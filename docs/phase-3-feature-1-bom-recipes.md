@@ -115,6 +115,8 @@ For a desired output quantity `Q` (in `yield_uom`):
 If `scrap_factor` is used (optional policy):
 - `required_component_qty = required_component_qty * (1 + scrap_factor)`
 
+Component quantity precision: component quantities are interpreted as exact numeric inputs; rounding policy (if any) is applied at execution time, not in BOM definition.
+
 ## Posting-Time Validations (Documented)
 
 ### Version activation and effective dating
@@ -122,6 +124,7 @@ If `scrap_factor` is used (optional policy):
 Posting-time validation (application/service layer):
 - Only one `bom_versions` row may be `active` per `bom_id` at a time (not enforceable via basic constraints).
 - If effective dating is used, active selection must resolve to at most one version for an as-of timestamp.
+- If multiple versions overlap for the same as-of time due to misconfiguration, posting-time validation must reject activation.
 
 ### UOM consistency
 
@@ -141,4 +144,3 @@ Posting-time validation:
 2. Documentation defines yield-based component computations (component per output unit) and optional scrap factor handling.
 3. Documentation defines posting-time validations for version activation, effective dating, UOM consistency, and basic component sanity rules.
 4. No production code is added (no migrations executed, no ORM/runtime model implementation).
-
