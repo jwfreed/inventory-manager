@@ -99,6 +99,7 @@ Posting-time validation:
   - `status='completed'`, and
   - it is linked to a `posted` `inventory_movement` with `movement_type='transfer'`.
 - `putaway_lines.inventory_movement_id` cardinality (Phase 1): either one movement per line or a shared movement across multiple lines is acceptable. If shared, the movement must contain matching transfer deltas for each completed `putaway_line` (by `(item_id, uom, from_location_id, to_location_id, quantity_moved)`), and the movement must be posted atomically with those line completions.
+- Putaway-from-QC policy (Phase 1): whether putaway is allowed while upstream QC is still `pending`/`held` is an application/service posting-time policy. If restricted, require QC to be effective (e.g., accepted/released) before completing putaway lines sourced from QC locations.
 - Putaway inventory effects must be representable as balanced transfers (sum of deltas = 0) per the Phase 0 transfer invariants.
 
 ### Quantity rules

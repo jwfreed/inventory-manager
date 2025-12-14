@@ -26,6 +26,7 @@ Out of scope (Phase 1 Feature 2):
 
 Phase 1 assumes a **two-step inventory strategy**:
 1. Receiving creates a `receive`-type `inventory_movement` into a designated **QC hold location**.
+   - QC hold location identification (Phase 1): The “designated QC hold location” is selected via implementation-time policy (e.g., a configured `location_id`, a hardcoded location code, or a location classification rule). Phase 1 schema does not encode the selection mechanism.
 2. QC release (accept) creates a `transfer` movement from QC hold → available location.
 3. QC reject creates a movement policy-defined as either:
    - `transfer` from QC hold → scrap/return location, or
@@ -91,6 +92,8 @@ Constraints / indexes:
 - `foreign key (inventory_movement_id) references inventory_movements(id)`
 - `unique (qc_event_id)`
 - `index (inventory_movement_id)`
+
+Cardinality note (Phase 1): A single `inventory_movement_id` may be linked to multiple QC events (the schema allows this) unless an application/service policy restricts it.
 
 ## Posting-Time Validations (Documented)
 

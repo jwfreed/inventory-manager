@@ -79,6 +79,7 @@ Constraints / indexes:
 ### Preconditions to close
 
 Posting-time validation (application/service layer):
+Closeout check scope (Phase 1): Closeout preconditions are evaluated only over records linked by FK to the anchor `purchase_order_receipt_id` (e.g., receipt lines, QC events linked to those receipt lines, putaways whose `purchase_order_receipt_id` references the receipt), not by global location/time inference.
 - Closeout can occur only if the anchor `purchase_order_receipt` is considered posted/effective per Phase 1 Feature 1:
   - It must be linked to a `posted` receive-type `inventory_movement` (or meet whatever “receipt posted” policy is chosen).
 - For the receipt’s lines:

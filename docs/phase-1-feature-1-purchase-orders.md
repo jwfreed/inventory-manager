@@ -153,6 +153,7 @@ Posting-time validation: `purchase_order_receipt_lines.uom` must match the refer
 
 Posting-time validation (application/service layer):
 - Receipt posting vs movement posting (Phase 1): A `purchase_order_receipt` may exist in a draft/unposted document state with `inventory_movement_id = NULL`. A receipt is considered posted/effective only when it is linked to a posted `inventory_movement` (`movement_type='receive'`). Inventory on-hand is derived from the movement ledger, not from receipt rows.
+- Authority split (Phase 1): Receipts are authoritative for PO status and received quantities (PO progress derives from receipt rows), while inventory movements are authoritative for inventory on-hand. If receipts and movements disagree, treat it as an integrity error to be resolved by posting-time validation and audit, not by letting one silently override the other.
 - Phase 1 assumes a one-to-one relationship between a `purchase_order_receipt` and a receive-type `inventory_movement`; alternative mappings are out of scope.
 - If `purchase_order_receipts.inventory_movement_id` is set, it must reference a `posted` `inventory_movement` with `movement_type='receive'`.
 - Receipt line totals should correspond to the associated movement lines by `(item_id, uom)` and positive deltas into `received_to_location_id`.
