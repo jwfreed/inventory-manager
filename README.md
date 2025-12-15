@@ -9,6 +9,7 @@ This repository now includes a minimal Node.js/TypeScript migration setup powere
 - Phase 1 Feature 1: `vendors`, `purchase_orders`, `purchase_order_lines`
 - Phase 1 Feature 2: `purchase_order_receipts`, `purchase_order_receipt_lines`, `qc_events`, `qc_inventory_links`
 - Phase 1 Feature 3: `putaways`, `putaway_lines`
+- Phase 1 Feature 4: `inbound_closeouts`
 
 ### Prerequisites
 
@@ -63,9 +64,10 @@ npm run dev
 
 - `POST /vendors`, `GET /vendors`
 - `POST /purchase-orders`, `GET /purchase-orders`, `GET /purchase-orders/:id`
-- `POST /purchase-order-receipts`, `GET /purchase-order-receipts/:id`
+- `POST /purchase-order-receipts`, `GET /purchase-order-receipts/:id`, `GET /purchase-order-receipts/:id/reconciliation`
 - `POST /qc-events`, `GET /purchase-order-receipt-lines/:id/qc-events`
 - `POST /putaways`, `GET /putaways/:id`, `POST /putaways/:id/post`
+- `POST /purchase-order-receipts/:id/close`, `POST /purchase-orders/:id/close`
 
 ### Manual smoke test
 
@@ -161,13 +163,28 @@ curl -s -X POST http://localhost:3000/putaways \
 # 9) Post the putaway (moves inventory from staging to the bin)
 curl -s -X POST http://localhost:3000/putaways/<PUTAWAY_ID>/post | jq .
 
-# 10) Verify inventory movements show the transfer
+# 10) Inspect receipt reconciliation before closing (should show zero remaining)
+curl -s http://localhost:3000/purchase-order-receipts/<RECEIPT_ID>/reconciliation | jq .
+
+# 11) Close the receipt (will fail if QC/putaway rules are violated)
+curl -s -X POST http://localhost:3000/purchase-order-receipts/<RECEIPT_ID>/close \
+  -H 'Content-Type: application/json' \
+  -d '{"actorType":"user","actorId":"closer-1","notes":"QA verified"}' | jq .
+
+# 12) Close the purchase order (all receipts must be closed first)
+curl -s -X POST http://localhost:3000/purchase-orders/<PO_ID>/close | jq .
+
+# 13) Verify inventory movements show the transfer
 psql "$DATABASE_URL" -c "
 SELECT item_id, location_id, uom, SUM(quantity_delta) AS on_hand
 FROM inventory_movement_lines
 GROUP BY item_id, location_id, uom
 ORDER BY location_id;
 "
+
+# 14) Inspect receipt closeout + PO status in SQL
+psql "$DATABASE_URL" -c "SELECT id, status, closed_at FROM inbound_closeouts;"
+psql "$DATABASE_URL" -c "SELECT id, status FROM purchase_orders WHERE id = '<PO_ID>';"
 ```
 
-Successful responses confirm vendors/POs work end-to-end, receipts insert atomically, QC events enforce the service validations, putaway posting creates balanced transfer movements, and the `inventory_movement_lines` ledger reflects the move from staging to the storage bin.
+Successful responses confirm vendors/POs work end-to-end, receipts insert atomically, QC events enforce the service validations, putaway posting creates balanced transfer movements, reconciliation detects blockers, closeout endpoints enforce the gating rules, and both receipts/POs end in a CLOSED state once reconciled.
