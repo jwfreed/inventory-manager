@@ -10,6 +10,8 @@ This repository now includes a minimal Node.js/TypeScript migration setup powere
 - Phase 1 Feature 2: `purchase_order_receipts`, `purchase_order_receipt_lines`, `qc_events`, `qc_inventory_links`
 - Phase 1 Feature 3: `putaways`, `putaway_lines`
 - Phase 1 Feature 4: `inbound_closeouts`
+- Phase 2 Feature 1: `inventory_adjustments`, `inventory_adjustment_lines`
+- Phase 2 Feature 2: `cycle_counts`, `cycle_count_lines`
 
 ### Prerequisites
 
@@ -69,6 +71,7 @@ npm run dev
 - `POST /putaways`, `GET /putaways/:id`, `POST /putaways/:id/post`
 - `POST /purchase-order-receipts/:id/close`, `POST /purchase-orders/:id/close`
 - `POST /inventory-adjustments`, `GET /inventory-adjustments/:id`, `POST /inventory-adjustments/:id/post`
+- `POST /inventory-counts`, `GET /inventory-counts/:id`, `POST /inventory-counts/:id/post`
 
 ### Manual smoke test
 
@@ -232,6 +235,40 @@ FROM inventory_movement_lines
 WHERE item_id = '<ITEM_UUID>' AND location_id = '<BIN_LOCATION_UUID>'
 GROUP BY item_id, location_id, uom;
 "
+
+# 19) Create a cycle count (counted quantity different from current on-hand)
+curl -s -X POST http://localhost:3000/inventory-counts \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "countedAt": "2024-01-18T10:00:00Z",
+    "locationId": "<BIN_LOCATION_UUID>",
+    "lines": [
+      {"itemId": "<ITEM_UUID>", "uom": "kg", "countedQuantity": 7}
+    ]
+  }' | jq .
+
+# 20) Inspect the count with variance summary
+curl -s http://localhost:3000/inventory-counts/<COUNT_ID> | jq .
+
+# 21) Post the cycle count
+curl -s -X POST http://localhost:3000/inventory-counts/<COUNT_ID>/post | jq .
+
+# 22) Verify a `movement_type='count'` entry exists and on-hand now equals the counted quantity
+psql "$DATABASE_URL" -c "
+SELECT m.id, m.movement_type, m.occurred_at, l.quantity_delta
+FROM inventory_movements m
+JOIN inventory_movement_lines l ON l.movement_id = m.id
+WHERE m.movement_type = 'count'
+ORDER BY m.created_at DESC
+LIMIT 10;
+"
+
+psql "$DATABASE_URL" -c "
+SELECT item_id, location_id, uom, SUM(quantity_delta) AS on_hand
+FROM inventory_movement_lines
+WHERE item_id = '<ITEM_UUID>' AND location_id = '<BIN_LOCATION_UUID>'
+GROUP BY item_id, location_id, uom;
+"
 ```
 
-Successful responses confirm vendors/POs work end-to-end, receipts insert atomically, QC events enforce the service validations, putaway posting creates balanced transfer movements, reconciliation detects blockers, closeout endpoints enforce the gating rules, and both receipts/POs end in a CLOSED state once reconciled.
+Successful responses confirm vendors/POs work end-to-end, receipts insert atomically, QC events enforce the service validations, putaway posting creates balanced transfer movements, reconciliation detects blockers, closeout endpoints enforce the gating rules, inventory adjustments correct stock with immutable movements, and cycle counts recompute on-hand via `movement_type='count'` deltas.
