@@ -6,7 +6,9 @@ This repository now includes a minimal Node.js/TypeScript migration setup powere
 
 - Phase 0 Feature 1: `items`, `locations`, `inventory_movements`, `inventory_movement_lines`
 - Phase 0 Feature 2: `locations` hierarchy fields and the `audit_log` table
-- Phase 1 Feature 1: `vendors`, `purchase_orders`, `purchase_order_lines` (run after Phase 0)
+- Phase 1 Feature 1: `vendors`, `purchase_orders`, `purchase_order_lines`
+- Phase 1 Feature 2: `purchase_order_receipts`, `purchase_order_receipt_lines`, `qc_events`, `qc_inventory_links`
+- Phase 1 Feature 3: `putaways`, `putaway_lines`
 
 ### Prerequisites
 
@@ -59,20 +61,21 @@ npm run dev
 
 ### Available endpoints
 
-- `POST /vendors` / `GET /vendors`
+- `POST /vendors`, `GET /vendors`
 - `POST /purchase-orders`, `GET /purchase-orders`, `GET /purchase-orders/:id`
 - `POST /purchase-order-receipts`, `GET /purchase-order-receipts/:id`
-- `POST /qc-events`
-- `GET /purchase-order-receipt-lines/:id/qc-events`
+- `POST /qc-events`, `GET /purchase-order-receipt-lines/:id/qc-events`
+- `POST /putaways`, `GET /putaways/:id`, `POST /putaways/:id/post`
 
 ### Manual smoke test
 
-The steps below exercise Vendors → POs → Receipts → QC. Replace placeholder UUIDs with the real ones returned from earlier steps.
+The steps below exercise Vendors → POs → Receipts → QC → Putaway. Replace placeholder UUIDs with the real ones returned from earlier steps.
 
 ```bash
-# 0) Insert a test item directly (Phase 0 table).
-#    Use `uuidgen` to supply the UUIDs.
+# 0) Insert a test item and two locations directly (use `uuidgen` for UUIDs).
 psql "$DATABASE_URL" -c "INSERT INTO items (id, sku, name, active, created_at, updated_at) VALUES ('<ITEM_UUID>', 'COCOA-001', 'Cocoa Nibs', true, now(), now());"
+psql "$DATABASE_URL" -c "INSERT INTO locations (id, code, name, type, active, created_at, updated_at) VALUES ('<STAGING_LOCATION_UUID>', 'STAGE-001', 'Receiving Staging', 'virtual', true, now(), now());"
+psql "$DATABASE_URL" -c "INSERT INTO locations (id, code, name, type, active, created_at, updated_at) VALUES ('<BIN_LOCATION_UUID>', 'BIN-A1', 'Finished Bin A1', 'bin', true, now(), now());"
 
 # 1) Create a vendor
 curl -s -X POST http://localhost:3000/vendors \
@@ -96,12 +99,13 @@ curl -s -X POST http://localhost:3000/purchase-orders \
 # 3) Fetch the PO to copy its line IDs
 curl -s http://localhost:3000/purchase-orders/<PO_ID> | jq '.lines'
 
-# 4) Create a purchase order receipt for those lines
+# 4) Create a purchase order receipt for those lines (send to the staging location)
 curl -s -X POST http://localhost:3000/purchase-order-receipts \
   -H 'Content-Type: application/json' \
   -d '{
     "purchaseOrderId": "<PO_ID>",
     "receivedAt": "2024-01-15T15:00:00Z",
+    "receivedToLocationId": "<STAGING_LOCATION_UUID>",
     "lines": [
       {"purchaseOrderLineId": "<PO_LINE_1_ID>", "uom": "kg", "quantityReceived": 90},
       {"purchaseOrderLineId": "<PO_LINE_2_ID>", "uom": "kg", "quantityReceived": 40}
@@ -137,6 +141,33 @@ curl -s http://localhost:3000/purchase-order-receipts/<RECEIPT_ID> | jq '.lines'
 
 # 7) List QC events for the line
 curl -s http://localhost:3000/purchase-order-receipt-lines/<RECEIPT_LINE_ID>/qc-events | jq .
+
+# 8) Create a putaway for the accepted quantity
+curl -s -X POST http://localhost:3000/putaways \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "sourceType": "purchase_order_receipt",
+    "purchaseOrderReceiptId": "<RECEIPT_ID>",
+    "lines": [
+      {
+        "purchaseOrderReceiptLineId": "<RECEIPT_LINE_ID>",
+        "toLocationId": "<BIN_LOCATION_UUID>",
+        "uom": "kg",
+        "quantity": 40
+      }
+    ]
+  }' | jq .
+
+# 9) Post the putaway (moves inventory from staging to the bin)
+curl -s -X POST http://localhost:3000/putaways/<PUTAWAY_ID>/post | jq .
+
+# 10) Verify inventory movements show the transfer
+psql "$DATABASE_URL" -c "
+SELECT item_id, location_id, uom, SUM(quantity_delta) AS on_hand
+FROM inventory_movement_lines
+GROUP BY item_id, location_id, uom
+ORDER BY location_id;
+"
 ```
 
-Successful responses confirm vendors/POs work end-to-end, receipts insert atomically, QC events enforce the service validations, and receipt retrieval shows `qcSummary` (`totalQcQuantity`, per-type breakdown, and `remainingUninspectedQuantity`).
+Successful responses confirm vendors/POs work end-to-end, receipts insert atomically, QC events enforce the service validations, putaway posting creates balanced transfer movements, and the `inventory_movement_lines` ledger reflects the move from staging to the storage bin.
