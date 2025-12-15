@@ -40,6 +40,32 @@ const purchaseOrderSchema = z.object({
   lines: z.array(purchaseOrderLineSchema).min(1)
 });
 
+const receiptLineSchema = z.object({
+  purchaseOrderLineId: z.string().uuid(),
+  uom: z.string().min(1).max(32),
+  quantityReceived: z.number().positive()
+});
+
+const purchaseOrderReceiptSchema = z.object({
+  purchaseOrderId: z.string().uuid(),
+  receivedAt: z.string().datetime(),
+  receivedToLocationId: z.string().uuid().optional(),
+  externalRef: z.string().max(255).optional(),
+  notes: z.string().max(2000).optional(),
+  lines: z.array(receiptLineSchema).min(1)
+});
+
+const qcEventSchema = z.object({
+  purchaseOrderReceiptLineId: z.string().uuid(),
+  eventType: z.enum(['hold', 'accept', 'reject']),
+  quantity: z.number().positive(),
+  uom: z.string().min(1).max(32),
+  reasonCode: z.string().max(255).optional(),
+  notes: z.string().max(2000).optional(),
+  actorType: z.enum(['user', 'system']),
+  actorId: z.string().max(255).optional()
+});
+
 function mapPurchaseOrder(row: any, lines: any[]) {
   return {
     id: row.id,
@@ -63,6 +89,120 @@ function mapPurchaseOrder(row: any, lines: any[]) {
       notes: line.notes,
       createdAt: line.created_at
     }))
+  };
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  if (value === null || value === undefined) {
+    return 0;
+  }
+  const num = Number(value);
+  return Number.isNaN(num) ? 0 : num;
+}
+
+function roundQuantity(value: number): number {
+  return parseFloat(value.toFixed(6));
+}
+
+type QcBreakdown = { hold: number; accept: number; reject: number };
+
+function defaultBreakdown(): QcBreakdown {
+  return { hold: 0, accept: 0, reject: 0 };
+}
+
+function buildQcSummary(lineId: string, breakdownMap: Map<string, QcBreakdown>, quantityReceived: number) {
+  const breakdown = breakdownMap.get(lineId) ?? defaultBreakdown();
+  const totalQcQuantity = roundQuantity(breakdown.hold + breakdown.accept + breakdown.reject);
+  return {
+    totalQcQuantity,
+    breakdown,
+    remainingUninspectedQuantity: roundQuantity(Math.max(0, quantityReceived - totalQcQuantity))
+  };
+}
+
+async function loadQcBreakdown(lineIds: string[]): Promise<Map<string, QcBreakdown>> {
+  const map = new Map<string, QcBreakdown>();
+  if (lineIds.length === 0) {
+    return map;
+  }
+  const { rows } = await query(
+    `SELECT purchase_order_receipt_line_id AS line_id, event_type, SUM(quantity) AS total_quantity
+       FROM qc_events
+       WHERE purchase_order_receipt_line_id = ANY($1::uuid[])
+       GROUP BY purchase_order_receipt_line_id, event_type`,
+    [lineIds]
+  );
+  for (const row of rows) {
+    const lineId = row.line_id as string;
+    const breakdown = map.get(lineId) ?? defaultBreakdown();
+    const eventType = row.event_type as keyof QcBreakdown;
+    breakdown[eventType] = roundQuantity(toNumber(row.total_quantity));
+    map.set(lineId, breakdown);
+  }
+  return map;
+}
+
+function mapReceiptLine(line: any, qcBreakdown: Map<string, QcBreakdown>) {
+  const quantityReceived = roundQuantity(toNumber(line.quantity_received));
+  return {
+    id: line.id,
+    purchaseOrderReceiptId: line.purchase_order_receipt_id,
+    purchaseOrderLineId: line.purchase_order_line_id,
+    uom: line.uom,
+    quantityReceived,
+    createdAt: line.created_at,
+    qcSummary: buildQcSummary(line.id, qcBreakdown, quantityReceived)
+  };
+}
+
+function mapReceipt(row: any, lineRows: any[], qcBreakdown: Map<string, QcBreakdown>) {
+  return {
+    id: row.id,
+    purchaseOrderId: row.purchase_order_id,
+    receivedAt: row.received_at,
+    receivedToLocationId: row.received_to_location_id,
+    inventoryMovementId: row.inventory_movement_id,
+    externalRef: row.external_ref,
+    notes: row.notes,
+    createdAt: row.created_at,
+    lines: lineRows.map((line) => mapReceiptLine(line, qcBreakdown))
+  };
+}
+
+async function fetchReceiptById(id: string) {
+  const receiptResult = await query('SELECT * FROM purchase_order_receipts WHERE id = $1', [id]);
+  if (receiptResult.rowCount === 0) {
+    return null;
+  }
+  const linesResult = await query(
+    'SELECT * FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1 ORDER BY created_at ASC',
+    [id]
+  );
+  const lineIds = linesResult.rows.map((line) => line.id);
+  const breakdown = await loadQcBreakdown(lineIds);
+  return mapReceipt(receiptResult.rows[0], linesResult.rows, breakdown);
+}
+
+function mapQcEvent(row: any) {
+  return {
+    id: row.id,
+    purchaseOrderReceiptLineId: row.purchase_order_receipt_line_id,
+    eventType: row.event_type,
+    quantity: roundQuantity(toNumber(row.quantity)),
+    uom: row.uom,
+    reasonCode: row.reason_code,
+    notes: row.notes,
+    actorType: row.actor_type,
+    actorId: row.actor_id,
+    occurredAt: row.occurred_at,
+    createdAt: row.created_at
   };
 }
 
@@ -229,6 +369,196 @@ app.get('/purchase-orders', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to list purchase orders.' });
+  }
+});
+
+app.post('/purchase-order-receipts', async (req: Request, res: Response) => {
+  const parsed = purchaseOrderReceiptSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const data = parsed.data;
+  const receiptId = uuidv4();
+  const uniqueSet = new Set(data.lines.map((line) => line.purchaseOrderLineId));
+  const uniqueLineIds = Array.from(uniqueSet);
+
+  try {
+    const { rows: poLineRows } = await query(
+      'SELECT id, purchase_order_id, uom FROM purchase_order_lines WHERE id = ANY($1::uuid[])',
+      [uniqueLineIds]
+    );
+    if (poLineRows.length !== uniqueLineIds.length) {
+      return res.status(400).json({ error: 'One or more purchase order lines were not found.' });
+    }
+    const poLineMap = new Map<string, { purchase_order_id: string; uom: string }>();
+    for (const row of poLineRows) {
+      poLineMap.set(row.id, { purchase_order_id: row.purchase_order_id, uom: row.uom });
+    }
+    for (const line of data.lines) {
+      const poLine = poLineMap.get(line.purchaseOrderLineId);
+      if (!poLine) {
+        return res.status(400).json({ error: 'Invalid purchase order line reference.' });
+      }
+      if (poLine.purchase_order_id !== data.purchaseOrderId) {
+        return res
+          .status(400)
+          .json({ error: 'All receipt lines must reference the provided purchase order.' });
+      }
+      if (poLine.uom !== line.uom) {
+        return res
+          .status(400)
+          .json({ error: 'Receipt line UOM must match the purchase order line UOM.' });
+      }
+    }
+
+    await withTransaction(async (client: PoolClient) => {
+      await client.query(
+        `INSERT INTO purchase_order_receipts (
+            id, purchase_order_id, received_at, received_to_location_id,
+            inventory_movement_id, external_ref, notes
+         ) VALUES ($1, $2, $3, $4, NULL, $5, $6)`,
+        [
+          receiptId,
+          data.purchaseOrderId,
+          new Date(data.receivedAt),
+          data.receivedToLocationId ?? null,
+          data.externalRef ?? null,
+          data.notes ?? null
+        ]
+      );
+
+      for (const line of data.lines) {
+        await client.query(
+          `INSERT INTO purchase_order_receipt_lines (
+              id, purchase_order_receipt_id, purchase_order_line_id, uom, quantity_received
+           ) VALUES ($1, $2, $3, $4, $5)`,
+          [uuidv4(), receiptId, line.purchaseOrderLineId, line.uom, line.quantityReceived]
+        );
+      }
+    });
+
+    const receipt = await fetchReceiptById(receiptId);
+    if (!receipt) {
+      return res
+        .status(500)
+        .json({ error: 'Receipt was created but could not be reloaded. Please retry fetch.' });
+    }
+    return res.status(201).json(receipt);
+  } catch (error: any) {
+    if (error?.code === '23503') {
+      return res.status(400).json({ error: 'Referenced purchase order, line, or location does not exist.' });
+    }
+    if (error?.code === '23514') {
+      return res.status(400).json({ error: 'Quantity received must be greater than zero.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to create purchase order receipt.' });
+  }
+});
+
+app.get('/purchase-order-receipts/:id', async (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!z.string().uuid().safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid receipt id.' });
+  }
+  try {
+    const receipt = await fetchReceiptById(id);
+    if (!receipt) {
+      return res.status(404).json({ error: 'Receipt not found.' });
+    }
+    return res.json(receipt);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fetch receipt.' });
+  }
+});
+
+app.post('/qc-events', async (req: Request, res: Response) => {
+  const parsed = qcEventSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const data = parsed.data;
+
+  try {
+    const lineResult = await query(
+      'SELECT id, uom, quantity_received FROM purchase_order_receipt_lines WHERE id = $1',
+      [data.purchaseOrderReceiptLineId]
+    );
+    if (lineResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Receipt line not found.' });
+    }
+    const line = lineResult.rows[0];
+    if (line.uom !== data.uom) {
+      return res.status(400).json({ error: 'QC event UOM must match the receipt line UOM.' });
+    }
+
+    const totalResult = await query(
+      'SELECT COALESCE(SUM(quantity), 0) AS total FROM qc_events WHERE purchase_order_receipt_line_id = $1',
+      [data.purchaseOrderReceiptLineId]
+    );
+    const currentTotal = roundQuantity(toNumber(totalResult.rows[0]?.total ?? 0));
+    const lineQuantity = roundQuantity(toNumber(line.quantity_received));
+    const newTotal = roundQuantity(currentTotal + data.quantity);
+    if (newTotal - lineQuantity > 1e-6) {
+      return res
+        .status(400)
+        .json({ error: 'QC quantities cannot exceed the received quantity for the line.' });
+    }
+
+    const { rows } = await query(
+      `INSERT INTO qc_events (
+          id, purchase_order_receipt_line_id, event_type, quantity, uom, reason_code, notes, actor_type, actor_id
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [
+        uuidv4(),
+        data.purchaseOrderReceiptLineId,
+        data.eventType,
+        data.quantity,
+        data.uom,
+        data.reasonCode ?? null,
+        data.notes ?? null,
+        data.actorType,
+        data.actorId ?? null
+      ]
+    );
+    return res.status(201).json(mapQcEvent(rows[0]));
+  } catch (error: any) {
+    if (error?.code === '23503') {
+      return res.status(400).json({ error: 'Referenced receipt line does not exist.' });
+    }
+    if (error?.code === '23514') {
+      return res.status(400).json({ error: 'QC quantity must be greater than zero.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to create QC event.' });
+  }
+});
+
+app.get('/purchase-order-receipt-lines/:id/qc-events', async (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!z.string().uuid().safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid receipt line id.' });
+  }
+
+  try {
+    const lineResult = await query('SELECT id FROM purchase_order_receipt_lines WHERE id = $1', [id]);
+    if (lineResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Receipt line not found.' });
+    }
+    const { rows } = await query(
+      `SELECT * FROM qc_events
+         WHERE purchase_order_receipt_line_id = $1
+         ORDER BY occurred_at ASC`,
+      [id]
+    );
+    return res.json({ data: rows.map(mapQcEvent) });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to list QC events.' });
   }
 });
 
