@@ -12,6 +12,7 @@ This repository now includes a minimal Node.js/TypeScript migration setup powere
 - Phase 1 Feature 4: `inbound_closeouts`
 - Phase 2 Feature 1: `inventory_adjustments`, `inventory_adjustment_lines`
 - Phase 2 Feature 2: `cycle_counts`, `cycle_count_lines`
+- Phase 3 Feature 1: `boms`, `bom_versions`, `bom_version_lines`
 
 ### Prerequisites
 
@@ -72,6 +73,7 @@ npm run dev
 - `POST /purchase-order-receipts/:id/close`, `POST /purchase-orders/:id/close`
 - `POST /inventory-adjustments`, `GET /inventory-adjustments/:id`, `POST /inventory-adjustments/:id/post`
 - `POST /inventory-counts`, `GET /inventory-counts/:id`, `POST /inventory-counts/:id/post`
+- `POST /boms`, `GET /boms/:id`, `GET /items/:id/boms`, `POST /boms/:id/activate`, `GET /items/:id/bom?asOf=ISO_DATE`
 
 ### Manual smoke test
 
@@ -272,3 +274,96 @@ GROUP BY item_id, location_id, uom;
 ```
 
 Successful responses confirm vendors/POs work end-to-end, receipts insert atomically, QC events enforce the service validations, putaway posting creates balanced transfer movements, reconciliation detects blockers, closeout endpoints enforce the gating rules, inventory adjustments correct stock with immutable movements, and cycle counts recompute on-hand via `movement_type='count'` deltas.
+
+## Phase 3 — Feature 1 BOM / Recipe Management
+
+### Smoke test / manual verification
+
+Run the steps below after applying the Phase 3 Feature 1 migrations.
+
+```bash
+# 0) Insert sample items (one finished good and at least one component; the example adds packaging for a second component line)
+psql "$DATABASE_URL" -c "INSERT INTO items (id, sku, name, active, created_at, updated_at) VALUES ('<FINISHED_ITEM_ID>', 'FG-CHOCO', 'Finished Chocolate Bar', true, now(), now());"
+psql "$DATABASE_URL" -c "INSERT INTO items (id, sku, name, active, created_at, updated_at) VALUES ('<COMPONENT_ITEM_ID>', 'RM-COCOA', 'Raw Cocoa', true, now(), now());"
+psql "$DATABASE_URL" -c "INSERT INTO items (id, sku, name, active, created_at, updated_at) VALUES ('<SECOND_COMPONENT_ID>', 'PKG-BAR', 'Bar Wrapper', true, now(), now());"
+
+# 1) Create BOM v1 with two component lines
+curl -s -X POST http://localhost:3000/boms \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "bomCode": "BOM-CHOCO-001",
+    "outputItemId": "<FINISHED_ITEM_ID>",
+    "defaultUom": "kg",
+    "version": {
+      "versionNumber": 1,
+      "yieldQuantity": 100,
+      "yieldUom": "kg",
+      "components": [
+        {"lineNumber": 1, "componentItemId": "<COMPONENT_ITEM_ID>", "uom": "kg", "quantityPer": 80},
+        {"lineNumber": 2, "componentItemId": "<SECOND_COMPONENT_ID>", "uom": "ea", "quantityPer": 100, "scrapFactor": 0.02}
+      ]
+    }
+  }' | jq .
+
+# 2) List BOMs for the finished item (shows draft version)
+curl -s http://localhost:3000/items/<FINISHED_ITEM_ID>/boms | jq .
+
+# 3) Activate the version (use the version id returned from step 1)
+curl -s -X POST http://localhost:3000/boms/<BOM_VERSION_ID>/activate \
+  -H 'Content-Type: application/json' \
+  -d '{"effectiveFrom":"2024-02-01T00:00:00Z"}' | jq '.versions'
+
+# 4) Fetch the BOM with components to confirm status flipped to active
+curl -s http://localhost:3000/boms/<BOM_ID> | jq '.versions'
+
+# 5) Resolve the effective BOM for an as-of date (defaults to now when asOf is omitted)
+curl -s "http://localhost:3000/items/<FINISHED_ITEM_ID>/bom?asOf=2024-02-15T00:00:00Z" | jq .
+
+# 6) Try to create a duplicate BOM code (should return 409)
+curl -s -X POST http://localhost:3000/boms \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "bomCode": "BOM-CHOCO-001",
+    "outputItemId": "<FINISHED_ITEM_ID>",
+    "defaultUom": "kg",
+    "version": {
+      "yieldQuantity": 100,
+      "yieldUom": "kg",
+      "components": [
+        {"lineNumber": 1, "componentItemId": "<COMPONENT_ITEM_ID>", "uom": "kg", "quantityPer": 80}
+      ]
+    }
+  }' | jq .
+
+# 7) Create a second BOM for the same finished item and attempt to activate it with an overlapping effective range (should return 409)
+SECOND_BOM=$(curl -s -X POST http://localhost:3000/boms \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"bomCode\": \"BOM-CHOCO-002\",
+    \"outputItemId\": \"<FINISHED_ITEM_ID>\",
+    \"defaultUom\": \"kg\",
+    \"version\": {
+      \"versionNumber\": 1,
+      \"yieldQuantity\": 100,
+      \"yieldUom\": \"kg\",
+      \"components\": [
+        {\"lineNumber\": 1, \"componentItemId\": \"<COMPONENT_ITEM_ID>\", \"uom\": \"kg\", \"quantityPer\": 70}
+      ]
+    }
+  }")
+SECOND_VERSION_ID=$(echo "$SECOND_BOM" | jq -r '.versions[0].id')
+curl -s -X POST http://localhost:3000/boms/$SECOND_VERSION_ID/activate \
+  -H 'Content-Type: application/json' \
+  -d '{"effectiveFrom":"2024-02-10T00:00:00Z"}' | jq .
+
+# 8) Activate the second BOM with a non-overlapping date to confirm the guard rails
+curl -s -X POST http://localhost:3000/boms/$SECOND_VERSION_ID/activate \
+  -H 'Content-Type: application/json' \
+  -d '{"effectiveFrom":"2024-03-01T00:00:00Z"}' | jq '.versions'
+
+# 9) Query the effective BOM again for different as-of dates to ensure the correct version is selected
+curl -s "http://localhost:3000/items/<FINISHED_ITEM_ID>/bom?asOf=2024-02-15T00:00:00Z" | jq '.version.versionNumber'
+curl -s "http://localhost:3000/items/<FINISHED_ITEM_ID>/bom?asOf=2024-03-15T00:00:00Z" | jq '.version.versionNumber'
+```
+
+These steps validate that BOM creation inserts headers and components atomically, activation enforces single-active effective ranges per finished item, duplicate BOM codes are rejected, and the `GET /items/:id/bom?asOf=...` lookup returns the correct version for any date. If any of the validation steps return 4xx/5xx responses other than the expected 409 conflict checks, inspect the API logs and database contents before proceeding.
