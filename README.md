@@ -68,6 +68,7 @@ npm run dev
 - `POST /qc-events`, `GET /purchase-order-receipt-lines/:id/qc-events`
 - `POST /putaways`, `GET /putaways/:id`, `POST /putaways/:id/post`
 - `POST /purchase-order-receipts/:id/close`, `POST /purchase-orders/:id/close`
+- `POST /inventory-adjustments`, `GET /inventory-adjustments/:id`, `POST /inventory-adjustments/:id/post`
 
 ### Manual smoke test
 
@@ -185,6 +186,52 @@ ORDER BY location_id;
 # 14) Inspect receipt closeout + PO status in SQL
 psql "$DATABASE_URL" -c "SELECT id, status, closed_at FROM inbound_closeouts;"
 psql "$DATABASE_URL" -c "SELECT id, status FROM purchase_orders WHERE id = '<PO_ID>';"
+
+# 15) Create an inventory adjustment that adds stock to the bin
+curl -s -X POST http://localhost:3000/inventory-adjustments \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "occurredAt": "2024-01-16T12:00:00Z",
+    "lines": [
+      {
+        "itemId": "<ITEM_UUID>",
+        "locationId": "<BIN_LOCATION_UUID>",
+        "uom": "kg",
+        "quantityDelta": 5,
+        "reasonCode": "found"
+      }
+    ]
+  }' | jq .
+
+# 16) Post the adjustment
+curl -s -X POST http://localhost:3000/inventory-adjustments/<ADJUSTMENT_ID>/post | jq .
+
+# 17) Create and post an adjustment that removes stock
+curl -s -X POST http://localhost:3000/inventory-adjustments \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "occurredAt": "2024-01-17T12:00:00Z",
+    "notes": "Shrink adjustment",
+    "lines": [
+      {
+        "itemId": "<ITEM_UUID>",
+        "locationId": "<BIN_LOCATION_UUID>",
+        "uom": "kg",
+        "quantityDelta": -3,
+        "reasonCode": "shrink"
+      }
+    ]
+  }' | jq .
+
+curl -s -X POST http://localhost:3000/inventory-adjustments/<SECOND_ADJUSTMENT_ID>/post | jq .
+
+# 18) Verify on-hand reflects the adjustments (net +2 kg after +5/-3)
+psql "$DATABASE_URL" -c "
+SELECT item_id, location_id, uom, SUM(quantity_delta) AS on_hand
+FROM inventory_movement_lines
+WHERE item_id = '<ITEM_UUID>' AND location_id = '<BIN_LOCATION_UUID>'
+GROUP BY item_id, location_id, uom;
+"
 ```
 
 Successful responses confirm vendors/POs work end-to-end, receipts insert atomically, QC events enforce the service validations, putaway posting creates balanced transfer movements, reconciliation detects blockers, closeout endpoints enforce the gating rules, and both receipts/POs end in a CLOSED state once reconciled.
