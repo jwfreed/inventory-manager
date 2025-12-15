@@ -1,17 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query, withTransaction } from '../db';
-import type {
-  purchaseOrderSchema,
-  purchaseOrderLineSchema,
-  poCloseSchema
-} from '../schemas/purchaseOrders.schema';
+import type { purchaseOrderSchema, purchaseOrderLineSchema } from '../schemas/purchaseOrders.schema';
 
 export type PurchaseOrderInput = z.infer<typeof purchaseOrderSchema>;
 export type PurchaseOrderLineInput = z.infer<typeof purchaseOrderLineSchema>;
-export type PurchaseOrderCloseInput = z.infer<typeof poCloseSchema>;
 
-function mapPurchaseOrder(row: any, lines: any[]) {
+export function mapPurchaseOrder(row: any, lines: any[]) {
   return {
     id: row.id,
     poNumber: row.po_number,
@@ -123,42 +118,4 @@ export async function listPurchaseOrders(limit: number, offset: number) {
     [limit, offset]
   );
   return rows;
-}
-
-export async function closePurchaseOrder(id: string, _data: PurchaseOrderCloseInput) {
-  return withTransaction(async (client) => {
-    const now = new Date();
-    const poResult = await client.query('SELECT * FROM purchase_orders WHERE id = $1 FOR UPDATE', [id]);
-    if (poResult.rowCount === 0) {
-      throw new Error('PO_NOT_FOUND');
-    }
-    const po = poResult.rows[0];
-    if (po.status === 'closed') {
-      throw new Error('PO_ALREADY_CLOSED');
-    }
-    if (po.status === 'canceled') {
-      throw new Error('PO_CANCELED');
-    }
-
-    const receiptsResult = await client.query(
-      `SELECT por.id, ico.status
-         FROM purchase_order_receipts por
-         LEFT JOIN inbound_closeouts ico ON ico.purchase_order_receipt_id = por.id
-        WHERE por.purchase_order_id = $1`,
-      [id]
-    );
-    const blocking = receiptsResult.rows.filter((row: any) => row.status !== 'closed');
-    if (receiptsResult.rowCount > 0 && blocking.length > 0) {
-      throw new Error('PO_RECEIPTS_OPEN');
-    }
-
-    await client.query('UPDATE purchase_orders SET status = $1, updated_at = $2 WHERE id = $3', ['closed', now, id]);
-
-    const updatedPo = await client.query('SELECT * FROM purchase_orders WHERE id = $1', [id]);
-    const linesResult = await client.query(
-      'SELECT * FROM purchase_order_lines WHERE purchase_order_id = $1 ORDER BY line_number ASC',
-      [id]
-    );
-    return mapPurchaseOrder(updatedPo.rows[0], linesResult.rows);
-  });
 }

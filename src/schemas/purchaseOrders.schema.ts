@@ -23,7 +23,3 @@ export const purchaseOrderSchema = z.object({
   notes: z.string().max(2000).optional(),
   lines: z.array(purchaseOrderLineSchema).min(1)
 });
-
-export const poCloseSchema = z.object({
-  notes: z.string().max(2000).optional()
-});

@@ -1,12 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import {
-  closePurchaseOrder,
-  createPurchaseOrder,
-  getPurchaseOrderById,
-  listPurchaseOrders
-} from '../services/purchaseOrders.service';
-import { poCloseSchema, purchaseOrderSchema } from '../schemas/purchaseOrders.schema';
+import { createPurchaseOrder, getPurchaseOrderById, listPurchaseOrders } from '../services/purchaseOrders.service';
+import { purchaseOrderSchema } from '../schemas/purchaseOrders.schema';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -63,38 +58,6 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to list purchase orders.' });
-  }
-});
-
-router.post('/purchase-orders/:id/close', async (req: Request, res: Response) => {
-  const id = req.params.id;
-  if (!uuidSchema.safeParse(id).success) {
-    return res.status(400).json({ error: 'Invalid purchase order id.' });
-  }
-
-  const parsed = poCloseSchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-
-  try {
-    const purchaseOrder = await closePurchaseOrder(id, parsed.data);
-    return res.json(purchaseOrder);
-  } catch (error: any) {
-    if (error?.message === 'PO_NOT_FOUND') {
-      return res.status(404).json({ error: 'Purchase order not found.' });
-    }
-    if (error?.message === 'PO_ALREADY_CLOSED') {
-      return res.status(409).json({ error: 'Purchase order already closed.' });
-    }
-    if (error?.message === 'PO_CANCELED') {
-      return res.status(400).json({ error: 'Canceled purchase orders cannot be closed.' });
-    }
-    if (error?.message === 'PO_RECEIPTS_OPEN') {
-      return res.status(409).json({ error: 'All receipts must be closed before closing the purchase order.' });
-    }
-    console.error(error);
-    return res.status(500).json({ error: 'Failed to close purchase order.' });
   }
 });
 

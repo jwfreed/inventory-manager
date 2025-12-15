@@ -8,17 +8,9 @@ import purchaseOrdersRouter from './routes/purchaseOrders.routes';
 import receiptsRouter from './routes/receipts.routes';
 import qcRouter from './routes/qc.routes';
 import putawaysRouter from './routes/putaways.routes';
+import closeoutRouter from './routes/closeout.routes';
 import adjustmentsRouter from './routes/adjustments.routes';
 import countsRouter from './routes/counts.routes';
-import {
-  calculateAcceptedQuantity,
-  calculatePutawayAvailability,
-  defaultBreakdown,
-  loadReceiptLineContexts,
-  loadPutawayTotals,
-  loadQcBreakdown
-} from './services/inbound/receivingAggregations';
-import type { QcBreakdown } from './services/inbound/receivingAggregations';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -29,6 +21,7 @@ app.use(express.json());
 // - Vendors + Purchase Orders routes are defined under src/routes/*.routes.ts.
 // - Receiving + QC routes are defined under src/routes/receipts.routes.ts and qc.routes.ts.
 // - Putaway routes are defined under src/routes/putaways.routes.ts.
+// - Inbound closeout routes are defined under src/routes/closeout.routes.ts.
 // - Inventory adjustment routes are defined under src/routes/adjustments.routes.ts.
 // - Inventory count routes are defined under src/routes/counts.routes.ts.
 app.use(vendorsRouter);
@@ -36,25 +29,9 @@ app.use(purchaseOrdersRouter);
 app.use(receiptsRouter);
 app.use(qcRouter);
 app.use(putawaysRouter);
+app.use(closeoutRouter);
 app.use(adjustmentsRouter);
 app.use(countsRouter);
-
-const receiptCloseSchema = z
-  .object({
-    actorType: z.enum(['user', 'system']).optional(),
-    actorId: z.string().max(255).optional(),
-    closeoutReasonCode: z.string().max(255).optional(),
-    notes: z.string().max(2000).optional()
-  })
-  .superRefine((data, ctx) => {
-    if (data.actorId && !data.actorType) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'actorType is required when actorId is provided',
-        path: ['actorType']
-      });
-    }
-  });
 
 const bomComponentInputSchema = z.object({
   lineNumber: z.number().int().positive(),
@@ -150,41 +127,6 @@ function toNumber(value: unknown): number {
 function roundQuantity(value: number): number {
   return parseFloat(value.toFixed(6));
 }
-
-function buildQcSummary(lineId: string, breakdownMap: Map<string, QcBreakdown>, quantityReceived: number) {
-  const breakdown = breakdownMap.get(lineId) ?? defaultBreakdown();
-  const totalQcQuantity = roundQuantity(breakdown.hold + breakdown.accept + breakdown.reject);
-  return {
-    totalQcQuantity,
-    breakdown,
-    remainingUninspectedQuantity: roundQuantity(Math.max(0, quantityReceived - totalQcQuantity))
-  };
-}
-
-type ReceiptLineReconciliation = {
-  purchaseOrderReceiptLineId: string;
-  quantityReceived: number;
-  qcBreakdown: QcBreakdown;
-  quantityPutawayPosted: number;
-  remainingToPutaway: number;
-  blockedReasons: string[];
-};
-
-type ReceiptReconciliation = {
-  receipt: {
-    id: string;
-    purchaseOrderId: string;
-    status: 'open' | 'closed' | 'reopened';
-    closedAt: string | null;
-    closeout: {
-      status: string;
-      closedAt: string | null;
-      closeoutReasonCode: string | null;
-      notes: string | null;
-    } | null;
-  };
-  lines: ReceiptLineReconciliation[];
-};
 
 type BomRow = {
   id: string;
@@ -316,187 +258,6 @@ function rangesOverlap(
   const candidateToTime = candidateTo ? candidateTo.getTime() : Number.POSITIVE_INFINITY;
   return candidateFromTime <= existingToTime && existingFromTime <= candidateToTime;
 }
-
-type CloseoutRow = {
-  id: string;
-  purchase_order_receipt_id: string;
-  status: 'open' | 'closed' | 'reopened';
-  closed_at: string | null;
-  closeout_reason_code: string | null;
-  notes: string | null;
-};
-
-async function fetchReceiptReconciliation(receiverId: string, client?: PoolClient): Promise<ReceiptReconciliation | null> {
-  const executor = client ?? pool;
-  const receiptResult = await executor.query('SELECT * FROM purchase_order_receipts WHERE id = $1', [receiverId]);
-  if (receiptResult.rowCount === 0) {
-    return null;
-  }
-  const receipt = receiptResult.rows[0];
-
-  const linesResult = await executor.query(
-    'SELECT * FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1 ORDER BY created_at ASC',
-    [receiverId]
-  );
-  const lineIds = linesResult.rows.map((line: any) => line.id);
-  const qcMap = await loadQcBreakdown(lineIds, client);
-  const totalsMap = await loadPutawayTotals(lineIds, client);
-
-  const closeoutResult = await executor.query<CloseoutRow>(
-    'SELECT * FROM inbound_closeouts WHERE purchase_order_receipt_id = $1',
-    [receiverId]
-  );
-  const closeout = closeoutResult.rows[0] ?? null;
-
-  const lineSummaries: ReceiptLineReconciliation[] = linesResult.rows.map((line: any) => {
-    const qc = qcMap.get(line.id) ?? defaultBreakdown();
-    const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0 };
-    const quantityReceived = roundQuantity(toNumber(line.quantity_received));
-    const acceptedQty = calculateAcceptedQuantity(quantityReceived, qc);
-    const postedQty = roundQuantity(totals.posted ?? 0);
-    const remaining = Math.max(0, roundQuantity(acceptedQty - postedQty));
-    const blockedReasons: string[] = [];
-    if (roundQuantity(qc.hold ?? 0) > 0 && roundQuantity(qc.accept ?? 0) === 0) {
-      blockedReasons.push('QC hold unresolved');
-    }
-    if (remaining > 0) {
-      blockedReasons.push('Accepted quantity not fully put away');
-    }
-    return {
-      purchaseOrderReceiptLineId: line.id,
-      quantityReceived,
-      qcBreakdown: {
-        hold: roundQuantity(qc.hold ?? 0),
-        accept: roundQuantity(qc.accept ?? 0),
-        reject: roundQuantity(qc.reject ?? 0)
-      },
-      quantityPutawayPosted: postedQty,
-      remainingToPutaway: remaining,
-      blockedReasons
-    };
-  });
-
-  return {
-    receipt: {
-      id: receipt.id,
-      purchaseOrderId: receipt.purchase_order_id,
-      status: closeout?.status ?? 'open',
-      closedAt: closeout?.closed_at ?? null,
-      closeout: closeout
-        ? {
-            status: closeout.status,
-            closedAt: closeout.closed_at,
-            closeoutReasonCode: closeout.closeout_reason_code,
-            notes: closeout.notes
-          }
-        : null
-    },
-    lines: lineSummaries
-  };
-}
-
-app.get('/purchase-order-receipts/:id/reconciliation', async (req: Request, res: Response) => {
-  const id = req.params.id;
-  if (!z.string().uuid().safeParse(id).success) {
-    return res.status(400).json({ error: 'Invalid receipt id.' });
-  }
-  try {
-    const reconciliation = await fetchReceiptReconciliation(id);
-    if (!reconciliation) {
-      return res.status(404).json({ error: 'Receipt not found.' });
-    }
-    return res.json(reconciliation);
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Failed to compute receipt reconciliation.' });
-  }
-});
-
-app.post('/purchase-order-receipts/:id/close', async (req: Request, res: Response) => {
-  const receiptId = req.params.id;
-  if (!z.string().uuid().safeParse(receiptId).success) {
-    return res.status(400).json({ error: 'Invalid receipt id.' });
-  }
-  const parsed = receiptCloseSchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  const data = parsed.data;
-
-  try {
-    const reconciliation = await withTransaction(async (client: PoolClient) => {
-      const receiptRecon = await fetchReceiptReconciliation(receiptId, client);
-      if (!receiptRecon) {
-        throw new Error('RECEIPT_NOT_FOUND');
-      }
-
-      const closeoutResult = await client.query<CloseoutRow>(
-        'SELECT * FROM inbound_closeouts WHERE purchase_order_receipt_id = $1 FOR UPDATE',
-        [receiptId]
-      );
-      const existingCloseout = closeoutResult.rows[0];
-      if (existingCloseout && existingCloseout.status === 'closed') {
-        throw new Error('RECEIPT_ALREADY_CLOSED');
-      }
-
-      const blockingLines = receiptRecon.lines.filter((line) => line.blockedReasons.length > 0);
-      if (blockingLines.length > 0) {
-        const reasons = Array.from(new Set(blockingLines.flatMap((line) => line.blockedReasons)));
-        const error: any = new Error('RECEIPT_NOT_ELIGIBLE');
-        error.reasons = reasons;
-        throw error;
-      }
-
-      const now = new Date();
-      if (existingCloseout) {
-        await client.query(
-          `UPDATE inbound_closeouts
-              SET status = 'closed',
-                  closed_at = $1,
-                  closed_by_actor_type = $2,
-                  closed_by_actor_id = $3,
-                  closeout_reason_code = $4,
-                  notes = $5,
-                  updated_at = $1
-            WHERE id = $6`,
-          [now, data.actorType ?? null, data.actorId ?? null, data.closeoutReasonCode ?? null, data.notes ?? null, existingCloseout.id]
-        );
-      } else {
-        await client.query(
-          `INSERT INTO inbound_closeouts (
-              id, purchase_order_receipt_id, status, closed_at,
-              closed_by_actor_type, closed_by_actor_id, closeout_reason_code, notes, created_at, updated_at
-           ) VALUES ($1, $2, 'closed', $3, $4, $5, $6, $7, $3, $3)`,
-          [
-            uuidv4(),
-            receiptId,
-            now,
-            data.actorType ?? null,
-            data.actorId ?? null,
-            data.closeoutReasonCode ?? null,
-            data.notes ?? null
-          ]
-        );
-      }
-
-      return fetchReceiptReconciliation(receiptId, client);
-    });
-
-    return res.json(reconciliation);
-  } catch (error: any) {
-    if (error?.message === 'RECEIPT_NOT_FOUND') {
-      return res.status(404).json({ error: 'Receipt not found.' });
-    }
-    if (error?.message === 'RECEIPT_ALREADY_CLOSED') {
-      return res.status(409).json({ error: 'Receipt already closed.' });
-    }
-    if (error?.message === 'RECEIPT_NOT_ELIGIBLE') {
-      return res.status(400).json({ error: 'Receipt cannot be closed.', reasons: error.reasons ?? [] });
-    }
-    console.error(error);
-    return res.status(500).json({ error: 'Failed to close receipt.' });
-  }
-});
 
 app.post('/boms', async (req: Request, res: Response) => {
   const parsed = bomCreateSchema.safeParse(req.body);
