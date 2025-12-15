@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { query } from '../../db';
+import { roundQuantity, toNumber } from '../../lib/numbers';
 
 export type QcBreakdown = { hold: number; accept: number; reject: number };
 
@@ -17,25 +18,6 @@ export type PutawayTotals = {
   posted: number;
   pending: number;
 };
-
-function roundQuantity(value: number): number {
-  return parseFloat(value.toFixed(6));
-}
-
-function toNumber(value: unknown): number {
-  if (typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = parseFloat(value);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  if (value === null || value === undefined) {
-    return 0;
-  }
-  const num = Number(value);
-  return Number.isNaN(num) ? 0 : num;
-}
 
 export function defaultBreakdown(): QcBreakdown {
   return { hold: 0, accept: 0, reject: 0 };

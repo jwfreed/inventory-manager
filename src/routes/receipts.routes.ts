@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
 import { createPurchaseOrderReceipt, fetchReceiptById } from '../services/receipts.service';
+import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -35,11 +36,15 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
         .status(500)
         .json({ error: 'Receipt was created but could not be reloaded. Please retry fetch.' });
     }
-    if (error?.code === '23503') {
-      return res.status(400).json({ error: 'Referenced purchase order, line, or location does not exist.' });
-    }
-    if (error?.code === '23514') {
-      return res.status(400).json({ error: 'Quantity received must be greater than zero.' });
+    const mapped = mapPgErrorToHttp(error, {
+      foreignKey: () => ({
+        status: 400,
+        body: { error: 'Referenced purchase order, line, or location does not exist.' }
+      }),
+      check: () => ({ status: 400, body: { error: 'Quantity received must be greater than zero.' } })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create purchase order receipt.' });

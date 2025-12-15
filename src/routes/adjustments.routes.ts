@@ -6,6 +6,7 @@ import {
   postInventoryAdjustment
 } from '../services/adjustments.service';
 import { inventoryAdjustmentSchema } from '../schemas/adjustments.schema';
+import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -23,8 +24,14 @@ router.post('/inventory-adjustments', async (req: Request, res: Response) => {
     if (error?.message === 'ADJUSTMENT_DUPLICATE_LINE') {
       return res.status(400).json({ error: 'Line numbers must be unique within an adjustment.' });
     }
-    if (error?.code === '23503') {
-      return res.status(400).json({ error: 'Invalid reference: ensure item and location exist before adjustment.' });
+    const mapped = mapPgErrorToHttp(error, {
+      foreignKey: () => ({
+        status: 400,
+        body: { error: 'Invalid reference: ensure item and location exist before adjustment.' }
+      })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create inventory adjustment.' });

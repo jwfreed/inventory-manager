@@ -8,6 +8,7 @@ import {
   listBomsByItem,
   resolveEffectiveBom
 } from '../services/boms.service';
+import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -33,16 +34,20 @@ router.post('/boms', async (req: Request, res: Response) => {
     if (error?.message === 'BOM_COMPONENT_DUPLICATE_LINE') {
       return res.status(400).json({ error: 'Component line numbers must be unique per BOM version.' });
     }
-    if (error?.code === '23505') {
-      if (error?.constraint === 'boms_bom_code_key') {
-        return res.status(409).json({ error: 'bomCode must be unique.' });
-      }
-      if (error?.constraint === 'bom_version_lines_line_unique') {
-        return res.status(400).json({ error: 'Component line numbers must be unique per BOM version.' });
-      }
-    }
-    if (error?.code === '23503') {
-      return res.status(400).json({ error: 'Referenced item does not exist.' });
+    const mapped = mapPgErrorToHttp(error, {
+      unique: (err) => {
+        if (err.constraint === 'boms_bom_code_key') {
+          return { status: 409, body: { error: 'bomCode must be unique.' } };
+        }
+        if (err.constraint === 'bom_version_lines_line_unique') {
+          return { status: 400, body: { error: 'Component line numbers must be unique per BOM version.' } };
+        }
+        return null;
+      },
+      foreignKey: () => ({ status: 400, body: { error: 'Referenced item does not exist.' } })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
     }
     if (error?.message === 'BOM_NOT_FOUND_AFTER_CREATE') {
       console.error(error);

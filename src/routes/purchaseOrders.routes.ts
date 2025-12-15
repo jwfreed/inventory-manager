@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { createPurchaseOrder, getPurchaseOrderById, listPurchaseOrders } from '../services/purchaseOrders.service';
 import { purchaseOrderSchema } from '../schemas/purchaseOrders.schema';
+import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -19,11 +20,12 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
     if (error?.message === 'PO_DUPLICATE_LINE_NUMBERS') {
       return res.status(400).json({ error: 'Line numbers must be unique within a purchase order.' });
     }
-    if (error?.code === '23505') {
-      return res.status(409).json({ error: 'PO number must be unique.' });
-    }
-    if (error?.code === '23503') {
-      return res.status(400).json({ error: 'Referenced vendor, item, or location does not exist.' });
+    const mapped = mapPgErrorToHttp(error, {
+      unique: () => ({ status: 409, body: { error: 'PO number must be unique.' } }),
+      foreignKey: () => ({ status: 400, body: { error: 'Referenced vendor, item, or location does not exist.' } })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create purchase order.' });

@@ -2,27 +2,9 @@ import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query } from '../db';
 import { qcEventSchema } from '../schemas/qc.schema';
+import { roundQuantity, toNumber } from '../lib/numbers';
 
 export type QcEventInput = z.infer<typeof qcEventSchema>;
-
-function roundQuantity(value: number): number {
-  return parseFloat(value.toFixed(6));
-}
-
-function toNumber(value: unknown): number {
-  if (typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = parseFloat(value);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  if (value === null || value === undefined) {
-    return 0;
-  }
-  const num = Number(value);
-  return Number.isNaN(num) ? 0 : num;
-}
 
 function mapQcEvent(row: any) {
   return {

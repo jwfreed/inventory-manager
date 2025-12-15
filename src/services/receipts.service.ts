@@ -5,27 +5,9 @@ import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
 import type { z } from 'zod';
 import { defaultBreakdown, loadQcBreakdown } from './inbound/receivingAggregations';
 import type { QcBreakdown } from './inbound/receivingAggregations';
+import { roundQuantity, toNumber } from '../lib/numbers';
 
 type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
-
-function roundQuantity(value: number): number {
-  return parseFloat(value.toFixed(6));
-}
-
-function toNumber(value: unknown): number {
-  if (typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = parseFloat(value);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  if (value === null || value === undefined) {
-    return 0;
-  }
-  const num = Number(value);
-  return Number.isNaN(num) ? 0 : num;
-}
 
 function buildQcSummary(lineId: string, breakdownMap: Map<string, QcBreakdown>, quantityReceived: number) {
   const breakdown = breakdownMap.get(lineId) ?? defaultBreakdown();

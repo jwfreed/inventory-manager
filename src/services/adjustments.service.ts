@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import type { z } from 'zod';
 import { pool, withTransaction } from '../db';
 import { inventoryAdjustmentSchema } from '../schemas/adjustments.schema';
+import { roundQuantity, toNumber } from '../lib/numbers';
 
 type InventoryAdjustmentInput = z.infer<typeof inventoryAdjustmentSchema>;
 
@@ -28,25 +29,6 @@ type InventoryAdjustmentLineRow = {
   notes: string | null;
   created_at: string;
 };
-
-function toNumber(value: unknown): number {
-  if (typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = parseFloat(value);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  if (value === null || value === undefined) {
-    return 0;
-  }
-  const num = Number(value);
-  return Number.isNaN(num) ? 0 : num;
-}
-
-function roundQuantity(value: number): number {
-  return parseFloat(value.toFixed(6));
-}
 
 function mapInventoryAdjustment(row: InventoryAdjustmentRow, lines: InventoryAdjustmentLineRow[]) {
   return {

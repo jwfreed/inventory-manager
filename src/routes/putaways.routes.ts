@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { putawaySchema } from '../schemas/putaways.schema';
 import { createPutaway, fetchPutawayById, postPutaway } from '../services/putaways.service';
+import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -44,8 +45,14 @@ router.post('/putaways', async (req: Request, res: Response) => {
     if (error?.message === 'PUTAWAY_DUPLICATE_LINE') {
       return res.status(400).json({ error: 'Line numbers must be unique within a putaway.' });
     }
-    if (error?.code === '23503') {
-      return res.status(400).json({ error: 'Invalid reference: ensure locations, items, and receipt lines exist before putaway.' });
+    const mapped = mapPgErrorToHttp(error, {
+      foreignKey: () => ({
+        status: 400,
+        body: { error: 'Invalid reference: ensure locations, items, and receipt lines exist before putaway.' }
+      })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create putaway.' });

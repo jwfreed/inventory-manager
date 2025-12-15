@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { createInventoryCount, getInventoryCount, postInventoryCount } from '../services/counts.service';
 import { inventoryCountSchema } from '../schemas/counts.schema';
+import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -22,8 +23,14 @@ router.post('/inventory-counts', async (req: Request, res: Response) => {
     if (error?.message === 'COUNT_DUPLICATE_ITEM') {
       return res.status(400).json({ error: 'Each item/UOM may only appear once in a cycle count.' });
     }
-    if (error?.code === '23503') {
-      return res.status(400).json({ error: 'Invalid reference: ensure location and items exist before counting.' });
+    const mapped = mapPgErrorToHttp(error, {
+      foreignKey: () => ({
+        status: 400,
+        body: { error: 'Invalid reference: ensure location and items exist before counting.' }
+      })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create inventory count.' });

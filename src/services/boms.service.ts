@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import type { z } from 'zod';
 import { pool, query, withTransaction } from '../db';
 import { bomActivationSchema, bomCreateSchema } from '../schemas/boms.schema';
+import { roundQuantity, toNumber } from '../lib/numbers';
 
 type BomCreateInput = z.infer<typeof bomCreateSchema>;
 type BomActivationInput = z.infer<typeof bomActivationSchema>;
@@ -84,25 +85,6 @@ export type Bom = {
 };
 
 type BomListVersion = Omit<BomVersion, 'components'>;
-
-function toNumber(value: unknown): number {
-  if (typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = parseFloat(value);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  if (value === null || value === undefined) {
-    return 0;
-  }
-  const num = Number(value);
-  return Number.isNaN(num) ? 0 : num;
-}
-
-function roundQuantity(value: number): number {
-  return parseFloat(value.toFixed(6));
-}
 
 function mapBomVersionLine(row: BomVersionLineRow): BomVersionLine {
   return {

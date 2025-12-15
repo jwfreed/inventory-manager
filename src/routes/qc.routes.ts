@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { qcEventSchema } from '../schemas/qc.schema';
 import { createQcEvent, listQcEventsForLine } from '../services/qc.service';
+import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -25,11 +26,12 @@ router.post('/qc-events', async (req: Request, res: Response) => {
     if (error?.message === 'QC_EXCEEDS_RECEIPT') {
       return res.status(400).json({ error: 'QC quantities cannot exceed the received quantity for the line.' });
     }
-    if (error?.code === '23503') {
-      return res.status(400).json({ error: 'Referenced receipt line does not exist.' });
-    }
-    if (error?.code === '23514') {
-      return res.status(400).json({ error: 'QC quantity must be greater than zero.' });
+    const mapped = mapPgErrorToHttp(error, {
+      foreignKey: () => ({ status: 400, body: { error: 'Referenced receipt line does not exist.' } }),
+      check: () => ({ status: 400, body: { error: 'QC quantity must be greater than zero.' } })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create QC event.' });

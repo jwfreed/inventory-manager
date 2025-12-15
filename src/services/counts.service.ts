@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import type { z } from 'zod';
 import { pool, withTransaction } from '../db';
 import { inventoryCountSchema } from '../schemas/counts.schema';
+import { roundQuantity, toNumber } from '../lib/numbers';
 
 type InventoryCountInput = z.infer<typeof inventoryCountSchema>;
 
@@ -31,25 +32,6 @@ type CycleCountLineRow = {
 };
 
 type OnHandKey = string;
-
-function toNumber(value: unknown): number {
-  if (typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = parseFloat(value);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  if (value === null || value === undefined) {
-    return 0;
-  }
-  const num = Number(value);
-  return Number.isNaN(num) ? 0 : num;
-}
-
-function roundQuantity(value: number): number {
-  return parseFloat(value.toFixed(6));
-}
 
 function makeOnHandKey(itemId: string, uom: string): OnHandKey {
   return `${itemId}:${uom}`;

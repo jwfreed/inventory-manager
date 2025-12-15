@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { vendorSchema } from '../schemas/vendors.schema';
 import { createVendor, listVendors } from '../services/vendors.service';
+import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
 
@@ -14,8 +15,11 @@ router.post('/vendors', async (req: Request, res: Response) => {
     const vendor = await createVendor(parsed.data);
     return res.status(201).json(vendor);
   } catch (error: any) {
-    if (error?.code === '23505') {
-      return res.status(409).json({ error: 'Vendor code must be unique.' });
+    const mapped = mapPgErrorToHttp(error, {
+      unique: () => ({ status: 409, body: { error: 'Vendor code must be unique.' } })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create vendor.' });
