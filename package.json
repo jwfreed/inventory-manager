@@ -5,13 +5,19 @@
   "scripts": {
     "migrate": "npm run migrate:up",
     "migrate:up": "NODE_PG_MIGRATE_TS_NODE=true node-pg-migrate up --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
-    "migrate:down": "NODE_PG_MIGRATE_TS_NODE=true node-pg-migrate down --migrations-dir src/migrations --migrations-table inventory_schema_migrations"
+    "migrate:down": "NODE_PG_MIGRATE_TS_NODE=true node-pg-migrate down --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
+    "dev": "ts-node --transpile-only src/server.ts",
+    "start": "node dist/server.js"
   },
   "dependencies": {
+    "express": "^4.19.2",
     "node-pg-migrate": "^7.6.0",
-    "pg": "^8.11.5"
+    "pg": "^8.11.5",
+    "uuid": "^11.0.3",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^20.11.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.0"
