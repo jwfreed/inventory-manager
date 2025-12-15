@@ -1,0 +1,22 @@
+{
+  "name": "inventory-manager",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "migrate": "npm run migrate:up",
+    "migrate:up": "NODE_PG_MIGRATE_TS_NODE=true node-pg-migrate up --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
+    "migrate:down": "NODE_PG_MIGRATE_TS_NODE=true node-pg-migrate down --migrations-dir src/migrations --migrations-table inventory_schema_migrations"
+  },
+  "dependencies": {
+    "node-pg-migrate": "^7.6.0",
+    "pg": "^8.11.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  },
+  "overrides": {
+    "glob": "^11.0.4"
+  }
+}
