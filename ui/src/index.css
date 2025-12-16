@@ -1,0 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #0f172a;
+  background-color: #f8fafc;
+}
+
+body {
+  @apply bg-slate-25 text-slate-900 min-h-screen antialiased;
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  @apply text-brand-600 hover:text-brand-700;
+}
