@@ -67,6 +67,35 @@ If any of these checks fail, re-run migrations after dropping the schema or insp
 npm run dev
 ```
 
+## Dev seed (optional, idempotent, API-only)
+
+This repo includes an opt-in dev seed script that populates a small dataset by calling the running HTTP API (no direct DB inserts; does not write `inventory_movements` directly). It is safe to run repeatedly and verifies a posted inventory movement exists at the end.
+
+Prereqs:
+- API running (`npm run dev`)
+- DB migrated (`npm run migrate`)
+
+Run:
+
+```bash
+npm run dev:seed
+```
+
+Config:
+- `API_BASE_URL` (default `http://localhost:3000`)
+- `SEED_PREFIX` (default `DEVSEED`)
+- `LOG_LEVEL` (default `info`)
+- `TIMEOUT_MS` (default `15000`)
+
+What it creates (minimum):
+- Locations: one warehouse + two bins
+- Items: one finished good + two components
+- Vendor + purchase order + receipt + putaway; posts the putaway to create one ledger movement
+
+Idempotency:
+- Unique resources (items/locations/vendors/PO) are detected by their deterministic codes/skus and reused.
+- Receipt/putaway IDs are cached locally in `scripts/.dev-seed-state.json` (not committed) to avoid duplicates across runs.
+
 ### Available endpoints
 
 - `POST /vendors`, `GET /vendors`
