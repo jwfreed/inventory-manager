@@ -24,12 +24,11 @@ export default function SalesOrderDetailPage() {
   })
 
   useEffect(() => {
-    if (query.data?.notImplemented) return
     const err = query.error as unknown as ApiError | undefined
     if (query.isError && err?.status === 404) {
       navigate('/not-found', { replace: true })
     }
-  }, [query.isError, query.error, query.data, navigate])
+  }, [query.isError, query.error, navigate])
 
   const copyId = async () => {
     if (!id) return
@@ -41,7 +40,7 @@ export default function SalesOrderDetailPage() {
   }
 
   const lines: SalesOrderLine[] = query.data?.lines || []
-  const shipments: Shipment[] = (query.data?.shipments as Shipment[]) || []
+  const shipments: Shipment[] = query.data?.shipments || []
 
   return (
     <div className="space-y-6">
@@ -61,17 +60,11 @@ export default function SalesOrderDetailPage() {
       </div>
 
       {query.isLoading && <LoadingSpinner label="Loading sales order..." />}
-      {query.data?.notImplemented && (
-        <EmptyState
-          title="API not available yet"
-          description="Phase 4 Order-to-Cash is DB-first in this repo; runtime endpoints are not implemented yet."
-        />
-      )}
-      {query.isError && !query.data?.notImplemented && query.error && (
+      {query.isError && query.error && !query.isLoading && (
         <ErrorState error={query.error as unknown as ApiError} onRetry={() => void query.refetch()} />
       )}
 
-      {query.data && !query.data.notImplemented && (
+      {query.data && !query.isError && (
         <>
           <Card>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -82,7 +75,10 @@ export default function SalesOrderDetailPage() {
                   <Badge variant="neutral">{query.data.status || '—'}</Badge>
                 </div>
                 <div className="mt-2 text-sm text-slate-700">
-                  Customer: {query.data.customerName || '—'}
+                  Customer: {query.data.customerId || '—'}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  Documents do not affect on-hand until corresponding inventory movements post.
                 </div>
               </div>
             </div>
@@ -117,9 +113,7 @@ export default function SalesOrderDetailPage() {
                     {lines.map((line) => (
                       <tr key={line.id}>
                         <td className="px-4 py-3 text-sm text-slate-800">{line.lineNumber ?? '—'}</td>
-                        <td className="px-4 py-3 text-sm text-slate-800">
-                          {line.itemSku || line.itemId || '—'}
-                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-800">{line.itemId || '—'}</td>
                         <td className="px-4 py-3 text-sm text-slate-800">{line.uom || '—'}</td>
                         <td className="px-4 py-3 text-right text-sm text-slate-800">
                           {line.quantityOrdered !== undefined ? formatNumber(line.quantityOrdered) : '—'}
@@ -137,7 +131,7 @@ export default function SalesOrderDetailPage() {
             {shipments.length === 0 ? (
               <EmptyState
                 title="No shipments linked"
-                description="Shipments may not be returned by this endpoint."
+                description="Shipments are available via the shipments list; this endpoint returns order data only."
               />
             ) : (
               <div className="overflow-hidden rounded-xl border border-slate-200">
@@ -148,9 +142,6 @@ export default function SalesOrderDetailPage() {
                         Shipped at
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Status
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                         Movement
                       </th>
                     </tr>
@@ -159,9 +150,6 @@ export default function SalesOrderDetailPage() {
                     {shipments.map((shipment) => (
                       <tr key={shipment.id}>
                         <td className="px-4 py-3 text-sm text-slate-800">{shipment.shippedAt || '—'}</td>
-                        <td className="px-4 py-3 text-sm text-slate-800">
-                          <Badge variant="neutral">{shipment.status || '—'}</Badge>
-                        </td>
                         <td className="px-4 py-3 text-sm text-slate-800">
                           {shipment.inventoryMovementId ? (
                             <Link

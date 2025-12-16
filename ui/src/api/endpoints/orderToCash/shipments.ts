@@ -1,39 +1,35 @@
 import { apiGet } from '../../http'
-import type { ApiError, Shipment } from '../../types'
+import type { Shipment } from '../../types'
 import { ORDER_TO_CASH_ENDPOINTS } from './config'
 
-type ListResponse = { data: Shipment[]; notImplemented?: boolean }
+type ListResponse = { data: Shipment[]; paging?: { limit: number; offset: number } }
 
-export async function listShipments(): Promise<ListResponse> {
-  if (!ORDER_TO_CASH_ENDPOINTS.shipments) {
-    return { data: [], notImplemented: true }
-  }
-
-  try {
-    const res = await apiGet<Shipment[] | { data?: Shipment[] }>(
-      ORDER_TO_CASH_ENDPOINTS.shipments,
-    )
-    if (Array.isArray(res)) return { data: res }
-    return { data: res.data ?? [] }
-  } catch (error) {
-    const err = error as ApiError
-    if (err.status === 404) return { data: [], notImplemented: true }
-    throw err
+function mapShipment(row: any): Shipment {
+  return {
+    id: row.id,
+    salesOrderId: row.salesOrderId ?? row.sales_order_id,
+    shippedAt: row.shippedAt ?? row.shipped_at,
+    shipFromLocationId: row.shipFromLocationId ?? row.ship_from_location_id ?? undefined,
+    inventoryMovementId: row.inventoryMovementId ?? row.inventory_movement_id ?? undefined,
+    externalRef: row.externalRef ?? row.external_ref ?? undefined,
+    notes: row.notes ?? undefined,
+    createdAt: row.createdAt ?? row.created_at ?? undefined,
   }
 }
 
-export async function getShipment(id: string): Promise<Shipment & { notImplemented?: boolean }> {
-  if (!ORDER_TO_CASH_ENDPOINTS.shipments) {
-    return { id, notImplemented: true }
+export async function listShipments(): Promise<ListResponse> {
+  const res = await apiGet<Shipment[] | { data?: any[]; paging?: { limit: number; offset: number } }>(
+    ORDER_TO_CASH_ENDPOINTS.shipments,
+  )
+  if (Array.isArray(res)) {
+    return { data: res.map(mapShipment) }
   }
+  return {
+    data: (res.data ?? []).map(mapShipment),
+    paging: res.paging,
+  }
+}
 
-  try {
-    return await apiGet<Shipment>(`${ORDER_TO_CASH_ENDPOINTS.shipments}/${id}`)
-  } catch (error) {
-    const err = error as ApiError
-    if (err.status === 404) {
-      return { id, notImplemented: true }
-    }
-    throw err
-  }
+export async function getShipment(id: string): Promise<Shipment> {
+  return await apiGet<Shipment>(`${ORDER_TO_CASH_ENDPOINTS.shipments}/${id}`)
 }

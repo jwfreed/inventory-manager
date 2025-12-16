@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { getShipment } from '../../../api/endpoints/orderToCash/shipments'
 import type { ApiError, ShipmentLine } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
-import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
@@ -25,12 +24,11 @@ export default function ShipmentDetailPage() {
   })
 
   useEffect(() => {
-    if (query.data?.notImplemented) return
     const err = query.error as unknown as ApiError | undefined
     if (query.isError && err?.status === 404) {
       navigate('/not-found', { replace: true })
     }
-  }, [query.isError, query.error, query.data, navigate])
+  }, [query.isError, query.error, navigate])
 
   const copyId = async () => {
     if (!id) return
@@ -61,17 +59,11 @@ export default function ShipmentDetailPage() {
       </div>
 
       {query.isLoading && <LoadingSpinner label="Loading shipment..." />}
-      {query.data?.notImplemented && (
-        <EmptyState
-          title="API not available yet"
-          description="Phase 4 Order-to-Cash is DB-first in this repo; runtime endpoints are not implemented yet."
-        />
-      )}
-      {query.isError && !query.data?.notImplemented && query.error && (
+      {query.isError && query.error && !query.isLoading && (
         <ErrorState error={query.error as unknown as ApiError} onRetry={() => void query.refetch()} />
       )}
 
-      {query.data && !query.data.notImplemented && (
+      {query.data && !query.isError && (
         <>
           <Card>
             <div className="grid gap-3 text-sm text-slate-800 md:grid-cols-2">
@@ -88,10 +80,6 @@ export default function ShipmentDetailPage() {
                 <div>{query.data.shipFromLocationId || '—'}</div>
               </div>
               <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
-                <Badge variant="neutral">{query.data.status || '—'}</Badge>
-              </div>
-              <div>
                 <div className="text-xs uppercase tracking-wide text-slate-500">Movement</div>
                 {query.data.inventoryMovementId ? (
                   <Link
@@ -103,6 +91,10 @@ export default function ShipmentDetailPage() {
                 ) : (
                   '—'
                 )}
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">External ref</div>
+                <div>{query.data.externalRef || '—'}</div>
               </div>
             </div>
             <Alert
@@ -125,7 +117,7 @@ export default function ShipmentDetailPage() {
                   <thead className="bg-slate-50">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Item
+                        Sales order line
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                         UOM
@@ -138,10 +130,14 @@ export default function ShipmentDetailPage() {
                   <tbody className="divide-y divide-slate-200 bg-white">
                     {lines.map((line) => (
                       <tr key={line.id}>
-                        <td className="px-4 py-3 text-sm text-slate-800">{line.itemId || '—'}</td>
+                        <td className="px-4 py-3 text-sm text-slate-800">
+                          {line.salesOrderLineId || '—'}
+                        </td>
                         <td className="px-4 py-3 text-sm text-slate-800">{line.uom || '—'}</td>
                         <td className="px-4 py-3 text-right text-sm text-slate-800">
-                          {line.quantity !== undefined ? formatNumber(line.quantity) : '—'}
+                          {line.quantityShipped !== undefined
+                            ? formatNumber(line.quantityShipped)
+                            : '—'}
                         </td>
                       </tr>
                     ))}

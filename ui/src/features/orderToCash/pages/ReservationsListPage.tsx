@@ -25,8 +25,6 @@ export default function ReservationsListPage() {
     retry: 1,
   })
 
-  const notImplemented = data?.notImplemented
-
   const filtered = useMemo(() => {
     const list = data?.data ?? []
     const statusFiltered = status ? list.filter((r) => r.status === status) : list
@@ -58,8 +56,9 @@ export default function ReservationsListPage() {
           >
             <option value="">All statuses</option>
             <option value="open">Open</option>
-            <option value="allocated">Allocated</option>
-            <option value="closed">Closed</option>
+            <option value="released">Released</option>
+            <option value="fulfilled">Fulfilled</option>
+            <option value="canceled">Canceled</option>
           </select>
           <input
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
@@ -76,22 +75,16 @@ export default function ReservationsListPage() {
       <Section title="Reservations">
         <Card>
           {isLoading && <LoadingSpinner label="Loading reservations..." />}
-          {isError && error && !notImplemented && (
+          {isError && error && (
             <Alert variant="error" title="Failed to load" message={error.message} />
           )}
-          {notImplemented && (
-            <EmptyState
-              title="API not available yet"
-              description="Phase 4 Order-to-Cash is DB-first in this repo; runtime endpoints are not implemented yet."
-            />
-          )}
-          {!isLoading && !isError && !notImplemented && filtered.length === 0 && (
+          {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
               title="No reservations found"
               description="Create reservations via API. This UI is read-only."
             />
           )}
-          {!isLoading && !isError && !notImplemented && filtered.length > 0 && (
+          {!isLoading && !isError && filtered.length > 0 && (
             <div className="overflow-hidden rounded-xl border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">

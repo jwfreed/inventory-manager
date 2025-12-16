@@ -7,7 +7,6 @@ import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
-import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 
@@ -23,12 +22,11 @@ export default function ReservationDetailPage() {
   })
 
   useEffect(() => {
-    if (query.data?.notImplemented) return
     const err = query.error as unknown as ApiError | undefined
     if (query.isError && err?.status === 404) {
       navigate('/not-found', { replace: true })
     }
-  }, [query.isError, query.error, query.data, navigate])
+  }, [query.isError, query.error, navigate])
 
   const copyId = async () => {
     if (!id) return
@@ -57,17 +55,11 @@ export default function ReservationDetailPage() {
       </div>
 
       {query.isLoading && <LoadingSpinner label="Loading reservation..." />}
-      {query.data?.notImplemented && (
-        <EmptyState
-          title="API not available yet"
-          description="Phase 4 Order-to-Cash is DB-first in this repo; runtime endpoints are not implemented yet."
-        />
-      )}
-      {query.isError && !query.data?.notImplemented && query.error && (
+      {query.isError && query.error && !query.isLoading && (
         <ErrorState error={query.error as unknown as ApiError} onRetry={() => void query.refetch()} />
       )}
 
-      {query.data && !query.data.notImplemented && (
+      {query.data && !query.isError && (
         <Card>
           <div className="grid gap-3 text-sm text-slate-800 md:grid-cols-2">
             <div>

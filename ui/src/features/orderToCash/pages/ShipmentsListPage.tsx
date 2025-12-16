@@ -24,8 +24,6 @@ export default function ShipmentsListPage() {
     retry: 1,
   })
 
-  const notImplemented = data?.notImplemented
-
   const filtered = useMemo(() => {
     const list = data?.data ?? []
     if (!search) return list
@@ -64,19 +62,13 @@ export default function ShipmentsListPage() {
       <Section title="Shipments">
         <Card>
           {isLoading && <LoadingSpinner label="Loading shipments..." />}
-          {isError && error && !notImplemented && (
+          {isError && error && (
             <Alert variant="error" title="Failed to load" message={error.message} />
           )}
-          {notImplemented && (
-            <EmptyState
-              title="API not available yet"
-              description="Phase 4 Order-to-Cash is DB-first in this repo; runtime endpoints are not implemented yet."
-            />
-          )}
-          {!isLoading && !isError && !notImplemented && filtered.length === 0 && (
+          {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState title="No shipments found" description="Create shipments via API." />
           )}
-          {!isLoading && !isError && !notImplemented && filtered.length > 0 && (
+          {!isLoading && !isError && filtered.length > 0 && (
             <div className="overflow-hidden rounded-xl border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">

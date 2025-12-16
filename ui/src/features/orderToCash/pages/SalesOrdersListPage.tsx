@@ -26,8 +26,6 @@ export default function SalesOrdersListPage() {
     retry: 1,
   })
 
-  const notImplemented = data?.notImplemented
-
   const filtered = useMemo(() => {
     const list = data?.data ?? []
     const statusFiltered = status ? list.filter((so) => so.status === status) : list
@@ -36,7 +34,7 @@ export default function SalesOrdersListPage() {
     return statusFiltered.filter(
       (so) =>
         so.soNumber.toLowerCase().includes(needle) ||
-        (so.customerName || '').toLowerCase().includes(needle),
+        (so.customerId || '').toLowerCase().includes(needle),
     )
   }, [data?.data, search, status])
 
@@ -59,7 +57,9 @@ export default function SalesOrdersListPage() {
           >
             <option value="">All statuses</option>
             <option value="draft">Draft</option>
-            <option value="open">Open</option>
+            <option value="submitted">Submitted</option>
+            <option value="partially_shipped">Partially Shipped</option>
+            <option value="shipped">Shipped</option>
             <option value="closed">Closed</option>
             <option value="canceled">Canceled</option>
           </select>
@@ -78,22 +78,16 @@ export default function SalesOrdersListPage() {
       <Section title="Sales orders">
         <Card>
           {isLoading && <LoadingSpinner label="Loading sales orders..." />}
-          {isError && error && !notImplemented && (
+          {isError && error && (
             <Alert variant="error" title="Failed to load" message={error.message} />
           )}
-          {notImplemented && (
-            <EmptyState
-              title="API not available yet"
-              description="Phase 4 Order-to-Cash is DB-first in this repo; runtime endpoints are not implemented yet."
-            />
-          )}
-          {!isLoading && !isError && !notImplemented && filtered.length === 0 && (
+          {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
               title="No sales orders found"
               description="Create sales orders via API or seed data. This UI is read-only."
             />
           )}
-          {!isLoading && !isError && !notImplemented && filtered.length > 0 && (
+          {!isLoading && !isError && filtered.length > 0 && (
             <div className="overflow-hidden rounded-xl border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
@@ -128,7 +122,7 @@ export default function SalesOrdersListPage() {
                       <td className="px-4 py-3 text-sm text-slate-800">
                         <Badge variant="neutral">{so.status || '—'}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">{so.customerName || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-slate-700">{so.customerId || '—'}</td>
                       <td className="px-4 py-3 text-sm text-slate-700">
                         {so.orderDate ? formatDate(so.orderDate) : '—'}
                       </td>

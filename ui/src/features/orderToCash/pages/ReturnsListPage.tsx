@@ -24,13 +24,16 @@ export default function ReturnsListPage() {
     retry: 1,
   })
 
-  const notImplemented = data?.notImplemented
-
   const filtered = useMemo(() => {
     const list = data?.data ?? []
     if (!search) return list
     const needle = search.toLowerCase()
-    return list.filter((r) => (r.id || '').toLowerCase().includes(needle))
+    return list.filter(
+      (r) =>
+        (r.id || '').toLowerCase().includes(needle) ||
+        (r.rmaNumber || '').toLowerCase().includes(needle) ||
+        (r.customerId || '').toLowerCase().includes(needle),
+    )
   }, [data?.data, search])
 
   return (
@@ -60,37 +63,31 @@ export default function ReturnsListPage() {
       <Section title="Returns">
         <Card>
           {isLoading && <LoadingSpinner label="Loading returns..." />}
-          {isError && error && !notImplemented && (
+          {isError && error && (
             <Alert variant="error" title="Failed to load" message={error.message} />
           )}
-          {notImplemented && (
-            <EmptyState
-              title="API not available yet"
-              description="Phase 4 Order-to-Cash is DB-first in this repo; runtime endpoints are not implemented yet."
-            />
-          )}
-          {!isLoading && !isError && !notImplemented && filtered.length === 0 && (
+          {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
               title="No returns found"
               description="Create returns via API. This UI is read-only."
             />
           )}
-          {!isLoading && !isError && !notImplemented && filtered.length > 0 && (
+          {!isLoading && !isError && filtered.length > 0 && (
             <div className="overflow-hidden rounded-xl border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Return ID
+                      RMA Number
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Status
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Type
+                      Customer
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Movement
+                      Sales order
                     </th>
                   </tr>
                 </thead>
@@ -101,14 +98,14 @@ export default function ReturnsListPage() {
                       className="cursor-pointer hover:bg-slate-50"
                       onClick={() => navigate(`/returns/${r.id}`)}
                     >
-                      <td className="px-4 py-3 text-sm font-semibold text-slate-900">{r.id}</td>
+                      <td className="px-4 py-3 text-sm font-semibold text-slate-900">
+                        {r.rmaNumber || r.id}
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-800">
                         <Badge variant="neutral">{r.status || '—'}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-800">{r.type || '—'}</td>
-                      <td className="px-4 py-3 text-sm text-slate-800">
-                        {r.inventoryMovementId ? <Badge variant="info">Movement linked</Badge> : '—'}
-                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-800">{r.customerId || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-slate-800">{r.salesOrderId || '—'}</td>
                     </tr>
                   ))}
                 </tbody>

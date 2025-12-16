@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getReturn } from '../../../api/endpoints/orderToCash/returns'
 import type { ApiError } from '../../../api/types'
@@ -10,6 +10,8 @@ import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
+import { Section } from '../../../components/Section'
+import { formatNumber } from '../../../lib/formatters'
 
 export default function ReturnDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -23,12 +25,11 @@ export default function ReturnDetailPage() {
   })
 
   useEffect(() => {
-    if (query.data?.notImplemented) return
     const err = query.error as unknown as ApiError | undefined
     if (query.isError && err?.status === 404) {
       navigate('/not-found', { replace: true })
     }
-  }, [query.isError, query.error, query.data, navigate])
+  }, [query.isError, query.error, navigate])
 
   const copyId = async () => {
     if (!id) return
@@ -57,52 +58,88 @@ export default function ReturnDetailPage() {
       </div>
 
       {query.isLoading && <LoadingSpinner label="Loading return..." />}
-      {query.data?.notImplemented && (
-        <EmptyState
-          title="API not available yet"
-          description="Phase 4 Order-to-Cash is DB-first in this repo; runtime endpoints are not implemented yet."
-        />
-      )}
-      {query.isError && !query.data?.notImplemented && query.error && (
+      {query.isError && query.error && !query.isLoading && (
         <ErrorState error={query.error as unknown as ApiError} onRetry={() => void query.refetch()} />
       )}
 
-      {query.data && !query.data.notImplemented && (
-        <Card>
-          <div className="grid gap-3 text-sm text-slate-800 md:grid-cols-2">
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
-              <Badge variant="neutral">{query.data.status || '—'}</Badge>
+      {query.data && !query.isError && (
+        <>
+          <Card>
+            <div className="grid gap-3 text-sm text-slate-800 md:grid-cols-2">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
+                <Badge variant="neutral">{query.data.status || '—'}</Badge>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">RMA Number</div>
+                <div>{query.data.rmaNumber || query.data.id}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Customer</div>
+                <div>{query.data.customerId || '—'}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Sales order</div>
+                <div>{query.data.salesOrderId || '—'}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Notes</div>
+                <div>{query.data.notes || '—'}</div>
+              </div>
             </div>
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-500">Type</div>
-              <div>{query.data.type || '—'}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-500">Movement</div>
-              {query.data.inventoryMovementId ? (
-                <Link
-                  to={`/ledger/movements/${query.data.inventoryMovementId}`}
-                  className="text-brand-700 hover:underline"
-                >
-                  {query.data.inventoryMovementId}
-                </Link>
-              ) : (
-                '—'
-              )}
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-500">Notes</div>
-              <div>{query.data.notes || '—'}</div>
-            </div>
-          </div>
-          <Alert
-            className="mt-3"
-            variant="info"
-            title="Return document"
-            message="This return document may be linked to an inventory movement when posted."
-          />
-        </Card>
+            <Alert
+              className="mt-3"
+              variant="info"
+              title="Return document"
+              message="Return authorizations document intent; inventory only changes when receipts/dispositions post movements."
+            />
+          </Card>
+
+          <Section title="Lines">
+            {query.data.lines && query.data.lines.length > 0 ? (
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Line
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Item
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        UOM
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Qty authorized
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Reason
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 bg-white">
+                    {query.data.lines.map((line) => (
+                      <tr key={line.id}>
+                        <td className="px-4 py-3 text-sm text-slate-800">{line.lineNumber ?? '—'}</td>
+                        <td className="px-4 py-3 text-sm text-slate-800">{line.itemId || '—'}</td>
+                        <td className="px-4 py-3 text-sm text-slate-800">{line.uom || '—'}</td>
+                        <td className="px-4 py-3 text-right text-sm text-slate-800">
+                          {line.quantityAuthorized !== undefined
+                            ? formatNumber(line.quantityAuthorized)
+                            : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-800">{line.reasonCode || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState title="No lines" description="No lines returned for this return." />
+            )}
+          </Section>
+        </>
       )}
     </div>
   )

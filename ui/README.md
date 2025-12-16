@@ -20,6 +20,7 @@
   - Work orders: `POST /work-orders`, `GET /work-orders`, `GET /work-orders/:id`, plus execution routes `POST /work-orders/:id/issues`, `GET /work-orders/:id/issues/:issueId`, `POST /work-orders/:id/issues/:issueId/post`, `POST /work-orders/:id/completions`, `GET /work-orders/:id/completions/:completionId`, `POST /work-orders/:id/completions/:completionId/post`, `GET /work-orders/:id/execution`
   - Order to Cash (runtime added): `POST /sales-orders`, `GET /sales-orders`, `GET /sales-orders/:id`; `POST /reservations`, `GET /reservations`, `GET /reservations/:id`; `POST /shipments`, `GET /shipments`, `GET /shipments/:id`; `POST /returns`, `GET /returns`, `GET /returns/:id`
 - DB-only (no runtime endpoints in this repo): KPI reporting (Phase 7). UI short-circuits until endpoints are added.
+- Order-to-Cash docs are read-only: creation and browsing are supported, but posting shipments/returns to inventory movements is out of scope for Phase 4 UI.
 
 ## Backend smoke tests (Phase 4 runtime)
 

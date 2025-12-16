@@ -1,39 +1,53 @@
 import { apiGet } from '../../http'
-import type { ApiError, SalesOrder } from '../../types'
+import type { SalesOrder } from '../../types'
 import { ORDER_TO_CASH_ENDPOINTS } from './config'
 
-type ListResponse = { data: SalesOrder[]; notImplemented?: boolean }
+export type SalesOrderListParams = {
+  limit?: number
+  offset?: number
+  status?: string
+  customerId?: string
+}
 
-export async function listSalesOrders(): Promise<ListResponse> {
-  if (!ORDER_TO_CASH_ENDPOINTS.salesOrders) {
-    return { data: [], notImplemented: true }
-  }
+export type SalesOrderListResponse = {
+  data: SalesOrder[]
+  paging?: { limit: number; offset: number }
+}
 
-  try {
-    const res = await apiGet<SalesOrder[] | { data?: SalesOrder[] }>(
-      ORDER_TO_CASH_ENDPOINTS.salesOrders,
-    )
-    if (Array.isArray(res)) return { data: res }
-    return { data: res.data ?? [] }
-  } catch (error) {
-    const err = error as ApiError
-    if (err.status === 404) return { data: [], notImplemented: true }
-    throw err
+function mapSalesOrderSummary(row: any): SalesOrder {
+  return {
+    id: row.id,
+    soNumber: row.soNumber ?? row.so_number,
+    customerId: row.customerId ?? row.customer_id,
+    status: row.status,
+    orderDate: row.orderDate ?? row.order_date ?? undefined,
+    requestedShipDate: row.requestedShipDate ?? row.requested_ship_date ?? undefined,
+    shipFromLocationId: row.shipFromLocationId ?? row.ship_from_location_id ?? undefined,
+    customerReference: row.customerReference ?? row.customer_reference ?? undefined,
+    notes: row.notes ?? undefined,
+    createdAt: row.createdAt ?? row.created_at ?? undefined,
+    updatedAt: row.updatedAt ?? row.updated_at ?? undefined,
   }
 }
 
-export async function getSalesOrder(id: string): Promise<SalesOrder & { notImplemented?: boolean }> {
-  if (!ORDER_TO_CASH_ENDPOINTS.salesOrders) {
-    return { id, soNumber: id, notImplemented: true }
+export async function listSalesOrders(
+  params: SalesOrderListParams = {},
+): Promise<SalesOrderListResponse> {
+  const response = await apiGet<SalesOrder[] | { data: any[]; paging?: { limit: number; offset: number } }>(
+    ORDER_TO_CASH_ENDPOINTS.salesOrders,
+    { params },
+  )
+
+  if (Array.isArray(response)) {
+    return { data: response.map(mapSalesOrderSummary) }
   }
 
-  try {
-    return await apiGet<SalesOrder>(`${ORDER_TO_CASH_ENDPOINTS.salesOrders}/${id}`)
-  } catch (error) {
-    const err = error as ApiError
-    if (err.status === 404) {
-      return { id, soNumber: id, notImplemented: true }
-    }
-    throw err
+  return {
+    data: (response.data ?? []).map(mapSalesOrderSummary),
+    paging: response.paging,
   }
+}
+
+export async function getSalesOrder(id: string): Promise<SalesOrder> {
+  return await apiGet<SalesOrder>(`${ORDER_TO_CASH_ENDPOINTS.salesOrders}/${id}`)
 }
