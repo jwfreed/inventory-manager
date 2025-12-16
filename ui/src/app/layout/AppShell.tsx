@@ -6,6 +6,7 @@ import { Badge } from '../../components/Badge'
 
 const navItems: { to: string; label: string; disabled?: boolean }[] = [
   { to: '/home', label: 'Home' },
+  { to: '/dashboard', label: 'Dashboard' },
   { to: '/ledger/movements', label: 'Ledger — Movements' },
   { to: '/work-orders', label: 'Work Orders' },
   { to: '/items', label: 'Items' },

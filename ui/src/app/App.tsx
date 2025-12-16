@@ -4,6 +4,7 @@ import HomePage from '../pages/Home'
 import NotFoundPage from '../pages/NotFound'
 import MovementsListPage from '../features/ledger/pages/MovementsListPage'
 import MovementDetailPage from '../features/ledger/pages/MovementDetailPage'
+import DashboardPage from '../features/kpis/pages/DashboardPage'
 import WorkOrdersListPage from '../features/workOrders/pages/WorkOrdersListPage'
 import WorkOrderDetailPage from '../features/workOrders/pages/WorkOrderDetailPage'
 import ItemsListPage from '../features/items/pages/ItemsListPage'
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/home" replace /> },
       { path: 'home', element: <HomePage /> },
+      { path: 'dashboard', element: <DashboardPage /> },
       { path: 'ledger/movements', element: <MovementsListPage /> },
       { path: 'ledger/movements/:movementId', element: <MovementDetailPage /> },
       { path: 'work-orders', element: <WorkOrdersListPage /> },
