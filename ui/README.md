@@ -6,22 +6,19 @@
 - In dev, the UI calls APIs via `/api/*` and Vite rewrites/proxies those requests to the backend (e.g., `/api/vendors` → `http://localhost:3000/vendors`).
 - The Home page “API connectivity” check uses `GET /vendors` (via the proxy) because it’s a real endpoint that should exist even on an empty database.
 
-## Backend endpoint inventory (as of aa9153e)
+## UI ↔ API wiring (as of main)
 
-- Routes are mounted directly at `/` (no prefix). The proxy still uses `/api/* → /`.
-- Implemented endpoints:
-  - Vendors: `POST /vendors`, `GET /vendors`
-  - Purchase orders: `POST /purchase-orders`, `GET /purchase-orders`, `GET /purchase-orders/:id`
-  - Receipts + QC: `POST /purchase-order-receipts`, `GET /purchase-order-receipts/:id`, `POST /qc-events`, `GET /purchase-order-receipt-lines/:id/qc-events`
-  - Putaways: `POST /putaways`, `GET /putaways/:id`, `POST /putaways/:id/post`
-  - Closeout: `GET /purchase-order-receipts/:id/reconciliation`, `POST /purchase-order-receipts/:id/close`, `POST /purchase-orders/:id/close`
-  - Inventory adjustments/counts: `POST /inventory-adjustments`, `GET /inventory-adjustments/:id`, `POST /inventory-adjustments/:id/post`, `POST /inventory-counts`, `GET /inventory-counts/:id`, `POST /inventory-counts/:id/post`
-  - BOMs: `POST /boms`, `GET /boms/:id`, `GET /items/:id/boms`, `POST /boms/:id/activate`, `GET /items/:id/bom`
-  - Work orders: `POST /work-orders`, `GET /work-orders`, `GET /work-orders/:id`, plus execution routes `POST /work-orders/:id/issues`, `GET /work-orders/:id/issues/:issueId`, `POST /work-orders/:id/issues/:issueId/post`, `POST /work-orders/:id/completions`, `GET /work-orders/:id/completions/:completionId`, `POST /work-orders/:id/completions/:completionId/post`, `GET /work-orders/:id/execution`
-  - Order to Cash (runtime added): `POST /sales-orders`, `GET /sales-orders`, `GET /sales-orders/:id`; `POST /reservations`, `GET /reservations`, `GET /reservations/:id`; `POST /shipments`, `GET /shipments`, `GET /shipments/:id`; `POST /returns`, `GET /returns`, `GET /returns/:id`
-  - Phase 0 runtime: `POST /items`, `GET /items`, `GET /items/:id`; `POST /locations`, `GET /locations`, `GET /locations/:id`; ledger browse `GET /inventory-movements`, `GET /inventory-movements/:id`, `GET /inventory-movements/:id/lines`
-- DB-only (no runtime endpoints in this repo): KPI reporting (Phase 7). UI short-circuits until endpoints are added.
-- Order-to-Cash docs are read-only: creation and browsing are supported, but posting shipments/returns to inventory movements is out of scope for Phase 4 UI.
+- Routes are mounted at `/`; the UI calls `/api/*` which the Vite proxy rewrites to `/`.
+- UI endpoints in use:
+  - Items: `GET /items`, `GET /items/:id`; optional inventory summary `GET /items/:id/inventory` (shows EmptyState on 404).
+  - Locations: `GET /locations`, `GET /locations/:id`; optional inventory summary `GET /locations/:id/inventory`.
+  - Ledger: `GET /inventory-movements`, `GET /inventory-movements/:id`, `GET /inventory-movements/:id/lines`.
+  - Work orders: `GET /work-orders`, `GET /work-orders/:id`, `GET /work-orders/:id/execution`, `POST /work-orders/:id/issues`, `POST /work-orders/:id/issues/:issueId/post`, `POST /work-orders/:id/completions`, `POST /work-orders/:id/completions/:completionId/post`.
+  - Order-to-Cash (docs only): `GET /sales-orders`, `GET /sales-orders/:id`, `GET /reservations`, `GET /reservations/:id`, `GET /shipments`, `GET /shipments/:id`, `GET /returns`, `GET /returns/:id`. Creation uses the same base paths via POST where forms exist.
+  - KPI storage: `GET /kpis/snapshots`, `GET /kpis/runs` (read-only dashboard; no KPI computation in UI).
+- Missing/optional APIs:
+  - Inventory summaries are optional helpers; UI handles 404/500 with EmptyState.
+  - No posting endpoints for shipments/returns; UI does not attempt them.
 
 ## Backend smoke tests (Phase 4 runtime)
 

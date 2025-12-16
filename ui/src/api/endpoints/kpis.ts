@@ -10,8 +10,7 @@ export type KpiListSuccess<T> = {
 
 export type ListKpiSnapshotsParams = {
   limit?: number
-  page?: number
-  pageSize?: number
+  offset?: number
   kpiName?: string
   from?: string
   to?: string
@@ -19,12 +18,12 @@ export type ListKpiSnapshotsParams = {
 
 export type ListKpiRunsParams = {
   limit?: number
+  offset?: number
 }
 
-// KPI runtime endpoints are not implemented in this repository (Phase 7 DB-only).
-// Set these strings if/when a backend route is added.
-const KPI_SNAPSHOT_ENDPOINT: string | null = null
-const KPI_RUN_ENDPOINT: string | null = null
+// KPI storage endpoints are available on the backend.
+const KPI_SNAPSHOT_ENDPOINT = '/kpis/snapshots'
+const KPI_RUN_ENDPOINT = '/kpis/runs'
 
 function normalizeSnapshot(row: any): KpiSnapshot {
   const rawValue = row?.value ?? row?.kpi_value ?? row?.metric_value ?? row?.metricValue
@@ -80,8 +79,7 @@ function extractList<T>(payload: any, mapper: (row: any) => T): T[] {
 function buildSnapshotQuery(params: ListKpiSnapshotsParams) {
   const query: Record<string, string | number> = {}
   if (params.limit) query.limit = params.limit
-  if (params.page) query.page = params.page
-  if (params.pageSize) query.page_size = params.pageSize
+  if (params.offset !== undefined) query.offset = params.offset
   if (params.kpiName) query.kpi_name = params.kpiName
   if (params.from) query.from = params.from
   if (params.to) query.to = params.to
@@ -116,7 +114,11 @@ export async function listKpiRuns(
   }
 
   try {
-    const response = await apiGet<any>(KPI_RUN_ENDPOINT, { params })
+    const queryParams: Record<string, string | number> = {}
+    if (params.limit) queryParams.limit = params.limit
+    if (params.offset !== undefined) queryParams.offset = params.offset
+
+    const response = await apiGet<any>(KPI_RUN_ENDPOINT, { params: queryParams })
     const data = extractList(response, normalizeRun)
     return { type: 'success', endpoint: KPI_RUN_ENDPOINT, attempted: [KPI_RUN_ENDPOINT], data }
   } catch (err) {
