@@ -1,4 +1,4 @@
-import { Pool, PoolClient, QueryConfig, QueryResult } from 'pg';
+import { Pool, PoolClient, QueryConfig, QueryResult, QueryResultRow } from 'pg';
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL must be set before starting the API');
@@ -8,8 +8,8 @@ export const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
 
-export async function query<T = unknown>(
-  config: string | QueryConfig,
+export async function query<T extends QueryResultRow = QueryResultRow>(
+  config: string | QueryConfig<any[]>,
   params?: unknown[]
 ): Promise<QueryResult<T>> {
   if (typeof config === 'string') {
