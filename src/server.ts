@@ -18,6 +18,9 @@ import inventorySummaryRouter from './routes/inventorySummary.routes';
 import pickingRouter from './routes/picking.routes';
 import packingRouter from './routes/packing.routes';
 import returnsExtendedRouter from './routes/returnsExtended.routes';
+import planningRouter from './routes/planning.routes';
+import drpRouter from './routes/drp.routes';
+import complianceRouter from './routes/compliance.routes';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -50,6 +53,9 @@ app.use(inventorySummaryRouter);
 app.use(pickingRouter);
 app.use(packingRouter);
 app.use(returnsExtendedRouter);
+app.use(planningRouter);
+app.use(drpRouter);
+app.use(complianceRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });

@@ -9,9 +9,9 @@ This repository uses `node-pg-migrate` with timestamped TypeScript migrations. A
 - Phase 2: Inventory Adjustments, Cycle Counts
 - Phase 3: BOMs (effective/versions), Work Orders, Work Order Execution (issue/produce)
 - Phase 4: Order-to-Cash docs (customers, sales orders, shipments, POS, reservations, returns) — DB-only
-- Phase 5: Planning read-models (MPS/MRP/Replenishment/KPIs) — DB-only
-- Phase 6: DRP network/runs/plan lines/planned transfers — DB-only
-- Phase 7: Compliance/traceability (lots, lot links, recall docs, KPI snapshots) — DB-only
+- Phase 5: Planning read-models (MPS/MRP/Replenishment/KPIs)
+- Phase 6: DRP network/runs/plan lines/planned transfers
+- Phase 7: Compliance/traceability (lots, lot links, recall docs, KPI snapshots)
 
 Ledger authority remains solely in `inventory_movements` + `inventory_movement_lines`; no table stores on-hand balances. DB-only phases (4–7) add reporting/planning schema only and do not change execution semantics.
 
@@ -218,6 +218,205 @@ curl -s -X POST http://localhost:3000/inventory-adjustments \
 
 # 16) Post the adjustment
 curl -s -X POST http://localhost:3000/inventory-adjustments/<ADJUSTMENT_ID>/post | jq .
+
+## Phase 5 — Planning read-models API (CRUD only, no computation)
+
+The Phase 5 runtime exposes CRUD/browse endpoints for MPS, MRP, replenishment policies, and KPI storage. No planning engines or netting run here; outputs tables are read-only and expected to be empty unless populated manually.
+
+Start the API with your database configured and run the following smoke tests (replace placeholder IDs with real UUIDs):
+
+### MPS plan with periods and demand inputs
+
+```bash
+# Create an MPS plan
+curl -s -X POST http://localhost:3000/mps/plans \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"MPS Jan","horizonStart":"2024-01-01","horizonEnd":"2024-03-31"}' | jq .
+
+# Add periods for the plan (weekly buckets)
+curl -s -X POST http://localhost:3000/mps/plans/<PLAN_ID>/periods \
+  -H 'Content-Type: application/json' \
+  -d '{"periods":[{"startDate":"2024-01-01","endDate":"2024-01-07"},{"startDate":"2024-01-08","endDate":"2024-01-14"}]}' | jq .
+
+# Insert demand inputs for a plan item (ensure the plan has a row in mps_plan_items for the given item)
+curl -s -X POST http://localhost:3000/mps/plans/<PLAN_ID>/demand-inputs \
+  -H 'Content-Type: application/json' \
+  -d '{"inputs":[{"mpsPlanItemId":"<PLAN_ITEM_ID>","periodStartDate":"2024-01-01","periodEndDate":"2024-01-07","quantity":"100"}]}' | jq .
+
+# List plan lines (outputs table, read-only)
+curl -s http://localhost:3000/mps/plans/<PLAN_ID>/plan-lines | jq .
+```
+
+### MRP run with item policies and gross requirements
+
+```bash
+# Create an MRP run
+curl -s -X POST http://localhost:3000/mrp/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"MRP Jan","planningWindowStart":"2024-01-01","planningWindowEnd":"2024-02-28"}' | jq .
+
+# Add item policies scoped to the run
+curl -s -X POST http://localhost:3000/mrp/runs/<RUN_ID>/item-policies \
+  -H 'Content-Type: application/json' \
+  -d '{"policies":[{"itemId":"<ITEM_ID>","locationId":"<LOCATION_ID>","planningUom":"ea","reorderPoint":"10","reorderQty":"50"}]}' | jq .
+
+# Add gross requirements scoped to the run
+curl -s -X POST http://localhost:3000/mrp/runs/<RUN_ID>/gross-requirements \
+  -H 'Content-Type: application/json' \
+  -d '{"requirements":[{"itemId":"<ITEM_ID>","locationId":"<LOCATION_ID>","uom":"ea","needByDate":"2024-01-10","quantity":"25"}]}' | jq .
+
+# Browse outputs (read-only; likely empty unless populated manually)
+curl -s http://localhost:3000/mrp/runs/<RUN_ID>/plan-lines | jq .
+curl -s http://localhost:3000/mrp/runs/<RUN_ID>/planned-orders | jq .
+```
+
+### Replenishment policies and recommendations
+
+```bash
+# Create a replenishment policy
+curl -s -X POST http://localhost:3000/replenishment/policies \
+  -H 'Content-Type: application/json' \
+  -d '{"itemId":"<ITEM_ID>","locationId":"<LOCATION_ID>","planningUom":"ea","reorderPoint":"5","reorderQty":"20"}' | jq .
+
+# List policies and fetch one by id
+curl -s http://localhost:3000/replenishment/policies | jq .
+curl -s http://localhost:3000/replenishment/policies/<POLICY_ID> | jq .
+
+# List recommendations (read-only; will be empty unless populated)
+curl -s http://localhost:3000/replenishment/recommendations | jq .
+```
+
+### KPI runs and snapshots (storage only)
+
+```bash
+# Create a KPI run record
+curl -s -X POST http://localhost:3000/kpis/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"KPI Jan","runStartedAt":"2024-01-02T12:00:00Z"}' | jq .
+
+# Add snapshots to the run
+curl -s -X POST http://localhost:3000/kpis/runs/<RUN_ID>/snapshots \
+  -H 'Content-Type: application/json' \
+  -d '{"snapshots":[{"kpiName":"inventory_turns","computedAt":"2024-01-02T12:05:00Z","value":"3.2","unit":"turns"}]}' | jq .
+
+# List snapshots for the run and globally with filters
+curl -s http://localhost:3000/kpis/runs/<RUN_ID>/snapshots | jq .
+curl -s "http://localhost:3000/kpis/snapshots?kpi_name=inventory_turns&from=2024-01-01&to=2024-01-31" | jq .
+
+# (Optional) add rollup inputs if used
+curl -s -X POST http://localhost:3000/kpis/runs/<RUN_ID>/rollup-inputs \
+  -H 'Content-Type: application/json' \
+  -d '{"inputs":[{"kpiName":"inventory_turns","sourceType":"manual","value":"3.2"}]}' | jq .
+curl -s http://localhost:3000/kpis/runs/<RUN_ID>/rollup-inputs | jq .
+```
+
+## Phase 6 — DRP API (CRUD only, no computation)
+
+The DRP API exposes network setup (nodes/lanes), runs, and run-scoped inputs/outputs. There is no DRP engine here; outputs tables are read-only and expected to be empty unless populated manually.
+
+```bash
+# Create a DRP node bound to a location
+curl -s -X POST http://localhost:3000/drp/nodes \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"PLANT-01","locationId":"<LOCATION_ID>","nodeType":"plant"}' | jq .
+
+# Create a second node for transfers
+curl -s -X POST http://localhost:3000/drp/nodes \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"DC-01","locationId":"<LOCATION_ID_2>","nodeType":"dc"}' | jq .
+
+# Create a lane between nodes
+curl -s -X POST http://localhost:3000/drp/lanes \
+  -H 'Content-Type: application/json' \
+  -d '{"fromNodeId":"<PLANT_NODE_ID>","toNodeId":"<DC_NODE_ID>","transferLeadTimeDays":2,"notes":"Plant to DC"}' | jq .
+
+# Create a DRP run
+curl -s -X POST http://localhost:3000/drp/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"bucketType":"week","startsOn":"2024-01-01","endsOn":"2024-02-29","asOf":"2024-01-01T00:00:00Z"}' | jq .
+
+# Add periods to the run
+curl -s -X POST http://localhost:3000/drp/runs/<RUN_ID>/periods \
+  -H 'Content-Type: application/json' \
+  -d '{"periods":[{"periodStart":"2024-01-01","periodEnd":"2024-01-07","sequence":1}]}' | jq .
+
+# Add item policies scoped to the run
+curl -s -X POST http://localhost:3000/drp/runs/<RUN_ID>/item-policies \
+  -H 'Content-Type: application/json' \
+  -d '{"policies":[{"toNodeId":"<DC_NODE_ID>","itemId":"<ITEM_ID>","uom":"ea","lotSizingMethod":"l4l"}]}' | jq .
+
+# Add gross requirements scoped to the run
+curl -s -X POST http://localhost:3000/drp/runs/<RUN_ID>/gross-requirements \
+  -H 'Content-Type: application/json' \
+  -d '{"requirements":[{"toNodeId":"<DC_NODE_ID>","itemId":"<ITEM_ID>","uom":"ea","periodStart":"2024-01-01","sourceType":"forecast","quantity":"25"}]}' | jq .
+
+# Browse run outputs (read-only; likely empty unless populated manually)
+curl -s http://localhost:3000/drp/runs/<RUN_ID>/plan-lines | jq .
+curl -s http://localhost:3000/drp/runs/<RUN_ID>/planned-transfers | jq .
+```
+
+## Phase 7 — Compliance & Reporting API (CRUD/browse only, no workflows)
+
+Lots, movement lot allocations, and recall documentation are exposed for CRUD/browse only. No trace engine or allocation enforcement is implemented.
+
+```bash
+# Create a lot
+curl -s -X POST http://localhost:3000/lots \
+  -H 'Content-Type: application/json' \
+  -d '{"itemId":"<ITEM_ID>","lotCode":"LOT-001","status":"active"}' | jq .
+
+# List/filter lots
+curl -s "http://localhost:3000/lots?item_id=<ITEM_ID>" | jq .
+curl -s http://localhost:3000/lots/<LOT_ID> | jq .
+
+# Allocate lots to a movement line
+curl -s -X POST http://localhost:3000/inventory-movement-lines/<LINE_ID>/lots \
+  -H 'Content-Type: application/json' \
+  -d '{"allocations":[{"lotId":"<LOT_ID>","uom":"ea","quantityDelta":"-5"}]}' | jq .
+curl -s http://localhost:3000/inventory-movement-lines/<LINE_ID>/lots | jq .
+curl -s http://localhost:3000/inventory-movements/<MOVEMENT_ID>/lots | jq .
+
+# Recall case lifecycle (documentation only)
+curl -s -X POST http://localhost:3000/recalls/cases \
+  -H 'Content-Type: application/json' \
+  -d '{"recallNumber":"RC-100","status":"draft","severity":"medium","summary":"Test recall"}' | jq .
+curl -s http://localhost:3000/recalls/cases | jq .
+curl -s http://localhost:3000/recalls/cases/<CASE_ID> | jq .
+
+# Add targets to the recall
+curl -s -X POST http://localhost:3000/recalls/cases/<CASE_ID>/targets \
+  -H 'Content-Type: application/json' \
+  -d '{"targets":[{"targetType":"lot","lotId":"<LOT_ID>"}]}' | jq .
+curl -s http://localhost:3000/recalls/cases/<CASE_ID>/targets | jq .
+
+# Add a trace run
+curl -s -X POST http://localhost:3000/recalls/cases/<CASE_ID>/trace-runs \
+  -H 'Content-Type: application/json' \
+  -d '{"asOf":"2024-01-10T00:00:00Z"}' | jq .
+curl -s http://localhost:3000/recalls/cases/<CASE_ID>/trace-runs | jq .
+curl -s http://localhost:3000/recalls/trace-runs/<TRACE_RUN_ID> | jq .
+
+# Link impacted shipments and lots to the trace run
+curl -s -X POST http://localhost:3000/recalls/trace-runs/<TRACE_RUN_ID>/impacted-shipments \
+  -H 'Content-Type: application/json' \
+  -d '{"shipments":[{"salesOrderShipmentId":"<SHIPMENT_ID>","customerId":"<CUSTOMER_ID>"}]}' | jq .
+curl -s -X POST http://localhost:3000/recalls/trace-runs/<TRACE_RUN_ID>/impacted-lots \
+  -H 'Content-Type: application/json' \
+  -d '{"lots":[{"lotId":"<LOT_ID>","role":"target"}]}' | jq .
+curl -s http://localhost:3000/recalls/trace-runs/<TRACE_RUN_ID>/impacted-shipments | jq .
+curl -s http://localhost:3000/recalls/trace-runs/<TRACE_RUN_ID>/impacted-lots | jq .
+
+# Add recall actions and communications
+curl -s -X POST http://localhost:3000/recalls/cases/<CASE_ID>/actions \
+  -H 'Content-Type: application/json' \
+  -d '{"actions":[{"actionType":"block_lot","status":"planned","lotId":"<LOT_ID>","notes":"Block lot pending inspection"}]}' | jq .
+curl -s http://localhost:3000/recalls/cases/<CASE_ID>/actions | jq .
+
+curl -s -X POST http://localhost:3000/recalls/cases/<CASE_ID>/communications \
+  -H 'Content-Type: application/json' \
+  -d '{"communications":[{"customerId":"<CUSTOMER_ID>","channel":"email","status":"draft","subject":"Recall notice"}]}' | jq .
+curl -s http://localhost:3000/recalls/cases/<CASE_ID>/communications | jq .
+```
 
 # 17) Create and post an adjustment that removes stock
 curl -s -X POST http://localhost:3000/inventory-adjustments \
