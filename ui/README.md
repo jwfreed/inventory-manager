@@ -61,6 +61,14 @@ curl http://localhost:3000/locations
 curl http://localhost:3000/inventory-movements
 curl http://localhost:3000/inventory-movements/<movement_id>
 curl http://localhost:3000/inventory-movements/<movement_id>/lines
+
+# Inventory summaries (ledger-derived, read-only)
+# Item summary (empty until movements exist)
+curl http://localhost:3000/items/<item_id>/inventory
+# Location summary
+curl http://localhost:3000/locations/<location_id>/inventory
+psql "$DATABASE_URL" -c "select item_id, location_id, quantity_delta from inventory_movement_lines limit 5;"
+echo "These summaries sum posted movement lines and are not an authority; inventory_movements remains the source of truth."
 ```
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

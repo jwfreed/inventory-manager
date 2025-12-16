@@ -14,6 +14,7 @@ import workOrderExecutionRouter from './routes/workOrderExecution.routes';
 import orderToCashRouter from './routes/orderToCash.routes';
 import masterDataRouter from './routes/masterData.routes';
 import ledgerRouter from './routes/ledger.routes';
+import inventorySummaryRouter from './routes/inventorySummary.routes';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -42,6 +43,7 @@ app.use(workOrderExecutionRouter);
 app.use(orderToCashRouter);
 app.use(masterDataRouter);
 app.use(ledgerRouter);
+app.use(inventorySummaryRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });
