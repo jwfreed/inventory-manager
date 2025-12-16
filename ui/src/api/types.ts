@@ -152,3 +152,62 @@ export type LocationInventoryRow = {
   uom: string
   onHand: number
 }
+
+export type SalesOrder = {
+  id: string
+  soNumber: string
+  status?: string
+  customerName?: string
+  orderDate?: string
+  requestedShipDate?: string
+  shipFromLocationId?: string
+  lines?: SalesOrderLine[]
+  shipments?: Shipment[]
+}
+
+export type SalesOrderLine = {
+  id: string
+  lineNumber?: number
+  itemId?: string
+  itemSku?: string
+  uom?: string
+  quantityOrdered?: number
+  notes?: string | null
+}
+
+export type Reservation = {
+  id: string
+  status?: string
+  demandType?: string
+  demandId?: string
+  itemId?: string
+  locationId?: string
+  uom?: string
+  quantityReserved?: number
+  quantityFulfilled?: number
+}
+
+export type Shipment = {
+  id: string
+  salesOrderId?: string
+  status?: string
+  shippedAt?: string
+  shipFromLocationId?: string
+  inventoryMovementId?: string | null
+  lines?: ShipmentLine[]
+}
+
+export type ShipmentLine = {
+  id: string
+  itemId?: string
+  uom?: string
+  quantity?: number
+}
+
+export type ReturnDoc = {
+  id: string
+  status?: string
+  type?: string
+  inventoryMovementId?: string | null
+  notes?: string | null
+}

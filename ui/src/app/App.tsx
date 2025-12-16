@@ -10,6 +10,14 @@ import ItemsListPage from '../features/items/pages/ItemsListPage'
 import ItemDetailPage from '../features/items/pages/ItemDetailPage'
 import LocationsListPage from '../features/locations/pages/LocationsListPage'
 import LocationDetailPage from '../features/locations/pages/LocationDetailPage'
+import SalesOrdersListPage from '../features/orderToCash/pages/SalesOrdersListPage'
+import SalesOrderDetailPage from '../features/orderToCash/pages/SalesOrderDetailPage'
+import ReservationsListPage from '../features/orderToCash/pages/ReservationsListPage'
+import ReservationDetailPage from '../features/orderToCash/pages/ReservationDetailPage'
+import ShipmentsListPage from '../features/orderToCash/pages/ShipmentsListPage'
+import ShipmentDetailPage from '../features/orderToCash/pages/ShipmentDetailPage'
+import ReturnsListPage from '../features/orderToCash/pages/ReturnsListPage'
+import ReturnDetailPage from '../features/orderToCash/pages/ReturnDetailPage'
 
 const router = createBrowserRouter([
   {
@@ -26,6 +34,14 @@ const router = createBrowserRouter([
       { path: 'items/:id', element: <ItemDetailPage /> },
       { path: 'locations', element: <LocationsListPage /> },
       { path: 'locations/:id', element: <LocationDetailPage /> },
+      { path: 'sales-orders', element: <SalesOrdersListPage /> },
+      { path: 'sales-orders/:id', element: <SalesOrderDetailPage /> },
+      { path: 'reservations', element: <ReservationsListPage /> },
+      { path: 'reservations/:id', element: <ReservationDetailPage /> },
+      { path: 'shipments', element: <ShipmentsListPage /> },
+      { path: 'shipments/:id', element: <ShipmentDetailPage /> },
+      { path: 'returns', element: <ReturnsListPage /> },
+      { path: 'returns/:id', element: <ReturnDetailPage /> },
       { path: 'not-found', element: <NotFoundPage /> },
       { path: '*', element: <Navigate to="/not-found" replace /> },
     ],

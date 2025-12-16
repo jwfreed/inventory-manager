@@ -10,6 +10,10 @@ const navItems: { to: string; label: string; disabled?: boolean }[] = [
   { to: '/work-orders', label: 'Work Orders' },
   { to: '/items', label: 'Items' },
   { to: '/locations', label: 'Locations' },
+  { to: '/sales-orders', label: 'OTC — Sales Orders' },
+  { to: '/reservations', label: 'OTC — Reservations' },
+  { to: '/shipments', label: 'OTC — Shipments' },
+  { to: '/returns', label: 'OTC — Returns' },
 ]
 
 function AppShell() {
