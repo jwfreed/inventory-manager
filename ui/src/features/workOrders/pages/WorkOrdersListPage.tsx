@@ -51,6 +51,11 @@ export default function WorkOrdersListPage() {
         <p className="max-w-3xl text-sm text-slate-600">
           Drafts do not affect inventory. Posting issues creates issue movements; posting completions creates receive movements.
         </p>
+        <div>
+          <Button size="sm" onClick={() => navigate('/work-orders/new')}>
+            New work order
+          </Button>
+        </div>
       </div>
 
       <Section title="Filters">

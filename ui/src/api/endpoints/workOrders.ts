@@ -35,6 +35,23 @@ export async function getWorkOrderExecution(id: string): Promise<WorkOrderExecut
   return apiGet<WorkOrderExecutionSummary>(`/work-orders/${id}/execution`)
 }
 
+export type WorkOrderCreatePayload = {
+  workOrderNumber: string
+  bomId: string
+  bomVersionId?: string
+  outputItemId: string
+  outputUom: string
+  quantityPlanned: number
+  quantityCompleted?: number
+  scheduledStartAt?: string
+  scheduledDueAt?: string
+  notes?: string
+}
+
+export async function createWorkOrder(payload: WorkOrderCreatePayload): Promise<WorkOrder> {
+  return apiPost<WorkOrder>('/work-orders', payload)
+}
+
 export type IssueDraftPayload = {
   occurredAt: string
   notes?: string | null

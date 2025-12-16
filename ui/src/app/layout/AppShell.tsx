@@ -9,6 +9,7 @@ const navItems: { to: string; label: string; disabled?: boolean }[] = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/ledger/movements', label: 'Ledger — Movements' },
   { to: '/work-orders', label: 'Work Orders' },
+  { to: '/receiving', label: 'Inbound — Receiving' },
   { to: '/items', label: 'Items' },
   { to: '/locations', label: 'Locations' },
   { to: '/sales-orders', label: 'OTC — Sales Orders' },

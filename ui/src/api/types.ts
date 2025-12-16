@@ -59,6 +59,45 @@ export type WorkOrderListResponse = {
   paging?: { limit: number; offset: number }
 }
 
+export type BomVersionComponent = {
+  id: string
+  bomVersionId: string
+  lineNumber: number
+  componentItemId: string
+  quantityPer: number
+  uom: string
+  scrapFactor: number | null
+  notes: string | null
+  createdAt: string
+}
+
+export type BomVersion = {
+  id: string
+  bomId: string
+  versionNumber: number
+  status: string
+  effectiveFrom: string | null
+  effectiveTo: string | null
+  yieldQuantity: number
+  yieldUom: string
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+  components: BomVersionComponent[]
+}
+
+export type Bom = {
+  id: string
+  bomCode: string
+  outputItemId: string
+  defaultUom: string
+  active: boolean
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+  versions: BomVersion[]
+}
+
 export type WorkOrderExecutionSummary = {
   workOrder: {
     id: string
@@ -267,4 +306,89 @@ export type KpiRun = {
 export type ApiNotAvailable = {
   type: 'ApiNotAvailable'
   attemptedEndpoints: string[]
+}
+
+export type PurchaseOrderLine = {
+  id: string
+  purchaseOrderId?: string
+  lineNumber?: number
+  itemId?: string
+  uom?: string
+  quantityOrdered?: number
+  notes?: string | null
+}
+
+export type PurchaseOrder = {
+  id: string
+  poNumber: string
+  vendorId: string
+  status: string
+  orderDate?: string
+  expectedDate?: string
+  shipToLocationId?: string
+  vendorReference?: string
+  notes?: string
+  createdAt?: string
+  updatedAt?: string
+  lines?: PurchaseOrderLine[]
+}
+
+export type PurchaseOrderReceiptLine = {
+  id: string
+  purchaseOrderReceiptId: string
+  purchaseOrderLineId: string
+  uom: string
+  quantityReceived: number
+  createdAt: string
+  qcSummary?: {
+    totalQcQuantity: number
+    remainingUninspectedQuantity: number
+    breakdown: {
+      accept: number
+      reject: number
+      hold: number
+    }
+  }
+}
+
+export type PurchaseOrderReceipt = {
+  id: string
+  purchaseOrderId: string
+  receivedAt: string
+  receivedToLocationId?: string | null
+  inventoryMovementId?: string | null
+  externalRef?: string | null
+  notes?: string | null
+  createdAt?: string
+  lines?: PurchaseOrderReceiptLine[]
+}
+
+export type PutawayLine = {
+  id: string
+  lineNumber: number
+  purchaseOrderReceiptLineId: string
+  itemId: string
+  uom: string
+  quantityPlanned: number
+  quantityMoved?: number | null
+  fromLocationId: string
+  toLocationId: string
+  inventoryMovementId?: string | null
+  status: string
+  notes?: string | null
+  createdAt?: string
+  updatedAt?: string
+  remainingQuantityToPutaway?: number
+}
+
+export type Putaway = {
+  id: string
+  status: string
+  sourceType: string
+  purchaseOrderReceiptId?: string | null
+  inventoryMovementId?: string | null
+  notes?: string | null
+  createdAt?: string
+  updatedAt?: string
+  lines: PutawayLine[]
 }

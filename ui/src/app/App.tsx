@@ -7,10 +7,12 @@ import MovementDetailPage from '../features/ledger/pages/MovementDetailPage'
 import DashboardPage from '../features/kpis/pages/DashboardPage'
 import WorkOrdersListPage from '../features/workOrders/pages/WorkOrdersListPage'
 import WorkOrderDetailPage from '../features/workOrders/pages/WorkOrderDetailPage'
+import WorkOrderCreatePage from '../features/workOrders/pages/WorkOrderCreatePage'
 import ItemsListPage from '../features/items/pages/ItemsListPage'
 import ItemDetailPage from '../features/items/pages/ItemDetailPage'
 import LocationsListPage from '../features/locations/pages/LocationsListPage'
 import LocationDetailPage from '../features/locations/pages/LocationDetailPage'
+import ReceivingPage from '../features/receiving/pages/ReceivingPage'
 import SalesOrdersListPage from '../features/orderToCash/pages/SalesOrdersListPage'
 import SalesOrderDetailPage from '../features/orderToCash/pages/SalesOrderDetailPage'
 import SalesOrderCreatePage from '../features/orderToCash/pages/SalesOrderCreatePage'
@@ -32,9 +34,11 @@ const router = createBrowserRouter([
       { path: 'ledger/movements', element: <MovementsListPage /> },
       { path: 'ledger/movements/:movementId', element: <MovementDetailPage /> },
       { path: 'work-orders', element: <WorkOrdersListPage /> },
+      { path: 'work-orders/new', element: <WorkOrderCreatePage /> },
       { path: 'work-orders/:id', element: <WorkOrderDetailPage /> },
       { path: 'items', element: <ItemsListPage /> },
       { path: 'items/:id', element: <ItemDetailPage /> },
+      { path: 'receiving', element: <ReceivingPage /> },
       { path: 'locations', element: <LocationsListPage /> },
       { path: 'locations/:id', element: <LocationDetailPage /> },
       { path: 'sales-orders', element: <SalesOrdersListPage /> },

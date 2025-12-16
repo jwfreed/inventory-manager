@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getItem, getItemInventorySummary } from '../../../api/endpoints/items'
+import { listBomsByItem } from '../../../api/endpoints/boms'
 import type { ApiError } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -13,11 +14,14 @@ import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { formatDate, formatNumber } from '../../../lib/formatters'
 import { ItemForm } from '../components/ItemForm'
+import { BomForm } from '../../boms/components/BomForm'
+import { BomCard } from '../../boms/components/BomCard'
 
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [showEdit, setShowEdit] = useState(false)
+  const [showBomForm, setShowBomForm] = useState(false)
 
   const itemQuery = useQuery({
     queryKey: ['item', id],
@@ -31,6 +35,13 @@ export default function ItemDetailPage() {
     queryFn: () => getItemInventorySummary(id as string),
     enabled: !!id,
     retry: 0,
+  })
+
+  const bomsQuery = useQuery({
+    queryKey: ['item-boms', id],
+    queryFn: () => listBomsByItem(id as string),
+    enabled: !!id,
+    retry: 1,
   })
 
   useEffect(() => {
@@ -165,6 +176,43 @@ export default function ItemDetailPage() {
             </table>
           </div>
         )}
+      </Section>
+
+      <Section title="BOMs">
+        {bomsQuery.isLoading && <LoadingSpinner label="Loading BOMs..." />}
+        {bomsQuery.isError && bomsQuery.error && (
+          <ErrorState error={bomsQuery.error as unknown as ApiError} onRetry={() => void bomsQuery.refetch()} />
+        )}
+        <div className="flex justify-between items-center pb-2">
+          <div className="text-sm text-slate-700">
+            Define recipes for this item. Activate versions to use them in work orders.
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => setShowBomForm((v) => !v)}>
+            {showBomForm ? 'Hide form' : 'New BOM'}
+          </Button>
+        </div>
+        {showBomForm && itemQuery.data && (
+          <div className="pb-4">
+            <BomForm
+              outputItemId={itemQuery.data.id}
+              onSuccess={() => {
+                setShowBomForm(false)
+                void bomsQuery.refetch()
+              }}
+            />
+          </div>
+        )}
+        {!bomsQuery.isLoading && !bomsQuery.isError && bomsQuery.data?.boms.length === 0 && (
+          <EmptyState
+            title="No BOMs yet"
+            description="Create a BOM to define components for this item."
+          />
+        )}
+        <div className="grid gap-4">
+          {bomsQuery.data?.boms.map((bom) => (
+            <BomCard key={bom.id} bomId={bom.id} fallback={bom} onChanged={() => void bomsQuery.refetch()} />
+          ))}
+        </div>
       </Section>
     </div>
   )
