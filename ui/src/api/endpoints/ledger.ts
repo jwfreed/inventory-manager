@@ -7,8 +7,8 @@ export type MovementListParams = {
   externalRef?: string
   occurredFrom?: string
   occurredTo?: string
-  page?: number
-  pageSize?: number
+  limit?: number
+  offset?: number
 }
 
 function toCamelMovement(row: any): Movement {
@@ -40,7 +40,7 @@ function toCamelLine(row: any): MovementLine {
     uom: row.uom,
     quantityDelta: Number(row.quantityDelta ?? row.quantity_delta ?? 0),
     reasonCode: row.reasonCode ?? row.reason_code,
-    notes: row.notes ?? row.line_notes ?? null,
+    lineNotes: row.lineNotes ?? row.line_notes ?? row.notes ?? null,
   }
 }
 
@@ -51,8 +51,8 @@ export async function listMovements(params: MovementListParams = {}): Promise<Mo
   if (params.externalRef) queryParams.external_ref = params.externalRef
   if (params.occurredFrom) queryParams.occurred_from = params.occurredFrom
   if (params.occurredTo) queryParams.occurred_to = params.occurredTo
-  if (params.page) queryParams.page = params.page
-  if (params.pageSize) queryParams.page_size = params.pageSize
+  if (params.limit) queryParams.limit = params.limit
+  if (params.offset !== undefined) queryParams.offset = params.offset
 
   const response = await apiGet<any>('/inventory-movements', {
     params: queryParams,
@@ -65,9 +65,7 @@ export async function listMovements(params: MovementListParams = {}): Promise<Mo
 
   return {
     data: Array.isArray(response.data) ? response.data.map(toCamelMovement) : [],
-    total: response.total,
-    page: response.page,
-    pageSize: response.pageSize ?? response.page_size,
+    paging: response.paging,
   }
 }
 

@@ -19,6 +19,7 @@
   - BOMs: `POST /boms`, `GET /boms/:id`, `GET /items/:id/boms`, `POST /boms/:id/activate`, `GET /items/:id/bom`
   - Work orders: `POST /work-orders`, `GET /work-orders`, `GET /work-orders/:id`, plus execution routes `POST /work-orders/:id/issues`, `GET /work-orders/:id/issues/:issueId`, `POST /work-orders/:id/issues/:issueId/post`, `POST /work-orders/:id/completions`, `GET /work-orders/:id/completions/:completionId`, `POST /work-orders/:id/completions/:completionId/post`, `GET /work-orders/:id/execution`
   - Order to Cash (runtime added): `POST /sales-orders`, `GET /sales-orders`, `GET /sales-orders/:id`; `POST /reservations`, `GET /reservations`, `GET /reservations/:id`; `POST /shipments`, `GET /shipments`, `GET /shipments/:id`; `POST /returns`, `GET /returns`, `GET /returns/:id`
+  - Phase 0 runtime: `POST /items`, `GET /items`, `GET /items/:id`; `POST /locations`, `GET /locations`, `GET /locations/:id`; ledger browse `GET /inventory-movements`, `GET /inventory-movements/:id`, `GET /inventory-movements/:id/lines`
 - DB-only (no runtime endpoints in this repo): KPI reporting (Phase 7). UI short-circuits until endpoints are added.
 - Order-to-Cash docs are read-only: creation and browsing are supported, but posting shipments/returns to inventory movements is out of scope for Phase 4 UI.
 
@@ -50,6 +51,16 @@ curl -X POST http://localhost:3000/returns \
   -H "Content-Type: application/json" \
   -d '{"rmaNumber":"RMA-1","customerId":"<customer_uuid>","salesOrderId":"<so_uuid>","lines":[{"itemId":"<item_uuid>","uom":"ea","quantityAuthorized":1}]}'
 curl http://localhost:3000/returns
+
+# Phase 0 basics
+curl -X POST http://localhost:3000/items -H "Content-Type: application/json" -d '{"sku":"SKU-1","name":"Widget"}'
+curl http://localhost:3000/items
+curl -X POST http://localhost:3000/locations -H "Content-Type: application/json" -d '{"code":"LOC-1","name":"Main","type":"warehouse"}'
+curl http://localhost:3000/locations
+# After creating an adjustment/receipt, browse ledger:
+curl http://localhost:3000/inventory-movements
+curl http://localhost:3000/inventory-movements/<movement_id>
+curl http://localhost:3000/inventory-movements/<movement_id>/lines
 ```
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

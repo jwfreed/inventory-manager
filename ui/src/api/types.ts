@@ -33,14 +33,12 @@ export type MovementLine = {
   uom: string
   quantityDelta: number
   reasonCode?: string | null
-  notes?: string | null
+  lineNotes?: string | null
 }
 
 export type MovementListResponse = {
   data: Movement[]
-  total?: number
-  page?: number
-  pageSize?: number
+  paging?: { limit: number; offset: number }
 }
 
 export type WorkOrder = {

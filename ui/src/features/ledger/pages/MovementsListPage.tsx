@@ -10,10 +10,10 @@ import type { ApiError, MovementListResponse } from '../../../api/types'
 import { MovementFilters } from '../components/MovementFilters'
 import { MovementsTable } from '../components/MovementsTable'
 
-const DEFAULT_PAGE_SIZE = 20
+const DEFAULT_LIMIT = 20
 
 export default function MovementsListPage() {
-  const [filters, setFilters] = useState<MovementListParams>({ page: 1, pageSize: DEFAULT_PAGE_SIZE })
+  const [filters, setFilters] = useState<MovementListParams>({ limit: DEFAULT_LIMIT, offset: 0 })
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<
     MovementListResponse,
@@ -23,11 +23,6 @@ export default function MovementsListPage() {
     queryFn: () => listMovements(filters),
     placeholderData: (previousData) => previousData,
   })
-
-  const pageCount = useMemo(() => {
-    if (!data?.total || !data.pageSize) return undefined
-    return Math.max(1, Math.ceil(data.total / data.pageSize))
-  }, [data?.total, data?.pageSize])
 
   return (
     <div className="space-y-6">
@@ -66,18 +61,8 @@ export default function MovementsListPage() {
             />
           )}
           {!isLoading && !isError && data && data.data.length > 0 && (
-            <MovementsTable
-              movements={data.data}
-              page={data.page}
-              pageCount={pageCount}
-              onPageChange={(page) => setFilters((prev) => ({ ...prev, page }))}
-            />
+            <MovementsTable movements={data.data} />
           )}
-          {!pageCount && data?.data.length ? (
-            <div className="mt-2 text-xs text-slate-500">
-              Pagination controls are limited until the backend exposes totals/page metadata.
-            </div>
-          ) : null}
         </Card>
       </Section>
     </div>

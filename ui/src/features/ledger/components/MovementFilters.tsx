@@ -32,7 +32,7 @@ export function MovementFilters({ initialFilters, onApply, disabled }: Props) {
     setFilters((prev) => ({
       ...prev,
       [key]: value || undefined,
-      page: 1,
+      offset: 0,
     }))
   }
 
@@ -124,7 +124,7 @@ export function MovementFilters({ initialFilters, onApply, disabled }: Props) {
           variant="secondary"
           size="sm"
           onClick={() => {
-            const reset = { page: 1, pageSize: filters.pageSize }
+            const reset: MovementListParams = { limit: filters.limit, offset: 0 }
             setFilters(reset)
             onApply(reset)
           }}
