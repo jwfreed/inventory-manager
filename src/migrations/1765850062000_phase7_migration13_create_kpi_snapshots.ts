@@ -1,5 +1,6 @@
 import type { MigrationBuilder } from 'node-pg-migrate';
 
+// Phase 5 created kpi_snapshots; this stays idempotent for Phase 7 ordering.
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.createTable(
     'kpi_snapshots',

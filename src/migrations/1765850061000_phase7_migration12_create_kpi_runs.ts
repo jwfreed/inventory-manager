@@ -1,5 +1,6 @@
 import type { MigrationBuilder } from 'node-pg-migrate';
 
+// Phase 5 created kpi_runs; this migration is idempotent to keep Phase 7 ordering consistent.
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.createTable(
     'kpi_runs',

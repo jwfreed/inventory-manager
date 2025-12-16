@@ -1,20 +1,19 @@
 # inventory-manager
 
-## Phase 0 — Features 1 & 2 Migrations
+## Phase Summary (0–7)
 
-This repository now includes a minimal Node.js/TypeScript migration setup powered by `node-pg-migrate`. The migrations currently implement:
+This repository uses `node-pg-migrate` with timestamped TypeScript migrations. All phases are implemented:
 
-- Phase 0 Feature 1: `items`, `locations`, `inventory_movements`, `inventory_movement_lines`
-- Phase 0 Feature 2: `locations` hierarchy fields and the `audit_log` table
-- Phase 1 Feature 1: `vendors`, `purchase_orders`, `purchase_order_lines`
-- Phase 1 Feature 2: `purchase_order_receipts`, `purchase_order_receipt_lines`, `qc_events`, `qc_inventory_links`
-- Phase 1 Feature 3: `putaways`, `putaway_lines`
-- Phase 1 Feature 4: `inbound_closeouts`
-- Phase 2 Feature 1: `inventory_adjustments`, `inventory_adjustment_lines`
-- Phase 2 Feature 2: `cycle_counts`, `cycle_count_lines`
-- Phase 3 Feature 1: `boms`, `bom_versions`, `bom_version_lines`
-- Phase 3 Feature 2: `work_orders`
-- Phase 3 Feature 3: `work_order_executions`, `work_order_execution_lines`, `work_order_material_issues`, `work_order_material_issue_lines`
+- Phase 0: Core ledger (`items`, `locations`, `inventory_movements`, `inventory_movement_lines`, `audit_log`)
+- Phase 1: Vendors, POs, Receiving, QC, Putaway, Inbound Closeout
+- Phase 2: Inventory Adjustments, Cycle Counts
+- Phase 3: BOMs (effective/versions), Work Orders, Work Order Execution (issue/produce)
+- Phase 4: Order-to-Cash docs (customers, sales orders, shipments, POS, reservations, returns) — DB-only
+- Phase 5: Planning read-models (MPS/MRP/Replenishment/KPIs) — DB-only
+- Phase 6: DRP network/runs/plan lines/planned transfers — DB-only
+- Phase 7: Compliance/traceability (lots, lot links, recall docs, KPI snapshots) — DB-only
+
+Ledger authority remains solely in `inventory_movements` + `inventory_movement_lines`; no table stores on-hand balances. DB-only phases (4–7) add reporting/planning schema only and do not change execution semantics.
 
 ### Prerequisites
 
@@ -50,6 +49,7 @@ After running the migrations on an empty database, confirm the schema with `psql
 2. `psql "$DATABASE_URL" -c "\\d+ locations"` — check the `chk_locations_type` constraint, verify indexes on `type` and `active`, and ensure the hierarchy fields exist with `idx_locations_parent` plus the `chk_locations_parent_not_self` constraint.
 3. `psql "$DATABASE_URL" -c "\\d+ inventory_movement_lines"` — verify the `movement_id` foreign key shows `ON DELETE CASCADE` and the `chk_movement_lines_qty_nonzero` constraint enforces `quantity_delta <> 0`.
 4. `psql "$DATABASE_URL" -c "\\d+ audit_log"` — confirm all documented columns, the indexes on `occurred_at`, `(entity_type, entity_id, occurred_at)`, `(actor_type, actor_id, occurred_at)`, `request_id`, and the `actor_type`/`action` check constraints.
+5. `psql "$DATABASE_URL" -c "\\dt *kpi_runs* *drp_* *mps_* *mrp_* *replenishment_* *lots* *recall_*"` — DB-only phases 4–7 schemas should be present without errors.
 
 If any of these checks fail, re-run migrations after dropping the schema or inspect the individual migration files in `src/migrations`.
 

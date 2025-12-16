@@ -1,5 +1,6 @@
 import type { MigrationBuilder } from 'node-pg-migrate';
 
+// Phase 5 introduced KPI rollup inputs; keep this idempotent to maintain Phase 7 ordering.
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.createTable(
     'kpi_rollup_inputs',
@@ -29,4 +30,3 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
 export async function down(): Promise<void> {
   // Existing Phase 5 tables satisfy this migration; no-op on down.
 }
-
