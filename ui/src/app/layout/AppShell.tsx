@@ -7,7 +7,7 @@ import { Badge } from '../../components/Badge'
 const navItems = [
   { to: '/home', label: 'Home' },
   { to: '/ledger/movements', label: 'Ledger — Movements' },
-  { to: '/work-orders', label: 'Work Orders (coming soon)', disabled: true },
+  { to: '/work-orders', label: 'Work Orders' },
   { to: '/items', label: 'Items (coming soon)', disabled: true },
   { to: '/locations', label: 'Locations (coming soon)', disabled: true },
 ]

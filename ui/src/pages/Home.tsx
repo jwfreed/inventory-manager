@@ -6,47 +6,68 @@ import { Alert } from '../components/Alert'
 import { Button } from '../components/Button'
 import { Card } from '../components/Card'
 import { EmptyState } from '../components/EmptyState'
-import { ErrorState } from '../components/ErrorState'
 import { LoadingSpinner } from '../components/Loading'
 import { Section } from '../components/Section'
 import { Table } from '../components/Table'
 
-type HealthResponse = { status?: string; message?: string }
+type ConnectivityResult =
+  | { status: 'ok'; message: string }
+  | { status: 'neutral'; message: string }
+  | { status: 'down'; message: string }
 
-const healthEndpoints = ['/api/health', '/api']
-
-async function fetchHealth(): Promise<HealthResponse> {
-  let lastError: ApiError | undefined
-  // Try health endpoints in order, stop on first success.
-  for (const path of healthEndpoints) {
-    try {
-      return await apiGet<HealthResponse>(path)
-    } catch (error) {
-      lastError = error as ApiError
+async function fetchConnectivity(): Promise<ConnectivityResult> {
+  try {
+    // Use a real endpoint that exists in the backend route table.
+    // Any 200 response counts as "reachable" (even if the dataset is empty).
+    await apiGet<{ data?: unknown[] }>('/vendors')
+    return { status: 'ok', message: 'API responded successfully.' }
+  } catch (error) {
+    const apiError = error as ApiError
+    if (apiError?.status === 0) {
+      return {
+        status: 'down',
+        message:
+          'Could not reach the API over the network. Ensure the backend is running and the Vite proxy is active.',
+      }
+    }
+    if (apiError?.status === 404) {
+      return {
+        status: 'neutral',
+        message: 'Connectivity check endpoint not available; API may still be reachable. Try Ledger.',
+      }
+    }
+    if (apiError?.status >= 500) {
+      return {
+        status: 'neutral',
+        message:
+          'API responded, but returned a server error. This often means the database is not configured/migrated yet.',
+      }
+    }
+    return {
+      status: 'neutral',
+      message: 'API responded with an error. Try opening Ledger for a more specific request.',
     }
   }
-
-  throw lastError ?? { status: 500, message: 'Unable to reach API' }
 }
 
 export default function HomePage() {
   const {
-    data: health,
+    data: connectivity,
     isLoading,
     isError,
     error,
     refetch,
-  } = useQuery<HealthResponse, ApiError>({
+  } = useQuery<ConnectivityResult, ApiError>({
     queryKey: ['healthcheck'],
-    queryFn: fetchHealth,
+    queryFn: fetchConnectivity,
     retry: false,
   })
 
   const apiStatus = useMemo(() => {
     if (isLoading) return 'checking'
     if (isError) return 'down'
-    return health?.status || 'ok'
-  }, [isError, isLoading, health])
+    return connectivity?.status || 'ok'
+  }, [isError, isLoading, connectivity])
 
   return (
     <div className="space-y-6">
@@ -63,18 +84,28 @@ export default function HomePage() {
         <Card>
           {isLoading && <LoadingSpinner label="Checking API..." />}
           {isError && error && (
-            <ErrorState
-              error={error}
-              onRetry={() => {
-                void refetch()
-              }}
+            <Alert
+              variant="error"
+              title="API unreachable"
+              message={error.message || 'Unable to reach API.'}
+              action={
+                <Button size="sm" variant="secondary" onClick={() => void refetch()}>
+                  Retry
+                </Button>
+              }
             />
           )}
           {!isLoading && !isError && (
             <Alert
-              variant={apiStatus === 'ok' ? 'success' : 'warning'}
-              title={apiStatus === 'ok' ? 'API reachable' : 'API status'}
-              message={health?.message || 'Health endpoint responded successfully.'}
+              variant={apiStatus === 'ok' ? 'success' : apiStatus === 'down' ? 'error' : 'info'}
+              title={
+                apiStatus === 'ok'
+                  ? 'API reachable'
+                  : apiStatus === 'down'
+                    ? 'API unreachable'
+                    : 'Connectivity check'
+              }
+              message={connectivity?.message || 'Connectivity check completed.'}
               action={
                 <Button size="sm" variant="secondary" onClick={() => void refetch()}>
                   Recheck

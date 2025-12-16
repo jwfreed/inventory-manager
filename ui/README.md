@@ -1,5 +1,11 @@
 # React + TypeScript + Vite
 
+## Backend connectivity
+
+- The backend Express app mounts routes at `/` (not `/api`).
+- In dev, the UI calls APIs via `/api/*` and Vite rewrites/proxies those requests to the backend (e.g., `/api/vendors` → `http://localhost:3000/vendors`).
+- The Home page “API connectivity” check uses `GET /vendors` (via the proxy) because it’s a real endpoint that should exist even on an empty database.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

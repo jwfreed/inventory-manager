@@ -42,3 +42,74 @@ export type MovementListResponse = {
   page?: number
   pageSize?: number
 }
+
+export type WorkOrder = {
+  id: string
+  workOrderNumber: string
+  status: string
+  bomId?: string
+  bomVersionId?: string | null
+  outputItemId: string
+  outputUom: string
+  quantityPlanned: number
+  quantityCompleted?: number | null
+  notes?: string | null
+}
+
+export type WorkOrderListResponse = {
+  data: WorkOrder[]
+  paging?: { limit: number; offset: number }
+}
+
+export type WorkOrderExecutionSummary = {
+  workOrder: {
+    id: string
+    status: string
+    bomId: string
+    bomVersionId: string | null
+    outputItemId: string
+    outputUom: string
+    quantityPlanned: number
+    quantityCompleted: number
+    completedAt?: string | null
+  }
+  issuedTotals: { componentItemId: string; uom: string; quantityIssued: number }[]
+  completedTotals: { outputItemId: string; uom: string; quantityCompleted: number }[]
+  remainingToComplete: number
+}
+
+export type WorkOrderIssue = {
+  id: string
+  workOrderId: string
+  status: string
+  occurredAt: string
+  inventoryMovementId?: string | null
+  notes?: string | null
+  lines: {
+    id: string
+    lineNumber: number
+    componentItemId: string
+    fromLocationId: string
+    uom: string
+    quantityIssued: number
+    notes?: string | null
+  }[]
+}
+
+export type WorkOrderCompletion = {
+  id: string
+  workOrderId: string
+  status: string
+  occurredAt: string
+  productionMovementId?: string | null
+  notes?: string | null
+  lines: {
+    id: string
+    lineType: string
+    itemId: string
+    toLocationId: string | null
+    uom: string
+    quantity: number
+    notes?: string | null
+  }[]
+}

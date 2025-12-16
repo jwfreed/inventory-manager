@@ -4,9 +4,15 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 function buildUrl(path: string) {
   if (path.startsWith('http')) return path
-  const base = API_BASE_URL || ''
-  const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base
+
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
+
+  // If no explicit base URL is provided, prefer calling via Vite proxy at /api/*.
+  if (!API_BASE_URL) {
+    return normalizedPath.startsWith('/api') ? normalizedPath : `/api${normalizedPath}`
+  }
+
+  const normalizedBase = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL
   return `${normalizedBase}${normalizedPath}`
 }
 
@@ -46,13 +52,23 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     })
   }
 
-  const response = await fetch(url.toString(), {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-    ...options,
-  })
+  let response: Response
+  try {
+    response = await fetch(url.toString(), {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+      ...options,
+    })
+  } catch (err) {
+    const error: ApiError = {
+      status: 0,
+      message: 'Network error while contacting API',
+      details: err,
+    }
+    throw error
+  }
 
   return handleResponse<T>(response)
 }
