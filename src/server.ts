@@ -15,6 +15,9 @@ import orderToCashRouter from './routes/orderToCash.routes';
 import masterDataRouter from './routes/masterData.routes';
 import ledgerRouter from './routes/ledger.routes';
 import inventorySummaryRouter from './routes/inventorySummary.routes';
+import pickingRouter from './routes/picking.routes';
+import packingRouter from './routes/packing.routes';
+import returnsExtendedRouter from './routes/returnsExtended.routes';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -44,6 +47,9 @@ app.use(orderToCashRouter);
 app.use(masterDataRouter);
 app.use(ledgerRouter);
 app.use(inventorySummaryRouter);
+app.use(pickingRouter);
+app.use(packingRouter);
+app.use(returnsExtendedRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });

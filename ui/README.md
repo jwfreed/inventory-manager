@@ -69,6 +69,23 @@ curl http://localhost:3000/items/<item_id>/inventory
 curl http://localhost:3000/locations/<location_id>/inventory
 psql "$DATABASE_URL" -c "select item_id, location_id, quantity_delta from inventory_movement_lines limit 5;"
 echo "These summaries sum posted movement lines and are not an authority; inventory_movements remains the source of truth."
+
+# Phase 4 — Picking
+curl -X POST http://localhost:3000/pick-batches -H "Content-Type: application/json" -d '{"pickType":"single_order","status":"draft"}'
+curl http://localhost:3000/pick-batches
+curl -X POST http://localhost:3000/pick-tasks -H "Content-Type: application/json" -d '{"pickBatchId":"<batch_id>","itemId":"<item_uuid>","uom":"ea","fromLocationId":"<loc_uuid>","quantityRequested":1}'
+curl http://localhost:3000/pick-tasks
+
+# Phase 4 — Packing
+curl -X POST http://localhost:3000/packs -H "Content-Type: application/json" -d '{"salesOrderShipmentId":"<shipment_id>","status":"open","lines":[{"salesOrderLineId":"<so_line_id>","itemId":"<item_id>","uom":"ea","quantityPacked":1}]}'
+curl http://localhost:3000/packs
+curl http://localhost:3000/packs/<pack_id>
+
+# Phase 4 — Return receipts & dispositions
+curl -X POST http://localhost:3000/return-receipts -H "Content-Type: application/json" -d '{"returnAuthorizationId":"<rma_id>","receivedAt":"2024-01-01T00:00:00Z","receivedToLocationId":"<loc_id>","lines":[{"itemId":"<item_id>","uom":"ea","quantityReceived":1}]}'
+curl http://localhost:3000/return-receipts
+curl -X POST http://localhost:3000/return-dispositions -H "Content-Type: application/json" -d '{"returnReceiptId":"<receipt_id>","occurredAt":"2024-01-02T00:00:00Z","dispositionType":"restock","fromLocationId":"<loc_id>","lines":[{"itemId":"<item_id>","uom":"ea","quantity":1}]}'
+curl http://localhost:3000/return-dispositions
 ```
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
