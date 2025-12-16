@@ -60,7 +60,7 @@ export default function ReservationDetailPage() {
       {query.data?.notImplemented && (
         <EmptyState
           title="API not available yet"
-          description="Expected endpoint: GET /reservations/:id (Phase 4 runtime may be DB-only)."
+          description="Phase 4 Order-to-Cash is DB-first in this repo; runtime endpoints are not implemented yet."
         />
       )}
       {query.isError && !query.data?.notImplemented && query.error && (

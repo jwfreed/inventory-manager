@@ -52,6 +52,14 @@ export default function DashboardPage() {
   const snapshotApiMissing = snapshotsResult?.type === 'ApiNotAvailable'
   const snapshotAttempts = attemptedEndpoints(snapshotsResult)
   const runAttempts = attemptedEndpoints(runsResult)
+  const snapshotUnavailableDescription =
+    snapshotAttempts.length > 0
+      ? `Endpoint not available: ${snapshotAttempts.join(', ')}`
+      : 'KPI runtime endpoints are not implemented in this repository (DB-first only).'
+  const runUnavailableDescription =
+    runAttempts.length > 0
+      ? `Endpoint not available: ${runAttempts.join(', ')}`
+      : 'KPI run endpoints are not implemented in this repository (DB-first only).'
 
   return (
     <div className="space-y-6">
@@ -75,11 +83,7 @@ export default function DashboardPage() {
           {!snapshotsLoading && !snapshotsFetching && !snapshotsError && snapshotApiMissing ? (
             <EmptyState
               title="KPI API not available yet"
-              description={
-                snapshotAttempts.length
-                  ? `Attempted endpoints: ${snapshotAttempts.join(', ')}`
-                  : 'No KPI endpoints responded.'
-              }
+              description={snapshotUnavailableDescription}
             />
           ) : null}
           {!snapshotsLoading &&
@@ -112,11 +116,7 @@ export default function DashboardPage() {
           <Card>
             <EmptyState
               title="KPI API not available yet"
-              description={
-                snapshotAttempts.length
-                  ? `Attempted endpoints: ${snapshotAttempts.join(', ')}`
-                  : 'No KPI endpoints responded.'
-              }
+              description={snapshotUnavailableDescription}
             />
           </Card>
         ) : null}
@@ -184,11 +184,7 @@ export default function DashboardPage() {
           <Card>
             <EmptyState
               title="KPI run API not available"
-              description={
-                runAttempts.length
-                  ? `Attempted endpoints: ${runAttempts.join(', ')}`
-                  : 'No run endpoints responded.'
-              }
+              description={runUnavailableDescription}
             />
           </Card>
         </Section>

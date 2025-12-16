@@ -21,18 +21,10 @@ export type ListKpiRunsParams = {
   limit?: number
 }
 
-const SNAPSHOT_ENDPOINT_CANDIDATES = ['/kpis/snapshots', '/kpi-snapshots', '/metrics/kpis', '/kpis']
-const RUN_ENDPOINT_CANDIDATES = ['/kpis/runs', '/kpi-runs']
-
-let snapshotProbe:
-  | { endpoint: string; attempted: string[] }
-  | { notAvailable: true; attempted: string[] }
-  | null = null
-
-let runProbe:
-  | { endpoint: string; attempted: string[] }
-  | { notAvailable: true; attempted: string[] }
-  | null = null
+// KPI runtime endpoints are not implemented in this repository (Phase 7 DB-only).
+// Set these strings if/when a backend route is added.
+const KPI_SNAPSHOT_ENDPOINT: string | null = null
+const KPI_RUN_ENDPOINT: string | null = null
 
 function normalizeSnapshot(row: any): KpiSnapshot {
   const rawValue = row?.value ?? row?.kpi_value ?? row?.metric_value ?? row?.metricValue
@@ -99,58 +91,39 @@ function buildSnapshotQuery(params: ListKpiSnapshotsParams) {
 export async function listKpiSnapshots(
   params: ListKpiSnapshotsParams = {},
 ): Promise<KpiListSuccess<KpiSnapshot> | ApiNotAvailable> {
-  if (snapshotProbe && 'notAvailable' in snapshotProbe) {
-    return { type: 'ApiNotAvailable', attemptedEndpoints: snapshotProbe.attempted }
+  if (!KPI_SNAPSHOT_ENDPOINT) {
+    return { type: 'ApiNotAvailable', attemptedEndpoints: [] }
   }
 
-  const attempted: string[] = []
-  const candidates = snapshotProbe?.endpoint ? [snapshotProbe.endpoint] : SNAPSHOT_ENDPOINT_CANDIDATES
-
-  for (const endpoint of candidates) {
-    attempted.push(endpoint)
-    try {
-      const response = await apiGet<any>(endpoint, { params: buildSnapshotQuery(params) })
-      const data = extractList(response, normalizeSnapshot)
-      snapshotProbe = { endpoint, attempted }
-      return { type: 'success', endpoint, attempted, data }
-    } catch (err) {
-      const apiErr = err as ApiError
-      if (apiErr?.status === 404) {
-        continue
-      }
-      throw err
+  try {
+    const response = await apiGet<any>(KPI_SNAPSHOT_ENDPOINT, { params: buildSnapshotQuery(params) })
+    const data = extractList(response, normalizeSnapshot)
+    return { type: 'success', endpoint: KPI_SNAPSHOT_ENDPOINT, attempted: [KPI_SNAPSHOT_ENDPOINT], data }
+  } catch (err) {
+    const apiErr = err as ApiError
+    if (apiErr?.status === 404) {
+      return { type: 'ApiNotAvailable', attemptedEndpoints: [KPI_SNAPSHOT_ENDPOINT] }
     }
+    throw err
   }
-
-  snapshotProbe = { notAvailable: true, attempted }
-  return { type: 'ApiNotAvailable', attemptedEndpoints: attempted }
 }
 
 export async function listKpiRuns(
   params: ListKpiRunsParams = {},
 ): Promise<KpiListSuccess<KpiRun> | ApiNotAvailable> {
-  if (runProbe && 'notAvailable' in runProbe) {
-    return { type: 'ApiNotAvailable', attemptedEndpoints: runProbe.attempted }
+  if (!KPI_RUN_ENDPOINT) {
+    return { type: 'ApiNotAvailable', attemptedEndpoints: [] }
   }
 
-  const attempted: string[] = []
-  const candidates = runProbe?.endpoint ? [runProbe.endpoint] : RUN_ENDPOINT_CANDIDATES
-  for (const endpoint of candidates) {
-    attempted.push(endpoint)
-    try {
-      const response = await apiGet<any>(endpoint, { params })
-      const data = extractList(response, normalizeRun)
-      runProbe = { endpoint, attempted }
-      return { type: 'success', endpoint, attempted, data }
-    } catch (err) {
-      const apiErr = err as ApiError
-      if (apiErr?.status === 404) {
-        continue
-      }
-      throw err
+  try {
+    const response = await apiGet<any>(KPI_RUN_ENDPOINT, { params })
+    const data = extractList(response, normalizeRun)
+    return { type: 'success', endpoint: KPI_RUN_ENDPOINT, attempted: [KPI_RUN_ENDPOINT], data }
+  } catch (err) {
+    const apiErr = err as ApiError
+    if (apiErr?.status === 404) {
+      return { type: 'ApiNotAvailable', attemptedEndpoints: [KPI_RUN_ENDPOINT] }
     }
+    throw err
   }
-
-  runProbe = { notAvailable: true, attempted }
-  return { type: 'ApiNotAvailable', attemptedEndpoints: attempted }
 }

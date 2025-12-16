@@ -84,7 +84,7 @@ export default function SalesOrdersListPage() {
           {notImplemented && (
             <EmptyState
               title="API not available yet"
-              description="Expected endpoint: GET /sales-orders (Phase 4 runtime may be DB-only)."
+              description="Phase 4 Order-to-Cash is DB-first in this repo; runtime endpoints are not implemented yet."
             />
           )}
           {!isLoading && !isError && !notImplemented && filtered.length === 0 && (
