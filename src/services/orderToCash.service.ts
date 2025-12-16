@@ -1,0 +1,384 @@
+import { v4 as uuidv4 } from 'uuid';
+import type { z } from 'zod';
+import { query, withTransaction } from '../db';
+import {
+  reservationsCreateSchema,
+  reservationSchema,
+  returnAuthorizationSchema,
+  salesOrderSchema,
+  shipmentSchema,
+} from '../schemas/orderToCash.schema';
+
+export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
+export type ReservationInput = z.infer<typeof reservationSchema>;
+export type ReservationCreateInput = z.infer<typeof reservationsCreateSchema>;
+export type ShipmentInput = z.infer<typeof shipmentSchema>;
+export type ReturnAuthorizationInput = z.infer<typeof returnAuthorizationSchema>;
+
+function normalizeLineNumbers<T extends { lineNumber?: number }>(lines: T[]) {
+  const lineNumbers = new Set<number>();
+  return lines.map((line, idx) => {
+    const ln = line.lineNumber ?? idx + 1;
+    if (lineNumbers.has(ln)) {
+      throw new Error('DUPLICATE_LINE_NUMBER');
+    }
+    lineNumbers.add(ln);
+    return { ...line, lineNumber: ln };
+  });
+}
+
+export function mapSalesOrder(row: any, lines: any[]) {
+  return {
+    id: row.id,
+    soNumber: row.so_number,
+    customerId: row.customer_id,
+    status: row.status,
+    orderDate: row.order_date,
+    requestedShipDate: row.requested_ship_date,
+    shipFromLocationId: row.ship_from_location_id,
+    customerReference: row.customer_reference,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lines: lines.map((line) => ({
+      id: line.id,
+      salesOrderId: line.sales_order_id,
+      lineNumber: line.line_number,
+      itemId: line.item_id,
+      uom: line.uom,
+      quantityOrdered: line.quantity_ordered,
+      notes: line.notes,
+      createdAt: line.created_at,
+    })),
+  };
+}
+
+export async function createSalesOrder(data: SalesOrderInput) {
+  const now = new Date();
+  const id = uuidv4();
+  const status = data.status ?? 'draft';
+  const normalizedLines = normalizeLineNumbers(data.lines);
+
+  return withTransaction(async (client) => {
+    const orderResult = await client.query(
+      `INSERT INTO sales_orders (
+        id, so_number, customer_id, status, order_date, requested_ship_date,
+        ship_from_location_id, customer_reference, notes, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+      RETURNING *`,
+      [
+        id,
+        data.soNumber,
+        data.customerId,
+        status,
+        data.orderDate ?? null,
+        data.requestedShipDate ?? null,
+        data.shipFromLocationId ?? null,
+        data.customerReference ?? null,
+        data.notes ?? null,
+        now,
+      ],
+    );
+
+    const lines: any[] = [];
+    for (const line of normalizedLines) {
+      const lineResult = await client.query(
+        `INSERT INTO sales_order_lines (
+          id, sales_order_id, line_number, item_id, uom, quantity_ordered, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *`,
+        [
+          uuidv4(),
+          id,
+          line.lineNumber,
+          line.itemId,
+          line.uom,
+          line.quantityOrdered,
+          line.notes ?? null,
+        ],
+      );
+      lines.push(lineResult.rows[0]);
+    }
+
+    return mapSalesOrder(orderResult.rows[0], lines);
+  });
+}
+
+export async function getSalesOrder(id: string) {
+  const orderResult = await query('SELECT * FROM sales_orders WHERE id = $1', [id]);
+  if (orderResult.rowCount === 0) return null;
+  const lines = await query(
+    'SELECT * FROM sales_order_lines WHERE sales_order_id = $1 ORDER BY line_number ASC',
+    [id],
+  );
+  return mapSalesOrder(orderResult.rows[0], lines.rows);
+}
+
+export async function listSalesOrders(limit: number, offset: number, filters: { status?: string; customerId?: string }) {
+  const params: any[] = [];
+  const conditions: string[] = [];
+  if (filters.status) {
+    params.push(filters.status);
+    conditions.push(`status = $${params.length}`);
+  }
+  if (filters.customerId) {
+    params.push(filters.customerId);
+    conditions.push(`customer_id = $${params.length}`);
+  }
+  params.push(limit, offset);
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const { rows } = await query(
+    `SELECT id, so_number, customer_id, status, order_date, requested_ship_date, ship_from_location_id,
+            customer_reference, notes, created_at, updated_at
+       FROM sales_orders
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+  return rows;
+}
+
+export function mapReservation(row: any) {
+  return {
+    id: row.id,
+    status: row.status,
+    demandType: row.demand_type,
+    demandId: row.demand_id,
+    itemId: row.item_id,
+    locationId: row.location_id,
+    uom: row.uom,
+    quantityReserved: row.quantity_reserved,
+    quantityFulfilled: row.quantity_fulfilled,
+    reservedAt: row.reserved_at,
+    releasedAt: row.released_at,
+    releaseReasonCode: row.release_reason_code,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function createReservations(data: ReservationCreateInput) {
+  const now = new Date();
+  const results: any[] = [];
+  await withTransaction(async (client) => {
+    for (const reservation of data.reservations) {
+      const res = await client.query(
+        `INSERT INTO inventory_reservations (
+          id, status, demand_type, demand_id, item_id, location_id, uom,
+          quantity_reserved, quantity_fulfilled, reserved_at, notes, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+        RETURNING *`,
+        [
+          uuidv4(),
+          reservation.status ?? 'open',
+          reservation.demandType,
+          reservation.demandId,
+          reservation.itemId,
+          reservation.locationId,
+          reservation.uom,
+          reservation.quantityReserved,
+          reservation.quantityFulfilled ?? null,
+          reservation.status === 'open' ? now : now,
+          reservation.notes ?? null,
+          now,
+        ],
+      );
+      results.push(res.rows[0]);
+    }
+  });
+  return results.map(mapReservation);
+}
+
+export async function listReservations(limit: number, offset: number) {
+  const { rows } = await query(
+    `SELECT * FROM inventory_reservations
+     ORDER BY reserved_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset],
+  );
+  return rows.map(mapReservation);
+}
+
+export async function getReservation(id: string) {
+  const res = await query('SELECT * FROM inventory_reservations WHERE id = $1', [id]);
+  if (res.rowCount === 0) return null;
+  return mapReservation(res.rows[0]);
+}
+
+export function mapShipment(row: any, lines: any[]) {
+  return {
+    id: row.id,
+    salesOrderId: row.sales_order_id,
+    shippedAt: row.shipped_at,
+    shipFromLocationId: row.ship_from_location_id,
+    inventoryMovementId: row.inventory_movement_id,
+    externalRef: row.external_ref,
+    notes: row.notes,
+    createdAt: row.created_at,
+    lines: lines.map((line) => ({
+      id: line.id,
+      salesOrderShipmentId: line.sales_order_shipment_id,
+      salesOrderLineId: line.sales_order_line_id,
+      uom: line.uom,
+      quantityShipped: line.quantity_shipped,
+      createdAt: line.created_at,
+    })),
+  };
+}
+
+export async function createShipment(data: ShipmentInput) {
+  const now = new Date();
+  const id = uuidv4();
+  return withTransaction(async (client) => {
+    const shipment = await client.query(
+      `INSERT INTO sales_order_shipments (
+        id, sales_order_id, shipped_at, ship_from_location_id, inventory_movement_id, external_ref, notes, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *`,
+      [
+        id,
+        data.salesOrderId,
+        data.shippedAt,
+        data.shipFromLocationId ?? null,
+        null,
+        data.externalRef ?? null,
+        data.notes ?? null,
+        now,
+      ],
+    );
+
+    const lines: any[] = [];
+    for (const line of data.lines) {
+      const lineResult = await client.query(
+        `INSERT INTO sales_order_shipment_lines (
+          id, sales_order_shipment_id, sales_order_line_id, uom, quantity_shipped
+        ) VALUES ($1, $2, $3, $4, $5)
+        RETURNING *`,
+        [uuidv4(), id, line.salesOrderLineId, line.uom, line.quantityShipped],
+      );
+      lines.push(lineResult.rows[0]);
+    }
+
+    return mapShipment(shipment.rows[0], lines);
+  });
+}
+
+export async function listShipments(limit: number, offset: number) {
+  const { rows } = await query(
+    `SELECT * FROM sales_order_shipments
+     ORDER BY shipped_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset],
+  );
+  return rows;
+}
+
+export async function getShipment(id: string) {
+  const shipment = await query('SELECT * FROM sales_order_shipments WHERE id = $1', [id]);
+  if (shipment.rowCount === 0) return null;
+  const lines = await query(
+    'SELECT * FROM sales_order_shipment_lines WHERE sales_order_shipment_id = $1 ORDER BY created_at ASC',
+    [id],
+  );
+  return mapShipment(shipment.rows[0], lines.rows);
+}
+
+export function mapReturnAuth(row: any, lines: any[]) {
+  return {
+    id: row.id,
+    rmaNumber: row.rma_number,
+    customerId: row.customer_id,
+    salesOrderId: row.sales_order_id,
+    status: row.status,
+    severity: row.severity,
+    authorizedAt: row.authorized_at,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lines: lines.map((line) => ({
+      id: line.id,
+      returnAuthorizationId: line.return_authorization_id,
+      lineNumber: line.line_number,
+      salesOrderLineId: line.sales_order_line_id,
+      itemId: line.item_id,
+      uom: line.uom,
+      quantityAuthorized: line.quantity_authorized,
+      reasonCode: line.reason_code,
+      notes: line.notes,
+      createdAt: line.created_at,
+    })),
+  };
+}
+
+export async function createReturnAuthorization(data: ReturnAuthorizationInput) {
+  const now = new Date();
+  const id = uuidv4();
+  const status = data.status ?? 'draft';
+  const normalizedLines = normalizeLineNumbers(data.lines);
+
+  return withTransaction(async (client) => {
+    const header = await client.query(
+      `INSERT INTO return_authorizations (
+        id, rma_number, customer_id, sales_order_id, status, severity, authorized_at, notes, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+      RETURNING *`,
+      [
+        id,
+        data.rmaNumber,
+        data.customerId,
+        data.salesOrderId ?? null,
+        status,
+        data.severity ?? null,
+        data.authorizedAt ?? null,
+        data.notes ?? null,
+        now,
+      ],
+    );
+
+    const lines: any[] = [];
+    for (const line of normalizedLines) {
+      const lineResult = await client.query(
+        `INSERT INTO return_authorization_lines (
+          id, return_authorization_id, line_number, sales_order_line_id, item_id, uom, quantity_authorized, reason_code, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING *`,
+        [
+          uuidv4(),
+          id,
+          line.lineNumber,
+          line.salesOrderLineId ?? null,
+          line.itemId,
+          line.uom,
+          line.quantityAuthorized,
+          line.reasonCode ?? null,
+          line.notes ?? null,
+        ],
+      );
+      lines.push(lineResult.rows[0]);
+    }
+
+    return mapReturnAuth(header.rows[0], lines);
+  });
+}
+
+export async function listReturnAuthorizations(limit: number, offset: number) {
+  const { rows } = await query(
+    `SELECT * FROM return_authorizations
+     ORDER BY created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset],
+  );
+  return rows;
+}
+
+export async function getReturnAuthorization(id: string) {
+  const header = await query('SELECT * FROM return_authorizations WHERE id = $1', [id]);
+  if (header.rowCount === 0) return null;
+  const lines = await query(
+    'SELECT * FROM return_authorization_lines WHERE return_authorization_id = $1 ORDER BY line_number ASC',
+    [id],
+  );
+  return mapReturnAuth(header.rows[0], lines.rows);
+}

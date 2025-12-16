@@ -6,6 +6,51 @@
 - In dev, the UI calls APIs via `/api/*` and Vite rewrites/proxies those requests to the backend (e.g., `/api/vendors` → `http://localhost:3000/vendors`).
 - The Home page “API connectivity” check uses `GET /vendors` (via the proxy) because it’s a real endpoint that should exist even on an empty database.
 
+## Backend endpoint inventory (as of aa9153e)
+
+- Routes are mounted directly at `/` (no prefix). The proxy still uses `/api/* → /`.
+- Implemented endpoints:
+  - Vendors: `POST /vendors`, `GET /vendors`
+  - Purchase orders: `POST /purchase-orders`, `GET /purchase-orders`, `GET /purchase-orders/:id`
+  - Receipts + QC: `POST /purchase-order-receipts`, `GET /purchase-order-receipts/:id`, `POST /qc-events`, `GET /purchase-order-receipt-lines/:id/qc-events`
+  - Putaways: `POST /putaways`, `GET /putaways/:id`, `POST /putaways/:id/post`
+  - Closeout: `GET /purchase-order-receipts/:id/reconciliation`, `POST /purchase-order-receipts/:id/close`, `POST /purchase-orders/:id/close`
+  - Inventory adjustments/counts: `POST /inventory-adjustments`, `GET /inventory-adjustments/:id`, `POST /inventory-adjustments/:id/post`, `POST /inventory-counts`, `GET /inventory-counts/:id`, `POST /inventory-counts/:id/post`
+  - BOMs: `POST /boms`, `GET /boms/:id`, `GET /items/:id/boms`, `POST /boms/:id/activate`, `GET /items/:id/bom`
+  - Work orders: `POST /work-orders`, `GET /work-orders`, `GET /work-orders/:id`, plus execution routes `POST /work-orders/:id/issues`, `GET /work-orders/:id/issues/:issueId`, `POST /work-orders/:id/issues/:issueId/post`, `POST /work-orders/:id/completions`, `GET /work-orders/:id/completions/:completionId`, `POST /work-orders/:id/completions/:completionId/post`, `GET /work-orders/:id/execution`
+  - Order to Cash (runtime added): `POST /sales-orders`, `GET /sales-orders`, `GET /sales-orders/:id`; `POST /reservations`, `GET /reservations`, `GET /reservations/:id`; `POST /shipments`, `GET /shipments`, `GET /shipments/:id`; `POST /returns`, `GET /returns`, `GET /returns/:id`
+- DB-only (no runtime endpoints in this repo): KPI reporting (Phase 7). UI short-circuits until endpoints are added.
+
+## Backend smoke tests (Phase 4 runtime)
+
+Run with the API server running (proxy via `/api/*` is fine):
+
+```bash
+# Sales order (draft)
+curl -X POST http://localhost:3000/sales-orders \
+  -H "Content-Type: application/json" \
+  -d '{"soNumber":"SO-1001","customerId":"<customer_uuid>","orderDate":"2024-01-01","lines":[{"itemId":"<item_uuid>","uom":"ea","quantityOrdered":2}]}'
+curl http://localhost:3000/sales-orders
+
+# Reservation (no movements created)
+curl -X POST http://localhost:3000/reservations \
+  -H "Content-Type: application/json" \
+  -d '{"reservations":[{"demandType":"sales_order_line","demandId":"<so_line_uuid>","itemId":"<item_uuid>","locationId":"<location_uuid>","uom":"ea","quantityReserved":1}]}'
+psql "$DATABASE_URL" -c "select count(*) from inventory_movements where external_ref like 'reservation%';"
+
+# Shipment (doc only)
+curl -X POST http://localhost:3000/shipments \
+  -H "Content-Type: application/json" \
+  -d '{"salesOrderId":"<so_uuid>","shippedAt":"2024-01-02T12:00:00Z","lines":[{"salesOrderLineId":"<so_line_uuid>","uom":"ea","quantityShipped":1}]}'
+curl http://localhost:3000/shipments
+
+# Return authorization (RMA)
+curl -X POST http://localhost:3000/returns \
+  -H "Content-Type: application/json" \
+  -d '{"rmaNumber":"RMA-1","customerId":"<customer_uuid>","salesOrderId":"<so_uuid>","lines":[{"itemId":"<item_uuid>","uom":"ea","quantityAuthorized":1}]}'
+curl http://localhost:3000/returns
+```
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
