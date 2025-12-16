@@ -113,3 +113,42 @@ export type WorkOrderCompletion = {
     notes?: string | null
   }[]
 }
+
+export type Item = {
+  id: string
+  sku: string
+  name: string
+  description?: string | null
+  active: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type ItemInventoryRow = {
+  locationId: string
+  locationCode?: string
+  locationName?: string
+  uom: string
+  onHand: number
+}
+
+export type Location = {
+  id: string
+  code: string
+  name: string
+  type: string
+  active: boolean
+  parentLocationId?: string | null
+  path?: string | null
+  depth?: number | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type LocationInventoryRow = {
+  itemId: string
+  itemSku?: string
+  itemName?: string
+  uom: string
+  onHand: number
+}

@@ -4,12 +4,12 @@ import Breadcrumbs from '../../components/Breadcrumbs'
 import { NavLink } from '../../components/NavLink'
 import { Badge } from '../../components/Badge'
 
-const navItems = [
+const navItems: { to: string; label: string; disabled?: boolean }[] = [
   { to: '/home', label: 'Home' },
   { to: '/ledger/movements', label: 'Ledger — Movements' },
   { to: '/work-orders', label: 'Work Orders' },
-  { to: '/items', label: 'Items (coming soon)', disabled: true },
-  { to: '/locations', label: 'Locations (coming soon)', disabled: true },
+  { to: '/items', label: 'Items' },
+  { to: '/locations', label: 'Locations' },
 ]
 
 function AppShell() {
