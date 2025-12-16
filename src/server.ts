@@ -10,6 +10,7 @@ import adjustmentsRouter from './routes/adjustments.routes';
 import countsRouter from './routes/counts.routes';
 import bomsRouter from './routes/boms.routes';
 import workOrdersRouter from './routes/workOrders.routes';
+import workOrderExecutionRouter from './routes/workOrderExecution.routes';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -34,6 +35,7 @@ app.use(adjustmentsRouter);
 app.use(countsRouter);
 app.use(bomsRouter);
 app.use(workOrdersRouter);
+app.use(workOrderExecutionRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });

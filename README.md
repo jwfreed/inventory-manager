@@ -13,6 +13,8 @@ This repository now includes a minimal Node.js/TypeScript migration setup powere
 - Phase 2 Feature 1: `inventory_adjustments`, `inventory_adjustment_lines`
 - Phase 2 Feature 2: `cycle_counts`, `cycle_count_lines`
 - Phase 3 Feature 1: `boms`, `bom_versions`, `bom_version_lines`
+- Phase 3 Feature 2: `work_orders`
+- Phase 3 Feature 3: `work_order_executions`, `work_order_execution_lines`, `work_order_material_issues`, `work_order_material_issue_lines`
 
 ### Prerequisites
 
@@ -74,6 +76,10 @@ npm run dev
 - `POST /inventory-adjustments`, `GET /inventory-adjustments/:id`, `POST /inventory-adjustments/:id/post`
 - `POST /inventory-counts`, `GET /inventory-counts/:id`, `POST /inventory-counts/:id/post`
 - `POST /boms`, `GET /boms/:id`, `GET /items/:id/boms`, `POST /boms/:id/activate`, `GET /items/:id/bom?asOf=ISO_DATE`
+- `POST /work-orders`, `GET /work-orders/:id`, `GET /work-orders`
+- `POST /work-orders/:id/issues`, `POST /work-orders/:id/issues/:issueId/post`
+- `POST /work-orders/:id/completions`, `POST /work-orders/:id/completions/:completionId/post`
+- `GET /work-orders/:id/execution`
 
 ### Manual smoke test
 
@@ -367,3 +373,85 @@ curl -s "http://localhost:3000/items/<FINISHED_ITEM_ID>/bom?asOf=2024-03-15T00:0
 ```
 
 These steps validate that BOM creation inserts headers and components atomically, activation enforces single-active effective ranges per finished item, duplicate BOM codes are rejected, and the `GET /items/:id/bom?asOf=...` lookup returns the correct version for any date. If any of the validation steps return 4xx/5xx responses other than the expected 409 conflict checks, inspect the API logs and database contents before proceeding.
+
+## Phase 3 — Feature 2 & 3 Work Orders + Execution (Issue-to-Work-Order)
+
+### Smoke test / manual verification
+
+Run the steps below after Phase 3 Feature 1 BOM creation/activation.
+
+```bash
+# 0) Create a work order referencing the BOM (use the BOM id + active version id from the BOM smoke test)
+curl -s -X POST http://localhost:3000/work-orders \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "workOrderNumber": "WO-0001",
+    "bomId": "<BOM_ID>",
+    "bomVersionId": "<BOM_VERSION_ID>",
+    "outputItemId": "<FINISHED_ITEM_ID>",
+    "outputUom": "kg",
+    "quantityPlanned": 100,
+    "scheduledStartAt": "2024-02-20T08:00:00Z",
+    "scheduledDueAt": "2024-02-21T08:00:00Z",
+    "notes": "First production run"
+  }' | jq .
+
+# 1) Fetch by id
+curl -s http://localhost:3000/work-orders/<WORK_ORDER_ID> | jq .
+
+# 2) List work orders with paging + status filter
+curl -s "http://localhost:3000/work-orders?status=draft&limit=10&offset=0" | jq .
+
+# 3) Add component stock via adjustment at a source location (fromLocationId below)
+psql "$DATABASE_URL" -c "INSERT INTO locations (id, code, name, type, active, created_at, updated_at) VALUES ('<COMPONENT_LOC_ID>', 'RM-BIN-1', 'Raw Material Bin', 'bin', true, now(), now());"
+curl -s -X POST http://localhost:3000/inventory-adjustments \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "occurredAt": "2024-02-20T07:00:00Z",
+    "notes": "Seed component inventory",
+    "lines": [
+      {"itemId": "<COMPONENT_ITEM_ID>", "locationId": "<COMPONENT_LOC_ID>", "uom": "kg", "quantityDelta": 500, "reasonCode": "seed"}
+    ]
+  }' | jq .
+curl -s -X POST http://localhost:3000/inventory-adjustments/<ADJUSTMENT_ID>/post | jq .
+
+# 4) Create a draft issue document for the work order
+curl -s -X POST http://localhost:3000/work-orders/<WORK_ORDER_ID>/issues \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "occurredAt": "2024-02-20T09:00:00Z",
+    "notes": "Issue cocoa",
+    "lines": [
+      {"lineNumber": 1, "componentItemId": "<COMPONENT_ITEM_ID>", "fromLocationId": "<COMPONENT_LOC_ID>", "uom": "kg", "quantityIssued": 80}
+    ]
+  }' | jq .
+
+# 5) Post the issue (creates one movement_type='issue' with negative deltas)
+curl -s -X POST http://localhost:3000/work-orders/<WORK_ORDER_ID>/issues/<ISSUE_ID>/post | jq .
+
+# 6) Create a completion draft (toLocationId is where finished goods land)
+psql "$DATABASE_URL" -c "INSERT INTO locations (id, code, name, type, active, created_at, updated_at) VALUES ('<FG_LOC_ID>', 'FG-BIN-1', 'Finished Goods Bin', 'bin', true, now(), now());"
+curl -s -X POST http://localhost:3000/work-orders/<WORK_ORDER_ID>/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "occurredAt": "2024-02-20T12:00:00Z",
+    "notes": "Produced finished goods",
+    "lines": [
+      {"outputItemId": "<FINISHED_ITEM_ID>", "toLocationId": "<FG_LOC_ID>", "uom": "kg", "quantityCompleted": 100}
+    ]
+  }' | jq .
+
+# 7) Post the completion (creates one movement_type='receive' with positive deltas and updates WO quantity_completed)
+curl -s -X POST http://localhost:3000/work-orders/<WORK_ORDER_ID>/completions/<COMPLETION_ID>/post | jq .
+
+# 8) Verify inventory deltas
+psql "$DATABASE_URL" -c "
+SELECT item_id, location_id, uom, SUM(quantity_delta) AS on_hand
+FROM inventory_movement_lines
+WHERE (item_id, location_id) IN (('<COMPONENT_ITEM_ID>', '<COMPONENT_LOC_ID>'), ('<FINISHED_ITEM_ID>', '<FG_LOC_ID>'))
+GROUP BY item_id, location_id, uom;
+"
+
+# 9) Execution summary
+curl -s http://localhost:3000/work-orders/<WORK_ORDER_ID>/execution | jq .
+```

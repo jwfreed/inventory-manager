@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "migrate": "npm run migrate:up",
-    "migrate:up": "NODE_PG_MIGRATE_TS_NODE=true node-pg-migrate up --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
-    "migrate:down": "NODE_PG_MIGRATE_TS_NODE=true node-pg-migrate down --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
+    "migrate:up": "NODE_PG_MIGRATE_TS_NODE=true TS_NODE_TRANSPILE_ONLY=true node -r ts-node/register ./node_modules/.bin/node-pg-migrate up --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
+    "migrate:down": "NODE_PG_MIGRATE_TS_NODE=true TS_NODE_TRANSPILE_ONLY=true node -r ts-node/register ./node_modules/.bin/node-pg-migrate down --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
     "dev": "ts-node --transpile-only src/server.ts",
     "start": "node dist/server.js"
   },
