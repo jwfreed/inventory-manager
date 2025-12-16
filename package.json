@@ -6,10 +6,11 @@
     "migrate": "npm run migrate:up",
     "migrate:up": "NODE_PG_MIGRATE_TS_NODE=true TS_NODE_TRANSPILE_ONLY=true node -r ts-node/register ./node_modules/.bin/node-pg-migrate up --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
     "migrate:down": "NODE_PG_MIGRATE_TS_NODE=true TS_NODE_TRANSPILE_ONLY=true node -r ts-node/register ./node_modules/.bin/node-pg-migrate down --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
-    "dev": "ts-node --transpile-only src/server.ts",
+    "dev": "ts-node --transpile-only -r dotenv/config src/server.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "dotenv": "^17.2.3",
     "express": "^4.19.2",
     "node-pg-migrate": "^7.6.0",
     "pg": "^8.11.5",

@@ -21,6 +21,8 @@ Ledger authority remains solely in `inventory_movements` + `inventory_movement_l
 - PostgreSQL instance you can connect to
 - `DATABASE_URL` environment variable pointing at the target database (e.g., `postgres://user:pass@localhost:5432/inventory_manager`)
 
+You can copy `.env.example` to `.env` to set `DATABASE_URL` (and optionally `PORT`). The dev script loads `.env` automatically.
+
 Install dependencies once:
 
 ```bash
