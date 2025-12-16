@@ -37,6 +37,23 @@ export async function getItem(id: string) {
   return mapItem(res.rows[0]);
 }
 
+export async function updateItem(id: string, data: ItemInput) {
+  const now = new Date();
+  const res = await query(
+    `UPDATE items
+       SET sku = $1,
+           name = $2,
+           description = $3,
+           active = $4,
+           updated_at = $5
+     WHERE id = $6
+     RETURNING *`,
+    [data.sku, data.name, data.description ?? null, data.active ?? true, now, id]
+  );
+  if (res.rowCount === 0) return null;
+  return mapItem(res.rows[0]);
+}
+
 export async function listItems(filters: { active?: boolean; search?: string; limit: number; offset: number }) {
   const conditions: string[] = [];
   const params: any[] = [];
@@ -96,6 +113,27 @@ export async function getLocation(id: string) {
   const res = await query('SELECT * FROM locations WHERE id = $1', [id]);
   if (res.rowCount === 0) return null;
   return mapLocation(res.rows[0]);
+}
+
+export async function updateLocation(id: string, data: LocationInput) {
+  const now = new Date();
+  const active = data.active ?? true;
+  return withTransaction(async (client) => {
+    const res = await client.query(
+      `UPDATE locations
+         SET code = $1,
+             name = $2,
+             type = $3,
+             active = $4,
+             parent_location_id = $5,
+             updated_at = $6
+       WHERE id = $7
+       RETURNING *`,
+      [data.code, data.name, data.type, active, data.parentLocationId ?? null, now, id]
+    );
+    if (res.rowCount === 0) return null;
+    return mapLocation(res.rows[0]);
+  });
 }
 
 export async function listLocations(filters: {

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getItem, getItemInventorySummary } from '../../../api/endpoints/items'
@@ -12,10 +12,12 @@ import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { formatDate, formatNumber } from '../../../lib/formatters'
+import { ItemForm } from '../components/ItemForm'
 
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [showEdit, setShowEdit] = useState(false)
 
   const itemQuery = useQuery({
     queryKey: ['item', id],
@@ -90,6 +92,25 @@ export default function ItemDetailPage() {
             </div>
           </div>
         </Card>
+      )}
+
+      {itemQuery.data && (
+        <Section title="Edit item">
+          <div className="flex justify-end pb-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowEdit((v) => !v)}>
+              {showEdit ? 'Hide form' : 'Edit item'}
+            </Button>
+          </div>
+          {showEdit && (
+            <ItemForm
+              initialItem={itemQuery.data}
+              onSuccess={() => {
+                setShowEdit(false)
+                void itemQuery.refetch()
+              }}
+            />
+          )}
+        </Section>
       )}
 
       <Section title="Inventory by location">

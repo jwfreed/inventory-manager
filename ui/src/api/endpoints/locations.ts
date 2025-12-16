@@ -1,5 +1,13 @@
-import { apiGet } from '../http'
+import { apiGet, apiPost, apiPut } from '../http'
 import type { Location, LocationInventoryRow } from '../types'
+
+export type LocationPayload = {
+  code: string
+  name: string
+  type: string
+  active?: boolean
+  parentLocationId?: string | null
+}
 
 export type ListLocationsParams = {
   type?: string
@@ -49,4 +57,14 @@ export async function getLocationInventorySummary(id: string): Promise<LocationI
   )
   if (Array.isArray(response)) return response
   return response.data ?? []
+}
+
+export async function createLocation(payload: LocationPayload): Promise<Location> {
+  const location = await apiPost<Location>('/locations', payload)
+  return mapLocation(location)
+}
+
+export async function updateLocation(id: string, payload: LocationPayload): Promise<Location> {
+  const location = await apiPut<Location>(`/locations/${id}`, payload)
+  return mapLocation(location)
 }

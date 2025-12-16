@@ -8,7 +8,9 @@ import {
   getItem,
   getLocation,
   listItems,
-  listLocations
+  listLocations,
+  updateItem,
+  updateLocation
 } from '../services/masterData.service';
 
 const router = Router();
@@ -61,6 +63,31 @@ router.get('/items/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to fetch item.' });
+  }
+});
+
+router.put('/items/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid item id.' });
+  }
+  const parsed = itemSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const item = await updateItem(id, parsed.data);
+    if (!item) return res.status(404).json({ error: 'Item not found.' });
+    return res.json(item);
+  } catch (error) {
+    const mapped = mapPgErrorToHttp(error, {
+      unique: () => ({ status: 409, body: { error: 'SKU must be unique.' } })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update item.' });
   }
 });
 
@@ -117,6 +144,36 @@ router.get('/locations/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to fetch location.' });
+  }
+});
+
+router.put('/locations/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid location id.' });
+  }
+  const parsed = locationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  if (parsed.data.parentLocationId && parsed.data.parentLocationId === id) {
+    return res.status(400).json({ error: 'parentLocationId cannot reference itself.' });
+  }
+  try {
+    const location = await updateLocation(id, parsed.data);
+    if (!location) return res.status(404).json({ error: 'Location not found.' });
+    return res.json(location);
+  } catch (error) {
+    const mapped = mapPgErrorToHttp(error, {
+      unique: () => ({ status: 409, body: { error: 'Location code must be unique.' } }),
+      foreignKey: () => ({ status: 400, body: { error: 'Parent location must exist.' } }),
+      check: () => ({ status: 400, body: { error: 'Invalid location type or hierarchy.' } })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update location.' });
   }
 });
 

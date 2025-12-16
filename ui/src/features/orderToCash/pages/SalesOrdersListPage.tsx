@@ -44,8 +44,13 @@ export default function SalesOrdersListPage() {
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Order to Cash</p>
         <h2 className="text-2xl font-semibold text-slate-900">Sales Orders</h2>
         <p className="max-w-3xl text-sm text-slate-600">
-          Read-only browsing. Documents do not change inventory unless linked to posted movements.
+          Create and browse orders. Documents do not change inventory unless linked to posted movements.
         </p>
+        <div>
+          <Button size="sm" onClick={() => navigate('/sales-orders/new')}>
+            New sales order
+          </Button>
+        </div>
       </div>
 
       <Section title="Filters">

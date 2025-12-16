@@ -13,6 +13,7 @@ import LocationsListPage from '../features/locations/pages/LocationsListPage'
 import LocationDetailPage from '../features/locations/pages/LocationDetailPage'
 import SalesOrdersListPage from '../features/orderToCash/pages/SalesOrdersListPage'
 import SalesOrderDetailPage from '../features/orderToCash/pages/SalesOrderDetailPage'
+import SalesOrderCreatePage from '../features/orderToCash/pages/SalesOrderCreatePage'
 import ReservationsListPage from '../features/orderToCash/pages/ReservationsListPage'
 import ReservationDetailPage from '../features/orderToCash/pages/ReservationDetailPage'
 import ShipmentsListPage from '../features/orderToCash/pages/ShipmentsListPage'
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
       { path: 'locations', element: <LocationsListPage /> },
       { path: 'locations/:id', element: <LocationDetailPage /> },
       { path: 'sales-orders', element: <SalesOrdersListPage /> },
+      { path: 'sales-orders/new', element: <SalesOrderCreatePage /> },
       { path: 'sales-orders/:id', element: <SalesOrderDetailPage /> },
       { path: 'reservations', element: <ReservationsListPage /> },
       { path: 'reservations/:id', element: <ReservationDetailPage /> },

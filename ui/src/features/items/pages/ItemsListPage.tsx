@@ -11,6 +11,7 @@ import { EmptyState } from '../../../components/EmptyState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { formatDate } from '../../../lib/formatters'
+import { ItemForm } from '../components/ItemForm'
 
 const activeOptions = [
   { label: 'All', value: '' },
@@ -22,6 +23,7 @@ export default function ItemsListPage() {
   const navigate = useNavigate()
   const [active, setActive] = useState('')
   const [search, setSearch] = useState('')
+  const [showCreate, setShowCreate] = useState(false)
 
   const { data, isLoading, isError, error, refetch } = useQuery<{ data: Item[] }, ApiError>({
     queryKey: ['items', active],
@@ -48,9 +50,26 @@ export default function ItemsListPage() {
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Master data</p>
         <h2 className="text-2xl font-semibold text-slate-900">Items</h2>
         <p className="max-w-3xl text-sm text-slate-600">
-          Browse items. Use API or scripts to create/update items; this UI is read-only.
+          Browse items or add new ones. Use the form below or click a row to view details and edit.
         </p>
       </div>
+
+      <Section title="Create item">
+        <div className="flex justify-end pb-2">
+          <Button variant="secondary" size="sm" onClick={() => setShowCreate((v) => !v)}>
+            {showCreate ? 'Hide form' : 'New item'}
+          </Button>
+        </div>
+        {showCreate && (
+          <ItemForm
+            onSuccess={(item) => {
+              setShowCreate(false)
+              void refetch()
+              navigate(`/items/${item.id}`)
+            }}
+          />
+        )}
+      </Section>
 
       <Section title="Filters">
         <div className="flex flex-wrap items-center gap-3">

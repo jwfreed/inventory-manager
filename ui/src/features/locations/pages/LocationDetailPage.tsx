@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getLocation, getLocationInventorySummary } from '../../../api/endpoints/locations'
@@ -12,10 +12,12 @@ import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { formatDate, formatNumber } from '../../../lib/formatters'
+import { LocationForm } from '../components/LocationForm'
 
 export default function LocationDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [showEdit, setShowEdit] = useState(false)
 
   const locationQuery = useQuery({
     queryKey: ['location', id],
@@ -91,6 +93,25 @@ export default function LocationDetailPage() {
             </div>
           </div>
         </Card>
+      )}
+
+      {locationQuery.data && (
+        <Section title="Edit location">
+          <div className="flex justify-end pb-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowEdit((v) => !v)}>
+              {showEdit ? 'Hide form' : 'Edit location'}
+            </Button>
+          </div>
+          {showEdit && (
+            <LocationForm
+              initialLocation={locationQuery.data}
+              onSuccess={() => {
+                setShowEdit(false)
+                void locationQuery.refetch()
+              }}
+            />
+          )}
+        </Section>
       )}
 
       <Section title="Inventory snapshot">

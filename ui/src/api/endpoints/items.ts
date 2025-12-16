@@ -1,5 +1,12 @@
-import { apiGet } from '../http'
+import { apiGet, apiPost, apiPut } from '../http'
 import type { Item, ItemInventoryRow } from '../types'
+
+export type ItemPayload = {
+  sku: string
+  name: string
+  description?: string
+  active?: boolean
+}
 
 export type ListItemsParams = {
   active?: boolean
@@ -44,4 +51,14 @@ export async function getItemInventorySummary(id: string): Promise<ItemInventory
   )
   if (Array.isArray(response)) return response
   return response.data ?? []
+}
+
+export async function createItem(payload: ItemPayload): Promise<Item> {
+  const item = await apiPost<Item>('/items', payload)
+  return mapItem(item)
+}
+
+export async function updateItem(id: string, payload: ItemPayload): Promise<Item> {
+  const item = await apiPut<Item>(`/items/${id}`, payload)
+  return mapItem(item)
 }

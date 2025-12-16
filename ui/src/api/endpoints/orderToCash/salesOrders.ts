@@ -1,5 +1,5 @@
-import { apiGet } from '../../http'
-import type { SalesOrder } from '../../types'
+import { apiGet, apiPost } from '../../http'
+import type { SalesOrder, SalesOrderLine } from '../../types'
 import { ORDER_TO_CASH_ENDPOINTS } from './config'
 
 export type SalesOrderListParams = {
@@ -50,4 +50,36 @@ export async function listSalesOrders(
 
 export async function getSalesOrder(id: string): Promise<SalesOrder> {
   return await apiGet<SalesOrder>(`${ORDER_TO_CASH_ENDPOINTS.salesOrders}/${id}`)
+}
+
+export type SalesOrderPayload = {
+  soNumber: string
+  customerId: string
+  status?: SalesOrder['status']
+  orderDate?: string
+  requestedShipDate?: string
+  shipFromLocationId?: string
+  customerReference?: string
+  notes?: string
+  lines: {
+    lineNumber?: number
+    itemId: string
+    uom: string
+    quantityOrdered: number
+    notes?: string
+  }[]
+}
+
+export async function createSalesOrder(payload: SalesOrderPayload): Promise<SalesOrder> {
+  const order = await apiPost<SalesOrder>(ORDER_TO_CASH_ENDPOINTS.salesOrders, payload)
+  return {
+    ...order,
+    lines: (order.lines ?? []).map((line: SalesOrderLine) => ({
+      ...line,
+      lineNumber: line.lineNumber ?? line.line_number,
+      itemId: line.itemId ?? line.item_id,
+      uom: line.uom ?? line.uom,
+      quantityOrdered: line.quantityOrdered ?? line.quantity_ordered,
+    })),
+  }
 }

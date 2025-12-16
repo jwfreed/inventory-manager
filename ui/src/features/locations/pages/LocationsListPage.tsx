@@ -10,6 +10,7 @@ import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
+import { LocationForm } from '../components/LocationForm'
 
 const activeOptions = [
   { label: 'All', value: '' },
@@ -24,6 +25,7 @@ export default function LocationsListPage() {
   const [active, setActive] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [search, setSearch] = useState('')
+  const [showCreate, setShowCreate] = useState(false)
 
   const { data, isLoading, isError, error, refetch } = useQuery<{ data: Location[] }, ApiError>({
     queryKey: ['locations', active, typeFilter],
@@ -51,9 +53,26 @@ export default function LocationsListPage() {
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Master data</p>
         <h2 className="text-2xl font-semibold text-slate-900">Locations</h2>
         <p className="max-w-3xl text-sm text-slate-600">
-          Browse locations. Use API or scripts to create/update locations; this UI is read-only.
+          Browse locations or add new storage/demand points. Use the form below or click a row to view details and edit.
         </p>
       </div>
+
+      <Section title="Create location">
+        <div className="flex justify-end pb-2">
+          <Button variant="secondary" size="sm" onClick={() => setShowCreate((v) => !v)}>
+            {showCreate ? 'Hide form' : 'New location'}
+          </Button>
+        </div>
+        {showCreate && (
+          <LocationForm
+            onSuccess={(location) => {
+              setShowCreate(false)
+              void refetch()
+              navigate(`/locations/${location.id}`)
+            }}
+          />
+        )}
+      </Section>
 
       <Section title="Filters">
         <div className="flex flex-wrap items-center gap-3">
