@@ -67,21 +67,14 @@ export default function WorkOrderCreatePage() {
     [bomsQuery.data, selectedBomId],
   )
 
-  const normalizeInputDate = (value: string) => {
-    if (!value) return ''
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      return `${value}T00:00`
-    }
-    return value
-  }
-
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!workOrderNumber || !selectedBomId || !outputItemId || !outputUom || quantityPlanned === '') {
       return
     }
-    const start = normalizeInputDate(scheduledStartAt)
-    const due = normalizeInputDate(scheduledDueAt)
+    const toDateTime = (value: string) => (value ? `${value}T00:00:00` : undefined)
+    const start = toDateTime(scheduledStartAt)
+    const due = toDateTime(scheduledDueAt)
 
     mutation.mutate({
       workOrderNumber,
@@ -181,18 +174,18 @@ export default function WorkOrderCreatePage() {
               <label className="space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">Scheduled start</span>
                 <Input
-                  type="datetime-local"
+                  type="date"
                   value={scheduledStartAt}
-                  onChange={(e) => setScheduledStartAt(normalizeInputDate(e.target.value))}
+                  onChange={(e) => setScheduledStartAt(e.target.value)}
                   disabled={mutation.isPending}
                 />
               </label>
               <label className="space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">Scheduled due</span>
                 <Input
-                  type="datetime-local"
+                  type="date"
                   value={scheduledDueAt}
-                  onChange={(e) => setScheduledDueAt(normalizeInputDate(e.target.value))}
+                  onChange={(e) => setScheduledDueAt(e.target.value)}
                   disabled={mutation.isPending}
                 />
               </label>
