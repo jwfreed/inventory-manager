@@ -17,6 +17,19 @@ import type { ApiError, Item, Location, WorkOrder } from '../../../api/types'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
 
+const formatError = (err: unknown): string => {
+  if (!err) return ''
+  if (typeof err === 'string') return err
+  if (typeof err === 'object' && 'message' in (err as { message?: unknown }) && typeof (err as { message?: unknown }).message === 'string') {
+    return (err as { message: string }).message
+  }
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return 'Unknown error'
+  }
+}
+
 type ConsumeLine = {
   componentItemId: string
   fromLocationId: string
@@ -140,8 +153,10 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
       void onRefetch()
     },
     onError: (err: ApiError | unknown) => {
-      const message = (err as ApiError)?.message ?? 'Failed to record batch.'
-      setWarning(message)
+      const apiErr = err as ApiError
+      const detail = typeof apiErr?.details === 'object' ? JSON.stringify(apiErr.details) : ''
+      const message = apiErr?.message ?? 'Failed to record batch.'
+      setWarning(detail ? `${message}: ${detail}` : message)
     },
   })
 
@@ -245,7 +260,11 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
       )}
       {warning && <Alert variant="warning" title="Fix validation" message={warning} />}
       {recordBatchMutation.isError && (
-        <Alert variant="error" title="Failed to record batch" message={(recordBatchMutation.error as ApiError)?.message} />
+        <Alert
+          variant="error"
+          title="Failed to record batch"
+          message={formatError(recordBatchMutation.error as ApiError)}
+        />
       )}
       {successId && (
         <Alert
