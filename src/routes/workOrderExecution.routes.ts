@@ -252,7 +252,7 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
       return res.status(mapped.status).json(mapped.body);
     }
     console.error(error);
-    return res.status(500).json({ error: 'Failed to record batch.' });
+    return res.status(500).json({ error: 'Failed to record batch.', details: error?.message ?? error });
   }
 });
 

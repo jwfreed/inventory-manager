@@ -154,7 +154,12 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
     },
     onError: (err: ApiError | unknown) => {
       const apiErr = err as ApiError
-      const detail = typeof apiErr?.details === 'object' ? JSON.stringify(apiErr.details) : ''
+      const detail =
+        typeof apiErr?.details === 'object'
+          ? JSON.stringify(apiErr.details)
+          : typeof apiErr?.details === 'string'
+            ? apiErr.details
+            : ''
       const message = apiErr?.message ?? 'Failed to record batch.'
       setWarning(detail ? `${message}: ${detail}` : message)
     },
