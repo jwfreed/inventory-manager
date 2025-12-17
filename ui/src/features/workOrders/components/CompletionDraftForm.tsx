@@ -17,6 +17,7 @@ import { formatNumber } from '../../../lib/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
 import { listLocations } from '../../../api/endpoints/locations'
 import { SearchableSelect } from '../../../components/SearchableSelect'
+import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
 
 type Line = {
   outputItemId: string
@@ -32,11 +33,18 @@ type Props = {
 }
 
 export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
+  const defaults = getWorkOrderDefaults(workOrder.id)
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [locationSearch, setLocationSearch] = useState('')
+  const [defaultToLocationId, setDefaultToLocationId] = useState<string>(defaults.produceLocationId ?? '')
   const [lines, setLines] = useState<Line[]>([
-    { outputItemId: workOrder.outputItemId, toLocationId: '', uom: workOrder.outputUom, quantityCompleted: '' },
+    {
+      outputItemId: workOrder.outputItemId,
+      toLocationId: defaultToLocationId,
+      uom: workOrder.outputUom,
+      quantityCompleted: '',
+    },
   ])
   const [createdCompletion, setCreatedCompletion] = useState<WorkOrderCompletion | null>(null)
   const [showPostConfirm, setShowPostConfirm] = useState(false)
@@ -78,7 +86,15 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
   )
 
   const addLine = () =>
-    setLines((prev) => [...prev, { outputItemId: workOrder.outputItemId, toLocationId: '', uom: workOrder.outputUom, quantityCompleted: '' }])
+    setLines((prev) => [
+      ...prev,
+      {
+        outputItemId: workOrder.outputItemId,
+        toLocationId: defaultToLocationId,
+        uom: workOrder.outputUom,
+        quantityCompleted: '',
+      },
+    ])
 
   const updateLine = (index: number, patch: Partial<Line>) => {
     setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)))
@@ -86,6 +102,14 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
 
   const removeLine = (index: number) => {
     setLines((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const onSelectDefaultToLocation = (locId: string) => {
+    setDefaultToLocationId(locId)
+    setWorkOrderDefaults(workOrder.id, { produceLocationId: locId })
+    setLines((prev) =>
+      prev.map((line) => ({ ...line, toLocationId: line.toLocationId || locId })),
+    )
   }
 
   const validate = (): string | null => {
@@ -197,6 +221,17 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
               placeholder="Search locations (code/name)"
             />
           </label>
+          <div className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Default production location</span>
+            <SearchableSelect
+              label="Default production location"
+              hideLabel
+              value={defaultToLocationId}
+              options={locationOptions}
+              disabled={locationsQuery.isLoading}
+              onChange={onSelectDefaultToLocation}
+            />
+          </div>
         </div>
         {lines.map((line, idx) => (
           <div

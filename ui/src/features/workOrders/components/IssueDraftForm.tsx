@@ -7,6 +7,7 @@ import { Input, Textarea } from '../../../components/Inputs'
 import { LoadingSpinner } from '../../../components/Loading'
 import {
   createWorkOrderIssue,
+  getWorkOrderRequirements,
   postWorkOrderIssue,
   type IssueDraftPayload,
 } from '../../../api/endpoints/workOrders'
@@ -18,6 +19,7 @@ import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '../../../lib/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
 import { SearchableSelect } from '../../../components/SearchableSelect'
+import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
 
 type Line = {
   componentItemId: string
@@ -33,12 +35,14 @@ type Props = {
 }
 
 export function IssueDraftForm({ workOrder, onRefetch }: Props) {
+  const defaults = getWorkOrderDefaults(workOrder.id)
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [itemSearch, setItemSearch] = useState('')
   const [locationSearch, setLocationSearch] = useState('')
+  const [defaultFromLocationId, setDefaultFromLocationId] = useState<string>(defaults.consumeLocationId ?? '')
   const [lines, setLines] = useState<Line[]>([
-    { componentItemId: '', fromLocationId: '', uom: workOrder.outputUom, quantityIssued: '' },
+    { componentItemId: '', fromLocationId: defaultFromLocationId, uom: workOrder.outputUom, quantityIssued: '' },
   ])
   const [createdIssue, setCreatedIssue] = useState<WorkOrderIssue | null>(null)
   const [showPostConfirm, setShowPostConfirm] = useState(false)
@@ -59,6 +63,26 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
       setCreatedIssue(issue)
       setShowPostConfirm(false)
       void onRefetch()
+    },
+  })
+
+  const requirementsMutation = useMutation({
+    mutationFn: () => getWorkOrderRequirements(workOrder.id),
+    onSuccess: (req) => {
+      const nextLines: Line[] = req.lines
+        .sort((a, b) => a.lineNumber - b.lineNumber)
+        .map((line) => ({
+          componentItemId: line.componentItemId,
+          fromLocationId: defaultFromLocationId,
+          uom: line.uom,
+          quantityIssued: line.quantityRequired,
+        }))
+      setLines(nextLines.length > 0 ? nextLines : [{ componentItemId: '', fromLocationId: defaultFromLocationId, uom: workOrder.outputUom, quantityIssued: '' }])
+      setWarning(null)
+    },
+    onError: (err: ApiError | unknown) => {
+      const message = (err as ApiError)?.message ?? 'Failed to load requirements.'
+      setWarning(message)
     },
   })
 
@@ -97,7 +121,10 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
   )
 
   const addLine = () =>
-    setLines((prev) => [...prev, { componentItemId: '', fromLocationId: '', uom: workOrder.outputUom, quantityIssued: '' }])
+    setLines((prev) => [
+      ...prev,
+      { componentItemId: '', fromLocationId: defaultFromLocationId, uom: workOrder.outputUom, quantityIssued: '' },
+    ])
 
   const updateLine = (index: number, patch: Partial<Line>) => {
     setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)))
@@ -105,6 +132,14 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
 
   const removeLine = (index: number) => {
     setLines((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const onSelectDefaultFromLocation = (locId: string) => {
+    setDefaultFromLocationId(locId)
+    setWorkOrderDefaults(workOrder.id, { consumeLocationId: locId })
+    setLines((prev) =>
+      prev.map((line) => ({ ...line, fromLocationId: line.fromLocationId || locId })),
+    )
   }
 
   const validate = (): string | null => {
@@ -199,9 +234,14 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
       <div className="mt-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold text-slate-800">Lines</div>
-          <Button variant="secondary" size="sm" onClick={addLine}>
-            Add line
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => requirementsMutation.mutate()}>
+              {requirementsMutation.isPending ? 'Loading…' : 'Load from BOM'}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={addLine}>
+              Add line
+            </Button>
+          </div>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1 text-sm">
@@ -220,6 +260,17 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
               placeholder="Search locations (code/name)"
             />
           </label>
+          <div className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Default consume location</span>
+            <SearchableSelect
+              label="Default consume location"
+              hideLabel
+              value={defaultFromLocationId}
+              options={locationOptions}
+              disabled={locationsQuery.isLoading}
+              onChange={onSelectDefaultFromLocation}
+            />
+          </div>
         </div>
         {lines.map((line, idx) => (
           <div

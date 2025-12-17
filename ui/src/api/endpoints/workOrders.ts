@@ -5,6 +5,7 @@ import type {
   WorkOrderExecutionSummary,
   WorkOrderIssue,
   WorkOrderCompletion,
+  WorkOrderRequirements,
 } from '../types'
 
 export type WorkOrderListParams = {
@@ -32,6 +33,14 @@ export async function getWorkOrder(id: string): Promise<WorkOrder> {
 
 export async function getWorkOrderExecution(id: string): Promise<WorkOrderExecutionSummary> {
   return apiGet<WorkOrderExecutionSummary>(`/work-orders/${id}/execution`)
+}
+
+export async function getWorkOrderRequirements(
+  id: string,
+  quantity?: number,
+): Promise<WorkOrderRequirements> {
+  const params = quantity ? { quantity } : undefined
+  return apiGet<WorkOrderRequirements>(`/work-orders/${id}/requirements`, { params })
 }
 
 export type WorkOrderCreatePayload = {

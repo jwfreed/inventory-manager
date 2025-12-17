@@ -59,6 +59,24 @@ export type WorkOrderListResponse = {
   paging?: { limit: number; offset: number }
 }
 
+export type WorkOrderRequirementLine = {
+  lineNumber: number
+  componentItemId: string
+  uom: string
+  quantityRequired: number
+  scrapFactor: number | null
+}
+
+export type WorkOrderRequirements = {
+  workOrderId: string
+  outputItemId: string
+  bomId: string
+  bomVersionId: string
+  quantityRequested: number
+  requestedUom: string
+  lines: WorkOrderRequirementLine[]
+}
+
 export type BomVersionComponent = {
   id: string
   bomVersionId: string
