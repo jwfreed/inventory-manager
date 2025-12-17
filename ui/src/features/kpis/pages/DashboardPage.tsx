@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { getFulfillmentFillRate, listKpiRuns, listKpiSnapshots } from '../../../api/endpoints/kpis'
+import { listReplenishmentRecommendations } from '../../../api/endpoints/planning'
 import { listWorkOrders } from '../../../api/endpoints/workOrders'
 import type { ApiError } from '../../../api/types'
 import { Card } from '../../../components/Card'
@@ -12,6 +13,7 @@ import { KpiCardGrid } from '../components/KpiCardGrid'
 import { SnapshotsTable } from '../components/SnapshotsTable'
 import { formatDateTime } from '../utils'
 import { formatNumber } from '../../../lib/formatters'
+import { Alert } from '../../../components/Alert'
 
 type SnapshotQueryResult = Awaited<ReturnType<typeof listKpiSnapshots>>
 type RunQueryResult = Awaited<ReturnType<typeof listKpiRuns>>
@@ -72,6 +74,12 @@ export default function DashboardPage() {
   const fillRateQuery = useQuery({
     queryKey: ['fulfillment-fill-rate'],
     queryFn: () => getFulfillmentFillRate({}),
+    staleTime: 30_000,
+  })
+
+  const recommendationsQuery = useQuery({
+    queryKey: ['replenishment-recommendations'],
+    queryFn: () => listReplenishmentRecommendations({ limit: 10 }),
     staleTime: 30_000,
   })
 
@@ -217,6 +225,57 @@ export default function DashboardPage() {
       >
         <Card>
           {fillRateCard}
+        </Card>
+      </Section>
+
+      <Section
+        title="Replenishment attention"
+        description="Based on inventory position and active policies. Focus on items that need ordering."
+      >
+        <Card>
+          {recommendationsQuery.isLoading && <LoadingSpinner label="Loading recommendations..." />}
+          {recommendationsQuery.isError && recommendationsQuery.error && (
+            <ErrorState error={recommendationsQuery.error as ApiError} onRetry={() => void recommendationsQuery.refetch()} />
+          )}
+          {!recommendationsQuery.isLoading &&
+            !recommendationsQuery.isError &&
+            (recommendationsQuery.data?.data || []).filter((r) => r.recommendation.reorderNeeded).length === 0 && (
+              <Alert
+                variant="success"
+                title="No immediate reorders"
+                message="No policies currently flag a reorder based on inventory position."
+              />
+            )}
+          {!recommendationsQuery.isLoading && !recommendationsQuery.isError && recommendationsQuery.data?.data && (
+            <div className="divide-y divide-slate-200">
+              {recommendationsQuery.data.data
+                .filter((r) => r.recommendation.reorderNeeded)
+                .slice(0, 5)
+                .map((rec) => (
+                  <div key={rec.policyId} className="flex items-start justify-between gap-3 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {rec.itemId} @ {rec.locationId} — order {formatNumber(rec.recommendation.recommendedOrderQty)}{' '}
+                        {rec.uom}
+                      </p>
+                      <p className="text-xs text-slate-600">
+                        Inventory position {formatNumber(rec.inventory.inventoryPosition)} vs target{' '}
+                        {rec.policyType === 'q_rop'
+                          ? formatNumber(rec.inputs.reorderPointQty ?? 0)
+                          : formatNumber(rec.inputs.orderUpToLevelQty ?? 0)}
+                      </p>
+                      {rec.assumptions.length > 0 && (
+                        <p className="text-xs text-slate-500">Assumptions: {rec.assumptions.join('; ')}</p>
+                      )}
+                    </div>
+                    <div className="text-right text-xs text-slate-500">
+                      <div>Available: {formatNumber(rec.inventory.available)} {rec.uom}</div>
+                      <div>On order: {formatNumber(rec.inventory.onOrder)} {rec.uom}</div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
         </Card>
       </Section>
 

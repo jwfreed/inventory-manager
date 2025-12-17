@@ -131,7 +131,7 @@ export default function ReceivingPage() {
 
       <Section
         title="Record a receipt"
-        description="Capture what arrived from a purchase order. Use the PO line IDs and matching units."
+        description="Capture what arrived from a purchase order. Incoming counts toward On order / In transit until put away."
       >
         <Card>
           <form className="space-y-4" onSubmit={onCreateReceipt}>

@@ -78,7 +78,8 @@ export default function SalesOrderDetailPage() {
                   Customer: {query.data.customerId || '—'}
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  Documents do not affect on-hand until corresponding inventory movements post.
+                  Promising should use <span className="font-semibold text-slate-700">Available</span> (on hand minus reserved),
+                  not raw on-hand. Shipments affect on-hand only when posted.
                 </div>
               </div>
             </div>

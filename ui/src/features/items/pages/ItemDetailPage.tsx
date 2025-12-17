@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getItem, getItemInventorySummary } from '../../../api/endpoints/items'
+import { getItem } from '../../../api/endpoints/items'
+import { listLocations } from '../../../api/endpoints/locations'
+import { getInventorySnapshot } from '../../../api/endpoints/inventorySnapshot'
 import { listBomsByItem } from '../../../api/endpoints/boms'
 import type { ApiError } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
@@ -22,6 +24,7 @@ export default function ItemDetailPage() {
   const navigate = useNavigate()
   const [showEdit, setShowEdit] = useState(false)
   const [showBomForm, setShowBomForm] = useState(false)
+  const [selectedLocationId, setSelectedLocationId] = useState('')
 
   const itemQuery = useQuery({
     queryKey: ['item', id],
@@ -30,11 +33,17 @@ export default function ItemDetailPage() {
     retry: (count, err: ApiError) => err?.status !== 404 && count < 1,
   })
 
-  const inventoryQuery = useQuery({
-    queryKey: ['item-inventory', id],
-    queryFn: () => getItemInventorySummary(id as string),
-    enabled: !!id,
-    retry: 0,
+  const locationsQuery = useQuery({
+    queryKey: ['locations', 'active'],
+    queryFn: () => listLocations({ active: true, limit: 100 }),
+    staleTime: 60_000,
+  })
+
+  const snapshotQuery = useQuery({
+    queryKey: ['inventory-snapshot', id, selectedLocationId],
+    queryFn: () => getInventorySnapshot({ itemId: id as string, locationId: selectedLocationId }),
+    enabled: !!id && !!selectedLocationId,
+    staleTime: 30_000,
   })
 
   const bomsQuery = useQuery({
@@ -124,57 +133,87 @@ export default function ItemDetailPage() {
         </Section>
       )}
 
-      <Section title="Inventory by location">
-        {inventoryQuery.isLoading && <LoadingSpinner label="Loading inventory..." />}
-        {inventoryQuery.isError && (
+      <Section
+        title="Inventory snapshot"
+        description="See what you can ship right now. Available = On hand - Already promised. Inventory position includes incoming."
+      >
+        <div className="flex flex-col gap-2 pb-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-slate-700">
+            Choose a location to see on-hand, reserved, available, incoming, and inventory position.
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs uppercase tracking-wide text-slate-500">Location</label>
+            <select
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={selectedLocationId}
+              onChange={(e) => setSelectedLocationId(e.target.value)}
+            >
+              <option value="">Select</option>
+              {locationsQuery.data?.data.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.code || loc.name || loc.id}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {locationsQuery.isLoading && <LoadingSpinner label="Loading locations..." />}
+        {locationsQuery.isError && (
           <Alert
-            variant="info"
-            title="Inventory summary not available"
-            message="Endpoint may be missing. On-hand is derived from the movement ledger."
+            variant="error"
+            title="Locations unavailable"
+            message={(locationsQuery.error as ApiError)?.message ?? 'Could not load locations.'}
             action={
-              <Button size="sm" variant="secondary" onClick={() => void inventoryQuery.refetch()}>
+              <Button size="sm" variant="secondary" onClick={() => void locationsQuery.refetch()}>
                 Retry
               </Button>
             }
           />
         )}
-        {!inventoryQuery.isLoading && !inventoryQuery.isError && inventoryQuery.data?.length === 0 && (
+        {!selectedLocationId && !locationsQuery.isLoading && (
           <EmptyState
-            title="Inventory summary not available yet"
-            description="On-hand is derived from the movement ledger. No summary endpoint found."
+            title="Pick a location"
+            description="Choose where you want to view availability. This helps separate on-hand vs incoming per site."
           />
         )}
-        {!inventoryQuery.isLoading && !inventoryQuery.isError && inventoryQuery.data && inventoryQuery.data.length > 0 && (
-          <div className="overflow-hidden rounded-xl border border-slate-200">
-            <table className="min-w-full divide-y divide-slate-200">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Location
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    UOM
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    On hand
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 bg-white">
-                {inventoryQuery.data.map((row, idx) => (
-                  <tr key={idx}>
-                    <td className="px-4 py-3 text-sm text-slate-800">
-                      {row.locationCode || row.locationName || row.locationId}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-800">{row.uom}</td>
-                    <td className="px-4 py-3 text-right text-sm text-slate-800">
-                      {formatNumber(row.onHand)}
-                    </td>
-                  </tr>
+        {selectedLocationId && snapshotQuery.isLoading && <LoadingSpinner label="Loading inventory snapshot..." />}
+        {selectedLocationId && snapshotQuery.isError && (
+          <ErrorState error={snapshotQuery.error as ApiError} onRetry={() => void snapshotQuery.refetch()} />
+        )}
+        {selectedLocationId && !snapshotQuery.isLoading && !snapshotQuery.isError && (
+          <>
+            {snapshotQuery.data && snapshotQuery.data.length === 0 && (
+              <EmptyState
+                title="No activity yet"
+                description="No on-hand, reservations, or incoming found for this item at the selected location."
+              />
+            )}
+            {snapshotQuery.data && snapshotQuery.data.length > 0 && (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {snapshotQuery.data.map((row) => (
+                  <Card key={row.uom} className="space-y-2">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">UOM {row.uom}</div>
+                    <div className="space-y-1">
+                      <div className="text-lg font-semibold text-slate-900">
+                        {formatNumber(row.available)} {row.uom} available
+                      </div>
+                      <div className="text-sm text-slate-700">
+                        On hand: {formatNumber(row.onHand)} · Promised: {formatNumber(row.reserved)}
+                      </div>
+                      <div className="text-sm text-slate-700">
+                        Incoming: {formatNumber(row.onOrder + row.inTransit)} ({formatNumber(row.onOrder)} on order,{' '}
+                        {formatNumber(row.inTransit)} in transit)
+                      </div>
+                      <div className="text-sm font-semibold text-slate-900">
+                        Inventory position: {formatNumber(row.inventoryPosition)}{' '}
+                        <span className="text-xs text-slate-500">(on-hand + incoming - promised)</span>
+                      </div>
+                    </div>
+                  </Card>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            )}
+          </>
         )}
       </Section>
 
