@@ -269,7 +269,7 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
         status: 400,
         body: {
           error: 'Referenced items or locations do not exist.',
-          details: { items: sentItemIds, locations: sentLocationIds }
+          details: { items: sentItemIds, locations: sentLocationIds, constraint: error?.constraint, detail: error?.detail }
         }
       }),
       check: () => ({ status: 400, body: { error: 'Invalid quantities.' } })
