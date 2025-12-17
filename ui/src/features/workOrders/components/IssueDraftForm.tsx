@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -10,10 +10,14 @@ import {
   postWorkOrderIssue,
   type IssueDraftPayload,
 } from '../../../api/endpoints/workOrders'
+import { listItems } from '../../../api/endpoints/items'
+import { listLocations } from '../../../api/endpoints/locations'
 import type { ApiError, WorkOrderIssue, WorkOrder } from '../../../api/types'
+import type { Item, Location } from '../../../api/types'
 import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '../../../lib/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
+import { SearchableSelect } from '../../../components/SearchableSelect'
 
 type Line = {
   componentItemId: string
@@ -31,6 +35,8 @@ type Props = {
 export function IssueDraftForm({ workOrder, onRefetch }: Props) {
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
+  const [itemSearch, setItemSearch] = useState('')
+  const [locationSearch, setLocationSearch] = useState('')
   const [lines, setLines] = useState<Line[]>([
     { componentItemId: '', fromLocationId: '', uom: workOrder.outputUom, quantityIssued: '' },
   ])
@@ -55,6 +61,40 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
       void onRefetch()
     },
   })
+
+  const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
+    queryKey: ['items', 'wo-issue', itemSearch],
+    queryFn: () => listItems({ limit: 200, search: itemSearch || undefined }),
+    staleTime: 60_000,
+    retry: 1,
+  })
+
+  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
+    queryKey: ['locations', 'wo-issue', locationSearch],
+    queryFn: () => listLocations({ limit: 200, search: locationSearch || undefined, active: true }),
+    staleTime: 60_000,
+    retry: 1,
+  })
+
+  const itemOptions = useMemo(
+    () =>
+      (itemsQuery.data?.data ?? []).map((item) => ({
+        value: item.id,
+        label: `${item.sku} — ${item.name}`,
+        keywords: `${item.sku} ${item.name}`,
+      })),
+    [itemsQuery.data],
+  )
+
+  const locationOptions = useMemo(
+    () =>
+      (locationsQuery.data?.data ?? []).map((loc) => ({
+        value: loc.id,
+        label: `${loc.code} — ${loc.name}`,
+        keywords: `${loc.code} ${loc.name} ${loc.type}`,
+      })),
+    [locationsQuery.data],
+  )
 
   const addLine = () =>
     setLines((prev) => [...prev, { componentItemId: '', fromLocationId: '', uom: workOrder.outputUom, quantityIssued: '' }])
@@ -163,25 +203,47 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
             Add line
           </Button>
         </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Item search</span>
+            <Input
+              value={itemSearch}
+              onChange={(e) => setItemSearch(e.target.value)}
+              placeholder="Search items (SKU/name)"
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Location search</span>
+            <Input
+              value={locationSearch}
+              onChange={(e) => setLocationSearch(e.target.value)}
+              placeholder="Search locations (code/name)"
+            />
+          </label>
+        </div>
         {lines.map((line, idx) => (
           <div
             key={idx}
             className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5"
           >
-            <label className="space-y-1 text-sm">
-              <span className="text-xs uppercase tracking-wide text-slate-500">Component Item ID</span>
-              <Input
+            <div>
+              <SearchableSelect
+                label="Component item"
                 value={line.componentItemId}
-                onChange={(e) => updateLine(idx, { componentItemId: e.target.value })}
+                options={itemOptions}
+                disabled={itemsQuery.isLoading}
+                onChange={(nextValue) => updateLine(idx, { componentItemId: nextValue })}
               />
-            </label>
-            <label className="space-y-1 text-sm">
-              <span className="text-xs uppercase tracking-wide text-slate-500">From Location ID</span>
-              <Input
+            </div>
+            <div>
+              <SearchableSelect
+                label="From location"
                 value={line.fromLocationId}
-                onChange={(e) => updateLine(idx, { fromLocationId: e.target.value })}
+                options={locationOptions}
+                disabled={locationsQuery.isLoading}
+                onChange={(nextValue) => updateLine(idx, { fromLocationId: nextValue })}
               />
-            </label>
+            </div>
             <label className="space-y-1 text-sm">
               <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
               <Input value={line.uom} onChange={(e) => updateLine(idx, { uom: e.target.value })} />

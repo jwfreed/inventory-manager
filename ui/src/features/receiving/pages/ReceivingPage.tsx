@@ -1,15 +1,17 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { listPurchaseOrders, getPurchaseOrder } from '../../../api/endpoints/purchaseOrders'
 import { createReceipt, type ReceiptCreatePayload, getReceipt } from '../../../api/endpoints/receipts'
 import { createPutaway, postPutaway, type PutawayCreatePayload, getPutaway } from '../../../api/endpoints/putaways'
-import type { ApiError, PurchaseOrder, PurchaseOrderReceipt, Putaway } from '../../../api/types'
+import type { ApiError, Location, PurchaseOrder, PurchaseOrderReceipt, Putaway } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { Input } from '../../../components/Inputs'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
+import { listLocations } from '../../../api/endpoints/locations'
+import { SearchableSelect } from '../../../components/SearchableSelect'
 
 export default function ReceivingPage() {
   const [selectedPoId, setSelectedPoId] = useState('')
@@ -20,6 +22,7 @@ export default function ReceivingPage() {
   const [putawayLines, setPutawayLines] = useState<
     { purchaseOrderReceiptLineId: string; toLocationId: string; uom: string; quantity: number | '' }[]
   >([{ purchaseOrderReceiptLineId: '', toLocationId: '', uom: '', quantity: '' }])
+  const [locationSearch, setLocationSearch] = useState('')
   const [putawayId, setPutawayId] = useState('')
 
   const poListQuery = useQuery({
@@ -45,6 +48,23 @@ export default function ReceivingPage() {
     queryFn: () => getPutaway(putawayId),
     enabled: !!putawayId,
   })
+
+  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
+    queryKey: ['locations', 'receiving-putaway', locationSearch],
+    queryFn: () => listLocations({ limit: 200, search: locationSearch || undefined, active: true }),
+    staleTime: 60_000,
+    retry: 1,
+  })
+
+  const locationOptions = useMemo(
+    () =>
+      (locationsQuery.data?.data ?? []).map((loc) => ({
+        value: loc.id,
+        label: `${loc.code} — ${loc.name}`,
+        keywords: `${loc.code} ${loc.name} ${loc.type}`,
+      })),
+    [locationsQuery.data],
+  )
 
   const receiptMutation = useMutation({
     mutationFn: (payload: ReceiptCreatePayload) => createReceipt(payload),
@@ -303,6 +323,16 @@ export default function ReceivingPage() {
                   Add line
                 </Button>
               </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Location search</span>
+                  <Input
+                    value={locationSearch}
+                    onChange={(e) => setLocationSearch(e.target.value)}
+                    placeholder="Search locations (code/name)"
+                  />
+                </label>
+              </div>
               {putawayLines.map((line, idx) => (
                 <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-4">
                   <label className="space-y-1 text-sm">
@@ -313,14 +343,15 @@ export default function ReceivingPage() {
                       placeholder="Receipt line UUID"
                     />
                   </label>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">To Location ID</span>
-                    <Input
+                  <div>
+                    <SearchableSelect
+                      label="To location"
                       value={line.toLocationId}
-                      onChange={(e) => updatePutawayLine(idx, { toLocationId: e.target.value })}
-                      placeholder="Destination location"
+                      options={locationOptions}
+                      disabled={locationsQuery.isLoading}
+                      onChange={(nextValue) => updatePutawayLine(idx, { toLocationId: nextValue })}
                     />
-                  </label>
+                  </div>
                   <label className="space-y-1 text-sm">
                     <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
                     <Input value={line.uom} onChange={(e) => updatePutawayLine(idx, { uom: e.target.value })} />

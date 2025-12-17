@@ -1,11 +1,14 @@
-import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { Input, Textarea } from '../../../components/Inputs'
 import type { ApiError } from '../../../api/types'
 import { createBom, type BomCreatePayload } from '../../../api/endpoints/boms'
+import { listItems } from '../../../api/endpoints/items'
+import type { Item } from '../../../api/types'
+import { SearchableSelect } from '../../../components/SearchableSelect'
 
 type Props = {
   outputItemId: string
@@ -29,9 +32,26 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
   const [yieldQuantity, setYieldQuantity] = useState<number | ''>(1)
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [notes, setNotes] = useState('')
+  const [itemSearch, setItemSearch] = useState('')
   const [components, setComponents] = useState<ComponentDraft[]>([
     { lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '' },
   ])
+
+  const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
+    queryKey: ['items', 'bom-form', itemSearch],
+    queryFn: () => listItems({ limit: 200, search: itemSearch || undefined }),
+    staleTime: 60_000,
+    retry: 1,
+  })
+
+  const itemOptions = useMemo(() => {
+    const items = itemsQuery.data?.data ?? []
+    return items.map((item) => ({
+      value: item.id,
+      label: `${item.sku} — ${item.name}`,
+      keywords: `${item.sku} ${item.name}`,
+    }))
+  }, [itemsQuery.data])
 
   const mutation = useMutation({
     mutationFn: (payload: BomCreatePayload) => createBom(payload),
@@ -167,6 +187,22 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
             Add component
           </Button>
         </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Item search</span>
+            <Input
+              value={itemSearch}
+              onChange={(e) => setItemSearch(e.target.value)}
+              placeholder="Search items (SKU/name)"
+              disabled={mutation.isPending}
+            />
+          </label>
+          {itemsQuery.isError && (
+            <div className="flex items-end">
+              <div className="text-sm text-red-700">{itemsQuery.error.message}</div>
+            </div>
+          )}
+        </div>
         <div className="space-y-3">
           {components.map((line, idx) => (
             <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-6">
@@ -184,15 +220,16 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
                   disabled={mutation.isPending}
                 />
               </label>
-              <label className="space-y-1 text-sm md:col-span-2">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Component Item ID</span>
-                <Input
+              <div className="md:col-span-2">
+                <SearchableSelect
+                  label="Component item"
                   value={line.componentItemId}
-                  onChange={(e) => updateComponent(idx, { componentItemId: e.target.value })}
-                  placeholder="Item UUID"
-                  disabled={mutation.isPending}
+                  options={itemOptions}
+                  placeholder="Type SKU/name"
+                  disabled={mutation.isPending || itemsQuery.isLoading}
+                  onChange={(nextValue) => updateComponent(idx, { componentItemId: nextValue })}
                 />
-              </label>
+              </div>
               <label className="space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
                 <Input

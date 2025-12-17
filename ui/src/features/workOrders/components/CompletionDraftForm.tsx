@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -11,9 +11,12 @@ import {
   type CompletionDraftPayload,
 } from '../../../api/endpoints/workOrders'
 import type { ApiError, WorkOrder, WorkOrderCompletion } from '../../../api/types'
+import type { Location } from '../../../api/types'
 import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '../../../lib/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
+import { listLocations } from '../../../api/endpoints/locations'
+import { SearchableSelect } from '../../../components/SearchableSelect'
 
 type Line = {
   outputItemId: string
@@ -31,6 +34,7 @@ type Props = {
 export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
+  const [locationSearch, setLocationSearch] = useState('')
   const [lines, setLines] = useState<Line[]>([
     { outputItemId: workOrder.outputItemId, toLocationId: '', uom: workOrder.outputUom, quantityCompleted: '' },
   ])
@@ -55,6 +59,23 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
       void onRefetch()
     },
   })
+
+  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
+    queryKey: ['locations', 'wo-completion', locationSearch],
+    queryFn: () => listLocations({ limit: 200, search: locationSearch || undefined, active: true }),
+    staleTime: 60_000,
+    retry: 1,
+  })
+
+  const locationOptions = useMemo(
+    () =>
+      (locationsQuery.data?.data ?? []).map((loc) => ({
+        value: loc.id,
+        label: `${loc.code} — ${loc.name}`,
+        keywords: `${loc.code} ${loc.name} ${loc.type}`,
+      })),
+    [locationsQuery.data],
+  )
 
   const addLine = () =>
     setLines((prev) => [...prev, { outputItemId: workOrder.outputItemId, toLocationId: '', uom: workOrder.outputUom, quantityCompleted: '' }])
@@ -167,6 +188,16 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
             Add line
           </Button>
         </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Location search</span>
+            <Input
+              value={locationSearch}
+              onChange={(e) => setLocationSearch(e.target.value)}
+              placeholder="Search locations (code/name)"
+            />
+          </label>
+        </div>
         {lines.map((line, idx) => (
           <div
             key={idx}
@@ -179,13 +210,15 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
                 onChange={(e) => updateLine(idx, { outputItemId: e.target.value })}
               />
             </label>
-            <label className="space-y-1 text-sm">
-              <span className="text-xs uppercase tracking-wide text-slate-500">To Location ID</span>
-              <Input
+            <div>
+              <SearchableSelect
+                label="To location"
                 value={line.toLocationId}
-                onChange={(e) => updateLine(idx, { toLocationId: e.target.value })}
+                options={locationOptions}
+                disabled={locationsQuery.isLoading}
+                onChange={(nextValue) => updateLine(idx, { toLocationId: nextValue })}
               />
-            </label>
+            </div>
             <label className="space-y-1 text-sm">
               <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
               <Input value={line.uom} onChange={(e) => updateLine(idx, { uom: e.target.value })} />
