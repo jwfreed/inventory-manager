@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { listKpiRuns, listKpiSnapshots } from '../../../api/endpoints/kpis'
+import { listWorkOrders } from '../../../api/endpoints/workOrders'
 import type { ApiError } from '../../../api/types'
 import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
@@ -61,6 +62,36 @@ export default function DashboardPage() {
       ? `Endpoint not available: ${runAttempts.join(', ')}`
       : 'KPI run endpoints are not implemented in this repository (DB-first only).'
 
+  const productionQuery = useQuery({
+    queryKey: ['production-summary'],
+    queryFn: () => listWorkOrders({ limit: 200 }),
+    staleTime: 30_000,
+  })
+
+  const productionRows =
+    productionQuery.data?.data.map((wo) => ({
+      outputItemId: wo.outputItemId,
+      uom: wo.outputUom,
+      planned: wo.quantityPlanned,
+      completed: wo.quantityCompleted ?? 0,
+    })) ?? []
+
+  const productionByItem = productionRows.reduce<
+    Record<string, { itemId: string; uom: string; planned: number; completed: number }>
+  >((acc, row) => {
+    const key = `${row.outputItemId}:${row.uom}`
+    const existing = acc[key] ?? { itemId: row.outputItemId, uom: row.uom, planned: 0, completed: 0 }
+    existing.planned += row.planned
+    existing.completed += row.completed
+    acc[key] = existing
+    return acc
+  }, {})
+
+  const productionList = Object.values(productionByItem).map((val) => ({
+    ...val,
+    remaining: Math.max(0, val.planned - val.completed),
+  }))
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
@@ -71,6 +102,59 @@ export default function DashboardPage() {
           implemented, you will see an informational placeholder instead of an error.
         </p>
       </div>
+
+      <Section title="Production snapshot" description="Planned vs. completed quantities by output item (work orders)">
+        <Card>
+          {productionQuery.isLoading && <LoadingSpinner label="Loading production summary..." />}
+          {productionQuery.isError && productionQuery.error && (
+            <ErrorState error={productionQuery.error as ApiError} onRetry={() => void productionQuery.refetch()} />
+          )}
+          {!productionQuery.isLoading && !productionQuery.isError && productionList.length === 0 && (
+            <EmptyState
+              title="No work orders found"
+              description="Create work orders to see planned vs. completed quantities."
+            />
+          )}
+          {!productionQuery.isLoading && !productionQuery.isError && productionList.length > 0 && (
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Output item
+                    </th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Planned
+                    </th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Completed
+                    </th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Remaining
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white">
+                  {productionList.map((row) => (
+                    <tr key={`${row.itemId}-${row.uom}`}>
+                      <td className="px-3 py-2 text-sm text-slate-800">{row.itemId}</td>
+                      <td className="px-3 py-2 text-right text-sm text-slate-800">
+                        {row.planned} {row.uom}
+                      </td>
+                      <td className="px-3 py-2 text-right text-sm text-slate-800">
+                        {row.completed} {row.uom}
+                      </td>
+                      <td className="px-3 py-2 text-right text-sm text-slate-800">
+                        {row.remaining} {row.uom}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </Section>
 
       <Section title="KPI cards">
         <Card>
