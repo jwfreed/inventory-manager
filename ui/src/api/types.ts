@@ -167,6 +167,7 @@ export type WorkOrderCompletion = {
     toLocationId: string | null
     uom: string
     quantity: number
+    packSize?: number | null
     notes?: string | null
   }[]
 }

@@ -69,6 +69,7 @@ type WorkOrderExecutionLineRow = {
   item_id: string;
   uom: string;
   quantity: string | number;
+  pack_size: string | number | null;
   from_location_id: string | null;
   to_location_id: string | null;
   notes: string | null;
@@ -114,6 +115,7 @@ function mapExecution(row: WorkOrderExecutionRow, lines: WorkOrderExecutionLineR
       itemId: line.item_id,
       uom: line.uom,
       quantity: roundQuantity(toNumber(line.quantity)),
+      packSize: line.pack_size !== null ? roundQuantity(toNumber(line.pack_size)) : null,
       fromLocationId: line.from_location_id,
       toLocationId: line.to_location_id,
       notes: line.notes,
@@ -321,14 +323,15 @@ export async function createWorkOrderCompletion(workOrderId: string, data: WorkO
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO work_order_execution_lines (
-            id, work_order_execution_id, line_type, item_id, uom, quantity, from_location_id, to_location_id, notes, created_at
-         ) VALUES ($1, $2, 'produce', $3, $4, $5, NULL, $6, $7, $8)`,
+            id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, notes, created_at
+         ) VALUES ($1, $2, 'produce', $3, $4, $5, $6, NULL, $7, $8, $9)`,
         [
           uuidv4(),
           executionId,
           line.outputItemId,
           line.uom,
           roundQuantity(line.quantityCompleted),
+          line.packSize ?? null,
           line.toLocationId,
           line.notes ?? null,
           now
@@ -632,14 +635,15 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
       const line = normalizedProduces[i];
       await client.query(
         `INSERT INTO work_order_execution_lines (
-            id, work_order_execution_id, line_type, item_id, uom, quantity, from_location_id, to_location_id, notes, created_at
-         ) VALUES ($1, $2, 'produce', $3, $4, $5, NULL, $6, $7, $8)`,
+            id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, notes, created_at
+         ) VALUES ($1, $2, 'produce', $3, $4, $5, $6, NULL, $7, $8, $9)`,
         [
           uuidv4(),
           executionId,
           line.outputItemId,
           line.uom,
           roundQuantity(line.quantity),
+          line.packSize ?? null,
           line.toLocationId,
           line.notes ?? null,
           now

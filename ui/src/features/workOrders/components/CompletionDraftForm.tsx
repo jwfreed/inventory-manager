@@ -47,6 +47,7 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
       toLocationId: defaultToLocationId,
       uom: workOrder.outputUom,
       quantityCompleted: '',
+      packSize: undefined,
     },
   ])
   const [createdCompletion, setCreatedCompletion] = useState<WorkOrderCompletion | null>(null)
@@ -100,6 +101,7 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
         toLocationId: defaultToLocationId,
         uom: workOrder.outputUom,
         quantityCompleted: '',
+        packSize: undefined,
       },
     ])
 
@@ -155,6 +157,7 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
         toLocationId: line.toLocationId,
         uom: line.uom,
         quantityCompleted: Number(line.quantityCompleted),
+        packSize: line.packSize ? Number(line.packSize) : undefined,
         notes: line.notes,
       })),
     })
@@ -275,6 +278,19 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
                 onChange={(e) =>
                   updateLine(idx, {
                     quantityCompleted: e.target.value === '' ? '' : Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="text-xs uppercase tracking-wide text-slate-500">Pack size (bars per box)</span>
+              <Input
+                type="number"
+                min={0}
+                value={line.packSize ?? ''}
+                onChange={(e) =>
+                  updateLine(idx, {
+                    packSize: e.target.value === '' ? undefined : Number(e.target.value),
                   })
                 }
               />

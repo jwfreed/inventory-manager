@@ -30,6 +30,7 @@ type ProduceLine = {
   toLocationId: string
   uom: string
   quantity: number | ''
+  packSize?: number
   notes?: string
 }
 
@@ -63,6 +64,7 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
       toLocationId: defaultToLocationId,
       uom: workOrder.outputUom,
       quantity: remaining || '',
+      packSize: undefined,
     },
   ])
   const [warning, setWarning] = useState<string | null>(null)
@@ -151,7 +153,13 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
   const addProduceLine = () =>
     setProduceLines((prev) => [
       ...prev,
-      { outputItemId: workOrder.outputItemId, toLocationId: defaultToLocationId, uom: workOrder.outputUom, quantity: '' },
+      {
+        outputItemId: workOrder.outputItemId,
+        toLocationId: defaultToLocationId,
+        uom: workOrder.outputUom,
+        quantity: '',
+        packSize: undefined,
+      },
     ])
 
   const updateConsumeLine = (index: number, patch: Partial<ConsumeLine>) => {
@@ -223,6 +231,7 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
         toLocationId: line.toLocationId,
         uom: line.uom,
         quantity: Number(line.quantity),
+        packSize: line.packSize ? Number(line.packSize) : undefined,
         notes: line.notes,
       })),
     }
@@ -414,6 +423,19 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
                 onChange={(e) =>
                   updateProduceLine(idx, {
                     quantity: e.target.value === '' ? '' : Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="text-xs uppercase tracking-wide text-slate-500">Pack size (bars per box)</span>
+              <Input
+                type="number"
+                min={0}
+                value={line.packSize ?? ''}
+                onChange={(e) =>
+                  updateProduceLine(idx, {
+                    packSize: e.target.value === '' ? undefined : Number(e.target.value),
                   })
                 }
               />

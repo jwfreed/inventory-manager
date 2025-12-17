@@ -20,6 +20,7 @@ export const workOrderCompletionLineSchema = z.object({
   toLocationId: z.string().uuid(),
   uom: z.string().min(1).max(32),
   quantityCompleted: z.number().positive(),
+  packSize: z.number().positive().optional(),
   notes: z.string().max(2000).optional()
 });
 
@@ -47,6 +48,7 @@ export const workOrderBatchSchema = z.object({
       toLocationId: z.string().uuid(),
       uom: z.string().min(1).max(32),
       quantity: z.number().positive(),
+      packSize: z.number().positive().optional(),
       notes: z.string().max(2000).optional()
     })
   ).min(1)

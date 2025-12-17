@@ -95,6 +95,7 @@ export type CompletionDraftPayload = {
     toLocationId: string
     uom: string
     quantityCompleted: number
+    packSize?: number
     notes?: string | null
   }[]
 }
@@ -140,6 +141,7 @@ export type RecordBatchPayload = {
     toLocationId: string
     uom: string
     quantity: number
+    packSize?: number
     notes?: string | null
   }[]
 }
