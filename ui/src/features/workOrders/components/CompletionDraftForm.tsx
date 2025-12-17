@@ -92,13 +92,15 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
       })),
     [locationsQuery.data],
   )
+  const validLocationIds = useMemo(() => new Set(locationOptions.map((o) => o.value)), [locationOptions])
+  const normalizedDefaultTo = validLocationIds.has(defaultToLocationId) ? defaultToLocationId : ''
 
   const addLine = () =>
     setLines((prev) => [
       ...prev,
       {
         outputItemId: workOrder.outputItemId,
-        toLocationId: defaultToLocationId,
+        toLocationId: normalizedDefaultTo,
         uom: workOrder.outputUom,
         quantityCompleted: '',
         packSize: undefined,
@@ -128,6 +130,7 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
       if (!line.toLocationId || !line.uom || line.quantityCompleted === '') {
         return 'All line fields are required.'
       }
+      if (!validLocationIds.has(line.toLocationId)) return 'Select a valid production location.'
       if (Number(line.quantityCompleted) <= 0) return 'Quantities must be greater than zero.'
     }
     return null
@@ -233,7 +236,7 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
             <span className="text-xs uppercase tracking-wide text-slate-500">Default production location</span>
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              value={defaultToLocationId}
+              value={normalizedDefaultTo}
               onChange={(e) => onSelectDefaultToLocation(e.target.value)}
               disabled={locationsQuery.isLoading}
             >

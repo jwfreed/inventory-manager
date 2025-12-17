@@ -131,10 +131,13 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
     [locationsQuery.data],
   )
 
+  const validLocationIds = useMemo(() => new Set(locationOptions.map((o) => o.value)), [locationOptions])
+  const normalizedDefaultFrom = validLocationIds.has(defaultFromLocationId) ? defaultFromLocationId : ''
+
   const addLine = () =>
     setLines((prev) => [
       ...prev,
-      { componentItemId: '', fromLocationId: defaultFromLocationId, uom: workOrder.outputUom, quantityIssued: '' },
+      { componentItemId: '', fromLocationId: normalizedDefaultFrom, uom: workOrder.outputUom, quantityIssued: '' },
     ])
 
   const updateLine = (index: number, patch: Partial<Line>) => {
@@ -160,6 +163,7 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
       if (!line.componentItemId || !line.fromLocationId || !line.uom || line.quantityIssued === '') {
         return 'All line fields are required.'
       }
+      if (!validLocationIds.has(line.fromLocationId)) return 'Select a valid consume location.'
       if (Number(line.quantityIssued) <= 0) return 'Quantities must be greater than zero.'
     }
     return null
@@ -276,7 +280,7 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
             <span className="text-xs uppercase tracking-wide text-slate-500">Default consume location</span>
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              value={defaultFromLocationId}
+              value={normalizedDefaultFrom}
               onChange={(e) => onSelectDefaultFromLocation(e.target.value)}
               disabled={locationsQuery.isLoading}
             >

@@ -115,6 +115,9 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
       })),
     [locationsQuery.data],
   )
+  const validLocationIds = useMemo(() => new Set(locationOptions.map((o) => o.value)), [locationOptions])
+  const normalizedDefaultFrom = validLocationIds.has(defaultFromLocationId) ? defaultFromLocationId : ''
+  const normalizedDefaultTo = validLocationIds.has(defaultToLocationId) ? defaultToLocationId : ''
 
   const defaultsConsumeMutation = useMutation({
     mutationFn: (locId: string) =>
@@ -168,14 +171,14 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
   const addConsumeLine = () =>
     setConsumeLines((prev) => [
       ...prev,
-      { componentItemId: '', fromLocationId: defaultFromLocationId, uom: workOrder.outputUom, quantity: '' },
+      { componentItemId: '', fromLocationId: normalizedDefaultFrom, uom: workOrder.outputUom, quantity: '' },
     ])
   const addProduceLine = () =>
     setProduceLines((prev) => [
       ...prev,
       {
         outputItemId: workOrder.outputItemId,
-        toLocationId: defaultToLocationId,
+        toLocationId: normalizedDefaultTo,
         uom: workOrder.outputUom,
         quantity: '',
         packSize: undefined,
@@ -215,12 +218,14 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
       if (!line.componentItemId || !line.fromLocationId || !line.uom || line.quantity === '') {
         return 'All consumption line fields are required.'
       }
+      if (!validLocationIds.has(line.fromLocationId)) return 'Select a valid consume location.'
       if (Number(line.quantity) <= 0) return 'Consumption quantities must be greater than zero.'
     }
     for (const line of produceLines) {
       if (!line.toLocationId || !line.uom || line.quantity === '') {
         return 'All production line fields are required.'
       }
+      if (!validLocationIds.has(line.toLocationId)) return 'Select a valid production location.'
       if (Number(line.quantity) <= 0) return 'Production quantities must be greater than zero.'
     }
     return null
@@ -322,7 +327,7 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
             <span className="text-xs uppercase tracking-wide text-slate-500">Default consume location</span>
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              value={defaultFromLocationId}
+              value={normalizedDefaultFrom}
               onChange={(e) => onSelectDefaultConsume(e.target.value)}
               disabled={locationsQuery.isLoading}
             >
@@ -410,7 +415,7 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
             <span className="text-xs uppercase tracking-wide text-slate-500">Default production location</span>
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              value={defaultToLocationId}
+              value={normalizedDefaultTo}
               onChange={(e) => onSelectDefaultProduce(e.target.value)}
               disabled={locationsQuery.isLoading}
             >
