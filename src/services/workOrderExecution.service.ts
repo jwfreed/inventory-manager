@@ -566,6 +566,38 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
       }
     }
 
+    // Pre-validate items and locations to avoid foreign key failures
+    const itemIds = Array.from(
+      new Set([
+        ...normalizedConsumes.map((l) => l.componentItemId),
+        ...normalizedProduces.map((l) => l.outputItemId)
+      ])
+    );
+    const locationIds = Array.from(
+      new Set([
+        ...normalizedConsumes.map((l) => l.fromLocationId),
+        ...normalizedProduces.map((l) => l.toLocationId)
+      ])
+    );
+
+    if (itemIds.length > 0) {
+      const itemRes = await client.query<{ id: string }>('SELECT id FROM items WHERE id = ANY($1)', [itemIds]);
+      const found = new Set(itemRes.rows.map((r) => r.id));
+      const missingItems = itemIds.filter((id) => !found.has(id));
+      if (missingItems.length > 0) {
+        throw new Error(`WO_BATCH_ITEMS_MISSING:${missingItems.join(',')}`);
+      }
+    }
+
+    if (locationIds.length > 0) {
+      const locRes = await client.query<{ id: string }>('SELECT id FROM locations WHERE id = ANY($1)', [locationIds]);
+      const found = new Set(locRes.rows.map((r) => r.id));
+      const missingLocs = locationIds.filter((id) => !found.has(id));
+      if (missingLocs.length > 0) {
+        throw new Error(`WO_BATCH_LOCATIONS_MISSING:${missingLocs.join(',')}`);
+      }
+    }
+
     const issueId = uuidv4();
     const executionId = uuidv4();
     const issueMovementId = uuidv4();

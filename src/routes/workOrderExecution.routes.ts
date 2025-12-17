@@ -241,6 +241,14 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
     if (error?.message === 'WO_BATCH_ITEM_MISMATCH') {
       return res.status(400).json({ error: 'Output item mismatch with work order.' });
     }
+    if (error?.message?.startsWith('WO_BATCH_ITEMS_MISSING')) {
+      const missing = error.message.split(':')[1] ?? '';
+      return res.status(400).json({ error: 'Items not found.', details: missing });
+    }
+    if (error?.message?.startsWith('WO_BATCH_LOCATIONS_MISSING')) {
+      const missing = error.message.split(':')[1] ?? '';
+      return res.status(400).json({ error: 'Locations not found.', details: missing });
+    }
     if (error?.message?.startsWith('WO_BATCH_INVALID')) {
       return res.status(400).json({ error: 'Quantities must be greater than zero.' });
     }
