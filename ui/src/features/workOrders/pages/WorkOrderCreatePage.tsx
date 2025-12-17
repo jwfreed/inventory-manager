@@ -67,14 +67,19 @@ export default function WorkOrderCreatePage() {
     [bomsQuery.data, selectedBomId],
   )
 
+  const normalizeInputDate = (value: string) => {
+    if (!value) return ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return `${value}T00:00`
+    }
+    return value
+  }
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!workOrderNumber || !selectedBomId || !outputItemId || !outputUom || quantityPlanned === '') {
       return
     }
-    const normalizeDateTime = (value: string) =>
-      value && value.includes(':') && value.includes('T') ? value : undefined
-
     mutation.mutate({
       workOrderNumber,
       bomId: selectedBomId,
@@ -82,8 +87,8 @@ export default function WorkOrderCreatePage() {
       outputItemId,
       outputUom,
       quantityPlanned: Number(quantityPlanned),
-      scheduledStartAt: normalizeDateTime(scheduledStartAt),
-      scheduledDueAt: normalizeDateTime(scheduledDueAt),
+      scheduledStartAt: scheduledStartAt || undefined,
+      scheduledDueAt: scheduledDueAt || undefined,
       notes: notes || undefined,
     })
   }
@@ -175,7 +180,7 @@ export default function WorkOrderCreatePage() {
                 <Input
                   type="datetime-local"
                   value={scheduledStartAt}
-                  onChange={(e) => setScheduledStartAt(e.target.value)}
+                  onChange={(e) => setScheduledStartAt(normalizeInputDate(e.target.value))}
                   disabled={mutation.isPending}
                 />
               </label>
@@ -184,7 +189,7 @@ export default function WorkOrderCreatePage() {
                 <Input
                   type="datetime-local"
                   value={scheduledDueAt}
-                  onChange={(e) => setScheduledDueAt(e.target.value)}
+                  onChange={(e) => setScheduledDueAt(normalizeInputDate(e.target.value))}
                   disabled={mutation.isPending}
                 />
               </label>
