@@ -85,7 +85,7 @@ export default function WorkOrderCreatePage() {
     if (!workOrderNumber || !selectedBomId || !outputItemId || !outputUom || quantityPlanned === '') {
       return
     }
-    const toDateTime = (value: string) => (value ? `${value}T00:00:00` : undefined)
+    const toDateTime = (value: string) => (value ? `${value}T00:00:00.000Z` : undefined)
     const start = toDateTime(scheduledStartAt)
     const due = toDateTime(scheduledDueAt)
 
