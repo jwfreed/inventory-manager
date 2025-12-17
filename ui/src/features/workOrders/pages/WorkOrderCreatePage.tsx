@@ -72,6 +72,9 @@ export default function WorkOrderCreatePage() {
     if (!workOrderNumber || !selectedBomId || !outputItemId || !outputUom || quantityPlanned === '') {
       return
     }
+    const normalizeDateTime = (value: string) =>
+      value && value.includes(':') && value.includes('T') ? value : undefined
+
     mutation.mutate({
       workOrderNumber,
       bomId: selectedBomId,
@@ -79,8 +82,8 @@ export default function WorkOrderCreatePage() {
       outputItemId,
       outputUom,
       quantityPlanned: Number(quantityPlanned),
-      scheduledStartAt: scheduledStartAt || undefined,
-      scheduledDueAt: scheduledDueAt || undefined,
+      scheduledStartAt: normalizeDateTime(scheduledStartAt),
+      scheduledDueAt: normalizeDateTime(scheduledDueAt),
       notes: notes || undefined,
     })
   }
