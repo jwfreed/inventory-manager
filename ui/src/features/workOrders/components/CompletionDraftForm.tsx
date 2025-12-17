@@ -13,6 +13,7 @@ import {
 import type { ApiError, WorkOrder, WorkOrderCompletion } from '../../../api/types'
 import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '../../../lib/formatters'
+import { LotAllocationsCard } from './LotAllocationsCard'
 
 type Line = {
   outputItemId: string
@@ -266,6 +267,15 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
           </div>
         }
       />
+
+      {isPosted && createdCompletion?.productionMovementId && (
+        <div className="mt-4">
+          <LotAllocationsCard
+            movementId={createdCompletion.productionMovementId}
+            title="Allocate lots to completions"
+          />
+        </div>
+      )}
     </Card>
   )
 }

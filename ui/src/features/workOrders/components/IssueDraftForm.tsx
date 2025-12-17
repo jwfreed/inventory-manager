@@ -13,6 +13,7 @@ import {
 import type { ApiError, WorkOrderIssue, WorkOrder } from '../../../api/types'
 import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '../../../lib/formatters'
+import { LotAllocationsCard } from './LotAllocationsCard'
 
 type Line = {
   componentItemId: string
@@ -257,6 +258,12 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
           </div>
         }
       />
+
+      {isPosted && createdIssue?.inventoryMovementId && (
+        <div className="mt-4">
+          <LotAllocationsCard movementId={createdIssue.inventoryMovementId} title="Allocate lots to issues" />
+        </div>
+      )}
     </Card>
   )
 }
