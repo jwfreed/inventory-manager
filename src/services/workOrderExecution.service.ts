@@ -605,6 +605,20 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
     const now = new Date();
     const occurredAt = new Date(data.occurredAt);
 
+    // Create movements first to satisfy FKs
+    await client.query(
+      `INSERT INTO inventory_movements (
+          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, 'issue', 'posted', $2, $3, $4, $5, $4, $4)`,
+      [issueMovementId, `work_order_batch_issue:${issueId}`, occurredAt, now, data.notes ?? null]
+    );
+    await client.query(
+      `INSERT INTO inventory_movements (
+          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, 'receive', 'posted', $2, $3, $4, $5, $4, $4)`,
+      [receiveMovementId, `work_order_batch_completion:${executionId}`, occurredAt, now, data.notes ?? null]
+    );
+
     // Material issue header + lines
     await client.query(
       `INSERT INTO work_order_material_issues (
@@ -631,14 +645,6 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
         ]
       );
     }
-
-    // Issue inventory movement
-    await client.query(
-      `INSERT INTO inventory_movements (
-          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, 'issue', 'posted', $2, $3, $4, $5, $4, $4)`,
-      [issueMovementId, `work_order_batch_issue:${issueId}`, occurredAt, now, data.notes ?? null]
-    );
     for (const line of normalizedConsumes) {
       await client.query(
         `INSERT INTO inventory_movement_lines (
@@ -682,14 +688,6 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
         ]
       );
     }
-
-    // Receive inventory movement
-    await client.query(
-      `INSERT INTO inventory_movements (
-          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, 'receive', 'posted', $2, $3, $4, $5, $4, $4)`,
-      [receiveMovementId, `work_order_batch_completion:${executionId}`, occurredAt, now, data.notes ?? null]
-    );
     for (const line of normalizedProduces) {
       await client.query(
         `INSERT INTO inventory_movement_lines (
