@@ -42,3 +42,7 @@ export const workOrderListQuerySchema = z.object({
   limit: z.string().optional(),
   offset: z.string().optional()
 });
+
+export const workOrderRequirementsQuerySchema = z.object({
+  quantity: z.string().optional()
+});

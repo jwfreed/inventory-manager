@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { workOrderCreateSchema, workOrderListQuerySchema } from '../schemas/workOrders.schema';
-import { createWorkOrder, getWorkOrderById, listWorkOrders } from '../services/workOrders.service';
+import { workOrderCreateSchema, workOrderListQuerySchema, workOrderRequirementsQuerySchema } from '../schemas/workOrders.schema';
+import { createWorkOrder, getWorkOrderById, getWorkOrderRequirements, listWorkOrders } from '../services/workOrders.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
@@ -73,6 +73,44 @@ router.get('/work-orders', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to list work orders.' });
+  }
+});
+
+router.get('/work-orders/:id/requirements', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+  const parsed = workOrderRequirementsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const quantity = parsed.data.quantity ? Number(parsed.data.quantity) : undefined;
+  if (quantity !== undefined && !(quantity > 0)) {
+    return res.status(400).json({ error: 'Quantity must be positive if provided.' });
+  }
+
+  try {
+    const requirements = await getWorkOrderRequirements(id, quantity);
+    if (!requirements) {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    return res.json(requirements);
+  } catch (error: any) {
+    if (error?.message === 'WO_BOM_NOT_FOUND') {
+      return res.status(400).json({ error: 'BOM not found for this work order.' });
+    }
+    if (error?.message === 'WO_BOM_VERSION_NOT_FOUND') {
+      return res.status(400).json({ error: 'No BOM version available for this work order.' });
+    }
+    if (error?.message === 'WO_REQUIREMENTS_UOM_MISMATCH') {
+      return res.status(400).json({ error: 'Output UOM does not match BOM yield UOM.' });
+    }
+    if (error?.message === 'WO_REQUIREMENTS_INVALID_YIELD') {
+      return res.status(400).json({ error: 'Invalid BOM yield quantity.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to compute work order requirements.' });
   }
 });
 

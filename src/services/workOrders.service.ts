@@ -4,6 +4,7 @@ import { query, withTransaction } from '../db';
 import { workOrderCreateSchema, workOrderListQuerySchema } from '../schemas/workOrders.schema';
 import { roundQuantity } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
+import { fetchBomById } from './boms.service';
 
 type WorkOrderCreateInput = z.infer<typeof workOrderCreateSchema>;
 type WorkOrderListQuery = z.infer<typeof workOrderListQuerySchema>;
@@ -143,4 +144,76 @@ export async function listWorkOrders(filters: WorkOrderListQuery) {
   );
 
   return { data: rows.map(mapWorkOrder), paging: { limit, offset } };
+}
+
+export type WorkOrderRequirementLine = {
+  lineNumber: number;
+  componentItemId: string;
+  uom: string;
+  quantityRequired: number;
+  scrapFactor: number | null;
+};
+
+export type WorkOrderRequirements = {
+  workOrderId: string;
+  outputItemId: string;
+  bomId: string;
+  bomVersionId: string;
+  quantityRequested: number;
+  requestedUom: string;
+  lines: WorkOrderRequirementLine[];
+};
+
+export async function getWorkOrderRequirements(workOrderId: string, requestedQty?: number): Promise<WorkOrderRequirements | null> {
+  const woRes = await query<WorkOrderRow>('SELECT * FROM work_orders WHERE id = $1', [workOrderId]);
+  if (woRes.rowCount === 0) return null;
+  const wo = woRes.rows[0];
+
+  const bom = await fetchBomById(wo.bom_id);
+  if (!bom) {
+    throw new Error('WO_BOM_NOT_FOUND');
+  }
+  const version =
+    (wo.bom_version_id && bom.versions.find((v) => v.id === wo.bom_version_id)) ||
+    bom.versions.find((v) => v.status === 'active') ||
+    bom.versions[0];
+  if (!version) {
+    throw new Error('WO_BOM_VERSION_NOT_FOUND');
+  }
+
+  const normalizedYield = normalizeQuantityByUom(version.yieldQuantity, version.yieldUom);
+  const quantity = requestedQty !== undefined ? requestedQty : Number(wo.quantity_planned);
+  const normalizedRequested = normalizeQuantityByUom(quantity, wo.output_uom);
+
+  if (normalizedYield.uom !== normalizedRequested.uom) {
+    throw new Error('WO_REQUIREMENTS_UOM_MISMATCH');
+  }
+  if (normalizedYield.quantity <= 0) {
+    throw new Error('WO_REQUIREMENTS_INVALID_YIELD');
+  }
+
+  const factor = roundQuantity(normalizedRequested.quantity / normalizedYield.quantity);
+
+  const lines: WorkOrderRequirementLine[] = version.components.map((c) => {
+    const normalizedComp = normalizeQuantityByUom(c.quantityPer, c.uom);
+    const scrap = c.scrapFactor ?? 0;
+    const required = roundQuantity(normalizedComp.quantity * factor * (1 + scrap));
+    return {
+      lineNumber: c.lineNumber,
+      componentItemId: c.componentItemId,
+      uom: normalizedComp.uom,
+      quantityRequired: required,
+      scrapFactor: c.scrapFactor
+    };
+  });
+
+  return {
+    workOrderId: wo.id,
+    outputItemId: wo.output_item_id,
+    bomId: wo.bom_id,
+    bomVersionId: version.id,
+    quantityRequested: normalizedRequested.quantity,
+    requestedUom: normalizedRequested.uom,
+    lines
+  };
 }
