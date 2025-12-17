@@ -227,6 +227,18 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  const sentItemIds = Array.from(
+    new Set([
+      ...parsed.data.consumeLines.map((l) => l.componentItemId),
+      ...parsed.data.produceLines.map((l) => l.outputItemId)
+    ])
+  );
+  const sentLocationIds = Array.from(
+    new Set([
+      ...parsed.data.consumeLines.map((l) => l.fromLocationId),
+      ...parsed.data.produceLines.map((l) => l.toLocationId)
+    ])
+  );
 
   try {
     const result = await recordWorkOrderBatch(workOrderId, parsed.data);
@@ -253,7 +265,13 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
       return res.status(400).json({ error: 'Quantities must be greater than zero.' });
     }
     const mapped = mapPgErrorToHttp(error, {
-      foreignKey: () => ({ status: 400, body: { error: 'Referenced items or locations do not exist.' } }),
+      foreignKey: () => ({
+        status: 400,
+        body: {
+          error: 'Referenced items or locations do not exist.',
+          details: { items: sentItemIds, locations: sentLocationIds }
+        }
+      }),
       check: () => ({ status: 400, body: { error: 'Invalid quantities.' } })
     });
     if (mapped) {
