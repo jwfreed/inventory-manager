@@ -13,6 +13,19 @@ import { Input, Textarea } from '../../../components/Inputs'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 
+const formatError = (err: unknown): string => {
+  if (!err) return ''
+  if (typeof err === 'string') return err
+  if (typeof err === 'object' && 'message' in (err as { message?: unknown }) && typeof (err as { message?: unknown }).message === 'string') {
+    return (err as { message: string }).message
+  }
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return 'Unknown error'
+  }
+}
+
 export default function WorkOrderCreatePage() {
   const navigate = useNavigate()
   const [workOrderNumber, setWorkOrderNumber] = useState('')
@@ -104,7 +117,7 @@ export default function WorkOrderCreatePage() {
       <Card>
         <form className="space-y-4" onSubmit={onSubmit}>
           {mutation.isError && (
-            <Alert variant="error" title="Create failed" message={(mutation.error as ApiError).message} />
+            <Alert variant="error" title="Create failed" message={formatError(mutation.error as ApiError)} />
           )}
           <Section title="Header">
             <div className="grid gap-3 md:grid-cols-3">
@@ -198,7 +211,7 @@ export default function WorkOrderCreatePage() {
           >
             {bomsQuery.isLoading && <LoadingSpinner label="Loading BOMs..." />}
             {bomsQuery.isError && bomsQuery.error && (
-              <Alert variant="error" title="Failed to load BOMs" message={(bomsQuery.error as ApiError).message} />
+              <Alert variant="error" title="Failed to load BOMs" message={formatError(bomsQuery.error as ApiError)} />
             )}
             <div className="grid gap-3 md:grid-cols-3">
               <label className="space-y-1 text-sm md:col-span-2">
