@@ -272,17 +272,22 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
               placeholder="Search locations (code/name)"
             />
           </label>
-          <div className="space-y-1 text-sm">
+          <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Default consume location</span>
-            <SearchableSelect
-              label="Default consume location"
-              hideLabel
+            <select
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               value={defaultFromLocationId}
-              options={locationOptions}
+              onChange={(e) => onSelectDefaultFromLocation(e.target.value)}
               disabled={locationsQuery.isLoading}
-              onChange={onSelectDefaultFromLocation}
-            />
-          </div>
+            >
+              <option value="">Select location</option>
+              {locationOptions.map((loc) => (
+                <option key={loc.value} value={loc.value}>
+                  {loc.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {lines.map((line, idx) => (
           <div

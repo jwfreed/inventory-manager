@@ -297,17 +297,22 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
               placeholder="Search items (SKU/name)"
             />
           </label>
-          <div className="space-y-1 text-sm">
+          <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Default consume location</span>
-            <SearchableSelect
-              label="Default consume location"
-              hideLabel
+            <select
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               value={defaultFromLocationId}
-              options={locationOptions}
+              onChange={(e) => onSelectDefaultConsume(e.target.value)}
               disabled={locationsQuery.isLoading}
-              onChange={onSelectDefaultConsume}
-            />
-          </div>
+            >
+              <option value="">Select location</option>
+              {locationOptions.map((loc) => (
+                <option key={loc.value} value={loc.value}>
+                  {loc.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {consumeLines.map((line, idx) => (
           <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
@@ -380,17 +385,22 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
               placeholder="Search locations (code/name)"
             />
           </label>
-          <div className="space-y-1 text-sm">
+          <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Default production location</span>
-            <SearchableSelect
-              label="Default production location"
-              hideLabel
+            <select
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               value={defaultToLocationId}
-              options={locationOptions}
+              onChange={(e) => onSelectDefaultProduce(e.target.value)}
               disabled={locationsQuery.isLoading}
-              onChange={onSelectDefaultProduce}
-            />
-          </div>
+            >
+              <option value="">Select location</option>
+              {locationOptions.map((loc) => (
+                <option key={loc.value} value={loc.value}>
+                  {loc.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {produceLines.map((line, idx) => (
           <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
