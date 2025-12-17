@@ -125,7 +125,7 @@ function mapExecution(row: WorkOrderExecutionRow, lines: WorkOrderExecutionLineR
 }
 
 async function fetchWorkOrderById(id: string, client?: PoolClient): Promise<WorkOrderRow | null> {
-  const executor = client ?? query;
+  const executor = client ? client.query.bind(client) : query;
   const result = await executor<WorkOrderRow>('SELECT * FROM work_orders WHERE id = $1', [id]);
   return result.rowCount === 0 ? null : result.rows[0];
 }
