@@ -28,3 +28,26 @@ export const workOrderCompletionCreateSchema = z.object({
   notes: z.string().max(2000).optional(),
   lines: z.array(workOrderCompletionLineSchema).min(1)
 });
+
+export const workOrderBatchSchema = z.object({
+  occurredAt: z.string().datetime(),
+  notes: z.string().max(2000).optional(),
+  consumeLines: z.array(
+    z.object({
+      componentItemId: z.string().uuid(),
+      fromLocationId: z.string().uuid(),
+      uom: z.string().min(1).max(32),
+      quantity: z.number().positive(),
+      notes: z.string().max(2000).optional()
+    })
+  ).min(1),
+  produceLines: z.array(
+    z.object({
+      outputItemId: z.string().uuid(),
+      toLocationId: z.string().uuid(),
+      uom: z.string().min(1).max(32),
+      quantity: z.number().positive(),
+      notes: z.string().max(2000).optional()
+    })
+  ).min(1)
+});

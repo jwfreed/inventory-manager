@@ -4,8 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import {
   getWorkOrder,
   getWorkOrderExecution,
+  getWorkOrderRequirements,
 } from '../../../api/endpoints/workOrders'
-import type { ApiError } from '../../../api/types'
+import type { ApiError, WorkOrderRequirements } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -17,8 +18,9 @@ import { WorkOrderHeader } from '../components/WorkOrderHeader'
 import { ExecutionSummaryPanel } from '../components/ExecutionSummaryPanel'
 import { IssueDraftForm } from '../components/IssueDraftForm'
 import { CompletionDraftForm } from '../components/CompletionDraftForm'
+import { RecordBatchForm } from '../components/RecordBatchForm'
 
-type TabKey = 'summary' | 'issues' | 'completions'
+type TabKey = 'summary' | 'issues' | 'completions' | 'batch'
 
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -36,6 +38,14 @@ export default function WorkOrderDetailPage() {
     queryKey: ['work-order-execution', id],
     queryFn: () => getWorkOrderExecution(id as string),
     enabled: !!id,
+    retry: 1,
+  })
+
+  const requirementsQuery = useQuery<WorkOrderRequirements, ApiError>({
+    queryKey: ['work-order-requirements', id],
+    queryFn: () => getWorkOrderRequirements(id as string),
+    enabled: !!id,
+    staleTime: 60_000,
     retry: 1,
   })
 
@@ -84,9 +94,62 @@ export default function WorkOrderDetailPage() {
         />
       </Section>
 
+      <Section title="Requirements vs issued">
+        {requirementsQuery.isLoading && <LoadingSpinner label="Loading requirements..." />}
+        {requirementsQuery.isError && (
+          <ErrorState
+            error={requirementsQuery.error}
+            onRetry={() => void requirementsQuery.refetch()}
+          />
+        )}
+        {requirementsQuery.data && executionQuery.data && (
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th className="px-2 py-2">Line</th>
+                    <th className="px-2 py-2">Component</th>
+                    <th className="px-2 py-2">Required</th>
+                    <th className="px-2 py-2">Issued</th>
+                    <th className="px-2 py-2">Remaining</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {requirementsQuery.data.lines.map((line) => {
+                    const issued = executionQuery.data?.issuedTotals.find(
+                      (i) => i.componentItemId === line.componentItemId && i.uom === line.uom,
+                    )
+                    const qtyIssued = issued?.quantityIssued ?? 0
+                    const remaining = Math.max(0, line.quantityRequired - qtyIssued)
+                    return (
+                      <tr key={line.lineNumber} className="border-b border-slate-100">
+                        <td className="px-2 py-2 font-mono text-xs text-slate-600">
+                          {line.lineNumber}
+                        </td>
+                        <td className="px-2 py-2">{line.componentItemId}</td>
+                        <td className="px-2 py-2">
+                          {line.quantityRequired} {line.uom}
+                        </td>
+                        <td className="px-2 py-2 text-red-600">
+                          {qtyIssued ? `-${qtyIssued}` : '0'} {line.uom}
+                        </td>
+                        <td className="px-2 py-2 font-semibold text-slate-800">
+                          {remaining} {line.uom}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </Section>
+
       <Section title="Actions">
         <div className="flex gap-2 border-b border-slate-200">
-          {(['summary', 'issues', 'completions'] as TabKey[]).map((key) => (
+          {(['summary', 'issues', 'completions', 'batch'] as TabKey[]).map((key) => (
             <button
               key={key}
               className={`px-3 py-2 text-sm font-semibold ${
@@ -98,7 +161,9 @@ export default function WorkOrderDetailPage() {
                 ? 'Execution Summary'
                 : key === 'issues'
                   ? 'Issues'
-                  : 'Completions'}
+                  : key === 'completions'
+                    ? 'Completions'
+                    : 'Record Batch'}
             </button>
           ))}
         </div>
@@ -126,6 +191,10 @@ export default function WorkOrderDetailPage() {
 
         {tab === 'completions' && workOrderQuery.data && (
           <CompletionDraftForm workOrder={workOrderQuery.data} onRefetch={refreshAll} />
+        )}
+
+        {tab === 'batch' && workOrderQuery.data && (
+          <RecordBatchForm workOrder={workOrderQuery.data} onRefetch={refreshAll} />
         )}
       </Section>
 

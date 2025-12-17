@@ -6,12 +6,14 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { fetchBomById } from './boms.service';
 import {
   workOrderCompletionCreateSchema,
-  workOrderIssueCreateSchema
+  workOrderIssueCreateSchema,
+  workOrderBatchSchema
 } from '../schemas/workOrderExecution.schema';
 import { normalizeQuantityByUom } from '../lib/uom';
 
 type WorkOrderIssueCreateInput = z.infer<typeof workOrderIssueCreateSchema>;
 type WorkOrderCompletionCreateInput = z.infer<typeof workOrderCompletionCreateSchema>;
+type WorkOrderBatchInput = z.infer<typeof workOrderBatchSchema>;
 
 type WorkOrderRow = {
   id: string;
@@ -529,4 +531,170 @@ export async function getWorkOrderExecutionSummary(workOrderId: string) {
     remainingToComplete: roundQuantity(Math.max(0, planned - completed)),
     bom
   };
+}
+
+export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderBatchInput) {
+  const normalizedConsumes = data.consumeLines.map((line) => {
+    const normalized = normalizeQuantityByUom(line.quantity, line.uom);
+    if (normalized.quantity <= 0) {
+      throw new Error('WO_BATCH_INVALID_CONSUME_QTY');
+    }
+    return { ...line, quantity: normalized.quantity, uom: normalized.uom };
+  });
+  const normalizedProduces = data.produceLines.map((line) => {
+    const normalized = normalizeQuantityByUom(line.quantity, line.uom);
+    if (normalized.quantity <= 0) {
+      throw new Error('WO_BATCH_INVALID_PRODUCE_QTY');
+    }
+    return { ...line, quantity: normalized.quantity, uom: normalized.uom };
+  });
+
+  return withTransaction(async (client) => {
+    const workOrder = await fetchWorkOrderById(workOrderId, client);
+    if (!workOrder) {
+      throw new Error('WO_NOT_FOUND');
+    }
+    if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
+      throw new Error('WO_INVALID_STATE');
+    }
+    for (const line of normalizedProduces) {
+      if (line.outputItemId !== workOrder.output_item_id) {
+        throw new Error('WO_BATCH_ITEM_MISMATCH');
+      }
+    }
+
+    const issueId = uuidv4();
+    const executionId = uuidv4();
+    const issueMovementId = uuidv4();
+    const receiveMovementId = uuidv4();
+    const now = new Date();
+    const occurredAt = new Date(data.occurredAt);
+
+    // Material issue header + lines
+    await client.query(
+      `INSERT INTO work_order_material_issues (
+          id, work_order_id, status, occurred_at, inventory_movement_id, notes, created_at, updated_at
+       ) VALUES ($1, $2, 'posted', $3, $4, $5, $6, $6)`,
+      [issueId, workOrderId, occurredAt, issueMovementId, data.notes ?? null, now]
+    );
+    for (let i = 0; i < normalizedConsumes.length; i++) {
+      const line = normalizedConsumes[i];
+      await client.query(
+        `INSERT INTO work_order_material_issue_lines (
+            id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, notes, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          uuidv4(),
+          issueId,
+          i + 1,
+          line.componentItemId,
+          line.uom,
+          roundQuantity(line.quantity),
+          line.fromLocationId,
+          line.notes ?? null,
+          now
+        ]
+      );
+    }
+
+    // Issue inventory movement
+    await client.query(
+      `INSERT INTO inventory_movements (
+          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, 'issue', 'posted', $2, $3, $4, $5, $4, $4)`,
+      [issueMovementId, `work_order_batch_issue:${issueId}`, occurredAt, now, data.notes ?? null]
+    );
+    for (const line of normalizedConsumes) {
+      await client.query(
+        `INSERT INTO inventory_movement_lines (
+            id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, 'work_order_issue', $7)`,
+        [
+          uuidv4(),
+          issueMovementId,
+          line.componentItemId,
+          line.fromLocationId,
+          roundQuantity(-line.quantity),
+          line.uom,
+          line.notes ?? null
+        ]
+      );
+    }
+
+    // Execution header + produce lines
+    await client.query(
+      `INSERT INTO work_order_executions (
+          id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id, notes, created_at
+       ) VALUES ($1, $2, $3, 'posted', $4, $5, $6, $7)`,
+      [executionId, workOrderId, occurredAt, issueMovementId, receiveMovementId, data.notes ?? null, now]
+    );
+    for (let i = 0; i < normalizedProduces.length; i++) {
+      const line = normalizedProduces[i];
+      await client.query(
+        `INSERT INTO work_order_execution_lines (
+            id, work_order_execution_id, line_type, item_id, uom, quantity, from_location_id, to_location_id, notes, created_at
+         ) VALUES ($1, $2, 'produce', $3, $4, $5, NULL, $6, $7, $8)`,
+        [
+          uuidv4(),
+          executionId,
+          line.outputItemId,
+          line.uom,
+          roundQuantity(line.quantity),
+          line.toLocationId,
+          line.notes ?? null,
+          now
+        ]
+      );
+    }
+
+    // Receive inventory movement
+    await client.query(
+      `INSERT INTO inventory_movements (
+          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, 'receive', 'posted', $2, $3, $4, $5, $4, $4)`,
+      [receiveMovementId, `work_order_batch_completion:${executionId}`, occurredAt, now, data.notes ?? null]
+    );
+    for (const line of normalizedProduces) {
+      await client.query(
+        `INSERT INTO inventory_movement_lines (
+            id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, 'work_order_completion', $7)`,
+        [
+          uuidv4(),
+          receiveMovementId,
+          line.outputItemId,
+          line.toLocationId,
+          roundQuantity(line.quantity),
+          line.uom,
+          line.notes ?? null
+        ]
+      );
+    }
+
+    // Update work order progress
+    const producedTotal = normalizedProduces.reduce((sum, line) => sum + roundQuantity(line.quantity), 0);
+    const currentCompleted = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
+    const newCompleted = roundQuantity(currentCompleted + producedTotal);
+    const planned = roundQuantity(toNumber(workOrder.quantity_planned));
+    const completedAt = newCompleted >= planned ? now : null;
+    const newStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
+
+    await client.query(
+      `UPDATE work_orders
+          SET quantity_completed = $2,
+              status = $3,
+              completed_at = COALESCE(completed_at, $4),
+              updated_at = $5
+        WHERE id = $1`,
+      [workOrderId, newCompleted, newStatus, completedAt, now]
+    );
+
+    return {
+      workOrderId,
+      issueMovementId,
+      receiveMovementId,
+      quantityCompleted: newCompleted,
+      workOrderStatus: newStatus
+    };
+  });
 }

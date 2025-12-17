@@ -9,6 +9,8 @@ export const workOrderCreateSchema = z
     outputUom: z.string().min(1).max(32),
     quantityPlanned: z.number().positive(),
     quantityCompleted: z.number().min(0).optional(),
+    defaultConsumeLocationId: z.string().uuid().optional(),
+    defaultProduceLocationId: z.string().uuid().optional(),
     scheduledStartAt: z.string().datetime().optional(),
     scheduledDueAt: z.string().datetime().optional(),
     notes: z.string().max(2000).optional()
@@ -45,4 +47,9 @@ export const workOrderListQuerySchema = z.object({
 
 export const workOrderRequirementsQuerySchema = z.object({
   quantity: z.string().optional()
+});
+
+export const workOrderDefaultLocationsSchema = z.object({
+  defaultConsumeLocationId: z.string().uuid().nullable().optional(),
+  defaultProduceLocationId: z.string().uuid().nullable().optional()
 });

@@ -19,6 +19,8 @@ type WorkOrderRow = {
   output_uom: string;
   quantity_planned: string | number;
   quantity_completed: string | number | null;
+  default_consume_location_id: string | null;
+  default_produce_location_id: string | null;
   scheduled_start_at: string | null;
   scheduled_due_at: string | null;
   released_at: string | null;
@@ -39,6 +41,8 @@ function mapWorkOrder(row: WorkOrderRow) {
     outputUom: row.output_uom,
     quantityPlanned: roundQuantity(Number(row.quantity_planned)),
     quantityCompleted: row.quantity_completed !== null ? roundQuantity(Number(row.quantity_completed)) : null,
+    defaultConsumeLocationId: row.default_consume_location_id,
+    defaultProduceLocationId: row.default_produce_location_id,
     scheduledStartAt: row.scheduled_start_at,
     scheduledDueAt: row.scheduled_due_at,
     releasedAt: row.released_at,
@@ -79,12 +83,14 @@ export async function createWorkOrder(data: WorkOrderCreateInput) {
     const inserted = await client.query(
       `INSERT INTO work_orders (
           id, work_order_number, status, bom_id, bom_version_id, output_item_id, output_uom,
-          quantity_planned, quantity_completed, scheduled_start_at, scheduled_due_at, released_at,
+          quantity_planned, quantity_completed, default_consume_location_id, default_produce_location_id,
+          scheduled_start_at, scheduled_due_at, released_at,
           completed_at, notes, created_at, updated_at
        ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
-          $8, $9, $10, $11, NULL,
-          NULL, $12, $13, $13
+          $8, $9, $10, $11,
+          $12, $13, NULL,
+          NULL, $14, $15, $15
        ) RETURNING *`,
       [
         id,
@@ -96,6 +102,8 @@ export async function createWorkOrder(data: WorkOrderCreateInput) {
         normalizedQty.uom,
         normalizedQty.quantity,
         data.quantityCompleted ?? null,
+        data.defaultConsumeLocationId ?? null,
+        data.defaultProduceLocationId ?? null,
         data.scheduledStartAt ? new Date(data.scheduledStartAt) : null,
         data.scheduledDueAt ? new Date(data.scheduledDueAt) : null,
         data.notes ?? null,
@@ -216,4 +224,27 @@ export async function getWorkOrderRequirements(workOrderId: string, requestedQty
     requestedUom: normalizedRequested.uom,
     lines
   };
+}
+
+export async function updateWorkOrderDefaults(workOrderId: string, defaults: { defaultConsumeLocationId?: string | null; defaultProduceLocationId?: string | null }) {
+  const now = new Date();
+  const sets: string[] = [];
+  const params: any[] = [];
+
+  if ('defaultConsumeLocationId' in defaults) {
+    params.push(defaults.defaultConsumeLocationId);
+    sets.push(`default_consume_location_id = $${params.length}`);
+  }
+  if ('defaultProduceLocationId' in defaults) {
+    params.push(defaults.defaultProduceLocationId);
+    sets.push(`default_produce_location_id = $${params.length}`);
+  }
+  params.push(now);
+  const updatedAtIdx = params.length;
+  sets.push(`updated_at = $${updatedAtIdx}`);
+  params.unshift(workOrderId);
+
+  const sql = `UPDATE work_orders SET ${sets.join(', ')} WHERE id = $1`;
+  await query(sql, params);
+  return getWorkOrderById(workOrderId);
 }

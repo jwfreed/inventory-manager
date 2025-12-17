@@ -1,7 +1,12 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { workOrderCreateSchema, workOrderListQuerySchema, workOrderRequirementsQuerySchema } from '../schemas/workOrders.schema';
-import { createWorkOrder, getWorkOrderById, getWorkOrderRequirements, listWorkOrders } from '../services/workOrders.service';
+import {
+  workOrderCreateSchema,
+  workOrderDefaultLocationsSchema,
+  workOrderListQuerySchema,
+  workOrderRequirementsQuerySchema
+} from '../schemas/workOrders.schema';
+import { createWorkOrder, getWorkOrderById, getWorkOrderRequirements, listWorkOrders, updateWorkOrderDefaults } from '../services/workOrders.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
@@ -111,6 +116,27 @@ router.get('/work-orders/:id/requirements', async (req: Request, res: Response) 
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to compute work order requirements.' });
+  }
+});
+
+router.patch('/work-orders/:id/default-locations', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+  const parsed = workOrderDefaultLocationsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const updated = await updateWorkOrderDefaults(id, parsed.data);
+    if (!updated) {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    return res.json(updated);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update default locations.' });
   }
 });
 

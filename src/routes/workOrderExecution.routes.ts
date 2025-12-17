@@ -7,11 +7,13 @@ import {
   fetchWorkOrderIssue,
   getWorkOrderExecutionSummary,
   postWorkOrderCompletion,
-  postWorkOrderIssue
+  postWorkOrderIssue,
+  recordWorkOrderBatch
 } from '../services/workOrderExecution.service';
 import {
   workOrderCompletionCreateSchema,
-  workOrderIssueCreateSchema
+  workOrderIssueCreateSchema,
+  workOrderBatchSchema
 } from '../schemas/workOrderExecution.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 
@@ -216,6 +218,44 @@ router.post('/work-orders/:id/completions/:completionId/post', async (req: Reque
   }
 });
 
+router.post('/work-orders/:id/record-batch', async (req: Request, res: Response) => {
+  const workOrderId = req.params.id;
+  if (!uuidSchema.safeParse(workOrderId).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+  const parsed = workOrderBatchSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    const result = await recordWorkOrderBatch(workOrderId, parsed.data);
+    return res.status(201).json(result);
+  } catch (error: any) {
+    if (error?.message === 'WO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    if (error?.message === 'WO_INVALID_STATE') {
+      return res.status(400).json({ error: 'Work order not in a state that allows recording a batch.' });
+    }
+    if (error?.message === 'WO_BATCH_ITEM_MISMATCH') {
+      return res.status(400).json({ error: 'Output item mismatch with work order.' });
+    }
+    if (error?.message?.startsWith('WO_BATCH_INVALID')) {
+      return res.status(400).json({ error: 'Quantities must be greater than zero.' });
+    }
+    const mapped = mapPgErrorToHttp(error, {
+      foreignKey: () => ({ status: 400, body: { error: 'Referenced items or locations do not exist.' } }),
+      check: () => ({ status: 400, body: { error: 'Invalid quantities.' } })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to record batch.' });
+  }
+});
+
 router.get('/work-orders/:id/execution', async (req: Request, res: Response) => {
   const workOrderId = req.params.id;
   if (!uuidSchema.safeParse(workOrderId).success) {
@@ -235,4 +275,3 @@ router.get('/work-orders/:id/execution', async (req: Request, res: Response) => 
 });
 
 export default router;
-

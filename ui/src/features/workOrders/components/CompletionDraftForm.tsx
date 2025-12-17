@@ -9,6 +9,7 @@ import {
   createWorkOrderCompletion,
   postWorkOrderCompletion,
   type CompletionDraftPayload,
+  updateWorkOrderDefaultsApi,
 } from '../../../api/endpoints/workOrders'
 import type { ApiError, WorkOrder, WorkOrderCompletion } from '../../../api/types'
 import type { Location } from '../../../api/types'
@@ -37,7 +38,9 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [locationSearch, setLocationSearch] = useState('')
-  const [defaultToLocationId, setDefaultToLocationId] = useState<string>(defaults.produceLocationId ?? '')
+  const [defaultToLocationId, setDefaultToLocationId] = useState<string>(
+    workOrder.defaultProduceLocationId ?? defaults.produceLocationId ?? '',
+  )
   const [lines, setLines] = useState<Line[]>([
     {
       outputItemId: workOrder.outputItemId,
@@ -57,6 +60,10 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
       setWarning(null)
       void onRefetch()
     },
+  })
+  const defaultsMutation = useMutation({
+    mutationFn: (locId: string) =>
+      updateWorkOrderDefaultsApi(workOrder.id, { defaultProduceLocationId: locId || null }),
   })
 
   const postMutation = useMutation<WorkOrderCompletion, ApiError, { completionId: string }>({
@@ -107,6 +114,7 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
   const onSelectDefaultToLocation = (locId: string) => {
     setDefaultToLocationId(locId)
     setWorkOrderDefaults(workOrder.id, { produceLocationId: locId })
+    defaultsMutation.mutate(locId)
     setLines((prev) =>
       prev.map((line) => ({ ...line, toLocationId: line.toLocationId || locId })),
     )

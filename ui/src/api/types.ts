@@ -51,6 +51,8 @@ export type WorkOrder = {
   outputUom: string
   quantityPlanned: number
   quantityCompleted?: number | null
+  defaultConsumeLocationId?: string | null
+  defaultProduceLocationId?: string | null
   notes?: string | null
 }
 

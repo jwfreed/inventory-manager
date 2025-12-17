@@ -8,6 +8,7 @@ import { LoadingSpinner } from '../../../components/Loading'
 import {
   createWorkOrderIssue,
   getWorkOrderRequirements,
+  updateWorkOrderDefaultsApi,
   postWorkOrderIssue,
   type IssueDraftPayload,
 } from '../../../api/endpoints/workOrders'
@@ -35,12 +36,14 @@ type Props = {
 }
 
 export function IssueDraftForm({ workOrder, onRefetch }: Props) {
-  const defaults = getWorkOrderDefaults(workOrder.id)
+  const localDefaults = getWorkOrderDefaults(workOrder.id)
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [itemSearch, setItemSearch] = useState('')
   const [locationSearch, setLocationSearch] = useState('')
-  const [defaultFromLocationId, setDefaultFromLocationId] = useState<string>(defaults.consumeLocationId ?? '')
+  const [defaultFromLocationId, setDefaultFromLocationId] = useState<string>(
+    workOrder.defaultConsumeLocationId ?? localDefaults.consumeLocationId ?? '',
+  )
   const [lines, setLines] = useState<Line[]>([
     { componentItemId: '', fromLocationId: defaultFromLocationId, uom: workOrder.outputUom, quantityIssued: '' },
   ])
@@ -63,6 +66,14 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
       setCreatedIssue(issue)
       setShowPostConfirm(false)
       void onRefetch()
+    },
+  })
+
+  const defaultsMutation = useMutation({
+    mutationFn: (locId: string) =>
+      updateWorkOrderDefaultsApi(workOrder.id, { defaultConsumeLocationId: locId || null }),
+    onSuccess: () => {
+      // noop
     },
   })
 
@@ -137,6 +148,7 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
   const onSelectDefaultFromLocation = (locId: string) => {
     setDefaultFromLocationId(locId)
     setWorkOrderDefaults(workOrder.id, { consumeLocationId: locId })
+    defaultsMutation.mutate(locId)
     setLines((prev) =>
       prev.map((line) => ({ ...line, fromLocationId: line.fromLocationId || locId })),
     )

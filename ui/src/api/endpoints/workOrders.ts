@@ -112,3 +112,49 @@ export async function postWorkOrderCompletion(
 ): Promise<WorkOrderCompletion> {
   return apiPost<WorkOrderCompletion>(`/work-orders/${workOrderId}/completions/${completionId}/post`)
 }
+
+export type WorkOrderDefaultsPayload = {
+  defaultConsumeLocationId?: string | null
+  defaultProduceLocationId?: string | null
+}
+
+export async function updateWorkOrderDefaultsApi(
+  workOrderId: string,
+  payload: WorkOrderDefaultsPayload,
+): Promise<WorkOrder> {
+  return apiPost<WorkOrder>(`/work-orders/${workOrderId}/default-locations`, payload, { method: 'PATCH' })
+}
+
+export type RecordBatchPayload = {
+  occurredAt: string
+  notes?: string | null
+  consumeLines: {
+    componentItemId: string
+    fromLocationId: string
+    uom: string
+    quantity: number
+    notes?: string | null
+  }[]
+  produceLines: {
+    outputItemId: string
+    toLocationId: string
+    uom: string
+    quantity: number
+    notes?: string | null
+  }[]
+}
+
+export type RecordBatchResult = {
+  workOrderId: string
+  issueMovementId: string
+  receiveMovementId: string
+  quantityCompleted: number
+  workOrderStatus: string
+}
+
+export async function recordWorkOrderBatch(
+  workOrderId: string,
+  payload: RecordBatchPayload,
+): Promise<RecordBatchResult> {
+  return apiPost<RecordBatchResult>(`/work-orders/${workOrderId}/record-batch`, payload)
+}
