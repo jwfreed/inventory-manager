@@ -1,5 +1,5 @@
 import { apiGet } from '../http'
-import type { ApiError, ApiNotAvailable, KpiRun, KpiSnapshot } from '../types'
+import type { ApiError, ApiNotAvailable, FulfillmentFillRate, KpiRun, KpiSnapshot } from '../types'
 
 export type KpiListSuccess<T> = {
   type: 'success'
@@ -128,4 +128,11 @@ export async function listKpiRuns(
     }
     throw err
   }
+}
+
+export async function getFulfillmentFillRate(params: { from?: string; to?: string } = {}): Promise<FulfillmentFillRate> {
+  const query: Record<string, string> = {}
+  if (params.from) query.from = params.from
+  if (params.to) query.to = params.to
+  return apiGet<FulfillmentFillRate>('/kpis/fulfillment-fill-rate', { params: query })
 }

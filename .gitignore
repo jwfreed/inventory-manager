@@ -5,3 +5,5 @@ scripts/.dev-seed-state.json
 dist
 package-lock.json
 .env
+docs/Refactoring UI.pdf
+docs/The Definitive Guide to Inventory Management.txt

@@ -190,6 +190,28 @@ export type LocationInventoryRow = {
   onHand: number
 }
 
+export type InventorySnapshotRow = {
+  itemId: string
+  locationId: string
+  uom: string
+  onHand: number
+  reserved: number
+  available: number
+  onOrder: number
+  inTransit: number
+  backordered: number
+  inventoryPosition: number
+}
+
+export type FulfillmentFillRate = {
+  metricName: string
+  shippedQty: number
+  requestedQty: number
+  fillRate: number | null
+  window: { from: string | null; to: string | null }
+  assumptions: string[]
+}
+
 export type SalesOrder = {
   id: string
   soNumber: string

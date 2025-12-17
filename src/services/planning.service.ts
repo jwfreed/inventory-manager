@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query, withTransaction } from '../db';
+import { roundQuantity, toNumber } from '../lib/numbers';
+import { getInventorySnapshot } from './inventorySnapshot.service';
 import type {
   kpiRollupInputsCreateSchema,
   kpiRunSchema,
@@ -13,6 +15,7 @@ import type {
   mrpItemPoliciesCreateSchema,
   mrpRunSchema,
   replenishmentPolicySchema,
+  fulfillmentFillRateQuerySchema
 } from '../schemas/planning.schema';
 
 export type MpsPlanInput = z.infer<typeof mpsPlanSchema>;
@@ -23,6 +26,7 @@ export type MrpRunInput = z.infer<typeof mrpRunSchema>;
 export type MrpItemPoliciesCreateInput = z.infer<typeof mrpItemPoliciesCreateSchema>;
 export type MrpGrossRequirementsCreateInput = z.infer<typeof mrpGrossRequirementsCreateSchema>;
 export type ReplenishmentPolicyInput = z.infer<typeof replenishmentPolicySchema>;
+export type FulfillmentFillRateQuery = z.infer<typeof fulfillmentFillRateQuerySchema>;
 export type KpiRunInput = z.infer<typeof kpiRunSchema>;
 export type KpiSnapshotsCreateInput = z.infer<typeof kpiSnapshotsCreateSchema>;
 export type KpiRollupInputsCreateInput = z.infer<typeof kpiRollupInputsCreateSchema>;
@@ -523,3 +527,208 @@ export async function listKpiRollupInputs(runId: string) {
   return rows;
 }
 
+type ReplenishmentRecommendation = {
+  policyId: string;
+  itemId: string;
+  locationId: string;
+  uom: string;
+  policyType: string;
+  inputs: {
+    leadTimeDays: number | null;
+    reorderPointQty: number | null;
+    orderUpToLevelQty: number | null;
+    orderQuantityQty: number | null;
+    minOrderQty: number | null;
+    maxOrderQty: number | null;
+  };
+  inventory: any;
+  recommendation: {
+    reorderNeeded: boolean;
+    recommendedOrderQty: number;
+    recommendedOrderDate: string | null;
+  };
+  assumptions: string[];
+};
+
+function defaultInventorySnapshot(itemId: string, locationId: string, uom: string) {
+  return {
+    itemId,
+    locationId,
+    uom,
+    onHand: 0,
+    reserved: 0,
+    available: 0,
+    onOrder: 0,
+    inTransit: 0,
+    backordered: 0,
+    inventoryPosition: 0
+  };
+}
+
+function applyMinMax(qty: number, minOrder: number | null, maxOrder: number | null, assumptions: string[]) {
+  let result = qty;
+  if (minOrder !== null && result < minOrder) {
+    result = minOrder;
+    assumptions.push(`Applied min order quantity (${minOrder}).`);
+  }
+  if (maxOrder !== null && result > maxOrder) {
+    result = maxOrder;
+    assumptions.push(`Applied max order quantity (${maxOrder}).`);
+  }
+  return roundQuantity(result);
+}
+
+function computeQropRecommendation(
+  policy: any,
+  snapshot: any,
+  assumptions: string[]
+): { reorderNeeded: boolean; recommendedOrderQty: number; recommendedOrderDate: string | null } {
+  const reorderPoint = toNumber(policy.reorder_point_qty ?? 0);
+  const orderQty = policy.order_quantity_qty != null ? toNumber(policy.order_quantity_qty) : null;
+  const inventoryPosition = toNumber(snapshot.inventoryPosition ?? 0);
+  const minOrder = policy.min_order_qty != null ? toNumber(policy.min_order_qty) : null;
+  const maxOrder = policy.max_order_qty != null ? toNumber(policy.max_order_qty) : null;
+
+  const reorderNeeded = inventoryPosition < reorderPoint;
+  if (!reorderNeeded) {
+    return { reorderNeeded, recommendedOrderQty: 0, recommendedOrderDate: null };
+  }
+
+  const suggested = orderQty != null ? orderQty : Math.max(0, reorderPoint - inventoryPosition);
+  const recommendedOrderQty = applyMinMax(roundQuantity(suggested), minOrder, maxOrder, assumptions);
+  return { reorderNeeded, recommendedOrderQty, recommendedOrderDate: null };
+}
+
+function computeToulRecommendation(
+  policy: any,
+  snapshot: any,
+  assumptions: string[]
+): { reorderNeeded: boolean; recommendedOrderQty: number; recommendedOrderDate: string | null } {
+  const target = toNumber(policy.order_up_to_level_qty ?? 0);
+  const inventoryPosition = toNumber(snapshot.inventoryPosition ?? 0);
+  const minOrder = policy.min_order_qty != null ? toNumber(policy.min_order_qty) : null;
+  const maxOrder = policy.max_order_qty != null ? toNumber(policy.max_order_qty) : null;
+
+  let recommendedOrderQty = roundQuantity(Math.max(0, target - inventoryPosition));
+  const reorderNeeded = recommendedOrderQty > 0;
+  recommendedOrderQty = applyMinMax(recommendedOrderQty, minOrder, maxOrder, assumptions);
+  return { reorderNeeded, recommendedOrderQty, recommendedOrderDate: null };
+}
+
+export async function computeReplenishmentRecommendations(limit: number, offset: number) {
+  const { rows } = await query(
+    `SELECT * FROM replenishment_policies WHERE status = 'active' ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+
+  const recommendations: ReplenishmentRecommendation[] = [];
+
+  for (const row of rows) {
+    const assumptions: string[] = [];
+
+    if (!row.site_location_id) {
+      assumptions.push('Missing site/location on policy; cannot compute recommendation.');
+      recommendations.push({
+        policyId: row.id,
+        itemId: row.item_id,
+        locationId: '',
+        uom: row.uom,
+        policyType: row.policy_type,
+        inputs: {
+          leadTimeDays: row.lead_time_days ?? null,
+          reorderPointQty: row.reorder_point_qty ?? null,
+          orderUpToLevelQty: row.order_up_to_level_qty ?? null,
+          orderQuantityQty: row.order_quantity_qty ?? null,
+          minOrderQty: row.min_order_qty ?? null,
+          maxOrderQty: row.max_order_qty ?? null
+        },
+        inventory: defaultInventorySnapshot(row.item_id, '', row.uom),
+        recommendation: { reorderNeeded: false, recommendedOrderQty: 0, recommendedOrderDate: null },
+        assumptions
+      });
+      continue;
+    }
+
+    let snapshot = defaultInventorySnapshot(row.item_id, row.site_location_id, row.uom);
+    try {
+      const snap = await getInventorySnapshot({
+        itemId: row.item_id,
+        locationId: row.site_location_id,
+        uom: row.uom
+      });
+      if (snap.length > 0) {
+        snapshot = snap[0];
+      }
+    } catch (err) {
+      assumptions.push('Inventory snapshot unavailable; defaulting to zero.');
+    }
+
+    let recommendation;
+    if (row.policy_type === 'q_rop') {
+      recommendation = computeQropRecommendation(row, snapshot, assumptions);
+    } else {
+      recommendation = computeToulRecommendation(row, snapshot, assumptions);
+    }
+
+    recommendations.push({
+      policyId: row.id,
+      itemId: row.item_id,
+      locationId: row.site_location_id,
+      uom: row.uom,
+      policyType: row.policy_type,
+      inputs: {
+        leadTimeDays: row.lead_time_days ?? null,
+        reorderPointQty: row.reorder_point_qty ?? null,
+        orderUpToLevelQty: row.order_up_to_level_qty ?? null,
+        orderQuantityQty: row.order_quantity_qty ?? null,
+        minOrderQty: row.min_order_qty ?? null,
+        maxOrderQty: row.max_order_qty ?? null
+      },
+      inventory: snapshot,
+      recommendation,
+      assumptions
+    });
+  }
+
+  return recommendations;
+}
+
+export async function computeFulfillmentFillRate(queryWindow: FulfillmentFillRateQuery) {
+  const params: any[] = [];
+  const conditions: string[] = [];
+  if (queryWindow.from) {
+    params.push(queryWindow.from);
+    conditions.push(`s.shipped_at >= $${params.length}`);
+  }
+  if (queryWindow.to) {
+    params.push(queryWindow.to);
+    conditions.push(`s.shipped_at <= $${params.length}`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const { rows } = await query(
+    `SELECT
+        COALESCE(SUM(sol.quantity_ordered), 0) AS ordered_qty,
+        COALESCE(SUM(sosl.quantity_shipped), 0) AS shipped_qty
+     FROM sales_order_shipment_lines sosl
+     JOIN sales_order_shipments s ON s.id = sosl.sales_order_shipment_id
+     JOIN sales_order_lines sol ON sol.id = sosl.sales_order_line_id
+     ${where}`,
+    params
+  );
+
+  const orderedQty = roundQuantity(toNumber(rows[0]?.ordered_qty ?? 0));
+  const shippedQty = roundQuantity(toNumber(rows[0]?.shipped_qty ?? 0));
+  const assumptions: string[] = [];
+  if (orderedQty <= 0) {
+    assumptions.push('No shipped order lines in the window; fill rate not measurable.');
+  }
+  const fillRate = orderedQty > 0 ? roundQuantity(shippedQty / orderedQty) : null;
+  return {
+    metricName: 'Fulfillment Fill Rate (measured)',
+    shippedQty,
+    requestedQty: orderedQty,
+    fillRate,
+    window: { from: queryWindow.from ?? null, to: queryWindow.to ?? null },
+    assumptions
+  };
+}

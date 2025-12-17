@@ -5,6 +5,7 @@ import {
   kpiRollupInputsCreateSchema,
   kpiRunSchema,
   kpiSnapshotsCreateSchema,
+  fulfillmentFillRateQuerySchema,
   mpsDemandInputsCreateSchema,
   mpsPeriodsCreateSchema,
   mpsPlanSchema,
@@ -42,7 +43,8 @@ import {
   listMrpPlannedOrders,
   listMrpRuns,
   listReplenishmentPolicies,
-  listReplenishmentRecommendations,
+  computeReplenishmentRecommendations,
+  computeFulfillmentFillRate,
 } from '../services/planning.service';
 
 const router = Router();
@@ -280,8 +282,13 @@ router.get('/replenishment/policies/:id', async (req: Request, res: Response) =>
 router.get('/replenishment/recommendations', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const data = await listReplenishmentRecommendations(limit, offset);
-  return res.json({ data, paging: { limit, offset } });
+  try {
+    const data = await computeReplenishmentRecommendations(limit, offset);
+    return res.json({ data, paging: { limit, offset } });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to compute replenishment recommendations.' });
+  }
 });
 
 router.post('/kpis/runs', async (req: Request, res: Response) => {
@@ -305,6 +312,18 @@ router.get('/kpis/runs', async (req: Request, res: Response) => {
   const offset = Math.max(0, Number(req.query.offset) || 0);
   const data = await listKpiRuns(limit, offset);
   return res.json({ data, paging: { limit, offset } });
+});
+
+router.get('/kpis/fulfillment-fill-rate', async (req: Request, res: Response) => {
+  const parsed = fulfillmentFillRateQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const data = await computeFulfillmentFillRate(parsed.data);
+    return res.json(data);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to compute fulfillment fill rate.' });
+  }
 });
 
 router.get('/kpis/runs/:id', async (req: Request, res: Response) => {
@@ -374,4 +393,3 @@ router.get('/kpis/runs/:id/rollup-inputs', async (req: Request, res: Response) =
 });
 
 export default router;
-

@@ -1,0 +1,202 @@
+import { query } from '../db';
+import { roundQuantity, toNumber } from '../lib/numbers';
+import { assertItemExists, assertLocationExists } from './inventorySummary.service';
+import {
+  calculateAcceptedQuantity,
+  loadPutawayTotals,
+  loadReceiptLineContexts,
+  loadQcBreakdown
+} from './inbound/receivingAggregations';
+
+export type InventorySnapshotRow = {
+  itemId: string;
+  locationId: string;
+  uom: string;
+  onHand: number;
+  reserved: number;
+  available: number;
+  onOrder: number;
+  inTransit: number;
+  backordered: number;
+  inventoryPosition: number;
+};
+
+export type InventorySnapshotParams = {
+  itemId: string;
+  locationId: string;
+  uom?: string;
+};
+
+function normalizeQuantity(value: unknown): number {
+  return roundQuantity(toNumber(value));
+}
+
+async function loadOnHand(itemId: string, locationId: string, uom?: string): Promise<Map<string, number>> {
+  const params: any[] = [itemId, locationId];
+  const uomFilter = uom ? ` AND iml.uom = $${params.push(uom)}` : '';
+  const { rows } = await query(
+    `SELECT iml.uom, SUM(iml.quantity_delta) AS on_hand
+       FROM inventory_movement_lines iml
+       JOIN inventory_movements im ON im.id = iml.movement_id
+      WHERE im.status = 'posted'
+        AND iml.item_id = $1
+        AND iml.location_id = $2${uomFilter}
+      GROUP BY iml.uom`,
+    params
+  );
+
+  const map = new Map<string, number>();
+  rows.forEach((row: any) => {
+    map.set(row.uom, normalizeQuantity(row.on_hand));
+  });
+  return map;
+}
+
+async function loadReserved(itemId: string, locationId: string, uom?: string): Promise<Map<string, number>> {
+  const params: any[] = [itemId, locationId];
+  const uomFilter = uom ? ` AND r.uom = $${params.push(uom)}` : '';
+  const { rows } = await query(
+    `SELECT r.uom, SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved_qty
+       FROM inventory_reservations r
+      WHERE r.item_id = $1
+        AND r.location_id = $2
+        AND r.status IN ('open', 'released')${uomFilter}
+      GROUP BY r.uom`,
+    params
+  );
+
+  const map = new Map<string, number>();
+  rows.forEach((row: any) => {
+    const remaining = roundQuantity(Math.max(0, normalizeQuantity(row.reserved_qty)));
+    map.set(row.uom, remaining);
+  });
+  return map;
+}
+
+async function loadOnOrder(itemId: string, locationId: string, uom?: string): Promise<Map<string, number>> {
+  const params: any[] = [itemId, locationId];
+  const uomFilter = uom ? ` AND pol.uom = $${params.push(uom)}` : '';
+  const { rows } = await query(
+    `SELECT
+        pol.uom,
+        SUM(pol.quantity_ordered) AS total_ordered,
+        SUM(COALESCE(rec.total_received, 0)) AS total_received
+       FROM purchase_order_lines pol
+       JOIN purchase_orders po ON po.id = pol.purchase_order_id
+       LEFT JOIN (
+         SELECT purchase_order_line_id, SUM(quantity_received) AS total_received
+           FROM purchase_order_receipt_lines
+          GROUP BY purchase_order_line_id
+       ) rec ON rec.purchase_order_line_id = pol.id
+      WHERE pol.item_id = $1
+        AND po.ship_to_location_id = $2
+        AND po.status = 'submitted'${uomFilter}
+      GROUP BY pol.uom`,
+    params
+  );
+
+  const map = new Map<string, number>();
+  rows.forEach((row: any) => {
+    const ordered = normalizeQuantity(row.total_ordered);
+    const received = normalizeQuantity(row.total_received);
+    const outstanding = roundQuantity(Math.max(0, ordered - received));
+    map.set(row.uom, outstanding);
+  });
+  return map;
+}
+
+async function loadInTransit(itemId: string, locationId: string, uom?: string): Promise<Map<string, number>> {
+  // Best available proxy: receipt lines for this item + location where accepted quantity
+  // has not yet been posted via putaway/completed movements.
+  const params: any[] = [itemId, locationId];
+  const uomFilter = uom ? ` AND prl.uom = $${params.push(uom)}` : '';
+  const { rows } = await query<{ id: string }>(
+    `SELECT prl.id
+       FROM purchase_order_receipt_lines prl
+       JOIN purchase_order_lines pol ON pol.id = prl.purchase_order_line_id
+       JOIN purchase_order_receipts por ON por.id = prl.purchase_order_receipt_id
+       JOIN purchase_orders po ON po.id = pol.purchase_order_id
+      WHERE pol.item_id = $1
+        AND COALESCE(por.received_to_location_id, po.ship_to_location_id) = $2${uomFilter}`,
+    params
+  );
+
+  const lineIds = rows.map((row) => row.id);
+  if (lineIds.length === 0) {
+    return new Map();
+  }
+
+  const contexts = await loadReceiptLineContexts(lineIds);
+  const qcBreakdown = await loadQcBreakdown(lineIds);
+  const putawayTotals = await loadPutawayTotals(lineIds);
+
+  const map = new Map<string, number>();
+
+  for (const lineId of lineIds) {
+    const context = contexts.get(lineId);
+    if (!context) continue;
+    const qc = qcBreakdown.get(lineId) ?? { hold: 0, accept: 0, reject: 0 };
+    const totals = putawayTotals.get(lineId) ?? { posted: 0, pending: 0 };
+
+    const accepted = normalizeQuantity(calculateAcceptedQuantity(context.quantityReceived, qc));
+    const posted = normalizeQuantity(totals.posted ?? 0);
+    const remaining = roundQuantity(Math.max(0, accepted - posted));
+
+    if (remaining <= 0) continue;
+    const current = map.get(context.uom) ?? 0;
+    map.set(context.uom, roundQuantity(current + remaining));
+  }
+
+  return map;
+}
+
+export async function getInventorySnapshot(params: InventorySnapshotParams): Promise<InventorySnapshotRow[]> {
+  const { itemId, locationId, uom } = params;
+
+  const [onHandMap, reservedMap, onOrderMap, inTransitMap] = await Promise.all([
+    loadOnHand(itemId, locationId, uom),
+    loadReserved(itemId, locationId, uom),
+    loadOnOrder(itemId, locationId, uom),
+    loadInTransit(itemId, locationId, uom)
+  ]);
+
+  const uoms = new Set<string>();
+  onHandMap.forEach((_v, key) => uoms.add(key));
+  reservedMap.forEach((_v, key) => uoms.add(key));
+  onOrderMap.forEach((_v, key) => uoms.add(key));
+  inTransitMap.forEach((_v, key) => uoms.add(key));
+  if (uom) {
+    uoms.add(uom);
+  }
+
+  const rows: InventorySnapshotRow[] = [];
+  Array.from(uoms)
+    .sort((a, b) => a.localeCompare(b))
+    .forEach((entryUom) => {
+      const onHand = onHandMap.get(entryUom) ?? 0;
+      const reserved = reservedMap.get(entryUom) ?? 0;
+      const onOrder = onOrderMap.get(entryUom) ?? 0;
+      const inTransit = inTransitMap.get(entryUom) ?? 0;
+      const backordered = 0;
+
+      const available = roundQuantity(onHand - reserved);
+      const inventoryPosition = roundQuantity(onHand + onOrder + inTransit - reserved - backordered);
+
+      rows.push({
+        itemId,
+        locationId,
+        uom: entryUom,
+        onHand,
+        reserved,
+        available,
+        onOrder,
+        inTransit,
+        backordered,
+        inventoryPosition
+      });
+    });
+
+  return rows;
+}
+
+export { assertItemExists, assertLocationExists };

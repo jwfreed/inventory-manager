@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { listKpiRuns, listKpiSnapshots } from '../../../api/endpoints/kpis'
+import { getFulfillmentFillRate, listKpiRuns, listKpiSnapshots } from '../../../api/endpoints/kpis'
 import { listWorkOrders } from '../../../api/endpoints/workOrders'
 import type { ApiError } from '../../../api/types'
 import { Card } from '../../../components/Card'
@@ -11,6 +11,7 @@ import { Badge } from '../../../components/Badge'
 import { KpiCardGrid } from '../components/KpiCardGrid'
 import { SnapshotsTable } from '../components/SnapshotsTable'
 import { formatDateTime } from '../utils'
+import { formatNumber } from '../../../lib/formatters'
 
 type SnapshotQueryResult = Awaited<ReturnType<typeof listKpiSnapshots>>
 type RunQueryResult = Awaited<ReturnType<typeof listKpiRuns>>
@@ -68,6 +69,12 @@ export default function DashboardPage() {
     staleTime: 30_000,
   })
 
+  const fillRateQuery = useQuery({
+    queryKey: ['fulfillment-fill-rate'],
+    queryFn: () => getFulfillmentFillRate({}),
+    staleTime: 30_000,
+  })
+
   const productionRows =
     productionQuery.data?.data.map((wo) => ({
       outputItemId: wo.outputItemId,
@@ -91,6 +98,51 @@ export default function DashboardPage() {
     ...val,
     remaining: Math.max(0, val.planned - val.completed),
   }))
+
+  const fillRateCard = (() => {
+    if (fillRateQuery.isLoading) {
+      return <LoadingSpinner label="Loading fulfillment fill rate..." />
+    }
+    if (fillRateQuery.isError && (fillRateQuery.error as ApiError)?.status === 404) {
+      return (
+        <EmptyState
+          title="Fill rate not available"
+          description="Backend did not expose /kpis/fulfillment-fill-rate. This card is a measured proxy only."
+        />
+      )
+    }
+    if (fillRateQuery.isError && fillRateQuery.error) {
+      return <ErrorState error={fillRateQuery.error as ApiError} onRetry={() => void fillRateQuery.refetch()} />
+    }
+    return (
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-700">Fulfillment Fill Rate (measured)</p>
+          <p className="text-xs text-slate-500">
+            Window: {fillRateQuery.data?.window.from ?? 'all time'} → {fillRateQuery.data?.window.to ?? 'now'}
+          </p>
+          {fillRateQuery.data?.assumptions?.length ? (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-500">
+              {fillRateQuery.data.assumptions.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <div className="text-right">
+          <p className="text-3xl font-semibold text-slate-900">
+            {fillRateQuery.data?.fillRate != null
+              ? `${formatNumber(fillRateQuery.data.fillRate * 100, { maximumFractionDigits: 1 })}%`
+              : 'n/a'}
+          </p>
+          <p className="text-xs text-slate-500">
+            Shipped: {formatNumber(fillRateQuery.data?.shippedQty ?? 0)} / Ordered:{' '}
+            {formatNumber(fillRateQuery.data?.requestedQty ?? 0)}
+          </p>
+        </div>
+      </div>
+    )
+  })()
 
   return (
     <div className="space-y-6">
@@ -156,6 +208,15 @@ export default function DashboardPage() {
               </table>
             </div>
           )}
+        </Card>
+      </Section>
+
+      <Section
+        title="Measured fulfillment"
+        description="Fulfillment Fill Rate (measured) from shipped sales order lines. This is a measured proxy, not PPIS."
+      >
+        <Card>
+          {fillRateCard}
         </Card>
       </Section>
 

@@ -123,3 +123,17 @@ export const kpiRollupInputSchema = z.object({
 export const kpiRollupInputsCreateSchema = z.object({
   inputs: z.array(kpiRollupInputSchema).min(1)
 });
+
+const isoDateTime = z
+  .string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/,
+    'Use ISO timestamp'
+  );
+
+export const fulfillmentFillRateQuerySchema = z.object({
+  from: isoDateTime.optional(),
+  to: isoDateTime.optional()
+});
+
+export type FulfillmentFillRateQuery = z.infer<typeof fulfillmentFillRateQuerySchema>;
