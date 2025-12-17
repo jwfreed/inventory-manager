@@ -129,7 +129,10 @@ export default function ReceivingPage() {
         </div>
       </div>
 
-      <Section title="Create receipt">
+      <Section
+        title="Record a receipt"
+        description="Capture what arrived from a purchase order. Use the PO line IDs and matching units."
+      >
         <Card>
           <form className="space-y-4" onSubmit={onCreateReceipt}>
             {receiptMutation.isError && (
@@ -137,7 +140,7 @@ export default function ReceivingPage() {
             )}
             <div className="grid gap-3 md:grid-cols-2">
               <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Purchase Order</span>
+                <span className="text-xs uppercase tracking-wide text-slate-500">Purchase order</span>
                 <select
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   value={selectedPoId}
@@ -218,7 +221,7 @@ export default function ReceivingPage() {
                     />
                   </label>
                   <div className="flex items-end">
-                    <div className="text-xs text-slate-500">Use PO line IDs and matching UOM.</div>
+                    <div className="text-xs text-slate-500">Use purchase order line IDs and matching units.</div>
                   </div>
                 </div>
               ))}
@@ -232,7 +235,10 @@ export default function ReceivingPage() {
         </Card>
       </Section>
 
-      <Section title="Putaway from receipt">
+      <Section
+        title="Move received items to storage"
+        description="Plan putaway moves from a receipt line into a storage location."
+      >
         <Card>
           <form className="space-y-4" onSubmit={onCreatePutaway}>
             {putawayMutation.isError && (

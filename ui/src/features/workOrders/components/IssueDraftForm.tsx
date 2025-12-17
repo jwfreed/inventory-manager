@@ -217,25 +217,25 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
         ))}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-slate-700">
-          Total to issue:{' '}
-          <span className="font-semibold text-red-600">-{formatNumber(totalIssued)}</span>{' '}
-          {lines[0]?.uom || ''}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-slate-700">
+            Total to issue:{' '}
+            <span className="font-semibold text-red-600">-{formatNumber(totalIssued)}</span>{' '}
+            {lines[0]?.uom || ''}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={onSubmitDraft} disabled={issueMutation.isPending}>
+              Save issue draft
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setShowPostConfirm(true)}
+              disabled={!createdIssue || isPosted || postMutation.isPending}
+            >
+              Post issue to inventory
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={onSubmitDraft} disabled={issueMutation.isPending}>
-            Save draft
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => setShowPostConfirm(true)}
-            disabled={!createdIssue || isPosted || postMutation.isPending}
-          >
-            Post issue
-          </Button>
-        </div>
-      </div>
 
       <PostConfirmModal
         isOpen={showPostConfirm}
@@ -261,7 +261,10 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
 
       {isPosted && createdIssue?.inventoryMovementId && (
         <div className="mt-4">
-          <LotAllocationsCard movementId={createdIssue.inventoryMovementId} title="Allocate lots to issues" />
+          <LotAllocationsCard
+            movementId={createdIssue.inventoryMovementId}
+            title="Assign lots for this issue movement"
+          />
         </div>
       )}
     </Card>

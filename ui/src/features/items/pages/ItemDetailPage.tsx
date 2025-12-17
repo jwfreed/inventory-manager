@@ -185,10 +185,10 @@ export default function ItemDetailPage() {
         )}
         <div className="flex justify-between items-center pb-2">
           <div className="text-sm text-slate-700">
-            Define recipes for this item. Activate versions to use them in work orders.
+            Define the recipe for this item. Activate a version before using it in a work order.
           </div>
           <Button variant="secondary" size="sm" onClick={() => setShowBomForm((v) => !v)}>
-            {showBomForm ? 'Hide form' : 'New BOM'}
+            {showBomForm ? 'Hide form' : 'Add BOM'}
           </Button>
         </div>
         {showBomForm && itemQuery.data && (

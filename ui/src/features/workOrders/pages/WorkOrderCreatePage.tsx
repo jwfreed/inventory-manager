@@ -103,7 +103,7 @@ export default function WorkOrderCreatePage() {
           <Section title="Header">
             <div className="grid gap-3 md:grid-cols-3">
               <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">WO number</span>
+                <span className="text-xs uppercase tracking-wide text-slate-500">Work order number</span>
                 <Input
                   value={workOrderNumber}
                   onChange={(e) => setWorkOrderNumber(e.target.value)}
@@ -123,7 +123,7 @@ export default function WorkOrderCreatePage() {
             </div>
             <div className="grid gap-3 md:grid-cols-3">
               <label className="space-y-1 text-sm md:col-span-2">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Output item</span>
+                <span className="text-xs uppercase tracking-wide text-slate-500">Item to make</span>
                 <select
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   value={outputItemId}
@@ -143,7 +143,7 @@ export default function WorkOrderCreatePage() {
                 </select>
               </label>
               <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Output UOM</span>
+                <span className="text-xs uppercase tracking-wide text-slate-500">Unit of measure</span>
                 <Input
                   value={outputUom}
                   onChange={(e) => setOutputUom(e.target.value)}
@@ -186,7 +186,10 @@ export default function WorkOrderCreatePage() {
             </div>
           </Section>
 
-          <Section title="BOM">
+          <Section
+            title="Bill of materials"
+            description="Select the recipe for this item. If multiple versions exist, choose the one you need."
+          >
             {bomsQuery.isLoading && <LoadingSpinner label="Loading BOMs..." />}
             {bomsQuery.isError && bomsQuery.error && (
               <Alert variant="error" title="Failed to load BOMs" message={(bomsQuery.error as ApiError).message} />

@@ -221,30 +221,30 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
         ))}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-slate-700">
-          Total to complete:{' '}
-          <span className="font-semibold text-green-700">+{formatNumber(totalCompleted)}</span>{' '}
-          {lines[0]?.uom || ''}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-slate-700">
+            Total to complete:{' '}
+            <span className="font-semibold text-green-700">+{formatNumber(totalCompleted)}</span>{' '}
+            {lines[0]?.uom || ''}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onSubmitDraft}
+              disabled={completionMutation.isPending}
+            >
+              Save completion draft
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setShowPostConfirm(true)}
+              disabled={!createdCompletion || isPosted || postMutation.isPending}
+            >
+              Post completion to inventory
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onSubmitDraft}
-            disabled={completionMutation.isPending}
-          >
-            Save draft
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => setShowPostConfirm(true)}
-            disabled={!createdCompletion || isPosted || postMutation.isPending}
-          >
-            Post completion
-          </Button>
-        </div>
-      </div>
 
       <PostConfirmModal
         isOpen={showPostConfirm}
@@ -272,7 +272,7 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
         <div className="mt-4">
           <LotAllocationsCard
             movementId={createdCompletion.productionMovementId}
-            title="Allocate lots to completions"
+            title="Assign lots for this completion movement"
           />
         </div>
       )}

@@ -98,12 +98,15 @@ export default function DashboardPage() {
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Dashboard</p>
         <h2 className="text-2xl font-semibold text-slate-900">Dashboard</h2>
         <p className="max-w-3xl text-sm text-slate-600">
-          Read-only KPI cards and snapshots as provided by the backend. If KPI endpoints are not yet
-          implemented, you will see an informational placeholder instead of an error.
+          Quick snapshot of KPIs and production progress. If a data feed is missing, you will see a
+          calm placeholder instead of an error.
         </p>
       </div>
 
-      <Section title="Production snapshot" description="Planned vs. completed quantities by output item (work orders)">
+      <Section
+        title="Production progress"
+        description="Planned versus completed quantities by finished or intermediate item (from work orders)."
+      >
         <Card>
           {productionQuery.isLoading && <LoadingSpinner label="Loading production summary..." />}
           {productionQuery.isError && productionQuery.error && (
@@ -121,10 +124,10 @@ export default function DashboardPage() {
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Output item
+                      Item to make
                     </th>
                     <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Planned
+                      Planned qty
                     </th>
                     <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Completed
