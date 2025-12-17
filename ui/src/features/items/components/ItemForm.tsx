@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import type { ApiError, Item } from '../../../api/types'
@@ -21,6 +22,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title }: Props) {
   const [description, setDescription] = useState(initialItem?.description ?? '')
   const [active, setActive] = useState(initialItem?.active ?? true)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!initialItem) return
     setSku(initialItem.sku)

@@ -151,7 +151,7 @@ export function LotAllocationsCard({ movementId, title }: Props) {
                       </td>
                     </tr>
                   ) : (
-                    currentAllocations[line.id].map((alloc: any) => (
+                    currentAllocations[line.id].map((alloc: { id: string; lot_id?: string; lotId?: string; quantity_delta?: number; quantityDelta?: number; uom: string }) => (
                       <tr key={alloc.id}>
                         <td className="px-3 py-2 text-sm text-slate-800">{alloc.lot_id ?? alloc.lotId}</td>
                         <td className="px-3 py-2 text-sm text-slate-800">{alloc.quantity_delta ?? alloc.quantityDelta}</td>

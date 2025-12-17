@@ -6,6 +6,7 @@ import type { z } from 'zod';
 import { defaultBreakdown, loadQcBreakdown } from './inbound/receivingAggregations';
 import type { QcBreakdown } from './inbound/receivingAggregations';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { normalizeQuantityByUom } from '../lib/uom';
 
 type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
 
@@ -107,11 +108,12 @@ export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput
     );
 
     for (const line of data.lines) {
+      const normalized = normalizeQuantityByUom(line.quantityReceived, line.uom);
       await client.query(
         `INSERT INTO purchase_order_receipt_lines (
             id, purchase_order_receipt_id, purchase_order_line_id, uom, quantity_received
          ) VALUES ($1, $2, $3, $4, $5)`,
-        [uuidv4(), receiptId, line.purchaseOrderLineId, line.uom, line.quantityReceived]
+        [uuidv4(), receiptId, line.purchaseOrderLineId, normalized.uom, normalized.quantity]
       );
     }
   });

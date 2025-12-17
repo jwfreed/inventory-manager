@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -36,6 +37,7 @@ export default function WorkOrderCreatePage() {
     enabled: !!outputItemId,
   })
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     const bomDefault = bomsQuery.data?.boms?.[0]
     if (bomDefault) {

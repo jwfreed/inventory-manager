@@ -4,6 +4,7 @@ import type { z } from 'zod';
 import { pool, withTransaction } from '../db';
 import { inventoryAdjustmentSchema } from '../schemas/adjustments.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { normalizeQuantityByUom } from '../lib/uom';
 
 type InventoryAdjustmentInput = z.infer<typeof inventoryAdjustmentSchema>;
 
@@ -75,13 +76,14 @@ function normalizeAdjustmentLines(data: InventoryAdjustmentInput) {
     if (lineNumbers.has(lineNumber)) {
       throw new Error('ADJUSTMENT_DUPLICATE_LINE');
     }
+    const normalized = normalizeQuantityByUom(line.quantityDelta, line.uom);
     lineNumbers.add(lineNumber);
     return {
       lineNumber,
       itemId: line.itemId,
       locationId: line.locationId,
-      uom: line.uom,
-      quantityDelta: roundQuantity(line.quantityDelta),
+      uom: normalized.uom,
+      quantityDelta: normalized.quantity,
       reasonCode: line.reasonCode,
       notes: line.notes ?? null
     };

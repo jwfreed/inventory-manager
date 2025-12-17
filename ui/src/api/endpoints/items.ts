@@ -1,6 +1,11 @@
 import { apiGet, apiPost, apiPut } from '../http'
 import type { Item, ItemInventoryRow } from '../types'
 
+type ItemApiRow = Item & {
+  created_at?: string
+  updated_at?: string
+}
+
 export type ItemPayload = {
   sku: string
   name: string
@@ -15,7 +20,7 @@ export type ListItemsParams = {
   offset?: number
 }
 
-function mapItem(row: any): Item {
+function mapItem(row: ItemApiRow): Item {
   return {
     id: row.id,
     sku: row.sku,

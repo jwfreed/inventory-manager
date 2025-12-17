@@ -8,6 +8,7 @@ import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema
 } from '../schemas/workOrderExecution.schema';
+import { normalizeQuantityByUom } from '../lib/uom';
 
 type WorkOrderIssueCreateInput = z.infer<typeof workOrderIssueCreateSchema>;
 type WorkOrderCompletionCreateInput = z.infer<typeof workOrderCompletionCreateSchema>;
@@ -132,13 +133,14 @@ export async function createWorkOrderIssue(workOrderId: string, data: WorkOrderI
     if (lineNumbers.has(lineNumber)) {
       throw new Error('WO_ISSUE_DUPLICATE_LINE');
     }
+    const normalized = normalizeQuantityByUom(line.quantityIssued, line.uom);
     lineNumbers.add(lineNumber);
     return {
       lineNumber,
       componentItemId: line.componentItemId,
       fromLocationId: line.fromLocationId,
-      uom: line.uom,
-      quantityIssued: roundQuantity(line.quantityIssued),
+      uom: normalized.uom,
+      quantityIssued: normalized.quantity,
       notes: line.notes ?? null
     };
   });
@@ -248,7 +250,8 @@ export async function postWorkOrderIssue(workOrderId: string, issueId: string) {
     );
 
     for (const line of linesResult.rows) {
-      const qty = roundQuantity(toNumber(line.quantity_issued));
+      const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity_issued)), line.uom);
+      const qty = normalized.quantity;
       if (qty <= 0) {
         throw new Error('WO_ISSUE_INVALID_QUANTITY');
       }
@@ -262,7 +265,7 @@ export async function postWorkOrderIssue(workOrderId: string, issueId: string) {
           line.component_item_id,
           line.from_location_id,
           roundQuantity(-qty),
-          line.uom,
+          normalized.uom,
           line.notes ?? `Work order issue ${issueId} line ${line.line_number}`
         ]
       );
@@ -292,6 +295,10 @@ export async function postWorkOrderIssue(workOrderId: string, issueId: string) {
 export async function createWorkOrderCompletion(workOrderId: string, data: WorkOrderCompletionCreateInput) {
   const executionId = uuidv4();
   const now = new Date();
+  const normalizedLines = data.lines.map((line) => {
+    const normalized = normalizeQuantityByUom(line.quantityCompleted, line.uom);
+    return { ...line, uom: normalized.uom, quantityCompleted: normalized.quantity };
+  });
 
   return withTransaction(async (client) => {
     const workOrder = await fetchWorkOrderById(workOrderId, client);
@@ -309,7 +316,7 @@ export async function createWorkOrderCompletion(workOrderId: string, data: WorkO
       [executionId, workOrderId, new Date(data.occurredAt), data.notes ?? null, now]
     );
 
-    for (const line of data.lines) {
+    for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO work_order_execution_lines (
             id, work_order_execution_id, line_type, item_id, uom, quantity, from_location_id, to_location_id, notes, created_at
@@ -397,7 +404,8 @@ export async function postWorkOrderCompletion(workOrderId: string, completionId:
       if (!line.to_location_id) {
         throw new Error('WO_COMPLETION_LOCATION_REQUIRED');
       }
-      const qty = roundQuantity(toNumber(line.quantity));
+      const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity)), line.uom);
+      const qty = normalized.quantity;
       if (qty <= 0) {
         throw new Error('WO_COMPLETION_INVALID_QUANTITY');
       }
@@ -413,7 +421,8 @@ export async function postWorkOrderCompletion(workOrderId: string, completionId:
     );
 
     for (const line of linesResult.rows) {
-      const qty = roundQuantity(toNumber(line.quantity));
+      const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity)), line.uom);
+      const qty = normalized.quantity;
       await client.query(
         `INSERT INTO inventory_movement_lines (
             id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
@@ -424,7 +433,7 @@ export async function postWorkOrderCompletion(workOrderId: string, completionId:
           line.item_id,
           line.to_location_id,
           qty,
-          line.uom,
+          normalized.uom,
           line.notes ?? `Work order completion ${completionId}`
         ]
       );
@@ -521,4 +530,3 @@ export async function getWorkOrderExecutionSummary(workOrderId: string) {
     bom
   };
 }
-

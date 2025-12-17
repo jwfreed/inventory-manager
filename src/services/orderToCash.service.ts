@@ -8,6 +8,7 @@ import {
   salesOrderSchema,
   shipmentSchema,
 } from '../schemas/orderToCash.schema';
+import { normalizeQuantityByUom } from '../lib/uom';
 
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
 export type ReservationInput = z.infer<typeof reservationSchema>;
@@ -164,6 +165,7 @@ export async function createReservations(data: ReservationCreateInput) {
   const results: any[] = [];
   await withTransaction(async (client) => {
     for (const reservation of data.reservations) {
+      const normalized = normalizeQuantityByUom(reservation.quantityReserved, reservation.uom);
       const res = await client.query(
         `INSERT INTO inventory_reservations (
           id, status, demand_type, demand_id, item_id, location_id, uom,
@@ -177,8 +179,8 @@ export async function createReservations(data: ReservationCreateInput) {
           reservation.demandId,
           reservation.itemId,
           reservation.locationId,
-          reservation.uom,
-          reservation.quantityReserved,
+          normalized.uom,
+          normalized.quantity,
           reservation.quantityFulfilled ?? null,
           reservation.status === 'open' ? now : now,
           reservation.notes ?? null,

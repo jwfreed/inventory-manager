@@ -4,7 +4,16 @@ import { ORDER_TO_CASH_ENDPOINTS } from './config'
 
 type ListResponse = { data: ReturnDoc[]; paging?: { limit: number; offset: number } }
 
-function mapReturn(row: any): ReturnDoc {
+type ReturnApiRow = Partial<ReturnDoc> & {
+  rma_number?: string
+  customer_id?: string
+  sales_order_id?: string
+  authorized_at?: string
+  created_at?: string
+  updated_at?: string
+}
+
+function mapReturn(row: ReturnApiRow): ReturnDoc {
   return {
     id: row.id,
     rmaNumber: row.rmaNumber ?? row.rma_number,
@@ -20,7 +29,7 @@ function mapReturn(row: any): ReturnDoc {
 }
 
 export async function listReturns(): Promise<ListResponse> {
-  const res = await apiGet<ReturnDoc[] | { data?: any[]; paging?: { limit: number; offset: number } }>(
+  const res = await apiGet<ReturnApiRow[] | { data?: ReturnApiRow[]; paging?: { limit: number; offset: number } }>(
     ORDER_TO_CASH_ENDPOINTS.returns,
   )
   if (Array.isArray(res)) {

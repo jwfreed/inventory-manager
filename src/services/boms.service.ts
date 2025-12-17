@@ -4,6 +4,7 @@ import type { z } from 'zod';
 import { pool, query, withTransaction } from '../db';
 import { bomActivationSchema, bomCreateSchema } from '../schemas/boms.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { normalizeQuantityByUom } from '../lib/uom';
 
 type BomCreateInput = z.infer<typeof bomCreateSchema>;
 type BomActivationInput = z.infer<typeof bomActivationSchema>;
@@ -178,6 +179,8 @@ export async function createBom(data: BomCreateInput): Promise<Bom> {
   const versionNumber = data.version.versionNumber ?? 1;
 
   const bom = await withTransaction(async (client) => {
+    const normalizedYield = normalizeQuantityByUom(data.version.yieldQuantity, data.version.yieldUom);
+
     await client.query(
       `INSERT INTO boms (id, bom_code, output_item_id, default_uom, active, notes, created_at, updated_at)
          VALUES ($1, $2, $3, $4, true, $5, $6, $6)`,
@@ -195,14 +198,15 @@ export async function createBom(data: BomCreateInput): Promise<Bom> {
         versionNumber,
         data.version.effectiveFrom ?? null,
         data.version.effectiveTo ?? null,
-        roundQuantity(data.version.yieldQuantity),
-        data.version.yieldUom,
+        normalizedYield.quantity,
+        normalizedYield.uom,
         data.version.notes ?? null,
         now
       ]
     );
 
     for (const component of data.version.components) {
+      const normalized = normalizeQuantityByUom(component.quantityPer, component.uom);
       await client.query(
         `INSERT INTO bom_version_lines (
             id, bom_version_id, line_number, component_item_id, component_quantity,
@@ -213,8 +217,8 @@ export async function createBom(data: BomCreateInput): Promise<Bom> {
           versionId,
           component.lineNumber,
           component.componentItemId,
-          roundQuantity(component.quantityPer),
-          component.uom,
+          normalized.quantity,
+          normalized.uom,
           component.scrapFactor !== undefined ? roundQuantity(component.scrapFactor) : null,
           component.notes ?? null,
           now

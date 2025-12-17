@@ -11,33 +11,58 @@ export type MovementListParams = {
   offset?: number
 }
 
-function toCamelMovement(row: any): Movement {
+type MovementApiRow = Partial<Movement> & {
+  movement_type?: string
+  type?: string
+  occurred_at?: string
+  posted_at?: string | null
+  external_ref?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+type MovementLineApiRow = Partial<MovementLine> & {
+  movement_id?: string
+  item_id?: string
+  item_sku?: string
+  item_name?: string
+  location_id?: string
+  location_code?: string
+  location_name?: string
+  quantity_delta?: number | string
+  reason_code?: string | null
+  line_notes?: string | null
+  sku?: string
+  name?: string
+}
+
+function toCamelMovement(row: MovementApiRow): Movement {
   if (!row) throw new Error('Missing movement payload')
   return {
-    id: row.id,
-    movementType: row.movementType ?? row.movement_type ?? row.type ?? row.movementType,
-    status: row.status,
-    occurredAt: row.occurredAt ?? row.occurred_at,
-    postedAt: row.postedAt ?? row.posted_at,
-    externalRef: row.externalRef ?? row.external_ref,
-    notes: row.notes,
+    id: row.id as string,
+    movementType: row.movementType ?? row.movement_type ?? row.type ?? '',
+    status: row.status ?? '',
+    occurredAt: row.occurredAt ?? row.occurred_at ?? '',
+    postedAt: row.postedAt ?? row.posted_at ?? null,
+    externalRef: row.externalRef ?? row.external_ref ?? null,
+    notes: row.notes ?? null,
     createdAt: row.createdAt ?? row.created_at,
     updatedAt: row.updatedAt ?? row.updated_at,
   }
 }
 
-function toCamelLine(row: any): MovementLine {
+function toCamelLine(row: MovementLineApiRow): MovementLine {
   if (!row) throw new Error('Missing movement line payload')
   return {
-    id: row.id,
-    movementId: row.movementId ?? row.movement_id,
-    itemId: row.itemId ?? row.item_id,
+    id: row.id as string,
+    movementId: row.movementId ?? row.movement_id ?? '',
+    itemId: row.itemId ?? row.item_id ?? '',
     itemSku: row.itemSku ?? row.item_sku ?? row.sku,
     itemName: row.itemName ?? row.item_name ?? row.name,
-    locationId: row.locationId ?? row.location_id,
+    locationId: row.locationId ?? row.location_id ?? '',
     locationCode: row.locationCode ?? row.location_code,
     locationName: row.locationName ?? row.location_name,
-    uom: row.uom,
+    uom: row.uom ?? '',
     quantityDelta: Number(row.quantityDelta ?? row.quantity_delta ?? 0),
     reasonCode: row.reasonCode ?? row.reason_code,
     lineNotes: row.lineNotes ?? row.line_notes ?? row.notes ?? null,
@@ -54,7 +79,7 @@ export async function listMovements(params: MovementListParams = {}): Promise<Mo
   if (params.limit) queryParams.limit = params.limit
   if (params.offset !== undefined) queryParams.offset = params.offset
 
-  const response = await apiGet<any>('/inventory-movements', {
+  const response = await apiGet<unknown>('/inventory-movements', {
     params: queryParams,
   })
 
@@ -70,12 +95,12 @@ export async function listMovements(params: MovementListParams = {}): Promise<Mo
 }
 
 export async function getMovement(movementId: string): Promise<Movement> {
-  const movement = await apiGet<any>(`/inventory-movements/${movementId}`)
+  const movement = await apiGet<MovementApiRow>(`/inventory-movements/${movementId}`)
   return toCamelMovement(movement)
 }
 
 export async function getMovementLines(movementId: string): Promise<MovementLine[]> {
-  const lines = await apiGet<any>(`/inventory-movements/${movementId}/lines`)
+  const lines = await apiGet<unknown>(`/inventory-movements/${movementId}/lines`)
   if (Array.isArray(lines)) {
     return lines.map(toCamelLine)
   }

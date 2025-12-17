@@ -1,6 +1,12 @@
 import { apiGet, apiPost, apiPut } from '../http'
 import type { Location, LocationInventoryRow } from '../types'
 
+type LocationApiRow = Location & {
+  parent_location_id?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
 export type LocationPayload = {
   code: string
   name: string
@@ -17,7 +23,7 @@ export type ListLocationsParams = {
   offset?: number
 }
 
-function mapLocation(row: any): Location {
+function mapLocation(row: LocationApiRow): Location {
   return {
     id: row.id,
     code: row.code,

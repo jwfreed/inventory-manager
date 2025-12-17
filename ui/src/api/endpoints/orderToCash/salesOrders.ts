@@ -14,7 +14,18 @@ export type SalesOrderListResponse = {
   paging?: { limit: number; offset: number }
 }
 
-function mapSalesOrderSummary(row: any): SalesOrder {
+type SalesOrderApiRow = Partial<SalesOrder> & {
+  so_number?: string
+  customer_id?: string
+  order_date?: string
+  requested_ship_date?: string
+  ship_from_location_id?: string
+  customer_reference?: string
+  created_at?: string
+  updated_at?: string
+}
+
+function mapSalesOrderSummary(row: SalesOrderApiRow): SalesOrder {
   return {
     id: row.id,
     soNumber: row.soNumber ?? row.so_number,
@@ -33,7 +44,7 @@ function mapSalesOrderSummary(row: any): SalesOrder {
 export async function listSalesOrders(
   params: SalesOrderListParams = {},
 ): Promise<SalesOrderListResponse> {
-  const response = await apiGet<SalesOrder[] | { data: any[]; paging?: { limit: number; offset: number } }>(
+  const response = await apiGet<SalesOrderApiRow[] | { data: SalesOrderApiRow[]; paging?: { limit: number; offset: number } }>(
     ORDER_TO_CASH_ENDPOINTS.salesOrders,
     { params },
   )

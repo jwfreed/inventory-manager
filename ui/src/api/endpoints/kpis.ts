@@ -25,7 +25,36 @@ export type ListKpiRunsParams = {
 const KPI_SNAPSHOT_ENDPOINT = '/kpis/snapshots'
 const KPI_RUN_ENDPOINT = '/kpis/runs'
 
-function normalizeSnapshot(row: any): KpiSnapshot {
+type SnapshotApiRow = Partial<KpiSnapshot> & {
+  kpiName?: string
+  name?: string
+  value_unit?: string
+  valueUnit?: string
+  units?: string | null
+  kpi_value?: number | string | null
+  metric_value?: number | string | null
+  metricValue?: number | string | null
+  snapshot_at?: string | null
+  snapshotAt?: string | null
+  timestamp?: string | null
+  created_at?: string | null
+  createdAt?: string | null
+}
+
+type RunApiRow = Partial<KpiRun> & {
+  state?: string
+  startedAt?: string | null
+  created_at?: string | null
+  createdAt?: string | null
+  finishedAt?: string | null
+  completed_at?: string | null
+  completedAt?: string | null
+  windowStart?: string | null
+  windowEnd?: string | null
+  asOf?: string | null
+}
+
+function normalizeSnapshot(row: SnapshotApiRow): KpiSnapshot {
   const rawValue = row?.value ?? row?.kpi_value ?? row?.metric_value ?? row?.metricValue
   let value: number | string | null = rawValue ?? null
   if (typeof value === 'string') {
@@ -49,12 +78,12 @@ function normalizeSnapshot(row: any): KpiSnapshot {
     value,
     unit: row?.unit ?? row?.units ?? row?.value_unit ?? row?.valueUnit ?? null,
     computed_at: computedAt || '',
-    dimensions: row?.dimensions ?? row?.attrs ?? row?.meta ?? null,
+    dimensions: row?.dimensions ?? (row as Record<string, unknown>)?.attrs ?? null,
     kpi_run_id: row?.kpi_run_id ?? row?.kpiRunId ?? null,
   }
 }
 
-function normalizeRun(row: any): KpiRun {
+function normalizeRun(row: RunApiRow): KpiRun {
   return {
     id: row?.id,
     status: row?.status ?? row?.state ?? 'unknown',
@@ -67,12 +96,15 @@ function normalizeRun(row: any): KpiRun {
   }
 }
 
-function extractList<T>(payload: any, mapper: (row: any) => T): T[] {
+function extractList<T>(payload: unknown, mapper: (row: unknown) => T): T[] {
   if (!payload) return []
   if (Array.isArray(payload)) return payload.map(mapper)
-  if (Array.isArray(payload?.data)) return payload.data.map(mapper)
-  if (Array.isArray(payload?.snapshots)) return payload.snapshots.map(mapper)
-  if (Array.isArray(payload?.results)) return payload.results.map(mapper)
+  if (typeof payload === 'object' && payload !== null) {
+    const asObj = payload as Record<string, unknown>
+    if (Array.isArray(asObj.data)) return asObj.data.map(mapper)
+    if (Array.isArray(asObj.snapshots)) return asObj.snapshots.map(mapper)
+    if (Array.isArray(asObj.results)) return asObj.results.map(mapper)
+  }
   return []
 }
 
@@ -94,7 +126,7 @@ export async function listKpiSnapshots(
   }
 
   try {
-    const response = await apiGet<any>(KPI_SNAPSHOT_ENDPOINT, { params: buildSnapshotQuery(params) })
+    const response = await apiGet<unknown>(KPI_SNAPSHOT_ENDPOINT, { params: buildSnapshotQuery(params) })
     const data = extractList(response, normalizeSnapshot)
     return { type: 'success', endpoint: KPI_SNAPSHOT_ENDPOINT, attempted: [KPI_SNAPSHOT_ENDPOINT], data }
   } catch (err) {
@@ -118,7 +150,7 @@ export async function listKpiRuns(
     if (params.limit) queryParams.limit = params.limit
     if (params.offset !== undefined) queryParams.offset = params.offset
 
-    const response = await apiGet<any>(KPI_RUN_ENDPOINT, { params: queryParams })
+    const response = await apiGet<unknown>(KPI_RUN_ENDPOINT, { params: queryParams })
     const data = extractList(response, normalizeRun)
     return { type: 'success', endpoint: KPI_RUN_ENDPOINT, attempted: [KPI_RUN_ENDPOINT], data }
   } catch (err) {

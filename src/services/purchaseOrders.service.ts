@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query, withTransaction } from '../db';
 import type { purchaseOrderSchema, purchaseOrderLineSchema } from '../schemas/purchaseOrders.schema';
+import { normalizeQuantityByUom } from '../lib/uom';
 
 export type PurchaseOrderInput = z.infer<typeof purchaseOrderSchema>;
 export type PurchaseOrderLineInput = z.infer<typeof purchaseOrderLineSchema>;
@@ -40,7 +41,8 @@ function normalizePurchaseOrderLines(lines: PurchaseOrderLineInput[]) {
       throw new Error('PO_DUPLICATE_LINE_NUMBERS');
     }
     lineNumbers.add(number);
-    return { ...line, lineNumber: number };
+    const normalizedQty = normalizeQuantityByUom(line.quantityOrdered, line.uom);
+    return { ...line, lineNumber: number, quantityOrdered: normalizedQty.quantity, uom: normalizedQty.uom };
   });
   return normalized;
 }

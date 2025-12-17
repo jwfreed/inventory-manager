@@ -16,15 +16,14 @@ export type WorkOrderListParams = {
 }
 
 export async function listWorkOrders(params: WorkOrderListParams = {}): Promise<WorkOrderListResponse> {
-  const response = await apiGet<WorkOrderListResponse>('/work-orders', { params })
-  // If backend returns only data array
-  if (Array.isArray((response as any).data)) {
+  const response = await apiGet<WorkOrderListResponse | WorkOrder[]>('/work-orders', { params })
+  if (Array.isArray(response)) {
+    return { data: response }
+  }
+  if (Array.isArray(response.data)) {
     return response
   }
-  if (Array.isArray(response as any)) {
-    return { data: response as unknown as WorkOrder[] }
-  }
-  return response
+  return { data: [], paging: response.paging }
 }
 
 export async function getWorkOrder(id: string): Promise<WorkOrder> {

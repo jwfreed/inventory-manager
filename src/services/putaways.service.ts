@@ -4,6 +4,7 @@ import { query, withTransaction } from '../db';
 import { putawaySchema } from '../schemas/putaways.schema';
 import type { z } from 'zod';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { normalizeQuantityByUom } from '../lib/uom';
 import {
   calculateAcceptedQuantity,
   calculatePutawayAvailability,
@@ -126,7 +127,8 @@ export async function createPutaway(data: PutawayInput) {
   const requestedByLine = new Map<string, number>();
   const normalizedLines = data.lines.map((line, index) => {
     const context = contexts.get(line.purchaseOrderReceiptLineId)!;
-    if (context.uom !== line.uom) {
+    const normalized = normalizeQuantityByUom(line.quantity, line.uom);
+    if (context.uom !== normalized.uom) {
       throw new Error('PUTAWAY_UOM_MISMATCH');
     }
     const fromLocationId = line.fromLocationId ?? context.defaultFromLocationId;
@@ -136,7 +138,7 @@ export async function createPutaway(data: PutawayInput) {
     if (fromLocationId === line.toLocationId) {
       throw new Error('PUTAWAY_SAME_LOCATION');
     }
-    const qty = roundQuantity(line.quantity);
+    const qty = normalized.quantity;
     requestedByLine.set(line.purchaseOrderReceiptLineId, (requestedByLine.get(line.purchaseOrderReceiptLineId) ?? 0) + qty);
     return {
       lineNumber: line.lineNumber ?? index + 1,
@@ -144,7 +146,7 @@ export async function createPutaway(data: PutawayInput) {
       toLocationId: line.toLocationId,
       fromLocationId,
       itemId: context.itemId,
-      uom: line.uom,
+      uom: normalized.uom,
       quantity: qty,
       notes: line.notes ?? null
     };
@@ -297,19 +299,20 @@ export async function postPutaway(id: string) {
     );
 
     for (const line of pendingLines) {
-      const qty = roundQuantity(toNumber(line.quantity_planned));
+      const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity_planned)), line.uom);
+      const qty = normalized.quantity;
       const lineNote = `Putaway ${id} line ${line.line_number}`;
       await client.query(
         `INSERT INTO inventory_movement_lines (
             id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
          ) VALUES ($1, $2, $3, $4, $5, $6, 'putaway', $7)`,
-        [uuidv4(), movementId, line.item_id, line.from_location_id, -qty, line.uom, lineNote]
+        [uuidv4(), movementId, line.item_id, line.from_location_id, -qty, normalized.uom, lineNote]
       );
       await client.query(
         `INSERT INTO inventory_movement_lines (
             id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
          ) VALUES ($1, $2, $3, $4, $5, $6, 'putaway', $7)`,
-        [uuidv4(), movementId, line.item_id, line.to_location_id, qty, line.uom, lineNote]
+        [uuidv4(), movementId, line.item_id, line.to_location_id, qty, normalized.uom, lineNote]
       );
       await client.query(
         `UPDATE putaway_lines

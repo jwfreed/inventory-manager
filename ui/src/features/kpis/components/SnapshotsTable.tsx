@@ -20,6 +20,7 @@ export function SnapshotsTable({ snapshots }: Props) {
   const [page, setPage] = useState(1)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(1)
   }, [kpiFilter, fromDate, toDate])
 

@@ -4,7 +4,16 @@ import { ORDER_TO_CASH_ENDPOINTS } from './config'
 
 type ListResponse = { data: Shipment[]; paging?: { limit: number; offset: number } }
 
-function mapShipment(row: any): Shipment {
+type ShipmentApiRow = Partial<Shipment> & {
+  sales_order_id?: string
+  shipped_at?: string
+  ship_from_location_id?: string
+  inventory_movement_id?: string
+  external_ref?: string
+  created_at?: string
+}
+
+function mapShipment(row: ShipmentApiRow): Shipment {
   return {
     id: row.id,
     salesOrderId: row.salesOrderId ?? row.sales_order_id,
@@ -18,7 +27,7 @@ function mapShipment(row: any): Shipment {
 }
 
 export async function listShipments(): Promise<ListResponse> {
-  const res = await apiGet<Shipment[] | { data?: any[]; paging?: { limit: number; offset: number } }>(
+  const res = await apiGet<ShipmentApiRow[] | { data?: ShipmentApiRow[]; paging?: { limit: number; offset: number } }>(
     ORDER_TO_CASH_ENDPOINTS.shipments,
   )
   if (Array.isArray(res)) {

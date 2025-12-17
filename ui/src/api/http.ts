@@ -18,7 +18,7 @@ function buildUrl(path: string) {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   const text = await response.text()
-  let parsed: any = null
+  let parsed: unknown = null
 
   if (text) {
     try {

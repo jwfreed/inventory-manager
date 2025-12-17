@@ -7,7 +7,7 @@ import type { ApiError, PurchaseOrder, PurchaseOrderReceipt, Putaway } from '../
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
-import { Input, Textarea } from '../../../components/Inputs'
+import { Input } from '../../../components/Inputs'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 

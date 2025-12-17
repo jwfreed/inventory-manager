@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import { query, withTransaction } from '../db';
 import { workOrderCreateSchema, workOrderListQuerySchema } from '../schemas/workOrders.schema';
 import { roundQuantity } from '../lib/numbers';
+import { normalizeQuantityByUom } from '../lib/uom';
 
 type WorkOrderCreateInput = z.infer<typeof workOrderCreateSchema>;
 type WorkOrderListQuery = z.infer<typeof workOrderListQuerySchema>;
@@ -51,6 +52,7 @@ export async function createWorkOrder(data: WorkOrderCreateInput) {
   const now = new Date();
   const id = uuidv4();
   const status = 'draft';
+  const normalizedQty = normalizeQuantityByUom(Number(data.quantityPlanned), data.outputUom);
 
   return withTransaction(async (client) => {
     // Validate BOM exists and matches output item
@@ -90,8 +92,8 @@ export async function createWorkOrder(data: WorkOrderCreateInput) {
         data.bomId,
         data.bomVersionId ?? null,
         data.outputItemId,
-        data.outputUom,
-        data.quantityPlanned,
+        normalizedQty.uom,
+        normalizedQty.quantity,
         data.quantityCompleted ?? null,
         data.scheduledStartAt ? new Date(data.scheduledStartAt) : null,
         data.scheduledDueAt ? new Date(data.scheduledDueAt) : null,
