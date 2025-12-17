@@ -125,13 +125,10 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
   const validate = (): string | null => {
     if (lines.length === 0) return 'Add at least one line.'
     for (const line of lines) {
-      if (!line.outputItemId || !line.toLocationId || !line.uom || line.quantityCompleted === '') {
+      if (!line.toLocationId || !line.uom || line.quantityCompleted === '') {
         return 'All line fields are required.'
       }
       if (Number(line.quantityCompleted) <= 0) return 'Quantities must be greater than zero.'
-      if (line.outputItemId !== workOrder.outputItemId) {
-        return 'Completion item should match the work order output item.'
-      }
     }
     return null
   }
@@ -153,7 +150,7 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
       occurredAt: new Date(occurredAt).toISOString(),
       notes: notes || undefined,
       lines: lines.map((line) => ({
-        outputItemId: line.outputItemId,
+        outputItemId: workOrder.outputItemId,
         toLocationId: line.toLocationId,
         uom: line.uom,
         quantityCompleted: Number(line.quantityCompleted),
@@ -256,10 +253,7 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
           >
             <label className="space-y-1 text-sm">
               <span className="text-xs uppercase tracking-wide text-slate-500">Output Item ID</span>
-              <Input
-                value={line.outputItemId}
-                onChange={(e) => updateLine(idx, { outputItemId: e.target.value })}
-              />
+              <Input value={workOrder.outputItemId} readOnly />
             </label>
             <div>
               <SearchableSelect

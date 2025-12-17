@@ -218,11 +218,8 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
       if (Number(line.quantity) <= 0) return 'Consumption quantities must be greater than zero.'
     }
     for (const line of produceLines) {
-      if (!line.outputItemId || !line.toLocationId || !line.uom || line.quantity === '') {
+      if (!line.toLocationId || !line.uom || line.quantity === '') {
         return 'All production line fields are required.'
-      }
-      if (line.outputItemId !== workOrder.outputItemId) {
-        return 'Production item must match work order output item.'
       }
       if (Number(line.quantity) <= 0) return 'Production quantities must be greater than zero.'
     }
@@ -247,7 +244,7 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
         notes: line.notes,
       })),
       produceLines: produceLines.map((line) => ({
-        outputItemId: line.outputItemId,
+        outputItemId: workOrder.outputItemId,
         toLocationId: line.toLocationId,
         uom: line.uom,
         quantity: Number(line.quantity),
@@ -430,10 +427,7 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
           <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
             <label className="space-y-1 text-sm">
               <span className="text-xs uppercase tracking-wide text-slate-500">Output Item ID</span>
-              <Input
-                value={line.outputItemId}
-                onChange={(e) => updateProduceLine(idx, { outputItemId: e.target.value })}
-              />
+              <Input value={workOrder.outputItemId} readOnly />
             </label>
             <div>
               <SearchableSelect
