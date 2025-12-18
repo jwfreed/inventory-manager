@@ -48,6 +48,8 @@ export type WorkOrder = {
   bomId?: string
   bomVersionId?: string | null
   outputItemId: string
+  outputItemSku?: string
+  outputItemName?: string
   outputUom: string
   quantityPlanned: number
   quantityCompleted?: number | null
@@ -64,6 +66,8 @@ export type WorkOrderListResponse = {
 export type WorkOrderRequirementLine = {
   lineNumber: number
   componentItemId: string
+  componentItemSku?: string
+  componentItemName?: string
   uom: string
   quantityRequired: number
   scrapFactor: number | null

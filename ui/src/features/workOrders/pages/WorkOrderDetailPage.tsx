@@ -127,7 +127,12 @@ export default function WorkOrderDetailPage() {
                         <td className="px-2 py-2 font-mono text-xs text-slate-600">
                           {line.lineNumber}
                         </td>
-                        <td className="px-2 py-2">{line.componentItemId}</td>
+                        <td className="px-2 py-2">
+                          {line.componentItemName || line.componentItemSku || line.componentItemId}
+                          {line.componentItemSku && (
+                            <span className="text-xs text-slate-500"> ({line.componentItemSku})</span>
+                          )}
+                        </td>
                         <td className="px-2 py-2">
                           {line.quantityRequired} {line.uom}
                         </td>

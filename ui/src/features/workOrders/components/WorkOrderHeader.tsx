@@ -30,7 +30,13 @@ export function WorkOrderHeader({ workOrder }: Props) {
           </div>
           <div className="mt-2 flex items-center gap-2">
             <Badge variant={statusVariant}>{workOrder.status}</Badge>
-            <Badge variant="neutral">Output: {workOrder.outputItemId}</Badge>
+            <Badge variant="neutral">
+              Output:{' '}
+              {workOrder.outputItemName || workOrder.outputItemSku || workOrder.outputItemId}
+              {workOrder.outputItemSku && (
+                <span className="text-xs text-slate-500"> ({workOrder.outputItemSku})</span>
+              )}
+            </Badge>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3 text-right text-sm text-slate-700">

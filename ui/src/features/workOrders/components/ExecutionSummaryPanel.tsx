@@ -58,11 +58,13 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
         ) : (
           <ul className="space-y-2 text-sm text-slate-800">
             {summary.issuedTotals.map((row) => (
-              <li key={`${row.componentItemId}-${row.uom}`} className="flex justify-between">
-                <span>{renderLabel({ name: row.componentItemName, sku: row.componentItemSku, id: row.componentItemId })}</span>
-                <span className="text-red-600">
+              <li key={`${row.componentItemId}-${row.uom}`} className="flex flex-col rounded-md border border-slate-200 px-3 py-2">
+                <div className="text-slate-900 font-medium">
+                  {renderLabel({ name: row.componentItemName, sku: row.componentItemSku, id: row.componentItemId })}
+                </div>
+                <div className="text-red-600">
                   -{formatNumber(row.quantityIssued)} {row.uom}
-                </span>
+                </div>
               </li>
             ))}
           </ul>
@@ -74,11 +76,13 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
         ) : (
           <ul className="space-y-2 text-sm text-slate-800">
             {summary.completedTotals.map((row) => (
-              <li key={`${row.outputItemId}-${row.uom}`} className="flex justify-between">
-                <span>{renderLabel({ name: row.outputItemName, sku: row.outputItemSku, id: row.outputItemId })}</span>
-                <span className="text-green-700">
+              <li key={`${row.outputItemId}-${row.uom}`} className="flex flex-col rounded-md border border-slate-200 px-3 py-2">
+                <div className="text-slate-900 font-medium">
+                  {renderLabel({ name: row.outputItemName, sku: row.outputItemSku, id: row.outputItemId })}
+                </div>
+                <div className="text-green-700">
                   +{formatNumber(row.quantityCompleted)} {row.uom}
-                </span>
+                </div>
               </li>
             ))}
           </ul>
