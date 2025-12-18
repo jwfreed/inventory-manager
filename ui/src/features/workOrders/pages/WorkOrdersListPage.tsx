@@ -37,7 +37,10 @@ export default function WorkOrdersListPage() {
     const list = data?.data ?? []
     if (!search) return list
     const needle = search.toLowerCase()
-    return list.filter((wo) => wo.workOrderNumber.toLowerCase().includes(needle))
+    return list.filter((wo) => {
+      const hay = `${wo.workOrderNumber} ${wo.outputItemSku ?? ''} ${wo.outputItemName ?? ''} ${wo.outputItemId}`.toLowerCase()
+      return hay.includes(needle)
+    })
   }, [data?.data, search])
 
   const remaining = (wo: WorkOrder) =>
@@ -144,7 +147,14 @@ export default function WorkOrdersListPage() {
                       <td className="px-4 py-3 text-sm text-slate-800">
                         <Badge variant="neutral">{wo.status}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">{wo.outputItemId}</td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        <div className="font-medium text-slate-900">
+                          {wo.outputItemName || wo.outputItemSku || wo.outputItemId}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {wo.outputItemSku ? `${wo.outputItemSku} · ${wo.outputItemId}` : wo.outputItemId}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-right text-sm text-slate-800">
                         {formatNumber(wo.quantityPlanned)} {wo.outputUom}
                       </td>
