@@ -8,6 +8,8 @@
     "migrate:down": "NODE_PG_MIGRATE_TS_NODE=true TS_NODE_TRANSPILE_ONLY=true node -r ts-node/register ./node_modules/.bin/node-pg-migrate down --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
     "dev": "ts-node --transpile-only -r dotenv/config src/server.ts",
     "dev:watch": "nodemon --watch src --ext ts --exec \"ts-node --transpile-only -r dotenv/config src/server.ts\"",
+    "db:reset": "ts-node --transpile-only -r dotenv/config scripts/db-reset.ts",
+    "db:reset:migrate": "npm run db:reset && npm run migrate",
     "dev:seed": "ts-node --transpile-only -r dotenv/config scripts/dev-seed.ts",
     "dev:seed:chocolate": "ts-node --transpile-only -r dotenv/config scripts/chocolate-seed.ts",
     "start": "node dist/server.js"
