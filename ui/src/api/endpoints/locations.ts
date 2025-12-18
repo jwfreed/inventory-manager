@@ -74,3 +74,17 @@ export async function updateLocation(id: string, payload: LocationPayload): Prom
   const location = await apiPut<Location>(`/locations/${id}`, payload)
   return mapLocation(location)
 }
+
+export async function createStandardWarehouseTemplate(opts: { includeReceivingQc?: boolean } = {}): Promise<{
+  created: Location[]
+  skipped: string[]
+}> {
+  const response = await apiPost<{ created?: LocationApiRow[]; skipped?: string[] }>(
+    '/locations/templates/standard-warehouse',
+    { includeReceivingQc: opts.includeReceivingQc },
+  )
+  return {
+    created: (response.created ?? []).map(mapLocation),
+    skipped: response.skipped ?? [],
+  }
+}

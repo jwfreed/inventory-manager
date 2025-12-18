@@ -5,6 +5,7 @@ import { itemSchema, locationSchema } from '../schemas/masterData.schema';
 import {
   createItem,
   createLocation,
+  createStandardWarehouseTemplate,
   getItem,
   getLocation,
   listItems,
@@ -178,6 +179,24 @@ router.put('/locations/:id', async (req: Request, res: Response) => {
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to update location.' });
+  }
+});
+
+const locationTemplateSchema = z.object({
+  includeReceivingQc: z.boolean().optional()
+});
+
+router.post('/locations/templates/standard-warehouse', async (req: Request, res: Response) => {
+  const parsed = locationTemplateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const result = await createStandardWarehouseTemplate(parsed.data.includeReceivingQc ?? true);
+    return res.status(result.created.length > 0 ? 201 : 200).json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to create standard warehouse template.' });
   }
 });
 

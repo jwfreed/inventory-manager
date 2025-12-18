@@ -221,3 +221,48 @@ export async function listLocations(filters: {
   );
   return rows.map(mapLocation);
 }
+
+export async function createStandardWarehouseTemplate(includeReceivingQc: boolean = true) {
+  const now = new Date();
+  const baseLocations = [
+    { code: 'RAW', name: 'Raw Stock', type: 'warehouse' },
+    { code: 'WIP', name: 'Work in Progress', type: 'warehouse' },
+    { code: 'FG', name: 'Finished Goods', type: 'warehouse' },
+    { code: 'SHIP-STG', name: 'Shipping Staging', type: 'warehouse' },
+    { code: 'STORE', name: 'Store/Customer', type: 'customer' }
+  ];
+  if (includeReceivingQc) {
+    baseLocations.push({ code: 'RECV', name: 'Receiving', type: 'warehouse' });
+    baseLocations.push({ code: 'QC', name: 'Quality Inspection', type: 'warehouse' });
+  }
+
+  const codes = baseLocations.map((loc) => loc.code);
+  return withTransaction(async (client) => {
+    const existingRes = await client.query<{ code: string }>(
+      'SELECT code FROM locations WHERE code = ANY($1)',
+      [codes]
+    );
+    const existingCodes = new Set(existingRes.rows.map((r) => r.code));
+    const created: any[] = [];
+
+    for (const loc of baseLocations) {
+      if (existingCodes.has(loc.code)) continue;
+      const id = uuidv4();
+      const res = await client.query(
+        `INSERT INTO locations (id, code, name, type, active, parent_location_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, true, NULL, $5, $5)
+         ON CONFLICT (code) DO NOTHING
+         RETURNING *`,
+        [id, loc.code, loc.name, loc.type, now]
+      );
+      if (res.rowCount > 0) {
+        created.push(mapLocation(res.rows[0]));
+      }
+    }
+
+    return {
+      created,
+      skipped: Array.from(existingCodes)
+    };
+  });
+}

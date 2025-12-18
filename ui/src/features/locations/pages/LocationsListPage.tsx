@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { listLocations } from '../../../api/endpoints/locations'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { createStandardWarehouseTemplate, listLocations } from '../../../api/endpoints/locations'
 import type { ApiError, Location } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -26,6 +26,7 @@ export default function LocationsListPage() {
   const [typeFilter, setTypeFilter] = useState('')
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  const [includeReceivingQc, setIncludeReceivingQc] = useState(true)
 
   const { data, isLoading, isError, error, refetch } = useQuery<{ data: Location[] }, ApiError>({
     queryKey: ['locations', active, typeFilter],
@@ -47,6 +48,13 @@ export default function LocationsListPage() {
     )
   }, [data?.data, search, typeFilter])
 
+  const templateMutation = useMutation<{ created: Location[]; skipped: string[] }, ApiError>({
+    mutationFn: () => createStandardWarehouseTemplate({ includeReceivingQc }),
+    onSuccess: () => {
+      void refetch()
+    },
+  })
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
@@ -62,6 +70,43 @@ export default function LocationsListPage() {
           <Button variant="secondary" size="sm" onClick={() => setShowCreate((v) => !v)}>
             {showCreate ? 'Hide form' : 'New location'}
           </Button>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+          <div className="space-y-1">
+            <div className="font-semibold text-slate-800">Create a standard warehouse</div>
+            <div className="text-slate-600">
+              Adds Raw, WIP, FG, Shipping Staging, Store/Customer, and optional Receiving/QC. Skips any that already exist.
+            </div>
+            {templateMutation.isSuccess && (
+              <div className="text-xs text-green-700">
+                Added {templateMutation.data?.created.length ?? 0} locations, skipped{' '}
+                {templateMutation.data?.skipped.length ?? 0}.
+              </div>
+            )}
+            {templateMutation.isError && (
+              <div className="text-xs text-red-600">
+                {(templateMutation.error as ApiError)?.message ?? 'Template creation failed.'}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <input
+                type="checkbox"
+                checked={includeReceivingQc}
+                onChange={(e) => setIncludeReceivingQc(e.target.checked)}
+                disabled={templateMutation.isPending}
+              />
+              Include Receiving/QC
+            </label>
+            <Button
+              size="sm"
+              onClick={() => templateMutation.mutate()}
+              disabled={templateMutation.isPending}
+            >
+              {templateMutation.isPending ? 'Creating…' : 'Create standard warehouse'}
+            </Button>
+          </div>
         </div>
         {showCreate && (
           <LocationForm
