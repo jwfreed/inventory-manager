@@ -91,12 +91,16 @@ router.get('/work-orders/:id/requirements', async (req: Request, res: Response) 
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const quantity = parsed.data.quantity ? Number(parsed.data.quantity) : undefined;
+  const packSize = parsed.data.packSize ? Number(parsed.data.packSize) : undefined;
   if (quantity !== undefined && !(quantity > 0)) {
     return res.status(400).json({ error: 'Quantity must be positive if provided.' });
   }
+  if (packSize !== undefined && !(packSize > 0)) {
+    return res.status(400).json({ error: 'packSize must be positive if provided.' });
+  }
 
   try {
-    const requirements = await getWorkOrderRequirements(id, quantity);
+    const requirements = await getWorkOrderRequirements(id, quantity, packSize);
     if (!requirements) {
       return res.status(404).json({ error: 'Work order not found.' });
     }

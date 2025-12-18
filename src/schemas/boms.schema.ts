@@ -6,6 +6,8 @@ export const bomComponentInputSchema = z.object({
   uom: z.string().min(1).max(32),
   quantityPer: z.number().positive(),
   scrapFactor: z.number().min(0).optional(),
+  usesPackSize: z.boolean().optional(),
+  variableUom: z.string().min(1).max(32).optional(),
   notes: z.string().max(2000).optional()
 });
 

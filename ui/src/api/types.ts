@@ -70,6 +70,8 @@ export type WorkOrderRequirementLine = {
   componentItemName?: string
   uom: string
   quantityRequired: number
+  usesPackSize?: boolean
+  variableUom?: string | null
   scrapFactor: number | null
 }
 
@@ -91,6 +93,8 @@ export type BomVersionComponent = {
   quantityPer: number
   uom: string
   scrapFactor: number | null
+  usesPackSize?: boolean
+  variableUom?: string | null
   notes: string | null
   createdAt: string
 }

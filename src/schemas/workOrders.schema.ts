@@ -46,7 +46,8 @@ export const workOrderListQuerySchema = z.object({
 });
 
 export const workOrderRequirementsQuerySchema = z.object({
-  quantity: z.string().optional()
+  quantity: z.string().optional(),
+  packSize: z.string().optional()
 });
 
 export const workOrderDefaultLocationsSchema = z.object({

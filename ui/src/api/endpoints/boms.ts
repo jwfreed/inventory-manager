@@ -12,6 +12,8 @@ export type BomComponentInput = {
   uom: string
   quantityPer: number
   scrapFactor?: number
+  usesPackSize?: boolean
+  variableUom?: string
   notes?: string
 }
 

@@ -42,6 +42,8 @@ type BomVersionLineRow = {
   component_quantity: string | number;
   component_uom: string;
   scrap_factor: string | number | null;
+  uses_pack_size: boolean;
+  variable_uom: string | null;
   notes: string | null;
   created_at: string;
 };
@@ -54,6 +56,8 @@ export type BomVersionLine = {
   quantityPer: number;
   uom: string;
   scrapFactor: number | null;
+  usesPackSize: boolean;
+  variableUom: string | null;
   notes: string | null;
   createdAt: string;
 };
@@ -96,6 +100,8 @@ function mapBomVersionLine(row: BomVersionLineRow): BomVersionLine {
     quantityPer: roundQuantity(toNumber(row.component_quantity)),
     uom: row.component_uom,
     scrapFactor: row.scrap_factor !== null ? roundQuantity(toNumber(row.scrap_factor)) : null,
+    usesPackSize: !!row.uses_pack_size,
+    variableUom: row.variable_uom,
     notes: row.notes,
     createdAt: row.created_at
   };
@@ -210,8 +216,8 @@ export async function createBom(data: BomCreateInput): Promise<Bom> {
       await client.query(
         `INSERT INTO bom_version_lines (
             id, bom_version_id, line_number, component_item_id, component_quantity,
-            component_uom, scrap_factor, notes, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            component_uom, scrap_factor, uses_pack_size, variable_uom, notes, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           uuidv4(),
           versionId,
@@ -220,6 +226,8 @@ export async function createBom(data: BomCreateInput): Promise<Bom> {
           normalized.quantity,
           normalized.uom,
           component.scrapFactor !== undefined ? roundQuantity(component.scrapFactor) : null,
+          component.usesPackSize ?? false,
+          component.variableUom ?? null,
           component.notes ?? null,
           now
         ]

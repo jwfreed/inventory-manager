@@ -169,6 +169,8 @@ export type WorkOrderRequirementLine = {
   componentItemId: string;
   uom: string;
   quantityRequired: number;
+  usesPackSize?: boolean;
+  variableUom?: string | null;
   scrapFactor: number | null;
 };
 
@@ -182,7 +184,11 @@ export type WorkOrderRequirements = {
   lines: WorkOrderRequirementLine[];
 };
 
-export async function getWorkOrderRequirements(workOrderId: string, requestedQty?: number): Promise<WorkOrderRequirements | null> {
+export async function getWorkOrderRequirements(
+  workOrderId: string,
+  requestedQty?: number,
+  packSize?: number
+): Promise<WorkOrderRequirements | null> {
   const woRes = await query<WorkOrderRow>('SELECT * FROM work_orders WHERE id = $1', [workOrderId]);
   if (woRes.rowCount === 0) return null;
   const wo = woRes.rows[0];
@@ -214,13 +220,17 @@ export async function getWorkOrderRequirements(workOrderId: string, requestedQty
 
   const lines: WorkOrderRequirementLine[] = version.components.map((c) => {
     const normalizedComp = normalizeQuantityByUom(c.quantityPer, c.uom);
+    const baseQuantity = c.usesPackSize && packSize !== undefined ? packSize : normalizedComp.quantity;
+    const uom = c.usesPackSize && c.variableUom ? c.variableUom : normalizedComp.uom;
     const scrap = c.scrapFactor ?? 0;
-    const required = roundQuantity(normalizedComp.quantity * factor * (1 + scrap));
+    const required = roundQuantity(baseQuantity * factor * (1 + scrap));
     return {
       lineNumber: c.lineNumber,
       componentItemId: c.componentItemId,
-      uom: normalizedComp.uom,
+      uom,
       quantityRequired: required,
+      usesPackSize: c.usesPackSize,
+      variableUom: c.variableUom ?? null,
       scrapFactor: c.scrapFactor
     };
   });

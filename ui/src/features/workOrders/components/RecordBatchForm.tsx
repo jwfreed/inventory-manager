@@ -35,6 +35,7 @@ type ConsumeLine = {
   fromLocationId: string
   uom: string
   quantity: number | ''
+  usesPackSize?: boolean
   notes?: string
 }
 
@@ -61,12 +62,13 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   const [locationSearch, setLocationSearch] = useState('')
   const [defaultFromLocationId, setDefaultFromLocationId] = useState<string>('')
   const [defaultToLocationId, setDefaultToLocationId] = useState<string>('')
+  const [packSize, setPackSize] = useState<number | ''>('')
   const remaining = Math.max(
     0,
     (workOrder.quantityPlanned || 0) - (workOrder.quantityCompleted ?? 0),
   )
   const [consumeLines, setConsumeLines] = useState<ConsumeLine[]>([
-    { componentItemId: '', fromLocationId: '', uom: '', quantity: '' },
+    { componentItemId: '', fromLocationId: '', uom: '', quantity: '', usesPackSize: false },
   ])
   const [produceLines, setProduceLines] = useState<ProduceLine[]>([
     {
@@ -187,7 +189,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   })
 
   const requirementsMutation = useMutation({
-    mutationFn: () => getWorkOrderRequirements(workOrder.id),
+    mutationFn: () => getWorkOrderRequirements(workOrder.id, undefined, packSize === '' ? undefined : packSize),
     onSuccess: (req) => {
       const nextLines: ConsumeLine[] = req.lines
         .sort((a, b) => a.lineNumber - b.lineNumber)
@@ -196,6 +198,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
           fromLocationId: effectiveDefaultFrom,
           uom: line.uom,
           quantity: line.quantityRequired,
+          usesPackSize: line.usesPackSize,
         }))
       setConsumeLines(nextLines.length > 0 ? nextLines : consumeLines)
       setWarning(null)
@@ -229,7 +232,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   const addConsumeLine = () =>
     setConsumeLines((prev) => [
       ...prev,
-      { componentItemId: '', fromLocationId: normalizedDefaultFrom, uom: baseOutputUom, quantity: '' },
+      { componentItemId: '', fromLocationId: normalizedDefaultFrom, uom: baseOutputUom, quantity: '', usesPackSize: false },
     ])
   const addProduceLine = () =>
     setProduceLines((prev) => [
@@ -376,6 +379,16 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold text-slate-800">Consumption</div>
           <div className="flex gap-2">
+            <label className="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <span>Pack size</span>
+              <Input
+                type="number"
+                min={0}
+                className="w-24"
+                value={packSize}
+                onChange={(e) => setPackSize(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            </label>
             <Button variant="secondary" size="sm" onClick={() => requirementsMutation.mutate()}>
               {requirementsMutation.isPending ? 'Loading…' : 'Load from BOM'}
             </Button>
@@ -423,6 +436,11 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
                 disabled={itemsQuery.isLoading}
                 onChange={(nextValue) => onComponentChange(idx, nextValue)}
               />
+              {line.usesPackSize && (
+                <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Pack-size driven
+                </div>
+              )}
             </div>
             <div>
               <SearchableSelect

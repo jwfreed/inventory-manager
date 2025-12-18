@@ -38,8 +38,11 @@ export async function getWorkOrderExecution(id: string): Promise<WorkOrderExecut
 export async function getWorkOrderRequirements(
   id: string,
   quantity?: number,
+  packSize?: number,
 ): Promise<WorkOrderRequirements> {
-  const params = quantity ? { quantity } : undefined
+  const params: Record<string, number> = {}
+  if (quantity) params.quantity = quantity
+  if (packSize) params.packSize = packSize
   return apiGet<WorkOrderRequirements>(`/work-orders/${id}/requirements`, { params })
 }
 
