@@ -7,6 +7,8 @@ import {
   getWorkOrderRequirements,
 } from '../../../api/endpoints/workOrders'
 import { getItem } from '../../../api/endpoints/items'
+import { listNextStepBoms } from '../../../api/endpoints/boms'
+import { createWorkOrder } from '../../../api/endpoints/workOrders'
 import type { ApiError, WorkOrderRequirements } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -27,6 +29,11 @@ export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [tab, setTab] = useState<TabKey>('summary')
+  const [showNextStep, setShowNextStep] = useState(false)
+  const [nextWorkOrderNumber, setNextWorkOrderNumber] = useState('')
+  const [selectedBomId, setSelectedBomId] = useState('')
+  const [nextQuantity, setNextQuantity] = useState<number | ''>(1)
+  const [createWarning, setCreateWarning] = useState<string | null>(null)
 
   const workOrderQuery = useQuery({
     queryKey: ['work-order', id],
@@ -41,6 +48,51 @@ export default function WorkOrderDetailPage() {
     enabled: Boolean(workOrderQuery.data?.outputItemId),
     staleTime: 60_000,
   })
+
+  const nextStepBomsQuery = useQuery({
+    queryKey: ['next-step-boms', workOrderQuery.data?.outputItemId],
+    queryFn: () => listNextStepBoms(workOrderQuery.data?.outputItemId as string),
+    enabled: Boolean(workOrderQuery.data?.outputItemId),
+    staleTime: 60_000,
+  })
+
+  const createNextStep = async () => {
+    if (!workOrderQuery.data) return
+    const bom = nextStepBomsQuery.data?.data.find((b) => b.id === selectedBomId)
+    if (!bom) {
+      setCreateWarning('Select a BOM')
+      return
+    }
+    if (!nextWorkOrderNumber) {
+      setCreateWarning('Work order number required')
+      return
+    }
+    const qty = nextQuantity === '' ? 0 : Number(nextQuantity)
+    if (!(qty > 0)) {
+      setCreateWarning('Quantity must be positive')
+      return
+    }
+    setCreateWarning(null)
+    const consumeLoc =
+      workOrderQuery.data.defaultProduceLocationId ||
+      outputItemQuery.data?.defaultLocationId ||
+      null
+    const produceLoc = outputItemQuery.data?.defaultLocationId ?? null
+    const next = await createWorkOrder({
+      workOrderNumber: nextWorkOrderNumber,
+      bomId: bom.id,
+      outputItemId: bom.outputItemId,
+      outputUom: bom.defaultUom,
+      quantityPlanned: qty,
+      defaultConsumeLocationId: consumeLoc || undefined,
+      defaultProduceLocationId: produceLoc || undefined,
+    })
+    setShowNextStep(false)
+    setSelectedBomId('')
+    setNextWorkOrderNumber('')
+    setNextQuantity(1)
+    navigate(`/work-orders/${next.id}`)
+  }
 
   const executionQuery = useQuery({
     queryKey: ['work-order-execution', id],
@@ -179,7 +231,81 @@ export default function WorkOrderDetailPage() {
                     : 'Record Batch'}
             </button>
           ))}
+          <button
+            className={`px-3 py-2 text-sm font-semibold ${
+              showNextStep ? 'border-b-2 border-brand-600 text-brand-700' : 'text-slate-600'
+            }`}
+            onClick={() => setShowNextStep((v) => !v)}
+          >
+            Create next step WO
+          </button>
         </div>
+
+        {showNextStep && workOrderQuery.data && (
+          <Card>
+            <div className="space-y-3">
+              <div className="text-sm text-slate-700">
+                Suggests BOMs where this WO output is a component. Defaults consume location to this WO&apos;s
+                production location and falls back to the item default location.
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Work order number</span>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    value={nextWorkOrderNumber}
+                    onChange={(e) => setNextWorkOrderNumber(e.target.value)}
+                  />
+                </label>
+                <label className="space-y-1 text-sm md:col-span-2">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Next BOM</span>
+                  <select
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    value={selectedBomId}
+                    onChange={(e) => setSelectedBomId(e.target.value)}
+                    disabled={nextStepBomsQuery.isLoading}
+                  >
+                    <option value="">Select</option>
+                    {nextStepBomsQuery.data?.data.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.bomCode} → item {b.outputItemId}
+                      </option>
+                    ))}
+                  </select>
+                  {nextStepBomsQuery.isError && (
+                    <p className="text-xs text-red-600">
+                      {(nextStepBomsQuery.error as ApiError)?.message ?? 'Failed to load suggestions.'}
+                    </p>
+                  )}
+                </label>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Quantity planned</span>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    type="number"
+                    min={0}
+                    value={nextQuantity}
+                    onChange={(e) => setNextQuantity(e.target.value === '' ? '' : Number(e.target.value))}
+                  />
+                </label>
+                <div className="text-sm text-slate-600 md:col-span-2">
+                  Consume location defaults to {workOrderQuery.data.defaultProduceLocationId || outputItemQuery.data?.defaultLocationId || '—'}.
+                </div>
+              </div>
+              {createWarning && <div className="text-sm text-red-600">{createWarning}</div>}
+              <div className="flex gap-2">
+                <Button size="sm" onClick={createNextStep} disabled={nextStepBomsQuery.isLoading}>
+                  Create next-step WO
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setShowNextStep(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {tab === 'summary' && (
           <Card>

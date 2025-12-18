@@ -81,6 +81,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   ])
   const [warning, setWarning] = useState<string | null>(null)
   const [successId, setSuccessId] = useState<string | null>(null)
+  const [successIssueId, setSuccessIssueId] = useState<string | null>(null)
 
   const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
     queryKey: ['items', 'wo-batch', itemSearch],
@@ -213,6 +214,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
     mutationFn: (payload: RecordBatchPayload) => recordWorkOrderBatch(workOrder.id, payload),
     onSuccess: (result) => {
       setSuccessId(result.receiveMovementId)
+      setSuccessIssueId(result.issueMovementId)
       setWarning(null)
       void onRefetch()
     },
@@ -350,7 +352,27 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
         <Alert
           variant="success"
           title="Batch recorded"
-          message={`Movements created. Receive movement: ${successId}`}
+          message={`Movements created. Issue: ${successIssueId ?? 'n/a'} · Receive: ${successId}`}
+          action={
+            <div className="flex gap-2">
+              {successIssueId && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => window.open(`/ledger/movements/${successIssueId}`, '_blank')}
+                >
+                  View issue movement
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => window.open(`/ledger/movements/${successId}`, '_blank')}
+              >
+                View receive movement
+              </Button>
+            </div>
+          }
         />
       )}
 

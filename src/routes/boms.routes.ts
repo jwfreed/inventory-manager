@@ -6,6 +6,7 @@ import {
   createBom,
   fetchBomById,
   listBomsByItem,
+  listNextStepBomsByComponentItem,
   resolveEffectiveBom
 } from '../services/boms.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
@@ -88,6 +89,20 @@ router.get('/items/:id/boms', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to list BOMs for item.' });
+  }
+});
+
+router.get('/items/:id/next-step-boms', async (req: Request, res: Response) => {
+  const componentItemId = req.params.id;
+  if (!uuidSchema.safeParse(componentItemId).success) {
+    return res.status(400).json({ error: 'Invalid item id.' });
+  }
+  try {
+    const boms = await listNextStepBomsByComponentItem(componentItemId);
+    return res.json({ data: boms });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to list next-step BOMs.' });
   }
 });
 

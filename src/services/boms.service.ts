@@ -324,6 +324,35 @@ export async function listBomsByItem(itemId: string) {
   return { itemId, boms: Array.from(bomMap.values()) };
 }
 
+export async function listNextStepBomsByComponentItem(componentItemId: string) {
+  const { rows } = await query(
+    `SELECT DISTINCT
+        b.id AS bom_id,
+        b.bom_code,
+        b.output_item_id,
+        b.default_uom,
+        b.active,
+        b.notes AS bom_notes,
+        b.created_at AS bom_created_at,
+        b.updated_at AS bom_updated_at
+     FROM bom_version_lines l
+     JOIN bom_versions v ON v.id = l.bom_version_id
+     JOIN boms b ON b.id = v.bom_id
+    WHERE l.component_item_id = $1`,
+    [componentItemId]
+  );
+  return rows.map((row) => ({
+    id: row.bom_id,
+    bomCode: row.bom_code,
+    outputItemId: row.output_item_id,
+    defaultUom: row.default_uom,
+    active: row.active,
+    notes: row.bom_notes,
+    createdAt: row.bom_created_at,
+    updatedAt: row.bom_updated_at
+  }));
+}
+
 function rangesOverlap(
   existingFrom: string | null,
   existingTo: string | null,

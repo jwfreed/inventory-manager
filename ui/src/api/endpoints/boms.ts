@@ -52,6 +52,10 @@ export async function listBomsByItem(itemId: string): Promise<BomListByItemRespo
   return apiGet<BomListByItemResponse>(`/items/${itemId}/boms`)
 }
 
+export async function listNextStepBoms(componentItemId: string): Promise<{ data: Bom[] }> {
+  return apiGet<{ data: Bom[] }>(`/items/${componentItemId}/next-step-boms`)
+}
+
 export async function activateBomVersion(versionId: string, payload: BomActivationPayload): Promise<Bom> {
   return apiPost<Bom>(`/boms/${versionId}/activate`, payload)
 }
