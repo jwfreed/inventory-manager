@@ -6,6 +6,7 @@ import {
   getWorkOrderExecution,
   getWorkOrderRequirements,
 } from '../../../api/endpoints/workOrders'
+import { getItem } from '../../../api/endpoints/items'
 import type { ApiError, WorkOrderRequirements } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -32,6 +33,13 @@ export default function WorkOrderDetailPage() {
     queryFn: () => getWorkOrder(id as string),
     enabled: !!id,
     retry: (count, err: ApiError) => err?.status !== 404 && count < 1,
+  })
+
+  const outputItemQuery = useQuery({
+    queryKey: ['item', 'wo-output', workOrderQuery.data?.outputItemId],
+    queryFn: () => getItem(workOrderQuery.data?.outputItemId as string),
+    enabled: Boolean(workOrderQuery.data?.outputItemId),
+    staleTime: 60_000,
   })
 
   const executionQuery = useQuery({
@@ -191,15 +199,27 @@ export default function WorkOrderDetailPage() {
         )}
 
         {tab === 'issues' && workOrderQuery.data && (
-          <IssueDraftForm workOrder={workOrderQuery.data} onRefetch={refreshAll} />
+          <IssueDraftForm
+            workOrder={workOrderQuery.data}
+            outputItem={outputItemQuery.data}
+            onRefetch={refreshAll}
+          />
         )}
 
         {tab === 'completions' && workOrderQuery.data && (
-          <CompletionDraftForm workOrder={workOrderQuery.data} onRefetch={refreshAll} />
+          <CompletionDraftForm
+            workOrder={workOrderQuery.data}
+            outputItem={outputItemQuery.data}
+            onRefetch={refreshAll}
+          />
         )}
 
         {tab === 'batch' && workOrderQuery.data && (
-          <RecordBatchForm workOrder={workOrderQuery.data} onRefetch={refreshAll} />
+          <RecordBatchForm
+            workOrder={workOrderQuery.data}
+            outputItem={outputItemQuery.data}
+            onRefetch={refreshAll}
+          />
         )}
       </Section>
 

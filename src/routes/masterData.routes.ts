@@ -26,7 +26,9 @@ router.post('/items', async (req: Request, res: Response) => {
     return res.status(201).json(item);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
-      unique: () => ({ status: 409, body: { error: 'SKU must be unique.' } })
+      unique: () => ({ status: 409, body: { error: 'SKU must be unique.' } }),
+      foreignKey: () => ({ status: 400, body: { error: 'Default location must exist.' } }),
+      check: () => ({ status: 400, body: { error: 'Invalid item type.' } })
     });
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
@@ -81,7 +83,9 @@ router.put('/items/:id', async (req: Request, res: Response) => {
     return res.json(item);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
-      unique: () => ({ status: 409, body: { error: 'SKU must be unique.' } })
+      unique: () => ({ status: 409, body: { error: 'SKU must be unique.' } }),
+      foreignKey: () => ({ status: 400, body: { error: 'Default location must exist.' } }),
+      check: () => ({ status: 400, body: { error: 'Invalid item type.' } })
     });
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);

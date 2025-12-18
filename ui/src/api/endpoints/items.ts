@@ -2,6 +2,11 @@ import { apiGet, apiPost, apiPut } from '../http'
 import type { Item, ItemInventoryRow } from '../types'
 
 type ItemApiRow = Item & {
+  type?: Item['type']
+  default_uom?: string | null
+  default_location_id?: string | null
+  default_location_code?: string | null
+  default_location_name?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -10,6 +15,9 @@ export type ItemPayload = {
   sku: string
   name: string
   description?: string
+  type?: Item['type']
+  defaultUom?: string | null
+  defaultLocationId?: string | null
   active?: boolean
 }
 
@@ -26,6 +34,11 @@ function mapItem(row: ItemApiRow): Item {
     sku: row.sku,
     name: row.name,
     description: row.description,
+    type: row.type ?? 'raw',
+    defaultUom: row.defaultUom ?? row.default_uom ?? null,
+    defaultLocationId: row.defaultLocationId ?? row.default_location_id ?? null,
+    defaultLocationCode: row.defaultLocationCode ?? row.default_location_code ?? null,
+    defaultLocationName: row.defaultLocationName ?? row.default_location_name ?? null,
     active: row.active,
     createdAt: row.createdAt ?? row.created_at,
     updatedAt: row.updatedAt ?? row.updated_at,
@@ -47,7 +60,8 @@ export async function listItems(params: ListItemsParams = {}): Promise<{ data: I
 }
 
 export async function getItem(id: string): Promise<Item> {
-  return apiGet<Item>(`/items/${id}`)
+  const item = await apiGet<ItemApiRow>(`/items/${id}`)
+  return mapItem(item)
 }
 
 export async function getItemInventorySummary(id: string): Promise<ItemInventoryRow[]> {

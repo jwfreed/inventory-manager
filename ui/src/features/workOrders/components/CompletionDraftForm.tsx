@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -11,8 +11,7 @@ import {
   type CompletionDraftPayload,
   updateWorkOrderDefaultsApi,
 } from '../../../api/endpoints/workOrders'
-import type { ApiError, WorkOrder, WorkOrderCompletion } from '../../../api/types'
-import type { Location } from '../../../api/types'
+import type { ApiError, WorkOrder, WorkOrderCompletion, Item, Location } from '../../../api/types'
 import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '../../../lib/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
@@ -25,27 +24,27 @@ type Line = {
   toLocationId: string
   uom: string
   quantityCompleted: number | ''
+  packSize?: number
   notes?: string
 }
 
 type Props = {
   workOrder: WorkOrder
+  outputItem?: Item
   onRefetch: () => void
 }
 
-export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
+export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props) {
   const defaults = getWorkOrderDefaults(workOrder.id)
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [locationSearch, setLocationSearch] = useState('')
-  const [defaultToLocationId, setDefaultToLocationId] = useState<string>(
-    workOrder.defaultProduceLocationId ?? defaults.produceLocationId ?? '',
-  )
+  const [defaultToLocationId, setDefaultToLocationId] = useState<string>('')
   const [lines, setLines] = useState<Line[]>([
     {
       outputItemId: workOrder.outputItemId,
-      toLocationId: defaultToLocationId,
-      uom: workOrder.outputUom,
+      toLocationId: '',
+      uom: '',
       quantityCompleted: '',
       packSize: undefined,
     },
@@ -83,6 +82,24 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
     retry: 1,
   })
 
+  const baseProduceLocationId =
+    workOrder.defaultProduceLocationId ??
+    outputItem?.defaultLocationId ??
+    defaults.produceLocationId ??
+    ''
+  const baseOutputUom = outputItem?.defaultUom || workOrder.outputUom
+  const usingItemProduceDefault =
+    !workOrder.defaultProduceLocationId &&
+    !defaults.produceLocationId &&
+    outputItem?.defaultLocationId &&
+    normalizedDefaultTo === outputItem.defaultLocationId
+
+  useEffect(() => {
+    if (!defaultToLocationId && baseProduceLocationId) {
+      setDefaultToLocationId(baseProduceLocationId)
+    }
+  }, [baseProduceLocationId, defaultToLocationId])
+
   const locationOptions = useMemo(
     () =>
       (locationsQuery.data?.data ?? []).map((loc) => ({
@@ -95,13 +112,23 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
   const validLocationIds = useMemo(() => new Set(locationOptions.map((o) => o.value)), [locationOptions])
   const normalizedDefaultTo = validLocationIds.has(defaultToLocationId) ? defaultToLocationId : ''
 
+  useEffect(() => {
+    setLines((prev) =>
+      prev.map((line) => ({
+        ...line,
+        toLocationId: line.toLocationId || normalizedDefaultTo || baseProduceLocationId,
+        uom: line.uom || baseOutputUom,
+      })),
+    )
+  }, [normalizedDefaultTo, baseProduceLocationId, baseOutputUom])
+
   const addLine = () =>
     setLines((prev) => [
       ...prev,
       {
         outputItemId: workOrder.outputItemId,
-        toLocationId: normalizedDefaultTo,
-        uom: workOrder.outputUom,
+        toLocationId: normalizedDefaultTo || baseProduceLocationId,
+        uom: baseOutputUom,
         quantityCompleted: '',
         packSize: undefined,
       },
@@ -241,13 +268,16 @@ export function CompletionDraftForm({ workOrder, onRefetch }: Props) {
               disabled={locationsQuery.isLoading}
             >
               <option value="">Select location</option>
-              {locationOptions.map((loc) => (
-                <option key={loc.value} value={loc.value}>
-                  {loc.label}
-                </option>
-              ))}
-            </select>
-          </label>
+      {locationOptions.map((loc) => (
+        <option key={loc.value} value={loc.value}>
+          {loc.label}
+        </option>
+      ))}
+    </select>
+    {usingItemProduceDefault && (
+      <p className="text-xs text-slate-500">Auto from item default location</p>
+    )}
+  </label>
         </div>
         {lines.map((line, idx) => (
           <div

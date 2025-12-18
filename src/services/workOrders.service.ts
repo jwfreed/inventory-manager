@@ -57,7 +57,17 @@ export async function createWorkOrder(data: WorkOrderCreateInput) {
   const now = new Date();
   const id = uuidv4();
   const status = 'draft';
-  const normalizedQty = normalizeQuantityByUom(Number(data.quantityPlanned), data.outputUom);
+  const outputItemRes = await query<{ default_location_id: string | null; default_uom: string | null }>(
+    'SELECT default_location_id, default_uom FROM items WHERE id = $1',
+    [data.outputItemId]
+  );
+  const outputItemDefaults = outputItemRes.rows[0];
+  const outputUom = data.outputUom || outputItemDefaults?.default_uom || data.outputUom;
+  const defaultConsumeLocationId =
+    data.defaultConsumeLocationId ?? outputItemDefaults?.default_location_id ?? null;
+  const defaultProduceLocationId =
+    data.defaultProduceLocationId ?? outputItemDefaults?.default_location_id ?? null;
+  const normalizedQty = normalizeQuantityByUom(Number(data.quantityPlanned), outputUom);
 
   return withTransaction(async (client) => {
     // Validate BOM exists and matches output item
@@ -102,8 +112,8 @@ export async function createWorkOrder(data: WorkOrderCreateInput) {
         normalizedQty.uom,
         normalizedQty.quantity,
         data.quantityCompleted ?? null,
-        data.defaultConsumeLocationId ?? null,
-        data.defaultProduceLocationId ?? null,
+        defaultConsumeLocationId,
+        defaultProduceLocationId,
         data.scheduledStartAt ? new Date(data.scheduledStartAt) : null,
         data.scheduledDueAt ? new Date(data.scheduledDueAt) : null,
         data.notes ?? null,

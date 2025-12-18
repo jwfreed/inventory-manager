@@ -19,6 +19,13 @@ const activeOptions = [
   { label: 'Inactive', value: 'false' },
 ]
 
+const typeLabels: Record<string, string> = {
+  raw: 'Raw',
+  wip: 'WIP',
+  finished: 'Finished',
+  packaging: 'Packaging',
+}
+
 export default function ItemsListPage() {
   const navigate = useNavigate()
   const [active, setActive] = useState('')
@@ -129,6 +136,15 @@ export default function ItemsListPage() {
                       Name
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Type
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Default UOM
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Default location
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Active
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -145,6 +161,15 @@ export default function ItemsListPage() {
                     >
                       <td className="px-4 py-3 text-sm font-semibold text-slate-900">{item.sku}</td>
                       <td className="px-4 py-3 text-sm text-slate-800">{item.name}</td>
+                      <td className="px-4 py-3 text-sm text-slate-800">
+                        <Badge variant="neutral">{typeLabels[item.type] ?? item.type}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-800">
+                        {item.defaultUom || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-800">
+                        {item.defaultLocationCode || item.defaultLocationName || '—'}
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-800">
                         <Badge variant={item.active ? 'success' : 'danger'}>
                           {item.active ? 'Active' : 'Inactive'}

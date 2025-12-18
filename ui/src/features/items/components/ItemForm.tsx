@@ -1,8 +1,9 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import type { ApiError, Item } from '../../../api/types'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import type { ApiError, Item, Location } from '../../../api/types'
 import { createItem, updateItem, type ItemPayload } from '../../../api/endpoints/items'
+import { listLocations } from '../../../api/endpoints/locations'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -20,6 +21,9 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title }: Props) {
   const [sku, setSku] = useState(initialItem?.sku ?? '')
   const [name, setName] = useState(initialItem?.name ?? '')
   const [description, setDescription] = useState(initialItem?.description ?? '')
+  const [type, setType] = useState<Item['type']>(initialItem?.type ?? 'raw')
+  const [defaultUom, setDefaultUom] = useState(initialItem?.defaultUom ?? '')
+  const [defaultLocationId, setDefaultLocationId] = useState(initialItem?.defaultLocationId ?? '')
   const [active, setActive] = useState(initialItem?.active ?? true)
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -28,8 +32,17 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title }: Props) {
     setSku(initialItem.sku)
     setName(initialItem.name)
     setDescription(initialItem.description ?? '')
+    setType(initialItem.type ?? 'raw')
+    setDefaultUom(initialItem.defaultUom ?? '')
+    setDefaultLocationId(initialItem.defaultLocationId ?? '')
     setActive(initialItem.active)
   }, [initialItem])
+
+  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
+    queryKey: ['locations', 'for-items'],
+    queryFn: () => listLocations({ active: true, limit: 200 }),
+    staleTime: 60_000,
+  })
 
   const mutation = useMutation<Item, ApiError, ItemPayload>({
     mutationFn: (payload) =>
@@ -45,9 +58,16 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title }: Props) {
       sku,
       name,
       description: description || undefined,
+      type,
+      defaultUom: defaultUom.trim() ? defaultUom.trim() : undefined,
+      defaultLocationId: defaultLocationId || null,
       active,
     })
   }
+
+  const locationOptions = locationsQuery.data?.data ?? []
+  const selectedLocationMissing =
+    Boolean(defaultLocationId) && !locationOptions.some((loc) => loc.id === defaultLocationId)
 
   return (
     <Card title={title ?? (isEdit ? 'Edit item' : 'Create item')}>
@@ -77,6 +97,59 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title }: Props) {
             />
           </label>
         </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Type</span>
+            <select
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={type}
+              onChange={(e) => setType(e.target.value as Item['type'])}
+              disabled={mutation.isPending}
+            >
+              <option value="raw">Raw material</option>
+              <option value="wip">Work in progress</option>
+              <option value="finished">Finished good</option>
+              <option value="packaging">Packaging</option>
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Default UOM</span>
+            <Input
+              value={defaultUom}
+              onChange={(e) => setDefaultUom(e.target.value)}
+              placeholder="ea, kg, box"
+              disabled={mutation.isPending}
+            />
+          </label>
+        </div>
+        <label className="space-y-1 text-sm block">
+          <span className="text-xs uppercase tracking-wide text-slate-500">Default location</span>
+          <select
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            value={defaultLocationId}
+            onChange={(e) => setDefaultLocationId(e.target.value)}
+            disabled={mutation.isPending || locationsQuery.isLoading}
+          >
+            <option value="">No default</option>
+            {locationOptions.map((loc) => (
+              <option key={loc.id} value={loc.id}>
+                {loc.code || loc.name || loc.id}
+              </option>
+            ))}
+            {selectedLocationMissing && defaultLocationId && (
+              <option value={defaultLocationId}>
+                {initialItem?.defaultLocationCode ||
+                  initialItem?.defaultLocationName ||
+                  defaultLocationId}
+              </option>
+            )}
+          </select>
+          {locationsQuery.isError && (
+            <p className="text-xs text-red-600">
+              {(locationsQuery.error?.message || 'Could not load locations. You can still save without one.')}
+            </p>
+          )}
+        </label>
         <label className="space-y-1 text-sm block">
           <span className="text-xs uppercase tracking-wide text-slate-500">Description</span>
           <Textarea

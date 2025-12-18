@@ -19,6 +19,13 @@ import { ItemForm } from '../components/ItemForm'
 import { BomForm } from '../../boms/components/BomForm'
 import { BomCard } from '../../boms/components/BomCard'
 
+const typeLabels: Record<string, string> = {
+  raw: 'Raw',
+  wip: 'WIP',
+  finished: 'Finished',
+  packaging: 'Packaging',
+}
+
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -104,6 +111,28 @@ export default function ItemDetailPage() {
                 <Badge variant={itemQuery.data.active ? 'success' : 'danger'}>
                   {itemQuery.data.active ? 'Active' : 'Inactive'}
                 </Badge>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3 text-sm text-slate-700">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Type</div>
+                  <div className="font-semibold text-slate-900">
+                    {typeLabels[itemQuery.data.type] ?? itemQuery.data.type}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Default UOM</div>
+                  <div className="font-semibold text-slate-900">
+                    {itemQuery.data.defaultUom || '—'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Default location</div>
+                  <div className="font-semibold text-slate-900">
+                    {itemQuery.data.defaultLocationCode ||
+                      itemQuery.data.defaultLocationName ||
+                      '—'}
+                  </div>
+                </div>
               </div>
             </div>
             <div className="grid gap-2 text-right text-sm text-slate-700">

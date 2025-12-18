@@ -152,6 +152,8 @@ export type WorkOrderExecutionSummary = {
   remainingToComplete: number
 }
 
+export type ItemType = 'raw' | 'wip' | 'finished' | 'packaging'
+
 export type WorkOrderIssue = {
   id: string
   workOrderId: string
@@ -194,6 +196,11 @@ export type Item = {
   sku: string
   name: string
   description?: string | null
+  type: ItemType
+  defaultUom?: string | null
+  defaultLocationId?: string | null
+  defaultLocationCode?: string | null
+  defaultLocationName?: string | null
   active: boolean
   createdAt?: string
   updatedAt?: string

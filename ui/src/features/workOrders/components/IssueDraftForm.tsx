@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -32,20 +32,19 @@ type Line = {
 
 type Props = {
   workOrder: WorkOrder
+  outputItem?: Item
   onRefetch: () => void
 }
 
-export function IssueDraftForm({ workOrder, onRefetch }: Props) {
+export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
   const localDefaults = getWorkOrderDefaults(workOrder.id)
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [itemSearch, setItemSearch] = useState('')
   const [locationSearch, setLocationSearch] = useState('')
-  const [defaultFromLocationId, setDefaultFromLocationId] = useState<string>(
-    workOrder.defaultConsumeLocationId ?? localDefaults.consumeLocationId ?? '',
-  )
+  const [defaultFromLocationId, setDefaultFromLocationId] = useState<string>('')
   const [lines, setLines] = useState<Line[]>([
-    { componentItemId: '', fromLocationId: defaultFromLocationId, uom: workOrder.outputUom, quantityIssued: '' },
+    { componentItemId: '', fromLocationId: '', uom: '', quantityIssued: '' },
   ])
   const [createdIssue, setCreatedIssue] = useState<WorkOrderIssue | null>(null)
   const [showPostConfirm, setShowPostConfirm] = useState(false)
@@ -84,11 +83,22 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
         .sort((a, b) => a.lineNumber - b.lineNumber)
         .map((line) => ({
           componentItemId: line.componentItemId,
-          fromLocationId: defaultFromLocationId,
+          fromLocationId: effectiveDefaultFrom,
           uom: line.uom,
           quantityIssued: line.quantityRequired,
         }))
-      setLines(nextLines.length > 0 ? nextLines : [{ componentItemId: '', fromLocationId: defaultFromLocationId, uom: workOrder.outputUom, quantityIssued: '' }])
+      setLines(
+        nextLines.length > 0
+          ? nextLines
+          : [
+              {
+                componentItemId: '',
+                fromLocationId: effectiveDefaultFrom,
+                uom: baseOutputUom,
+                quantityIssued: '',
+              },
+            ],
+      )
       setWarning(null)
     },
     onError: (err: ApiError | unknown) => {
@@ -111,6 +121,24 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
     retry: 1,
   })
 
+  const baseConsumeLocationId =
+    workOrder.defaultConsumeLocationId ??
+    outputItem?.defaultLocationId ??
+    localDefaults.consumeLocationId ??
+    ''
+  const baseOutputUom = outputItem?.defaultUom || workOrder.outputUom
+  const usingItemConsumeDefault =
+    !workOrder.defaultConsumeLocationId &&
+    !localDefaults.consumeLocationId &&
+    outputItem?.defaultLocationId &&
+    normalizedDefaultFrom === outputItem.defaultLocationId
+
+  useEffect(() => {
+    if (!defaultFromLocationId && baseConsumeLocationId) {
+      setDefaultFromLocationId(baseConsumeLocationId)
+    }
+  }, [baseConsumeLocationId, defaultFromLocationId])
+
   const itemOptions = useMemo(
     () =>
       (itemsQuery.data?.data ?? []).map((item) => ({
@@ -120,6 +148,11 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
       })),
     [itemsQuery.data],
   )
+  const itemsLookup = useMemo(() => {
+    const map = new Map<string, Item>()
+    itemsQuery.data?.data?.forEach((item) => map.set(item.id, item))
+    return map
+  }, [itemsQuery.data])
 
   const locationOptions = useMemo(
     () =>
@@ -132,13 +165,40 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
   )
 
   const validLocationIds = useMemo(() => new Set(locationOptions.map((o) => o.value)), [locationOptions])
-  const normalizedDefaultFrom = validLocationIds.has(defaultFromLocationId) ? defaultFromLocationId : ''
+  const effectiveDefaultFrom = defaultFromLocationId || baseConsumeLocationId
+  const normalizedDefaultFrom = validLocationIds.has(effectiveDefaultFrom) ? effectiveDefaultFrom : ''
+
+  useEffect(() => {
+    setLines((prev) =>
+      prev.map((line) => ({
+        ...line,
+        fromLocationId: line.fromLocationId || effectiveDefaultFrom,
+        uom: line.uom || baseOutputUom,
+      })),
+    )
+  }, [effectiveDefaultFrom, baseOutputUom])
 
   const addLine = () =>
     setLines((prev) => [
       ...prev,
-      { componentItemId: '', fromLocationId: normalizedDefaultFrom, uom: workOrder.outputUom, quantityIssued: '' },
+      { componentItemId: '', fromLocationId: normalizedDefaultFrom, uom: baseOutputUom, quantityIssued: '' },
     ])
+
+  const onComponentChange = (index: number, nextValue: string) => {
+    const selected = itemsLookup.get(nextValue)
+    const suggestedUom = selected?.defaultUom || baseOutputUom
+    setLines((prev) =>
+      prev.map((line, i) =>
+        i === index
+          ? {
+              ...line,
+              componentItemId: nextValue,
+              uom: line.uom || suggestedUom,
+            }
+          : line,
+      ),
+    )
+  }
 
   const updateLine = (index: number, patch: Partial<Line>) => {
     setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)))
@@ -291,6 +351,9 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
                 </option>
               ))}
             </select>
+            {usingItemConsumeDefault && (
+              <p className="text-xs text-slate-500">Auto from item default location</p>
+            )}
           </label>
         </div>
         {lines.map((line, idx) => (
@@ -304,7 +367,7 @@ export function IssueDraftForm({ workOrder, onRefetch }: Props) {
                 value={line.componentItemId}
                 options={itemOptions}
                 disabled={itemsQuery.isLoading}
-                onChange={(nextValue) => updateLine(idx, { componentItemId: nextValue })}
+                onChange={(nextValue) => onComponentChange(idx, nextValue)}
               />
             </div>
             <div>

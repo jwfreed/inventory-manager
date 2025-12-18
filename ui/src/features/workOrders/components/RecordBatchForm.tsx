@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -49,33 +49,30 @@ type ProduceLine = {
 
 type Props = {
   workOrder: WorkOrder
+  outputItem?: Item
   onRefetch: () => void
 }
 
-export function RecordBatchForm({ workOrder, onRefetch }: Props) {
+export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   const localDefaults = getWorkOrderDefaults(workOrder.id)
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [itemSearch, setItemSearch] = useState('')
   const [locationSearch, setLocationSearch] = useState('')
-  const [defaultFromLocationId, setDefaultFromLocationId] = useState<string>(
-    workOrder.defaultConsumeLocationId ?? localDefaults.consumeLocationId ?? '',
-  )
-  const [defaultToLocationId, setDefaultToLocationId] = useState<string>(
-    workOrder.defaultProduceLocationId ?? localDefaults.produceLocationId ?? '',
-  )
+  const [defaultFromLocationId, setDefaultFromLocationId] = useState<string>('')
+  const [defaultToLocationId, setDefaultToLocationId] = useState<string>('')
   const remaining = Math.max(
     0,
     (workOrder.quantityPlanned || 0) - (workOrder.quantityCompleted ?? 0),
   )
   const [consumeLines, setConsumeLines] = useState<ConsumeLine[]>([
-    { componentItemId: '', fromLocationId: defaultFromLocationId, uom: workOrder.outputUom, quantity: '' },
+    { componentItemId: '', fromLocationId: '', uom: '', quantity: '' },
   ])
   const [produceLines, setProduceLines] = useState<ProduceLine[]>([
     {
       outputItemId: workOrder.outputItemId,
-      toLocationId: defaultToLocationId,
-      uom: workOrder.outputUom,
+      toLocationId: '',
+      uom: '',
       quantity: remaining || '',
       packSize: undefined,
     },
@@ -96,6 +93,40 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
     retry: 1,
   })
 
+  const baseConsumeLocationId =
+    workOrder.defaultConsumeLocationId ??
+    outputItem?.defaultLocationId ??
+    localDefaults.consumeLocationId ??
+    ''
+  const baseProduceLocationId =
+    workOrder.defaultProduceLocationId ??
+    outputItem?.defaultLocationId ??
+    localDefaults.produceLocationId ??
+    ''
+  const baseOutputUom = outputItem?.defaultUom || workOrder.outputUom
+  const usingItemConsumeDefault =
+    !workOrder.defaultConsumeLocationId &&
+    !localDefaults.consumeLocationId &&
+    outputItem?.defaultLocationId &&
+    normalizedDefaultFrom === outputItem.defaultLocationId
+  const usingItemProduceDefault =
+    !workOrder.defaultProduceLocationId &&
+    !localDefaults.produceLocationId &&
+    outputItem?.defaultLocationId &&
+    normalizedDefaultTo === outputItem.defaultLocationId
+
+  useEffect(() => {
+    if (!defaultFromLocationId && baseConsumeLocationId) {
+      setDefaultFromLocationId(baseConsumeLocationId)
+    }
+  }, [baseConsumeLocationId, defaultFromLocationId])
+
+  useEffect(() => {
+    if (!defaultToLocationId && baseProduceLocationId) {
+      setDefaultToLocationId(baseProduceLocationId)
+    }
+  }, [baseProduceLocationId, defaultToLocationId])
+
   const itemOptions = useMemo(
     () =>
       (itemsQuery.data?.data ?? []).map((item) => ({
@@ -105,6 +136,11 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
       })),
     [itemsQuery.data],
   )
+  const itemsLookup = useMemo(() => {
+    const map = new Map<string, Item>()
+    itemsQuery.data?.data?.forEach((item) => map.set(item.id, item))
+    return map
+  }, [itemsQuery.data])
 
   const locationOptions = useMemo(
     () =>
@@ -116,8 +152,30 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
     [locationsQuery.data],
   )
   const validLocationIds = useMemo(() => new Set(locationOptions.map((o) => o.value)), [locationOptions])
-  const normalizedDefaultFrom = validLocationIds.has(defaultFromLocationId) ? defaultFromLocationId : ''
-  const normalizedDefaultTo = validLocationIds.has(defaultToLocationId) ? defaultToLocationId : ''
+  const effectiveDefaultFrom = defaultFromLocationId || baseConsumeLocationId
+  const effectiveDefaultTo = defaultToLocationId || baseProduceLocationId
+  const normalizedDefaultFrom = validLocationIds.has(effectiveDefaultFrom) ? effectiveDefaultFrom : ''
+  const normalizedDefaultTo = validLocationIds.has(effectiveDefaultTo) ? effectiveDefaultTo : ''
+
+  useEffect(() => {
+    setConsumeLines((prev) =>
+      prev.map((line) => ({
+        ...line,
+        fromLocationId: line.fromLocationId || effectiveDefaultFrom,
+        uom: line.uom || baseOutputUom,
+      })),
+    )
+  }, [effectiveDefaultFrom, baseOutputUom])
+
+  useEffect(() => {
+    setProduceLines((prev) =>
+      prev.map((line) => ({
+        ...line,
+        toLocationId: line.toLocationId || effectiveDefaultTo,
+        uom: line.uom || baseOutputUom,
+      })),
+    )
+  }, [effectiveDefaultTo, baseOutputUom])
 
   const defaultsConsumeMutation = useMutation({
     mutationFn: (locId: string) =>
@@ -135,7 +193,7 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
         .sort((a, b) => a.lineNumber - b.lineNumber)
         .map((line) => ({
           componentItemId: line.componentItemId,
-          fromLocationId: defaultFromLocationId,
+          fromLocationId: effectiveDefaultFrom,
           uom: line.uom,
           quantity: line.quantityRequired,
         }))
@@ -171,7 +229,7 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
   const addConsumeLine = () =>
     setConsumeLines((prev) => [
       ...prev,
-      { componentItemId: '', fromLocationId: normalizedDefaultFrom, uom: workOrder.outputUom, quantity: '' },
+      { componentItemId: '', fromLocationId: normalizedDefaultFrom, uom: baseOutputUom, quantity: '' },
     ])
   const addProduceLine = () =>
     setProduceLines((prev) => [
@@ -179,11 +237,23 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
       {
         outputItemId: workOrder.outputItemId,
         toLocationId: normalizedDefaultTo,
-        uom: workOrder.outputUom,
+        uom: baseOutputUom,
         quantity: '',
         packSize: undefined,
       },
     ])
+
+  const onComponentChange = (index: number, nextValue: string) => {
+    const selected = itemsLookup.get(nextValue)
+    const suggestedUom = selected?.defaultUom || baseOutputUom
+    setConsumeLines((prev) =>
+      prev.map((line, i) =>
+        i === index
+          ? { ...line, componentItemId: nextValue, uom: line.uom || suggestedUom }
+          : line,
+      ),
+    )
+  }
 
   const updateConsumeLine = (index: number, patch: Partial<ConsumeLine>) => {
     setConsumeLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)))
@@ -338,6 +408,9 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
                 </option>
               ))}
             </select>
+            {usingItemConsumeDefault && (
+              <p className="text-xs text-slate-500">Auto from item default location</p>
+            )}
           </label>
         </div>
         {consumeLines.map((line, idx) => (
@@ -348,7 +421,7 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
                 value={line.componentItemId}
                 options={itemOptions}
                 disabled={itemsQuery.isLoading}
-                onChange={(nextValue) => updateConsumeLine(idx, { componentItemId: nextValue })}
+                onChange={(nextValue) => onComponentChange(idx, nextValue)}
               />
             </div>
             <div>
@@ -426,6 +499,9 @@ export function RecordBatchForm({ workOrder, onRefetch }: Props) {
                 </option>
               ))}
             </select>
+            {usingItemProduceDefault && (
+              <p className="text-xs text-slate-500">Auto from item default location</p>
+            )}
           </label>
         </div>
         {produceLines.map((line, idx) => (

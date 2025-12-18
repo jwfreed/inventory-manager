@@ -5,7 +5,8 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createWorkOrder, type WorkOrderCreatePayload } from '../../../api/endpoints/workOrders'
 import { listBomsByItem } from '../../../api/endpoints/boms'
 import { listItems } from '../../../api/endpoints/items'
-import type { ApiError, Bom } from '../../../api/types'
+import { listLocations } from '../../../api/endpoints/locations'
+import type { ApiError, Bom, Item } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -37,10 +38,18 @@ export default function WorkOrderCreatePage() {
   const [notes, setNotes] = useState('')
   const [selectedBomId, setSelectedBomId] = useState('')
   const [selectedVersionId, setSelectedVersionId] = useState('')
+  const [defaultConsumeLocationId, setDefaultConsumeLocationId] = useState('')
+  const [defaultProduceLocationId, setDefaultProduceLocationId] = useState('')
 
   const itemsQuery = useQuery({
     queryKey: ['items', 'wo-create'],
     queryFn: () => listItems({ limit: 200 }),
+    staleTime: 1000 * 60,
+  })
+
+  const locationsQuery = useQuery({
+    queryKey: ['locations', 'wo-create'],
+    queryFn: () => listLocations({ limit: 200, active: true }),
     staleTime: 1000 * 60,
   })
 
@@ -49,6 +58,30 @@ export default function WorkOrderCreatePage() {
     queryFn: () => listBomsByItem(outputItemId),
     enabled: !!outputItemId,
   })
+
+  const itemsById = useMemo(() => {
+    const map = new Map<string, Item>()
+    itemsQuery.data?.data?.forEach((item) => map.set(item.id, item))
+    return map
+  }, [itemsQuery.data])
+
+  const locationOptions = useMemo(
+    () =>
+      (locationsQuery.data?.data ?? []).map((loc) => ({
+        value: loc.id,
+        label: `${loc.code} — ${loc.name}`,
+      })),
+    [locationsQuery.data],
+  )
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => {
+    const item = itemsById.get(outputItemId)
+    if (!item) return
+    setOutputUom((prev) => prev || item.defaultUom || '')
+    setDefaultConsumeLocationId((prev) => (prev ? prev : item.defaultLocationId ?? ''))
+    setDefaultProduceLocationId((prev) => (prev ? prev : item.defaultLocationId ?? ''))
+  }, [itemsById, outputItemId])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
@@ -79,6 +112,14 @@ export default function WorkOrderCreatePage() {
     () => bomsQuery.data?.boms.find((b) => b.id === selectedBomId),
     [bomsQuery.data, selectedBomId],
   )
+  const selectedItem = itemsById.get(outputItemId)
+
+  const consumeMissing =
+    Boolean(defaultConsumeLocationId) &&
+    !locationOptions.some((opt) => opt.value === defaultConsumeLocationId)
+  const produceMissing =
+    Boolean(defaultProduceLocationId) &&
+    !locationOptions.some((opt) => opt.value === defaultProduceLocationId)
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -96,6 +137,8 @@ export default function WorkOrderCreatePage() {
       outputItemId,
       outputUom,
       quantityPlanned: Number(quantityPlanned),
+      defaultConsumeLocationId: defaultConsumeLocationId || undefined,
+      defaultProduceLocationId: defaultProduceLocationId || undefined,
       scheduledStartAt: start || undefined,
       scheduledDueAt: due || undefined,
       notes: notes || undefined,
@@ -170,6 +213,9 @@ export default function WorkOrderCreatePage() {
                   required
                   disabled={mutation.isPending}
                 />
+                {selectedItem?.defaultUom && outputUom === selectedItem.defaultUom && (
+                  <p className="text-xs text-slate-500">Auto from item default UOM</p>
+                )}
               </label>
             </div>
             <div className="grid gap-3 md:grid-cols-3">
@@ -201,6 +247,54 @@ export default function WorkOrderCreatePage() {
                   onChange={(e) => setScheduledDueAt(e.target.value)}
                   disabled={mutation.isPending}
                 />
+              </label>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1 text-sm">
+                <span className="text-xs uppercase tracking-wide text-slate-500">Default consume location</span>
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  value={defaultConsumeLocationId}
+                  onChange={(e) => setDefaultConsumeLocationId(e.target.value)}
+                  disabled={mutation.isPending || locationsQuery.isLoading}
+                >
+                  <option value="">None</option>
+                  {locationOptions.map((loc) => (
+                    <option key={loc.value} value={loc.value}>
+                      {loc.label}
+                    </option>
+                  ))}
+                  {consumeMissing && (
+                    <option value={defaultConsumeLocationId}>Current selection</option>
+                  )}
+                </select>
+                {selectedItem?.defaultLocationId &&
+                  defaultConsumeLocationId === selectedItem.defaultLocationId && (
+                    <p className="text-xs text-slate-500">Auto from item default location</p>
+                  )}
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-xs uppercase tracking-wide text-slate-500">Default produce location</span>
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  value={defaultProduceLocationId}
+                  onChange={(e) => setDefaultProduceLocationId(e.target.value)}
+                  disabled={mutation.isPending || locationsQuery.isLoading}
+                >
+                  <option value="">None</option>
+                  {locationOptions.map((loc) => (
+                    <option key={loc.value} value={loc.value}>
+                      {loc.label}
+                    </option>
+                  ))}
+                  {produceMissing && (
+                    <option value={defaultProduceLocationId}>Current selection</option>
+                  )}
+                </select>
+                {selectedItem?.defaultLocationId &&
+                  defaultProduceLocationId === selectedItem.defaultLocationId && (
+                    <p className="text-xs text-slate-500">Auto from item default location</p>
+                  )}
               </label>
             </div>
           </Section>
