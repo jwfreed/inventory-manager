@@ -32,14 +32,13 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
   const [yieldQuantity, setYieldQuantity] = useState<number | ''>(1)
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [notes, setNotes] = useState('')
-  const [itemSearch, setItemSearch] = useState('')
   const [components, setComponents] = useState<ComponentDraft[]>([
     { lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '' },
   ])
 
   const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
-    queryKey: ['items', 'bom-form', itemSearch],
-    queryFn: () => listItems({ limit: 200, search: itemSearch || undefined }),
+    queryKey: ['items', 'bom-form'],
+    queryFn: () => listItems({ limit: 500 }),
     staleTime: 60_000,
     retry: 1,
   })
@@ -48,8 +47,8 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
     const items = itemsQuery.data?.data ?? []
     return items.map((item) => ({
       value: item.id,
-      label: `${item.sku} — ${item.name}`,
-      keywords: `${item.sku} ${item.name}`,
+      label: `${item.name} — ${item.sku}`,
+      keywords: `${item.sku} ${item.name} ${item.id}`,
     }))
   }, [itemsQuery.data])
 
@@ -187,22 +186,6 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
             Add component
           </Button>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Item search</span>
-            <Input
-              value={itemSearch}
-              onChange={(e) => setItemSearch(e.target.value)}
-              placeholder="Search items (SKU/name)"
-              disabled={mutation.isPending}
-            />
-          </label>
-          {itemsQuery.isError && (
-            <div className="flex items-end">
-              <div className="text-sm text-red-700">{itemsQuery.error.message}</div>
-            </div>
-          )}
-        </div>
         <div className="space-y-3">
           {components.map((line, idx) => (
             <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-6">
@@ -225,7 +208,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
                   label="Component item"
                   value={line.componentItemId}
                   options={itemOptions}
-                  placeholder="Type SKU/name"
+                  placeholder="Search by name or SKU"
                   disabled={mutation.isPending || itemsQuery.isLoading}
                   onChange={(nextValue) => updateComponent(idx, { componentItemId: nextValue })}
                 />
