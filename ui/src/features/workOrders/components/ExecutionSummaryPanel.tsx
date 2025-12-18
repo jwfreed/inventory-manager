@@ -14,6 +14,15 @@ type Props = {
 }
 
 export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, errorMessage }: Props) {
+  const renderLabel = (opts: { name?: string | null; sku?: string | null; id: string }) => {
+    const parts = []
+    if (opts.name) parts.push(opts.name)
+    if (opts.sku) parts.push(opts.sku)
+    if (parts.length === 0) parts.push(opts.id)
+    else parts.push(`(${opts.id})`)
+    return parts.join(' — ')
+  }
+
   if (isLoading) return <LoadingSpinner label="Loading execution summary..." />
   if (isError)
     return (
@@ -50,10 +59,7 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
           <ul className="space-y-2 text-sm text-slate-800">
             {summary.issuedTotals.map((row) => (
               <li key={`${row.componentItemId}-${row.uom}`} className="flex justify-between">
-                <span>
-                  {row.componentItemSku || row.componentItemId}
-                  {row.componentItemName ? ` — ${row.componentItemName}` : ''}
-                </span>
+                <span>{renderLabel({ name: row.componentItemName, sku: row.componentItemSku, id: row.componentItemId })}</span>
                 <span className="text-red-600">
                   -{formatNumber(row.quantityIssued)} {row.uom}
                 </span>
@@ -69,10 +75,7 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
           <ul className="space-y-2 text-sm text-slate-800">
             {summary.completedTotals.map((row) => (
               <li key={`${row.outputItemId}-${row.uom}`} className="flex justify-between">
-                <span>
-                  {row.outputItemSku || row.outputItemId}
-                  {row.outputItemName ? ` — ${row.outputItemName}` : ''}
-                </span>
+                <span>{renderLabel({ name: row.outputItemName, sku: row.outputItemSku, id: row.outputItemId })}</span>
                 <span className="text-green-700">
                   +{formatNumber(row.quantityCompleted)} {row.uom}
                 </span>
