@@ -484,23 +484,33 @@ export async function getWorkOrderExecutionSummary(workOrderId: string) {
   const workOrder = workOrderResult.rows[0];
 
   const issuedRows = await query(
-    `SELECT l.component_item_id, l.uom, SUM(l.quantity_issued) AS qty
+    `SELECT l.component_item_id,
+            i.sku AS component_item_sku,
+            i.name AS component_item_name,
+            l.uom,
+            SUM(l.quantity_issued) AS qty
        FROM work_order_material_issue_lines l
        JOIN work_order_material_issues h ON h.id = l.work_order_material_issue_id
+       JOIN items i ON i.id = l.component_item_id
       WHERE h.work_order_id = $1
         AND h.status = 'posted'
-      GROUP BY l.component_item_id, l.uom`,
+      GROUP BY l.component_item_id, i.sku, i.name, l.uom`,
     [workOrderId]
   );
 
   const producedRows = await query(
-    `SELECT l.item_id, l.uom, SUM(l.quantity) AS qty
+    `SELECT l.item_id,
+            i.sku AS item_sku,
+            i.name AS item_name,
+            l.uom,
+            SUM(l.quantity) AS qty
        FROM work_order_execution_lines l
        JOIN work_order_executions h ON h.id = l.work_order_execution_id
+       JOIN items i ON i.id = l.item_id
       WHERE h.work_order_id = $1
         AND h.status = 'posted'
         AND l.line_type = 'produce'
-      GROUP BY l.item_id, l.uom`,
+      GROUP BY l.item_id, i.sku, i.name, l.uom`,
     [workOrderId]
   );
 
@@ -523,11 +533,15 @@ export async function getWorkOrderExecutionSummary(workOrderId: string) {
     },
     issuedTotals: issuedRows.rows.map((row: any) => ({
       componentItemId: row.component_item_id,
+      componentItemSku: row.component_item_sku,
+      componentItemName: row.component_item_name,
       uom: row.uom,
       quantityIssued: roundQuantity(toNumber(row.qty))
     })),
     completedTotals: producedRows.rows.map((row: any) => ({
       outputItemId: row.item_id,
+      outputItemSku: row.item_sku,
+      outputItemName: row.item_name,
       uom: row.uom,
       quantityCompleted: roundQuantity(toNumber(row.qty))
     })),

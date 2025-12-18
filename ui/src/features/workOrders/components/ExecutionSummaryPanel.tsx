@@ -50,7 +50,10 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
           <ul className="space-y-2 text-sm text-slate-800">
             {summary.issuedTotals.map((row) => (
               <li key={`${row.componentItemId}-${row.uom}`} className="flex justify-between">
-                <span>{row.componentItemId}</span>
+                <span>
+                  {row.componentItemSku || row.componentItemId}
+                  {row.componentItemName ? ` — ${row.componentItemName}` : ''}
+                </span>
                 <span className="text-red-600">
                   -{formatNumber(row.quantityIssued)} {row.uom}
                 </span>
@@ -66,7 +69,10 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
           <ul className="space-y-2 text-sm text-slate-800">
             {summary.completedTotals.map((row) => (
               <li key={`${row.outputItemId}-${row.uom}`} className="flex justify-between">
-                <span>{row.outputItemId}</span>
+                <span>
+                  {row.outputItemSku || row.outputItemId}
+                  {row.outputItemName ? ` — ${row.outputItemName}` : ''}
+                </span>
                 <span className="text-green-700">
                   +{formatNumber(row.quantityCompleted)} {row.uom}
                 </span>

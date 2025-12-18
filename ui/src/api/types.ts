@@ -131,7 +131,20 @@ export type WorkOrderExecutionSummary = {
     completedAt?: string | null
   }
   issuedTotals: { componentItemId: string; uom: string; quantityIssued: number }[]
-  completedTotals: { outputItemId: string; uom: string; quantityCompleted: number }[]
+  issuedTotals: {
+    componentItemId: string
+    componentItemSku?: string
+    componentItemName?: string
+    uom: string
+    quantityIssued: number
+  }[]
+  completedTotals: {
+    outputItemId: string
+    outputItemSku?: string
+    outputItemName?: string
+    uom: string
+    quantityCompleted: number
+  }[]
   remainingToComplete: number
 }
 
