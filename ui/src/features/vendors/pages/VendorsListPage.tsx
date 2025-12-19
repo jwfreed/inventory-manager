@@ -87,123 +87,136 @@ export default function VendorsListPage() {
 
   return (
     <div className="space-y-6">
-      <Section title="Vendors" description="Manage suppliers so purchase orders can reference them.">
-        <Card>
-          {loading && <LoadingSpinner label="Processing..." />}
-          {error && (
-            <Alert
-              variant="error"
-              title="Error"
-              message={(error as ApiError)?.message ?? 'An error occurred'}
-            />
-          )}
-          <form className="space-y-4" onSubmit={onSubmit}>
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Code</span>
-                <Input value={code} onChange={(e) => setCode(e.target.value)} required />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Name</span>
-                <Input value={name} onChange={(e) => setName(e.target.value)} required />
-              </label>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Email</span>
-                <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Phone</span>
-                <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </label>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex gap-3 text-sm text-slate-600">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    checked={filterActive === 'active'}
-                    onChange={() => setFilterActive('active')}
-                  />
-                  Active
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="radio" checked={filterActive === 'all'} onChange={() => setFilterActive('all')} />
-                  All
-                </label>
-              </div>
-              <div className="flex gap-2">
+      <Section title="Vendors" description="Create suppliers and keep them tidy. Active vendors show up in PO and receiving pickers.">
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Card className="lg:col-span-1">
+            {loading && <LoadingSpinner label="Processing..." />}
+            {error && (
+              <Alert
+                variant="error"
+                title="Error"
+                message={(error as ApiError)?.message ?? 'An error occurred'}
+              />
+            )}
+            <form className="space-y-4" onSubmit={onSubmit}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">
+                    {editingId ? 'Edit vendor' : 'New vendor'}
+                  </div>
+                  <p className="text-xs text-slate-500">Code should be short and unique (e.g., SIAMAYA).</p>
+                </div>
                 {editingId && (
-                  <Button type="button" variant="secondary" onClick={resetForm}>
-                    Cancel edit
+                  <Button type="button" variant="secondary" size="sm" onClick={resetForm}>
+                    Cancel
                   </Button>
                 )}
+              </div>
+              <div className="grid gap-3">
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Code</span>
+                  <Input value={code} onChange={(e) => setCode(e.target.value)} required />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Name</span>
+                  <Input value={name} onChange={(e) => setName(e.target.value)} required />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Email</span>
+                  <Input value={email} onChange={(e) => setEmail(e.target.value)} />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Phone</span>
+                  <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+                </label>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-slate-500">Active by default; deactivate from the list.</p>
                 <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
                   {editingId ? 'Update vendor' : 'Create vendor'}
                 </Button>
               </div>
-            </div>
-          </form>
-        </Card>
-      </Section>
+            </form>
+          </Card>
 
-      <Section title="Vendor list" description="Edit or deactivate vendors.">
-        <Card>
-          {vendorsQuery.isLoading && <LoadingSpinner label="Loading vendors..." />}
-          {!vendorsQuery.isLoading && vendors.length === 0 && (
-            <div className="py-6 text-sm text-slate-600">No vendors found.</div>
-          )}
-          {!vendorsQuery.isLoading && vendors.length > 0 && (
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Code
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Name
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Email
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Phone
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Active
-                    </th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {vendors.map((vendor) => (
-                    <tr key={vendor.id}>
-                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.code}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.name}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.email ?? '—'}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.phone ?? '—'}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.active ? 'Yes' : 'No'}</td>
-                      <td className="px-3 py-2 text-right text-sm text-slate-800">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="secondary" size="sm" onClick={() => onEdit(vendor)}>
-                            Edit
-                          </Button>
-                          <Button variant="secondary" size="sm" onClick={() => deleteMutation.mutate(vendor.id)}>
-                            Deactivate
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <Card className="lg:col-span-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Vendor list</div>
+                <p className="text-xs text-slate-500">Filter to active for day-to-day; show all for audit/reactivation.</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant={filterActive === 'active' ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => setFilterActive('active')}
+                >
+                  Active
+                </Button>
+                <Button
+                  variant={filterActive === 'all' ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => setFilterActive('all')}
+                >
+                  All
+                </Button>
+              </div>
             </div>
-          )}
-        </Card>
+            {vendorsQuery.isLoading && <LoadingSpinner label="Loading vendors..." />}
+            {!vendorsQuery.isLoading && vendors.length === 0 && (
+              <div className="py-6 text-sm text-slate-600">No vendors found.</div>
+            )}
+            {!vendorsQuery.isLoading && vendors.length > 0 && (
+              <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Code
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Name
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Email
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Phone
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Active
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 bg-white">
+                    {vendors.map((vendor) => (
+                      <tr key={vendor.id}>
+                        <td className="px-3 py-2 text-sm text-slate-800">{vendor.code}</td>
+                        <td className="px-3 py-2 text-sm text-slate-800">{vendor.name}</td>
+                        <td className="px-3 py-2 text-sm text-slate-800">{vendor.email ?? '—'}</td>
+                        <td className="px-3 py-2 text-sm text-slate-800">{vendor.phone ?? '—'}</td>
+                        <td className="px-3 py-2 text-sm text-slate-800">{vendor.active ? 'Yes' : 'No'}</td>
+                        <td className="px-3 py-2 text-right text-sm text-slate-800">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="secondary" size="sm" onClick={() => onEdit(vendor)}>
+                              Edit
+                            </Button>
+                            <Button variant="secondary" size="sm" onClick={() => deleteMutation.mutate(vendor.id)}>
+                              Deactivate
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
       </Section>
     </div>
   )
