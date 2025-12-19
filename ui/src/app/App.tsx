@@ -23,6 +23,7 @@ import ShipmentDetailPage from '../features/orderToCash/pages/ShipmentDetailPage
 import ReturnsListPage from '../features/orderToCash/pages/ReturnsListPage'
 import ReturnDetailPage from '../features/orderToCash/pages/ReturnDetailPage'
 import PurchaseOrderCreatePage from '../features/purchaseOrders/pages/PurchaseOrderCreatePage'
+import VendorsListPage from '../features/vendors/pages/VendorsListPage'
 
 const router = createBrowserRouter([
   {
@@ -43,6 +44,7 @@ const router = createBrowserRouter([
       { path: 'purchase-orders/new', element: <PurchaseOrderCreatePage /> },
       { path: 'locations', element: <LocationsListPage /> },
       { path: 'locations/:id', element: <LocationDetailPage /> },
+      { path: 'vendors', element: <VendorsListPage /> },
       { path: 'sales-orders', element: <SalesOrdersListPage /> },
       { path: 'sales-orders/new', element: <SalesOrderCreatePage /> },
       { path: 'sales-orders/:id', element: <SalesOrderDetailPage /> },

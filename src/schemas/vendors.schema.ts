@@ -6,3 +6,7 @@ export const vendorSchema = z.object({
   email: z.string().email().max(255).optional(),
   phone: z.string().max(32).optional()
 });
+
+export const vendorUpdateSchema = vendorSchema.extend({
+  active: z.boolean().optional()
+});
