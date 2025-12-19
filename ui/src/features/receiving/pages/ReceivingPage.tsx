@@ -108,6 +108,18 @@ export default function ReceivingPage() {
   const addPoLineInput = () =>
     setPoLineInputs((prev) => [...prev, { purchaseOrderLineId: '', uom: '', quantity: '' }])
 
+  const fillFromPo = () => {
+    const poLines = poQuery.data?.lines ?? []
+    if (poLines.length === 0) return
+    setPoLineInputs(
+      poLines.map((l) => ({
+        purchaseOrderLineId: l.id,
+        uom: l.uom ?? '',
+        quantity: l.quantityOrdered ?? '',
+      })),
+    )
+  }
+
   const updatePoLineInput = (idx: number, patch: Partial<{ purchaseOrderLineId: string; uom: string; quantity: number | '' }>) => {
     setPoLineInputs((prev) => prev.map((line, i) => (i === idx ? { ...line, ...patch } : line)))
   }
@@ -231,9 +243,14 @@ export default function ReceivingPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold text-slate-800">Receipt lines</div>
-                <Button type="button" variant="secondary" size="sm" onClick={addPoLineInput}>
-                  Add line
-                </Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={fillFromPo} disabled={!poQuery.data?.lines?.length}>
+                    Fill from PO
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" onClick={addPoLineInput}>
+                    Add line
+                  </Button>
+                </div>
               </div>
               {poLineInputs.map((line, idx) => (
                 <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-4">
