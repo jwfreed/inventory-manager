@@ -20,8 +20,14 @@ export default function ReceivingPage() {
   ])
   const [receiptIdForPutaway, setReceiptIdForPutaway] = useState('')
   const [putawayLines, setPutawayLines] = useState<
-    { purchaseOrderReceiptLineId: string; toLocationId: string; uom: string; quantity: number | '' }[]
-  >([{ purchaseOrderReceiptLineId: '', toLocationId: '', uom: '', quantity: '' }])
+    {
+      purchaseOrderReceiptLineId: string
+      toLocationId: string
+      fromLocationId: string
+      uom: string
+      quantity: number | ''
+    }[]
+  >([{ purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' }])
   const [locationSearch, setLocationSearch] = useState('')
   const [putawayId, setPutawayId] = useState('')
   const poListQuery = useQuery({
@@ -50,6 +56,7 @@ export default function ReceivingPage() {
         uom: line.uom,
         quantity: line.quantityReceived,
         defaultToLocationId: line.defaultToLocationId ?? '',
+        defaultFromLocationId: line.defaultFromLocationId ?? '',
       })),
     [receiptQuery.data],
   )
@@ -106,7 +113,7 @@ export default function ReceivingPage() {
     mutationFn: (payload: ReceiptCreatePayload) => createReceipt(payload),
     onSuccess: (receipt) => {
       setReceiptIdForPutaway(receipt.id)
-      setPutawayLines([{ purchaseOrderReceiptLineId: '', toLocationId: '', uom: '', quantity: '' }])
+      setPutawayLines([{ purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' }])
     },
   })
 
@@ -142,7 +149,10 @@ export default function ReceivingPage() {
   }
 
   const addPutawayLine = () =>
-    setPutawayLines((prev) => [...prev, { purchaseOrderReceiptLineId: '', toLocationId: '', uom: '', quantity: '' }])
+    setPutawayLines((prev) => [
+      ...prev,
+      { purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' },
+    ])
 
   const fillPutawayFromReceipt = () => {
     const lines = receiptQuery.data?.lines ?? []
@@ -151,6 +161,7 @@ export default function ReceivingPage() {
       lines.map((l) => ({
         purchaseOrderReceiptLineId: l.id,
         toLocationId: l.defaultToLocationId ?? '',
+        fromLocationId: l.defaultFromLocationId ?? '',
         uom: l.uom,
         quantity: l.quantityReceived,
       })),
@@ -159,7 +170,13 @@ export default function ReceivingPage() {
 
   const updatePutawayLine = (
     idx: number,
-    patch: Partial<{ purchaseOrderReceiptLineId: string; toLocationId: string; uom: string; quantity: number | '' }>,
+    patch: Partial<{
+      purchaseOrderReceiptLineId: string
+      toLocationId: string
+      fromLocationId: string
+      uom: string
+      quantity: number | ''
+    }>,
   ) => {
     setPutawayLines((prev) => prev.map((line, i) => (i === idx ? { ...line, ...patch } : line)))
   }
@@ -186,13 +203,18 @@ export default function ReceivingPage() {
     e.preventDefault()
     const lines = putawayLines
       .filter((l) => l.purchaseOrderReceiptLineId && l.toLocationId && l.uom && l.quantity !== '' && Number(l.quantity) > 0)
-      .map((l, idx) => ({
-        lineNumber: idx + 1,
-        purchaseOrderReceiptLineId: l.purchaseOrderReceiptLineId,
-        toLocationId: l.toLocationId,
-        uom: l.uom,
-        quantity: Number(l.quantity),
-      }))
+      .map((l, idx) => {
+        const selected = receiptLineOptions.find((opt) => opt.value === l.purchaseOrderReceiptLineId)
+        const fallbackFrom = l.fromLocationId || selected?.defaultFromLocationId || ''
+        return {
+          lineNumber: idx + 1,
+          purchaseOrderReceiptLineId: l.purchaseOrderReceiptLineId,
+          toLocationId: l.toLocationId,
+          fromLocationId: fallbackFrom || undefined,
+          uom: l.uom,
+          quantity: Number(l.quantity),
+        }
+      })
     if (!receiptIdForPutaway || lines.length === 0) return
     putawayMutation.mutate({
       sourceType: 'purchase_order_receipt',
@@ -477,6 +499,7 @@ export default function ReceivingPage() {
                           uom: selected?.uom ?? line.uom,
                           quantity: selected?.quantity ?? line.quantity,
                           toLocationId: line.toLocationId || selected?.defaultToLocationId || '',
+                          fromLocationId: line.fromLocationId || selected?.defaultFromLocationId || '',
                         })
                       }}
                     />
@@ -490,6 +513,14 @@ export default function ReceivingPage() {
                       onChange={(nextValue) => updatePutawayLine(idx, { toLocationId: nextValue })}
                     />
                   </div>
+                  <label className="space-y-1 text-sm">
+                    <span className="text-xs uppercase tracking-wide text-slate-500">From location</span>
+                    <Input
+                      value={line.fromLocationId}
+                      onChange={(e) => updatePutawayLine(idx, { fromLocationId: e.target.value })}
+                      placeholder="Defaults from receipt or item"
+                    />
+                  </label>
                   <label className="space-y-1 text-sm">
                     <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
                     <Input value={line.uom} onChange={(e) => updatePutawayLine(idx, { uom: e.target.value })} />
