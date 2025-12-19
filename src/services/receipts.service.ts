@@ -124,3 +124,21 @@ export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput
   }
   return receipt;
 }
+
+export async function listReceipts(limit = 20, offset = 0) {
+  const { rows } = await query(
+    `SELECT por.id,
+            por.purchase_order_id,
+            por.received_at,
+            por.received_to_location_id,
+            por.inventory_movement_id,
+            por.external_ref,
+            por.notes,
+            por.created_at
+       FROM purchase_order_receipts por
+       ORDER BY por.created_at DESC
+       LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows;
+}

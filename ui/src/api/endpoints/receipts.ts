@@ -21,3 +21,7 @@ export async function createReceipt(payload: ReceiptCreatePayload): Promise<Purc
 export async function getReceipt(id: string): Promise<PurchaseOrderReceipt> {
   return apiGet<PurchaseOrderReceipt>(`/purchase-order-receipts/${id}`)
 }
+
+export async function listReceipts(params: { limit?: number; offset?: number } = {}): Promise<{ data: PurchaseOrderReceipt[] }> {
+  return apiGet<{ data: PurchaseOrderReceipt[] }>('/purchase-order-receipts', { params })
+}

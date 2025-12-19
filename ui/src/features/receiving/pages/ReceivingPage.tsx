@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { listPurchaseOrders, getPurchaseOrder } from '../../../api/endpoints/purchaseOrders'
-import { createReceipt, type ReceiptCreatePayload, getReceipt } from '../../../api/endpoints/receipts'
+import { createReceipt, type ReceiptCreatePayload, getReceipt, listReceipts } from '../../../api/endpoints/receipts'
 import { createPutaway, postPutaway, type PutawayCreatePayload, getPutaway } from '../../../api/endpoints/putaways'
 import type { ApiError, Location, PurchaseOrder, PurchaseOrderReceipt, Putaway } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
@@ -57,6 +57,12 @@ export default function ReceivingPage() {
     queryKey: ['putaway', putawayId],
     queryFn: () => getPutaway(putawayId),
     enabled: !!putawayId,
+  })
+
+  const recentReceiptsQuery = useQuery({
+    queryKey: ['recent-receipts'],
+    queryFn: () => listReceipts({ limit: 20 }),
+    staleTime: 30_000,
   })
 
   const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
@@ -319,6 +325,45 @@ export default function ReceivingPage() {
         description="Plan putaway moves from a receipt line into a storage location."
       >
         <Card>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-800">Recent receipts</div>
+              <p className="text-xs text-slate-500">Select a receipt to load its lines for putaway.</p>
+            </div>
+            <div className="text-xs text-slate-500">
+              Showing {recentReceiptsQuery.data?.data?.length ?? 0} of recent receipts
+            </div>
+          </div>
+          {!recentReceiptsQuery.isLoading && (recentReceiptsQuery.data?.data?.length ?? 0) === 0 && (
+            <div className="mt-2 text-sm text-slate-600">No receipts yet.</div>
+          )}
+          {recentReceiptsQuery.isLoading && <LoadingSpinner label="Loading recent receipts..." />}
+          {!recentReceiptsQuery.isLoading && (recentReceiptsQuery.data?.data?.length ?? 0) > 0 && (
+            <div className="mt-2 overflow-hidden rounded border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Receipt</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">PO</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Received at</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white">
+                  {recentReceiptsQuery.data?.data?.map((rec) => (
+                    <tr
+                      key={rec.id}
+                      className="cursor-pointer hover:bg-slate-50"
+                      onClick={() => setReceiptIdForPutaway(rec.id)}
+                    >
+                      <td className="px-3 py-2 text-sm text-slate-800">{rec.id}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">{rec.purchaseOrderId}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">{rec.receivedAt}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <form className="space-y-4" onSubmit={onCreatePutaway}>
             {putawayMutation.isError && (
               <Alert variant="error" title="Putaway failed" message={(putawayMutation.error as ApiError).message} />

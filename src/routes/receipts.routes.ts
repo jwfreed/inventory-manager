@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
-import { createPurchaseOrderReceipt, fetchReceiptById } from '../services/receipts.service';
+import { createPurchaseOrderReceipt, fetchReceiptById, listReceipts } from '../services/receipts.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
@@ -65,6 +65,18 @@ router.get('/purchase-order-receipts/:id', async (req: Request, res: Response) =
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to fetch receipt.' });
+  }
+});
+
+router.get('/purchase-order-receipts', async (req: Request, res: Response) => {
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  try {
+    const rows = await listReceipts(limit, offset);
+    return res.json({ data: rows, paging: { limit, offset } });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to list receipts.' });
   }
 });
 
