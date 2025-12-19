@@ -21,6 +21,7 @@ type ComponentDraft = {
   componentItemId: string
   uom: string
   quantityPer: number | ''
+  ratio?: number | ''
   scrapFactor?: number | ''
   notes?: string
 }
@@ -33,6 +34,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [notes, setNotes] = useState('')
   const [targetOutputWeight, setTargetOutputWeight] = useState<number | ''>('')
+  const [ratioMode, setRatioMode] = useState(false)
   const [components, setComponents] = useState<ComponentDraft[]>([
     { lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '' },
   ])
@@ -70,7 +72,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
   const addComponent = () =>
     setComponents((prev) => [
       ...prev,
-      { lineNumber: prev.length + 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '' },
+      { lineNumber: prev.length + 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '', ratio: '' },
     ])
 
   const updateComponent = (index: number, patch: Partial<ComponentDraft>) => {
@@ -81,10 +83,28 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
     setComponents((prev) => prev.filter((_, i) => i !== index).map((c, idx) => ({ ...c, lineNumber: idx + 1 })))
   }
 
+  const computeQuantitiesFromRatios = (lines: ComponentDraft[], target: number) => {
+    const valid = lines.filter((c) => Number(c.ratio) > 0)
+    const sum = valid.reduce((acc, c) => acc + Number(c.ratio), 0)
+    if (sum <= 0 || !(target > 0)) return lines
+    return lines.map((c) => {
+      const ratio = Number(c.ratio)
+      if (!(ratio > 0)) return c
+      const qty = (ratio / sum) * target
+      return { ...c, quantityPer: Number(qty.toFixed(6)) }
+    })
+  }
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!bomCode || !yieldUom || !defaultBomUom) return
-    const cleanComponents = components.filter(
+
+    const targetWeight = ratioMode ? Number(targetOutputWeight) : undefined
+    const workingComponents = ratioMode && targetWeight && targetWeight > 0
+      ? computeQuantitiesFromRatios(components, targetWeight)
+      : components
+
+    const cleanComponents = workingComponents.filter(
       (c) => c.componentItemId && c.uom && c.quantityPer !== '' && Number(c.quantityPer) > 0,
     )
     if (cleanComponents.length === 0) return
@@ -111,6 +131,11 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
   }
 
   const scaleQuantitiesToTarget = () => {
+    if (ratioMode) {
+      if (targetOutputWeight === '' || Number(targetOutputWeight) <= 0) return
+      setComponents((prev) => computeQuantitiesFromRatios(prev, Number(targetOutputWeight)))
+      return
+    }
     if (targetOutputWeight === '' || Number(targetOutputWeight) <= 0) return
     const baseTotal = components.reduce((sum, c) => sum + (Number(c.quantityPer) || 0), 0)
     if (baseTotal <= 0) return
@@ -212,6 +237,19 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
               disabled={mutation.isPending}
             />
           </label>
+          <div className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Ratio mode</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300"
+                checked={ratioMode}
+                onChange={(e) => setRatioMode(e.target.checked)}
+                disabled={mutation.isPending}
+              />
+              <span className="text-sm text-slate-700">Enter ratios and scale to target weight</span>
+            </div>
+          </div>
           <div className="flex items-end md:col-span-2">
             <Button
               type="button"
@@ -224,8 +262,8 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
             </Button>
           </div>
           <p className="md:col-span-3 text-xs text-slate-600">
-            Enter your recipe quantities first (e.g. 1000 g base + 25 g durian), set target bar weight (e.g. 75 g),
-            then click to auto-scale Qty per.
+            Enter your recipe quantities OR ratios (toggle above), set target per-output weight (e.g. 75 g for a bar),
+            then click to auto-scale Qty per. Ratios must be positive numbers to be included.
           </p>
         </div>
         <div className="space-y-3">
@@ -263,20 +301,37 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
                   disabled={mutation.isPending}
                 />
               </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Qty per</span>
-                <Input
-                  type="number"
-                  min={0}
-                  value={line.quantityPer}
-                  onChange={(e) =>
-                    updateComponent(idx, {
-                      quantityPer: e.target.value === '' ? '' : Number(e.target.value),
-                    })
-                  }
-                  disabled={mutation.isPending}
-                />
-              </label>
+              {ratioMode ? (
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Ratio</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={line.ratio ?? ''}
+                    onChange={(e) =>
+                      updateComponent(idx, {
+                        ratio: e.target.value === '' ? '' : Number(e.target.value),
+                      })
+                    }
+                    disabled={mutation.isPending}
+                  />
+                </label>
+              ) : (
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Qty per</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={line.quantityPer}
+                    onChange={(e) =>
+                      updateComponent(idx, {
+                        quantityPer: e.target.value === '' ? '' : Number(e.target.value),
+                      })
+                    }
+                    disabled={mutation.isPending}
+                  />
+                </label>
+              )}
               <label className="space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">Scrap factor</span>
                 <Input
