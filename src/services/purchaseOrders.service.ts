@@ -13,10 +13,13 @@ export function mapPurchaseOrder(row: any, lines: any[]) {
     id: row.id,
     poNumber: row.po_number,
     vendorId: row.vendor_id,
+    vendorCode: row.vendor_code ?? null,
+    vendorName: row.vendor_name ?? null,
     status: row.status,
     orderDate: row.order_date,
     expectedDate: row.expected_date,
     shipToLocationId: row.ship_to_location_id,
+    shipToLocationCode: row.ship_to_location_code ?? null,
     vendorReference: row.vendor_reference,
     notes: row.notes,
     createdAt: row.created_at,
@@ -138,10 +141,24 @@ export async function getPurchaseOrderById(id: string) {
 
 export async function listPurchaseOrders(limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT id, po_number, vendor_id, status, order_date, expected_date, ship_to_location_id,
-            vendor_reference, notes, created_at, updated_at
-       FROM purchase_orders
-       ORDER BY created_at DESC
+    `SELECT po.id,
+            po.po_number,
+            po.vendor_id,
+            v.code AS vendor_code,
+            v.name AS vendor_name,
+            po.status,
+            po.order_date,
+            po.expected_date,
+            po.ship_to_location_id,
+            loc.code AS ship_to_location_code,
+            po.vendor_reference,
+            po.notes,
+            po.created_at,
+            po.updated_at
+       FROM purchase_orders po
+       LEFT JOIN vendors v ON v.id = po.vendor_id
+       LEFT JOIN locations loc ON loc.id = po.ship_to_location_id
+       ORDER BY po.created_at DESC
        LIMIT $1 OFFSET $2`,
     [limit, offset]
   );

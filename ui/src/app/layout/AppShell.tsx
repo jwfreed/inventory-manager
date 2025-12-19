@@ -9,7 +9,7 @@ const navItems: { to: string; label: string; disabled?: boolean }[] = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/ledger/movements', label: 'Inventory movements' },
   { to: '/work-orders', label: 'Work Orders' },
-  { to: '/purchase-orders/new', label: 'Purchase Orders' },
+  { to: '/purchase-orders', label: 'Purchase Orders' },
   { to: '/vendors', label: 'Vendors' },
   { to: '/receiving', label: 'Receiving & putaway' },
   { to: '/items', label: 'Items' },

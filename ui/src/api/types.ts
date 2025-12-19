@@ -418,10 +418,13 @@ export type PurchaseOrder = {
   id: string
   poNumber: string
   vendorId: string
+  vendorCode?: string | null
+  vendorName?: string | null
   status: string
   orderDate?: string
   expectedDate?: string
   shipToLocationId?: string
+  shipToLocationCode?: string | null
   vendorReference?: string
   notes?: string
   createdAt?: string
