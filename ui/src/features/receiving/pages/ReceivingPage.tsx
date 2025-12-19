@@ -24,7 +24,6 @@ export default function ReceivingPage() {
   >([{ purchaseOrderReceiptLineId: '', toLocationId: '', uom: '', quantity: '' }])
   const [locationSearch, setLocationSearch] = useState('')
   const [putawayId, setPutawayId] = useState('')
-
   const poListQuery = useQuery({
     queryKey: ['purchase-orders'],
     queryFn: () => listPurchaseOrders({ limit: 50 }),
@@ -42,6 +41,17 @@ export default function ReceivingPage() {
     queryFn: () => getReceipt(receiptIdForPutaway),
     enabled: !!receiptIdForPutaway,
   })
+
+  const receiptLineOptions = useMemo(
+    () =>
+      (receiptQuery.data?.lines ?? []).map((line) => ({
+        value: line.id,
+        label: `Line ${line.id.slice(0, 8)}… — PO line ${line.purchaseOrderLineId} · ${line.quantityReceived} ${line.uom}`,
+        uom: line.uom,
+        quantity: line.quantityReceived,
+      })),
+    [receiptQuery.data],
+  )
 
   const putawayQuery = useQuery<Putaway>({
     queryKey: ['putaway', putawayId],
@@ -313,11 +323,11 @@ export default function ReceivingPage() {
             {putawayMutation.isError && (
               <Alert variant="error" title="Putaway failed" message={(putawayMutation.error as ApiError).message} />
             )}
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Receipt ID</span>
-                <Input
-                  value={receiptIdForPutaway}
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Receipt ID</span>
+                  <Input
+                    value={receiptIdForPutaway}
                   onChange={(e) => setReceiptIdForPutaway(e.target.value)}
                   placeholder="Receipt UUID"
                 />
@@ -384,14 +394,22 @@ export default function ReceivingPage() {
               </div>
               {putawayLines.map((line, idx) => (
                 <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-4">
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">Receipt Line ID</span>
-                    <Input
+                  <div>
+                    <SearchableSelect
+                      label="Receipt line"
                       value={line.purchaseOrderReceiptLineId}
-                      onChange={(e) => updatePutawayLine(idx, { purchaseOrderReceiptLineId: e.target.value })}
-                      placeholder="Receipt line UUID"
+                      options={receiptLineOptions}
+                      disabled={!receiptLineOptions.length}
+                      onChange={(nextValue) => {
+                        const selected = receiptLineOptions.find((opt) => opt.value === nextValue)
+                        updatePutawayLine(idx, {
+                          purchaseOrderReceiptLineId: nextValue,
+                          uom: selected?.uom ?? line.uom,
+                          quantity: selected?.quantity ?? line.quantity,
+                        })
+                      }}
                     />
-                  </label>
+                  </div>
                   <div>
                     <SearchableSelect
                       label="To location"
