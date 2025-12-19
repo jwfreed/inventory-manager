@@ -39,6 +39,25 @@ export function mapPurchaseOrder(row: any, lines: any[]) {
   };
 }
 
+function mapPurchaseOrderSummary(row: any) {
+  return {
+    id: row.id,
+    poNumber: row.po_number,
+    vendorId: row.vendor_id,
+    vendorCode: row.vendor_code ?? null,
+    vendorName: row.vendor_name ?? null,
+    status: row.status,
+    orderDate: row.order_date,
+    expectedDate: row.expected_date,
+    shipToLocationId: row.ship_to_location_id,
+    shipToLocationCode: row.ship_to_location_code ?? null,
+    vendorReference: row.vendor_reference,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
 function normalizePurchaseOrderLines(lines: PurchaseOrderLineInput[]) {
   const lineNumbers = new Set<number>();
   const normalized = lines.map((line, index) => {
@@ -162,5 +181,5 @@ export async function listPurchaseOrders(limit: number, offset: number) {
        LIMIT $1 OFFSET $2`,
     [limit, offset]
   );
-  return rows;
+  return rows.map(mapPurchaseOrderSummary);
 }
