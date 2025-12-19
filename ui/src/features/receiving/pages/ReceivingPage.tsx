@@ -143,6 +143,19 @@ export default function ReceivingPage() {
   const addPutawayLine = () =>
     setPutawayLines((prev) => [...prev, { purchaseOrderReceiptLineId: '', toLocationId: '', uom: '', quantity: '' }])
 
+  const fillPutawayFromReceipt = () => {
+    const lines = receiptQuery.data?.lines ?? []
+    if (!lines.length) return
+    setPutawayLines(
+      lines.map((l) => ({
+        purchaseOrderReceiptLineId: l.id,
+        toLocationId: '',
+        uom: l.uom,
+        quantity: l.quantityReceived,
+      })),
+    )
+  }
+
   const updatePutawayLine = (
     idx: number,
     patch: Partial<{ purchaseOrderReceiptLineId: string; toLocationId: string; uom: string; quantity: number | '' }>,
@@ -423,9 +436,20 @@ export default function ReceivingPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold text-slate-800">Putaway lines</div>
-                <Button type="button" variant="secondary" size="sm" onClick={addPutawayLine}>
-                  Add line
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={fillPutawayFromReceipt}
+                    disabled={!receiptQuery.data?.lines?.length}
+                  >
+                    Use receipt lines
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" onClick={addPutawayLine}>
+                    Add line
+                  </Button>
+                </div>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="space-y-1 text-sm">
