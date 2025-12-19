@@ -26,6 +26,10 @@ function mapReceiptLine(line: any, qcBreakdown: Map<string, QcBreakdown>) {
     id: line.id,
     purchaseOrderReceiptId: line.purchase_order_receipt_id,
     purchaseOrderLineId: line.purchase_order_line_id,
+    itemId: line.item_id,
+    itemSku: line.item_sku ?? null,
+    itemName: line.item_name ?? null,
+    defaultToLocationId: line.item_default_location_id ?? null,
     uom: line.uom,
     quantityReceived,
     createdAt: line.created_at,
@@ -54,7 +58,16 @@ export async function fetchReceiptById(id: string, client?: PoolClient) {
     return null;
   }
   const linesResult = await executor(
-    'SELECT * FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1 ORDER BY created_at ASC',
+    `SELECT porl.*,
+            pol.item_id,
+            i.sku AS item_sku,
+            i.name AS item_name,
+            i.default_location_id AS item_default_location_id
+       FROM purchase_order_receipt_lines porl
+       LEFT JOIN purchase_order_lines pol ON pol.id = porl.purchase_order_line_id
+       LEFT JOIN items i ON i.id = pol.item_id
+      WHERE porl.purchase_order_receipt_id = $1
+      ORDER BY porl.created_at ASC`,
     [id]
   );
   const lineIds = linesResult.rows.map((line) => line.id);
@@ -129,6 +142,7 @@ export async function listReceipts(limit = 20, offset = 0) {
   const { rows } = await query(
     `SELECT por.id,
             por.purchase_order_id,
+            po.po_number,
             por.received_at,
             por.received_to_location_id,
             por.inventory_movement_id,
@@ -136,6 +150,7 @@ export async function listReceipts(limit = 20, offset = 0) {
             por.notes,
             por.created_at
        FROM purchase_order_receipts por
+       LEFT JOIN purchase_orders po ON po.id = por.purchase_order_id
        ORDER BY por.created_at DESC
        LIMIT $1 OFFSET $2`,
     [limit, offset]

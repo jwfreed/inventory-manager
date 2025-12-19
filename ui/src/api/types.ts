@@ -447,6 +447,10 @@ export type PurchaseOrderReceiptLine = {
   id: string
   purchaseOrderReceiptId: string
   purchaseOrderLineId: string
+  itemId?: string
+  itemSku?: string | null
+  itemName?: string | null
+  defaultToLocationId?: string | null
   uom: string
   quantityReceived: number
   createdAt: string
@@ -464,6 +468,7 @@ export type PurchaseOrderReceiptLine = {
 export type PurchaseOrderReceipt = {
   id: string
   purchaseOrderId: string
+  purchaseOrderNumber?: string
   receivedAt: string
   receivedToLocationId?: string | null
   inventoryMovementId?: string | null

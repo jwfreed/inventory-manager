@@ -46,9 +46,10 @@ export default function ReceivingPage() {
     () =>
       (receiptQuery.data?.lines ?? []).map((line) => ({
         value: line.id,
-        label: `Line ${line.id.slice(0, 8)}… — PO line ${line.purchaseOrderLineId} · ${line.quantityReceived} ${line.uom}`,
+        label: `Line ${line.id.slice(0, 8)}… — ${line.itemSku ?? line.itemId ?? 'Item'}${line.itemName ? ` — ${line.itemName}` : ''} · ${line.quantityReceived} ${line.uom}`,
         uom: line.uom,
         quantity: line.quantityReceived,
+        defaultToLocationId: line.defaultToLocationId ?? '',
       })),
     [receiptQuery.data],
   )
@@ -149,7 +150,7 @@ export default function ReceivingPage() {
     setPutawayLines(
       lines.map((l) => ({
         purchaseOrderReceiptLineId: l.id,
-        toLocationId: '',
+        toLocationId: l.defaultToLocationId ?? '',
         uom: l.uom,
         quantity: l.quantityReceived,
       })),
@@ -475,6 +476,7 @@ export default function ReceivingPage() {
                           purchaseOrderReceiptLineId: nextValue,
                           uom: selected?.uom ?? line.uom,
                           quantity: selected?.quantity ?? line.quantity,
+                          toLocationId: line.toLocationId || selected?.defaultToLocationId || '',
                         })
                       }}
                     />
