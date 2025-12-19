@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -52,8 +52,20 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
       value: item.id,
       label: `${item.name} — ${item.sku}`,
       keywords: `${item.sku} ${item.name} ${item.id}`,
+      defaultUom: item.defaultUom ?? '',
     }))
   }, [itemsQuery.data])
+
+  const findItemById = useCallback(
+    (id: string) => itemsQuery.data?.data?.find((i) => i.id === id),
+    [itemsQuery.data],
+  )
+
+  const outputItem = useMemo(() => findItemById(outputItemId), [findItemById, outputItemId])
+  const resolvedDefaultBomUom = defaultBomUom || outputItem?.defaultUom || ''
+  const resolvedYieldUom = yieldUom || outputItem?.defaultUom || ''
+
+
 
   const mutation = useMutation({
     mutationFn: (payload: BomCreatePayload) => createBom(payload),
@@ -64,7 +76,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
       setYieldQuantity(1)
       setEffectiveFrom('')
       setNotes('')
-      setComponents([{ lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '' }])
+      setComponents([{ lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '', ratio: '' }])
       onSuccess?.()
     },
   })
@@ -97,7 +109,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!bomCode || !yieldUom || !defaultBomUom) return
+    if (!bomCode || !resolvedYieldUom || !resolvedDefaultBomUom) return
 
     const targetWeight = ratioMode ? Number(targetOutputWeight) : undefined
     const workingComponents = ratioMode && targetWeight && targetWeight > 0
@@ -111,13 +123,13 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
     mutation.mutate({
       bomCode,
       outputItemId,
-      defaultUom: defaultBomUom,
+      defaultUom: resolvedDefaultBomUom,
       notes: notes || undefined,
       version: {
         versionNumber: 1,
         effectiveFrom: effectiveFrom || undefined,
         yieldQuantity: Number(yieldQuantity || 0) || 1,
-        yieldUom,
+        yieldUom: resolvedYieldUom,
         components: cleanComponents.map((c, idx) => ({
           lineNumber: c.lineNumber || idx + 1,
           componentItemId: c.componentItemId,
@@ -168,7 +180,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
           <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Default UOM</span>
             <Input
-              value={defaultBomUom}
+              value={resolvedDefaultBomUom}
               onChange={(e) => setDefaultBomUom(e.target.value)}
               placeholder="ea"
               required
@@ -178,7 +190,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
           <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Yield UOM</span>
             <Input
-              value={yieldUom}
+              value={resolvedYieldUom}
               onChange={(e) => setYieldUom(e.target.value)}
               placeholder="ea"
               required
@@ -290,7 +302,13 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
                   options={itemOptions}
                   placeholder="Search by name or SKU"
                   disabled={mutation.isPending || itemsQuery.isLoading}
-                  onChange={(nextValue) => updateComponent(idx, { componentItemId: nextValue })}
+                  onChange={(nextValue) => {
+                    const selected = findItemById(nextValue)
+                    updateComponent(idx, {
+                      componentItemId: nextValue,
+                      uom: line.uom || selected?.defaultUom || line.uom,
+                    })
+                  }}
                 />
               </div>
               <label className="space-y-1 text-sm">
