@@ -253,8 +253,8 @@ export default function ReceivingPage() {
                 </div>
               </div>
               {poLineInputs.map((line, idx) => (
-                <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-4">
-                  <div>
+                <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
+                  <div className="md:col-span-2">
                     <SearchableSelect
                       label="PO line"
                       value={line.purchaseOrderLineId}
@@ -264,10 +264,13 @@ export default function ReceivingPage() {
                         const selected = nextValue ? poLinesById.get(nextValue) : undefined
                         updatePoLineInput(idx, {
                           purchaseOrderLineId: nextValue,
-                          uom: line.uom || selected?.uom || '',
+                          uom: selected?.uom || line.uom,
                         })
                       }}
                     />
+                    {line.purchaseOrderLineId && (
+                      <div className="mt-1 text-xs text-slate-500">{poLinesById.get(line.purchaseOrderLineId)?.label}</div>
+                    )}
                   </div>
                   <label className="space-y-1 text-sm">
                     <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
@@ -287,7 +290,7 @@ export default function ReceivingPage() {
                     />
                   </label>
                   <div className="flex items-end">
-                    <div className="text-xs text-slate-500">Use purchase order line IDs and matching units.</div>
+                    <div className="text-xs text-slate-500">Use PO line and matching units.</div>
                   </div>
                 </div>
               ))}
