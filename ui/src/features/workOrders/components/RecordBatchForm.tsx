@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -56,6 +56,17 @@ type Props = {
 
 export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   const localDefaults = getWorkOrderDefaults(workOrder.id)
+  const baseOutputUom = outputItem?.defaultUom || workOrder.outputUom
+  const baseConsumeLocationId =
+    workOrder.defaultConsumeLocationId ??
+    outputItem?.defaultLocationId ??
+    localDefaults.consumeLocationId ??
+    ''
+  const baseProduceLocationId =
+    workOrder.defaultProduceLocationId ??
+    outputItem?.defaultLocationId ??
+    localDefaults.produceLocationId ??
+    ''
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [itemSearch, setItemSearch] = useState('')
@@ -68,13 +79,13 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
     (workOrder.quantityPlanned || 0) - (workOrder.quantityCompleted ?? 0),
   )
   const [consumeLines, setConsumeLines] = useState<ConsumeLine[]>([
-    { componentItemId: '', fromLocationId: '', uom: '', quantity: '', usesPackSize: false },
+    { componentItemId: '', fromLocationId: '', uom: baseOutputUom, quantity: '', usesPackSize: false },
   ])
   const [produceLines, setProduceLines] = useState<ProduceLine[]>([
     {
       outputItemId: workOrder.outputItemId,
       toLocationId: '',
-      uom: '',
+      uom: baseOutputUom,
       quantity: remaining || '',
       packSize: undefined,
     },
@@ -96,39 +107,8 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
     retry: 1,
   })
 
-  const baseConsumeLocationId =
-    workOrder.defaultConsumeLocationId ??
-    outputItem?.defaultLocationId ??
-    localDefaults.consumeLocationId ??
-    ''
-  const baseProduceLocationId =
-    workOrder.defaultProduceLocationId ??
-    outputItem?.defaultLocationId ??
-    localDefaults.produceLocationId ??
-    ''
-  const baseOutputUom = outputItem?.defaultUom || workOrder.outputUom
-  const usingItemConsumeDefault =
-    !workOrder.defaultConsumeLocationId &&
-    !localDefaults.consumeLocationId &&
-    outputItem?.defaultLocationId &&
-    normalizedDefaultFrom === outputItem.defaultLocationId
-  const usingItemProduceDefault =
-    !workOrder.defaultProduceLocationId &&
-    !localDefaults.produceLocationId &&
-    outputItem?.defaultLocationId &&
-    normalizedDefaultTo === outputItem.defaultLocationId
-
-  useEffect(() => {
-    if (!defaultFromLocationId && baseConsumeLocationId) {
-      setDefaultFromLocationId(baseConsumeLocationId)
-    }
-  }, [baseConsumeLocationId, defaultFromLocationId])
-
-  useEffect(() => {
-    if (!defaultToLocationId && baseProduceLocationId) {
-      setDefaultToLocationId(baseProduceLocationId)
-    }
-  }, [baseProduceLocationId, defaultToLocationId])
+  const prevDefaultFromRef = useRef<string>('')
+  const prevDefaultToRef = useRef<string>('')
 
   const itemOptions = useMemo(
     () =>
@@ -159,26 +139,42 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   const effectiveDefaultTo = defaultToLocationId || baseProduceLocationId
   const normalizedDefaultFrom = validLocationIds.has(effectiveDefaultFrom) ? effectiveDefaultFrom : ''
   const normalizedDefaultTo = validLocationIds.has(effectiveDefaultTo) ? effectiveDefaultTo : ''
+  const usingItemConsumeDefault =
+    !workOrder.defaultConsumeLocationId &&
+    !localDefaults.consumeLocationId &&
+    outputItem?.defaultLocationId &&
+    normalizedDefaultFrom === outputItem.defaultLocationId
+  const usingItemProduceDefault =
+    !workOrder.defaultProduceLocationId &&
+    !localDefaults.produceLocationId &&
+    outputItem?.defaultLocationId &&
+    normalizedDefaultTo === outputItem.defaultLocationId
 
   useEffect(() => {
     setConsumeLines((prev) =>
       prev.map((line) => ({
         ...line,
-        fromLocationId: line.fromLocationId || effectiveDefaultFrom,
-        uom: line.uom || baseOutputUom,
+        fromLocationId:
+          !line.fromLocationId || line.fromLocationId === prevDefaultFromRef.current
+            ? normalizedDefaultFrom
+            : line.fromLocationId,
       })),
     )
-  }, [effectiveDefaultFrom, baseOutputUom])
+    prevDefaultFromRef.current = normalizedDefaultFrom
+  }, [normalizedDefaultFrom])
 
   useEffect(() => {
     setProduceLines((prev) =>
       prev.map((line) => ({
         ...line,
-        toLocationId: line.toLocationId || effectiveDefaultTo,
-        uom: line.uom || baseOutputUom,
+        toLocationId:
+          !line.toLocationId || line.toLocationId === prevDefaultToRef.current
+            ? normalizedDefaultTo
+            : line.toLocationId,
       })),
     )
-  }, [effectiveDefaultTo, baseOutputUom])
+    prevDefaultToRef.current = normalizedDefaultTo
+  }, [normalizedDefaultTo])
 
   const defaultsConsumeMutation = useMutation({
     mutationFn: (locId: string) =>
@@ -196,7 +192,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
         .sort((a, b) => a.lineNumber - b.lineNumber)
         .map((line) => ({
           componentItemId: line.componentItemId,
-          fromLocationId: effectiveDefaultFrom,
+          fromLocationId: normalizedDefaultFrom,
           uom: line.uom,
           quantity: line.quantityRequired,
           usesPackSize: line.usesPackSize,
@@ -273,17 +269,11 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
     setDefaultFromLocationId(locId)
     setWorkOrderDefaults(workOrder.id, { consumeLocationId: locId })
     defaultsConsumeMutation.mutate(locId)
-    setConsumeLines((prev) =>
-      prev.map((line) => ({ ...line, fromLocationId: line.fromLocationId || locId })),
-    )
   }
   const onSelectDefaultProduce = (locId: string) => {
     setDefaultToLocationId(locId)
     setWorkOrderDefaults(workOrder.id, { produceLocationId: locId })
     defaultsProduceMutation.mutate(locId)
-    setProduceLines((prev) =>
-      prev.map((line) => ({ ...line, toLocationId: line.toLocationId || locId })),
-    )
   }
 
   const validate = (): string | null => {

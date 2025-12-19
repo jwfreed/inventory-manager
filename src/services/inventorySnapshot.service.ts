@@ -27,6 +27,13 @@ export type InventorySnapshotParams = {
   uom?: string;
 };
 
+export type InventorySnapshotSummaryParams = {
+  itemId?: string;
+  locationId?: string;
+  limit?: number;
+  offset?: number;
+};
+
 function normalizeQuantity(value: unknown): number {
   return roundQuantity(toNumber(value));
 }
@@ -200,3 +207,90 @@ export async function getInventorySnapshot(params: InventorySnapshotParams): Pro
 }
 
 export { assertItemExists, assertLocationExists };
+
+export async function getInventorySnapshotSummary(
+  params: InventorySnapshotSummaryParams = {}
+): Promise<InventorySnapshotRow[]> {
+  const clauses: string[] = [];
+  const reservedClauses: string[] = [];
+  const paramsList: any[] = [];
+
+  if (params.itemId) {
+    clauses.push(`iml.item_id = $${paramsList.push(params.itemId)}`);
+    reservedClauses.push(`r.item_id = $${paramsList.length}`);
+  }
+  if (params.locationId) {
+    clauses.push(`iml.location_id = $${paramsList.push(params.locationId)}`);
+    reservedClauses.push(`r.location_id = $${paramsList.length}`);
+  }
+
+  const limit = params.limit ?? 500;
+  const offset = params.offset ?? 0;
+
+  const whereOnHand = clauses.length ? `AND ${clauses.join(' AND ')}` : '';
+  const whereReserved = reservedClauses.length ? `AND ${reservedClauses.join(' AND ')}` : '';
+
+  const { rows } = await query(
+    `WITH on_hand AS (
+       SELECT iml.item_id,
+              iml.location_id,
+              iml.uom,
+              SUM(iml.quantity_delta) AS on_hand
+         FROM inventory_movement_lines iml
+         JOIN inventory_movements im ON im.id = iml.movement_id
+        WHERE im.status = 'posted'
+          ${whereOnHand}
+        GROUP BY iml.item_id, iml.location_id, iml.uom
+     ),
+     reserved AS (
+       SELECT r.item_id,
+              r.location_id,
+              r.uom,
+              SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved
+         FROM inventory_reservations r
+        WHERE r.status IN ('open', 'released')
+          ${whereReserved}
+        GROUP BY r.item_id, r.location_id, r.uom
+     ),
+     combined AS (
+       SELECT COALESCE(oh.item_id, rs.item_id) AS item_id,
+              COALESCE(oh.location_id, rs.location_id) AS location_id,
+              COALESCE(oh.uom, rs.uom) AS uom,
+              COALESCE(oh.on_hand, 0) AS on_hand,
+              COALESCE(rs.reserved, 0) AS reserved
+         FROM on_hand oh
+         FULL OUTER JOIN reserved rs
+           ON oh.item_id = rs.item_id
+          AND oh.location_id = rs.location_id
+          AND oh.uom = rs.uom
+     )
+    SELECT item_id,
+           location_id,
+           uom,
+           on_hand,
+           reserved,
+           (on_hand - reserved) AS available,
+           0 AS on_order,
+           0 AS in_transit,
+           0 AS backordered,
+           (on_hand - reserved) AS inventory_position
+      FROM combined
+     WHERE on_hand <> 0 OR reserved <> 0
+     ORDER BY item_id, location_id, uom
+     LIMIT $${paramsList.push(limit)} OFFSET $${paramsList.push(offset)};`,
+    paramsList
+  );
+
+  return rows.map((row: any) => ({
+    itemId: row.item_id,
+    locationId: row.location_id,
+    uom: row.uom,
+    onHand: normalizeQuantity(row.on_hand),
+    reserved: normalizeQuantity(row.reserved),
+    available: normalizeQuantity(row.available),
+    onOrder: normalizeQuantity(row.on_order),
+    inTransit: normalizeQuantity(row.in_transit),
+    backordered: normalizeQuantity(row.backordered),
+    inventoryPosition: normalizeQuantity(row.inventory_position)
+  }));
+}

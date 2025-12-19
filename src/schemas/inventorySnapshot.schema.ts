@@ -19,3 +19,12 @@ export const inventorySnapshotQuerySchema = z.object({
 });
 
 export type InventorySnapshotQuery = z.infer<typeof inventorySnapshotQuerySchema>;
+
+export const inventorySnapshotSummaryQuerySchema = z.object({
+  itemId: z.preprocess(toUuidString, z.string().uuid()).optional(),
+  locationId: z.preprocess(toUuidString, z.string().uuid()).optional(),
+  limit: z.preprocess((val) => Number(toSingleString(val)), z.number().int().positive().max(2000)).optional(),
+  offset: z.preprocess((val) => Number(toSingleString(val)), z.number().int().min(0)).optional()
+});
+
+export type InventorySnapshotSummaryQuery = z.infer<typeof inventorySnapshotSummaryQuerySchema>;

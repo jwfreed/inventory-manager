@@ -1,7 +1,11 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getFulfillmentFillRate, listKpiRuns, listKpiSnapshots } from '../../../api/endpoints/kpis'
 import { listReplenishmentRecommendations } from '../../../api/endpoints/planning'
 import { listWorkOrders } from '../../../api/endpoints/workOrders'
+import { listInventorySnapshotSummary } from '../../../api/endpoints/inventorySnapshot'
+import { listItems } from '../../../api/endpoints/items'
+import { listLocations } from '../../../api/endpoints/locations'
 import type { ApiError } from '../../../api/types'
 import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
@@ -83,6 +87,24 @@ export default function DashboardPage() {
     staleTime: 30_000,
   })
 
+  const inventorySummaryQuery = useQuery({
+    queryKey: ['inventory-summary'],
+    queryFn: () => listInventorySnapshotSummary({ limit: 500 }),
+    staleTime: 30_000,
+  })
+
+  const itemsQuery = useQuery({
+    queryKey: ['items', 'inventory-summary'],
+    queryFn: () => listItems({ limit: 500 }),
+    staleTime: 30_000,
+  })
+
+  const locationsQuery = useQuery({
+    queryKey: ['locations', 'inventory-summary'],
+    queryFn: () => listLocations({ limit: 500, active: true }),
+    staleTime: 30_000,
+  })
+
   const productionRows =
     productionQuery.data?.data.map((wo) => ({
       outputItemId: wo.outputItemId,
@@ -106,6 +128,22 @@ export default function DashboardPage() {
     ...val,
     remaining: Math.max(0, val.planned - val.completed),
   }))
+
+  const itemLookup = useMemo(() => {
+    const map = new Map<string, { sku?: string; name?: string }>()
+    itemsQuery.data?.data?.forEach((item) => {
+      map.set(item.id, { sku: item.sku, name: item.name })
+    })
+    return map
+  }, [itemsQuery.data])
+
+  const locationLookup = useMemo(() => {
+    const map = new Map<string, { code?: string; name?: string }>()
+    locationsQuery.data?.data?.forEach((loc) => {
+      map.set(loc.id, { code: loc.code, name: loc.name })
+    })
+    return map
+  }, [locationsQuery.data])
 
   const fillRateCard = (() => {
     if (fillRateQuery.isLoading) {
@@ -216,6 +254,93 @@ export default function DashboardPage() {
               </table>
             </div>
           )}
+        </Card>
+      </Section>
+
+      <Section
+        title="Inventory on hand"
+        description="Current on-hand, reserved, and available by item and location (posted movements minus reservations)."
+      >
+        <Card>
+          {(inventorySummaryQuery.isLoading || itemsQuery.isLoading || locationsQuery.isLoading) && (
+            <LoadingSpinner label="Loading inventory..." />
+          )}
+          {(inventorySummaryQuery.isError || itemsQuery.isError || locationsQuery.isError) && (
+            <ErrorState
+              error={
+                (inventorySummaryQuery.error as ApiError) ||
+                (itemsQuery.error as ApiError) ||
+                (locationsQuery.error as ApiError)
+              }
+              onRetry={() => {
+                void inventorySummaryQuery.refetch()
+                void itemsQuery.refetch()
+                void locationsQuery.refetch()
+              }}
+            />
+          )}
+          {!inventorySummaryQuery.isLoading &&
+            !inventorySummaryQuery.isError &&
+            (inventorySummaryQuery.data ?? []).length === 0 && (
+              <EmptyState
+                title="No inventory yet"
+                description="Post receipts or completions to see on-hand by item/location."
+              />
+            )}
+          {!inventorySummaryQuery.isLoading &&
+            !inventorySummaryQuery.isError &&
+            (inventorySummaryQuery.data ?? []).length > 0 && (
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Item
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Location
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        UOM
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        On hand
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Reserved
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Available
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 bg-white">
+                    {(inventorySummaryQuery.data ?? []).map((row) => {
+                      const item = itemLookup.get(row.itemId)
+                      const loc = locationLookup.get(row.locationId)
+                      const itemLabel = item ? `${item.sku ?? row.itemId} — ${item.name ?? ''}` : row.itemId
+                      const locLabel = loc ? `${loc.code ?? row.locationId} — ${loc.name ?? ''}` : row.locationId
+                      return (
+                        <tr key={`${row.itemId}-${row.locationId}-${row.uom}`}>
+                          <td className="px-3 py-2 text-sm text-slate-800">{itemLabel}</td>
+                          <td className="px-3 py-2 text-sm text-slate-800">{locLabel}</td>
+                          <td className="px-3 py-2 text-sm text-slate-800">{row.uom}</td>
+                          <td className="px-3 py-2 text-right text-sm text-slate-800">
+                            {formatNumber(row.onHand)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-sm text-slate-800">
+                            {formatNumber(row.reserved)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-sm text-slate-800">
+                            {formatNumber(row.available)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
         </Card>
       </Section>
 

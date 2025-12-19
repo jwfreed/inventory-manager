@@ -13,7 +13,7 @@ export const purchaseOrderLineSchema = z.object({
 });
 
 export const purchaseOrderSchema = z.object({
-  poNumber: z.string().min(1).max(64),
+  poNumber: z.string().min(1).max(64).optional(),
   vendorId: z.string().uuid(),
   status: z.enum(['draft', 'submitted']).optional(),
   orderDate: isoDateString.optional(),

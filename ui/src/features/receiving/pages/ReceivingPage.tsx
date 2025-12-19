@@ -66,6 +66,25 @@ export default function ReceivingPage() {
     [locationsQuery.data],
   )
 
+  const poLinesById = useMemo(() => {
+    const map = new Map<string, { id: string; label: string; uom: string }>()
+    if (poQuery.data?.lines) {
+      poQuery.data.lines.forEach((line) => {
+        const sku = line.itemSku ?? line.itemId ?? ''
+        const name = line.itemName ?? ''
+        const label = `Line ${line.lineNumber ?? ''} — ${sku}${name ? ` — ${name}` : ''} (${line.quantityOrdered ?? ''} ${line.uom ?? ''})`
+        map.set(line.id, { id: line.id, label, uom: line.uom ?? '' })
+      })
+    }
+    return map
+  }, [poQuery.data])
+
+  const poLineOptions = useMemo(() => Array.from(poLinesById.values()).map((l) => ({
+    value: l.id,
+    label: l.label,
+    keywords: l.label,
+  })), [poLinesById])
+
   const receiptMutation = useMutation({
     mutationFn: (payload: ReceiptCreatePayload) => createReceipt(payload),
     onSuccess: (receipt) => {
@@ -179,11 +198,11 @@ export default function ReceivingPage() {
             {poQuery.isError && poQuery.error && (
               <Alert variant="error" title="PO load failed" message={(poQuery.error as ApiError).message} />
             )}
-            {poQuery.data && (
-              <div className="rounded-lg border border-slate-200 p-3">
-                <div className="text-sm font-semibold text-slate-800">Lines</div>
-                <div className="overflow-hidden rounded border border-slate-200 mt-2">
-                  <table className="min-w-full divide-y divide-slate-200">
+              {poQuery.data && (
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <div className="text-sm font-semibold text-slate-800">Lines</div>
+                  <div className="overflow-hidden rounded border border-slate-200 mt-2">
+                    <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-slate-50">
                       <tr>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Line</th>
@@ -196,7 +215,10 @@ export default function ReceivingPage() {
                       {poQuery.data.lines?.map((l) => (
                         <tr key={l.id}>
                           <td className="px-3 py-2 text-sm text-slate-800">{l.lineNumber}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{l.itemId}</td>
+                          <td className="px-3 py-2 text-sm text-slate-800">
+                            {l.itemSku ?? l.itemId}
+                            {l.itemName ? ` — ${l.itemName}` : ''}
+                          </td>
                           <td className="px-3 py-2 text-sm text-slate-800">{l.quantityOrdered}</td>
                           <td className="px-3 py-2 text-sm text-slate-800">{l.uom}</td>
                         </tr>
@@ -215,14 +237,21 @@ export default function ReceivingPage() {
               </div>
               {poLineInputs.map((line, idx) => (
                 <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-4">
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">PO Line ID</span>
-                    <Input
+                  <div>
+                    <SearchableSelect
+                      label="PO line"
                       value={line.purchaseOrderLineId}
-                      onChange={(e) => updatePoLineInput(idx, { purchaseOrderLineId: e.target.value })}
-                      placeholder="PO line UUID"
+                      options={poLineOptions}
+                      disabled={!selectedPoId || poLineOptions.length === 0}
+                      onChange={(nextValue) => {
+                        const selected = nextValue ? poLinesById.get(nextValue) : undefined
+                        updatePoLineInput(idx, {
+                          purchaseOrderLineId: nextValue,
+                          uom: line.uom || selected?.uom || '',
+                        })
+                      }}
                     />
-                  </label>
+                  </div>
                   <label className="space-y-1 text-sm">
                     <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
                     <Input value={line.uom} onChange={(e) => updatePoLineInput(idx, { uom: e.target.value })} />

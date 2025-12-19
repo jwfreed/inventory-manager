@@ -407,6 +407,8 @@ export type PurchaseOrderLine = {
   purchaseOrderId?: string
   lineNumber?: number
   itemId?: string
+  itemSku?: string | null
+  itemName?: string | null
   uom?: string
   quantityOrdered?: number
   notes?: string | null
