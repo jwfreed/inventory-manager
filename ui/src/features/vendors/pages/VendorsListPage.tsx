@@ -12,6 +12,7 @@ import { Input } from '../../../components/Inputs'
 export default function VendorsListPage() {
   const qc = useQueryClient()
   const [filterActive, setFilterActive] = useState<'all' | 'active'>('active')
+  const [showForm, setShowForm] = useState(false)
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -30,6 +31,7 @@ export default function VendorsListPage() {
     setEmail('')
     setPhone('')
     setEditingId(null)
+    setShowForm(false)
   }
 
   const createMutation = useMutation({
@@ -78,6 +80,7 @@ export default function VendorsListPage() {
     setName(vendor.name)
     setEmail(vendor.email ?? '')
     setPhone(vendor.phone ?? '')
+    setShowForm(true)
   }
 
   const vendors = useMemo(() => vendorsQuery.data?.data ?? [], [vendorsQuery.data])
@@ -88,16 +91,39 @@ export default function VendorsListPage() {
   return (
     <div className="space-y-6">
       <Section title="Vendors" description="Create suppliers and keep them tidy. Active vendors show up in PO and receiving pickers.">
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-1">
+        {error && (
+          <Alert
+            variant="error"
+            title="Error"
+            message={(error as ApiError)?.message ?? 'An error occurred'}
+          />
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-slate-800">Vendor list</div>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowForm((prev) => !prev)}>
+              {showForm ? 'Hide form' : 'Create new vendor'}
+            </Button>
+            <Button
+              variant={filterActive === 'active' ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => setFilterActive('active')}
+            >
+              Active
+            </Button>
+            <Button
+              variant={filterActive === 'all' ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => setFilterActive('all')}
+            >
+              All
+            </Button>
+          </div>
+        </div>
+
+        {showForm && (
+          <Card className="mt-4">
             {loading && <LoadingSpinner label="Processing..." />}
-            {error && (
-              <Alert
-                variant="error"
-                title="Error"
-                message={(error as ApiError)?.message ?? 'An error occurred'}
-              />
-            )}
             <form className="space-y-4" onSubmit={onSubmit}>
               <div className="flex items-center justify-between">
                 <div>
@@ -112,7 +138,7 @@ export default function VendorsListPage() {
                   </Button>
                 )}
               </div>
-              <div className="grid gap-3">
+              <div className="grid gap-3 md:grid-cols-2">
                 <label className="space-y-1 text-sm">
                   <span className="text-xs uppercase tracking-wide text-slate-500">Code</span>
                   <Input value={code} onChange={(e) => setCode(e.target.value)} required />
@@ -138,85 +164,63 @@ export default function VendorsListPage() {
               </div>
             </form>
           </Card>
+        )}
 
-          <Card className="lg:col-span-2">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-800">Vendor list</div>
-                <p className="text-xs text-slate-500">Filter to active for day-to-day; show all for audit/reactivation.</p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant={filterActive === 'active' ? 'primary' : 'secondary'}
-                  size="sm"
-                  onClick={() => setFilterActive('active')}
-                >
-                  Active
-                </Button>
-                <Button
-                  variant={filterActive === 'all' ? 'primary' : 'secondary'}
-                  size="sm"
-                  onClick={() => setFilterActive('all')}
-                >
-                  All
-                </Button>
-              </div>
-            </div>
-            {vendorsQuery.isLoading && <LoadingSpinner label="Loading vendors..." />}
-            {!vendorsQuery.isLoading && vendors.length === 0 && (
-              <div className="py-6 text-sm text-slate-600">No vendors found.</div>
-            )}
-            {!vendorsQuery.isLoading && vendors.length > 0 && (
-              <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Code
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Name
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Email
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Phone
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Active
-                      </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Actions
-                      </th>
+        <Card className="mt-4">
+          {vendorsQuery.isLoading && <LoadingSpinner label="Loading vendors..." />}
+          {!vendorsQuery.isLoading && vendors.length === 0 && (
+            <div className="py-6 text-sm text-slate-600">No vendors found.</div>
+          )}
+          {!vendorsQuery.isLoading && vendors.length > 0 && (
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Code
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Name
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Email
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Phone
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Active
+                    </th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white">
+                  {vendors.map((vendor) => (
+                    <tr key={vendor.id}>
+                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.code}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.name}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.email ?? '—'}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.phone ?? '—'}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.active ? 'Yes' : 'No'}</td>
+                      <td className="px-3 py-2 text-right text-sm text-slate-800">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="secondary" size="sm" onClick={() => onEdit(vendor)}>
+                            Edit
+                          </Button>
+                          <Button variant="secondary" size="sm" onClick={() => deleteMutation.mutate(vendor.id)}>
+                            Deactivate
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white">
-                    {vendors.map((vendor) => (
-                      <tr key={vendor.id}>
-                        <td className="px-3 py-2 text-sm text-slate-800">{vendor.code}</td>
-                        <td className="px-3 py-2 text-sm text-slate-800">{vendor.name}</td>
-                        <td className="px-3 py-2 text-sm text-slate-800">{vendor.email ?? '—'}</td>
-                        <td className="px-3 py-2 text-sm text-slate-800">{vendor.phone ?? '—'}</td>
-                        <td className="px-3 py-2 text-sm text-slate-800">{vendor.active ? 'Yes' : 'No'}</td>
-                        <td className="px-3 py-2 text-right text-sm text-slate-800">
-                          <div className="flex justify-end gap-2">
-                            <Button variant="secondary" size="sm" onClick={() => onEdit(vendor)}>
-                              Edit
-                            </Button>
-                            <Button variant="secondary" size="sm" onClick={() => deleteMutation.mutate(vendor.id)}>
-                              Deactivate
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-        </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       </Section>
     </div>
   )
