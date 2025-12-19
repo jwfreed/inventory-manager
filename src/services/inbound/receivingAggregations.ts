@@ -40,10 +40,12 @@ export async function loadReceiptLineContexts(
         prl.uom,
         pol.item_id,
         pol.purchase_order_id,
-        por.received_to_location_id
+        por.received_to_location_id,
+        i.default_location_id
      FROM purchase_order_receipt_lines prl
      JOIN purchase_order_lines pol ON pol.id = prl.purchase_order_line_id
      JOIN purchase_order_receipts por ON por.id = prl.purchase_order_receipt_id
+     LEFT JOIN items i ON i.id = pol.item_id
      WHERE prl.id = ANY($1::uuid[])`,
     [lineIds]
   );
@@ -55,7 +57,7 @@ export async function loadReceiptLineContexts(
       itemId: row.item_id,
       uom: row.uom,
       quantityReceived: roundQuantity(toNumber(row.quantity_received)),
-      defaultFromLocationId: row.received_to_location_id
+      defaultFromLocationId: row.received_to_location_id ?? row.default_location_id ?? null
     });
   }
   return map;

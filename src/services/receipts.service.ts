@@ -26,6 +26,7 @@ function mapReceiptLine(line: any, qcBreakdown: Map<string, QcBreakdown>) {
     id: line.id,
     purchaseOrderReceiptId: line.purchase_order_receipt_id,
     purchaseOrderLineId: line.purchase_order_line_id,
+    defaultFromLocationId: line.received_to_location_id ?? line.item_default_location_id ?? null,
     itemId: line.item_id,
     itemSku: line.item_sku ?? null,
     itemName: line.item_name ?? null,
@@ -41,6 +42,7 @@ function mapReceipt(row: any, lineRows: any[], qcBreakdown: Map<string, QcBreakd
   return {
     id: row.id,
     purchaseOrderId: row.purchase_order_id,
+    purchaseOrderNumber: row.po_number ?? null,
     receivedAt: row.received_at,
     receivedToLocationId: row.received_to_location_id,
     inventoryMovementId: row.inventory_movement_id,
@@ -53,7 +55,13 @@ function mapReceipt(row: any, lineRows: any[], qcBreakdown: Map<string, QcBreakd
 
 export async function fetchReceiptById(id: string, client?: PoolClient) {
   const executor = client ?? query;
-  const receiptResult = await executor('SELECT * FROM purchase_order_receipts WHERE id = $1', [id]);
+  const receiptResult = await executor(
+    `SELECT por.*, po.po_number
+       FROM purchase_order_receipts por
+       LEFT JOIN purchase_orders po ON po.id = por.purchase_order_id
+      WHERE por.id = $1`,
+    [id]
+  );
   if (receiptResult.rowCount === 0) {
     return null;
   }
