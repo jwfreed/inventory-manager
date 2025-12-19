@@ -85,7 +85,7 @@ export async function createPurchaseOrder(data: PurchaseOrderInput) {
        RETURNING *`,
       [
         poId,
-        data.poNumber,
+        poNumber,
         data.vendorId,
         status,
         data.orderDate ?? null,
