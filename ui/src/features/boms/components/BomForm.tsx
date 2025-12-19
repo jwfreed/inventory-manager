@@ -32,6 +32,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
   const [yieldQuantity, setYieldQuantity] = useState<number | ''>(1)
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [notes, setNotes] = useState('')
+  const [targetOutputWeight, setTargetOutputWeight] = useState<number | ''>('')
   const [components, setComponents] = useState<ComponentDraft[]>([
     { lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '' },
   ])
@@ -107,6 +108,19 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
         })),
       },
     })
+  }
+
+  const scaleQuantitiesToTarget = () => {
+    if (targetOutputWeight === '' || Number(targetOutputWeight) <= 0) return
+    const baseTotal = components.reduce((sum, c) => sum + (Number(c.quantityPer) || 0), 0)
+    if (baseTotal <= 0) return
+    const factor = Number(targetOutputWeight) / baseTotal
+    setComponents((prev) =>
+      prev.map((c) => ({
+        ...c,
+        quantityPer: Number(c.quantityPer) ? Number((Number(c.quantityPer) * factor).toFixed(6)) : c.quantityPer,
+      })),
+    )
   }
 
   return (
@@ -185,6 +199,34 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
           <Button type="button" variant="secondary" size="sm" onClick={addComponent} disabled={mutation.isPending}>
             Add component
           </Button>
+        </div>
+        <div className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-3">
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Target output weight (g)</span>
+            <Input
+              type="number"
+              min={0}
+              value={targetOutputWeight}
+              onChange={(e) => setTargetOutputWeight(e.target.value === '' ? '' : Number(e.target.value))}
+              placeholder="e.g. 75"
+              disabled={mutation.isPending}
+            />
+          </label>
+          <div className="flex items-end md:col-span-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={scaleQuantitiesToTarget}
+              disabled={mutation.isPending}
+            >
+              Scale Qty per to target weight
+            </Button>
+          </div>
+          <p className="md:col-span-3 text-xs text-slate-600">
+            Enter your recipe quantities first (e.g. 1000 g base + 25 g durian), set target bar weight (e.g. 75 g),
+            then click to auto-scale Qty per.
+          </p>
         </div>
         <div className="space-y-3">
           {components.map((line, idx) => (
