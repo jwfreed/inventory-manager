@@ -429,6 +429,17 @@ export type PurchaseOrder = {
   lines?: PurchaseOrderLine[]
 }
 
+export type Vendor = {
+  id: string
+  code: string
+  name: string
+  email?: string | null
+  phone?: string | null
+  active?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
 export type PurchaseOrderReceiptLine = {
   id: string
   purchaseOrderReceiptId: string
