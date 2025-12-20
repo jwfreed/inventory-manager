@@ -193,11 +193,29 @@ export async function deleteReceipt(id: string) {
   const lineIds = receiptLineIds.map((r) => r.id);
   if (lineIds.length > 0) {
     const { rows: putawayRefs } = await query(
-      'SELECT id FROM putaway_lines WHERE purchase_order_receipt_line_id = ANY($1::uuid[])',
+      `SELECT pl.id,
+              pl.putaway_id,
+              pl.status AS line_status,
+              p.status AS putaway_status,
+              pl.inventory_movement_id
+         FROM putaway_lines pl
+         JOIN putaways p ON p.id = pl.putaway_id
+        WHERE pl.purchase_order_receipt_line_id = ANY($1::uuid[])`,
       [lineIds]
     );
     if (putawayRefs.length > 0) {
-      throw new Error('RECEIPT_HAS_PUTAWAYS');
+      const hasPosted = putawayRefs.some(
+        (r) => r.line_status === 'completed' || r.putaway_status === 'completed' || r.inventory_movement_id
+      );
+      if (hasPosted) {
+        throw new Error('RECEIPT_HAS_PUTAWAYS_POSTED');
+      }
+      // Safe to delete pending putaways tied to this receipt
+      const putawayIds = Array.from(new Set(putawayRefs.map((r) => r.putaway_id)));
+      await withTransaction(async (client) => {
+        await client.query('DELETE FROM putaway_lines WHERE putaway_id = ANY($1::uuid[])', [putawayIds]);
+        await client.query('DELETE FROM putaways WHERE id = ANY($1::uuid[])', [putawayIds]);
+      });
     }
   }
   await withTransaction(async (client) => {

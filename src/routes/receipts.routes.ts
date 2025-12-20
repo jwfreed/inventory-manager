@@ -95,8 +95,8 @@ router.delete('/purchase-order-receipts/:id', async (req: Request, res: Response
     await deleteReceipt(id);
     return res.status(204).send();
   } catch (error: any) {
-    if (error?.message === 'RECEIPT_HAS_PUTAWAYS') {
-      return res.status(409).json({ error: 'Receipt has putaway lines and cannot be deleted.' });
+    if (error?.message === 'RECEIPT_HAS_PUTAWAYS_POSTED') {
+      return res.status(409).json({ error: 'Receipt has posted putaway lines and cannot be deleted.' });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to delete receipt.' });
