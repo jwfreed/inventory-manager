@@ -32,7 +32,7 @@ export default function WorkOrderCreatePage() {
   const [workOrderNumber, setWorkOrderNumber] = useState('')
   const [outputItemId, setOutputItemId] = useState('')
   const [outputUom, setOutputUom] = useState('')
-  const [quantityPlanned, setQuantityPlanned] = useState<number | ''>(0)
+  const [quantityPlanned, setQuantityPlanned] = useState<number | ''>(1)
   const [scheduledStartAt, setScheduledStartAt] = useState('')
   const [scheduledDueAt, setScheduledDueAt] = useState('')
   const [notes, setNotes] = useState('')
@@ -40,6 +40,7 @@ export default function WorkOrderCreatePage() {
   const [selectedVersionId, setSelectedVersionId] = useState('')
   const [defaultConsumeLocationId, setDefaultConsumeLocationId] = useState('')
   const [defaultProduceLocationId, setDefaultProduceLocationId] = useState('')
+  const [quantityError, setQuantityError] = useState<string | null>(null)
 
   const itemsQuery = useQuery({
     queryKey: ['items', 'wo-create'],
@@ -123,7 +124,12 @@ export default function WorkOrderCreatePage() {
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    setQuantityError(null)
     if (!workOrderNumber || !selectedBomId || !outputItemId || !outputUom || quantityPlanned === '') {
+      return
+    }
+    if (!(Number(quantityPlanned) > 0)) {
+      setQuantityError('Quantity planned must be greater than 0.')
       return
     }
     const toDateTime = (value: string) => (value ? `${value}T00:00:00.000Z` : undefined)
@@ -223,12 +229,17 @@ export default function WorkOrderCreatePage() {
                 <span className="text-xs uppercase tracking-wide text-slate-500">Quantity planned</span>
                 <Input
                   type="number"
-                  min={0}
+                  min={1}
                   value={quantityPlanned}
-                  onChange={(e) => setQuantityPlanned(e.target.value === '' ? '' : Number(e.target.value))}
+                  onChange={(e) => {
+                    const next = e.target.value === '' ? '' : Number(e.target.value)
+                    setQuantityPlanned(next)
+                    if (quantityError) setQuantityError(null)
+                  }}
                   required
                   disabled={mutation.isPending}
                 />
+                {quantityError ? <p className="text-xs text-red-600">{quantityError}</p> : null}
               </label>
               <label className="space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">Scheduled start</span>
