@@ -9,7 +9,6 @@ function formatLabel(segment: string) {
 }
 
 function buildPath(segments: string[], index: number) {
-  if (index === 0) return '/home'
   return `/${segments.slice(0, index + 1).join('/')}`
 }
 
