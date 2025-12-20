@@ -128,7 +128,11 @@ export default function PurchaseOrdersListPage() {
                 <tbody className="divide-y divide-slate-200 bg-white">
                   {rows.map((po: PurchaseOrder) => (
                     <tr key={po.id}>
-                      <td className="px-3 py-2 text-sm text-slate-800">{po.poNumber}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">
+                        <Link to={`/purchase-orders/${po.id}`} className="text-brand-700 underline">
+                          {po.poNumber}
+                        </Link>
+                      </td>
                       <td className="px-3 py-2 text-sm text-slate-800">
                         {po.vendorCode ?? po.vendorId}
                         {po.vendorName ? ` — ${po.vendorName}` : ''}
