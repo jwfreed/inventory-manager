@@ -2,11 +2,12 @@ import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
-import type { purchaseOrderSchema, purchaseOrderLineSchema } from '../schemas/purchaseOrders.schema';
+import type { purchaseOrderSchema, purchaseOrderLineSchema, purchaseOrderUpdateSchema } from '../schemas/purchaseOrders.schema';
 import { normalizeQuantityByUom } from '../lib/uom';
 
 export type PurchaseOrderInput = z.infer<typeof purchaseOrderSchema>;
 export type PurchaseOrderLineInput = z.infer<typeof purchaseOrderLineSchema>;
+export type PurchaseOrderUpdateInput = z.infer<typeof purchaseOrderUpdateSchema>;
 
 export function mapPurchaseOrder(row: any, lines: any[]) {
   return {
@@ -142,6 +143,74 @@ export async function createPurchaseOrder(data: PurchaseOrderInput) {
 
     const enrichedLines = await loadLinesWithItems(client, poId);
     return mapPurchaseOrder(insertedOrder.rows[0], enrichedLines);
+  });
+}
+
+export async function updatePurchaseOrder(id: string, data: PurchaseOrderUpdateInput) {
+  const now = new Date();
+  const status = data.status ?? 'draft';
+  const normalizedLines = data.lines ? normalizePurchaseOrderLines(data.lines) : null;
+
+  return withTransaction(async (client) => {
+    const poResult = await client.query('SELECT * FROM purchase_orders WHERE id = $1', [id]);
+    if (poResult.rowCount === 0) {
+      throw new Error('PO_NOT_FOUND');
+    }
+
+    const updated = await client.query(
+      `UPDATE purchase_orders
+          SET status = $2,
+              order_date = $3,
+              expected_date = $4,
+              ship_to_location_id = $5,
+              receiving_location_id = $6,
+              vendor_reference = $7,
+              notes = $8,
+              updated_at = $9
+        WHERE id = $1
+        RETURNING *`,
+      [
+        id,
+        status,
+        data.orderDate ?? null,
+        data.expectedDate ?? null,
+        data.shipToLocationId ?? null,
+        data.receivingLocationId ?? null,
+        data.vendorReference ?? null,
+        data.notes ?? null,
+        now
+      ]
+    );
+
+    if (normalizedLines) {
+      await client.query('DELETE FROM purchase_order_lines WHERE purchase_order_id = $1', [id]);
+      for (const line of normalizedLines) {
+        await client.query(
+          `INSERT INTO purchase_order_lines (
+              id, purchase_order_id, line_number, item_id, uom, quantity_ordered, notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            uuidv4(),
+            id,
+            line.lineNumber,
+            line.itemId,
+            line.uom,
+            line.quantityOrdered,
+            line.notes ?? null
+          ]
+        );
+      }
+    }
+
+    const lines = await loadLinesWithItems(client, id);
+    return mapPurchaseOrder(updated.rows[0], lines);
+  });
+}
+
+export async function deletePurchaseOrder(id: string) {
+  await withTransaction(async (client) => {
+    await client.query('DELETE FROM purchase_order_lines WHERE purchase_order_id = $1', [id]);
+    await client.query('DELETE FROM purchase_orders WHERE id = $1', [id]);
   });
 }
 

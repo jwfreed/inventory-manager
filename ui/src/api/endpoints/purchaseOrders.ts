@@ -1,5 +1,4 @@
-import { apiGet } from '../http'
-import { apiPost } from '../http'
+import { apiGet, apiPost, apiPut, apiDelete } from '../http'
 import type { PurchaseOrder } from '../types'
 
 export type PurchaseOrderListResponse = {
@@ -13,6 +12,14 @@ export async function listPurchaseOrders(params: { limit?: number; offset?: numb
 
 export async function getPurchaseOrder(id: string): Promise<PurchaseOrder> {
   return apiGet<PurchaseOrder>(`/purchase-orders/${id}`)
+}
+
+export async function updatePurchaseOrder(id: string, payload: Partial<PurchaseOrder>): Promise<PurchaseOrder> {
+  return apiPut<PurchaseOrder>(`/purchase-orders/${id}`, payload)
+}
+
+export async function deletePurchaseOrderApi(id: string): Promise<void> {
+  await apiDelete(`/purchase-orders/${id}`)
 }
 
 export type PurchaseOrderCreateInput = {

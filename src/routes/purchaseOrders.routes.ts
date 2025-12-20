@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { createPurchaseOrder, getPurchaseOrderById, listPurchaseOrders } from '../services/purchaseOrders.service';
-import { purchaseOrderSchema } from '../schemas/purchaseOrders.schema';
+import { createPurchaseOrder, deletePurchaseOrder, getPurchaseOrderById, listPurchaseOrders, updatePurchaseOrder } from '../services/purchaseOrders.service';
+import { purchaseOrderSchema, purchaseOrderUpdateSchema } from '../schemas/purchaseOrders.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
@@ -60,6 +60,47 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to list purchase orders.' });
+  }
+});
+
+router.put('/purchase-orders/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid purchase order id.' });
+  }
+  const parsed = purchaseOrderUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const po = await updatePurchaseOrder(id, parsed.data);
+    return res.json(po);
+  } catch (error: any) {
+    if (error?.message === 'PO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Purchase order not found.' });
+    }
+    const mapped = mapPgErrorToHttp(error, {
+      foreignKey: () => ({ status: 400, body: { error: 'Referenced vendor, item, or location does not exist.' } })
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update purchase order.' });
+  }
+});
+
+router.delete('/purchase-orders/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid purchase order id.' });
+  }
+  try {
+    await deletePurchaseOrder(id);
+    return res.status(204).send();
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to delete purchase order.' });
   }
 });
 

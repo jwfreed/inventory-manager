@@ -38,3 +38,10 @@ export const purchaseOrderSchema = z.object({
   notes: z.string().max(2000).optional(),
   lines: z.array(purchaseOrderLineSchema).min(1)
 });
+
+export const purchaseOrderUpdateSchema = purchaseOrderSchema
+  .omit({ vendorId: true })
+  .extend({
+    vendorId: z.string().uuid().optional(),
+    lines: z.array(purchaseOrderLineSchema).optional()
+  });
