@@ -8,6 +8,7 @@ import type { QcBreakdown } from './inbound/receivingAggregations';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
 import { query as baseQuery } from '../db';
+import { updatePoStatusFromReceipts } from './status/purchaseOrdersStatus.service';
 
 type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
 
@@ -160,6 +161,7 @@ export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput
   if (!receipt) {
     throw new Error('RECEIPT_NOT_FOUND_AFTER_CREATE');
   }
+  await updatePoStatusFromReceipts(receipt.purchaseOrderId);
   return receipt;
 }
 
