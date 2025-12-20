@@ -7,6 +7,7 @@ import { defaultBreakdown, loadQcBreakdown } from './inbound/receivingAggregatio
 import type { QcBreakdown } from './inbound/receivingAggregations';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
+import { query as baseQuery } from '../db';
 
 type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
 
@@ -88,6 +89,15 @@ export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput
   const uniqueSet = new Set(data.lines.map((line) => line.purchaseOrderLineId));
   const uniqueLineIds = Array.from(uniqueSet);
 
+  const poResult = await query('SELECT status, ship_to_location_id FROM purchase_orders WHERE id = $1', [data.purchaseOrderId]);
+  if (poResult.rowCount === 0) {
+    throw new Error('RECEIPT_PO_NOT_FOUND');
+  }
+  const poRow = poResult.rows[0];
+  if (['received', 'closed'].includes(poRow.status)) {
+    throw new Error('RECEIPT_PO_ALREADY_RECEIVED');
+  }
+
   const { rows: poLineRows } = await query(
     'SELECT id, purchase_order_id, uom FROM purchase_order_lines WHERE id = ANY($1::uuid[])',
     [uniqueLineIds]
@@ -112,6 +122,13 @@ export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput
     }
   }
 
+  // Default receiving location: prefer explicit provided, otherwise a dedicated receiving/staging location, otherwise ship-to.
+  let resolvedReceivedToLocationId = data.receivedToLocationId ?? null;
+  if (!resolvedReceivedToLocationId) {
+    const receivingLoc = await findDefaultReceivingLocation();
+    resolvedReceivedToLocationId = receivingLoc ?? poRow.ship_to_location_id ?? null;
+  }
+
   await withTransaction(async (client) => {
     await client.query(
       `INSERT INTO purchase_order_receipts (
@@ -122,7 +139,7 @@ export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput
         receiptId,
         data.purchaseOrderId,
         new Date(data.receivedAt),
-        data.receivedToLocationId ?? null,
+        resolvedReceivedToLocationId,
         data.externalRef ?? null,
         data.notes ?? null
       ]
@@ -164,4 +181,15 @@ export async function listReceipts(limit = 20, offset = 0) {
     [limit, offset]
   );
   return rows;
+}
+async function findDefaultReceivingLocation(): Promise<string | null> {
+  const { rows } = await baseQuery(
+    `SELECT id
+       FROM locations
+      WHERE active = true
+        AND (type = 'receiving' OR code ILIKE '%recv%' OR name ILIKE '%receiv%')
+      ORDER BY created_at ASC
+      LIMIT 1`,
+  );
+  return rows[0]?.id ?? null;
 }

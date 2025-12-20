@@ -28,6 +28,12 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
         .status(400)
         .json({ error: 'All receipt lines must reference the provided purchase order.' });
     }
+    if (error?.message === 'RECEIPT_PO_ALREADY_RECEIVED') {
+      return res.status(409).json({ error: 'Purchase order is already fully received/closed.' });
+    }
+    if (error?.message === 'RECEIPT_PO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Purchase order not found.' });
+    }
     if (error?.message === 'RECEIPT_LINE_UOM_MISMATCH') {
       return res.status(400).json({ error: 'Receipt line UOM must match the purchase order line UOM.' });
     }

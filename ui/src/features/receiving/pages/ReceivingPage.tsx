@@ -250,11 +250,13 @@ export default function ReceivingPage() {
                   onChange={(e) => setSelectedPoId(e.target.value)}
                 >
                   <option value="">Select PO</option>
-                  {poListQuery.data?.data.map((po) => (
-                    <option key={po.id} value={po.id}>
-                      {po.poNumber} ({po.status})
-                    </option>
-                  ))}
+                  {poListQuery.data?.data
+                    .filter((po) => po.status !== 'received' && po.status !== 'closed')
+                    .map((po) => (
+                      <option key={po.id} value={po.id}>
+                        {po.poNumber} ({po.status})
+                      </option>
+                    ))}
                 </select>
               </label>
             </div>
