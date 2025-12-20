@@ -10,6 +10,19 @@ import { Alert } from '../../../components/Alert'
 import { LoadingSpinner } from '../../../components/Loading'
 import { formatNumber } from '../../../lib/formatters'
 
+const formatError = (err: unknown) => {
+  if (!err) return 'Unknown error'
+  if (typeof err === 'string') return err
+  if (err instanceof Error && err.message) return err.message
+  const apiErr = err as ApiError
+  if (apiErr?.message && typeof apiErr.message === 'string') return apiErr.message
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return 'Unknown error'
+  }
+}
+
 export default function PurchaseOrdersListPage() {
   const qc = useQueryClient()
   const [repeatMessage, setRepeatMessage] = useState<string | null>(null)
@@ -27,13 +40,15 @@ export default function PurchaseOrdersListPage() {
       setRepeatError(null)
       const po = await getPurchaseOrder(poId)
       if (!po) throw new Error('PO not found')
-      const lines = (po.lines ?? []).map((l, idx) => ({
-        itemId: l.itemId!,
-        uom: l.uom!,
-        quantityOrdered: l.quantityOrdered ?? 0,
-        lineNumber: l.lineNumber ?? idx + 1,
-        notes: l.notes ?? undefined,
-      }))
+      const lines = (po.lines ?? [])
+        .filter((l) => l.itemId)
+        .map((l, idx) => ({
+          itemId: l.itemId!,
+          uom: l.uom!,
+          quantityOrdered: l.quantityOrdered ?? 0,
+          lineNumber: l.lineNumber ?? idx + 1,
+          notes: l.notes ?? undefined,
+        }))
       if (lines.length === 0) {
         throw new Error('Cannot repeat PO with no lines.')
       }
@@ -41,6 +56,7 @@ export default function PurchaseOrdersListPage() {
       const payload = {
         vendorId: po.vendorId,
         shipToLocationId: po.shipToLocationId,
+        receivingLocationId: po.receivingLocationId ?? undefined,
         orderDate: today,
         expectedDate: po.expectedDate ?? undefined,
         notes: po.notes ?? undefined,
@@ -54,8 +70,7 @@ export default function PurchaseOrdersListPage() {
       void qc.invalidateQueries({ queryKey: ['purchase-orders'] })
     },
     onError: (err: ApiError | unknown) => {
-      const msg = (err as ApiError)?.message ?? (err as Error)?.message ?? 'Failed to repeat PO.'
-      setRepeatError(msg)
+      setRepeatError(formatError(err))
     },
   })
 
