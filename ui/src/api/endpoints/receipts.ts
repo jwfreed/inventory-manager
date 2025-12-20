@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '../http'
+import { apiGet, apiPost, apiDelete } from '../http'
 import type { PurchaseOrderReceipt } from '../types'
 
 export type ReceiptCreatePayload = {
@@ -24,4 +24,8 @@ export async function getReceipt(id: string): Promise<PurchaseOrderReceipt> {
 
 export async function listReceipts(params: { limit?: number; offset?: number } = {}): Promise<{ data: PurchaseOrderReceipt[] }> {
   return apiGet<{ data: PurchaseOrderReceipt[] }>('/purchase-order-receipts', { params })
+}
+
+export async function deleteReceiptApi(id: string): Promise<void> {
+  await apiDelete<void>(`/purchase-order-receipts/${id}`)
 }

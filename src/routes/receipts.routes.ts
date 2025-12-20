@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
-import { createPurchaseOrderReceipt, fetchReceiptById, listReceipts } from '../services/receipts.service';
+import { createPurchaseOrderReceipt, deleteReceipt, fetchReceiptById, listReceipts } from '../services/receipts.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
@@ -83,6 +83,23 @@ router.get('/purchase-order-receipts', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to list receipts.' });
+  }
+});
+
+router.delete('/purchase-order-receipts/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid receipt id.' });
+  }
+  try {
+    await deleteReceipt(id);
+    return res.status(204).send();
+  } catch (error: any) {
+    if (error?.message === 'RECEIPT_HAS_PUTAWAYS') {
+      return res.status(409).json({ error: 'Receipt has putaway lines and cannot be deleted.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to delete receipt.' });
   }
 });
 

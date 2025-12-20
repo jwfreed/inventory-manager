@@ -184,6 +184,27 @@ export async function listReceipts(limit = 20, offset = 0) {
   );
   return rows;
 }
+
+export async function deleteReceipt(id: string) {
+  const { rows: receiptLineIds } = await query(
+    'SELECT id FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1',
+    [id]
+  );
+  const lineIds = receiptLineIds.map((r) => r.id);
+  if (lineIds.length > 0) {
+    const { rows: putawayRefs } = await query(
+      'SELECT id FROM putaway_lines WHERE purchase_order_receipt_line_id = ANY($1::uuid[])',
+      [lineIds]
+    );
+    if (putawayRefs.length > 0) {
+      throw new Error('RECEIPT_HAS_PUTAWAYS');
+    }
+  }
+  await withTransaction(async (client) => {
+    await client.query('DELETE FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1', [id]);
+    await client.query('DELETE FROM purchase_order_receipts WHERE id = $1', [id]);
+  });
+}
 async function findDefaultReceivingLocation(): Promise<string | null> {
   const { rows } = await baseQuery(
     `SELECT id

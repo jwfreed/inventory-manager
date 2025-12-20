@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { listPurchaseOrders, getPurchaseOrder } from '../../../api/endpoints/purchaseOrders'
-import { createReceipt, type ReceiptCreatePayload, getReceipt, listReceipts } from '../../../api/endpoints/receipts'
+import { createReceipt, type ReceiptCreatePayload, getReceipt, listReceipts, deleteReceiptApi } from '../../../api/endpoints/receipts'
 import { createPutaway, postPutaway, type PutawayCreatePayload, getPutaway } from '../../../api/endpoints/putaways'
 import type { ApiError, Location, PurchaseOrder, PurchaseOrderReceipt, Putaway } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
@@ -114,6 +114,13 @@ export default function ReceivingPage() {
     onSuccess: (receipt) => {
       setReceiptIdForPutaway(receipt.id)
       setPutawayLines([{ purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' }])
+    },
+  })
+  const deleteReceiptMutation = useMutation({
+    mutationFn: (id: string) => deleteReceiptApi(id),
+    onSuccess: () => {
+      void recentReceiptsQuery.refetch()
+      if (receiptIdForPutaway) setReceiptIdForPutaway('')
     },
   })
 
@@ -384,18 +391,45 @@ export default function ReceivingPage() {
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Receipt</th>
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">PO</th>
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Received at</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white">
                   {recentReceiptsQuery.data?.data?.map((rec) => (
                     <tr
                       key={rec.id}
-                      className="cursor-pointer hover:bg-slate-50"
-                      onClick={() => setReceiptIdForPutaway(rec.id)}
+                      className="hover:bg-slate-50"
                     >
-                      <td className="px-3 py-2 text-sm text-slate-800">{rec.id}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">
+                        <button type="button" className="text-brand-700 underline" onClick={() => setReceiptIdForPutaway(rec.id)}>
+                          {rec.id.slice(0, 8)}…
+                        </button>
+                      </td>
                       <td className="px-3 py-2 text-sm text-slate-800">{rec.purchaseOrderId}</td>
                       <td className="px-3 py-2 text-sm text-slate-800">{rec.receivedAt}</td>
+                      <td className="px-3 py-2 text-right text-sm text-slate-800">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setReceiptIdForPutaway(rec.id)}
+                          >
+                            Load
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={deleteReceiptMutation.isPending}
+                            onClick={() => {
+                              if (confirm('Delete this receipt? (Only allowed if no putaway exists)')) {
+                                deleteReceiptMutation.mutate(rec.id)
+                              }
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
