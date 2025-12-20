@@ -19,6 +19,7 @@ export const purchaseOrderSchema = z.object({
   orderDate: isoDateString.optional(),
   expectedDate: isoDateString.optional(),
   shipToLocationId: z.string().uuid().optional(),
+  receivingLocationId: z.string().uuid().optional(),
   vendorReference: z.string().max(255).optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(purchaseOrderLineSchema).min(1)

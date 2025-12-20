@@ -20,6 +20,8 @@ export function mapPurchaseOrder(row: any, lines: any[]) {
     expectedDate: row.expected_date,
     shipToLocationId: row.ship_to_location_id,
     shipToLocationCode: row.ship_to_location_code ?? null,
+    receivingLocationId: row.receiving_location_id ?? null,
+    receivingLocationCode: row.receiving_location_code ?? null,
     vendorReference: row.vendor_reference,
     notes: row.notes,
     createdAt: row.created_at,
@@ -102,8 +104,8 @@ export async function createPurchaseOrder(data: PurchaseOrderInput) {
     const insertedOrder = await client.query(
       `INSERT INTO purchase_orders (
           id, po_number, vendor_id, status, order_date, expected_date,
-          ship_to_location_id, vendor_reference, notes, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+          ship_to_location_id, receiving_location_id, vendor_reference, notes, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
        RETURNING *`,
       [
         poId,
@@ -113,6 +115,7 @@ export async function createPurchaseOrder(data: PurchaseOrderInput) {
         data.orderDate ?? null,
         data.expectedDate ?? null,
         data.shipToLocationId ?? null,
+        data.receivingLocationId ?? null,
         data.vendorReference ?? null,
         data.notes ?? null,
         now
@@ -143,7 +146,16 @@ export async function createPurchaseOrder(data: PurchaseOrderInput) {
 }
 
 export async function getPurchaseOrderById(id: string) {
-  const poResult = await query('SELECT * FROM purchase_orders WHERE id = $1', [id]);
+  const poResult = await query(
+    `SELECT po.*,
+            loc.code AS receiving_location_code,
+            ship.code AS ship_to_location_code
+       FROM purchase_orders po
+       LEFT JOIN locations loc ON loc.id = po.receiving_location_id
+       LEFT JOIN locations ship ON ship.id = po.ship_to_location_id
+      WHERE po.id = $1`,
+    [id]
+  );
   if (poResult.rowCount === 0) {
     return null;
   }
@@ -170,6 +182,8 @@ export async function listPurchaseOrders(limit: number, offset: number) {
             po.expected_date,
             po.ship_to_location_id,
             loc.code AS ship_to_location_code,
+            po.receiving_location_id,
+            recv.code AS receiving_location_code,
             po.vendor_reference,
             po.notes,
             po.created_at,
@@ -177,6 +191,7 @@ export async function listPurchaseOrders(limit: number, offset: number) {
        FROM purchase_orders po
        LEFT JOIN vendors v ON v.id = po.vendor_id
        LEFT JOIN locations loc ON loc.id = po.ship_to_location_id
+       LEFT JOIN locations recv ON recv.id = po.receiving_location_id
        ORDER BY po.created_at DESC
        LIMIT $1 OFFSET $2`,
     [limit, offset]

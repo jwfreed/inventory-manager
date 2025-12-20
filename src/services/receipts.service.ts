@@ -122,10 +122,10 @@ export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput
     }
   }
 
-  // Default receiving location: prefer explicit provided, otherwise a dedicated receiving/staging location, otherwise ship-to.
+  // Default receiving location: prefer explicit provided, otherwise PO receiving/staging, otherwise dedicated receiving, otherwise ship-to.
   let resolvedReceivedToLocationId = data.receivedToLocationId ?? null;
   if (!resolvedReceivedToLocationId) {
-    const receivingLoc = await findDefaultReceivingLocation();
+    const receivingLoc = poRow.receiving_location_id ?? (await findDefaultReceivingLocation());
     resolvedReceivedToLocationId = receivingLoc ?? poRow.ship_to_location_id ?? null;
   }
 

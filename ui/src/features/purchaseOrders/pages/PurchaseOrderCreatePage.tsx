@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createPurchaseOrder, type PurchaseOrderCreateInput } from '../../../api/endpoints/purchaseOrders'
 import { listVendors } from '../../../api/endpoints/vendors'
@@ -21,6 +22,7 @@ type LineDraft = {
 }
 
 export default function PurchaseOrderCreatePage() {
+  const navigate = useNavigate()
   const [vendorSearch, setVendorSearch] = useState('')
   const [locationSearch, setLocationSearch] = useState('')
   const [itemSearch, setItemSearch] = useState('')
@@ -28,6 +30,7 @@ export default function PurchaseOrderCreatePage() {
   const [poNumber, setPoNumber] = useState('')
   const [vendorId, setVendorId] = useState('')
   const [shipToLocationId, setShipToLocationId] = useState('')
+  const [receivingLocationId, setReceivingLocationId] = useState('')
   const [orderDate, setOrderDate] = useState('')
   const [expectedDate, setExpectedDate] = useState('')
   const [notes, setNotes] = useState('')
@@ -97,6 +100,9 @@ export default function PurchaseOrderCreatePage() {
 
   const mutation = useMutation({
     mutationFn: (payload: PurchaseOrderCreateInput) => createPurchaseOrder(payload),
+    onSuccess: () => {
+      navigate('/purchase-orders')
+    },
   })
 
   const onSubmit = (e: React.FormEvent) => {
@@ -122,6 +128,7 @@ export default function PurchaseOrderCreatePage() {
       poNumber: poNumber.trim() || undefined,
       vendorId,
       shipToLocationId: shipToLocationId || undefined,
+      receivingLocationId: receivingLocationId || undefined,
       orderDate: orderDate || undefined,
       expectedDate: expectedDate || undefined,
       notes: notes || undefined,
@@ -207,6 +214,17 @@ export default function PurchaseOrderCreatePage() {
                   value={locationSearch}
                   onChange={(e) => setLocationSearch(e.target.value)}
                   placeholder="Search locations"
+                />
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="md:col-span-1">
+                <SearchableSelect
+                  label="Default receiving/staging location"
+                  value={receivingLocationId}
+                  options={locationOptions}
+                  disabled={locationsQuery.isLoading}
+                  onChange={(nextValue) => setReceivingLocationId(nextValue)}
                 />
               </div>
             </div>

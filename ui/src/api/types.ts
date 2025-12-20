@@ -425,6 +425,8 @@ export type PurchaseOrder = {
   expectedDate?: string
   shipToLocationId?: string
   shipToLocationCode?: string | null
+  receivingLocationId?: string | null
+  receivingLocationCode?: string | null
   vendorReference?: string
   notes?: string
   createdAt?: string
