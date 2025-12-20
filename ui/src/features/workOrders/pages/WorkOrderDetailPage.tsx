@@ -7,6 +7,7 @@ import {
   getWorkOrderRequirements,
 } from '../../../api/endpoints/workOrders'
 import { getItem } from '../../../api/endpoints/items'
+import { listItems } from '../../../api/endpoints/items'
 import { listNextStepBoms } from '../../../api/endpoints/boms'
 import { createWorkOrder } from '../../../api/endpoints/workOrders'
 import type { ApiError, WorkOrderRequirements } from '../../../api/types'
@@ -55,6 +56,23 @@ export default function WorkOrderDetailPage() {
     enabled: Boolean(workOrderQuery.data?.outputItemId),
     staleTime: 60_000,
   })
+
+  const itemsLookupQuery = useQuery({
+    queryKey: ['items', 'wo-detail'],
+    queryFn: () => listItems({ limit: 500 }),
+    staleTime: 60_000,
+  })
+
+  const itemLabel = (id?: string) => {
+    if (!id) return ''
+    const found = itemsLookupQuery.data?.data?.find((itm) => itm.id === id)
+    const name = found?.name
+    const sku = found?.sku
+    if (name && sku) return `${name} — ${sku}`
+    if (name) return name
+    if (sku) return sku
+    return id
+  }
 
   const createNextStep = async () => {
     if (!workOrderQuery.data) return
@@ -262,22 +280,22 @@ export default function WorkOrderDetailPage() {
                 </label>
                 <label className="space-y-1 text-sm md:col-span-2">
                   <span className="text-xs uppercase tracking-wide text-slate-500">Next BOM</span>
-                  <select
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                    value={selectedBomId}
-                    onChange={(e) => setSelectedBomId(e.target.value)}
-                    disabled={nextStepBomsQuery.isLoading}
-                  >
-                    <option value="">Select</option>
-                    {nextStepBomsQuery.data?.data.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.bomCode} → item {b.outputItemId}
-                      </option>
-                    ))}
-                  </select>
-                  {nextStepBomsQuery.isError && (
-                    <p className="text-xs text-red-600">
-                      {(nextStepBomsQuery.error as ApiError)?.message ?? 'Failed to load suggestions.'}
+                    <select
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      value={selectedBomId}
+                      onChange={(e) => setSelectedBomId(e.target.value)}
+                      disabled={nextStepBomsQuery.isLoading}
+                    >
+                      <option value="">Select</option>
+                      {nextStepBomsQuery.data?.data.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.bomCode} → {itemLabel(b.outputItemId)}
+                        </option>
+                      ))}
+                    </select>
+                    {nextStepBomsQuery.isError && (
+                      <p className="text-xs text-red-600">
+                        {(nextStepBomsQuery.error as ApiError)?.message ?? 'Failed to load suggestions.'}
                     </p>
                   )}
                 </label>
@@ -316,7 +334,7 @@ export default function WorkOrderDetailPage() {
               Posted issues create issue movements (negative). Posted completions create receive
               movements (positive). Remaining to complete:{' '}
               <span className="font-semibold">{remaining}</span>{' '}
-              {workOrderQuery.data?.outputUom}
+              {workOrderQuery.data?.outputUom} of {itemLabel(workOrderQuery.data?.outputItemId)}
             </div>
             {!executionQuery.data && !executionQuery.isLoading && (
               <EmptyState
