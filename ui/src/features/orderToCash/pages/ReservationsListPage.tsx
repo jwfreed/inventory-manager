@@ -81,7 +81,7 @@ export default function ReservationsListPage() {
           {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
               title="No reservations found"
-              description="Create reservations via API. This UI is read-only."
+              description="Create reservations via API; this list is read-only."
             />
           )}
           {!isLoading && !isError && filtered.length > 0 && (

@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getFulfillmentFillRate, listKpiRuns, listKpiSnapshots } from '../../../api/endpoints/kpis'
 import { listReplenishmentRecommendations } from '../../../api/endpoints/planning'
@@ -18,6 +19,7 @@ import { SnapshotsTable } from '../components/SnapshotsTable'
 import { formatDateTime } from '../utils'
 import { formatNumber } from '../../../lib/formatters'
 import { Alert } from '../../../components/Alert'
+import { InventorySnapshotTable } from '../../inventory/components/InventorySnapshotTable'
 
 type SnapshotQueryResult = Awaited<ReturnType<typeof listKpiSnapshots>>
 type RunQueryResult = Awaited<ReturnType<typeof listKpiRuns>>
@@ -145,6 +147,37 @@ export default function DashboardPage() {
     return map
   }, [locationsQuery.data])
 
+  const formatItem = (id: string) => {
+    const item = itemLookup.get(id)
+    if (!item) return id
+    const sku = item.sku ?? id
+    return item.name ? `${sku} — ${item.name}` : sku
+  }
+
+  const formatLocation = (id: string) => {
+    const loc = locationLookup.get(id)
+    if (!loc) return id
+    const code = loc.code ?? id
+    return loc.name ? `${code} — ${loc.name}` : code
+  }
+
+  const reorderNeeded = useMemo(
+    () =>
+      (recommendationsQuery.data?.data ?? []).filter(
+        (r) => r.recommendation.reorderNeeded,
+      ),
+    [recommendationsQuery.data],
+  )
+
+  const availabilityIssues = useMemo(
+    () =>
+      (inventorySummaryQuery.data ?? [])
+        .filter((row) => row.available <= 0 || row.inventoryPosition <= 0)
+        .sort((a, b) => a.available - b.available)
+        .slice(0, 8),
+    [inventorySummaryQuery.data],
+  )
+
   const fillRateCard = (() => {
     if (fillRateQuery.isLoading) {
       return <LoadingSpinner label="Loading fulfillment fill rate..." />
@@ -202,6 +235,110 @@ export default function DashboardPage() {
       </div>
 
       <Section
+        title="Action required"
+        description="Exception-first list: reorders flagged by policies and locations with zero/negative coverage."
+      >
+        <Card>
+          {(recommendationsQuery.isLoading || inventorySummaryQuery.isLoading) && (
+            <LoadingSpinner label="Scanning for exceptions..." />
+          )}
+          {(recommendationsQuery.isError || inventorySummaryQuery.isError) && (
+            <Alert
+              variant="error"
+              title="Could not load exceptions"
+              message="Retry to refresh recommendations and inventory coverage."
+              action={
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    void recommendationsQuery.refetch()
+                    void inventorySummaryQuery.refetch()
+                  }}
+                >
+                  Retry
+                </Button>
+              }
+            />
+          )}
+          {!recommendationsQuery.isLoading &&
+            !inventorySummaryQuery.isLoading &&
+            !recommendationsQuery.isError &&
+            !inventorySummaryQuery.isError &&
+            reorderNeeded.length === 0 &&
+            availabilityIssues.length === 0 && (
+              <Alert
+                variant="success"
+                title="No immediate exceptions"
+                message="No reorder flags and no zero/negative availability detected."
+              />
+            )}
+          <div className="divide-y divide-slate-200">
+            {reorderNeeded.slice(0, 5).map((rec) => {
+              const threshold =
+                rec.policyType === 'q_rop'
+                  ? rec.inputs.reorderPointQty ?? 0
+                  : rec.inputs.orderUpToLevelQty ?? 0
+              const gap = rec.inventory.inventoryPosition - threshold
+              return (
+                <div key={`reorder-${rec.policyId}`} className="py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-slate-900">
+                        Reorder: {formatItem(rec.itemId)} @ {formatLocation(rec.locationId)}
+                      </p>
+                      <p className="text-xs text-slate-600">
+                        Inventory position {formatNumber(rec.inventory.inventoryPosition)} vs threshold {formatNumber(threshold)} · gap {formatNumber(Math.abs(gap))}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Policy {rec.policyType} · Recommend order {formatNumber(rec.recommendation.recommendedOrderQty)} {rec.uom}{' '}
+                        {rec.recommendation.recommendedOrderDate ? `by ${rec.recommendation.recommendedOrderDate}` : ''}
+                      </p>
+                    </div>
+                    <div className="text-right text-xs text-slate-500 space-y-1">
+                      <Link to={`/items/${rec.itemId}`} className="text-brand-700 hover:underline">
+                        View item
+                      </Link>
+                      <br />
+                      <Link to={`/locations/${rec.locationId}`} className="text-brand-700 hover:underline">
+                        View location
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            {availabilityIssues.map((row) => (
+              <div key={`avail-${row.itemId}-${row.locationId}-${row.uom}`} className="py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Low/negative availability: {formatItem(row.itemId)} @ {formatLocation(row.locationId)}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      Available {formatNumber(row.available)} {row.uom} · Inventory position {formatNumber(row.inventoryPosition)}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      On hand {formatNumber(row.onHand)} · Reserved {formatNumber(row.reserved)} · Incoming {formatNumber(row.onOrder + row.inTransit)}
+                    </p>
+                  </div>
+                  <div className="text-right text-xs text-slate-500 space-y-1">
+                    <Link to={`/items/${row.itemId}`} className="text-brand-700 hover:underline">
+                      View item
+                    </Link>
+                    <br />
+                    <Link to={`/locations/${row.locationId}`} className="text-brand-700 hover:underline">
+                      View location
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </Section>
+
+      <Section
         title="Production progress"
         description="Planned versus completed quantities by finished or intermediate item (from work orders)."
       >
@@ -238,7 +375,7 @@ export default function DashboardPage() {
                 <tbody className="divide-y divide-slate-200 bg-white">
                   {productionList.map((row) => (
                     <tr key={`${row.itemId}-${row.uom}`}>
-                      <td className="px-3 py-2 text-sm text-slate-800">{row.itemId}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">{formatItem(row.itemId)}</td>
                       <td className="px-3 py-2 text-right text-sm text-slate-800">
                         {row.planned} {row.uom}
                       </td>
@@ -290,56 +427,11 @@ export default function DashboardPage() {
           {!inventorySummaryQuery.isLoading &&
             !inventorySummaryQuery.isError &&
             (inventorySummaryQuery.data ?? []).length > 0 && (
-              <div className="overflow-hidden rounded-lg border border-slate-200">
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Item
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Location
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        UOM
-                      </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        On hand
-                      </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Reserved
-                      </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Available
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white">
-                    {(inventorySummaryQuery.data ?? []).map((row) => {
-                      const item = itemLookup.get(row.itemId)
-                      const loc = locationLookup.get(row.locationId)
-                      const itemLabel = item ? `${item.sku ?? row.itemId} — ${item.name ?? ''}` : row.itemId
-                      const locLabel = loc ? `${loc.code ?? row.locationId} — ${loc.name ?? ''}` : row.locationId
-                      return (
-                        <tr key={`${row.itemId}-${row.locationId}-${row.uom}`}>
-                          <td className="px-3 py-2 text-sm text-slate-800">{itemLabel}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{locLabel}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{row.uom}</td>
-                          <td className="px-3 py-2 text-right text-sm text-slate-800">
-                            {formatNumber(row.onHand)}
-                          </td>
-                          <td className="px-3 py-2 text-right text-sm text-slate-800">
-                            {formatNumber(row.reserved)}
-                          </td>
-                          <td className="px-3 py-2 text-right text-sm text-slate-800">
-                            {formatNumber(row.available)}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <InventorySnapshotTable
+                rows={inventorySummaryQuery.data ?? []}
+                itemLookup={itemLookup}
+                locationLookup={locationLookup}
+              />
             )}
         </Card>
       </Section>
@@ -357,51 +449,65 @@ export default function DashboardPage() {
         title="Replenishment attention"
         description="Based on inventory position and active policies. Focus on items that need ordering."
       >
-        <Card>
-          {recommendationsQuery.isLoading && <LoadingSpinner label="Loading recommendations..." />}
-          {recommendationsQuery.isError && recommendationsQuery.error && (
-            <ErrorState error={recommendationsQuery.error as ApiError} onRetry={() => void recommendationsQuery.refetch()} />
-          )}
-          {!recommendationsQuery.isLoading &&
-            !recommendationsQuery.isError &&
-            (recommendationsQuery.data?.data || []).filter((r) => r.recommendation.reorderNeeded).length === 0 && (
-              <Alert
-                variant="success"
-                title="No immediate reorders"
-                message="No policies currently flag a reorder based on inventory position."
-              />
+          <Card>
+            {recommendationsQuery.isLoading && <LoadingSpinner label="Loading recommendations..." />}
+            {recommendationsQuery.isError && recommendationsQuery.error && (
+              <ErrorState error={recommendationsQuery.error as ApiError} onRetry={() => void recommendationsQuery.refetch()} />
             )}
-          {!recommendationsQuery.isLoading && !recommendationsQuery.isError && recommendationsQuery.data?.data && (
-            <div className="divide-y divide-slate-200">
-              {recommendationsQuery.data.data
-                .filter((r) => r.recommendation.reorderNeeded)
-                .slice(0, 5)
-                .map((rec) => (
-                  <div key={rec.policyId} className="flex items-start justify-between gap-3 py-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">
-                        {rec.itemId} @ {rec.locationId} — order {formatNumber(rec.recommendation.recommendedOrderQty)}{' '}
-                        {rec.uom}
-                      </p>
-                      <p className="text-xs text-slate-600">
-                        Inventory position {formatNumber(rec.inventory.inventoryPosition)} vs target{' '}
-                        {rec.policyType === 'q_rop'
-                          ? formatNumber(rec.inputs.reorderPointQty ?? 0)
-                          : formatNumber(rec.inputs.orderUpToLevelQty ?? 0)}
-                      </p>
-                      {rec.assumptions.length > 0 && (
-                        <p className="text-xs text-slate-500">Assumptions: {rec.assumptions.join('; ')}</p>
-                      )}
+            {!recommendationsQuery.isLoading &&
+              !recommendationsQuery.isError &&
+              (recommendationsQuery.data?.data || []).filter((r) => r.recommendation.reorderNeeded).length === 0 && (
+                <Alert
+                  variant="success"
+                  title="No immediate reorders"
+                  message="No policies currently flag a reorder based on inventory position."
+                />
+              )}
+            {!recommendationsQuery.isLoading && !recommendationsQuery.isError && recommendationsQuery.data?.data && (
+              <div className="divide-y divide-slate-200">
+                {recommendationsQuery.data.data
+                  .filter((r) => r.recommendation.reorderNeeded)
+                  .slice(0, 5)
+                  .map((rec) => (
+                    <div key={rec.policyId} className="flex items-start justify-between gap-3 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {formatItem(rec.itemId)} @ {formatLocation(rec.locationId)}
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          Recommend order {formatNumber(rec.recommendation.recommendedOrderQty)} {rec.uom}{' '}
+                          {rec.recommendation.recommendedOrderDate ? `by ${rec.recommendation.recommendedOrderDate}` : ''}
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          Inventory position {formatNumber(rec.inventory.inventoryPosition)} vs target{' '}
+                          {rec.policyType === 'q_rop'
+                            ? formatNumber(rec.inputs.reorderPointQty ?? 0)
+                            : formatNumber(rec.inputs.orderUpToLevelQty ?? 0)}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          On hand {formatNumber(rec.inventory.onHand)} · Reserved {formatNumber(rec.inventory.reserved)} · Incoming{' '}
+                          {formatNumber(rec.inventory.onOrder + rec.inventory.inTransit)}
+                        </p>
+                        {rec.assumptions.length > 0 && (
+                          <p className="text-xs text-slate-500">Assumptions: {rec.assumptions.join('; ')}</p>
+                        )}
+                      </div>
+                      <div className="text-right text-xs text-slate-500">
+                        <div>Available: {formatNumber(rec.inventory.available)} {rec.uom}</div>
+                        <div>Inv position: {formatNumber(rec.inventory.inventoryPosition)} {rec.uom}</div>
+                        <Link to={`/items/${rec.itemId}`} className="text-brand-700 hover:underline">
+                          Item
+                        </Link>
+                        <br />
+                        <Link to={`/locations/${rec.locationId}`} className="text-brand-700 hover:underline">
+                          Location
+                        </Link>
+                      </div>
                     </div>
-                    <div className="text-right text-xs text-slate-500">
-                      <div>Available: {formatNumber(rec.inventory.available)} {rec.uom}</div>
-                      <div>On order: {formatNumber(rec.inventory.onOrder)} {rec.uom}</div>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          )}
-        </Card>
+                  ))}
+              </div>
+            )}
+          </Card>
       </Section>
 
       <Section title="KPI cards">

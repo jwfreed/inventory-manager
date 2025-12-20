@@ -69,7 +69,7 @@ export default function MovementDetailPage() {
           <p className="text-sm text-slate-600">Review header info and line deltas.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => navigate('/ledger/movements')}>
+          <Button variant="secondary" size="sm" onClick={() => navigate('/movements')}>
             Back to list
           </Button>
           <Button variant="secondary" size="sm" onClick={copyId}>

@@ -89,7 +89,7 @@ export default function SalesOrdersListPage() {
           {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
               title="No sales orders found"
-              description="Create sales orders via API or seed data. This UI is read-only."
+              description="Create sales orders via the New button, API, or seed data."
             />
           )}
           {!isLoading && !isError && filtered.length > 0 && (

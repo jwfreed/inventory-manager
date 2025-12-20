@@ -162,12 +162,12 @@ export default function WorkOrderDetailPage() {
             onRetry={() => void requirementsQuery.refetch()}
           />
         )}
-        {requirementsQuery.data && executionQuery.data && (
-          <Card>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+          {requirementsQuery.data && executionQuery.data && (
+            <Card>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-2 py-2">Line</th>
                     <th className="px-2 py-2">Component</th>
                     <th className="px-2 py-2">Required</th>
@@ -205,12 +205,15 @@ export default function WorkOrderDetailPage() {
                       </tr>
                     )
                   })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-      </Section>
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 text-xs text-slate-500">
+                Material availability at consume locations is not shown here yet; check item inventory snapshots before issuing to avoid stalled WIP.
+              </div>
+            </Card>
+          )}
+        </Section>
 
       <Section title="Actions">
         <div className="flex gap-2 border-b border-slate-200">

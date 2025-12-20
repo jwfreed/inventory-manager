@@ -48,7 +48,7 @@ export function MovementsTable({ movements, page, pageCount, onPageChange }: Pro
               <tr
                 key={movement.id}
                 className="cursor-pointer transition hover:bg-slate-50"
-                onClick={() => navigate(`/ledger/movements/${movement.id}`)}
+                onClick={() => navigate(`/movements/${movement.id}`)}
               >
                 <td className="px-4 py-3 text-sm text-slate-800">
                   {formatDate(movement.occurredAt)}

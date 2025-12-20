@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { listWorkOrders } from '../../../api/endpoints/workOrders'
+import { listItems } from '../../../api/endpoints/items'
 import type { ApiError, WorkOrder } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -25,6 +26,12 @@ export default function WorkOrdersListPage() {
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
 
+  const itemsQuery = useQuery({
+    queryKey: ['items', 'work-orders-list'],
+    queryFn: () => listItems({ limit: 500 }),
+    staleTime: 60_000,
+  })
+
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<
     Awaited<ReturnType<typeof listWorkOrders>>,
     ApiError
@@ -33,18 +40,37 @@ export default function WorkOrdersListPage() {
     queryFn: () => listWorkOrders({ status: status || undefined, limit: 50 }),
   })
 
+  const itemLookup = useMemo(() => {
+    const map = new Map<string, { name?: string; sku?: string }>()
+    itemsQuery.data?.data?.forEach((item) => {
+      map.set(item.id, { name: item.name, sku: item.sku })
+    })
+    return map
+  }, [itemsQuery.data])
+
   const filtered = useMemo(() => {
     const list = data?.data ?? []
     if (!search) return list
     const needle = search.toLowerCase()
     return list.filter((wo) => {
-      const hay = `${wo.workOrderNumber} ${wo.outputItemSku ?? ''} ${wo.outputItemName ?? ''} ${wo.outputItemId}`.toLowerCase()
+      const lookup = itemLookup.get(wo.outputItemId)
+      const hay = `${wo.workOrderNumber} ${wo.outputItemSku ?? ''} ${wo.outputItemName ?? ''} ${lookup?.name ?? ''} ${lookup?.sku ?? ''} ${wo.outputItemId}`.toLowerCase()
       return hay.includes(needle)
     })
-  }, [data?.data, search])
+  }, [data?.data, search, itemLookup])
 
   const remaining = (wo: WorkOrder) =>
     Math.max(0, (wo.quantityPlanned || 0) - (wo.quantityCompleted ?? 0))
+
+  const formatOutput = (wo: WorkOrder) => {
+    const lookup = wo.outputItemId ? itemLookup.get(wo.outputItemId) : undefined
+    const name = wo.outputItemName || lookup?.name
+    const sku = wo.outputItemSku || lookup?.sku
+    if (name && sku) return `${name} — ${sku}`
+    if (name) return name
+    if (sku) return sku
+    return wo.outputItemId
+  }
 
   return (
     <div className="space-y-6">
@@ -148,12 +174,10 @@ export default function WorkOrdersListPage() {
                         <Badge variant="neutral">{wo.status}</Badge>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-700">
-                        <div className="font-medium text-slate-900">
-                          {wo.outputItemName || wo.outputItemSku || wo.outputItemId}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {wo.outputItemSku ? `${wo.outputItemSku} · ${wo.outputItemId}` : wo.outputItemId}
-                        </div>
+                        <div className="font-medium text-slate-900">{formatOutput(wo)}</div>
+                        {(!wo.outputItemName && !wo.outputItemSku) && (
+                          <div className="text-xs text-slate-500">{wo.outputItemId}</div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right text-sm text-slate-800">
                         {formatNumber(wo.quantityPlanned)} {wo.outputUom}

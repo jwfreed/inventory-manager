@@ -121,7 +121,7 @@ export default function ItemsListPage() {
           {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
               title="No items yet"
-              description="Create items via API or migrations. This UI is read-only."
+              description="Create items with the form above or via API/migrations."
             />
           )}
           {!isLoading && !isError && filtered.length > 0 && (

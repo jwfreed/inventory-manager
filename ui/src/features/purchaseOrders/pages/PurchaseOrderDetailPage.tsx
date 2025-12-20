@@ -199,6 +199,9 @@ export default function PurchaseOrderDetailPage() {
 
       <Section title="Lines">
         <Card>
+          <div className="mb-3 text-xs text-slate-500">
+            Ordered vs received/in-transit is not surfaced yet in this UI; use Receiving/Putaway to verify what has arrived.
+          </div>
           {po.lines && po.lines.length > 0 ? (
             <div className="overflow-hidden rounded-lg border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200">

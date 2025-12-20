@@ -69,7 +69,7 @@ export default function ReturnsListPage() {
           {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
               title="No returns found"
-              description="Create returns via API. This UI is read-only."
+              description="Create returns via API; this list is read-only."
             />
           )}
           {!isLoading && !isError && filtered.length > 0 && (

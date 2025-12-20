@@ -104,12 +104,6 @@ export function MovementFilters({ initialFilters, onApply, disabled }: Props) {
             disabled={disabled}
           />
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Item filter
-          </label>
-          <Input placeholder="Not available (backend not exposed)" value="" disabled />
-        </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button
@@ -133,7 +127,7 @@ export function MovementFilters({ initialFilters, onApply, disabled }: Props) {
           Reset
         </Button>
         <span className="text-xs text-slate-500">
-          Item/location filters are hidden until backend exposes them.
+          Item/location filters will appear once the backend exposes them.
         </span>
       </div>
     </div>

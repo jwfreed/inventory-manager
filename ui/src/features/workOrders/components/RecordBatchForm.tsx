@@ -349,7 +349,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => window.open(`/ledger/movements/${successIssueId}`, '_blank')}
+                onClick={() => window.open(`/movements/${successIssueId}`, '_blank')}
                 >
                   View issue movement
                 </Button>
@@ -357,7 +357,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => window.open(`/ledger/movements/${successId}`, '_blank')}
+                onClick={() => window.open(`/movements/${successId}`, '_blank')}
               >
                 View receive movement
               </Button>

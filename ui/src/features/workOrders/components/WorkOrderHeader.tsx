@@ -32,10 +32,14 @@ export function WorkOrderHeader({ workOrder }: Props) {
             <Badge variant={statusVariant}>{workOrder.status}</Badge>
             <Badge variant="neutral">
               Output:{' '}
-              {workOrder.outputItemName || workOrder.outputItemSku || workOrder.outputItemId}
-              {workOrder.outputItemSku && (
-                <span className="text-xs text-slate-500"> ({workOrder.outputItemSku})</span>
-              )}
+              {workOrder.outputItemName
+                ? workOrder.outputItemName
+                : workOrder.outputItemSku
+                  ? workOrder.outputItemSku
+                  : workOrder.outputItemId}
+              {workOrder.outputItemName && workOrder.outputItemSku ? (
+                <span className="text-xs text-slate-500"> — {workOrder.outputItemSku}</span>
+              ) : null}
             </Badge>
           </div>
         </div>

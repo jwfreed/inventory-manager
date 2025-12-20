@@ -14,10 +14,11 @@ import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
-import { formatDate, formatNumber } from '../../../lib/formatters'
+import { formatDate } from '../../../lib/formatters'
 import { ItemForm } from '../components/ItemForm'
 import { BomForm } from '../../boms/components/BomForm'
 import { BomCard } from '../../boms/components/BomCard'
+import { InventorySnapshotTable } from '../../inventory/components/InventorySnapshotTable'
 
 const typeLabels: Record<string, string> = {
   raw: 'Raw',
@@ -218,29 +219,11 @@ export default function ItemDetailPage() {
               />
             )}
             {snapshotQuery.data && snapshotQuery.data.length > 0 && (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {snapshotQuery.data.map((row) => (
-                  <Card key={row.uom} className="space-y-2">
-                    <div className="text-xs uppercase tracking-wide text-slate-500">UOM {row.uom}</div>
-                    <div className="space-y-1">
-                      <div className="text-lg font-semibold text-slate-900">
-                        {formatNumber(row.available)} {row.uom} available
-                      </div>
-                      <div className="text-sm text-slate-700">
-                        On hand: {formatNumber(row.onHand)} · Promised: {formatNumber(row.reserved)}
-                      </div>
-                      <div className="text-sm text-slate-700">
-                        Incoming: {formatNumber(row.onOrder + row.inTransit)} ({formatNumber(row.onOrder)} on order,{' '}
-                        {formatNumber(row.inTransit)} in transit)
-                      </div>
-                      <div className="text-sm font-semibold text-slate-900">
-                        Inventory position: {formatNumber(row.inventoryPosition)}{' '}
-                        <span className="text-xs text-slate-500">(on-hand + incoming - promised)</span>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
+              <InventorySnapshotTable
+                rows={snapshotQuery.data}
+                showItem={false}
+                showLocation={false}
+              />
             )}
           </>
         )}

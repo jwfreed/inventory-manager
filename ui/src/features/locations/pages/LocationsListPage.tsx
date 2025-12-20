@@ -174,7 +174,7 @@ export default function LocationsListPage() {
           {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
               title="No locations yet"
-              description="Create locations via API or migrations. This UI is read-only."
+              description="Create locations with the form above or via API/migrations."
             />
           )}
           {!isLoading && !isError && filtered.length > 0 && (

@@ -154,7 +154,7 @@ export default function SalesOrderDetailPage() {
                         <td className="px-4 py-3 text-sm text-slate-800">
                           {shipment.inventoryMovementId ? (
                             <Link
-                              to={`/ledger/movements/${shipment.inventoryMovementId}`}
+                              to={`/movements/${shipment.inventoryMovementId}`}
                               className="text-brand-700 hover:underline"
                             >
                               {shipment.inventoryMovementId}

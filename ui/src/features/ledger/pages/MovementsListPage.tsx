@@ -6,6 +6,7 @@ import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
+import { Alert } from '../../../components/Alert'
 import type { ApiError, MovementListResponse } from '../../../api/types'
 import { MovementFilters } from '../components/MovementFilters'
 import { MovementsTable } from '../components/MovementsTable'
@@ -40,6 +41,11 @@ export default function MovementsListPage() {
           initialFilters={filters}
           onApply={(next) => setFilters(next)}
           disabled={isFetching}
+        />
+        <Alert
+          variant="info"
+          title="Exception focus"
+          message="Draft or late-posted movements and large adjustments are typical exceptions. Narrow the date range and sort by occurred date to spot them quickly."
         />
       </Section>
 

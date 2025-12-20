@@ -83,7 +83,7 @@ export default function ShipmentDetailPage() {
                 <div className="text-xs uppercase tracking-wide text-slate-500">Movement</div>
                 {query.data.inventoryMovementId ? (
                   <Link
-                    to={`/ledger/movements/${query.data.inventoryMovementId}`}
+                    to={`/movements/${query.data.inventoryMovementId}`}
                     className="text-brand-700 hover:underline"
                   >
                     {query.data.inventoryMovementId}
