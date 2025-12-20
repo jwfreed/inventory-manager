@@ -5,9 +5,10 @@ import type { WorkOrder } from '../../../api/types'
 
 type Props = {
   workOrder: WorkOrder
+  outputItemLabel?: string
 }
 
-export function WorkOrderHeader({ workOrder }: Props) {
+export function WorkOrderHeader({ workOrder, outputItemLabel }: Props) {
   const remaining =
     (workOrder.quantityPlanned || 0) - (workOrder.quantityCompleted ?? 0)
 
@@ -31,15 +32,7 @@ export function WorkOrderHeader({ workOrder }: Props) {
           <div className="mt-2 flex items-center gap-2">
             <Badge variant={statusVariant}>{workOrder.status}</Badge>
             <Badge variant="neutral">
-              Output:{' '}
-              {workOrder.outputItemName
-                ? workOrder.outputItemName
-                : workOrder.outputItemSku
-                  ? workOrder.outputItemSku
-                  : workOrder.outputItemId}
-              {workOrder.outputItemName && workOrder.outputItemSku ? (
-                <span className="text-xs text-slate-500"> — {workOrder.outputItemSku}</span>
-              ) : null}
+              Output: {outputItemLabel || workOrder.outputItemName || workOrder.outputItemSku || workOrder.outputItemId}
             </Badge>
           </div>
         </div>

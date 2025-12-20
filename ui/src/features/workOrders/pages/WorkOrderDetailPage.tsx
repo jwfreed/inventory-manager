@@ -6,8 +6,7 @@ import {
   getWorkOrderExecution,
   getWorkOrderRequirements,
 } from '../../../api/endpoints/workOrders'
-import { getItem } from '../../../api/endpoints/items'
-import { listItems } from '../../../api/endpoints/items'
+import { getItem, listItems } from '../../../api/endpoints/items'
 import { listNextStepBoms } from '../../../api/endpoints/boms'
 import { createWorkOrder } from '../../../api/endpoints/workOrders'
 import type { ApiError, WorkOrderRequirements } from '../../../api/types'
@@ -72,6 +71,13 @@ export default function WorkOrderDetailPage() {
     if (name) return name
     if (sku) return sku
     return id
+  }
+
+  const componentLabel = (id: string, name?: string | null, sku?: string | null) => {
+    if (name && sku) return `${name} — ${sku}`
+    if (name) return name
+    if (sku) return sku
+    return itemLabel(id)
   }
 
   const createNextStep = async () => {
@@ -160,7 +166,12 @@ export default function WorkOrderDetailPage() {
       {workOrderQuery.isError && workOrderQuery.error && (
         <ErrorState error={workOrderQuery.error} onRetry={() => void workOrderQuery.refetch()} />
       )}
-      {workOrderQuery.data && <WorkOrderHeader workOrder={workOrderQuery.data} />}
+      {workOrderQuery.data && (
+        <WorkOrderHeader
+          workOrder={workOrderQuery.data}
+          outputItemLabel={itemLabel(workOrderQuery.data.outputItemId)}
+        />
+      )}
 
       <Section title="Execution summary">
         <ExecutionSummaryPanel
@@ -206,10 +217,7 @@ export default function WorkOrderDetailPage() {
                           {line.lineNumber}
                         </td>
                         <td className="px-2 py-2">
-                          {line.componentItemName || line.componentItemSku || line.componentItemId}
-                          {line.componentItemSku && (
-                            <span className="text-xs text-slate-500"> ({line.componentItemSku})</span>
-                          )}
+                          {componentLabel(line.componentItemId, line.componentItemName, line.componentItemSku)}
                         </td>
                         <td className="px-2 py-2">
                           {line.quantityRequired} {line.uom}
