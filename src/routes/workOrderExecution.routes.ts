@@ -16,6 +16,7 @@ import {
   workOrderBatchSchema
 } from '../schemas/workOrderExecution.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { emitEvent } from '../lib/events';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -31,7 +32,7 @@ router.post('/work-orders/:id/issues', async (req: Request, res: Response) => {
   }
 
   try {
-    const issue = await createWorkOrderIssue(workOrderId, parsed.data);
+    const issue = await createWorkOrderIssue(req.auth!.tenantId, workOrderId, parsed.data);
     return res.status(201).json(issue);
   } catch (error: any) {
     if (error?.message === 'WO_NOT_FOUND') {
@@ -65,7 +66,7 @@ router.get('/work-orders/:id/issues/:issueId', async (req: Request, res: Respons
     return res.status(400).json({ error: 'Invalid issue id.' });
   }
   try {
-    const issue = await fetchWorkOrderIssue(workOrderId, issueId);
+    const issue = await fetchWorkOrderIssue(req.auth!.tenantId, workOrderId, issueId);
     if (!issue) {
       return res.status(404).json({ error: 'Issue not found.' });
     }
@@ -87,7 +88,17 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
   }
 
   try {
-    const issue = await postWorkOrderIssue(workOrderId, issueId);
+    const tenantId = req.auth!.tenantId;
+    const issue = await postWorkOrderIssue(tenantId, workOrderId, issueId);
+    const itemIds = Array.from(new Set(issue.lines.map((line) => line.componentItemId)));
+    const locationIds = Array.from(new Set(issue.lines.map((line) => line.fromLocationId)));
+    emitEvent(tenantId, 'inventory.work_order.issue.posted', {
+      workOrderId,
+      issueId,
+      movementId: issue.inventoryMovementId,
+      itemIds,
+      locationIds
+    });
     return res.json(issue);
   } catch (error: any) {
     if (error?.message === 'WO_NOT_FOUND') {
@@ -127,7 +138,7 @@ router.post('/work-orders/:id/completions', async (req: Request, res: Response) 
   }
 
   try {
-    const completion = await createWorkOrderCompletion(workOrderId, parsed.data);
+    const completion = await createWorkOrderCompletion(req.auth!.tenantId, workOrderId, parsed.data);
     return res.status(201).json(completion);
   } catch (error: any) {
     if (error?.message === 'WO_NOT_FOUND') {
@@ -158,7 +169,7 @@ router.get('/work-orders/:id/completions/:completionId', async (req: Request, re
     return res.status(400).json({ error: 'Invalid completion id.' });
   }
   try {
-    const completion = await fetchWorkOrderCompletion(workOrderId, completionId);
+    const completion = await fetchWorkOrderCompletion(req.auth!.tenantId, workOrderId, completionId);
     if (!completion) {
       return res.status(404).json({ error: 'Completion not found.' });
     }
@@ -180,7 +191,17 @@ router.post('/work-orders/:id/completions/:completionId/post', async (req: Reque
   }
 
   try {
-    const completion = await postWorkOrderCompletion(workOrderId, completionId);
+    const tenantId = req.auth!.tenantId;
+    const completion = await postWorkOrderCompletion(tenantId, workOrderId, completionId);
+    const itemIds = Array.from(new Set(completion.lines.map((line) => line.itemId)));
+    const locationIds = Array.from(new Set(completion.lines.map((line) => line.toLocationId)));
+    emitEvent(tenantId, 'inventory.work_order.completion.posted', {
+      workOrderId,
+      completionId,
+      movementId: completion.productionMovementId,
+      itemIds,
+      locationIds
+    });
     return res.json(completion);
   } catch (error: any) {
     if (error?.message === 'WO_NOT_FOUND') {
@@ -241,7 +262,27 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
   );
 
   try {
-    const result = await recordWorkOrderBatch(workOrderId, parsed.data);
+    const tenantId = req.auth!.tenantId;
+    const result = await recordWorkOrderBatch(tenantId, workOrderId, parsed.data);
+    const itemIds = Array.from(
+      new Set([
+        ...parsed.data.consumeLines.map((line) => line.componentItemId),
+        ...parsed.data.produceLines.map((line) => line.outputItemId)
+      ])
+    );
+    const locationIds = Array.from(
+      new Set([
+        ...parsed.data.consumeLines.map((line) => line.fromLocationId),
+        ...parsed.data.produceLines.map((line) => line.toLocationId)
+      ])
+    );
+    emitEvent(tenantId, 'inventory.work_order.batch.posted', {
+      workOrderId,
+      issueMovementId: result.issueMovementId,
+      receiveMovementId: result.receiveMovementId,
+      itemIds,
+      locationIds
+    });
     return res.status(201).json(result);
   } catch (error: any) {
     if (error?.message === 'WO_NOT_FOUND') {
@@ -289,7 +330,7 @@ router.get('/work-orders/:id/execution', async (req: Request, res: Response) => 
   }
 
   try {
-    const summary = await getWorkOrderExecutionSummary(workOrderId);
+    const summary = await getWorkOrderExecutionSummary(req.auth!.tenantId, workOrderId);
     if (!summary) {
       return res.status(404).json({ error: 'Work order not found.' });
     }

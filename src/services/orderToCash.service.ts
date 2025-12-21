@@ -54,7 +54,7 @@ export function mapSalesOrder(row: any, lines: any[]) {
   };
 }
 
-export async function createSalesOrder(data: SalesOrderInput) {
+export async function createSalesOrder(tenantId: string, data: SalesOrderInput) {
   const now = new Date();
   const id = uuidv4();
   const status = data.status ?? 'draft';
@@ -63,12 +63,13 @@ export async function createSalesOrder(data: SalesOrderInput) {
   return withTransaction(async (client) => {
     const orderResult = await client.query(
       `INSERT INTO sales_orders (
-        id, so_number, customer_id, status, order_date, requested_ship_date,
+        id, tenant_id, so_number, customer_id, status, order_date, requested_ship_date,
         ship_from_location_id, customer_reference, notes, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
       RETURNING *`,
       [
         id,
+        tenantId,
         data.soNumber,
         data.customerId,
         status,
@@ -85,11 +86,12 @@ export async function createSalesOrder(data: SalesOrderInput) {
     for (const line of normalizedLines) {
       const lineResult = await client.query(
         `INSERT INTO sales_order_lines (
-          id, sales_order_id, line_number, item_id, uom, quantity_ordered, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          id, tenant_id, sales_order_id, line_number, item_id, uom, quantity_ordered, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           id,
           line.lineNumber,
           line.itemId,
@@ -105,19 +107,24 @@ export async function createSalesOrder(data: SalesOrderInput) {
   });
 }
 
-export async function getSalesOrder(id: string) {
-  const orderResult = await query('SELECT * FROM sales_orders WHERE id = $1', [id]);
+export async function getSalesOrder(tenantId: string, id: string) {
+  const orderResult = await query('SELECT * FROM sales_orders WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (orderResult.rowCount === 0) return null;
   const lines = await query(
-    'SELECT * FROM sales_order_lines WHERE sales_order_id = $1 ORDER BY line_number ASC',
-    [id],
+    'SELECT * FROM sales_order_lines WHERE sales_order_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
+    [id, tenantId],
   );
   return mapSalesOrder(orderResult.rows[0], lines.rows);
 }
 
-export async function listSalesOrders(limit: number, offset: number, filters: { status?: string; customerId?: string }) {
-  const params: any[] = [];
-  const conditions: string[] = [];
+export async function listSalesOrders(
+  tenantId: string,
+  limit: number,
+  offset: number,
+  filters: { status?: string; customerId?: string }
+) {
+  const params: any[] = [tenantId];
+  const conditions: string[] = ['tenant_id = $1'];
   if (filters.status) {
     params.push(filters.status);
     conditions.push(`status = $${params.length}`);
@@ -160,7 +167,7 @@ export function mapReservation(row: any) {
   };
 }
 
-export async function createReservations(data: ReservationCreateInput) {
+export async function createReservations(tenantId: string, data: ReservationCreateInput) {
   const now = new Date();
   const results: any[] = [];
   await withTransaction(async (client) => {
@@ -168,12 +175,13 @@ export async function createReservations(data: ReservationCreateInput) {
       const normalized = normalizeQuantityByUom(reservation.quantityReserved, reservation.uom);
       const res = await client.query(
         `INSERT INTO inventory_reservations (
-          id, status, demand_type, demand_id, item_id, location_id, uom,
+          id, tenant_id, status, demand_type, demand_id, item_id, location_id, uom,
           quantity_reserved, quantity_fulfilled, reserved_at, notes, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
         RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           reservation.status ?? 'open',
           reservation.demandType,
           reservation.demandId,
@@ -193,18 +201,19 @@ export async function createReservations(data: ReservationCreateInput) {
   return results.map(mapReservation);
 }
 
-export async function listReservations(limit: number, offset: number) {
+export async function listReservations(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
     `SELECT * FROM inventory_reservations
+     WHERE tenant_id = $1
      ORDER BY reserved_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows.map(mapReservation);
 }
 
-export async function getReservation(id: string) {
-  const res = await query('SELECT * FROM inventory_reservations WHERE id = $1', [id]);
+export async function getReservation(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapReservation(res.rows[0]);
 }
@@ -230,17 +239,18 @@ export function mapShipment(row: any, lines: any[]) {
   };
 }
 
-export async function createShipment(data: ShipmentInput) {
+export async function createShipment(tenantId: string, data: ShipmentInput) {
   const now = new Date();
   const id = uuidv4();
   return withTransaction(async (client) => {
     const shipment = await client.query(
       `INSERT INTO sales_order_shipments (
-        id, sales_order_id, shipped_at, ship_from_location_id, inventory_movement_id, external_ref, notes, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        id, tenant_id, sales_order_id, shipped_at, ship_from_location_id, inventory_movement_id, external_ref, notes, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *`,
       [
         id,
+        tenantId,
         data.salesOrderId,
         data.shippedAt,
         data.shipFromLocationId ?? null,
@@ -255,10 +265,10 @@ export async function createShipment(data: ShipmentInput) {
     for (const line of data.lines) {
       const lineResult = await client.query(
         `INSERT INTO sales_order_shipment_lines (
-          id, sales_order_shipment_id, sales_order_line_id, uom, quantity_shipped
-        ) VALUES ($1, $2, $3, $4, $5)
+          id, tenant_id, sales_order_shipment_id, sales_order_line_id, uom, quantity_shipped
+        ) VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *`,
-        [uuidv4(), id, line.salesOrderLineId, line.uom, line.quantityShipped],
+        [uuidv4(), tenantId, id, line.salesOrderLineId, line.uom, line.quantityShipped],
       );
       lines.push(lineResult.rows[0]);
     }
@@ -267,22 +277,26 @@ export async function createShipment(data: ShipmentInput) {
   });
 }
 
-export async function listShipments(limit: number, offset: number) {
+export async function listShipments(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
     `SELECT * FROM sales_order_shipments
+     WHERE tenant_id = $1
      ORDER BY shipped_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows;
 }
 
-export async function getShipment(id: string) {
-  const shipment = await query('SELECT * FROM sales_order_shipments WHERE id = $1', [id]);
+export async function getShipment(tenantId: string, id: string) {
+  const shipment = await query('SELECT * FROM sales_order_shipments WHERE id = $1 AND tenant_id = $2', [
+    id,
+    tenantId,
+  ]);
   if (shipment.rowCount === 0) return null;
   const lines = await query(
-    'SELECT * FROM sales_order_shipment_lines WHERE sales_order_shipment_id = $1 ORDER BY created_at ASC',
-    [id],
+    'SELECT * FROM sales_order_shipment_lines WHERE sales_order_shipment_id = $1 AND tenant_id = $2 ORDER BY created_at ASC',
+    [id, tenantId],
   );
   return mapShipment(shipment.rows[0], lines.rows);
 }
@@ -314,7 +328,7 @@ export function mapReturnAuth(row: any, lines: any[]) {
   };
 }
 
-export async function createReturnAuthorization(data: ReturnAuthorizationInput) {
+export async function createReturnAuthorization(tenantId: string, data: ReturnAuthorizationInput) {
   const now = new Date();
   const id = uuidv4();
   const status = data.status ?? 'draft';
@@ -323,11 +337,12 @@ export async function createReturnAuthorization(data: ReturnAuthorizationInput) 
   return withTransaction(async (client) => {
     const header = await client.query(
       `INSERT INTO return_authorizations (
-        id, rma_number, customer_id, sales_order_id, status, severity, authorized_at, notes, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+        id, tenant_id, rma_number, customer_id, sales_order_id, status, severity, authorized_at, notes, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
       RETURNING *`,
       [
         id,
+        tenantId,
         data.rmaNumber,
         data.customerId,
         data.salesOrderId ?? null,
@@ -343,11 +358,12 @@ export async function createReturnAuthorization(data: ReturnAuthorizationInput) 
     for (const line of normalizedLines) {
       const lineResult = await client.query(
         `INSERT INTO return_authorization_lines (
-          id, return_authorization_id, line_number, sales_order_line_id, item_id, uom, quantity_authorized, reason_code, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          id, tenant_id, return_authorization_id, line_number, sales_order_line_id, item_id, uom, quantity_authorized, reason_code, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           id,
           line.lineNumber,
           line.salesOrderLineId ?? null,
@@ -365,22 +381,26 @@ export async function createReturnAuthorization(data: ReturnAuthorizationInput) 
   });
 }
 
-export async function listReturnAuthorizations(limit: number, offset: number) {
+export async function listReturnAuthorizations(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
     `SELECT * FROM return_authorizations
+     WHERE tenant_id = $1
      ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows;
 }
 
-export async function getReturnAuthorization(id: string) {
-  const header = await query('SELECT * FROM return_authorizations WHERE id = $1', [id]);
+export async function getReturnAuthorization(tenantId: string, id: string) {
+  const header = await query('SELECT * FROM return_authorizations WHERE id = $1 AND tenant_id = $2', [
+    id,
+    tenantId,
+  ]);
   if (header.rowCount === 0) return null;
   const lines = await query(
-    'SELECT * FROM return_authorization_lines WHERE return_authorization_id = $1 ORDER BY line_number ASC',
-    [id],
+    'SELECT * FROM return_authorization_lines WHERE return_authorization_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
+    [id, tenantId],
   );
   return mapReturnAuth(header.rows[0], lines.rows);
 }

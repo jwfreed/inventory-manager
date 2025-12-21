@@ -12,7 +12,9 @@ import { Alert } from '../../../components/Alert'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Button } from '../../../components/Button'
 import { Input, Textarea } from '../../../components/Inputs'
+import { Combobox } from '../../../components/Combobox'
 import { SearchableSelect } from '../../../components/SearchableSelect'
+import { useDebouncedValue } from '../../../lib/useDebouncedValue'
 
 type LineDraft = {
   itemId: string
@@ -42,16 +44,20 @@ export default function PurchaseOrderCreatePage() {
     staleTime: 60_000,
   })
 
+  const debouncedItemSearch = useDebouncedValue(itemSearch, 200)
+  const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
+
   const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'po-create', locationSearch],
-    queryFn: () => listLocations({ limit: 200, search: locationSearch || undefined, active: true }),
+    queryKey: ['locations', 'po-create', debouncedLocationSearch],
+    queryFn: () =>
+      listLocations({ limit: 200, search: debouncedLocationSearch || undefined, active: true }),
     staleTime: 60_000,
     retry: 1,
   })
 
   const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
-    queryKey: ['items', 'po-create', itemSearch],
-    queryFn: () => listItems({ limit: 200, search: itemSearch || undefined, active: true }),
+    queryKey: ['items', 'po-create', debouncedItemSearch],
+    queryFn: () => listItems({ limit: 200, search: debouncedItemSearch || undefined, active: true }),
     staleTime: 60_000,
     retry: 1,
   })
@@ -202,28 +208,26 @@ export default function PurchaseOrderCreatePage() {
                 <Input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
               </label>
               <div>
-                <SearchableSelect
+                <Combobox
                   label="Ship-to location"
                   value={shipToLocationId}
                   options={locationOptions}
-                  disabled={locationsQuery.isLoading}
+                  loading={locationsQuery.isLoading}
+                  onQueryChange={setLocationSearch}
+                  placeholder="Search locations (code/name)"
                   onChange={(nextValue) => setShipToLocationId(nextValue)}
-                />
-                <Input
-                  className="mt-2"
-                  value={locationSearch}
-                  onChange={(e) => setLocationSearch(e.target.value)}
-                  placeholder="Search locations"
                 />
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-3">
               <div className="md:col-span-1">
-                <SearchableSelect
+                <Combobox
                   label="Default receiving/staging location"
                   value={receivingLocationId}
                   options={locationOptions}
-                  disabled={locationsQuery.isLoading}
+                  loading={locationsQuery.isLoading}
+                  onQueryChange={setLocationSearch}
+                  placeholder="Search locations (code/name)"
                   onChange={(nextValue) => setReceivingLocationId(nextValue)}
                 />
               </div>
@@ -236,12 +240,6 @@ export default function PurchaseOrderCreatePage() {
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-800">Lines</div>
               <div className="flex gap-2">
-                <Input
-                  className="w-48"
-                  value={itemSearch}
-                  onChange={(e) => setItemSearch(e.target.value)}
-                  placeholder="Search items (SKU/name)"
-                />
                 <Button type="button" variant="secondary" size="sm" onClick={addLine}>
                   Add line
                 </Button>
@@ -251,11 +249,13 @@ export default function PurchaseOrderCreatePage() {
               {lines.map((line, idx) => (
                 <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
                   <div>
-                    <SearchableSelect
+                    <Combobox
                       label="Item"
                       value={line.itemId}
                       options={itemOptions}
-                      disabled={itemsQuery.isLoading}
+                      loading={itemsQuery.isLoading}
+                      onQueryChange={setItemSearch}
+                      placeholder="Search items (SKU/name)"
                       onChange={(nextValue) => {
                         const selected = nextValue ? itemLookup.get(nextValue) : undefined
                         updateLine(idx, { itemId: nextValue, uom: line.uom || selected?.defaultUom || '' })

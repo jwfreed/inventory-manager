@@ -124,13 +124,20 @@ function mapExecution(row: WorkOrderExecutionRow, lines: WorkOrderExecutionLineR
   };
 }
 
-async function fetchWorkOrderById(id: string, client?: PoolClient): Promise<WorkOrderRow | null> {
+async function fetchWorkOrderById(
+  tenantId: string,
+  id: string,
+  client?: PoolClient
+): Promise<WorkOrderRow | null> {
   const executor = client ? client.query.bind(client) : query;
-  const result = await executor<WorkOrderRow>('SELECT * FROM work_orders WHERE id = $1', [id]);
+  const result = await executor<WorkOrderRow>('SELECT * FROM work_orders WHERE id = $1 AND tenant_id = $2', [
+    id,
+    tenantId
+  ]);
   return result.rowCount === 0 ? null : result.rows[0];
 }
 
-export async function createWorkOrderIssue(workOrderId: string, data: WorkOrderIssueCreateInput) {
+export async function createWorkOrderIssue(tenantId: string, workOrderId: string, data: WorkOrderIssueCreateInput) {
   const lineNumbers = new Set<number>();
   const normalizedLines = data.lines.map((line, index) => {
     const lineNumber = line.lineNumber ?? index + 1;
@@ -153,7 +160,7 @@ export async function createWorkOrderIssue(workOrderId: string, data: WorkOrderI
   const now = new Date();
 
   return withTransaction(async (client) => {
-    const workOrder = await fetchWorkOrderById(workOrderId, client);
+    const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
     }
@@ -163,18 +170,19 @@ export async function createWorkOrderIssue(workOrderId: string, data: WorkOrderI
 
     await client.query(
       `INSERT INTO work_order_material_issues (
-          id, work_order_id, status, occurred_at, inventory_movement_id, notes, created_at, updated_at
-       ) VALUES ($1, $2, 'draft', $3, NULL, $4, $5, $5)`,
-      [issueId, workOrderId, new Date(data.occurredAt), data.notes ?? null, now]
+          id, tenant_id, work_order_id, status, occurred_at, inventory_movement_id, notes, created_at, updated_at
+       ) VALUES ($1, $2, $3, 'draft', $4, NULL, $5, $6, $6)`,
+      [issueId, tenantId, workOrderId, new Date(data.occurredAt), data.notes ?? null, now]
     );
 
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO work_order_material_issue_lines (
-            id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, notes, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            id, tenant_id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, notes, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           uuidv4(),
+          tenantId,
           issueId,
           line.lineNumber,
           line.componentItemId,
@@ -187,7 +195,7 @@ export async function createWorkOrderIssue(workOrderId: string, data: WorkOrderI
       );
     }
 
-    const issue = await fetchWorkOrderIssue(workOrderId, issueId, client);
+    const issue = await fetchWorkOrderIssue(tenantId, workOrderId, issueId, client);
     if (!issue) {
       throw new Error('WO_ISSUE_NOT_FOUND_AFTER_CREATE');
     }
@@ -195,25 +203,30 @@ export async function createWorkOrderIssue(workOrderId: string, data: WorkOrderI
   });
 }
 
-export async function fetchWorkOrderIssue(workOrderId: string, issueId: string, client?: PoolClient) {
+export async function fetchWorkOrderIssue(
+  tenantId: string,
+  workOrderId: string,
+  issueId: string,
+  client?: PoolClient
+) {
   const executor = client ?? query;
   const headerResult = await executor<WorkOrderMaterialIssueRow>(
-    'SELECT * FROM work_order_material_issues WHERE id = $1 AND work_order_id = $2',
-    [issueId, workOrderId]
+    'SELECT * FROM work_order_material_issues WHERE id = $1 AND work_order_id = $2 AND tenant_id = $3',
+    [issueId, workOrderId, tenantId]
   );
   if (headerResult.rowCount === 0) {
     return null;
   }
   const linesResult = await executor<WorkOrderMaterialIssueLineRow>(
-    'SELECT * FROM work_order_material_issue_lines WHERE work_order_material_issue_id = $1 ORDER BY line_number ASC',
-    [issueId]
+    'SELECT * FROM work_order_material_issue_lines WHERE work_order_material_issue_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
+    [issueId, tenantId]
   );
   return mapMaterialIssue(headerResult.rows[0], linesResult.rows);
 }
 
-export async function postWorkOrderIssue(workOrderId: string, issueId: string) {
+export async function postWorkOrderIssue(tenantId: string, workOrderId: string, issueId: string) {
   return withTransaction(async (client) => {
-    const workOrder = await fetchWorkOrderById(workOrderId, client);
+    const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
     }
@@ -222,8 +235,8 @@ export async function postWorkOrderIssue(workOrderId: string, issueId: string) {
     }
 
     const issueResult = await client.query<WorkOrderMaterialIssueRow>(
-      'SELECT * FROM work_order_material_issues WHERE id = $1 AND work_order_id = $2 FOR UPDATE',
-      [issueId, workOrderId]
+      'SELECT * FROM work_order_material_issues WHERE id = $1 AND work_order_id = $2 AND tenant_id = $3 FOR UPDATE',
+      [issueId, workOrderId, tenantId]
     );
     if (issueResult.rowCount === 0) {
       throw new Error('WO_ISSUE_NOT_FOUND');
@@ -237,8 +250,8 @@ export async function postWorkOrderIssue(workOrderId: string, issueId: string) {
     }
 
     const linesResult = await client.query<WorkOrderMaterialIssueLineRow>(
-      'SELECT * FROM work_order_material_issue_lines WHERE work_order_material_issue_id = $1 ORDER BY line_number ASC',
-      [issueId]
+      'SELECT * FROM work_order_material_issue_lines WHERE work_order_material_issue_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
+      [issueId, tenantId]
     );
     if (linesResult.rowCount === 0) {
       throw new Error('WO_ISSUE_NO_LINES');
@@ -248,9 +261,9 @@ export async function postWorkOrderIssue(workOrderId: string, issueId: string) {
     const movementId = uuidv4();
     await client.query(
       `INSERT INTO inventory_movements (
-          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, 'issue', 'posted', $2, $3, $4, $5, $4, $4)`,
-      [movementId, `work_order_issue:${issueId}`, issue.occurred_at, now, issue.notes ?? null]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, $2, 'issue', 'posted', $3, $4, $5, $6, $5, $5)`,
+      [movementId, tenantId, `work_order_issue:${issueId}`, issue.occurred_at, now, issue.notes ?? null]
     );
 
     for (const line of linesResult.rows) {
@@ -261,10 +274,11 @@ export async function postWorkOrderIssue(workOrderId: string, issueId: string) {
       }
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, 'work_order_issue', $7)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'work_order_issue', $8)`,
         [
           uuidv4(),
+          tenantId,
           movementId,
           line.component_item_id,
           line.from_location_id,
@@ -280,15 +294,18 @@ export async function postWorkOrderIssue(workOrderId: string, issueId: string) {
           SET status = 'posted',
               inventory_movement_id = $1,
               updated_at = $2
-        WHERE id = $3`,
-      [movementId, now, issueId]
+        WHERE id = $3 AND tenant_id = $4`,
+      [movementId, now, issueId, tenantId]
     );
 
     if (workOrder.status === 'draft') {
-      await client.query(`UPDATE work_orders SET status = 'in_progress', updated_at = $2 WHERE id = $1`, [workOrderId, now]);
+      await client.query(
+        `UPDATE work_orders SET status = 'in_progress', updated_at = $2 WHERE id = $1 AND tenant_id = $3`,
+        [workOrderId, now, tenantId]
+      );
     }
 
-    const posted = await fetchWorkOrderIssue(workOrderId, issueId, client);
+    const posted = await fetchWorkOrderIssue(tenantId, workOrderId, issueId, client);
     if (!posted) {
       throw new Error('WO_ISSUE_NOT_FOUND_AFTER_POST');
     }
@@ -296,7 +313,11 @@ export async function postWorkOrderIssue(workOrderId: string, issueId: string) {
   });
 }
 
-export async function createWorkOrderCompletion(workOrderId: string, data: WorkOrderCompletionCreateInput) {
+export async function createWorkOrderCompletion(
+  tenantId: string,
+  workOrderId: string,
+  data: WorkOrderCompletionCreateInput
+) {
   const executionId = uuidv4();
   const now = new Date();
   const normalizedLines = data.lines.map((line) => {
@@ -305,7 +326,7 @@ export async function createWorkOrderCompletion(workOrderId: string, data: WorkO
   });
 
   return withTransaction(async (client) => {
-    const workOrder = await fetchWorkOrderById(workOrderId, client);
+    const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
     }
@@ -315,18 +336,19 @@ export async function createWorkOrderCompletion(workOrderId: string, data: WorkO
 
     await client.query(
       `INSERT INTO work_order_executions (
-          id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id, notes, created_at
-       ) VALUES ($1, $2, $3, 'draft', NULL, NULL, $4, $5)`,
-      [executionId, workOrderId, new Date(data.occurredAt), data.notes ?? null, now]
+          id, tenant_id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id, notes, created_at
+       ) VALUES ($1, $2, $3, $4, 'draft', NULL, NULL, $5, $6)`,
+      [executionId, tenantId, workOrderId, new Date(data.occurredAt), data.notes ?? null, now]
     );
 
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO work_order_execution_lines (
-            id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, notes, created_at
-         ) VALUES ($1, $2, 'produce', $3, $4, $5, $6, NULL, $7, $8, $9)`,
+            id, tenant_id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, notes, created_at
+         ) VALUES ($1, $2, $3, 'produce', $4, $5, $6, $7, NULL, $8, $9, $10)`,
         [
           uuidv4(),
+          tenantId,
           executionId,
           line.outputItemId,
           line.uom,
@@ -339,7 +361,7 @@ export async function createWorkOrderCompletion(workOrderId: string, data: WorkO
       );
     }
 
-    const created = await fetchWorkOrderCompletion(workOrderId, executionId, client);
+    const created = await fetchWorkOrderCompletion(tenantId, workOrderId, executionId, client);
     if (!created) {
       throw new Error('WO_COMPLETION_NOT_FOUND_AFTER_CREATE');
     }
@@ -347,25 +369,34 @@ export async function createWorkOrderCompletion(workOrderId: string, data: WorkO
   });
 }
 
-export async function fetchWorkOrderCompletion(workOrderId: string, completionId: string, client?: PoolClient) {
+export async function fetchWorkOrderCompletion(
+  tenantId: string,
+  workOrderId: string,
+  completionId: string,
+  client?: PoolClient
+) {
   const executor = client ?? query;
   const headerResult = await executor<WorkOrderExecutionRow>(
-    'SELECT * FROM work_order_executions WHERE id = $1 AND work_order_id = $2',
-    [completionId, workOrderId]
+    'SELECT * FROM work_order_executions WHERE id = $1 AND work_order_id = $2 AND tenant_id = $3',
+    [completionId, workOrderId, tenantId]
   );
   if (headerResult.rowCount === 0) {
     return null;
   }
   const linesResult = await executor<WorkOrderExecutionLineRow>(
-    'SELECT * FROM work_order_execution_lines WHERE work_order_execution_id = $1 ORDER BY created_at ASC',
-    [completionId]
+    'SELECT * FROM work_order_execution_lines WHERE work_order_execution_id = $1 AND tenant_id = $2 ORDER BY created_at ASC',
+    [completionId, tenantId]
   );
   return mapExecution(headerResult.rows[0], linesResult.rows);
 }
 
-export async function postWorkOrderCompletion(workOrderId: string, completionId: string) {
+export async function postWorkOrderCompletion(
+  tenantId: string,
+  workOrderId: string,
+  completionId: string
+) {
   return withTransaction(async (client) => {
-    const workOrder = await fetchWorkOrderById(workOrderId, client);
+    const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
     }
@@ -374,8 +405,8 @@ export async function postWorkOrderCompletion(workOrderId: string, completionId:
     }
 
     const execResult = await client.query<WorkOrderExecutionRow>(
-      'SELECT * FROM work_order_executions WHERE id = $1 AND work_order_id = $2 FOR UPDATE',
-      [completionId, workOrderId]
+      'SELECT * FROM work_order_executions WHERE id = $1 AND work_order_id = $2 AND tenant_id = $3 FOR UPDATE',
+      [completionId, workOrderId, tenantId]
     );
     if (execResult.rowCount === 0) {
       throw new Error('WO_COMPLETION_NOT_FOUND');
@@ -389,8 +420,8 @@ export async function postWorkOrderCompletion(workOrderId: string, completionId:
     }
 
     const linesResult = await client.query<WorkOrderExecutionLineRow>(
-      'SELECT * FROM work_order_execution_lines WHERE work_order_execution_id = $1 ORDER BY created_at ASC',
-      [completionId]
+      'SELECT * FROM work_order_execution_lines WHERE work_order_execution_id = $1 AND tenant_id = $2 ORDER BY created_at ASC',
+      [completionId, tenantId]
     );
     if (linesResult.rowCount === 0) {
       throw new Error('WO_COMPLETION_NO_LINES');
@@ -420,9 +451,9 @@ export async function postWorkOrderCompletion(workOrderId: string, completionId:
     const movementId = uuidv4();
     await client.query(
       `INSERT INTO inventory_movements (
-          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, 'receive', 'posted', $2, $3, $4, $5, $4, $4)`,
-      [movementId, `work_order_completion:${completionId}`, execution.occurred_at, now, execution.notes ?? null]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $5, $6, $5, $5)`,
+      [movementId, tenantId, `work_order_completion:${completionId}`, execution.occurred_at, now, execution.notes ?? null]
     );
 
     for (const line of linesResult.rows) {
@@ -430,10 +461,11 @@ export async function postWorkOrderCompletion(workOrderId: string, completionId:
       const qty = normalized.quantity;
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, 'work_order_completion', $7)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'work_order_completion', $8)`,
         [
           uuidv4(),
+          tenantId,
           movementId,
           line.item_id,
           line.to_location_id,
@@ -448,8 +480,8 @@ export async function postWorkOrderCompletion(workOrderId: string, completionId:
       `UPDATE work_order_executions
           SET status = 'posted',
               production_movement_id = $1
-        WHERE id = $2`,
-      [movementId, completionId]
+        WHERE id = $2 AND tenant_id = $3`,
+      [movementId, completionId, tenantId]
     );
 
     const currentCompleted = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
@@ -464,11 +496,11 @@ export async function postWorkOrderCompletion(workOrderId: string, completionId:
               status = $3,
               completed_at = COALESCE(completed_at, $4),
               updated_at = $5
-        WHERE id = $1`,
-      [workOrderId, newCompleted, newStatus, completedAt, now]
+        WHERE id = $1 AND tenant_id = $6`,
+      [workOrderId, newCompleted, newStatus, completedAt, now, tenantId]
     );
 
-    const posted = await fetchWorkOrderCompletion(workOrderId, completionId, client);
+    const posted = await fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client);
     if (!posted) {
       throw new Error('WO_COMPLETION_NOT_FOUND_AFTER_POST');
     }
@@ -476,8 +508,11 @@ export async function postWorkOrderCompletion(workOrderId: string, completionId:
   });
 }
 
-export async function getWorkOrderExecutionSummary(workOrderId: string) {
-  const workOrderResult = await query<WorkOrderRow>('SELECT * FROM work_orders WHERE id = $1', [workOrderId]);
+export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId: string) {
+  const workOrderResult = await query<WorkOrderRow>('SELECT * FROM work_orders WHERE id = $1 AND tenant_id = $2', [
+    workOrderId,
+    tenantId
+  ]);
   if (workOrderResult.rowCount === 0) {
     return null;
   }
@@ -491,11 +526,13 @@ export async function getWorkOrderExecutionSummary(workOrderId: string) {
             SUM(l.quantity_issued) AS qty
        FROM work_order_material_issue_lines l
        JOIN work_order_material_issues h ON h.id = l.work_order_material_issue_id
-       JOIN items i ON i.id = l.component_item_id
+       JOIN items i ON i.id = l.component_item_id AND i.tenant_id = h.tenant_id
       WHERE h.work_order_id = $1
         AND h.status = 'posted'
+        AND h.tenant_id = $2
+        AND l.tenant_id = $2
       GROUP BY l.component_item_id, i.sku, i.name, l.uom`,
-    [workOrderId]
+    [workOrderId, tenantId]
   );
 
   const producedRows = await query(
@@ -506,18 +543,20 @@ export async function getWorkOrderExecutionSummary(workOrderId: string) {
             SUM(l.quantity) AS qty
        FROM work_order_execution_lines l
        JOIN work_order_executions h ON h.id = l.work_order_execution_id
-       JOIN items i ON i.id = l.item_id
+       JOIN items i ON i.id = l.item_id AND i.tenant_id = h.tenant_id
       WHERE h.work_order_id = $1
         AND h.status = 'posted'
         AND l.line_type = 'produce'
+        AND h.tenant_id = $2
+        AND l.tenant_id = $2
       GROUP BY l.item_id, i.sku, i.name, l.uom`,
-    [workOrderId]
+    [workOrderId, tenantId]
   );
 
   const planned = roundQuantity(toNumber(workOrder.quantity_planned));
   const completed = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
 
-  const bom = await fetchBomById(workOrder.bom_id);
+  const bom = await fetchBomById(tenantId, workOrder.bom_id);
 
   return {
     workOrder: {
@@ -550,7 +589,11 @@ export async function getWorkOrderExecutionSummary(workOrderId: string) {
   };
 }
 
-export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderBatchInput) {
+export async function recordWorkOrderBatch(
+  tenantId: string,
+  workOrderId: string,
+  data: WorkOrderBatchInput
+) {
   const normalizedConsumes = data.consumeLines.map((line) => {
     const normalized = normalizeQuantityByUom(line.quantity, line.uom);
     if (normalized.quantity <= 0) {
@@ -567,7 +610,7 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
   });
 
   return withTransaction(async (client) => {
-    const workOrder = await fetchWorkOrderById(workOrderId, client);
+    const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
     }
@@ -595,7 +638,10 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
     );
 
     if (itemIds.length > 0) {
-      const itemRes = await client.query<{ id: string }>('SELECT id FROM items WHERE id = ANY($1)', [itemIds]);
+      const itemRes = await client.query<{ id: string }>(
+        'SELECT id FROM items WHERE id = ANY($1) AND tenant_id = $2',
+        [itemIds, tenantId]
+      );
       const found = new Set(itemRes.rows.map((r) => r.id));
       const missingItems = itemIds.filter((id) => !found.has(id));
       if (missingItems.length > 0) {
@@ -604,7 +650,10 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
     }
 
     if (locationIds.length > 0) {
-      const locRes = await client.query<{ id: string }>('SELECT id FROM locations WHERE id = ANY($1)', [locationIds]);
+      const locRes = await client.query<{ id: string }>(
+        'SELECT id FROM locations WHERE id = ANY($1) AND tenant_id = $2',
+        [locationIds, tenantId]
+      );
       const found = new Set(locRes.rows.map((r) => r.id));
       const missingLocs = locationIds.filter((id) => !found.has(id));
       if (missingLocs.length > 0) {
@@ -622,32 +671,33 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
     // Create movements first to satisfy FKs
     await client.query(
       `INSERT INTO inventory_movements (
-          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, 'issue', 'posted', $2, $3, $4, $5, $4, $4)`,
-      [issueMovementId, `work_order_batch_issue:${issueId}`, occurredAt, now, data.notes ?? null]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, $2, 'issue', 'posted', $3, $4, $5, $6, $5, $5)`,
+      [issueMovementId, tenantId, `work_order_batch_issue:${issueId}`, occurredAt, now, data.notes ?? null]
     );
     await client.query(
       `INSERT INTO inventory_movements (
-          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, 'receive', 'posted', $2, $3, $4, $5, $4, $4)`,
-      [receiveMovementId, `work_order_batch_completion:${executionId}`, occurredAt, now, data.notes ?? null]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $5, $6, $5, $5)`,
+      [receiveMovementId, tenantId, `work_order_batch_completion:${executionId}`, occurredAt, now, data.notes ?? null]
     );
 
     // Material issue header + lines
     await client.query(
       `INSERT INTO work_order_material_issues (
-          id, work_order_id, status, occurred_at, inventory_movement_id, notes, created_at, updated_at
-       ) VALUES ($1, $2, 'posted', $3, $4, $5, $6, $6)`,
-      [issueId, workOrderId, occurredAt, issueMovementId, data.notes ?? null, now]
+          id, tenant_id, work_order_id, status, occurred_at, inventory_movement_id, notes, created_at, updated_at
+       ) VALUES ($1, $2, $3, 'posted', $4, $5, $6, $7, $7)`,
+      [issueId, tenantId, workOrderId, occurredAt, issueMovementId, data.notes ?? null, now]
     );
     for (let i = 0; i < normalizedConsumes.length; i++) {
       const line = normalizedConsumes[i];
       await client.query(
         `INSERT INTO work_order_material_issue_lines (
-            id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, notes, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            id, tenant_id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, notes, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           uuidv4(),
+          tenantId,
           issueId,
           i + 1,
           line.componentItemId,
@@ -662,10 +712,11 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
     for (const line of normalizedConsumes) {
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, 'work_order_issue', $7)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'work_order_issue', $8)`,
         [
           uuidv4(),
+          tenantId,
           issueMovementId,
           line.componentItemId,
           line.fromLocationId,
@@ -679,18 +730,19 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
     // Execution header + produce lines
     await client.query(
       `INSERT INTO work_order_executions (
-          id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id, notes, created_at
-       ) VALUES ($1, $2, $3, 'posted', $4, $5, $6, $7)`,
-      [executionId, workOrderId, occurredAt, issueMovementId, receiveMovementId, data.notes ?? null, now]
+          id, tenant_id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id, notes, created_at
+       ) VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $8)`,
+      [executionId, tenantId, workOrderId, occurredAt, issueMovementId, receiveMovementId, data.notes ?? null, now]
     );
     for (let i = 0; i < normalizedProduces.length; i++) {
       const line = normalizedProduces[i];
       await client.query(
         `INSERT INTO work_order_execution_lines (
-            id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, notes, created_at
-         ) VALUES ($1, $2, 'produce', $3, $4, $5, $6, NULL, $7, $8, $9)`,
+            id, tenant_id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, notes, created_at
+         ) VALUES ($1, $2, $3, 'produce', $4, $5, $6, $7, NULL, $8, $9, $10)`,
         [
           uuidv4(),
+          tenantId,
           executionId,
           line.outputItemId,
           line.uom,
@@ -705,10 +757,11 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
     for (const line of normalizedProduces) {
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, 'work_order_completion', $7)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'work_order_completion', $8)`,
         [
           uuidv4(),
+          tenantId,
           receiveMovementId,
           line.outputItemId,
           line.toLocationId,
@@ -733,8 +786,8 @@ export async function recordWorkOrderBatch(workOrderId: string, data: WorkOrderB
               status = $3,
               completed_at = COALESCE(completed_at, $4),
               updated_at = $5
-        WHERE id = $1`,
-      [workOrderId, newCompleted, newStatus, completedAt, now]
+        WHERE id = $1 AND tenant_id = $6`,
+      [workOrderId, newCompleted, newStatus, completedAt, now, tenantId]
     );
 
     return {

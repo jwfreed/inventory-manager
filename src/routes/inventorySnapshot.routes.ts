@@ -19,10 +19,11 @@ router.get('/inventory-snapshot', async (req: Request, res: Response) => {
   }
 
   const { itemId, locationId, uom } = parsed.data;
+  const tenantId = req.auth!.tenantId;
 
   const [itemExists, locationExists] = await Promise.all([
-    assertItemExists(itemId),
-    assertLocationExists(locationId)
+    assertItemExists(tenantId, itemId),
+    assertLocationExists(tenantId, locationId)
   ]);
 
   if (!itemExists) {
@@ -33,7 +34,7 @@ router.get('/inventory-snapshot', async (req: Request, res: Response) => {
   }
 
   try {
-    const snapshot = await getInventorySnapshot({ itemId, locationId, uom });
+    const snapshot = await getInventorySnapshot(tenantId, { itemId, locationId, uom });
     return res.json({ data: snapshot });
   } catch (error) {
     console.error(error);
@@ -48,7 +49,7 @@ router.get('/inventory-snapshot/summary', async (req: Request, res: Response) =>
   }
 
   try {
-    const summary = await getInventorySnapshotSummary(parsed.data);
+    const summary = await getInventorySnapshotSummary(req.auth!.tenantId, parsed.data);
     return res.json({ data: summary });
   } catch (error) {
     console.error(error);

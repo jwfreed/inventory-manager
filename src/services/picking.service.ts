@@ -37,49 +37,51 @@ export function mapPickTask(row: any) {
   };
 }
 
-export async function createPickBatch(data: PickBatchInput) {
+export async function createPickBatch(tenantId: string, data: PickBatchInput) {
   const now = new Date();
   const id = uuidv4();
   const status = data.status ?? 'draft';
   const res = await query(
-    `INSERT INTO pick_batches (id, status, pick_type, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $5)
+    `INSERT INTO pick_batches (id, tenant_id, status, pick_type, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $6)
      RETURNING *`,
-    [id, status, data.pickType, data.notes ?? null, now]
+    [id, tenantId, status, data.pickType, data.notes ?? null, now]
   );
   return mapPickBatch(res.rows[0]);
 }
 
-export async function listPickBatches(limit: number, offset: number) {
+export async function listPickBatches(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
     `SELECT * FROM pick_batches
+     WHERE tenant_id = $1
      ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
+     LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset]
   );
   return rows.map(mapPickBatch);
 }
 
-export async function getPickBatch(id: string) {
-  const res = await query('SELECT * FROM pick_batches WHERE id = $1', [id]);
+export async function getPickBatch(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM pick_batches WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapPickBatch(res.rows[0]);
 }
 
-export async function createPickTask(data: PickTaskInput) {
+export async function createPickTask(tenantId: string, data: PickTaskInput) {
   const now = new Date();
   const id = uuidv4();
   const status = data.status ?? 'pending';
   try {
     const res = await query(
       `INSERT INTO pick_tasks (
-        id, pick_batch_id, status, inventory_reservation_id, sales_order_line_id,
+        id, tenant_id, pick_batch_id, status, inventory_reservation_id, sales_order_line_id,
         item_id, uom, from_location_id, quantity_requested, quantity_picked, picked_at, notes,
         created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
       RETURNING *`,
       [
         id,
+        tenantId,
         data.pickBatchId,
         status,
         data.inventoryReservationId ?? null,
@@ -105,18 +107,19 @@ export async function createPickTask(data: PickTaskInput) {
   }
 }
 
-export async function listPickTasks(limit: number, offset: number) {
+export async function listPickTasks(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
     `SELECT * FROM pick_tasks
+     WHERE tenant_id = $1
      ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
+     LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset]
   );
   return rows.map(mapPickTask);
 }
 
-export async function getPickTask(id: string) {
-  const res = await query('SELECT * FROM pick_tasks WHERE id = $1', [id]);
+export async function getPickTask(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM pick_tasks WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapPickTask(res.rows[0]);
 }

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
 import { createPurchaseOrderReceipt, deleteReceipt, fetchReceiptById, listReceipts } from '../services/receipts.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { emitEvent } from '../lib/events';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -14,7 +15,24 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
   }
 
   try {
-    const receipt = await createPurchaseOrderReceipt(parsed.data);
+    const tenantId = req.auth!.tenantId;
+    const receipt = await createPurchaseOrderReceipt(tenantId, parsed.data);
+    const itemIds = Array.from(new Set(receipt.lines.map((line: any) => line.itemId).filter(Boolean)));
+    const locationIds = Array.from(
+      new Set(
+        [
+          receipt.receivedToLocationId,
+          ...receipt.lines.map((line: any) => line.defaultToLocationId),
+          ...receipt.lines.map((line: any) => line.defaultFromLocationId)
+        ].filter(Boolean)
+      )
+    );
+    emitEvent(tenantId, 'inventory.receipt.created', {
+      receiptId: receipt.id,
+      purchaseOrderId: receipt.purchaseOrderId,
+      itemIds,
+      locationIds
+    });
     return res.status(201).json(receipt);
   } catch (error: any) {
     if (error?.message === 'RECEIPT_PO_LINES_NOT_FOUND') {
@@ -63,7 +81,7 @@ router.get('/purchase-order-receipts/:id', async (req: Request, res: Response) =
     return res.status(400).json({ error: 'Invalid receipt id.' });
   }
   try {
-    const receipt = await fetchReceiptById(id);
+    const receipt = await fetchReceiptById(req.auth!.tenantId, id);
     if (!receipt) {
       return res.status(404).json({ error: 'Receipt not found.' });
     }
@@ -78,7 +96,7 @@ router.get('/purchase-order-receipts', async (req: Request, res: Response) => {
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const rows = await listReceipts(limit, offset);
+    const rows = await listReceipts(req.auth!.tenantId, limit, offset);
     return res.json({ data: rows, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -92,7 +110,9 @@ router.delete('/purchase-order-receipts/:id', async (req: Request, res: Response
     return res.status(400).json({ error: 'Invalid receipt id.' });
   }
   try {
-    await deleteReceipt(id);
+    const tenantId = req.auth!.tenantId;
+    await deleteReceipt(tenantId, id);
+    emitEvent(tenantId, 'inventory.receipt.deleted', { receiptId: id });
     return res.status(204).send();
   } catch (error: any) {
     if (error?.message === 'RECEIPT_HAS_PUTAWAYS_POSTED') {

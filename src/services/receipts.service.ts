@@ -55,14 +55,14 @@ function mapReceipt(row: any, lineRows: any[], qcBreakdown: Map<string, QcBreakd
   };
 }
 
-export async function fetchReceiptById(id: string, client?: PoolClient) {
+export async function fetchReceiptById(tenantId: string, id: string, client?: PoolClient) {
   const executor = client ?? query;
   const receiptResult = await executor(
     `SELECT por.*, po.po_number
        FROM purchase_order_receipts por
-       LEFT JOIN purchase_orders po ON po.id = por.purchase_order_id
-      WHERE por.id = $1`,
-    [id]
+       LEFT JOIN purchase_orders po ON po.id = por.purchase_order_id AND po.tenant_id = por.tenant_id
+      WHERE por.id = $1 AND por.tenant_id = $2`,
+    [id, tenantId]
   );
   if (receiptResult.rowCount === 0) {
     return null;
@@ -74,23 +74,26 @@ export async function fetchReceiptById(id: string, client?: PoolClient) {
             i.name AS item_name,
             i.default_location_id AS item_default_location_id
        FROM purchase_order_receipt_lines porl
-       LEFT JOIN purchase_order_lines pol ON pol.id = porl.purchase_order_line_id
-       LEFT JOIN items i ON i.id = pol.item_id
-      WHERE porl.purchase_order_receipt_id = $1
+       LEFT JOIN purchase_order_lines pol ON pol.id = porl.purchase_order_line_id AND pol.tenant_id = porl.tenant_id
+       LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = porl.tenant_id
+      WHERE porl.purchase_order_receipt_id = $1 AND porl.tenant_id = $2
       ORDER BY porl.created_at ASC`,
-    [id]
+    [id, tenantId]
   );
   const lineIds = linesResult.rows.map((line) => line.id);
-  const breakdown = await loadQcBreakdown(lineIds, client);
+  const breakdown = await loadQcBreakdown(tenantId, lineIds, client);
   return mapReceipt(receiptResult.rows[0], linesResult.rows, breakdown);
 }
 
-export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput) {
+export async function createPurchaseOrderReceipt(tenantId: string, data: PurchaseOrderReceiptInput) {
   const receiptId = uuidv4();
   const uniqueSet = new Set(data.lines.map((line) => line.purchaseOrderLineId));
   const uniqueLineIds = Array.from(uniqueSet);
 
-  const poResult = await query('SELECT status, ship_to_location_id FROM purchase_orders WHERE id = $1', [data.purchaseOrderId]);
+  const poResult = await query(
+    'SELECT status, ship_to_location_id, receiving_location_id FROM purchase_orders WHERE id = $1 AND tenant_id = $2',
+    [data.purchaseOrderId, tenantId]
+  );
   if (poResult.rowCount === 0) {
     throw new Error('RECEIPT_PO_NOT_FOUND');
   }
@@ -100,8 +103,8 @@ export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput
   }
 
   const { rows: poLineRows } = await query(
-    'SELECT id, purchase_order_id, uom FROM purchase_order_lines WHERE id = ANY($1::uuid[])',
-    [uniqueLineIds]
+    'SELECT id, purchase_order_id, uom FROM purchase_order_lines WHERE id = ANY($1::uuid[]) AND tenant_id = $2',
+    [uniqueLineIds, tenantId]
   );
   if (poLineRows.length !== uniqueLineIds.length) {
     throw new Error('RECEIPT_PO_LINES_NOT_FOUND');
@@ -126,18 +129,19 @@ export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput
   // Default receiving location: prefer explicit provided, otherwise PO receiving/staging, otherwise dedicated receiving, otherwise ship-to.
   let resolvedReceivedToLocationId = data.receivedToLocationId ?? null;
   if (!resolvedReceivedToLocationId) {
-    const receivingLoc = poRow.receiving_location_id ?? (await findDefaultReceivingLocation());
+    const receivingLoc = poRow.receiving_location_id ?? (await findDefaultReceivingLocation(tenantId));
     resolvedReceivedToLocationId = receivingLoc ?? poRow.ship_to_location_id ?? null;
   }
 
   await withTransaction(async (client) => {
     await client.query(
       `INSERT INTO purchase_order_receipts (
-          id, purchase_order_id, received_at, received_to_location_id,
+          id, tenant_id, purchase_order_id, received_at, received_to_location_id,
           inventory_movement_id, external_ref, notes
-       ) VALUES ($1, $2, $3, $4, NULL, $5, $6)`,
+       ) VALUES ($1, $2, $3, $4, $5, NULL, $6, $7)`,
       [
         receiptId,
+        tenantId,
         data.purchaseOrderId,
         new Date(data.receivedAt),
         resolvedReceivedToLocationId,
@@ -150,22 +154,22 @@ export async function createPurchaseOrderReceipt(data: PurchaseOrderReceiptInput
       const normalized = normalizeQuantityByUom(line.quantityReceived, line.uom);
       await client.query(
         `INSERT INTO purchase_order_receipt_lines (
-            id, purchase_order_receipt_id, purchase_order_line_id, uom, quantity_received
-         ) VALUES ($1, $2, $3, $4, $5)`,
-        [uuidv4(), receiptId, line.purchaseOrderLineId, normalized.uom, normalized.quantity]
+            id, tenant_id, purchase_order_receipt_id, purchase_order_line_id, uom, quantity_received
+         ) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [uuidv4(), tenantId, receiptId, line.purchaseOrderLineId, normalized.uom, normalized.quantity]
       );
     }
   });
 
-  const receipt = await fetchReceiptById(receiptId);
+  const receipt = await fetchReceiptById(tenantId, receiptId);
   if (!receipt) {
     throw new Error('RECEIPT_NOT_FOUND_AFTER_CREATE');
   }
-  await updatePoStatusFromReceipts(receipt.purchaseOrderId);
+  await updatePoStatusFromReceipts(tenantId, receipt.purchaseOrderId);
   return receipt;
 }
 
-export async function listReceipts(limit = 20, offset = 0) {
+export async function listReceipts(tenantId: string, limit = 20, offset = 0) {
   const { rows } = await query(
     `SELECT por.id,
             por.purchase_order_id,
@@ -177,18 +181,19 @@ export async function listReceipts(limit = 20, offset = 0) {
             por.notes,
             por.created_at
        FROM purchase_order_receipts por
-       LEFT JOIN purchase_orders po ON po.id = por.purchase_order_id
+       LEFT JOIN purchase_orders po ON po.id = por.purchase_order_id AND po.tenant_id = por.tenant_id
+      WHERE por.tenant_id = $1
        ORDER BY por.created_at DESC
-       LIMIT $1 OFFSET $2`,
-    [limit, offset]
+       LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset]
   );
   return rows;
 }
 
-export async function deleteReceipt(id: string) {
+export async function deleteReceipt(tenantId: string, id: string) {
   const { rows: receiptLineIds } = await query(
-    'SELECT id FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1',
-    [id]
+    'SELECT id FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1 AND tenant_id = $2',
+    [id, tenantId]
   );
   const lineIds = receiptLineIds.map((r) => r.id);
   if (lineIds.length > 0) {
@@ -199,9 +204,9 @@ export async function deleteReceipt(id: string) {
               p.status AS putaway_status,
               pl.inventory_movement_id
          FROM putaway_lines pl
-         JOIN putaways p ON p.id = pl.putaway_id
-        WHERE pl.purchase_order_receipt_line_id = ANY($1::uuid[])`,
-      [lineIds]
+         JOIN putaways p ON p.id = pl.putaway_id AND p.tenant_id = pl.tenant_id
+        WHERE pl.purchase_order_receipt_line_id = ANY($1::uuid[]) AND pl.tenant_id = $2`,
+      [lineIds, tenantId]
     );
     if (putawayRefs.length > 0) {
       const hasPosted = putawayRefs.some(
@@ -213,24 +218,32 @@ export async function deleteReceipt(id: string) {
       // Safe to delete pending putaways tied to this receipt
       const putawayIds = Array.from(new Set(putawayRefs.map((r) => r.putaway_id)));
       await withTransaction(async (client) => {
-        await client.query('DELETE FROM putaway_lines WHERE putaway_id = ANY($1::uuid[])', [putawayIds]);
-        await client.query('DELETE FROM putaways WHERE id = ANY($1::uuid[])', [putawayIds]);
+        await client.query('DELETE FROM putaway_lines WHERE putaway_id = ANY($1::uuid[]) AND tenant_id = $2', [
+          putawayIds,
+          tenantId
+        ]);
+        await client.query('DELETE FROM putaways WHERE id = ANY($1::uuid[]) AND tenant_id = $2', [putawayIds, tenantId]);
       });
     }
   }
   await withTransaction(async (client) => {
-    await client.query('DELETE FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1', [id]);
-    await client.query('DELETE FROM purchase_order_receipts WHERE id = $1', [id]);
+    await client.query(
+      'DELETE FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1 AND tenant_id = $2',
+      [id, tenantId]
+    );
+    await client.query('DELETE FROM purchase_order_receipts WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   });
 }
-async function findDefaultReceivingLocation(): Promise<string | null> {
+async function findDefaultReceivingLocation(tenantId: string): Promise<string | null> {
   const { rows } = await baseQuery(
     `SELECT id
        FROM locations
-      WHERE active = true
+      WHERE tenant_id = $1
+        AND active = true
         AND (type = 'receiving' OR code ILIKE '%recv%' OR name ILIKE '%receiv%')
       ORDER BY created_at ASC
       LIMIT 1`,
+    [tenantId]
   );
   return rows[0]?.id ?? null;
 }

@@ -138,22 +138,25 @@ function mapBom(row: BomRow, versionRows: BomVersionRow[], lineMap: Map<string, 
   };
 }
 
-export async function fetchBomById(id: string, client?: PoolClient): Promise<Bom | null> {
+export async function fetchBomById(tenantId: string, id: string, client?: PoolClient): Promise<Bom | null> {
   const executor = client ?? pool;
-  const bomResult = await executor.query<BomRow>('SELECT * FROM boms WHERE id = $1', [id]);
+  const bomResult = await executor.query<BomRow>('SELECT * FROM boms WHERE id = $1 AND tenant_id = $2', [
+    id,
+    tenantId
+  ]);
   if (bomResult.rowCount === 0) {
     return null;
   }
   const versionResult = await executor.query<BomVersionRow>(
-    'SELECT * FROM bom_versions WHERE bom_id = $1 ORDER BY version_number ASC',
-    [id]
+    'SELECT * FROM bom_versions WHERE bom_id = $1 AND tenant_id = $2 ORDER BY version_number ASC',
+    [id, tenantId]
   );
   const versionIds = versionResult.rows.map((version) => version.id);
   let lineRows: BomVersionLineRow[] = [];
   if (versionIds.length > 0) {
     const { rows } = await executor.query<BomVersionLineRow>(
-      'SELECT * FROM bom_version_lines WHERE bom_version_id = ANY($1::uuid[]) ORDER BY line_number ASC',
-      [versionIds]
+      'SELECT * FROM bom_version_lines WHERE bom_version_id = ANY($1::uuid[]) AND tenant_id = $2 ORDER BY line_number ASC',
+      [versionIds, tenantId]
     );
     lineRows = rows;
   }
@@ -177,7 +180,7 @@ function normalizeComponents(components: BomCreateInput['version']['components']
   });
 }
 
-export async function createBom(data: BomCreateInput): Promise<Bom> {
+export async function createBom(tenantId: string, data: BomCreateInput): Promise<Bom> {
   normalizeComponents(data.version.components);
   const now = new Date();
   const bomId = uuidv4();
@@ -188,18 +191,19 @@ export async function createBom(data: BomCreateInput): Promise<Bom> {
     const normalizedYield = normalizeQuantityByUom(data.version.yieldQuantity, data.version.yieldUom);
 
     await client.query(
-      `INSERT INTO boms (id, bom_code, output_item_id, default_uom, active, notes, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, true, $5, $6, $6)`,
-      [bomId, data.bomCode, data.outputItemId, data.defaultUom, data.notes ?? null, now]
+      `INSERT INTO boms (id, tenant_id, bom_code, output_item_id, default_uom, active, notes, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, true, $6, $7, $7)`,
+      [bomId, tenantId, data.bomCode, data.outputItemId, data.defaultUom, data.notes ?? null, now]
     );
 
     await client.query(
       `INSERT INTO bom_versions (
-          id, bom_id, version_number, status, effective_from, effective_to,
+          id, tenant_id, bom_id, version_number, status, effective_from, effective_to,
           yield_quantity, yield_uom, notes, created_at, updated_at
-       ) VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $9)`,
+       ) VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7, $8, $9, $10, $10)`,
       [
         versionId,
+        tenantId,
         bomId,
         versionNumber,
         data.version.effectiveFrom ?? null,
@@ -215,11 +219,12 @@ export async function createBom(data: BomCreateInput): Promise<Bom> {
       const normalized = normalizeQuantityByUom(component.quantityPer, component.uom);
       await client.query(
         `INSERT INTO bom_version_lines (
-            id, bom_version_id, line_number, component_item_id, component_quantity,
+            id, tenant_id, bom_version_id, line_number, component_item_id, component_quantity,
             component_uom, scrap_factor, uses_pack_size, variable_uom, notes, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           uuidv4(),
+          tenantId,
           versionId,
           component.lineNumber,
           component.componentItemId,
@@ -234,7 +239,7 @@ export async function createBom(data: BomCreateInput): Promise<Bom> {
       );
     }
 
-    const created = await fetchBomById(bomId, client);
+    const created = await fetchBomById(tenantId, bomId, client);
     if (!created) {
       throw new Error('BOM_NOT_FOUND_AFTER_CREATE');
     }
@@ -244,7 +249,7 @@ export async function createBom(data: BomCreateInput): Promise<Bom> {
   return bom;
 }
 
-export async function listBomsByItem(itemId: string) {
+export async function listBomsByItem(tenantId: string, itemId: string) {
   const { rows } = await query(
     `SELECT
         b.id AS bom_id,
@@ -266,10 +271,10 @@ export async function listBomsByItem(itemId: string) {
         v.created_at AS version_created_at,
         v.updated_at AS version_updated_at
      FROM boms b
-     LEFT JOIN bom_versions v ON v.bom_id = b.id
-     WHERE b.output_item_id = $1
+     LEFT JOIN bom_versions v ON v.bom_id = b.id AND v.tenant_id = b.tenant_id
+     WHERE b.output_item_id = $1 AND b.tenant_id = $2
      ORDER BY b.created_at DESC, v.version_number DESC`,
-    [itemId]
+    [itemId, tenantId]
   );
 
   const bomMap = new Map<
@@ -324,7 +329,7 @@ export async function listBomsByItem(itemId: string) {
   return { itemId, boms: Array.from(bomMap.values()) };
 }
 
-export async function listNextStepBomsByComponentItem(componentItemId: string) {
+export async function listNextStepBomsByComponentItem(tenantId: string, componentItemId: string) {
   const { rows } = await query(
     `SELECT DISTINCT
         b.id AS bom_id,
@@ -336,10 +341,10 @@ export async function listNextStepBomsByComponentItem(componentItemId: string) {
         b.created_at AS bom_created_at,
         b.updated_at AS bom_updated_at
      FROM bom_version_lines l
-     JOIN bom_versions v ON v.id = l.bom_version_id
-     JOIN boms b ON b.id = v.bom_id
-    WHERE l.component_item_id = $1`,
-    [componentItemId]
+     JOIN bom_versions v ON v.id = l.bom_version_id AND v.tenant_id = l.tenant_id
+     JOIN boms b ON b.id = v.bom_id AND b.tenant_id = l.tenant_id
+    WHERE l.component_item_id = $1 AND l.tenant_id = $2`,
+    [componentItemId, tenantId]
   );
   return rows.map((row) => ({
     id: row.bom_id,
@@ -367,6 +372,7 @@ function rangesOverlap(
 }
 
 export async function activateBomVersion(
+  tenantId: string,
   versionId: string,
   _data: BomActivationInput,
   effectiveFrom: Date,
@@ -382,10 +388,10 @@ export async function activateBomVersion(
     >(
       `SELECT v.*, b.output_item_id
          FROM bom_versions v
-         JOIN boms b ON b.id = v.bom_id
-        WHERE v.id = $1
+         JOIN boms b ON b.id = v.bom_id AND b.tenant_id = v.tenant_id
+        WHERE v.id = $1 AND v.tenant_id = $2
         FOR UPDATE`,
-      [versionId]
+      [versionId, tenantId]
     );
     if (versionResult.rowCount === 0) {
       throw new Error('BOM_VERSION_NOT_FOUND');
@@ -398,11 +404,12 @@ export async function activateBomVersion(
     const { rows: activeRows } = await client.query(
       `SELECT v.id, v.effective_from, v.effective_to
          FROM bom_versions v
-         JOIN boms b ON b.id = v.bom_id
+         JOIN boms b ON b.id = v.bom_id AND b.tenant_id = v.tenant_id
         WHERE b.output_item_id = $1
           AND v.status = 'active'
-          AND v.id <> $2`,
-      [versionRow.output_item_id, versionId]
+          AND v.id <> $2
+          AND v.tenant_id = $3`,
+      [versionRow.output_item_id, versionId, tenantId]
     );
     for (const row of activeRows) {
       if (rangesOverlap(row.effective_from, row.effective_to, effectiveFrom, effectiveTo)) {
@@ -416,11 +423,11 @@ export async function activateBomVersion(
               effective_from = $2,
               effective_to = $3,
               updated_at = $4
-        WHERE id = $1`,
-      [versionId, effectiveFromIso, effectiveToIso, now]
+        WHERE id = $1 AND tenant_id = $5`,
+      [versionId, effectiveFromIso, effectiveToIso, now, tenantId]
     );
 
-    const updated = await fetchBomById(versionRow.bom_id, client);
+    const updated = await fetchBomById(tenantId, versionRow.bom_id, client);
     if (!updated) {
       throw new Error('BOM_NOT_FOUND_AFTER_UPDATE');
     }
@@ -430,25 +437,26 @@ export async function activateBomVersion(
   return bom;
 }
 
-export async function resolveEffectiveBom(itemId: string, asOfIso: string) {
+export async function resolveEffectiveBom(tenantId: string, itemId: string, asOfIso: string) {
   const { rows } = await query<{ bom_id: string; version_id: string }>(
     `SELECT b.id AS bom_id, v.id AS version_id
        FROM boms b
-       JOIN bom_versions v ON v.bom_id = b.id
+       JOIN bom_versions v ON v.bom_id = b.id AND v.tenant_id = b.tenant_id
       WHERE b.output_item_id = $1
         AND v.status = 'active'
         AND v.effective_from <= $2
         AND (v.effective_to IS NULL OR v.effective_to >= $2)
+        AND b.tenant_id = $3
       ORDER BY v.effective_from DESC
       LIMIT 1`,
-    [itemId, asOfIso]
+    [itemId, asOfIso, tenantId]
   );
   if (rows.length === 0) {
     return null;
   }
 
   const { bom_id: bomId, version_id: versionId } = rows[0];
-  const bom = await fetchBomById(bomId);
+  const bom = await fetchBomById(tenantId, bomId);
   if (!bom) {
     throw new Error('BOM_NOT_FOUND');
   }

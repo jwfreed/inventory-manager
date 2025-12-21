@@ -15,7 +15,7 @@ router.get('/inventory-movements', async (req: Request, res: Response) => {
     parsed.data;
 
   try {
-    const data = await listMovements({
+    const data = await listMovements(req.auth!.tenantId, {
       movementType: movement_type,
       status,
       externalRef: external_ref,
@@ -37,7 +37,7 @@ router.get('/inventory-movements/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid movement id.' });
   }
   try {
-    const movement = await getMovement(id);
+    const movement = await getMovement(req.auth!.tenantId, id);
     if (!movement) return res.status(404).json({ error: 'Inventory movement not found.' });
     return res.json(movement);
   } catch (error) {
@@ -52,7 +52,7 @@ router.get('/inventory-movements/:id/lines', async (req: Request, res: Response)
     return res.status(400).json({ error: 'Invalid movement id.' });
   }
   try {
-    const lines = await getMovementLines(id);
+    const lines = await getMovementLines(req.auth!.tenantId, id);
     return res.json({ data: lines });
   } catch (error) {
     console.error(error);

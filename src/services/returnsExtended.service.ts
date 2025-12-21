@@ -85,7 +85,7 @@ function wrapPgError(error: unknown, messages: { entity: string }) {
   return error
 }
 
-export async function createReturnReceipt(data: ReturnReceiptInput) {
+export async function createReturnReceipt(tenantId: string, data: ReturnReceiptInput) {
   const now = new Date()
   const id = uuidv4()
   const status = data.status ?? 'draft'
@@ -95,12 +95,13 @@ export async function createReturnReceipt(data: ReturnReceiptInput) {
     try {
       header = await client.query(
         `INSERT INTO return_receipts (
-          id, return_authorization_id, status, received_at, received_to_location_id,
+          id, tenant_id, return_authorization_id, status, received_at, received_to_location_id,
           inventory_movement_id, external_ref, notes, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
         RETURNING *`,
         [
           id,
+          tenantId,
           data.returnAuthorizationId,
           status,
           data.receivedAt,
@@ -121,11 +122,12 @@ export async function createReturnReceipt(data: ReturnReceiptInput) {
         try {
           const res = await client.query(
             `INSERT INTO return_receipt_lines (
-              id, return_receipt_id, return_authorization_line_id, item_id, uom, quantity_received, notes, created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+              id, tenant_id, return_receipt_id, return_authorization_line_id, item_id, uom, quantity_received, notes, created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
             RETURNING *`,
             [
               uuidv4(),
+              tenantId,
               id,
               line.returnAuthorizationLineId ?? null,
               line.itemId,
@@ -146,33 +148,42 @@ export async function createReturnReceipt(data: ReturnReceiptInput) {
   })
 }
 
-export async function listReturnReceipts(limit: number, offset: number) {
+export async function listReturnReceipts(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
     `SELECT * FROM return_receipts
+     WHERE tenant_id = $1
      ORDER BY received_at DESC, created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   )
   return rows.map(mapReturnReceipt)
 }
 
-export async function getReturnReceipt(id: string) {
-  const header = await query('SELECT * FROM return_receipts WHERE id = $1', [id])
+export async function getReturnReceipt(tenantId: string, id: string) {
+  const header = await query('SELECT * FROM return_receipts WHERE id = $1 AND tenant_id = $2', [id, tenantId])
   if (header.rowCount === 0) return null
-  const lines = await query('SELECT * FROM return_receipt_lines WHERE return_receipt_id = $1 ORDER BY created_at ASC', [id])
+  const lines = await query(
+    'SELECT * FROM return_receipt_lines WHERE return_receipt_id = $1 AND tenant_id = $2 ORDER BY created_at ASC',
+    [id, tenantId]
+  )
   return mapReturnReceipt(header.rows[0], lines.rows)
 }
 
-export async function addReturnReceiptLine(returnReceiptId: string, line: ReturnReceiptLineInput) {
+export async function addReturnReceiptLine(
+  tenantId: string,
+  returnReceiptId: string,
+  line: ReturnReceiptLineInput
+) {
   const now = new Date()
   try {
     const res = await query(
       `INSERT INTO return_receipt_lines (
-        id, return_receipt_id, return_authorization_line_id, item_id, uom, quantity_received, notes, created_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        id, tenant_id, return_receipt_id, return_authorization_line_id, item_id, uom, quantity_received, notes, created_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       RETURNING *`,
       [
         uuidv4(),
+        tenantId,
         returnReceiptId,
         line.returnAuthorizationLineId ?? null,
         line.itemId,
@@ -188,7 +199,7 @@ export async function addReturnReceiptLine(returnReceiptId: string, line: Return
   }
 }
 
-export async function createReturnDisposition(data: ReturnDispositionInput) {
+export async function createReturnDisposition(tenantId: string, data: ReturnDispositionInput) {
   const now = new Date()
   const id = uuidv4()
   const status = data.status ?? 'draft'
@@ -198,12 +209,13 @@ export async function createReturnDisposition(data: ReturnDispositionInput) {
     try {
       header = await client.query(
         `INSERT INTO return_dispositions (
-          id, return_receipt_id, status, occurred_at, disposition_type, from_location_id, to_location_id,
+          id, tenant_id, return_receipt_id, status, occurred_at, disposition_type, from_location_id, to_location_id,
           inventory_movement_id, notes, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
         RETURNING *`,
         [
           id,
+          tenantId,
           data.returnReceiptId,
           status,
           data.occurredAt,
@@ -225,11 +237,12 @@ export async function createReturnDisposition(data: ReturnDispositionInput) {
         try {
           const res = await client.query(
             `INSERT INTO return_disposition_lines (
-              id, return_disposition_id, line_number, item_id, uom, quantity, notes, created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+              id, tenant_id, return_disposition_id, line_number, item_id, uom, quantity, notes, created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
             RETURNING *`,
             [
               uuidv4(),
+              tenantId,
               id,
               line.lineNumber ?? null,
               line.itemId,
@@ -250,27 +263,29 @@ export async function createReturnDisposition(data: ReturnDispositionInput) {
   })
 }
 
-export async function listReturnDispositions(limit: number, offset: number) {
+export async function listReturnDispositions(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
     `SELECT * FROM return_dispositions
+     WHERE tenant_id = $1
      ORDER BY occurred_at DESC, created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   )
   return rows.map(mapReturnDisposition)
 }
 
-export async function getReturnDisposition(id: string) {
-  const header = await query('SELECT * FROM return_dispositions WHERE id = $1', [id])
+export async function getReturnDisposition(tenantId: string, id: string) {
+  const header = await query('SELECT * FROM return_dispositions WHERE id = $1 AND tenant_id = $2', [id, tenantId])
   if (header.rowCount === 0) return null
   const lines = await query(
-    'SELECT * FROM return_disposition_lines WHERE return_disposition_id = $1 ORDER BY line_number ASC NULLS LAST',
-    [id],
+    'SELECT * FROM return_disposition_lines WHERE return_disposition_id = $1 AND tenant_id = $2 ORDER BY line_number ASC NULLS LAST',
+    [id, tenantId],
   )
   return mapReturnDisposition(header.rows[0], lines.rows)
 }
 
 export async function addReturnDispositionLine(
+  tenantId: string,
   returnDispositionId: string,
   line: ReturnDispositionLineInput,
 ) {
@@ -278,11 +293,12 @@ export async function addReturnDispositionLine(
   try {
     const res = await query(
       `INSERT INTO return_disposition_lines (
-        id, return_disposition_id, line_number, item_id, uom, quantity, notes, created_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        id, tenant_id, return_disposition_id, line_number, item_id, uom, quantity, notes, created_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       RETURNING *`,
       [
         uuidv4(),
+        tenantId,
         returnDispositionId,
         line.lineNumber ?? null,
         line.itemId,

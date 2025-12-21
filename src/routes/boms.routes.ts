@@ -29,7 +29,7 @@ router.post('/boms', async (req: Request, res: Response) => {
   }
 
   try {
-    const bom = await createBom(parsed.data);
+    const bom = await createBom(req.auth!.tenantId, parsed.data);
     return res.status(201).json(bom);
   } catch (error: any) {
     if (error?.message === 'BOM_COMPONENT_DUPLICATE_LINE') {
@@ -66,7 +66,7 @@ router.get('/boms/:id', async (req: Request, res: Response) => {
   }
 
   try {
-    const bom = await fetchBomById(id);
+    const bom = await fetchBomById(req.auth!.tenantId, id);
     if (!bom) {
       return res.status(404).json({ error: 'BOM not found.' });
     }
@@ -84,7 +84,7 @@ router.get('/items/:id/boms', async (req: Request, res: Response) => {
   }
 
   try {
-    const summary = await listBomsByItem(itemId);
+    const summary = await listBomsByItem(req.auth!.tenantId, itemId);
     return res.json(summary);
   } catch (error) {
     console.error(error);
@@ -98,7 +98,7 @@ router.get('/items/:id/next-step-boms', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid item id.' });
   }
   try {
-    const boms = await listNextStepBomsByComponentItem(componentItemId);
+    const boms = await listNextStepBomsByComponentItem(req.auth!.tenantId, componentItemId);
     return res.json({ data: boms });
   } catch (error) {
     console.error(error);
@@ -127,7 +127,7 @@ router.post('/boms/:id/activate', async (req: Request, res: Response) => {
   }
 
   try {
-    const bom = await activateBomVersion(versionId, parsed.data, effectiveFrom, effectiveTo);
+    const bom = await activateBomVersion(req.auth!.tenantId, versionId, parsed.data, effectiveFrom, effectiveTo);
     return res.json(bom);
   } catch (error: any) {
     if (error?.message === 'BOM_VERSION_NOT_FOUND') {
@@ -171,7 +171,7 @@ router.get('/items/:id/bom', async (req: Request, res: Response) => {
   const asOfIso = asOfDate.toISOString();
 
   try {
-    const result = await resolveEffectiveBom(itemId, asOfIso);
+    const result = await resolveEffectiveBom(req.auth!.tenantId, itemId, asOfIso);
     if (!result) {
       return res.status(404).json({ error: 'No active BOM found for the specified date.' });
     }

@@ -11,7 +11,9 @@ import { Input } from '../../../components/Inputs'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { listLocations } from '../../../api/endpoints/locations'
+import { Combobox } from '../../../components/Combobox'
 import { SearchableSelect } from '../../../components/SearchableSelect'
+import { useDebouncedValue } from '../../../lib/useDebouncedValue'
 
 export default function ReceivingPage() {
   const [selectedPoId, setSelectedPoId] = useState('')
@@ -73,9 +75,12 @@ export default function ReceivingPage() {
     staleTime: 30_000,
   })
 
+  const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
+
   const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'receiving-putaway', locationSearch],
-    queryFn: () => listLocations({ limit: 200, search: locationSearch || undefined, active: true }),
+    queryKey: ['locations', 'receiving-putaway', debouncedLocationSearch],
+    queryFn: () =>
+      listLocations({ limit: 200, search: debouncedLocationSearch || undefined, active: true }),
     staleTime: 60_000,
     retry: 1,
   })
@@ -510,16 +515,6 @@ export default function ReceivingPage() {
                   </Button>
                 </div>
               </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="space-y-1 text-sm">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">Location search</span>
-                  <Input
-                    value={locationSearch}
-                    onChange={(e) => setLocationSearch(e.target.value)}
-                    placeholder="Search locations (code/name)"
-                  />
-                </label>
-              </div>
               {putawayLines.map((line, idx) => (
                 <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-4">
                   <div>
@@ -541,11 +536,13 @@ export default function ReceivingPage() {
                     />
                   </div>
                   <div>
-                    <SearchableSelect
+                    <Combobox
                       label="To location"
                       value={line.toLocationId}
                       options={locationOptions}
-                      disabled={locationsQuery.isLoading}
+                      loading={locationsQuery.isLoading}
+                      onQueryChange={setLocationSearch}
+                      placeholder="Search locations (code/name)"
                       onChange={(nextValue) => updatePutawayLine(idx, { toLocationId: nextValue })}
                     />
                   </div>

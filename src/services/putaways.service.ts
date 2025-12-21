@@ -98,31 +98,34 @@ function mapPutaway(row: PutawayRow, lines: PutawayLineRow[], contexts: Map<stri
   };
 }
 
-export async function fetchPutawayById(id: string) {
-  const putawayResult = await query<PutawayRow>('SELECT * FROM putaways WHERE id = $1', [id]);
+export async function fetchPutawayById(tenantId: string, id: string) {
+  const putawayResult = await query<PutawayRow>('SELECT * FROM putaways WHERE id = $1 AND tenant_id = $2', [
+    id,
+    tenantId
+  ]);
   if (putawayResult.rowCount === 0) {
     return null;
   }
   const linesResult = await query<PutawayLineRow>(
-    'SELECT * FROM putaway_lines WHERE putaway_id = $1 ORDER BY line_number ASC',
-    [id]
+    'SELECT * FROM putaway_lines WHERE putaway_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
+    [id, tenantId]
   );
   const receiptLineIds = linesResult.rows.map((line) => line.purchase_order_receipt_line_id);
-  const contexts = await loadReceiptLineContexts(receiptLineIds);
-  const qcBreakdown = await loadQcBreakdown(receiptLineIds);
-  const totals = await loadPutawayTotals(receiptLineIds);
+  const contexts = await loadReceiptLineContexts(tenantId, receiptLineIds);
+  const qcBreakdown = await loadQcBreakdown(tenantId, receiptLineIds);
+  const totals = await loadPutawayTotals(tenantId, receiptLineIds);
   return mapPutaway(putawayResult.rows[0], linesResult.rows, contexts, qcBreakdown, totals);
 }
 
-export async function createPutaway(data: PutawayInput) {
+export async function createPutaway(tenantId: string, data: PutawayInput) {
   const lineIds = data.lines.map((line) => line.purchaseOrderReceiptLineId);
   const uniqueLineIds = Array.from(new Set(lineIds));
-  const contexts = await loadReceiptLineContexts(uniqueLineIds);
+  const contexts = await loadReceiptLineContexts(tenantId, uniqueLineIds);
   if (contexts.size !== uniqueLineIds.length) {
     throw new Error('PUTAWAY_LINES_NOT_FOUND');
   }
-  const qcBreakdown = await loadQcBreakdown(uniqueLineIds);
-  const totals = await loadPutawayTotals(uniqueLineIds);
+  const qcBreakdown = await loadQcBreakdown(tenantId, uniqueLineIds);
+  const totals = await loadPutawayTotals(tenantId, uniqueLineIds);
 
   const requestedByLine = new Map<string, number>();
   const normalizedLines = data.lines.map((line, index) => {
@@ -195,20 +198,21 @@ export async function createPutaway(data: PutawayInput) {
   await withTransaction(async (client) => {
     await client.query(
       `INSERT INTO putaways (
-          id, status, source_type, purchase_order_receipt_id, notes, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $6)`,
-      [putawayId, 'draft', data.sourceType, receiptIdForPutaway ?? null, data.notes ?? null, now]
+          id, tenant_id, status, source_type, purchase_order_receipt_id, notes, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
+      [putawayId, tenantId, 'draft', data.sourceType, receiptIdForPutaway ?? null, data.notes ?? null, now]
     );
 
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO putaway_lines (
-            id, putaway_id, purchase_order_receipt_line_id, line_number,
+            id, tenant_id, putaway_id, purchase_order_receipt_line_id, line_number,
             item_id, uom, quantity_planned, from_location_id, to_location_id,
             status, notes, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, $11, $11)`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11, $12, $12)`,
         [
           uuidv4(),
+          tenantId,
           putawayId,
           line.receiptLineId,
           line.lineNumber,
@@ -224,17 +228,20 @@ export async function createPutaway(data: PutawayInput) {
     }
   });
 
-  const putaway = await fetchPutawayById(putawayId);
+  const putaway = await fetchPutawayById(tenantId, putawayId);
   if (!putaway) {
     throw new Error('PUTAWAY_NOT_FOUND_AFTER_CREATE');
   }
   return putaway;
 }
 
-export async function postPutaway(id: string) {
+export async function postPutaway(tenantId: string, id: string) {
   return withTransaction(async (client) => {
     const now = new Date();
-    const putawayResult = await client.query<PutawayRow>('SELECT * FROM putaways WHERE id = $1 FOR UPDATE', [id]);
+    const putawayResult = await client.query<PutawayRow>(
+      'SELECT * FROM putaways WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+      [id, tenantId]
+    );
     if (putawayResult.rowCount === 0) {
       throw new Error('PUTAWAY_NOT_FOUND');
     }
@@ -247,8 +254,8 @@ export async function postPutaway(id: string) {
     }
 
     const linesResult = await client.query<PutawayLineRow>(
-      'SELECT * FROM putaway_lines WHERE putaway_id = $1 ORDER BY line_number ASC FOR UPDATE',
-      [id]
+      'SELECT * FROM putaway_lines WHERE putaway_id = $1 AND tenant_id = $2 ORDER BY line_number ASC FOR UPDATE',
+      [id, tenantId]
     );
     if (linesResult.rowCount === 0) {
       throw new Error('PUTAWAY_NO_LINES');
@@ -259,9 +266,9 @@ export async function postPutaway(id: string) {
     }
 
     const receiptLineIds = pendingLines.map((line) => line.purchase_order_receipt_line_id);
-    const contexts = await loadReceiptLineContexts(receiptLineIds);
-    const qcBreakdown = await loadQcBreakdown(receiptLineIds);
-    const totals = await loadPutawayTotals(receiptLineIds);
+    const contexts = await loadReceiptLineContexts(tenantId, receiptLineIds);
+    const qcBreakdown = await loadQcBreakdown(tenantId, receiptLineIds);
+    const totals = await loadPutawayTotals(tenantId, receiptLineIds);
 
     const movementId = uuidv4();
     for (const line of pendingLines) {
@@ -293,9 +300,9 @@ export async function postPutaway(id: string) {
 
     await client.query(
       `INSERT INTO inventory_movements (
-          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, 'transfer', 'posted', $2, $3, $3, $4, $3, $3)`,
-      [movementId, `putaway:${id}`, now, `Putaway ${id}`]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, $2, 'transfer', 'posted', $3, $4, $4, $5, $4, $4)`,
+      [movementId, tenantId, `putaway:${id}`, now, `Putaway ${id}`]
     );
 
     for (const line of pendingLines) {
@@ -304,15 +311,15 @@ export async function postPutaway(id: string) {
       const lineNote = `Putaway ${id} line ${line.line_number}`;
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, 'putaway', $7)`,
-        [uuidv4(), movementId, line.item_id, line.from_location_id, -qty, normalized.uom, lineNote]
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'putaway', $8)`,
+        [uuidv4(), tenantId, movementId, line.item_id, line.from_location_id, -qty, normalized.uom, lineNote]
       );
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, 'putaway', $7)`,
-        [uuidv4(), movementId, line.item_id, line.to_location_id, qty, normalized.uom, lineNote]
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'putaway', $8)`,
+        [uuidv4(), tenantId, movementId, line.item_id, line.to_location_id, qty, normalized.uom, lineNote]
       );
       await client.query(
         `UPDATE putaway_lines
@@ -320,16 +327,16 @@ export async function postPutaway(id: string) {
                 quantity_moved = $1,
                 inventory_movement_id = $2,
                 updated_at = $3
-         WHERE id = $4`,
-        [qty, movementId, now, line.id]
+         WHERE id = $4 AND tenant_id = $5`,
+        [qty, movementId, now, line.id, tenantId]
       );
     }
 
     await client.query(
-      'UPDATE putaways SET status = $1, inventory_movement_id = $2, updated_at = $3 WHERE id = $4',
-      ['completed', movementId, now, id]
+      'UPDATE putaways SET status = $1, inventory_movement_id = $2, updated_at = $3 WHERE id = $4 AND tenant_id = $5',
+      ['completed', movementId, now, id, tenantId]
     );
 
-    return fetchPutawayById(id);
+    return fetchPutawayById(tenantId, id);
   });
 }

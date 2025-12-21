@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { putawaySchema } from '../schemas/putaways.schema';
 import { createPutaway, fetchPutawayById, postPutaway } from '../services/putaways.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { emitEvent } from '../lib/events';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -14,7 +15,7 @@ router.post('/putaways', async (req: Request, res: Response) => {
   }
 
   try {
-    const putaway = await createPutaway(parsed.data);
+    const putaway = await createPutaway(req.auth!.tenantId, parsed.data);
     return res.status(201).json(putaway);
   } catch (error: any) {
     if (error?.message === 'PUTAWAY_LINES_NOT_FOUND') {
@@ -66,7 +67,7 @@ router.get('/putaways/:id', async (req: Request, res: Response) => {
   }
 
   try {
-    const putaway = await fetchPutawayById(id);
+    const putaway = await fetchPutawayById(req.auth!.tenantId, id);
     if (!putaway) {
       return res.status(404).json({ error: 'Putaway not found.' });
     }
@@ -84,7 +85,20 @@ router.post('/putaways/:id/post', async (req: Request, res: Response) => {
   }
 
   try {
-    const putaway = await postPutaway(id);
+    const tenantId = req.auth!.tenantId;
+    const putaway = await postPutaway(tenantId, id);
+    const itemIds = Array.from(new Set(putaway.lines.map((line) => line.itemId)));
+    const locationIds = Array.from(
+      new Set(
+        putaway.lines.flatMap((line) => [line.fromLocationId, line.toLocationId])
+      )
+    );
+    emitEvent(tenantId, 'inventory.putaway.posted', {
+      putawayId: putaway.id,
+      movementId: putaway.inventoryMovementId,
+      itemIds,
+      locationIds
+    });
     return res.json(putaway);
   } catch (error: any) {
     if (error?.message === 'PUTAWAY_NOT_FOUND') {

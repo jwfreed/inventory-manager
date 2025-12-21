@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createInventoryCount, getInventoryCount, postInventoryCount } from '../services/counts.service';
 import { inventoryCountSchema } from '../schemas/counts.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { emitEvent } from '../lib/events';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -14,7 +15,7 @@ router.post('/inventory-counts', async (req: Request, res: Response) => {
   }
 
   try {
-    const count = await createInventoryCount(parsed.data);
+    const count = await createInventoryCount(req.auth!.tenantId, parsed.data);
     return res.status(201).json(count);
   } catch (error: any) {
     if (error?.message === 'COUNT_DUPLICATE_LINE') {
@@ -44,7 +45,7 @@ router.get('/inventory-counts/:id', async (req: Request, res: Response) => {
   }
 
   try {
-    const count = await getInventoryCount(id);
+    const count = await getInventoryCount(req.auth!.tenantId, id);
     if (!count) {
       return res.status(404).json({ error: 'Inventory count not found.' });
     }
@@ -62,7 +63,15 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
   }
 
   try {
-    const count = await postInventoryCount(id);
+    const tenantId = req.auth!.tenantId;
+    const count = await postInventoryCount(tenantId, id);
+    const itemIds = Array.from(new Set(count.lines.map((line) => line.itemId)));
+    emitEvent(tenantId, 'inventory.count.posted', {
+      countId: count.id,
+      movementId: count.inventoryMovementId,
+      locationId: count.locationId,
+      itemIds
+    });
     return res.json(count);
   } catch (error: any) {
     if (error?.message === 'COUNT_NOT_FOUND') {

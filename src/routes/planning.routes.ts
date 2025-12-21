@@ -54,7 +54,7 @@ router.post('/mps/plans', async (req: Request, res: Response) => {
   const parsed = mpsPlanSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const plan = await createMpsPlan(parsed.data);
+    const plan = await createMpsPlan(req.auth!.tenantId, parsed.data);
     return res.status(201).json(plan);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -70,14 +70,14 @@ router.post('/mps/plans', async (req: Request, res: Response) => {
 router.get('/mps/plans', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const data = await listMpsPlans(limit, offset);
+  const data = await listMpsPlans(req.auth!.tenantId, limit, offset);
   return res.json({ data, paging: { limit, offset } });
 });
 
 router.get('/mps/plans/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid plan id.' });
-  const plan = await getMpsPlan(id);
+  const plan = await getMpsPlan(req.auth!.tenantId, id);
   if (!plan) return res.status(404).json({ error: 'MPS plan not found.' });
   return res.json(plan);
 });
@@ -88,7 +88,7 @@ router.post('/mps/plans/:id/periods', async (req: Request, res: Response) => {
   const parsed = mpsPeriodsCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const periods = await createMpsPeriods(id, parsed.data);
+    const periods = await createMpsPeriods(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data: periods });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MPS plan not found.' });
@@ -105,7 +105,7 @@ router.post('/mps/plans/:id/periods', async (req: Request, res: Response) => {
 router.get('/mps/plans/:id/periods', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid plan id.' });
-  const data = await listMpsPeriods(id);
+  const data = await listMpsPeriods(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -115,7 +115,7 @@ router.post('/mps/plans/:id/demand-inputs', async (req: Request, res: Response) 
   const parsed = mpsDemandInputsCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createMpsDemandInputs(id, parsed.data);
+    const data = await createMpsDemandInputs(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MPS plan not found.' });
@@ -134,14 +134,14 @@ router.post('/mps/plans/:id/demand-inputs', async (req: Request, res: Response) 
 router.get('/mps/plans/:id/demand-inputs', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid plan id.' });
-  const data = await listMpsDemandInputs(id);
+  const data = await listMpsDemandInputs(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
 router.get('/mps/plans/:id/plan-lines', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid plan id.' });
-  const data = await listMpsPlanLines(id);
+  const data = await listMpsPlanLines(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -149,7 +149,7 @@ router.post('/mrp/runs', async (req: Request, res: Response) => {
   const parsed = mrpRunSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const run = await createMrpRun(parsed.data);
+    const run = await createMrpRun(req.auth!.tenantId, parsed.data);
     return res.status(201).json(run);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -165,14 +165,14 @@ router.post('/mrp/runs', async (req: Request, res: Response) => {
 router.get('/mrp/runs', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const data = await listMrpRuns(limit, offset);
+  const data = await listMrpRuns(req.auth!.tenantId, limit, offset);
   return res.json({ data, paging: { limit, offset } });
 });
 
 router.get('/mrp/runs/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const run = await getMrpRun(id);
+  const run = await getMrpRun(req.auth!.tenantId, id);
   if (!run) return res.status(404).json({ error: 'MRP run not found.' });
   return res.json(run);
 });
@@ -183,7 +183,7 @@ router.post('/mrp/runs/:id/item-policies', async (req: Request, res: Response) =
   const parsed = mrpItemPoliciesCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createMrpItemPolicies(id, parsed.data);
+    const data = await createMrpItemPolicies(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MRP run not found.' });
@@ -201,7 +201,7 @@ router.post('/mrp/runs/:id/item-policies', async (req: Request, res: Response) =
 router.get('/mrp/runs/:id/item-policies', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const data = await listMrpItemPolicies(id);
+  const data = await listMrpItemPolicies(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -211,7 +211,7 @@ router.post('/mrp/runs/:id/gross-requirements', async (req: Request, res: Respon
   const parsed = mrpGrossRequirementsCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createMrpGrossRequirements(id, parsed.data);
+    const data = await createMrpGrossRequirements(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MRP run not found.' });
@@ -228,21 +228,21 @@ router.post('/mrp/runs/:id/gross-requirements', async (req: Request, res: Respon
 router.get('/mrp/runs/:id/gross-requirements', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const data = await listMrpGrossRequirements(id);
+  const data = await listMrpGrossRequirements(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
 router.get('/mrp/runs/:id/plan-lines', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const data = await listMrpPlanLines(id);
+  const data = await listMrpPlanLines(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
 router.get('/mrp/runs/:id/planned-orders', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const data = await listMrpPlannedOrders(id);
+  const data = await listMrpPlannedOrders(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -250,7 +250,7 @@ router.post('/replenishment/policies', async (req: Request, res: Response) => {
   const parsed = replenishmentPolicySchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const policy = await createReplenishmentPolicy(parsed.data);
+    const policy = await createReplenishmentPolicy(req.auth!.tenantId, parsed.data);
     return res.status(201).json(policy);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -267,14 +267,14 @@ router.post('/replenishment/policies', async (req: Request, res: Response) => {
 router.get('/replenishment/policies', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const data = await listReplenishmentPolicies(limit, offset);
+  const data = await listReplenishmentPolicies(req.auth!.tenantId, limit, offset);
   return res.json({ data, paging: { limit, offset } });
 });
 
 router.get('/replenishment/policies/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid policy id.' });
-  const policy = await getReplenishmentPolicy(id);
+  const policy = await getReplenishmentPolicy(req.auth!.tenantId, id);
   if (!policy) return res.status(404).json({ error: 'Replenishment policy not found.' });
   return res.json(policy);
 });
@@ -283,7 +283,7 @@ router.get('/replenishment/recommendations', async (req: Request, res: Response)
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const data = await computeReplenishmentRecommendations(limit, offset);
+    const data = await computeReplenishmentRecommendations(req.auth!.tenantId, limit, offset);
     return res.json({ data, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -295,7 +295,7 @@ router.post('/kpis/runs', async (req: Request, res: Response) => {
   const parsed = kpiRunSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const run = await createKpiRun(parsed.data);
+    const run = await createKpiRun(req.auth!.tenantId, parsed.data);
     return res.status(201).json(run);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -310,7 +310,7 @@ router.post('/kpis/runs', async (req: Request, res: Response) => {
 router.get('/kpis/runs', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const data = await listKpiRuns(limit, offset);
+  const data = await listKpiRuns(req.auth!.tenantId, limit, offset);
   return res.json({ data, paging: { limit, offset } });
 });
 
@@ -318,7 +318,7 @@ router.get('/kpis/fulfillment-fill-rate', async (req: Request, res: Response) =>
   const parsed = fulfillmentFillRateQuerySchema.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await computeFulfillmentFillRate(parsed.data);
+    const data = await computeFulfillmentFillRate(req.auth!.tenantId, parsed.data);
     return res.json(data);
   } catch (error) {
     console.error(error);
@@ -329,7 +329,7 @@ router.get('/kpis/fulfillment-fill-rate', async (req: Request, res: Response) =>
 router.get('/kpis/runs/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid KPI run id.' });
-  const run = await getKpiRun(id);
+  const run = await getKpiRun(req.auth!.tenantId, id);
   if (!run) return res.status(404).json({ error: 'KPI run not found.' });
   return res.json(run);
 });
@@ -340,7 +340,7 @@ router.post('/kpis/runs/:id/snapshots', async (req: Request, res: Response) => {
   const parsed = kpiSnapshotsCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createKpiSnapshots(id, parsed.data);
+    const data = await createKpiSnapshots(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'KPI run not found.' });
@@ -356,7 +356,7 @@ router.post('/kpis/runs/:id/snapshots', async (req: Request, res: Response) => {
 router.get('/kpis/runs/:id/snapshots', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid KPI run id.' });
-  const data = await listKpiRunSnapshots(id);
+  const data = await listKpiRunSnapshots(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -366,7 +366,7 @@ router.get('/kpis/snapshots', async (req: Request, res: Response) => {
   const to = typeof req.query.to === 'string' ? req.query.to : undefined;
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const data = await listKpiSnapshots({ kpiName, from, to, limit, offset });
+  const data = await listKpiSnapshots(req.auth!.tenantId, { kpiName, from, to, limit, offset });
   return res.json({ data, paging: { limit, offset } });
 });
 
@@ -376,7 +376,7 @@ router.post('/kpis/runs/:id/rollup-inputs', async (req: Request, res: Response) 
   const parsed = kpiRollupInputsCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createKpiRollupInputs(id, parsed.data);
+    const data = await createKpiRollupInputs(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'KPI run not found.' });
@@ -388,7 +388,7 @@ router.post('/kpis/runs/:id/rollup-inputs', async (req: Request, res: Response) 
 router.get('/kpis/runs/:id/rollup-inputs', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid KPI run id.' });
-  const data = await listKpiRollupInputs(id);
+  const data = await listKpiRollupInputs(req.auth!.tenantId, id);
   return res.json({ data });
 });
 

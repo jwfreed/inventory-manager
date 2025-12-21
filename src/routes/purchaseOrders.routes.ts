@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createPurchaseOrder, deletePurchaseOrder, getPurchaseOrderById, listPurchaseOrders, updatePurchaseOrder } from '../services/purchaseOrders.service';
 import { purchaseOrderSchema, purchaseOrderUpdateSchema } from '../schemas/purchaseOrders.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { emitEvent } from '../lib/events';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -14,7 +15,18 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
   }
 
   try {
-    const purchaseOrder = await createPurchaseOrder(parsed.data);
+    const tenantId = req.auth!.tenantId;
+    const purchaseOrder = await createPurchaseOrder(tenantId, parsed.data);
+    const itemIds = Array.from(new Set(purchaseOrder.lines.map((line) => line.itemId)));
+    const locationIds = Array.from(
+      new Set([purchaseOrder.shipToLocationId, purchaseOrder.receivingLocationId].filter(Boolean))
+    );
+    emitEvent(tenantId, 'inventory.purchase_order.created', {
+      purchaseOrderId: purchaseOrder.id,
+      status: purchaseOrder.status,
+      itemIds,
+      locationIds
+    });
     return res.status(201).json(purchaseOrder);
   } catch (error: any) {
     if (error?.message === 'PO_DUPLICATE_LINE_NUMBERS') {
@@ -39,7 +51,7 @@ router.get('/purchase-orders/:id', async (req: Request, res: Response) => {
   }
 
   try {
-    const po = await getPurchaseOrderById(id);
+    const po = await getPurchaseOrderById(req.auth!.tenantId, id);
     if (!po) {
       return res.status(404).json({ error: 'Purchase order not found.' });
     }
@@ -55,7 +67,7 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
   const offset = Math.max(0, Number(req.query.offset) || 0);
 
   try {
-    const rows = await listPurchaseOrders(limit, offset);
+    const rows = await listPurchaseOrders(req.auth!.tenantId, limit, offset);
     return res.json({ data: rows, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -73,7 +85,16 @@ router.put('/purchase-orders/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const po = await updatePurchaseOrder(id, parsed.data);
+    const tenantId = req.auth!.tenantId;
+    const po = await updatePurchaseOrder(tenantId, id, parsed.data);
+    const itemIds = Array.from(new Set(po.lines.map((line) => line.itemId)));
+    const locationIds = Array.from(new Set([po.shipToLocationId, po.receivingLocationId].filter(Boolean)));
+    emitEvent(tenantId, 'inventory.purchase_order.updated', {
+      purchaseOrderId: po.id,
+      status: po.status,
+      itemIds,
+      locationIds
+    });
     return res.json(po);
   } catch (error: any) {
     if (error?.message === 'PO_NOT_FOUND') {
@@ -96,7 +117,9 @@ router.delete('/purchase-orders/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid purchase order id.' });
   }
   try {
-    await deletePurchaseOrder(id);
+    const tenantId = req.auth!.tenantId;
+    await deletePurchaseOrder(tenantId, id);
+    emitEvent(tenantId, 'inventory.purchase_order.deleted', { purchaseOrderId: id });
     return res.status(204).send();
   } catch (error) {
     console.error(error);

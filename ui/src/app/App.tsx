@@ -1,6 +1,8 @@
 import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom'
 import AppShell from './layout/AppShell'
+import { RequireAuth } from '../lib/auth'
 import HomePage from '../pages/Home'
+import LoginPage from '../pages/Login'
 import NotFoundPage from '../pages/NotFound'
 import MovementsListPage from '../features/ledger/pages/MovementsListPage'
 import MovementDetailPage from '../features/ledger/pages/MovementDetailPage'
@@ -28,9 +30,14 @@ import PurchaseOrdersListPage from '../features/purchaseOrders/pages/PurchaseOrd
 import PurchaseOrderDetailPage from '../features/purchaseOrders/pages/PurchaseOrderDetailPage'
 
 const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
   {
     path: '/',
-    element: <AppShell />,
+    element: (
+      <RequireAuth>
+        <AppShell />
+      </RequireAuth>
+    ),
     children: [
       { index: true, element: <Navigate to="/home" replace /> },
       { path: 'home', element: <HomePage /> },

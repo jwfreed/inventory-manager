@@ -28,7 +28,7 @@ export function mapMovementLine(row: any) {
   };
 }
 
-export async function listMovements(filters: {
+export async function listMovements(tenantId: string, filters: {
   movementType?: string;
   status?: string;
   externalRef?: string;
@@ -37,8 +37,8 @@ export async function listMovements(filters: {
   limit: number;
   offset: number;
 }) {
-  const conditions: string[] = [];
-  const params: any[] = [];
+  const conditions: string[] = ['tenant_id = $1'];
+  const params: any[] = [tenantId];
 
   if (filters.movementType) {
     params.push(filters.movementType);
@@ -76,16 +76,16 @@ export async function listMovements(filters: {
   return rows.map(mapMovement);
 }
 
-export async function getMovement(id: string) {
-  const res = await query('SELECT * FROM inventory_movements WHERE id = $1', [id]);
+export async function getMovement(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM inventory_movements WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapMovement(res.rows[0]);
 }
 
-export async function getMovementLines(id: string) {
+export async function getMovementLines(tenantId: string, id: string) {
   const res = await query(
-    'SELECT * FROM inventory_movement_lines WHERE movement_id = $1 ORDER BY created_at ASC',
-    [id]
+    'SELECT * FROM inventory_movement_lines WHERE movement_id = $1 AND tenant_id = $2 ORDER BY created_at ASC',
+    [id, tenantId]
   );
   return res.rows.map(mapMovementLine);
 }

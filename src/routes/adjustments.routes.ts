@@ -7,6 +7,7 @@ import {
 } from '../services/adjustments.service';
 import { inventoryAdjustmentSchema } from '../schemas/adjustments.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { emitEvent } from '../lib/events';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -18,7 +19,7 @@ router.post('/inventory-adjustments', async (req: Request, res: Response) => {
   }
 
   try {
-    const adjustment = await createInventoryAdjustment(parsed.data);
+    const adjustment = await createInventoryAdjustment(req.auth!.tenantId, parsed.data);
     return res.status(201).json(adjustment);
   } catch (error: any) {
     if (error?.message === 'ADJUSTMENT_DUPLICATE_LINE') {
@@ -45,7 +46,7 @@ router.get('/inventory-adjustments/:id', async (req: Request, res: Response) => 
   }
 
   try {
-    const adjustment = await getInventoryAdjustment(id);
+    const adjustment = await getInventoryAdjustment(req.auth!.tenantId, id);
     if (!adjustment) {
       return res.status(404).json({ error: 'Inventory adjustment not found.' });
     }
@@ -63,7 +64,16 @@ router.post('/inventory-adjustments/:id/post', async (req: Request, res: Respons
   }
 
   try {
-    const adjustment = await postInventoryAdjustment(id);
+    const tenantId = req.auth!.tenantId;
+    const adjustment = await postInventoryAdjustment(tenantId, id);
+    const itemIds = Array.from(new Set(adjustment.lines.map((line) => line.itemId)));
+    const locationIds = Array.from(new Set(adjustment.lines.map((line) => line.locationId)));
+    emitEvent(tenantId, 'inventory.adjustment.posted', {
+      adjustmentId: adjustment.id,
+      movementId: adjustment.inventoryMovementId,
+      itemIds,
+      locationIds
+    });
     return res.json(adjustment);
   } catch (error: any) {
     if (error?.message === 'ADJUSTMENT_NOT_FOUND') {

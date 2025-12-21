@@ -14,7 +14,7 @@ router.post('/vendors', async (req: Request, res: Response) => {
   }
 
   try {
-    const vendor = await createVendor(parsed.data);
+    const vendor = await createVendor(req.auth!.tenantId, parsed.data);
     return res.status(201).json(vendor);
   } catch (error: any) {
     const mapped = mapPgErrorToHttp(error, {
@@ -35,7 +35,7 @@ router.get('/vendors', async (_req: Request, res: Response) => {
     active = activeParam === 'true' || activeParam === '1';
   }
   try {
-    const rows = await listVendorsFiltered(active);
+    const rows = await listVendorsFiltered(req.auth!.tenantId, active);
     return res.json({ data: rows });
   } catch (error) {
     console.error(error);
@@ -53,7 +53,7 @@ router.put('/vendors/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const updated = await updateVendor(id, parsed.data);
+    const updated = await updateVendor(req.auth!.tenantId, id, parsed.data);
     if (!updated) {
       return res.status(404).json({ error: 'Vendor not found.' });
     }
@@ -76,7 +76,7 @@ router.delete('/vendors/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid vendor id.' });
   }
   try {
-    const updated = await deactivateVendor(id);
+    const updated = await deactivateVendor(req.auth!.tenantId, id);
     if (!updated) {
       return res.status(404).json({ error: 'Vendor not found.' });
     }

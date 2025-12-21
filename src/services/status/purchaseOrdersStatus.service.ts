@@ -1,13 +1,13 @@
 import { query } from '../../db';
 import { roundQuantity, toNumber } from '../../lib/numbers';
 
-export async function updatePoStatusFromReceipts(poId: string) {
+export async function updatePoStatusFromReceipts(tenantId: string, poId: string) {
   // Compute ordered vs received
   const { rows: orderedRows } = await query(
     `SELECT pol.id, pol.quantity_ordered, pol.uom
        FROM purchase_order_lines pol
-      WHERE pol.purchase_order_id = $1`,
-    [poId]
+      WHERE pol.purchase_order_id = $1 AND pol.tenant_id = $2`,
+    [poId, tenantId]
   );
   if (orderedRows.length === 0) return;
 
@@ -15,9 +15,9 @@ export async function updatePoStatusFromReceipts(poId: string) {
     `SELECT porl.purchase_order_line_id AS line_id, SUM(porl.quantity_received) AS qty
        FROM purchase_order_receipt_lines porl
        JOIN purchase_order_receipts por ON por.id = porl.purchase_order_receipt_id
-      WHERE por.purchase_order_id = $1
+      WHERE por.purchase_order_id = $1 AND por.tenant_id = $2
       GROUP BY porl.purchase_order_line_id`,
-    [poId]
+    [poId, tenantId]
   );
   const receivedMap = new Map<string, number>();
   receivedRows.forEach((row) => {
@@ -47,7 +47,7 @@ export async function updatePoStatusFromReceipts(poId: string) {
     `UPDATE purchase_orders
         SET status = $2,
             updated_at = now()
-      WHERE id = $1`,
-    [poId, nextStatus]
+      WHERE id = $1 AND tenant_id = $3`,
+    [poId, nextStatus, tenantId]
   );
 }

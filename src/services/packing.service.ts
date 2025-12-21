@@ -33,17 +33,17 @@ export function mapPackLine(row: any) {
   };
 }
 
-export async function createPack(data: PackInput) {
+export async function createPack(tenantId: string, data: PackInput) {
   const now = new Date();
   const id = uuidv4();
   const status = data.status ?? 'open';
 
   return withTransaction(async (client) => {
     const header = await client.query(
-      `INSERT INTO packs (id, status, sales_order_shipment_id, package_ref, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $6)
+      `INSERT INTO packs (id, tenant_id, status, sales_order_shipment_id, package_ref, notes, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
        RETURNING *`,
-      [id, status, data.salesOrderShipmentId, data.packageRef ?? null, data.notes ?? null, now]
+      [id, tenantId, status, data.salesOrderShipmentId, data.packageRef ?? null, data.notes ?? null, now]
     );
 
     let lines: any[] = [];
@@ -52,11 +52,12 @@ export async function createPack(data: PackInput) {
         data.lines.map((line) =>
           client
             .query(
-              `INSERT INTO pack_lines (id, pack_id, pick_task_id, sales_order_line_id, item_id, uom, quantity_packed)
-               VALUES ($1,$2,$3,$4,$5,$6,$7)
+              `INSERT INTO pack_lines (id, tenant_id, pack_id, pick_task_id, sales_order_line_id, item_id, uom, quantity_packed)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
                RETURNING *`,
               [
                 uuidv4(),
+                tenantId,
                 id,
                 line.pickTaskId ?? null,
                 line.salesOrderLineId,
@@ -74,30 +75,35 @@ export async function createPack(data: PackInput) {
   })
 }
 
-export async function listPacks(limit: number, offset: number) {
+export async function listPacks(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
     `SELECT * FROM packs
+     WHERE tenant_id = $1
      ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   )
   return rows.map(mapPack)
 }
 
-export async function getPack(id: string) {
-  const header = await query('SELECT * FROM packs WHERE id = $1', [id])
+export async function getPack(tenantId: string, id: string) {
+  const header = await query('SELECT * FROM packs WHERE id = $1 AND tenant_id = $2', [id, tenantId])
   if (header.rowCount === 0) return null
-  const lines = await query('SELECT * FROM pack_lines WHERE pack_id = $1 ORDER BY created_at ASC', [id])
+  const lines = await query('SELECT * FROM pack_lines WHERE pack_id = $1 AND tenant_id = $2 ORDER BY created_at ASC', [
+    id,
+    tenantId
+  ])
   return mapPack(header.rows[0], lines.rows)
 }
 
-export async function addPackLine(packId: string, line: PackLineInput) {
+export async function addPackLine(tenantId: string, packId: string, line: PackLineInput) {
   const res = await query(
-    `INSERT INTO pack_lines (id, pack_id, pick_task_id, sales_order_line_id, item_id, uom, quantity_packed)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `INSERT INTO pack_lines (id, tenant_id, pack_id, pick_task_id, sales_order_line_id, item_id, uom, quantity_packed)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      RETURNING *`,
     [
       uuidv4(),
+      tenantId,
       packId,
       line.pickTaskId ?? null,
       line.salesOrderLineId,
@@ -109,8 +115,12 @@ export async function addPackLine(packId: string, line: PackLineInput) {
   return mapPackLine(res.rows[0])
 }
 
-export async function deletePackLine(packId: string, lineId: string) {
-  const res = await query('DELETE FROM pack_lines WHERE id = $1 AND pack_id = $2', [lineId, packId])
+export async function deletePackLine(tenantId: string, packId: string, lineId: string) {
+  const res = await query('DELETE FROM pack_lines WHERE id = $1 AND pack_id = $2 AND tenant_id = $3', [
+    lineId,
+    packId,
+    tenantId
+  ])
   return res.rowCount > 0
 }
 

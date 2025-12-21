@@ -54,17 +54,18 @@ function mapInventoryAdjustment(row: InventoryAdjustmentRow, lines: InventoryAdj
   };
 }
 
-async function fetchInventoryAdjustmentById(id: string, client?: PoolClient) {
+async function fetchInventoryAdjustmentById(tenantId: string, id: string, client?: PoolClient) {
   const executor = client ?? pool;
-  const adjustmentResult = await executor.query<InventoryAdjustmentRow>('SELECT * FROM inventory_adjustments WHERE id = $1', [
-    id
-  ]);
+  const adjustmentResult = await executor.query<InventoryAdjustmentRow>(
+    'SELECT * FROM inventory_adjustments WHERE id = $1 AND tenant_id = $2',
+    [id, tenantId]
+  );
   if (adjustmentResult.rowCount === 0) {
     return null;
   }
   const linesResult = await executor.query<InventoryAdjustmentLineRow>(
-    'SELECT * FROM inventory_adjustment_lines WHERE inventory_adjustment_id = $1 ORDER BY line_number ASC',
-    [id]
+    'SELECT * FROM inventory_adjustment_lines WHERE inventory_adjustment_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
+    [id, tenantId]
   );
   return mapInventoryAdjustment(adjustmentResult.rows[0], linesResult.rows);
 }
@@ -90,7 +91,7 @@ function normalizeAdjustmentLines(data: InventoryAdjustmentInput) {
   });
 }
 
-export async function createInventoryAdjustment(data: InventoryAdjustmentInput) {
+export async function createInventoryAdjustment(tenantId: string, data: InventoryAdjustmentInput) {
   const normalizedLines = normalizeAdjustmentLines(data);
   const now = new Date();
   const adjustmentId = uuidv4();
@@ -98,18 +99,19 @@ export async function createInventoryAdjustment(data: InventoryAdjustmentInput) 
   await withTransaction(async (client: PoolClient) => {
     await client.query(
       `INSERT INTO inventory_adjustments (
-          id, status, occurred_at, notes, created_at, updated_at
-       ) VALUES ($1, 'draft', $2, $3, $4, $4)`,
-      [adjustmentId, new Date(data.occurredAt), data.notes ?? null, now]
+          id, tenant_id, status, occurred_at, notes, created_at, updated_at
+       ) VALUES ($1, $2, 'draft', $3, $4, $5, $5)`,
+      [adjustmentId, tenantId, new Date(data.occurredAt), data.notes ?? null, now]
     );
 
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO inventory_adjustment_lines (
-            id, inventory_adjustment_id, line_number, item_id, location_id, uom, quantity_delta, reason_code, notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            id, tenant_id, inventory_adjustment_id, line_number, item_id, location_id, uom, quantity_delta, reason_code, notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           uuidv4(),
+          tenantId,
           adjustmentId,
           line.lineNumber,
           line.itemId,
@@ -123,23 +125,24 @@ export async function createInventoryAdjustment(data: InventoryAdjustmentInput) 
     }
   });
 
-  const adjustment = await fetchInventoryAdjustmentById(adjustmentId);
+  const adjustment = await fetchInventoryAdjustmentById(tenantId, adjustmentId);
   if (!adjustment) {
     throw new Error('ADJUSTMENT_NOT_FOUND');
   }
   return adjustment;
 }
 
-export async function getInventoryAdjustment(id: string) {
-  return fetchInventoryAdjustmentById(id);
+export async function getInventoryAdjustment(tenantId: string, id: string) {
+  return fetchInventoryAdjustmentById(tenantId, id);
 }
 
-export async function postInventoryAdjustment(id: string) {
+export async function postInventoryAdjustment(tenantId: string, id: string) {
   const adjustment = await withTransaction(async (client: PoolClient) => {
     const now = new Date();
-    const adjustmentResult = await client.query<InventoryAdjustmentRow>('SELECT * FROM inventory_adjustments WHERE id = $1 FOR UPDATE', [
-      id
-    ]);
+    const adjustmentResult = await client.query<InventoryAdjustmentRow>(
+      'SELECT * FROM inventory_adjustments WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+      [id, tenantId]
+    );
     if (adjustmentResult.rowCount === 0) {
       throw new Error('ADJUSTMENT_NOT_FOUND');
     }
@@ -152,8 +155,8 @@ export async function postInventoryAdjustment(id: string) {
     }
 
     const linesResult = await client.query<InventoryAdjustmentLineRow>(
-      'SELECT * FROM inventory_adjustment_lines WHERE inventory_adjustment_id = $1 ORDER BY line_number ASC',
-      [id]
+      'SELECT * FROM inventory_adjustment_lines WHERE inventory_adjustment_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
+      [id, tenantId]
     );
     if (linesResult.rowCount === 0) {
       throw new Error('ADJUSTMENT_NO_LINES');
@@ -162,9 +165,9 @@ export async function postInventoryAdjustment(id: string) {
     const movementId = uuidv4();
     await client.query(
       `INSERT INTO inventory_movements (
-          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, 'adjustment', 'posted', $2, $3, $4, $5, $4, $4)`,
-      [movementId, `inventory_adjustment:${id}`, adjustmentRow.occurred_at, now, adjustmentRow.notes ?? null]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, $2, 'adjustment', 'posted', $3, $4, $5, $6, $5, $5)`,
+      [movementId, tenantId, `inventory_adjustment:${id}`, adjustmentRow.occurred_at, now, adjustmentRow.notes ?? null]
     );
 
     for (const line of linesResult.rows) {
@@ -174,10 +177,11 @@ export async function postInventoryAdjustment(id: string) {
       }
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           uuidv4(),
+          tenantId,
           movementId,
           line.item_id,
           line.location_id,
@@ -194,11 +198,11 @@ export async function postInventoryAdjustment(id: string) {
           SET status = 'posted',
               inventory_movement_id = $1,
               updated_at = $2
-       WHERE id = $3`,
-      [movementId, now, id]
+       WHERE id = $3 AND tenant_id = $4`,
+      [movementId, now, id, tenantId]
     );
 
-    return fetchInventoryAdjustmentById(id, client);
+    return fetchInventoryAdjustmentById(tenantId, id, client);
   });
 
   return adjustment;

@@ -24,6 +24,7 @@ export function defaultBreakdown(): QcBreakdown {
 }
 
 export async function loadReceiptLineContexts(
+  tenantId: string,
   lineIds: string[],
   client?: PoolClient
 ): Promise<Map<string, ReceiptLineContext>> {
@@ -43,11 +44,11 @@ export async function loadReceiptLineContexts(
         por.received_to_location_id,
         i.default_location_id
      FROM purchase_order_receipt_lines prl
-     JOIN purchase_order_lines pol ON pol.id = prl.purchase_order_line_id
-     JOIN purchase_order_receipts por ON por.id = prl.purchase_order_receipt_id
-     LEFT JOIN items i ON i.id = pol.item_id
-     WHERE prl.id = ANY($1::uuid[])`,
-    [lineIds]
+     JOIN purchase_order_lines pol ON pol.id = prl.purchase_order_line_id AND pol.tenant_id = prl.tenant_id
+     JOIN purchase_order_receipts por ON por.id = prl.purchase_order_receipt_id AND por.tenant_id = prl.tenant_id
+     LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = prl.tenant_id
+     WHERE prl.id = ANY($1::uuid[]) AND prl.tenant_id = $2`,
+    [lineIds, tenantId]
   );
   for (const row of rows) {
     map.set(row.id, {
@@ -64,6 +65,7 @@ export async function loadReceiptLineContexts(
 }
 
 export async function loadPutawayTotals(
+  tenantId: string,
   lineIds: string[],
   client?: PoolClient
 ): Promise<Map<string, PutawayTotals>> {
@@ -79,9 +81,10 @@ export async function loadPutawayTotals(
         SUM(CASE WHEN status = 'pending' THEN COALESCE(quantity_planned, 0) ELSE 0 END) AS pending_qty
      FROM putaway_lines
      WHERE purchase_order_receipt_line_id = ANY($1::uuid[])
+       AND tenant_id = $2
        AND status <> 'canceled'
      GROUP BY purchase_order_receipt_line_id`,
-    [lineIds]
+    [lineIds, tenantId]
   );
   for (const row of rows) {
     map.set(row.line_id, {
@@ -93,6 +96,7 @@ export async function loadPutawayTotals(
 }
 
 export async function loadQcBreakdown(
+  tenantId: string,
   lineIds: string[],
   client?: PoolClient
 ): Promise<Map<string, QcBreakdown>> {
@@ -105,8 +109,9 @@ export async function loadQcBreakdown(
     `SELECT purchase_order_receipt_line_id AS line_id, event_type, SUM(quantity) AS total_quantity
        FROM qc_events
        WHERE purchase_order_receipt_line_id = ANY($1::uuid[])
+         AND tenant_id = $2
        GROUP BY purchase_order_receipt_line_id, event_type`,
-    [lineIds]
+    [lineIds, tenantId]
   );
   for (const row of rows) {
     const lineId = row.line_id as string;

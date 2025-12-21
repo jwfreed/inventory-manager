@@ -41,16 +41,17 @@ export function mapLot(row: any) {
   };
 }
 
-export async function createLot(data: LotInput) {
+export async function createLot(tenantId: string, data: LotInput) {
   const id = uuidv4();
   const now = new Date();
   const status = data.status ?? 'active';
   const res = await query(
-    `INSERT INTO lots (id, item_id, lot_code, status, manufactured_at, received_at, expires_at, vendor_lot_code, notes, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)
+    `INSERT INTO lots (id, tenant_id, item_id, lot_code, status, manufactured_at, received_at, expires_at, vendor_lot_code, notes, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)
      RETURNING *`,
     [
       id,
+      tenantId,
       data.itemId,
       data.lotCode,
       status,
@@ -65,9 +66,14 @@ export async function createLot(data: LotInput) {
   return mapLot(res.rows[0]);
 }
 
-export async function listLots(filters: { itemId?: string; lotCode?: string; status?: string }, limit: number, offset: number) {
-  const conditions: string[] = [];
-  const params: any[] = [];
+export async function listLots(
+  tenantId: string,
+  filters: { itemId?: string; lotCode?: string; status?: string },
+  limit: number,
+  offset: number
+) {
+  const conditions: string[] = ['tenant_id = $1'];
+  const params: any[] = [tenantId];
 
   if (filters.itemId) {
     params.push(filters.itemId);
@@ -93,16 +99,23 @@ export async function listLots(filters: { itemId?: string; lotCode?: string; sta
   return rows.map(mapLot);
 }
 
-export async function getLot(id: string) {
-  const res = await query('SELECT * FROM lots WHERE id = $1', [id]);
+export async function getLot(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM lots WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapLot(res.rows[0]);
 }
 
-export async function createMovementLotAllocations(lineId: string, data: MovementLotAllocationsInput) {
+export async function createMovementLotAllocations(
+  tenantId: string,
+  lineId: string,
+  data: MovementLotAllocationsInput
+) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const line = await client.query('SELECT 1 FROM inventory_movement_lines WHERE id = $1', [lineId]);
+    const line = await client.query('SELECT 1 FROM inventory_movement_lines WHERE id = $1 AND tenant_id = $2', [
+      lineId,
+      tenantId
+    ]);
     if (line.rowCount === 0) {
       const err: any = new Error('MOVEMENT_LINE_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -112,10 +125,10 @@ export async function createMovementLotAllocations(lineId: string, data: Movemen
     const inserted: any[] = [];
     for (const alloc of data.allocations) {
       const res = await client.query(
-        `INSERT INTO inventory_movement_lots (id, inventory_movement_line_id, lot_id, uom, quantity_delta, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6)
+        `INSERT INTO inventory_movement_lots (id, tenant_id, inventory_movement_line_id, lot_id, uom, quantity_delta, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
          RETURNING *`,
-        [uuidv4(), lineId, alloc.lotId, alloc.uom, alloc.quantityDelta, now],
+        [uuidv4(), tenantId, lineId, alloc.lotId, alloc.uom, alloc.quantityDelta, now],
       );
       inserted.push(res.rows[0]);
     }
@@ -123,22 +136,22 @@ export async function createMovementLotAllocations(lineId: string, data: Movemen
   });
 }
 
-export async function listMovementLotAllocations(lineId: string) {
+export async function listMovementLotAllocations(tenantId: string, lineId: string) {
   const { rows } = await query(
-    `SELECT * FROM inventory_movement_lots WHERE inventory_movement_line_id = $1 ORDER BY created_at ASC`,
-    [lineId],
+    `SELECT * FROM inventory_movement_lots WHERE inventory_movement_line_id = $1 AND tenant_id = $2 ORDER BY created_at ASC`,
+    [lineId, tenantId],
   );
   return rows;
 }
 
-export async function listMovementLotsByMovement(movementId: string) {
+export async function listMovementLotsByMovement(tenantId: string, movementId: string) {
   const { rows } = await query(
     `SELECT iml.*
      FROM inventory_movement_lots iml
      JOIN inventory_movement_lines l ON l.id = iml.inventory_movement_line_id
-     WHERE l.inventory_movement_id = $1
+     WHERE l.inventory_movement_id = $1 AND l.tenant_id = $2 AND iml.tenant_id = $2
      ORDER BY iml.created_at ASC`,
-    [movementId],
+    [movementId, tenantId],
   );
   return rows;
 }
@@ -158,16 +171,17 @@ export function mapRecallCase(row: any) {
   };
 }
 
-export async function createRecallCase(data: RecallCaseInput) {
+export async function createRecallCase(tenantId: string, data: RecallCaseInput) {
   const id = uuidv4();
   const now = new Date();
   const status = data.status ?? 'draft';
   const res = await query(
-    `INSERT INTO recall_cases (id, recall_number, status, severity, initiated_at, closed_at, summary, notes, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
+    `INSERT INTO recall_cases (id, tenant_id, recall_number, status, severity, initiated_at, closed_at, summary, notes, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)
      RETURNING *`,
     [
       id,
+      tenantId,
       data.recallNumber,
       status,
       data.severity ?? null,
@@ -181,33 +195,33 @@ export async function createRecallCase(data: RecallCaseInput) {
   return mapRecallCase(res.rows[0]);
 }
 
-export async function listRecallCases(limit: number, offset: number) {
+export async function listRecallCases(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT * FROM recall_cases ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    `SELECT * FROM recall_cases WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows.map(mapRecallCase);
 }
 
-export async function getRecallCase(id: string) {
-  const res = await query('SELECT * FROM recall_cases WHERE id = $1', [id]);
+export async function getRecallCase(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM recall_cases WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapRecallCase(res.rows[0]);
 }
 
-export async function updateRecallCaseStatus(id: string, data: RecallCaseStatusPatchInput) {
+export async function updateRecallCaseStatus(tenantId: string, id: string, data: RecallCaseStatusPatchInput) {
   const now = new Date();
   const res = await query(
-    `UPDATE recall_cases SET status = $1, updated_at = $2 WHERE id = $3 RETURNING *`,
-    [data.status, now, id],
+    `UPDATE recall_cases SET status = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4 RETURNING *`,
+    [data.status, now, id, tenantId],
   );
   if (res.rowCount === 0) return null;
   return mapRecallCase(res.rows[0]);
 }
 
-export async function createRecallTargets(caseId: string, data: RecallCaseTargetInput) {
+export async function createRecallTargets(tenantId: string, caseId: string, data: RecallCaseTargetInput) {
   return withTransaction(async (client) => {
-    const rc = await client.query('SELECT 1 FROM recall_cases WHERE id = $1', [caseId]);
+    const rc = await client.query('SELECT 1 FROM recall_cases WHERE id = $1 AND tenant_id = $2', [caseId, tenantId]);
     if (rc.rowCount === 0) {
       const err: any = new Error('RECALL_CASE_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -227,11 +241,12 @@ export async function createRecallTargets(caseId: string, data: RecallCaseTarget
         throw err;
       }
       const res = await client.query(
-        `INSERT INTO recall_case_targets (id, recall_case_id, target_type, lot_id, item_id, uom, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+        `INSERT INTO recall_case_targets (id, tenant_id, recall_case_id, target_type, lot_id, item_id, uom, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           caseId,
           target.targetType,
           target.lotId ?? null,
@@ -246,10 +261,10 @@ export async function createRecallTargets(caseId: string, data: RecallCaseTarget
   });
 }
 
-export async function listRecallTargets(caseId: string) {
+export async function listRecallTargets(tenantId: string, caseId: string) {
   const { rows } = await query(
-    `SELECT * FROM recall_case_targets WHERE recall_case_id = $1 ORDER BY created_at ASC`,
-    [caseId],
+    `SELECT * FROM recall_case_targets WHERE recall_case_id = $1 AND tenant_id = $2 ORDER BY created_at ASC`,
+    [caseId, tenantId],
   );
   return rows;
 }
@@ -265,8 +280,8 @@ export function mapTraceRun(row: any) {
   };
 }
 
-export async function createRecallTraceRun(caseId: string, data: RecallTraceRunInput) {
-  const resCase = await query('SELECT 1 FROM recall_cases WHERE id = $1', [caseId]);
+export async function createRecallTraceRun(tenantId: string, caseId: string, data: RecallTraceRunInput) {
+  const resCase = await query('SELECT 1 FROM recall_cases WHERE id = $1 AND tenant_id = $2', [caseId, tenantId]);
   if (resCase.rowCount === 0) {
     const err: any = new Error('RECALL_CASE_NOT_FOUND');
     err.code = 'NOT_FOUND';
@@ -275,32 +290,39 @@ export async function createRecallTraceRun(caseId: string, data: RecallTraceRunI
   const id = uuidv4();
   const status = data.status ?? 'computed';
   const res = await query(
-    `INSERT INTO recall_trace_runs (id, recall_case_id, as_of, status, notes)
-     VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO recall_trace_runs (id, tenant_id, recall_case_id, as_of, status, notes)
+     VALUES ($1,$2,$3,$4,$5,$6)
      RETURNING *`,
-    [id, caseId, data.asOf, status, data.notes ?? null],
+    [id, tenantId, caseId, data.asOf, status, data.notes ?? null],
   );
   return mapTraceRun(res.rows[0]);
 }
 
-export async function listRecallTraceRuns(caseId: string) {
+export async function listRecallTraceRuns(tenantId: string, caseId: string) {
   const { rows } = await query(
-    `SELECT * FROM recall_trace_runs WHERE recall_case_id = $1 ORDER BY computed_at DESC`,
-    [caseId],
+    `SELECT * FROM recall_trace_runs WHERE recall_case_id = $1 AND tenant_id = $2 ORDER BY computed_at DESC`,
+    [caseId, tenantId],
   );
   return rows.map(mapTraceRun);
 }
 
-export async function getRecallTraceRun(id: string) {
-  const res = await query('SELECT * FROM recall_trace_runs WHERE id = $1', [id]);
+export async function getRecallTraceRun(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM recall_trace_runs WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapTraceRun(res.rows[0]);
 }
 
-export async function createRecallImpactedShipments(traceRunId: string, data: RecallImpactedShipmentInput) {
+export async function createRecallImpactedShipments(
+  tenantId: string,
+  traceRunId: string,
+  data: RecallImpactedShipmentInput
+) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const run = await client.query('SELECT 1 FROM recall_trace_runs WHERE id = $1', [traceRunId]);
+    const run = await client.query('SELECT 1 FROM recall_trace_runs WHERE id = $1 AND tenant_id = $2', [
+      traceRunId,
+      tenantId
+    ]);
     if (run.rowCount === 0) {
       const err: any = new Error('TRACE_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -309,10 +331,10 @@ export async function createRecallImpactedShipments(traceRunId: string, data: Re
     const rows: any[] = [];
     for (const s of data.shipments) {
       const res = await client.query(
-        `INSERT INTO recall_impacted_shipments (id, recall_trace_run_id, sales_order_shipment_id, customer_id, created_at)
-         VALUES ($1,$2,$3,$4,$5)
+        `INSERT INTO recall_impacted_shipments (id, tenant_id, recall_trace_run_id, sales_order_shipment_id, customer_id, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6)
          RETURNING *`,
-        [uuidv4(), traceRunId, s.salesOrderShipmentId, s.customerId, now],
+        [uuidv4(), tenantId, traceRunId, s.salesOrderShipmentId, s.customerId, now],
       );
       rows.push(res.rows[0]);
     }
@@ -320,18 +342,25 @@ export async function createRecallImpactedShipments(traceRunId: string, data: Re
   });
 }
 
-export async function listRecallImpactedShipments(traceRunId: string) {
+export async function listRecallImpactedShipments(tenantId: string, traceRunId: string) {
   const { rows } = await query(
-    `SELECT * FROM recall_impacted_shipments WHERE recall_trace_run_id = $1 ORDER BY created_at DESC`,
-    [traceRunId],
+    `SELECT * FROM recall_impacted_shipments WHERE recall_trace_run_id = $1 AND tenant_id = $2 ORDER BY created_at DESC`,
+    [traceRunId, tenantId],
   );
   return rows;
 }
 
-export async function createRecallImpactedLots(traceRunId: string, data: RecallImpactedLotInput) {
+export async function createRecallImpactedLots(
+  tenantId: string,
+  traceRunId: string,
+  data: RecallImpactedLotInput
+) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const run = await client.query('SELECT 1 FROM recall_trace_runs WHERE id = $1', [traceRunId]);
+    const run = await client.query('SELECT 1 FROM recall_trace_runs WHERE id = $1 AND tenant_id = $2', [
+      traceRunId,
+      tenantId
+    ]);
     if (run.rowCount === 0) {
       const err: any = new Error('TRACE_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -340,10 +369,10 @@ export async function createRecallImpactedLots(traceRunId: string, data: RecallI
     const rows: any[] = [];
     for (const l of data.lots) {
       const res = await client.query(
-        `INSERT INTO recall_impacted_lots (id, recall_trace_run_id, lot_id, role, created_at)
-         VALUES ($1,$2,$3,$4,$5)
+        `INSERT INTO recall_impacted_lots (id, tenant_id, recall_trace_run_id, lot_id, role, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6)
          RETURNING *`,
-        [uuidv4(), traceRunId, l.lotId, l.role, now],
+        [uuidv4(), tenantId, traceRunId, l.lotId, l.role, now],
       );
       rows.push(res.rows[0]);
     }
@@ -351,18 +380,18 @@ export async function createRecallImpactedLots(traceRunId: string, data: RecallI
   });
 }
 
-export async function listRecallImpactedLots(traceRunId: string) {
+export async function listRecallImpactedLots(tenantId: string, traceRunId: string) {
   const { rows } = await query(
-    `SELECT * FROM recall_impacted_lots WHERE recall_trace_run_id = $1 ORDER BY created_at DESC`,
-    [traceRunId],
+    `SELECT * FROM recall_impacted_lots WHERE recall_trace_run_id = $1 AND tenant_id = $2 ORDER BY created_at DESC`,
+    [traceRunId, tenantId],
   );
   return rows;
 }
 
-export async function createRecallActions(caseId: string, data: RecallActionInput) {
+export async function createRecallActions(tenantId: string, caseId: string, data: RecallActionInput) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const rc = await client.query('SELECT 1 FROM recall_cases WHERE id = $1', [caseId]);
+    const rc = await client.query('SELECT 1 FROM recall_cases WHERE id = $1 AND tenant_id = $2', [caseId, tenantId]);
     if (rc.rowCount === 0) {
       const err: any = new Error('RECALL_CASE_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -372,11 +401,12 @@ export async function createRecallActions(caseId: string, data: RecallActionInpu
     for (const action of data.actions) {
       const status = action.status ?? 'planned';
       const res = await client.query(
-        `INSERT INTO recall_actions (id, recall_case_id, action_type, status, lot_id, sales_order_shipment_id, inventory_movement_id, notes, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
+        `INSERT INTO recall_actions (id, tenant_id, recall_case_id, action_type, status, lot_id, sales_order_shipment_id, inventory_movement_id, notes, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)
          RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           caseId,
           action.actionType,
           status,
@@ -393,18 +423,22 @@ export async function createRecallActions(caseId: string, data: RecallActionInpu
   });
 }
 
-export async function listRecallActions(caseId: string) {
+export async function listRecallActions(tenantId: string, caseId: string) {
   const { rows } = await query(
-    `SELECT * FROM recall_actions WHERE recall_case_id = $1 ORDER BY created_at DESC`,
-    [caseId],
+    `SELECT * FROM recall_actions WHERE recall_case_id = $1 AND tenant_id = $2 ORDER BY created_at DESC`,
+    [caseId, tenantId],
   );
   return rows;
 }
 
-export async function createRecallCommunications(caseId: string, data: RecallCommunicationInput) {
+export async function createRecallCommunications(
+  tenantId: string,
+  caseId: string,
+  data: RecallCommunicationInput
+) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const rc = await client.query('SELECT 1 FROM recall_cases WHERE id = $1', [caseId]);
+    const rc = await client.query('SELECT 1 FROM recall_cases WHERE id = $1 AND tenant_id = $2', [caseId, tenantId]);
     if (rc.rowCount === 0) {
       const err: any = new Error('RECALL_CASE_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -414,11 +448,12 @@ export async function createRecallCommunications(caseId: string, data: RecallCom
     for (const comm of data.communications) {
       const status = comm.status ?? 'draft';
       const res = await client.query(
-        `INSERT INTO recall_communications (id, recall_case_id, customer_id, channel, status, sent_at, subject, body, external_ref, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        `INSERT INTO recall_communications (id, tenant_id, recall_case_id, customer_id, channel, status, sent_at, subject, body, external_ref, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           caseId,
           comm.customerId ?? null,
           comm.channel,
@@ -436,10 +471,10 @@ export async function createRecallCommunications(caseId: string, data: RecallCom
   });
 }
 
-export async function listRecallCommunications(caseId: string) {
+export async function listRecallCommunications(tenantId: string, caseId: string) {
   const { rows } = await query(
-    `SELECT * FROM recall_communications WHERE recall_case_id = $1 ORDER BY created_at DESC`,
-    [caseId],
+    `SELECT * FROM recall_communications WHERE recall_case_id = $1 AND tenant_id = $2 ORDER BY created_at DESC`,
+    [caseId, tenantId],
   );
   return rows;
 }

@@ -36,7 +36,7 @@ router.post('/drp/nodes', async (req: Request, res: Response) => {
   const parsed = drpNodeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const node = await createDrpNode(parsed.data);
+    const node = await createDrpNode(req.auth!.tenantId, parsed.data);
     return res.status(201).json(node);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -53,14 +53,14 @@ router.post('/drp/nodes', async (req: Request, res: Response) => {
 router.get('/drp/nodes', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const data = await listDrpNodes(limit, offset);
+  const data = await listDrpNodes(req.auth!.tenantId, limit, offset);
   return res.json({ data, paging: { limit, offset } });
 });
 
 router.get('/drp/nodes/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid node id.' });
-  const node = await getDrpNode(id);
+  const node = await getDrpNode(req.auth!.tenantId, id);
   if (!node) return res.status(404).json({ error: 'DRP node not found.' });
   return res.json(node);
 });
@@ -69,7 +69,7 @@ router.post('/drp/lanes', async (req: Request, res: Response) => {
   const parsed = drpLaneSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const lane = await createDrpLane(parsed.data);
+    const lane = await createDrpLane(req.auth!.tenantId, parsed.data);
     return res.status(201).json(lane);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -86,14 +86,14 @@ router.post('/drp/lanes', async (req: Request, res: Response) => {
 router.get('/drp/lanes', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const data = await listDrpLanes(limit, offset);
+  const data = await listDrpLanes(req.auth!.tenantId, limit, offset);
   return res.json({ data, paging: { limit, offset } });
 });
 
 router.get('/drp/lanes/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid lane id.' });
-  const lane = await getDrpLane(id);
+  const lane = await getDrpLane(req.auth!.tenantId, id);
   if (!lane) return res.status(404).json({ error: 'DRP lane not found.' });
   return res.json(lane);
 });
@@ -102,7 +102,7 @@ router.post('/drp/runs', async (req: Request, res: Response) => {
   const parsed = drpRunSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const run = await createDrpRun(parsed.data);
+    const run = await createDrpRun(req.auth!.tenantId, parsed.data);
     return res.status(201).json(run);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -117,14 +117,14 @@ router.post('/drp/runs', async (req: Request, res: Response) => {
 router.get('/drp/runs', async (_req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(_req.query.limit) || 50));
   const offset = Math.max(0, Number(_req.query.offset) || 0);
-  const data = await listDrpRuns(limit, offset);
+  const data = await listDrpRuns(_req.auth!.tenantId, limit, offset);
   return res.json({ data, paging: { limit, offset } });
 });
 
 router.get('/drp/runs/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const run = await getDrpRun(id);
+  const run = await getDrpRun(req.auth!.tenantId, id);
   if (!run) return res.status(404).json({ error: 'DRP run not found.' });
   return res.json(run);
 });
@@ -135,7 +135,7 @@ router.post('/drp/runs/:id/periods', async (req: Request, res: Response) => {
   const parsed = drpPeriodsCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createDrpPeriods(id, parsed.data);
+    const data = await createDrpPeriods(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'DRP run not found.' });
@@ -152,7 +152,7 @@ router.post('/drp/runs/:id/periods', async (req: Request, res: Response) => {
 router.get('/drp/runs/:id/periods', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const data = await listDrpPeriods(id);
+  const data = await listDrpPeriods(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -162,7 +162,7 @@ router.post('/drp/runs/:id/item-policies', async (req: Request, res: Response) =
   const parsed = drpItemPoliciesCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createDrpItemPolicies(id, parsed.data);
+    const data = await createDrpItemPolicies(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'DRP run not found.' });
@@ -180,7 +180,7 @@ router.post('/drp/runs/:id/item-policies', async (req: Request, res: Response) =
 router.get('/drp/runs/:id/item-policies', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const data = await listDrpItemPolicies(id);
+  const data = await listDrpItemPolicies(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -190,7 +190,7 @@ router.post('/drp/runs/:id/gross-requirements', async (req: Request, res: Respon
   const parsed = drpGrossRequirementsCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createDrpGrossRequirements(id, parsed.data);
+    const data = await createDrpGrossRequirements(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'DRP run not found.' });
@@ -207,21 +207,21 @@ router.post('/drp/runs/:id/gross-requirements', async (req: Request, res: Respon
 router.get('/drp/runs/:id/gross-requirements', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const data = await listDrpGrossRequirements(id);
+  const data = await listDrpGrossRequirements(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
 router.get('/drp/runs/:id/plan-lines', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const data = await listDrpPlanLines(id);
+  const data = await listDrpPlanLines(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
 router.get('/drp/runs/:id/planned-transfers', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
-  const data = await listDrpPlannedTransfers(id);
+  const data = await listDrpPlannedTransfers(req.auth!.tenantId, id);
   return res.json({ data });
 });
 

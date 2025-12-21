@@ -38,7 +38,7 @@ export function mapItem(row: any) {
   };
 }
 
-export async function createItem(data: ItemInput) {
+export async function createItem(tenantId: string, data: ItemInput) {
   const now = new Date();
   const id = uuidv4();
   const active = data.active ?? true;
@@ -46,30 +46,42 @@ export async function createItem(data: ItemInput) {
   const defaultUom = data.defaultUom ?? null;
   const defaultLocationId = data.defaultLocationId ?? null;
   await query(
-    `INSERT INTO items (id, sku, name, description, type, default_uom, default_location_id, active, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
-    [id, data.sku, data.name, data.description ?? null, type, defaultUom, defaultLocationId, active, now]
+    `INSERT INTO items (
+        id, tenant_id, sku, name, description, type, default_uom, default_location_id, active, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)`,
+    [
+      id,
+      tenantId,
+      data.sku,
+      data.name,
+      data.description ?? null,
+      type,
+      defaultUom,
+      defaultLocationId,
+      active,
+      now
+    ]
   );
-  const created = await getItem(id);
+  const created = await getItem(tenantId, id);
   if (!created) throw new Error('Failed to create item.');
   return created;
 }
 
-export async function getItem(id: string) {
+export async function getItem(tenantId: string, id: string) {
   const res = await query(
     `
     SELECT ${itemSelectColumns}
     FROM items i
-    LEFT JOIN locations l ON l.id = i.default_location_id
-    WHERE i.id = $1
+    LEFT JOIN locations l ON l.id = i.default_location_id AND l.tenant_id = i.tenant_id
+    WHERE i.id = $1 AND i.tenant_id = $2
   `,
-    [id]
+    [id, tenantId]
   );
   if (res.rowCount === 0) return null;
   return mapItem(res.rows[0]);
 }
 
-export async function updateItem(id: string, data: ItemInput) {
+export async function updateItem(tenantId: string, id: string, data: ItemInput) {
   const now = new Date();
   const type = data.type ?? 'raw';
   const defaultUom = data.defaultUom ?? null;
@@ -84,7 +96,7 @@ export async function updateItem(id: string, data: ItemInput) {
            default_location_id = $6,
            active = $7,
            updated_at = $8
-     WHERE id = $9
+     WHERE id = $9 AND tenant_id = $10
      RETURNING id`,
     [
       data.sku,
@@ -95,18 +107,22 @@ export async function updateItem(id: string, data: ItemInput) {
       defaultLocationId,
       data.active ?? true,
       now,
-      id
+      id,
+      tenantId
     ]
   );
   if (res.rowCount === 0) return null;
-  const updated = await getItem(id);
+  const updated = await getItem(tenantId, id);
   if (!updated) throw new Error('Failed to load item after update.');
   return updated;
 }
 
-export async function listItems(filters: { active?: boolean; search?: string; limit: number; offset: number }) {
-  const conditions: string[] = [];
-  const params: any[] = [];
+export async function listItems(
+  tenantId: string,
+  filters: { active?: boolean; search?: string; limit: number; offset: number }
+) {
+  const conditions: string[] = ['i.tenant_id = $1'];
+  const params: any[] = [tenantId];
   if (filters.active !== undefined) {
     params.push(filters.active);
     conditions.push(`i.active = $${params.length}`);
@@ -121,7 +137,7 @@ export async function listItems(filters: { active?: boolean; search?: string; li
   const { rows } = await query(
     `SELECT ${itemSelectColumns}
      FROM items i
-     LEFT JOIN locations l ON l.id = i.default_location_id
+     LEFT JOIN locations l ON l.id = i.default_location_id AND l.tenant_id = i.tenant_id
      ${where}
      ORDER BY i.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -145,29 +161,30 @@ export function mapLocation(row: any) {
   };
 }
 
-export async function createLocation(data: LocationInput) {
+export async function createLocation(tenantId: string, data: LocationInput) {
   const now = new Date();
   const id = uuidv4();
   const active = data.active ?? true;
 
   return withTransaction(async (client) => {
     const res = await client.query(
-      `INSERT INTO locations (id, code, name, type, active, parent_location_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+      `INSERT INTO locations (
+          id, tenant_id, code, name, type, active, parent_location_id, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
        RETURNING *`,
-      [id, data.code, data.name, data.type, active, data.parentLocationId ?? null, now]
+      [id, tenantId, data.code, data.name, data.type, active, data.parentLocationId ?? null, now]
     );
     return mapLocation(res.rows[0]);
   });
 }
 
-export async function getLocation(id: string) {
-  const res = await query('SELECT * FROM locations WHERE id = $1', [id]);
+export async function getLocation(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM locations WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapLocation(res.rows[0]);
 }
 
-export async function updateLocation(id: string, data: LocationInput) {
+export async function updateLocation(tenantId: string, id: string, data: LocationInput) {
   const now = new Date();
   const active = data.active ?? true;
   return withTransaction(async (client) => {
@@ -179,9 +196,9 @@ export async function updateLocation(id: string, data: LocationInput) {
              active = $4,
              parent_location_id = $5,
              updated_at = $6
-       WHERE id = $7
+       WHERE id = $7 AND tenant_id = $8
        RETURNING *`,
-      [data.code, data.name, data.type, active, data.parentLocationId ?? null, now, id]
+      [data.code, data.name, data.type, active, data.parentLocationId ?? null, now, id, tenantId]
     );
     if (res.rowCount === 0) return null;
     return mapLocation(res.rows[0]);
@@ -189,14 +206,15 @@ export async function updateLocation(id: string, data: LocationInput) {
 }
 
 export async function listLocations(filters: {
+  tenantId: string;
   active?: boolean;
   type?: string;
   search?: string;
   limit: number;
   offset: number;
 }) {
-  const conditions: string[] = [];
-  const params: any[] = [];
+  const conditions: string[] = ['tenant_id = $1'];
+  const params: any[] = [filters.tenantId];
   if (filters.active !== undefined) {
     params.push(filters.active);
     conditions.push(`active = $${params.length}`);
@@ -222,7 +240,10 @@ export async function listLocations(filters: {
   return rows.map(mapLocation);
 }
 
-export async function createStandardWarehouseTemplate(includeReceivingQc: boolean = true) {
+export async function createStandardWarehouseTemplate(
+  tenantId: string,
+  includeReceivingQc: boolean = true
+) {
   const now = new Date();
   const baseLocations = [
     { code: 'RAW', name: 'Raw Stock', type: 'warehouse' },
@@ -239,8 +260,8 @@ export async function createStandardWarehouseTemplate(includeReceivingQc: boolea
   const codes = baseLocations.map((loc) => loc.code);
   return withTransaction(async (client) => {
     const existingRes = await client.query<{ code: string }>(
-      'SELECT code FROM locations WHERE code = ANY($1)',
-      [codes]
+      'SELECT code FROM locations WHERE tenant_id = $1 AND code = ANY($2)',
+      [tenantId, codes]
     );
     const existingCodes = new Set(existingRes.rows.map((r) => r.code));
     const created: any[] = [];
@@ -249,11 +270,12 @@ export async function createStandardWarehouseTemplate(includeReceivingQc: boolea
       if (existingCodes.has(loc.code)) continue;
       const id = uuidv4();
       const res = await client.query(
-        `INSERT INTO locations (id, code, name, type, active, parent_location_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, true, NULL, $5, $5)
+        `INSERT INTO locations (
+            id, tenant_id, code, name, type, active, parent_location_id, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, true, NULL, $6, $6)
          ON CONFLICT (code) DO NOTHING
          RETURNING *`,
-        [id, loc.code, loc.name, loc.type, now]
+        [id, tenantId, loc.code, loc.name, loc.type, now]
       );
       if (res.rowCount > 0) {
         created.push(mapLocation(res.rows[0]));

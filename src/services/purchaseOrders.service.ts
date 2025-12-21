@@ -82,19 +82,19 @@ async function generatePoNumber(client: PoolClient) {
   return `PO-${padded}`;
 }
 
-async function loadLinesWithItems(client: PoolClient, poId: string) {
+async function loadLinesWithItems(client: PoolClient, tenantId: string, poId: string) {
   const { rows } = await client.query(
     `SELECT pol.*, i.sku AS item_sku, i.name AS item_name
        FROM purchase_order_lines pol
-       LEFT JOIN items i ON i.id = pol.item_id
-      WHERE pol.purchase_order_id = $1
+       LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = pol.tenant_id
+      WHERE pol.purchase_order_id = $1 AND pol.tenant_id = $2
       ORDER BY pol.line_number ASC`,
-    [poId]
+    [poId, tenantId]
   );
   return rows;
 }
 
-export async function createPurchaseOrder(data: PurchaseOrderInput) {
+export async function createPurchaseOrder(tenantId: string, data: PurchaseOrderInput) {
   const poId = uuidv4();
   const now = new Date();
   const status = data.status ?? 'draft';
@@ -104,12 +104,13 @@ export async function createPurchaseOrder(data: PurchaseOrderInput) {
     const poNumber = (data.poNumber ?? '').trim() || (await generatePoNumber(client));
     const insertedOrder = await client.query(
       `INSERT INTO purchase_orders (
-          id, po_number, vendor_id, status, order_date, expected_date,
+          id, tenant_id, po_number, vendor_id, status, order_date, expected_date,
           ship_to_location_id, receiving_location_id, vendor_reference, notes, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
        RETURNING *`,
       [
         poId,
+        tenantId,
         poNumber,
         data.vendorId,
         status,
@@ -126,11 +127,12 @@ export async function createPurchaseOrder(data: PurchaseOrderInput) {
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO purchase_order_lines (
-            id, purchase_order_id, line_number, item_id, uom, quantity_ordered, notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered, notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id`,
         [
           uuidv4(),
+          tenantId,
           poId,
           line.lineNumber,
           line.itemId,
@@ -141,18 +143,21 @@ export async function createPurchaseOrder(data: PurchaseOrderInput) {
       );
     }
 
-    const enrichedLines = await loadLinesWithItems(client, poId);
+    const enrichedLines = await loadLinesWithItems(client, tenantId, poId);
     return mapPurchaseOrder(insertedOrder.rows[0], enrichedLines);
   });
 }
 
-export async function updatePurchaseOrder(id: string, data: PurchaseOrderUpdateInput) {
+export async function updatePurchaseOrder(tenantId: string, id: string, data: PurchaseOrderUpdateInput) {
   const now = new Date();
   const status = data.status ?? 'draft';
   const normalizedLines = data.lines ? normalizePurchaseOrderLines(data.lines) : null;
 
   return withTransaction(async (client) => {
-    const poResult = await client.query('SELECT * FROM purchase_orders WHERE id = $1', [id]);
+    const poResult = await client.query('SELECT * FROM purchase_orders WHERE id = $1 AND tenant_id = $2', [
+      id,
+      tenantId
+    ]);
     if (poResult.rowCount === 0) {
       throw new Error('PO_NOT_FOUND');
     }
@@ -167,7 +172,7 @@ export async function updatePurchaseOrder(id: string, data: PurchaseOrderUpdateI
               vendor_reference = $7,
               notes = $8,
               updated_at = $9
-        WHERE id = $1
+        WHERE id = $1 AND tenant_id = $10
         RETURNING *`,
       [
         id,
@@ -178,19 +183,24 @@ export async function updatePurchaseOrder(id: string, data: PurchaseOrderUpdateI
         data.receivingLocationId ?? null,
         data.vendorReference ?? null,
         data.notes ?? null,
-        now
+        now,
+        tenantId
       ]
     );
 
     if (normalizedLines) {
-      await client.query('DELETE FROM purchase_order_lines WHERE purchase_order_id = $1', [id]);
+      await client.query(
+        'DELETE FROM purchase_order_lines WHERE purchase_order_id = $1 AND tenant_id = $2',
+        [id, tenantId]
+      );
       for (const line of normalizedLines) {
         await client.query(
           `INSERT INTO purchase_order_lines (
-              id, purchase_order_id, line_number, item_id, uom, quantity_ordered, notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered, notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [
             uuidv4(),
+            tenantId,
             id,
             line.lineNumber,
             line.itemId,
@@ -202,28 +212,31 @@ export async function updatePurchaseOrder(id: string, data: PurchaseOrderUpdateI
       }
     }
 
-    const lines = await loadLinesWithItems(client, id);
+    const lines = await loadLinesWithItems(client, tenantId, id);
     return mapPurchaseOrder(updated.rows[0], lines);
   });
 }
 
-export async function deletePurchaseOrder(id: string) {
+export async function deletePurchaseOrder(tenantId: string, id: string) {
   await withTransaction(async (client) => {
-    await client.query('DELETE FROM purchase_order_lines WHERE purchase_order_id = $1', [id]);
-    await client.query('DELETE FROM purchase_orders WHERE id = $1', [id]);
+    await client.query('DELETE FROM purchase_order_lines WHERE purchase_order_id = $1 AND tenant_id = $2', [
+      id,
+      tenantId
+    ]);
+    await client.query('DELETE FROM purchase_orders WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   });
 }
 
-export async function getPurchaseOrderById(id: string) {
+export async function getPurchaseOrderById(tenantId: string, id: string) {
   const poResult = await query(
     `SELECT po.*,
             loc.code AS receiving_location_code,
             ship.code AS ship_to_location_code
        FROM purchase_orders po
-       LEFT JOIN locations loc ON loc.id = po.receiving_location_id
-       LEFT JOIN locations ship ON ship.id = po.ship_to_location_id
-      WHERE po.id = $1`,
-    [id]
+       LEFT JOIN locations loc ON loc.id = po.receiving_location_id AND loc.tenant_id = po.tenant_id
+       LEFT JOIN locations ship ON ship.id = po.ship_to_location_id AND ship.tenant_id = po.tenant_id
+      WHERE po.id = $1 AND po.tenant_id = $2`,
+    [id, tenantId]
   );
   if (poResult.rowCount === 0) {
     return null;
@@ -231,15 +244,15 @@ export async function getPurchaseOrderById(id: string) {
   const lineResult = await query(
     `SELECT pol.*, i.sku AS item_sku, i.name AS item_name
        FROM purchase_order_lines pol
-       LEFT JOIN items i ON i.id = pol.item_id
-      WHERE pol.purchase_order_id = $1
+       LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = pol.tenant_id
+      WHERE pol.purchase_order_id = $1 AND pol.tenant_id = $2
       ORDER BY pol.line_number ASC`,
-    [id]
+    [id, tenantId]
   );
   return mapPurchaseOrder(poResult.rows[0], lineResult.rows);
 }
 
-export async function listPurchaseOrders(limit: number, offset: number) {
+export async function listPurchaseOrders(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
     `SELECT po.id,
             po.po_number,
@@ -258,12 +271,13 @@ export async function listPurchaseOrders(limit: number, offset: number) {
             po.created_at,
             po.updated_at
        FROM purchase_orders po
-       LEFT JOIN vendors v ON v.id = po.vendor_id
-       LEFT JOIN locations loc ON loc.id = po.ship_to_location_id
-       LEFT JOIN locations recv ON recv.id = po.receiving_location_id
+       LEFT JOIN vendors v ON v.id = po.vendor_id AND v.tenant_id = po.tenant_id
+       LEFT JOIN locations loc ON loc.id = po.ship_to_location_id AND loc.tenant_id = po.tenant_id
+       LEFT JOIN locations recv ON recv.id = po.receiving_location_id AND recv.tenant_id = po.tenant_id
+      WHERE po.tenant_id = $1
        ORDER BY po.created_at DESC
-       LIMIT $1 OFFSET $2`,
-    [limit, offset]
+       LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset]
   );
   return rows.map(mapPurchaseOrderSummary);
 }

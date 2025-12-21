@@ -16,8 +16,9 @@ import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '../../../lib/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
 import { listLocations } from '../../../api/endpoints/locations'
-import { SearchableSelect } from '../../../components/SearchableSelect'
+import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
+import { useDebouncedValue } from '../../../lib/useDebouncedValue'
 
 type Line = {
   outputItemId: string
@@ -75,9 +76,12 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
     },
   })
 
+  const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
+
   const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'wo-completion', locationSearch],
-    queryFn: () => listLocations({ limit: 200, search: locationSearch || undefined, active: true }),
+    queryKey: ['locations', 'wo-completion', debouncedLocationSearch],
+    queryFn: () =>
+      listLocations({ limit: 200, search: debouncedLocationSearch || undefined, active: true }),
     staleTime: 60_000,
     retry: 1,
   })
@@ -252,14 +256,6 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Location search</span>
-            <Input
-              value={locationSearch}
-              onChange={(e) => setLocationSearch(e.target.value)}
-              placeholder="Search locations (code/name)"
-            />
-          </label>
-          <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Default production location</span>
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
@@ -289,11 +285,13 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
               <Input value={workOrder.outputItemId} readOnly />
             </label>
             <div>
-              <SearchableSelect
+              <Combobox
                 label="To location"
                 value={line.toLocationId}
                 options={locationOptions}
-                disabled={locationsQuery.isLoading}
+                loading={locationsQuery.isLoading}
+                onQueryChange={setLocationSearch}
+                placeholder="Search locations (code/name)"
                 onChange={(nextValue) => updateLine(idx, { toLocationId: nextValue })}
               />
             </div>

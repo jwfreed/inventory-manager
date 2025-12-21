@@ -50,27 +50,31 @@ export type ReceiptReconciliation = {
 };
 
 export async function fetchReceiptReconciliation(
+  tenantId: string,
   receiverId: string,
   client?: PoolClient
 ): Promise<ReceiptReconciliation | null> {
   const executor = client ?? pool;
-  const receiptResult = await executor.query('SELECT * FROM purchase_order_receipts WHERE id = $1', [receiverId]);
+  const receiptResult = await executor.query(
+    'SELECT * FROM purchase_order_receipts WHERE id = $1 AND tenant_id = $2',
+    [receiverId, tenantId]
+  );
   if (receiptResult.rowCount === 0) {
     return null;
   }
   const receipt = receiptResult.rows[0];
 
   const linesResult = await executor.query(
-    'SELECT * FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1 ORDER BY created_at ASC',
-    [receiverId]
+    'SELECT * FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1 AND tenant_id = $2 ORDER BY created_at ASC',
+    [receiverId, tenantId]
   );
   const lineIds = linesResult.rows.map((line: any) => line.id);
-  const qcMap = await loadQcBreakdown(lineIds, client);
-  const totalsMap = await loadPutawayTotals(lineIds, client);
+  const qcMap = await loadQcBreakdown(tenantId, lineIds, client);
+  const totalsMap = await loadPutawayTotals(tenantId, lineIds, client);
 
   const closeoutResult = await executor.query<CloseoutRow>(
-    'SELECT * FROM inbound_closeouts WHERE purchase_order_receipt_id = $1',
-    [receiverId]
+    'SELECT * FROM inbound_closeouts WHERE purchase_order_receipt_id = $1 AND tenant_id = $2',
+    [receiverId, tenantId]
   );
   const closeout = closeoutResult.rows[0] ?? null;
 
@@ -121,16 +125,20 @@ export async function fetchReceiptReconciliation(
   };
 }
 
-export async function closePurchaseOrderReceipt(receiptId: string, data: ReceiptCloseInput) {
+export async function closePurchaseOrderReceipt(
+  tenantId: string,
+  receiptId: string,
+  data: ReceiptCloseInput
+) {
   return withTransaction(async (client) => {
-    const receiptRecon = await fetchReceiptReconciliation(receiptId, client);
+    const receiptRecon = await fetchReceiptReconciliation(tenantId, receiptId, client);
     if (!receiptRecon) {
       throw new Error('RECEIPT_NOT_FOUND');
     }
 
     const closeoutResult = await client.query<CloseoutRow>(
-      'SELECT * FROM inbound_closeouts WHERE purchase_order_receipt_id = $1 FOR UPDATE',
-      [receiptId]
+      'SELECT * FROM inbound_closeouts WHERE purchase_order_receipt_id = $1 AND tenant_id = $2 FOR UPDATE',
+      [receiptId, tenantId]
     );
     const existingCloseout = closeoutResult.rows[0];
     if (existingCloseout && existingCloseout.status === 'closed') {
@@ -156,17 +164,26 @@ export async function closePurchaseOrderReceipt(receiptId: string, data: Receipt
                 closeout_reason_code = $4,
                 notes = $5,
                 updated_at = $1
-          WHERE id = $6`,
-        [now, data.actorType ?? null, data.actorId ?? null, data.closeoutReasonCode ?? null, data.notes ?? null, existingCloseout.id]
+          WHERE id = $6 AND tenant_id = $7`,
+        [
+          now,
+          data.actorType ?? null,
+          data.actorId ?? null,
+          data.closeoutReasonCode ?? null,
+          data.notes ?? null,
+          existingCloseout.id,
+          tenantId
+        ]
       );
     } else {
       await client.query(
         `INSERT INTO inbound_closeouts (
-            id, purchase_order_receipt_id, status, closed_at,
+            id, tenant_id, purchase_order_receipt_id, status, closed_at,
             closed_by_actor_type, closed_by_actor_id, closeout_reason_code, notes, created_at, updated_at
-         ) VALUES ($1, $2, 'closed', $3, $4, $5, $6, $7, $3, $3)`,
+         ) VALUES ($1, $2, $3, 'closed', $4, $5, $6, $7, $8, $4, $4)`,
         [
           uuidv4(),
+          tenantId,
           receiptId,
           now,
           data.actorType ?? null,
@@ -177,14 +194,17 @@ export async function closePurchaseOrderReceipt(receiptId: string, data: Receipt
       );
     }
 
-    return fetchReceiptReconciliation(receiptId, client);
+    return fetchReceiptReconciliation(tenantId, receiptId, client);
   });
 }
 
-export async function closePurchaseOrder(id: string, _data: PurchaseOrderCloseInput) {
+export async function closePurchaseOrder(tenantId: string, id: string, _data: PurchaseOrderCloseInput) {
   return withTransaction(async (client) => {
     const now = new Date();
-    const poResult = await client.query('SELECT * FROM purchase_orders WHERE id = $1 FOR UPDATE', [id]);
+    const poResult = await client.query('SELECT * FROM purchase_orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE', [
+      id,
+      tenantId
+    ]);
     if (poResult.rowCount === 0) {
       throw new Error('PO_NOT_FOUND');
     }
@@ -200,20 +220,26 @@ export async function closePurchaseOrder(id: string, _data: PurchaseOrderCloseIn
       `SELECT por.id, ico.status
          FROM purchase_order_receipts por
          LEFT JOIN inbound_closeouts ico ON ico.purchase_order_receipt_id = por.id
-        WHERE por.purchase_order_id = $1`,
-      [id]
+        WHERE por.purchase_order_id = $1 AND por.tenant_id = $2`,
+      [id, tenantId]
     );
     const blocking = receiptsResult.rows.filter((row: any) => row.status !== 'closed');
     if (receiptsResult.rowCount > 0 && blocking.length > 0) {
       throw new Error('PO_RECEIPTS_OPEN');
     }
 
-    await client.query('UPDATE purchase_orders SET status = $1, updated_at = $2 WHERE id = $3', ['closed', now, id]);
+    await client.query(
+      'UPDATE purchase_orders SET status = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4',
+      ['closed', now, id, tenantId]
+    );
 
-    const updatedPo = await client.query('SELECT * FROM purchase_orders WHERE id = $1', [id]);
+    const updatedPo = await client.query('SELECT * FROM purchase_orders WHERE id = $1 AND tenant_id = $2', [
+      id,
+      tenantId
+    ]);
     const linesResult = await client.query(
-      'SELECT * FROM purchase_order_lines WHERE purchase_order_id = $1 ORDER BY line_number ASC',
-      [id]
+      'SELECT * FROM purchase_order_lines WHERE purchase_order_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
+      [id, tenantId]
     );
     return mapPurchaseOrder(updatedPo.rows[0], linesResult.rows);
   });

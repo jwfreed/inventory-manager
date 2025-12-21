@@ -45,36 +45,39 @@ export function mapMpsPlan(row: any) {
   };
 }
 
-export async function createMpsPlan(data: MpsPlanInput) {
+export async function createMpsPlan(tenantId: string, data: MpsPlanInput) {
   const id = uuidv4();
   const now = new Date();
   const status = data.status ?? 'draft';
   const res = await query(
-    `INSERT INTO mps_plans (id, code, status, bucket_type, starts_on, ends_on, notes, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
+    `INSERT INTO mps_plans (id, tenant_id, code, status, bucket_type, starts_on, ends_on, notes, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
      RETURNING *`,
-    [id, data.code, status, data.bucketType, data.startsOn, data.endsOn, data.notes ?? null, now],
+    [id, tenantId, data.code, status, data.bucketType, data.startsOn, data.endsOn, data.notes ?? null, now],
   );
   return mapMpsPlan(res.rows[0]);
 }
 
-export async function listMpsPlans(limit: number, offset: number) {
+export async function listMpsPlans(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT * FROM mps_plans ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    `SELECT * FROM mps_plans WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows.map(mapMpsPlan);
 }
 
-export async function getMpsPlan(id: string) {
-  const res = await query('SELECT * FROM mps_plans WHERE id = $1', [id]);
+export async function getMpsPlan(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM mps_plans WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapMpsPlan(res.rows[0]);
 }
 
-export async function createMpsPeriods(planId: string, data: MpsPeriodsCreateInput) {
+export async function createMpsPeriods(tenantId: string, planId: string, data: MpsPeriodsCreateInput) {
   return withTransaction(async (client) => {
-    const plan = await client.query('SELECT 1 FROM mps_plans WHERE id = $1', [planId]);
+    const plan = await client.query('SELECT 1 FROM mps_plans WHERE id = $1 AND tenant_id = $2', [
+      planId,
+      tenantId
+    ]);
     if (plan.rowCount === 0) {
       const err: any = new Error('MPS_PLAN_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -83,10 +86,10 @@ export async function createMpsPeriods(planId: string, data: MpsPeriodsCreateInp
     const rows: any[] = [];
     for (const period of data.periods) {
       const res = await client.query(
-        `INSERT INTO mps_periods (id, mps_plan_id, period_start, period_end, sequence)
-         VALUES ($1,$2,$3,$4,$5)
+        `INSERT INTO mps_periods (id, tenant_id, mps_plan_id, period_start, period_end, sequence)
+         VALUES ($1,$2,$3,$4,$5,$6)
          RETURNING *`,
-        [uuidv4(), planId, period.periodStart, period.periodEnd, period.sequence],
+        [uuidv4(), tenantId, planId, period.periodStart, period.periodEnd, period.sequence],
       );
       rows.push(res.rows[0]);
     }
@@ -94,18 +97,25 @@ export async function createMpsPeriods(planId: string, data: MpsPeriodsCreateInp
   });
 }
 
-export async function listMpsPeriods(planId: string) {
+export async function listMpsPeriods(tenantId: string, planId: string) {
   const { rows } = await query(
-    `SELECT * FROM mps_periods WHERE mps_plan_id = $1 ORDER BY sequence ASC`,
-    [planId],
+    `SELECT * FROM mps_periods WHERE mps_plan_id = $1 AND tenant_id = $2 ORDER BY sequence ASC`,
+    [planId, tenantId],
   );
   return rows;
 }
 
-export async function createMpsDemandInputs(planId: string, data: MpsDemandInputsCreateInput) {
+export async function createMpsDemandInputs(
+  tenantId: string,
+  planId: string,
+  data: MpsDemandInputsCreateInput
+) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const plan = await client.query('SELECT 1 FROM mps_plans WHERE id = $1', [planId]);
+    const plan = await client.query('SELECT 1 FROM mps_plans WHERE id = $1 AND tenant_id = $2', [
+      planId,
+      tenantId
+    ]);
     if (plan.rowCount === 0) {
       const err: any = new Error('MPS_PLAN_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -116,8 +126,8 @@ export async function createMpsDemandInputs(planId: string, data: MpsDemandInput
     for (const input of data.inputs) {
       // Ensure the provided plan item belongs to the plan (avoid cross-plan writes).
       const scoped = await client.query(
-        'SELECT 1 FROM mps_plan_items WHERE id = $1 AND mps_plan_id = $2',
-        [input.mpsPlanItemId, planId],
+        'SELECT 1 FROM mps_plan_items WHERE id = $1 AND mps_plan_id = $2 AND tenant_id = $3',
+        [input.mpsPlanItemId, planId, tenantId],
       );
       if (scoped.rowCount === 0) {
         const err: any = new Error('MPS_PLAN_ITEM_NOT_IN_PLAN');
@@ -126,10 +136,10 @@ export async function createMpsDemandInputs(planId: string, data: MpsDemandInput
       }
 
       const res = await client.query(
-        `INSERT INTO mps_demand_inputs (id, mps_plan_item_id, mps_period_id, demand_type, quantity, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6)
+        `INSERT INTO mps_demand_inputs (id, tenant_id, mps_plan_item_id, mps_period_id, demand_type, quantity, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
          RETURNING *`,
-        [uuidv4(), input.mpsPlanItemId, input.mpsPeriodId, input.demandType, input.quantity, now],
+        [uuidv4(), tenantId, input.mpsPlanItemId, input.mpsPeriodId, input.demandType, input.quantity, now],
       );
       inserted.push(res.rows[0]);
     }
@@ -137,26 +147,26 @@ export async function createMpsDemandInputs(planId: string, data: MpsDemandInput
   });
 }
 
-export async function listMpsDemandInputs(planId: string) {
+export async function listMpsDemandInputs(tenantId: string, planId: string) {
   const { rows } = await query(
     `SELECT mdi.*
      FROM mps_demand_inputs mdi
      JOIN mps_plan_items mpi ON mpi.id = mdi.mps_plan_item_id
-     WHERE mpi.mps_plan_id = $1
+     WHERE mpi.mps_plan_id = $1 AND mpi.tenant_id = $2
      ORDER BY mdi.created_at DESC`,
-    [planId],
+    [planId, tenantId],
   );
   return rows;
 }
 
-export async function listMpsPlanLines(planId: string) {
+export async function listMpsPlanLines(tenantId: string, planId: string) {
   const { rows } = await query(
     `SELECT mpl.*
      FROM mps_plan_lines mpl
      JOIN mps_plan_items mpi ON mpi.id = mpl.mps_plan_item_id
-     WHERE mpi.mps_plan_id = $1
+     WHERE mpi.mps_plan_id = $1 AND mpi.tenant_id = $2
      ORDER BY mpl.mps_period_id ASC`,
-    [planId],
+    [planId, tenantId],
   );
   return rows;
 }
@@ -175,37 +185,48 @@ export function mapMrpRun(row: any) {
   };
 }
 
-export async function createMrpRun(data: MrpRunInput) {
+export async function createMrpRun(tenantId: string, data: MrpRunInput) {
   const id = uuidv4();
   const now = new Date();
   const status = data.status ?? 'draft';
   const res = await query(
-    `INSERT INTO mrp_runs (id, mps_plan_id, status, as_of, bucket_type, starts_on, ends_on, notes, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `INSERT INTO mrp_runs (id, tenant_id, mps_plan_id, status, as_of, bucket_type, starts_on, ends_on, notes, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      RETURNING *`,
-    [id, data.mpsPlanId, status, data.asOf, data.bucketType, data.startsOn, data.endsOn, data.notes ?? null, now],
+    [
+      id,
+      tenantId,
+      data.mpsPlanId,
+      status,
+      data.asOf,
+      data.bucketType,
+      data.startsOn,
+      data.endsOn,
+      data.notes ?? null,
+      now
+    ],
   );
   return mapMrpRun(res.rows[0]);
 }
 
-export async function listMrpRuns(limit: number, offset: number) {
+export async function listMrpRuns(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT * FROM mrp_runs ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    `SELECT * FROM mrp_runs WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows.map(mapMrpRun);
 }
 
-export async function getMrpRun(id: string) {
-  const res = await query('SELECT * FROM mrp_runs WHERE id = $1', [id]);
+export async function getMrpRun(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM mrp_runs WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapMrpRun(res.rows[0]);
 }
 
-export async function createMrpItemPolicies(runId: string, data: MrpItemPoliciesCreateInput) {
+export async function createMrpItemPolicies(tenantId: string, runId: string, data: MrpItemPoliciesCreateInput) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const run = await client.query('SELECT 1 FROM mrp_runs WHERE id = $1', [runId]);
+    const run = await client.query('SELECT 1 FROM mrp_runs WHERE id = $1 AND tenant_id = $2', [runId, tenantId]);
     if (run.rowCount === 0) {
       const err: any = new Error('MRP_RUN_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -215,12 +236,13 @@ export async function createMrpItemPolicies(runId: string, data: MrpItemPolicies
     for (const policy of data.policies) {
       const res = await client.query(
         `INSERT INTO mrp_item_policies (
-          id, mrp_run_id, item_id, uom, site_location_id, planning_lead_time_days, safety_stock_qty,
+          id, tenant_id, mrp_run_id, item_id, uom, site_location_id, planning_lead_time_days, safety_stock_qty,
           lot_sizing_method, foq_qty, poq_periods, ppb_periods, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
         RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           runId,
           policy.itemId,
           policy.uom,
@@ -240,18 +262,22 @@ export async function createMrpItemPolicies(runId: string, data: MrpItemPolicies
   });
 }
 
-export async function listMrpItemPolicies(runId: string) {
+export async function listMrpItemPolicies(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM mrp_item_policies WHERE mrp_run_id = $1 ORDER BY created_at DESC`,
-    [runId],
+    `SELECT * FROM mrp_item_policies WHERE mrp_run_id = $1 AND tenant_id = $2 ORDER BY created_at DESC`,
+    [runId, tenantId],
   );
   return rows;
 }
 
-export async function createMrpGrossRequirements(runId: string, data: MrpGrossRequirementsCreateInput) {
+export async function createMrpGrossRequirements(
+  tenantId: string,
+  runId: string,
+  data: MrpGrossRequirementsCreateInput
+) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const run = await client.query('SELECT 1 FROM mrp_runs WHERE id = $1', [runId]);
+    const run = await client.query('SELECT 1 FROM mrp_runs WHERE id = $1 AND tenant_id = $2', [runId, tenantId]);
     if (run.rowCount === 0) {
       const err: any = new Error('MRP_RUN_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -261,11 +287,12 @@ export async function createMrpGrossRequirements(runId: string, data: MrpGrossRe
     for (const req of data.requirements) {
       const res = await client.query(
         `INSERT INTO mrp_gross_requirements (
-          id, mrp_run_id, item_id, uom, site_location_id, period_start, source_type, source_ref, quantity, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          id, tenant_id, mrp_run_id, item_id, uom, site_location_id, period_start, source_type, source_ref, quantity, created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
         RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           runId,
           req.itemId,
           req.uom,
@@ -283,26 +310,26 @@ export async function createMrpGrossRequirements(runId: string, data: MrpGrossRe
   });
 }
 
-export async function listMrpGrossRequirements(runId: string) {
+export async function listMrpGrossRequirements(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM mrp_gross_requirements WHERE mrp_run_id = $1 ORDER BY period_start ASC, created_at ASC`,
-    [runId],
+    `SELECT * FROM mrp_gross_requirements WHERE mrp_run_id = $1 AND tenant_id = $2 ORDER BY period_start ASC, created_at ASC`,
+    [runId, tenantId],
   );
   return rows;
 }
 
-export async function listMrpPlanLines(runId: string) {
+export async function listMrpPlanLines(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM mrp_plan_lines WHERE mrp_run_id = $1 ORDER BY period_start ASC`,
-    [runId],
+    `SELECT * FROM mrp_plan_lines WHERE mrp_run_id = $1 AND tenant_id = $2 ORDER BY period_start ASC`,
+    [runId, tenantId],
   );
   return rows;
 }
 
-export async function listMrpPlannedOrders(runId: string) {
+export async function listMrpPlannedOrders(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM mrp_planned_orders WHERE mrp_run_id = $1 ORDER BY release_date ASC, created_at ASC`,
-    [runId],
+    `SELECT * FROM mrp_planned_orders WHERE mrp_run_id = $1 AND tenant_id = $2 ORDER BY release_date ASC, created_at ASC`,
+    [runId, tenantId],
   );
   return rows;
 }
@@ -332,19 +359,20 @@ export function mapReplenishmentPolicy(row: any) {
   };
 }
 
-export async function createReplenishmentPolicy(data: ReplenishmentPolicyInput) {
+export async function createReplenishmentPolicy(tenantId: string, data: ReplenishmentPolicyInput) {
   const id = uuidv4();
   const now = new Date();
   const status = data.status ?? 'active';
   const res = await query(
     `INSERT INTO replenishment_policies (
-      id, item_id, uom, site_location_id, policy_type, status, lead_time_days, demand_rate_per_day,
+      id, tenant_id, item_id, uom, site_location_id, policy_type, status, lead_time_days, demand_rate_per_day,
       safety_stock_method, safety_stock_qty, ppis_periods, review_period_days, order_up_to_level_qty,
       reorder_point_qty, order_quantity_qty, min_order_qty, max_order_qty, notes, created_at, updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19)
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$20)
     RETURNING *`,
     [
       id,
+      tenantId,
       data.itemId,
       data.uom,
       data.siteLocationId ?? null,
@@ -368,24 +396,24 @@ export async function createReplenishmentPolicy(data: ReplenishmentPolicyInput) 
   return mapReplenishmentPolicy(res.rows[0]);
 }
 
-export async function listReplenishmentPolicies(limit: number, offset: number) {
+export async function listReplenishmentPolicies(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT * FROM replenishment_policies ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    `SELECT * FROM replenishment_policies WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows.map(mapReplenishmentPolicy);
 }
 
-export async function getReplenishmentPolicy(id: string) {
-  const res = await query('SELECT * FROM replenishment_policies WHERE id = $1', [id]);
+export async function getReplenishmentPolicy(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM replenishment_policies WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapReplenishmentPolicy(res.rows[0]);
 }
 
-export async function listReplenishmentRecommendations(limit: number, offset: number) {
+export async function listReplenishmentRecommendations(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT * FROM replenishment_recommendations ORDER BY computed_at DESC LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    `SELECT * FROM replenishment_recommendations WHERE tenant_id = $1 ORDER BY computed_at DESC LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows;
 }
@@ -402,36 +430,40 @@ export function mapKpiRun(row: any) {
   };
 }
 
-export async function createKpiRun(data: KpiRunInput) {
+export async function createKpiRun(tenantId: string, data: KpiRunInput) {
   const id = uuidv4();
   const now = new Date();
   const status = data.status ?? 'draft';
   const res = await query(
-    `INSERT INTO kpi_runs (id, status, window_start, window_end, as_of, notes, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `INSERT INTO kpi_runs (id, tenant_id, status, window_start, window_end, as_of, notes, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      RETURNING *`,
-    [id, status, data.windowStart ?? null, data.windowEnd ?? null, data.asOf ?? null, data.notes ?? null, now],
+    [id, tenantId, status, data.windowStart ?? null, data.windowEnd ?? null, data.asOf ?? null, data.notes ?? null, now],
   );
   return mapKpiRun(res.rows[0]);
 }
 
-export async function listKpiRuns(limit: number, offset: number) {
+export async function listKpiRuns(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT * FROM kpi_runs ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    `SELECT * FROM kpi_runs WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows.map(mapKpiRun);
 }
 
-export async function getKpiRun(id: string) {
-  const res = await query('SELECT * FROM kpi_runs WHERE id = $1', [id]);
+export async function getKpiRun(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM kpi_runs WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapKpiRun(res.rows[0]);
 }
 
-export async function createKpiSnapshots(runId: string, data: KpiSnapshotsCreateInput) {
+export async function createKpiSnapshots(
+  tenantId: string,
+  runId: string,
+  data: KpiSnapshotsCreateInput
+) {
   return withTransaction(async (client) => {
-    const run = await client.query('SELECT 1 FROM kpi_runs WHERE id = $1', [runId]);
+    const run = await client.query('SELECT 1 FROM kpi_runs WHERE id = $1 AND tenant_id = $2', [runId, tenantId]);
     if (run.rowCount === 0) {
       const err: any = new Error('KPI_RUN_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -440,11 +472,12 @@ export async function createKpiSnapshots(runId: string, data: KpiSnapshotsCreate
     const inserted: any[] = [];
     for (const snapshot of data.snapshots) {
       const res = await client.query(
-        `INSERT INTO kpi_snapshots (id, kpi_run_id, kpi_name, dimensions, value, units, computed_at)
-         VALUES ($1,$2,$3,$4,$5,$6,now())
+        `INSERT INTO kpi_snapshots (id, tenant_id, kpi_run_id, kpi_name, dimensions, value, units, computed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,now())
          RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           runId,
           snapshot.kpiName,
           snapshot.dimensions,
@@ -458,17 +491,20 @@ export async function createKpiSnapshots(runId: string, data: KpiSnapshotsCreate
   });
 }
 
-export async function listKpiRunSnapshots(runId: string) {
+export async function listKpiRunSnapshots(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM kpi_snapshots WHERE kpi_run_id = $1 ORDER BY computed_at DESC`,
-    [runId],
+    `SELECT * FROM kpi_snapshots WHERE kpi_run_id = $1 AND tenant_id = $2 ORDER BY computed_at DESC`,
+    [runId, tenantId],
   );
   return rows;
 }
 
-export async function listKpiSnapshots(filters: { kpiName?: string; from?: string; to?: string; limit: number; offset: number }) {
-  const conditions: string[] = [];
-  const params: any[] = [];
+export async function listKpiSnapshots(
+  tenantId: string,
+  filters: { kpiName?: string; from?: string; to?: string; limit: number; offset: number }
+) {
+  const conditions: string[] = ['tenant_id = $1'];
+  const params: any[] = [tenantId];
   if (filters.kpiName) {
     params.push(filters.kpiName);
     conditions.push(`kpi_name = $${params.length}`);
@@ -490,9 +526,13 @@ export async function listKpiSnapshots(filters: { kpiName?: string; from?: strin
   return rows;
 }
 
-export async function createKpiRollupInputs(runId: string, data: KpiRollupInputsCreateInput) {
+export async function createKpiRollupInputs(
+  tenantId: string,
+  runId: string,
+  data: KpiRollupInputsCreateInput
+) {
   return withTransaction(async (client) => {
-    const run = await client.query('SELECT 1 FROM kpi_runs WHERE id = $1', [runId]);
+    const run = await client.query('SELECT 1 FROM kpi_runs WHERE id = $1 AND tenant_id = $2', [runId, tenantId]);
     if (run.rowCount === 0) {
       const err: any = new Error('KPI_RUN_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -501,11 +541,12 @@ export async function createKpiRollupInputs(runId: string, data: KpiRollupInputs
     const inserted: any[] = [];
     for (const input of data.inputs) {
       const res = await client.query(
-        `INSERT INTO kpi_rollup_inputs (id, kpi_run_id, metric_name, dimensions, numerator_qty, denominator_qty, computed_at)
-         VALUES ($1,$2,$3,$4,$5,$6,now())
+        `INSERT INTO kpi_rollup_inputs (id, tenant_id, kpi_run_id, metric_name, dimensions, numerator_qty, denominator_qty, computed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,now())
          RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           runId,
           input.metricName,
           input.dimensions,
@@ -519,10 +560,10 @@ export async function createKpiRollupInputs(runId: string, data: KpiRollupInputs
   });
 }
 
-export async function listKpiRollupInputs(runId: string) {
+export async function listKpiRollupInputs(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM kpi_rollup_inputs WHERE kpi_run_id = $1 ORDER BY computed_at DESC`,
-    [runId],
+    `SELECT * FROM kpi_rollup_inputs WHERE kpi_run_id = $1 AND tenant_id = $2 ORDER BY computed_at DESC`,
+    [runId, tenantId],
   );
   return rows;
 }
@@ -615,10 +656,13 @@ function computeToulRecommendation(
   return { reorderNeeded, recommendedOrderQty, recommendedOrderDate: null };
 }
 
-export async function computeReplenishmentRecommendations(limit: number, offset: number) {
+export async function computeReplenishmentRecommendations(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT * FROM replenishment_policies WHERE status = 'active' ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-    [limit, offset]
+    `SELECT * FROM replenishment_policies
+     WHERE status = 'active' AND tenant_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset]
   );
 
   const recommendations: ReplenishmentRecommendation[] = [];
@@ -651,7 +695,7 @@ export async function computeReplenishmentRecommendations(limit: number, offset:
 
     let snapshot = defaultInventorySnapshot(row.item_id, row.site_location_id, row.uom);
     try {
-      const snap = await getInventorySnapshot({
+      const snap = await getInventorySnapshot(tenantId, {
         itemId: row.item_id,
         locationId: row.site_location_id,
         uom: row.uom
@@ -693,9 +737,12 @@ export async function computeReplenishmentRecommendations(limit: number, offset:
   return recommendations;
 }
 
-export async function computeFulfillmentFillRate(queryWindow: FulfillmentFillRateQuery) {
-  const params: any[] = [];
-  const conditions: string[] = [];
+export async function computeFulfillmentFillRate(
+  tenantId: string,
+  queryWindow: FulfillmentFillRateQuery
+) {
+  const params: any[] = [tenantId];
+  const conditions: string[] = ['s.tenant_id = $1'];
   if (queryWindow.from) {
     params.push(queryWindow.from);
     conditions.push(`s.shipped_at >= $${params.length}`);
@@ -710,8 +757,8 @@ export async function computeFulfillmentFillRate(queryWindow: FulfillmentFillRat
         COALESCE(SUM(sol.quantity_ordered), 0) AS ordered_qty,
         COALESCE(SUM(sosl.quantity_shipped), 0) AS shipped_qty
      FROM sales_order_shipment_lines sosl
-     JOIN sales_order_shipments s ON s.id = sosl.sales_order_shipment_id
-     JOIN sales_order_lines sol ON sol.id = sosl.sales_order_line_id
+     JOIN sales_order_shipments s ON s.id = sosl.sales_order_shipment_id AND s.tenant_id = sosl.tenant_id
+     JOIN sales_order_lines sol ON sol.id = sosl.sales_order_line_id AND sol.tenant_id = s.tenant_id
      ${where}`,
     params
   );

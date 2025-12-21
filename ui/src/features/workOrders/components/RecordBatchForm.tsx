@@ -14,8 +14,9 @@ import {
   type RecordBatchPayload,
 } from '../../../api/endpoints/workOrders'
 import type { ApiError, Item, Location, WorkOrder } from '../../../api/types'
-import { SearchableSelect } from '../../../components/SearchableSelect'
+import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
+import { useDebouncedValue } from '../../../lib/useDebouncedValue'
 
 const formatError = (err: unknown): string => {
   if (!err) return ''
@@ -94,15 +95,19 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   const [successId, setSuccessId] = useState<string | null>(null)
   const [successIssueId, setSuccessIssueId] = useState<string | null>(null)
 
+  const debouncedItemSearch = useDebouncedValue(itemSearch, 200)
+  const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
+
   const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
-    queryKey: ['items', 'wo-batch', itemSearch],
-    queryFn: () => listItems({ limit: 200, search: itemSearch || undefined }),
+    queryKey: ['items', 'wo-batch', debouncedItemSearch],
+    queryFn: () => listItems({ limit: 200, search: debouncedItemSearch || undefined }),
     staleTime: 60_000,
     retry: 1,
   })
   const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'wo-batch', locationSearch],
-    queryFn: () => listLocations({ limit: 200, search: locationSearch || undefined, active: true }),
+    queryKey: ['locations', 'wo-batch', debouncedLocationSearch],
+    queryFn: () =>
+      listLocations({ limit: 200, search: debouncedLocationSearch || undefined, active: true }),
     staleTime: 60_000,
     retry: 1,
   })
@@ -411,14 +416,6 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Item search</span>
-            <Input
-              value={itemSearch}
-              onChange={(e) => setItemSearch(e.target.value)}
-              placeholder="Search items (SKU/name)"
-            />
-          </label>
-          <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Default consume location</span>
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
@@ -441,11 +438,13 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
         {consumeLines.map((line, idx) => (
           <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
             <div>
-              <SearchableSelect
+              <Combobox
                 label="Component item"
                 value={line.componentItemId}
                 options={itemOptions}
-                disabled={itemsQuery.isLoading}
+                loading={itemsQuery.isLoading}
+                onQueryChange={setItemSearch}
+                placeholder="Search items (SKU/name)"
                 onChange={(nextValue) => onComponentChange(idx, nextValue)}
               />
               {line.usesPackSize && (
@@ -455,11 +454,13 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
               )}
             </div>
             <div>
-              <SearchableSelect
+              <Combobox
                 label="From location"
                 value={line.fromLocationId}
                 options={locationOptions}
-                disabled={locationsQuery.isLoading}
+                loading={locationsQuery.isLoading}
+                onQueryChange={setLocationSearch}
+                placeholder="Search locations (code/name)"
                 onChange={(nextValue) => updateConsumeLine(idx, { fromLocationId: nextValue })}
               />
             </div>
@@ -507,14 +508,6 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Location search</span>
-            <Input
-              value={locationSearch}
-              onChange={(e) => setLocationSearch(e.target.value)}
-              placeholder="Search locations (code/name)"
-            />
-          </label>
-          <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Default production location</span>
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
@@ -541,11 +534,13 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
               <Input value={workOrder.outputItemId} readOnly />
             </label>
             <div>
-              <SearchableSelect
+              <Combobox
                 label="To location"
                 value={line.toLocationId}
                 options={locationOptions}
-                disabled={locationsQuery.isLoading}
+                loading={locationsQuery.isLoading}
+                onQueryChange={setLocationSearch}
+                placeholder="Search locations (code/name)"
                 onChange={(nextValue) => updateProduceLine(idx, { toLocationId: nextValue })}
               />
             </div>

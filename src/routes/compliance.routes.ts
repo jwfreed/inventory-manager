@@ -46,7 +46,7 @@ router.post('/lots', async (req: Request, res: Response) => {
   const parsed = lotSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const lot = await createLot(parsed.data);
+    const lot = await createLot(req.auth!.tenantId, parsed.data);
     return res.status(201).json(lot);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -66,14 +66,14 @@ router.get('/lots', async (req: Request, res: Response) => {
   const itemId = typeof req.query.item_id === 'string' ? req.query.item_id : undefined;
   const lotCode = typeof req.query.lot_code === 'string' ? req.query.lot_code : undefined;
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-  const data = await listLots({ itemId, lotCode, status }, limit, offset);
+  const data = await listLots(req.auth!.tenantId, { itemId, lotCode, status }, limit, offset);
   return res.json({ data, paging: { limit, offset } });
 });
 
 router.get('/lots/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid lot id.' });
-  const lot = await getLot(id);
+  const lot = await getLot(req.auth!.tenantId, id);
   if (!lot) return res.status(404).json({ error: 'Lot not found.' });
   return res.json(lot);
 });
@@ -84,7 +84,7 @@ router.post('/inventory-movement-lines/:id/lots', async (req: Request, res: Resp
   const parsed = movementLotAllocationsSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createMovementLotAllocations(id, parsed.data);
+    const data = await createMovementLotAllocations(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'Movement line not found.' });
@@ -101,14 +101,14 @@ router.post('/inventory-movement-lines/:id/lots', async (req: Request, res: Resp
 router.get('/inventory-movement-lines/:id/lots', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid movement line id.' });
-  const data = await listMovementLotAllocations(id);
+  const data = await listMovementLotAllocations(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
 router.get('/inventory-movements/:id/lots', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid movement id.' });
-  const data = await listMovementLotsByMovement(id);
+  const data = await listMovementLotsByMovement(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -116,7 +116,7 @@ router.post('/recalls/cases', async (req: Request, res: Response) => {
   const parsed = recallCaseSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const recall = await createRecallCase(parsed.data);
+    const recall = await createRecallCase(req.auth!.tenantId, parsed.data);
     return res.status(201).json(recall);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -132,14 +132,14 @@ router.post('/recalls/cases', async (req: Request, res: Response) => {
 router.get('/recalls/cases', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const data = await listRecallCases(limit, offset);
+  const data = await listRecallCases(req.auth!.tenantId, limit, offset);
   return res.json({ data, paging: { limit, offset } });
 });
 
 router.get('/recalls/cases/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid case id.' });
-  const recall = await getRecallCase(id);
+  const recall = await getRecallCase(req.auth!.tenantId, id);
   if (!recall) return res.status(404).json({ error: 'Recall case not found.' });
   return res.json(recall);
 });
@@ -150,7 +150,7 @@ router.patch('/recalls/cases/:id', async (req: Request, res: Response) => {
   const parsed = recallCaseStatusPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const recall = await updateRecallCaseStatus(id, parsed.data);
+    const recall = await updateRecallCaseStatus(req.auth!.tenantId, id, parsed.data);
     if (!recall) return res.status(404).json({ error: 'Recall case not found.' });
     return res.json(recall);
   } catch (error) {
@@ -169,7 +169,7 @@ router.post('/recalls/cases/:id/targets', async (req: Request, res: Response) =>
   const parsed = recallCaseTargetSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createRecallTargets(id, parsed.data);
+    const data = await createRecallTargets(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'Recall case not found.' });
@@ -188,7 +188,7 @@ router.post('/recalls/cases/:id/targets', async (req: Request, res: Response) =>
 router.get('/recalls/cases/:id/targets', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid case id.' });
-  const data = await listRecallTargets(id);
+  const data = await listRecallTargets(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -198,7 +198,7 @@ router.post('/recalls/cases/:id/trace-runs', async (req: Request, res: Response)
   const parsed = recallTraceRunSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const trace = await createRecallTraceRun(id, parsed.data);
+    const trace = await createRecallTraceRun(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json(trace);
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'Recall case not found.' });
@@ -214,14 +214,14 @@ router.post('/recalls/cases/:id/trace-runs', async (req: Request, res: Response)
 router.get('/recalls/cases/:id/trace-runs', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid case id.' });
-  const data = await listRecallTraceRuns(id);
+  const data = await listRecallTraceRuns(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
 router.get('/recalls/trace-runs/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid trace run id.' });
-  const trace = await getRecallTraceRun(id);
+  const trace = await getRecallTraceRun(req.auth!.tenantId, id);
   if (!trace) return res.status(404).json({ error: 'Recall trace run not found.' });
   return res.json(trace);
 });
@@ -232,7 +232,7 @@ router.post('/recalls/trace-runs/:id/impacted-shipments', async (req: Request, r
   const parsed = recallImpactedShipmentSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createRecallImpactedShipments(id, parsed.data);
+    const data = await createRecallImpactedShipments(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'Recall trace run not found.' });
@@ -249,7 +249,7 @@ router.post('/recalls/trace-runs/:id/impacted-shipments', async (req: Request, r
 router.get('/recalls/trace-runs/:id/impacted-shipments', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid trace run id.' });
-  const data = await listRecallImpactedShipments(id);
+  const data = await listRecallImpactedShipments(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -259,7 +259,7 @@ router.post('/recalls/trace-runs/:id/impacted-lots', async (req: Request, res: R
   const parsed = recallImpactedLotSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createRecallImpactedLots(id, parsed.data);
+    const data = await createRecallImpactedLots(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'Recall trace run not found.' });
@@ -277,7 +277,7 @@ router.post('/recalls/trace-runs/:id/impacted-lots', async (req: Request, res: R
 router.get('/recalls/trace-runs/:id/impacted-lots', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid trace run id.' });
-  const data = await listRecallImpactedLots(id);
+  const data = await listRecallImpactedLots(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -287,7 +287,7 @@ router.post('/recalls/cases/:id/actions', async (req: Request, res: Response) =>
   const parsed = recallActionSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createRecallActions(id, parsed.data);
+    const data = await createRecallActions(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'Recall case not found.' });
@@ -304,7 +304,7 @@ router.post('/recalls/cases/:id/actions', async (req: Request, res: Response) =>
 router.get('/recalls/cases/:id/actions', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid case id.' });
-  const data = await listRecallActions(id);
+  const data = await listRecallActions(req.auth!.tenantId, id);
   return res.json({ data });
 });
 
@@ -314,7 +314,7 @@ router.post('/recalls/cases/:id/communications', async (req: Request, res: Respo
   const parsed = recallCommunicationSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const data = await createRecallCommunications(id, parsed.data);
+    const data = await createRecallCommunications(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'Recall case not found.' });
@@ -331,7 +331,7 @@ router.post('/recalls/cases/:id/communications', async (req: Request, res: Respo
 router.get('/recalls/cases/:id/communications', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid case id.' });
-  const data = await listRecallCommunications(id);
+  const data = await listRecallCommunications(req.auth!.tenantId, id);
   return res.json({ data });
 });
 

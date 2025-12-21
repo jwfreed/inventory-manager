@@ -19,7 +19,7 @@ router.post('/work-orders', async (req: Request, res: Response) => {
   }
 
   try {
-    const workOrder = await createWorkOrder(parsed.data);
+    const workOrder = await createWorkOrder(req.auth!.tenantId, parsed.data);
     return res.status(201).json(workOrder);
   } catch (error: any) {
     if (error?.message === 'WO_BOM_NOT_FOUND') {
@@ -55,7 +55,7 @@ router.get('/work-orders/:id', async (req: Request, res: Response) => {
   }
 
   try {
-    const workOrder = await getWorkOrderById(id);
+    const workOrder = await getWorkOrderById(req.auth!.tenantId, id);
     if (!workOrder) {
       return res.status(404).json({ error: 'Work order not found.' });
     }
@@ -73,7 +73,7 @@ router.get('/work-orders', async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await listWorkOrders(parsed.data);
+    const result = await listWorkOrders(req.auth!.tenantId, parsed.data);
     return res.json(result);
   } catch (error) {
     console.error(error);
@@ -100,7 +100,7 @@ router.get('/work-orders/:id/requirements', async (req: Request, res: Response) 
   }
 
   try {
-    const requirements = await getWorkOrderRequirements(id, quantity, packSize);
+    const requirements = await getWorkOrderRequirements(req.auth!.tenantId, id, quantity, packSize);
     if (!requirements) {
       return res.status(404).json({ error: 'Work order not found.' });
     }
@@ -133,7 +133,7 @@ router.patch('/work-orders/:id/default-locations', async (req: Request, res: Res
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const updated = await updateWorkOrderDefaults(id, parsed.data);
+    const updated = await updateWorkOrderDefaults(req.auth!.tenantId, id, parsed.data);
     if (!updated) {
       return res.status(404).json({ error: 'Work order not found.' });
     }

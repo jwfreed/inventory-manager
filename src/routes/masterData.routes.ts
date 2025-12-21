@@ -23,7 +23,7 @@ router.post('/items', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const item = await createItem(parsed.data);
+    const item = await createItem(req.auth!.tenantId, parsed.data);
     return res.status(201).json(item);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -46,7 +46,7 @@ router.get('/items', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const items = await listItems({ active, search, limit, offset });
+    const items = await listItems(req.auth!.tenantId, { active, search, limit, offset });
     return res.json({ data: items, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -60,7 +60,7 @@ router.get('/items/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid item id.' });
   }
   try {
-    const item = await getItem(id);
+    const item = await getItem(req.auth!.tenantId, id);
     if (!item) return res.status(404).json({ error: 'Item not found.' });
     return res.json(item);
   } catch (error) {
@@ -79,7 +79,7 @@ router.put('/items/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const item = await updateItem(id, parsed.data);
+    const item = await updateItem(req.auth!.tenantId, id, parsed.data);
     if (!item) return res.status(404).json({ error: 'Item not found.' });
     return res.json(item);
   } catch (error) {
@@ -105,7 +105,7 @@ router.post('/locations', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'parentLocationId cannot reference itself.' });
   }
   try {
-    const location = await createLocation(parsed.data);
+    const location = await createLocation(req.auth!.tenantId, parsed.data);
     return res.status(201).json(location);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -129,7 +129,7 @@ router.get('/locations', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const locations = await listLocations({ active, type, search, limit, offset });
+    const locations = await listLocations({ tenantId: req.auth!.tenantId, active, type, search, limit, offset });
     return res.json({ data: locations, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -143,7 +143,7 @@ router.get('/locations/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid location id.' });
   }
   try {
-    const location = await getLocation(id);
+    const location = await getLocation(req.auth!.tenantId, id);
     if (!location) return res.status(404).json({ error: 'Location not found.' });
     return res.json(location);
   } catch (error) {
@@ -165,7 +165,7 @@ router.put('/locations/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'parentLocationId cannot reference itself.' });
   }
   try {
-    const location = await updateLocation(id, parsed.data);
+    const location = await updateLocation(req.auth!.tenantId, id, parsed.data);
     if (!location) return res.status(404).json({ error: 'Location not found.' });
     return res.json(location);
   } catch (error) {
@@ -192,7 +192,10 @@ router.post('/locations/templates/standard-warehouse', async (req: Request, res:
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const result = await createStandardWarehouseTemplate(parsed.data.includeReceivingQc ?? true);
+    const result = await createStandardWarehouseTemplate(
+      req.auth!.tenantId,
+      parsed.data.includeReceivingQc ?? true
+    );
     return res.status(result.created.length > 0 ? 201 : 200).json(result);
   } catch (error) {
     console.error(error);

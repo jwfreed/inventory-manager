@@ -17,13 +17,14 @@ router.get('/items/:id/inventory', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid item id.' });
   }
 
-  const exists = await assertItemExists(id);
+  const tenantId = req.auth!.tenantId;
+  const exists = await assertItemExists(tenantId, id);
   if (!exists) {
     return res.status(404).json({ error: 'Item not found.' });
   }
 
   try {
-    const summary = await getItemInventorySummary(id);
+    const summary = await getItemInventorySummary(tenantId, id);
     return res.json({ data: summary });
   } catch (error) {
     console.error(error);
@@ -37,13 +38,14 @@ router.get('/locations/:id/inventory', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid location id.' });
   }
 
-  const exists = await assertLocationExists(id);
+  const tenantId = req.auth!.tenantId;
+  const exists = await assertLocationExists(tenantId, id);
   if (!exists) {
     return res.status(404).json({ error: 'Location not found.' });
   }
 
   try {
-    const summary = await getLocationInventorySummary(id);
+    const summary = await getLocationInventorySummary(tenantId, id);
     return res.json({ data: summary });
   } catch (error) {
     console.error(error);

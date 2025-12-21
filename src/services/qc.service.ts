@@ -22,10 +22,10 @@ function mapQcEvent(row: any) {
   };
 }
 
-export async function createQcEvent(data: QcEventInput) {
+export async function createQcEvent(tenantId: string, data: QcEventInput) {
   const lineResult = await query(
-    'SELECT id, uom, quantity_received FROM purchase_order_receipt_lines WHERE id = $1',
-    [data.purchaseOrderReceiptLineId]
+    'SELECT id, uom, quantity_received FROM purchase_order_receipt_lines WHERE id = $1 AND tenant_id = $2',
+    [data.purchaseOrderReceiptLineId, tenantId]
   );
   if (lineResult.rowCount === 0) {
     throw new Error('QC_LINE_NOT_FOUND');
@@ -36,8 +36,8 @@ export async function createQcEvent(data: QcEventInput) {
   }
 
   const totalResult = await query(
-    'SELECT COALESCE(SUM(quantity), 0) AS total FROM qc_events WHERE purchase_order_receipt_line_id = $1',
-    [data.purchaseOrderReceiptLineId]
+    'SELECT COALESCE(SUM(quantity), 0) AS total FROM qc_events WHERE purchase_order_receipt_line_id = $1 AND tenant_id = $2',
+    [data.purchaseOrderReceiptLineId, tenantId]
   );
   const currentTotal = roundQuantity(toNumber(totalResult.rows[0]?.total ?? 0));
   const lineQuantity = roundQuantity(toNumber(line.quantity_received));
@@ -48,11 +48,12 @@ export async function createQcEvent(data: QcEventInput) {
 
   const { rows } = await query(
     `INSERT INTO qc_events (
-        id, purchase_order_receipt_line_id, event_type, quantity, uom, reason_code, notes, actor_type, actor_id
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        id, tenant_id, purchase_order_receipt_line_id, event_type, quantity, uom, reason_code, notes, actor_type, actor_id
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
       uuidv4(),
+      tenantId,
       data.purchaseOrderReceiptLineId,
       data.eventType,
       data.quantity,
@@ -66,16 +67,19 @@ export async function createQcEvent(data: QcEventInput) {
   return mapQcEvent(rows[0]);
 }
 
-export async function listQcEventsForLine(lineId: string) {
-  const lineResult = await query('SELECT id FROM purchase_order_receipt_lines WHERE id = $1', [lineId]);
+export async function listQcEventsForLine(tenantId: string, lineId: string) {
+  const lineResult = await query('SELECT id FROM purchase_order_receipt_lines WHERE id = $1 AND tenant_id = $2', [
+    lineId,
+    tenantId
+  ]);
   if (lineResult.rowCount === 0) {
     throw new Error('QC_LINE_NOT_FOUND');
   }
   const { rows } = await query(
     `SELECT * FROM qc_events
-       WHERE purchase_order_receipt_line_id = $1
+       WHERE purchase_order_receipt_line_id = $1 AND tenant_id = $2
        ORDER BY occurred_at ASC`,
-    [lineId]
+    [lineId, tenantId]
   );
   return rows.map(mapQcEvent);
 }

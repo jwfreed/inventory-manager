@@ -38,6 +38,7 @@ function makeOnHandKey(itemId: string, uom: string): OnHandKey {
 }
 
 async function loadSystemOnHandForLocation(
+  tenantId: string,
   locationId: string,
   countedAt: string,
   items: { itemId: string; uom: string }[],
@@ -57,8 +58,10 @@ async function loadSystemOnHandForLocation(
         AND l.location_id = $1
         AND m.occurred_at <= $2
         AND l.item_id = ANY($3::uuid[])
+        AND l.tenant_id = $4
+        AND m.tenant_id = $4
       GROUP BY l.item_id, l.uom`,
-    [locationId, countedAt, itemIds]
+    [locationId, countedAt, itemIds, tenantId]
   );
   for (const row of rows) {
     map.set(makeOnHandKey(row.item_id, row.uom), roundQuantity(toNumber(row.qty)));
@@ -140,18 +143,22 @@ function mapCycleCount(row: CycleCountRow, lines: CycleCountLineRow[], systemMap
   };
 }
 
-async function fetchCycleCountById(id: string, client?: PoolClient) {
+async function fetchCycleCountById(tenantId: string, id: string, client?: PoolClient) {
   const executor = client ?? pool;
-  const countResult = await executor.query<CycleCountRow>('SELECT * FROM cycle_counts WHERE id = $1', [id]);
+  const countResult = await executor.query<CycleCountRow>(
+    'SELECT * FROM cycle_counts WHERE id = $1 AND tenant_id = $2',
+    [id, tenantId]
+  );
   if (countResult.rowCount === 0) {
     return null;
   }
   const linesResult = await executor.query<CycleCountLineRow>(
-    'SELECT * FROM cycle_count_lines WHERE cycle_count_id = $1 ORDER BY line_number ASC',
-    [id]
+    'SELECT * FROM cycle_count_lines WHERE cycle_count_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
+    [id, tenantId]
   );
   const items = linesResult.rows.map((line) => ({ itemId: line.item_id, uom: line.uom }));
   const systemMap = await loadSystemOnHandForLocation(
+    tenantId,
     countResult.rows[0].location_id,
     countResult.rows[0].counted_at,
     items,
@@ -185,7 +192,7 @@ function normalizeCountLines(data: InventoryCountInput) {
   });
 }
 
-export async function createInventoryCount(data: InventoryCountInput) {
+export async function createInventoryCount(tenantId: string, data: InventoryCountInput) {
   const normalizedLines = normalizeCountLines(data);
   const countId = uuidv4();
   const now = new Date();
@@ -193,36 +200,39 @@ export async function createInventoryCount(data: InventoryCountInput) {
   await withTransaction(async (client: PoolClient) => {
     await client.query(
       `INSERT INTO cycle_counts (
-          id, status, counted_at, location_id, notes, created_at, updated_at
-       ) VALUES ($1, 'draft', $2, $3, $4, $5, $5)`,
-      [countId, new Date(data.countedAt), data.locationId, data.notes ?? null, now]
+          id, tenant_id, status, counted_at, location_id, notes, created_at, updated_at
+       ) VALUES ($1, $2, 'draft', $3, $4, $5, $6, $6)`,
+      [countId, tenantId, new Date(data.countedAt), data.locationId, data.notes ?? null, now]
     );
 
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO cycle_count_lines (
-            id, cycle_count_id, line_number, item_id, uom, counted_quantity, notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [uuidv4(), countId, line.lineNumber, line.itemId, line.uom, line.countedQuantity, line.notes]
+            id, tenant_id, cycle_count_id, line_number, item_id, uom, counted_quantity, notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [uuidv4(), tenantId, countId, line.lineNumber, line.itemId, line.uom, line.countedQuantity, line.notes]
       );
     }
   });
 
-  const count = await fetchCycleCountById(countId);
+  const count = await fetchCycleCountById(tenantId, countId);
   if (!count) {
     throw new Error('COUNT_NOT_FOUND');
   }
   return count;
 }
 
-export async function getInventoryCount(id: string) {
-  return fetchCycleCountById(id);
+export async function getInventoryCount(tenantId: string, id: string) {
+  return fetchCycleCountById(tenantId, id);
 }
 
-export async function postInventoryCount(id: string) {
+export async function postInventoryCount(tenantId: string, id: string) {
   const count = await withTransaction(async (client: PoolClient) => {
     const now = new Date();
-    const countResult = await client.query<CycleCountRow>('SELECT * FROM cycle_counts WHERE id = $1 FOR UPDATE', [id]);
+    const countResult = await client.query<CycleCountRow>(
+      'SELECT * FROM cycle_counts WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+      [id, tenantId]
+    );
     if (countResult.rowCount === 0) {
       throw new Error('COUNT_NOT_FOUND');
     }
@@ -235,8 +245,8 @@ export async function postInventoryCount(id: string) {
     }
 
     const linesResult = await client.query<CycleCountLineRow>(
-      'SELECT * FROM cycle_count_lines WHERE cycle_count_id = $1 ORDER BY line_number ASC FOR UPDATE',
-      [id]
+      'SELECT * FROM cycle_count_lines WHERE cycle_count_id = $1 AND tenant_id = $2 ORDER BY line_number ASC FOR UPDATE',
+      [id, tenantId]
     );
     if (linesResult.rowCount === 0) {
       throw new Error('COUNT_NO_LINES');
@@ -244,6 +254,7 @@ export async function postInventoryCount(id: string) {
 
     const items = linesResult.rows.map((line) => ({ itemId: line.item_id, uom: line.uom }));
     const systemMap = await loadSystemOnHandForLocation(
+      tenantId,
       cycleCount.location_id,
       cycleCount.counted_at,
       items,
@@ -264,9 +275,9 @@ export async function postInventoryCount(id: string) {
     const movementId = uuidv4();
     await client.query(
       `INSERT INTO inventory_movements (
-          id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, 'count', 'posted', $2, $3, $4, $5, $4, $4)`,
-      [movementId, `inventory_count:${id}`, cycleCount.counted_at, now, cycleCount.notes ?? null]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
+       ) VALUES ($1, $2, 'count', 'posted', $3, $4, $5, $6, $5, $5)`,
+      [movementId, tenantId, `inventory_count:${id}`, cycleCount.counted_at, now, cycleCount.notes ?? null]
     );
 
     for (const delta of deltas) {
@@ -274,17 +285,18 @@ export async function postInventoryCount(id: string) {
         `UPDATE cycle_count_lines
             SET system_quantity = $1,
                 variance_quantity = $2
-         WHERE id = $3`,
-        [delta.systemQty, delta.variance, delta.line.id]
+         WHERE id = $3 AND tenant_id = $4`,
+        [delta.systemQty, delta.variance, delta.line.id, tenantId]
       );
 
       if (delta.variance !== 0) {
         await client.query(
           `INSERT INTO inventory_movement_lines (
-              id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, 'cycle_count', $7)`,
+              id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'cycle_count', $8)`,
           [
             uuidv4(),
+            tenantId,
             movementId,
             delta.line.item_id,
             cycleCount.location_id,
@@ -301,11 +313,11 @@ export async function postInventoryCount(id: string) {
           SET status = 'posted',
               inventory_movement_id = $1,
               updated_at = $2
-       WHERE id = $3`,
-      [movementId, now, id]
+       WHERE id = $3 AND tenant_id = $4`,
+      [movementId, now, id, tenantId]
     );
 
-    return fetchCycleCountById(id, client);
+    return fetchCycleCountById(tenantId, id, client);
   });
 
   return count;

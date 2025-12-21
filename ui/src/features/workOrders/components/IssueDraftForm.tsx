@@ -19,8 +19,9 @@ import type { Item, Location } from '../../../api/types'
 import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '../../../lib/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
-import { SearchableSelect } from '../../../components/SearchableSelect'
+import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
+import { useDebouncedValue } from '../../../lib/useDebouncedValue'
 
 type Line = {
   componentItemId: string
@@ -107,16 +108,20 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
     },
   })
 
+  const debouncedItemSearch = useDebouncedValue(itemSearch, 200)
+  const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
+
   const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
-    queryKey: ['items', 'wo-issue', itemSearch],
-    queryFn: () => listItems({ limit: 200, search: itemSearch || undefined }),
+    queryKey: ['items', 'wo-issue', debouncedItemSearch],
+    queryFn: () => listItems({ limit: 200, search: debouncedItemSearch || undefined }),
     staleTime: 60_000,
     retry: 1,
   })
 
   const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'wo-issue', locationSearch],
-    queryFn: () => listLocations({ limit: 200, search: locationSearch || undefined, active: true }),
+    queryKey: ['locations', 'wo-issue', debouncedLocationSearch],
+    queryFn: () =>
+      listLocations({ limit: 200, search: debouncedLocationSearch || undefined, active: true }),
     staleTime: 60_000,
     retry: 1,
   })
@@ -321,22 +326,6 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Item search</span>
-            <Input
-              value={itemSearch}
-              onChange={(e) => setItemSearch(e.target.value)}
-              placeholder="Search items (SKU/name)"
-            />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Location search</span>
-            <Input
-              value={locationSearch}
-              onChange={(e) => setLocationSearch(e.target.value)}
-              placeholder="Search locations (code/name)"
-            />
-          </label>
-          <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Default consume location</span>
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
@@ -362,20 +351,24 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
             className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5"
           >
             <div>
-              <SearchableSelect
+              <Combobox
                 label="Component item"
                 value={line.componentItemId}
                 options={itemOptions}
-                disabled={itemsQuery.isLoading}
+                loading={itemsQuery.isLoading}
+                onQueryChange={setItemSearch}
+                placeholder="Search items (SKU/name)"
                 onChange={(nextValue) => onComponentChange(idx, nextValue)}
               />
             </div>
             <div>
-              <SearchableSelect
+              <Combobox
                 label="From location"
                 value={line.fromLocationId}
                 options={locationOptions}
-                disabled={locationsQuery.isLoading}
+                loading={locationsQuery.isLoading}
+                onQueryChange={setLocationSearch}
+                placeholder="Search locations (code/name)"
                 onChange={(nextValue) => updateLine(idx, { fromLocationId: nextValue })}
               />
             </div>

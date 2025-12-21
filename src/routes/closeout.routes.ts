@@ -16,7 +16,7 @@ router.get('/purchase-order-receipts/:id/reconciliation', async (req: Request, r
     return res.status(400).json({ error: 'Invalid receipt id.' });
   }
   try {
-    const reconciliation = await fetchReceiptReconciliation(id);
+    const reconciliation = await fetchReceiptReconciliation(req.auth!.tenantId, id);
     if (!reconciliation) {
       return res.status(404).json({ error: 'Receipt not found.' });
     }
@@ -38,7 +38,7 @@ router.post('/purchase-order-receipts/:id/close', async (req: Request, res: Resp
   }
 
   try {
-    const reconciliation = await closePurchaseOrderReceipt(receiptId, parsed.data);
+    const reconciliation = await closePurchaseOrderReceipt(req.auth!.tenantId, receiptId, parsed.data);
     return res.json(reconciliation);
   } catch (error: any) {
     if (error?.message === 'RECEIPT_NOT_FOUND') {
@@ -67,7 +67,7 @@ router.post('/purchase-orders/:id/close', async (req: Request, res: Response) =>
   }
 
   try {
-    const purchaseOrder = await closePurchaseOrder(id, parsed.data);
+    const purchaseOrder = await closePurchaseOrder(req.auth!.tenantId, id, parsed.data);
     return res.json(purchaseOrder);
   } catch (error: any) {
     if (error?.message === 'PO_NOT_FOUND') {

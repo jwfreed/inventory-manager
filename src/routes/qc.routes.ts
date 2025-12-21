@@ -14,7 +14,7 @@ router.post('/qc-events', async (req: Request, res: Response) => {
   }
 
   try {
-    const event = await createQcEvent(parsed.data);
+    const event = await createQcEvent(req.auth!.tenantId, parsed.data);
     return res.status(201).json(event);
   } catch (error: any) {
     if (error?.message === 'QC_LINE_NOT_FOUND') {
@@ -45,7 +45,7 @@ router.get('/purchase-order-receipt-lines/:id/qc-events', async (req: Request, r
   }
 
   try {
-    const events = await listQcEventsForLine(id);
+    const events = await listQcEventsForLine(req.auth!.tenantId, id);
     return res.json({ data: events });
   } catch (error: any) {
     if (error?.message === 'QC_LINE_NOT_FOUND') {

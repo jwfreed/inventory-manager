@@ -19,7 +19,7 @@ router.post('/packs', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const pack = await createPack(parsed.data);
+    const pack = await createPack(req.auth!.tenantId, parsed.data);
     return res.status(201).json(pack);
   } catch (error: any) {
     const mapped = mapPackError(error);
@@ -32,7 +32,7 @@ router.post('/packs', async (req: Request, res: Response) => {
 router.get('/packs', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const rows = await listPacks(limit, offset);
+  const rows = await listPacks(req.auth!.tenantId, limit, offset);
   return res.json({ data: rows, paging: { limit, offset } });
 });
 
@@ -41,7 +41,7 @@ router.get('/packs/:id', async (req: Request, res: Response) => {
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid pack id.' });
   }
-  const pack = await getPack(id);
+  const pack = await getPack(req.auth!.tenantId, id);
   if (!pack) return res.status(404).json({ error: 'Pack not found.' });
   return res.json(pack);
 });
@@ -56,7 +56,7 @@ router.post('/packs/:id/lines', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const line = await addPackLine(id, parsed.data);
+    const line = await addPackLine(req.auth!.tenantId, id, parsed.data);
     return res.status(201).json(line);
   } catch (error: any) {
     const mapped = mapPackError(error);
@@ -71,7 +71,7 @@ router.delete('/packs/:id/lines/:lineId', async (req: Request, res: Response) =>
   if (!uuidSchema.safeParse(id).success || !uuidSchema.safeParse(lineId).success) {
     return res.status(400).json({ error: 'Invalid id.' });
   }
-  const deleted = await deletePackLine(id, lineId);
+  const deleted = await deletePackLine(req.auth!.tenantId, id, lineId);
   if (!deleted) return res.status(404).json({ error: 'Pack line not found.' });
   return res.status(204).send();
 });

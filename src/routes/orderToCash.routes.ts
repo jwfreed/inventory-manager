@@ -21,6 +21,7 @@ import {
   shipmentSchema,
 } from '../schemas/orderToCash.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { emitEvent } from '../lib/events';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -31,7 +32,7 @@ router.post('/sales-orders', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const order = await createSalesOrder(parsed.data);
+    const order = await createSalesOrder(req.auth!.tenantId, parsed.data);
     return res.status(201).json(order);
   } catch (error: any) {
     if (error?.message === 'DUPLICATE_LINE_NUMBER') {
@@ -59,7 +60,7 @@ router.get('/sales-orders', async (req: Request, res: Response) => {
       ? (req.query.customerId as string)
       : undefined;
   try {
-    const rows = await listSalesOrders(limit, offset, { status, customerId });
+    const rows = await listSalesOrders(req.auth!.tenantId, limit, offset, { status, customerId });
     return res.json({ data: rows, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -73,7 +74,7 @@ router.get('/sales-orders/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid sales order id.' });
   }
   try {
-    const order = await getSalesOrder(id);
+    const order = await getSalesOrder(req.auth!.tenantId, id);
     if (!order) return res.status(404).json({ error: 'Sales order not found.' });
     return res.json(order);
   } catch (error) {
@@ -88,7 +89,16 @@ router.post('/reservations', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const results = await createReservations(parsed.data);
+    const tenantId = req.auth!.tenantId;
+    const results = await createReservations(tenantId, parsed.data);
+    const reservationIds = results.map((r) => r.id);
+    const itemIds = Array.from(new Set(results.map((r) => r.itemId).filter(Boolean)));
+    const locationIds = Array.from(new Set(results.map((r) => r.locationId).filter(Boolean)));
+    emitEvent(tenantId, 'inventory.reservation.created', {
+      reservationIds,
+      itemIds,
+      locationIds
+    });
     return res.status(201).json({ data: results });
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -108,7 +118,7 @@ router.get('/reservations', async (req: Request, res: Response) => {
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const rows = await listReservations(limit, offset);
+    const rows = await listReservations(req.auth!.tenantId, limit, offset);
     return res.json({ data: rows, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -122,7 +132,7 @@ router.get('/reservations/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid reservation id.' });
   }
   try {
-    const reservation = await getReservation(id);
+    const reservation = await getReservation(req.auth!.tenantId, id);
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error) {
@@ -137,7 +147,7 @@ router.post('/shipments', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const shipment = await createShipment(parsed.data);
+    const shipment = await createShipment(req.auth!.tenantId, parsed.data);
     return res.status(201).json(shipment);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -160,7 +170,7 @@ router.get('/shipments', async (req: Request, res: Response) => {
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const rows = await listShipments(limit, offset);
+    const rows = await listShipments(req.auth!.tenantId, limit, offset);
     return res.json({ data: rows, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -174,7 +184,7 @@ router.get('/shipments/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid shipment id.' });
   }
   try {
-    const shipment = await getShipment(id);
+    const shipment = await getShipment(req.auth!.tenantId, id);
     if (!shipment) return res.status(404).json({ error: 'Shipment not found.' });
     return res.json(shipment);
   } catch (error) {
@@ -189,7 +199,7 @@ router.post('/returns', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const rma = await createReturnAuthorization(parsed.data);
+    const rma = await createReturnAuthorization(req.auth!.tenantId, parsed.data);
     return res.status(201).json(rma);
   } catch (error: any) {
     if (error?.message === 'DUPLICATE_LINE_NUMBER') {
@@ -215,7 +225,7 @@ router.get('/returns', async (req: Request, res: Response) => {
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const rows = await listReturnAuthorizations(limit, offset);
+    const rows = await listReturnAuthorizations(req.auth!.tenantId, limit, offset);
     return res.json({ data: rows, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -229,7 +239,7 @@ router.get('/returns/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid return id.' });
   }
   try {
-    const rma = await getReturnAuthorization(id);
+    const rma = await getReturnAuthorization(req.auth!.tenantId, id);
     if (!rma) return res.status(404).json({ error: 'Return not found.' });
     return res.json(rma);
   } catch (error) {

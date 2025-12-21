@@ -55,89 +55,89 @@ export function mapRun(row: any) {
   };
 }
 
-export async function createDrpNode(data: DrpNodeInput) {
+export async function createDrpNode(tenantId: string, data: DrpNodeInput) {
   const id = uuidv4();
   const now = new Date();
   const active = data.active ?? true;
   const res = await query(
-    `INSERT INTO drp_nodes (id, code, location_id, node_type, active, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$6)
+    `INSERT INTO drp_nodes (id, tenant_id, code, location_id, node_type, active, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
      RETURNING *`,
-    [id, data.code, data.locationId, data.nodeType, active, now],
+    [id, tenantId, data.code, data.locationId, data.nodeType, active, now],
   );
   return mapNode(res.rows[0]);
 }
 
-export async function listDrpNodes(limit: number, offset: number) {
+export async function listDrpNodes(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT * FROM drp_nodes ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    `SELECT * FROM drp_nodes WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows.map(mapNode);
 }
 
-export async function getDrpNode(id: string) {
-  const res = await query('SELECT * FROM drp_nodes WHERE id = $1', [id]);
+export async function getDrpNode(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM drp_nodes WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapNode(res.rows[0]);
 }
 
-export async function createDrpLane(data: DrpLaneInput) {
+export async function createDrpLane(tenantId: string, data: DrpLaneInput) {
   const id = uuidv4();
   const now = new Date();
   const active = data.active ?? true;
   const res = await query(
-    `INSERT INTO drp_lanes (id, from_node_id, to_node_id, transfer_lead_time_days, active, notes, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+    `INSERT INTO drp_lanes (id, tenant_id, from_node_id, to_node_id, transfer_lead_time_days, active, notes, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
      RETURNING *`,
-    [id, data.fromNodeId, data.toNodeId, data.transferLeadTimeDays, active, data.notes ?? null, now],
+    [id, tenantId, data.fromNodeId, data.toNodeId, data.transferLeadTimeDays, active, data.notes ?? null, now],
   );
   return mapLane(res.rows[0]);
 }
 
-export async function listDrpLanes(limit: number, offset: number) {
+export async function listDrpLanes(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT * FROM drp_lanes ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    `SELECT * FROM drp_lanes WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows.map(mapLane);
 }
 
-export async function getDrpLane(id: string) {
-  const res = await query('SELECT * FROM drp_lanes WHERE id = $1', [id]);
+export async function getDrpLane(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM drp_lanes WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapLane(res.rows[0]);
 }
 
-export async function createDrpRun(data: DrpRunInput) {
+export async function createDrpRun(tenantId: string, data: DrpRunInput) {
   const id = uuidv4();
   const status = data.status ?? 'draft';
   const res = await query(
-    `INSERT INTO drp_runs (id, status, bucket_type, starts_on, ends_on, as_of, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `INSERT INTO drp_runs (id, tenant_id, status, bucket_type, starts_on, ends_on, as_of, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      RETURNING *`,
-    [id, status, data.bucketType, data.startsOn, data.endsOn, data.asOf, data.notes ?? null],
+    [id, tenantId, status, data.bucketType, data.startsOn, data.endsOn, data.asOf, data.notes ?? null],
   );
   return mapRun(res.rows[0]);
 }
 
-export async function listDrpRuns(limit: number, offset: number) {
+export async function listDrpRuns(tenantId: string, limit: number, offset: number) {
   const { rows } = await query(
-    `SELECT * FROM drp_runs ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    `SELECT * FROM drp_runs WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [tenantId, limit, offset],
   );
   return rows.map(mapRun);
 }
 
-export async function getDrpRun(id: string) {
-  const res = await query('SELECT * FROM drp_runs WHERE id = $1', [id]);
+export async function getDrpRun(tenantId: string, id: string) {
+  const res = await query('SELECT * FROM drp_runs WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapRun(res.rows[0]);
 }
 
-export async function createDrpPeriods(runId: string, data: DrpPeriodsInput) {
+export async function createDrpPeriods(tenantId: string, runId: string, data: DrpPeriodsInput) {
   return withTransaction(async (client) => {
-    const run = await client.query('SELECT 1 FROM drp_runs WHERE id = $1', [runId]);
+    const run = await client.query('SELECT 1 FROM drp_runs WHERE id = $1 AND tenant_id = $2', [runId, tenantId]);
     if (run.rowCount === 0) {
       const err: any = new Error('DRP_RUN_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -147,10 +147,10 @@ export async function createDrpPeriods(runId: string, data: DrpPeriodsInput) {
     const rows: any[] = [];
     for (const period of data.periods) {
       const res = await client.query(
-        `INSERT INTO drp_periods (id, drp_run_id, period_start, period_end, sequence)
-         VALUES ($1,$2,$3,$4,$5)
+        `INSERT INTO drp_periods (id, tenant_id, drp_run_id, period_start, period_end, sequence)
+         VALUES ($1,$2,$3,$4,$5,$6)
          RETURNING *`,
-        [uuidv4(), runId, period.periodStart, period.periodEnd, period.sequence],
+        [uuidv4(), tenantId, runId, period.periodStart, period.periodEnd, period.sequence],
       );
       rows.push(res.rows[0]);
     }
@@ -158,18 +158,18 @@ export async function createDrpPeriods(runId: string, data: DrpPeriodsInput) {
   });
 }
 
-export async function listDrpPeriods(runId: string) {
+export async function listDrpPeriods(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM drp_periods WHERE drp_run_id = $1 ORDER BY sequence ASC`,
-    [runId],
+    `SELECT * FROM drp_periods WHERE drp_run_id = $1 AND tenant_id = $2 ORDER BY sequence ASC`,
+    [runId, tenantId],
   );
   return rows;
 }
 
-export async function createDrpItemPolicies(runId: string, data: DrpItemPoliciesInput) {
+export async function createDrpItemPolicies(tenantId: string, runId: string, data: DrpItemPoliciesInput) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const run = await client.query('SELECT 1 FROM drp_runs WHERE id = $1', [runId]);
+    const run = await client.query('SELECT 1 FROM drp_runs WHERE id = $1 AND tenant_id = $2', [runId, tenantId]);
     if (run.rowCount === 0) {
       const err: any = new Error('DRP_RUN_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -180,11 +180,12 @@ export async function createDrpItemPolicies(runId: string, data: DrpItemPolicies
     for (const policy of data.policies) {
       const res = await client.query(
         `INSERT INTO drp_item_policies
-         (id, drp_run_id, to_node_id, preferred_from_node_id, item_id, uom, safety_stock_qty, lot_sizing_method, foq_qty, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         (id, tenant_id, drp_run_id, to_node_id, preferred_from_node_id, item_id, uom, safety_stock_qty, lot_sizing_method, foq_qty, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           runId,
           policy.toNodeId,
           policy.preferredFromNodeId ?? null,
@@ -202,18 +203,22 @@ export async function createDrpItemPolicies(runId: string, data: DrpItemPolicies
   });
 }
 
-export async function listDrpItemPolicies(runId: string) {
+export async function listDrpItemPolicies(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM drp_item_policies WHERE drp_run_id = $1 ORDER BY created_at DESC`,
-    [runId],
+    `SELECT * FROM drp_item_policies WHERE drp_run_id = $1 AND tenant_id = $2 ORDER BY created_at DESC`,
+    [runId, tenantId],
   );
   return rows;
 }
 
-export async function createDrpGrossRequirements(runId: string, data: DrpGrossRequirementsInput) {
+export async function createDrpGrossRequirements(
+  tenantId: string,
+  runId: string,
+  data: DrpGrossRequirementsInput
+) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const run = await client.query('SELECT 1 FROM drp_runs WHERE id = $1', [runId]);
+    const run = await client.query('SELECT 1 FROM drp_runs WHERE id = $1 AND tenant_id = $2', [runId, tenantId]);
     if (run.rowCount === 0) {
       const err: any = new Error('DRP_RUN_NOT_FOUND');
       err.code = 'NOT_FOUND';
@@ -224,11 +229,12 @@ export async function createDrpGrossRequirements(runId: string, data: DrpGrossRe
     for (const req of data.requirements) {
       const res = await client.query(
         `INSERT INTO drp_gross_requirements
-         (id, drp_run_id, to_node_id, item_id, uom, period_start, source_type, source_ref, quantity, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         (id, tenant_id, drp_run_id, to_node_id, item_id, uom, period_start, source_type, source_ref, quantity, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING *`,
         [
           uuidv4(),
+          tenantId,
           runId,
           req.toNodeId,
           req.itemId,
@@ -246,26 +252,26 @@ export async function createDrpGrossRequirements(runId: string, data: DrpGrossRe
   });
 }
 
-export async function listDrpGrossRequirements(runId: string) {
+export async function listDrpGrossRequirements(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM drp_gross_requirements WHERE drp_run_id = $1 ORDER BY period_start ASC, created_at DESC`,
-    [runId],
+    `SELECT * FROM drp_gross_requirements WHERE drp_run_id = $1 AND tenant_id = $2 ORDER BY period_start ASC, created_at DESC`,
+    [runId, tenantId],
   );
   return rows;
 }
 
-export async function listDrpPlanLines(runId: string) {
+export async function listDrpPlanLines(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM drp_plan_lines WHERE drp_run_id = $1 ORDER BY period_start ASC`,
-    [runId],
+    `SELECT * FROM drp_plan_lines WHERE drp_run_id = $1 AND tenant_id = $2 ORDER BY period_start ASC`,
+    [runId, tenantId],
   );
   return rows;
 }
 
-export async function listDrpPlannedTransfers(runId: string) {
+export async function listDrpPlannedTransfers(tenantId: string, runId: string) {
   const { rows } = await query(
-    `SELECT * FROM drp_planned_transfers WHERE drp_run_id = $1 ORDER BY release_date ASC`,
-    [runId],
+    `SELECT * FROM drp_planned_transfers WHERE drp_run_id = $1 AND tenant_id = $2 ORDER BY release_date ASC`,
+    [runId, tenantId],
   );
   return rows;
 }

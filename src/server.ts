@@ -1,5 +1,7 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import { pool } from './db';
+import authRouter from './routes/auth.routes';
 import vendorsRouter from './routes/vendors.routes';
 import purchaseOrdersRouter from './routes/purchaseOrders.routes';
 import receiptsRouter from './routes/receipts.routes';
@@ -22,11 +24,17 @@ import returnsExtendedRouter from './routes/returnsExtended.routes';
 import planningRouter from './routes/planning.routes';
 import drpRouter from './routes/drp.routes';
 import complianceRouter from './routes/compliance.routes';
+import eventsRouter from './routes/events.routes';
+import { requireAuth } from './middleware/auth.middleware';
 
 const PORT = Number(process.env.PORT) || 3000;
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
+
+app.use(authRouter);
+app.use(requireAuth);
 
 // Refactor map:
 // - Vendors + Purchase Orders routes are defined under src/routes/*.routes.ts.
@@ -58,6 +66,7 @@ app.use(returnsExtendedRouter);
 app.use(planningRouter);
 app.use(drpRouter);
 app.use(complianceRouter);
+app.use(eventsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });
