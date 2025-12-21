@@ -120,6 +120,8 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
       (c) => c.componentItemId && c.uom && c.quantityPer !== '' && Number(c.quantityPer) > 0,
     )
     if (cleanComponents.length === 0) return
+    const effectiveFromIso = effectiveFrom ? `${effectiveFrom}T00:00:00.000Z` : undefined
+
     mutation.mutate({
       bomCode,
       outputItemId,
@@ -127,7 +129,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
       notes: notes || undefined,
       version: {
         versionNumber: 1,
-        effectiveFrom: effectiveFrom || undefined,
+        effectiveFrom: effectiveFromIso,
         yieldQuantity: Number(yieldQuantity || 0) || 1,
         yieldUom: resolvedYieldUom,
         components: cleanComponents.map((c, idx) => ({
@@ -214,7 +216,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
           <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Effective from</span>
             <Input
-              type="datetime-local"
+              type="date"
               value={effectiveFrom}
               onChange={(e) => setEffectiveFrom(e.target.value)}
               disabled={mutation.isPending}
