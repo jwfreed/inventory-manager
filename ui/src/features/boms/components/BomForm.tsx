@@ -327,6 +327,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
                   <Input
                     type="number"
                     min={0}
+                    step="any"
                     value={line.ratio ?? ''}
                     onChange={(e) =>
                       updateComponent(idx, {
@@ -342,6 +343,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
                   <Input
                     type="number"
                     min={0}
+                    step="any"
                     value={line.quantityPer}
                     onChange={(e) =>
                       updateComponent(idx, {
