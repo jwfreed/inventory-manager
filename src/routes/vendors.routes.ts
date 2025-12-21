@@ -35,7 +35,7 @@ router.get('/vendors', async (_req: Request, res: Response) => {
     active = activeParam === 'true' || activeParam === '1';
   }
   try {
-    const rows = await listVendorsFiltered(req.auth!.tenantId, active);
+    const rows = await listVendorsFiltered(_req.auth!.tenantId, active);
     return res.json({ data: rows });
   } catch (error) {
     console.error(error);

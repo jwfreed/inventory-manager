@@ -13,7 +13,6 @@ import { LoadingSpinner } from '../../../components/Loading'
 import { Button } from '../../../components/Button'
 import { Input, Textarea } from '../../../components/Inputs'
 import { Combobox } from '../../../components/Combobox'
-import { SearchableSelect } from '../../../components/SearchableSelect'
 import { useDebouncedValue } from '../../../lib/useDebouncedValue'
 
 type LineDraft = {
@@ -25,7 +24,6 @@ type LineDraft = {
 
 export default function PurchaseOrderCreatePage() {
   const navigate = useNavigate()
-  const [vendorSearch, setVendorSearch] = useState('')
   const [locationSearch, setLocationSearch] = useState('')
   const [itemSearch, setItemSearch] = useState('')
 
@@ -39,7 +37,7 @@ export default function PurchaseOrderCreatePage() {
   const [lines, setLines] = useState<LineDraft[]>([{ itemId: '', uom: '', quantityOrdered: '' }])
 
   const vendorsQuery = useQuery<{ data: Vendor[] }, ApiError>({
-    queryKey: ['vendors', vendorSearch],
+    queryKey: ['vendors', 'po-create'],
     queryFn: () => listVendors({ limit: 200, active: true }),
     staleTime: 60_000,
   })
@@ -183,18 +181,13 @@ export default function PurchaseOrderCreatePage() {
                 />
               </label>
               <div>
-                <SearchableSelect
+                <Combobox
                   label="Vendor"
                   value={vendorId}
                   options={vendorOptions}
-                  disabled={vendorsQuery.isLoading}
+                  loading={vendorsQuery.isLoading}
+                  placeholder="Search vendors (code/name)"
                   onChange={(nextValue) => setVendorId(nextValue)}
-                />
-                <Input
-                  className="mt-2"
-                  value={vendorSearch}
-                  onChange={(e) => setVendorSearch(e.target.value)}
-                  placeholder="Search vendors"
                 />
               </div>
             </div>

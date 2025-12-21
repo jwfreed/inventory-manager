@@ -13,6 +13,7 @@ import type { ApiError, WorkOrderRequirements } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
+import { Combobox } from '../../../components/Combobox'
 import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
@@ -79,6 +80,20 @@ export default function WorkOrderDetailPage() {
     if (sku) return sku
     return itemLabel(id)
   }
+
+  const nextBomOptions = useMemo(
+    () =>
+      (nextStepBomsQuery.data?.data ?? []).map((bom) => {
+        const outputLabel = itemLabel(bom.outputItemId)
+        const label = outputLabel ? `${bom.bomCode} → ${outputLabel}` : bom.bomCode
+        return {
+          value: bom.id,
+          label,
+          keywords: `${bom.bomCode} ${outputLabel}`.trim(),
+        }
+      }),
+    [nextStepBomsQuery.data, itemsLookupQuery.data],
+  )
 
   const createNextStep = async () => {
     if (!workOrderQuery.data) return
@@ -287,23 +302,19 @@ export default function WorkOrderDetailPage() {
                   />
                 </label>
                 <label className="space-y-1 text-sm md:col-span-2">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">Next BOM</span>
-                    <select
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                      value={selectedBomId}
-                      onChange={(e) => setSelectedBomId(e.target.value)}
-                      disabled={nextStepBomsQuery.isLoading}
-                    >
-                      <option value="">Select</option>
-                      {nextStepBomsQuery.data?.data.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.bomCode} → {itemLabel(b.outputItemId)}
-                        </option>
-                      ))}
-                    </select>
-                    {nextStepBomsQuery.isError && (
-                      <p className="text-xs text-red-600">
-                        {(nextStepBomsQuery.error as ApiError)?.message ?? 'Failed to load suggestions.'}
+                  <Combobox
+                    label="Next BOM"
+                    value={selectedBomId}
+                    options={nextBomOptions}
+                    loading={nextStepBomsQuery.isLoading}
+                    disabled={nextStepBomsQuery.isLoading}
+                    placeholder="Search suggested BOMs"
+                    emptyMessage="No suggested BOMs"
+                    onChange={(nextValue) => setSelectedBomId(nextValue)}
+                  />
+                  {nextStepBomsQuery.isError && (
+                    <p className="text-xs text-red-600">
+                      {(nextStepBomsQuery.error as ApiError)?.message ?? 'Failed to load suggestions.'}
                     </p>
                   )}
                 </label>

@@ -10,6 +10,7 @@ import type { ApiError, Bom, Item } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
+import { Combobox } from '../../../components/Combobox'
 import { Input, Textarea } from '../../../components/Inputs'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
@@ -73,6 +74,17 @@ export default function WorkOrderCreatePage() {
         label: `${loc.code} — ${loc.name}`,
       })),
     [locationsQuery.data],
+  )
+
+  const bomOptions = useMemo(
+    () =>
+      (bomsQuery.data?.boms ?? []).map((bom) => ({
+        value: bom.id,
+        label: bom.bomCode,
+        description: bom.defaultUom ? `Default UOM: ${bom.defaultUom}` : undefined,
+        keywords: `${bom.bomCode} ${bom.defaultUom ?? ''}`.trim(),
+      })),
+    [bomsQuery.data],
   )
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -319,27 +331,24 @@ export default function WorkOrderCreatePage() {
               <Alert variant="error" title="Failed to load BOMs" message={formatError(bomsQuery.error as ApiError)} />
             )}
             <div className="grid gap-3 md:grid-cols-3">
-              <label className="space-y-1 text-sm md:col-span-2">
-                <span className="text-xs uppercase tracking-wide text-slate-500">BOM</span>
-                <select
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              <div className="md:col-span-2">
+                <Combobox
+                  key={outputItemId || 'bom'}
+                  label="BOM"
                   value={selectedBomId}
-                  onChange={(e) => {
-                    setSelectedBomId(e.target.value)
+                  options={bomOptions}
+                  loading={bomsQuery.isLoading}
+                  disabled={mutation.isPending || !outputItemId || bomsQuery.isLoading}
+                  placeholder={outputItemId ? 'Search BOM code' : 'Select item first'}
+                  emptyMessage={outputItemId ? 'No BOMs found' : 'Select an item first'}
+                  onChange={(nextValue) => {
+                    setSelectedBomId(nextValue)
                     setSelectedVersionId('')
-                    const bom = bomsQuery.data?.boms.find((b) => b.id === e.target.value)
+                    const bom = bomsQuery.data?.boms.find((b) => b.id === nextValue)
                     if (bom) setOutputUom((prev) => prev || bom.defaultUom)
                   }}
-                  disabled={mutation.isPending || !outputItemId || bomsQuery.isLoading}
-                >
-                  <option value="">Select BOM</option>
-                  {bomsQuery.data?.boms.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.bomCode}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                />
+              </div>
               <label className="space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">Version</span>
                 <select
