@@ -106,7 +106,10 @@ async function createSession(res: Response, user: any, membership: any) {
     ]
   );
 
-  res.cookie('refresh_token', refreshToken.raw, refreshCookieOptions());
+  // Clear any legacy refresh cookie scoped to /auth so we don't end up with duplicate refresh_token cookies
+  // (e.g., one for /auth and one for /) and accidentally read the wrong one server-side.
+  res.clearCookie('refresh_token', refreshCookieOptions('/auth'));
+  res.cookie('refresh_token', refreshToken.raw, refreshCookieOptions('/'));
 
   return {
     accessToken,
@@ -114,6 +117,26 @@ async function createSession(res: Response, user: any, membership: any) {
     tenant: mapTenant(membership),
     role: membership.role
   };
+}
+
+function extractRefreshTokenCandidates(req: Request): string[] {
+  const candidates = new Set<string>();
+  const parsed = req.cookies?.refresh_token;
+  if (typeof parsed === 'string' && parsed) {
+    candidates.add(parsed);
+  }
+
+  const header = req.headers.cookie;
+  if (typeof header === 'string' && header) {
+    const re = /(?:^|;\s*)refresh_token=([^;]+)/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(header))) {
+      const value = match[1];
+      if (value) candidates.add(value);
+    }
+  }
+
+  return Array.from(candidates);
 }
 
 router.post('/auth/bootstrap', async (req: Request, res: Response) => {
@@ -216,19 +239,22 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const raw = req.cookies?.refresh_token as string | undefined;
-  if (!raw) {
+  const rawCandidates = extractRefreshTokenCandidates(req);
+  if (rawCandidates.length === 0) {
     return res.status(401).json({ error: 'Missing refresh token.' });
   }
 
   try {
-    const tokenHash = hashToken(raw);
+    const tokenHashes = rawCandidates.map(hashToken);
     const tokenRes = await query(
-      `SELECT * FROM refresh_tokens
-        WHERE token_hash = $1
+      `SELECT *
+         FROM refresh_tokens
+        WHERE token_hash = ANY($1::text[])
           AND revoked_at IS NULL
-          AND expires_at > now()`,
-      [tokenHash]
+          AND expires_at > now()
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [tokenHashes]
     );
     if (tokenRes.rowCount === 0) {
       return res.status(401).json({ error: 'Invalid refresh token.' });
@@ -265,17 +291,19 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
 });
 
 router.post('/auth/logout', async (req: Request, res: Response) => {
-  const raw = req.cookies?.refresh_token as string | undefined;
-  if (raw) {
-    const tokenHash = hashToken(raw);
+  const rawCandidates = extractRefreshTokenCandidates(req);
+  if (rawCandidates.length) {
+    const tokenHashes = rawCandidates.map(hashToken);
     await query(
       `UPDATE refresh_tokens
           SET revoked_at = now()
-        WHERE token_hash = $1`,
-      [tokenHash]
+        WHERE token_hash = ANY($1::text[])`,
+      [tokenHashes]
     );
   }
-  res.clearCookie('refresh_token', refreshCookieOptions());
+
+  res.clearCookie('refresh_token', refreshCookieOptions('/auth'));
+  res.clearCookie('refresh_token', refreshCookieOptions('/'));
   return res.status(204).send();
 });
 

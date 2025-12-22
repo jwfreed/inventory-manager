@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { listPurchaseOrders, getPurchaseOrder } from '../../../api/endpoints/purchaseOrders'
 import { createReceipt, type ReceiptCreatePayload, getReceipt, listReceipts, deleteReceiptApi } from '../../../api/endpoints/receipts'
@@ -20,6 +20,7 @@ export default function ReceivingPage() {
   const [poLineInputs, setPoLineInputs] = useState<{ purchaseOrderLineId: string; uom: string; quantity: number | '' }[]>([
     { purchaseOrderLineId: '', uom: '', quantity: '' },
   ])
+  const [receivedToLocationId, setReceivedToLocationId] = useState('')
   const [receiptIdForPutaway, setReceiptIdForPutaway] = useState('')
   const [putawayLines, setPutawayLines] = useState<
     {
@@ -44,6 +45,80 @@ export default function ReceivingPage() {
     enabled: !!selectedPoId,
   })
 
+  useEffect(() => {
+    if (!poQuery.data?.id) return
+    setReceivedToLocationId(
+      poQuery.data.receivingLocationId ?? poQuery.data.shipToLocationId ?? '',
+    )
+  }, [poQuery.data?.id])
+
+  const getErrorMessage = (error: unknown, fallback: string) => {
+    if (!error) return fallback
+    if (typeof error === 'string') return error
+    if (typeof error === 'object' && 'message' in (error as { message?: unknown })) {
+      const message = (error as { message?: unknown }).message
+      if (typeof message === 'string' && message.trim().length > 0) return message
+    }
+    return fallback
+  }
+
+  const receiptErrorMap: Record<string, string> = {
+    'Purchase order is already fully received/closed.':
+      'This PO is already received/closed. Create a receipt on a different PO.',
+    'Receipt line UOM must match the purchase order line UOM.':
+      'Use the same UOM as the PO line for each receipt line.',
+    'One or more purchase order lines were not found.':
+      'One or more PO lines are invalid. Re-select the PO lines and try again.',
+    'All receipt lines must reference the provided purchase order.':
+      'Each receipt line must belong to the selected PO.',
+  }
+
+  const putawayCreateErrorMap: Record<string, string> = {
+    'Source and destination locations must differ.':
+      'Pick a different To location than the From location for each line.',
+    'Putaway line UOM must match the receipt line UOM.':
+      'Use the same UOM as the receipt line.',
+    'fromLocationId is required when the receipt lacks a staging location.':
+      'Select a From location for each line (staging/receiving).',
+    'QC hold or missing acceptance prevents planning this putaway.':
+      'This receipt line is on QC hold or has no accepted quantity. Resolve QC before planning putaway.',
+    'Requested quantity exceeds available putaway quantity.':
+      'Reduce the quantity to the remaining available amount.',
+    'purchaseOrderReceiptId is required for receipt-based putaways.':
+      'Select a receipt before creating a putaway.',
+    'One or more receipt lines were not found.':
+      'One or more receipt lines are invalid. Reload the receipt and try again.',
+  }
+
+  const putawayPostErrorMap: Record<string, string> = {
+    'Putaway already posted.':
+      'This putaway was already posted. No additional changes were made.',
+    'Putaway line quantity must be greater than zero before posting.':
+      'Each line must have a positive quantity before posting.',
+    'Putaway has no lines to post.':
+      'Add at least one line before posting.',
+    'All putaway lines are already completed or canceled.':
+      'Nothing left to post for this putaway.',
+    'QC hold or missing acceptance prevents posting this putaway.':
+      'QC hold is blocking posting. Resolve QC and try again.',
+    'Putaway quantity exceeds available accepted quantity.':
+      'Reduce quantities or record QC acceptance before posting.',
+    'Requested putaway quantity exceeds accepted quantity.':
+      'Reduce quantities or record QC acceptance before posting.',
+  }
+
+  const mapErrorMessage = (message: string, map: Record<string, string>) => {
+    if (!message) return message
+    if (map[message]) return map[message]
+    if (message.startsWith('Requested quantity exceeds available putaway quantity')) {
+      return 'Reduce the quantity to the remaining available amount.'
+    }
+    if (message.startsWith('Requested putaway quantity exceeds accepted quantity')) {
+      return 'Reduce quantities or record QC acceptance before posting.'
+    }
+    return message
+  }
+
   const receiptQuery = useQuery<PurchaseOrderReceipt>({
     queryKey: ['receipt', receiptIdForPutaway],
     queryFn: () => getReceipt(receiptIdForPutaway),
@@ -58,7 +133,7 @@ export default function ReceivingPage() {
         uom: line.uom,
         quantity: line.quantityReceived,
         defaultToLocationId: line.defaultToLocationId ?? '',
-        defaultFromLocationId: line.defaultFromLocationId ?? '',
+        defaultFromLocationId: line.defaultFromLocationId ?? receiptQuery.data?.receivedToLocationId ?? '',
       })),
     [receiptQuery.data],
   )
@@ -119,6 +194,7 @@ export default function ReceivingPage() {
     onSuccess: (receipt) => {
       setReceiptIdForPutaway(receipt.id)
       setPutawayLines([{ purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' }])
+      void recentReceiptsQuery.refetch()
     },
   })
   const deleteReceiptMutation = useMutation({
@@ -138,7 +214,15 @@ export default function ReceivingPage() {
 
   const postPutawayMutation = useMutation({
     mutationFn: (id: string) => postPutaway(id),
-    onSuccess: (p) => setPutawayId(p.id),
+    onSuccess: (p) => {
+      setPutawayId(p.id)
+      void putawayQuery.refetch()
+    },
+    onError: (error) => {
+      if (getErrorMessage(error, '') === 'Putaway already posted.') {
+        void putawayQuery.refetch()
+      }
+    },
   })
 
   const addPoLineInput = () =>
@@ -166,14 +250,28 @@ export default function ReceivingPage() {
       { purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' },
     ])
 
+  const resolvePutawayDefaults = (opts: { defaultFromLocationId?: string; defaultToLocationId?: string }) => {
+    const fromId = opts.defaultFromLocationId ?? ''
+    const toId = opts.defaultToLocationId ?? ''
+    return {
+      fromId,
+      toId: toId && toId === fromId ? '' : toId,
+    }
+  }
+
   const fillPutawayFromReceipt = () => {
     const lines = receiptQuery.data?.lines ?? []
     if (!lines.length) return
     setPutawayLines(
       lines.map((l) => ({
         purchaseOrderReceiptLineId: l.id,
-        toLocationId: l.defaultToLocationId ?? '',
-        fromLocationId: l.defaultFromLocationId ?? '',
+        ...(() => {
+          const defaults = resolvePutawayDefaults({
+            defaultFromLocationId: l.defaultFromLocationId ?? receiptQuery.data?.receivedToLocationId ?? '',
+            defaultToLocationId: l.defaultToLocationId ?? '',
+          })
+          return { toLocationId: defaults.toId, fromLocationId: defaults.fromId }
+        })(),
         uom: l.uom,
         quantity: l.quantityReceived,
       })),
@@ -195,6 +293,7 @@ export default function ReceivingPage() {
 
   const onCreateReceipt = (e: React.FormEvent) => {
     e.preventDefault()
+    receiptMutation.reset()
     if (!selectedPoId) return
     const lines = poLineInputs
       .filter((l) => l.purchaseOrderLineId && l.uom && l.quantity !== '' && Number(l.quantity) > 0)
@@ -207,6 +306,7 @@ export default function ReceivingPage() {
     receiptMutation.mutate({
       purchaseOrderId: selectedPoId,
       receivedAt: new Date().toISOString(),
+      receivedToLocationId: receivedToLocationId || undefined,
       lines,
     })
   }
@@ -228,6 +328,7 @@ export default function ReceivingPage() {
         }
       })
     if (!receiptIdForPutaway || lines.length === 0) return
+    putawayMutation.reset()
     putawayMutation.mutate({
       sourceType: 'purchase_order_receipt',
       purchaseOrderReceiptId: receiptIdForPutaway,
@@ -251,7 +352,37 @@ export default function ReceivingPage() {
         <Card>
           <form className="space-y-4" onSubmit={onCreateReceipt}>
             {receiptMutation.isError && (
-              <Alert variant="error" title="Receipt failed" message={(receiptMutation.error as ApiError).message} />
+              <Alert
+                variant="error"
+                title="Receipt not saved"
+                message={
+                  receiptErrorMap[getErrorMessage(receiptMutation.error, '')] ??
+                  getErrorMessage(receiptMutation.error, 'Unable to save receipt. Check the lines and try again.')
+                }
+              />
+            )}
+            {receiptMutation.isPending && (
+              <Alert
+                variant="info"
+                title="Saving receipt"
+                message="Creating the receipt and reserving the received quantities. Please wait…"
+              />
+            )}
+            {receiptMutation.isSuccess && receiptMutation.data && (
+              <Alert
+                variant="success"
+                title="Receipt saved"
+                message={`Receipt ${receiptMutation.data.id.slice(0, 8)}… created. Next: review the receipt lines below and create a putaway.`}
+                action={
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setReceiptIdForPutaway(receiptMutation.data?.id ?? '')}
+                  >
+                    Load receipt
+                  </Button>
+                }
+              />
             )}
             <div className="grid gap-3 md:grid-cols-2">
               <label className="space-y-1 text-sm">
@@ -267,10 +398,21 @@ export default function ReceivingPage() {
                     .map((po) => (
                       <option key={po.id} value={po.id}>
                         {po.poNumber} ({po.status})
-                      </option>
-                    ))}
+                  </option>
+                ))}
                 </select>
               </label>
+              <div>
+                <Combobox
+                  label="Received to location"
+                  value={receivedToLocationId}
+                  options={locationOptions}
+                  loading={locationsQuery.isLoading}
+                  onQueryChange={setLocationSearch}
+                  placeholder="Search locations (code/name)"
+                  onChange={(nextValue) => setReceivedToLocationId(nextValue)}
+                />
+              </div>
             </div>
             {poQuery.isLoading && <LoadingSpinner label="Loading PO..." />}
             {poQuery.isError && poQuery.error && (
@@ -363,7 +505,7 @@ export default function ReceivingPage() {
             </div>
             <div className="flex justify-end">
               <Button type="submit" size="sm" disabled={receiptMutation.isPending}>
-                Create receipt
+                {receiptMutation.isPending ? 'Creating…' : 'Create receipt'}
               </Button>
             </div>
           </form>
@@ -443,7 +585,58 @@ export default function ReceivingPage() {
           )}
           <form className="space-y-4" onSubmit={onCreatePutaway}>
             {putawayMutation.isError && (
-              <Alert variant="error" title="Putaway failed" message={(putawayMutation.error as ApiError).message} />
+              <Alert
+                variant="error"
+                title="Putaway draft not saved"
+                message={
+                  mapErrorMessage(
+                    putawayCreateErrorMap[getErrorMessage(putawayMutation.error, '')] ??
+                      getErrorMessage(putawayMutation.error, ''),
+                    putawayCreateErrorMap,
+                  ) || 'Unable to save the putaway draft. Check the lines and try again.'
+                }
+              />
+            )}
+            {putawayMutation.isPending && (
+              <Alert
+                variant="info"
+                title="Saving putaway draft"
+                message="Planning the move. No inventory has moved yet."
+              />
+            )}
+            {putawayMutation.isSuccess && putawayMutation.data && (
+              <Alert
+                variant="success"
+                title="Putaway draft saved"
+                message={`Draft ${putawayMutation.data.id.slice(0, 8)}… created. Review the lines, then post to move inventory.`}
+              />
+            )}
+            {postPutawayMutation.isError && (
+              <Alert
+                variant={getErrorMessage(postPutawayMutation.error, '') === 'Putaway already posted.' ? 'info' : 'error'}
+                title={getErrorMessage(postPutawayMutation.error, '') === 'Putaway already posted.' ? 'Putaway already posted' : 'Putaway not posted'}
+                message={
+                  mapErrorMessage(
+                    putawayPostErrorMap[getErrorMessage(postPutawayMutation.error, '')] ??
+                      getErrorMessage(postPutawayMutation.error, ''),
+                    putawayPostErrorMap,
+                  ) || 'Unable to post the putaway. Check the lines and try again.'
+                }
+              />
+            )}
+            {postPutawayMutation.isPending && (
+              <Alert
+                variant="warning"
+                title="Posting putaway"
+                message="Creating inventory movements. This action is irreversible."
+              />
+            )}
+            {postPutawayMutation.isSuccess && postPutawayMutation.data && (
+              <Alert
+                variant="success"
+                title="Putaway posted"
+                message={`Inventory moved and recorded. Movement ${postPutawayMutation.data.inventoryMovementId ?? 'created'}; putaway ${postPutawayMutation.data.id.slice(0, 8)}… completed.`}
+              />
             )}
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="space-y-1 text-sm">
@@ -525,12 +718,16 @@ export default function ReceivingPage() {
                       disabled={!receiptLineOptions.length}
                       onChange={(nextValue) => {
                         const selected = receiptLineOptions.find((opt) => opt.value === nextValue)
+                        const defaults = resolvePutawayDefaults({
+                          defaultFromLocationId: selected?.defaultFromLocationId,
+                          defaultToLocationId: selected?.defaultToLocationId,
+                        })
                         updatePutawayLine(idx, {
                           purchaseOrderReceiptLineId: nextValue,
                           uom: selected?.uom ?? line.uom,
                           quantity: selected?.quantity ?? line.quantity,
-                          toLocationId: line.toLocationId || selected?.defaultToLocationId || '',
-                          fromLocationId: line.fromLocationId || selected?.defaultFromLocationId || '',
+                          toLocationId: line.toLocationId || defaults.toId,
+                          fromLocationId: line.fromLocationId || defaults.fromId,
                         })
                       }}
                     />
@@ -576,18 +773,25 @@ export default function ReceivingPage() {
             </div>
             <div className="flex gap-2 justify-end">
               <Button type="submit" size="sm" disabled={putawayMutation.isPending}>
-                Create putaway
+                {putawayMutation.isPending ? 'Saving…' : 'Create putaway'}
               </Button>
               <Button
                 type="button"
                 size="sm"
                 variant="secondary"
-                disabled={!putawayId || postPutawayMutation.isPending}
-                onClick={() => putawayId && postPutawayMutation.mutate(putawayId)}
+                disabled={!putawayId || postPutawayMutation.isPending || putawayMutation.isPending}
+                onClick={() => {
+                  if (!putawayId) return
+                  postPutawayMutation.reset()
+                  postPutawayMutation.mutate(putawayId)
+                }}
               >
-                Post putaway
+                {postPutawayMutation.isPending ? 'Posting…' : 'Post putaway'}
               </Button>
             </div>
+            <p className="text-xs text-slate-500">
+              Posting creates inventory movements and cannot be undone.
+            </p>
           </form>
         </Card>
       </Section>

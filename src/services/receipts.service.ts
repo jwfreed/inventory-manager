@@ -72,8 +72,10 @@ export async function fetchReceiptById(tenantId: string, id: string, client?: Po
             pol.item_id,
             i.sku AS item_sku,
             i.name AS item_name,
-            i.default_location_id AS item_default_location_id
+            i.default_location_id AS item_default_location_id,
+            por.received_to_location_id
        FROM purchase_order_receipt_lines porl
+       JOIN purchase_order_receipts por ON por.id = porl.purchase_order_receipt_id AND por.tenant_id = porl.tenant_id
        LEFT JOIN purchase_order_lines pol ON pol.id = porl.purchase_order_line_id AND pol.tenant_id = porl.tenant_id
        LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = porl.tenant_id
       WHERE porl.purchase_order_receipt_id = $1 AND porl.tenant_id = $2

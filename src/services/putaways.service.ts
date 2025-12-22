@@ -98,22 +98,23 @@ function mapPutaway(row: PutawayRow, lines: PutawayLineRow[], contexts: Map<stri
   };
 }
 
-export async function fetchPutawayById(tenantId: string, id: string) {
-  const putawayResult = await query<PutawayRow>('SELECT * FROM putaways WHERE id = $1 AND tenant_id = $2', [
+export async function fetchPutawayById(tenantId: string, id: string, client?: PoolClient) {
+  const executor = client ?? query;
+  const putawayResult = await executor<PutawayRow>('SELECT * FROM putaways WHERE id = $1 AND tenant_id = $2', [
     id,
     tenantId
   ]);
   if (putawayResult.rowCount === 0) {
     return null;
   }
-  const linesResult = await query<PutawayLineRow>(
+  const linesResult = await executor<PutawayLineRow>(
     'SELECT * FROM putaway_lines WHERE putaway_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
     [id, tenantId]
   );
   const receiptLineIds = linesResult.rows.map((line) => line.purchase_order_receipt_line_id);
-  const contexts = await loadReceiptLineContexts(tenantId, receiptLineIds);
-  const qcBreakdown = await loadQcBreakdown(tenantId, receiptLineIds);
-  const totals = await loadPutawayTotals(tenantId, receiptLineIds);
+  const contexts = await loadReceiptLineContexts(tenantId, receiptLineIds, client);
+  const qcBreakdown = await loadQcBreakdown(tenantId, receiptLineIds, client);
+  const totals = await loadPutawayTotals(tenantId, receiptLineIds, client);
   return mapPutaway(putawayResult.rows[0], linesResult.rows, contexts, qcBreakdown, totals);
 }
 
@@ -337,6 +338,6 @@ export async function postPutaway(tenantId: string, id: string) {
       ['completed', movementId, now, id, tenantId]
     );
 
-    return fetchPutawayById(tenantId, id);
+    return fetchPutawayById(tenantId, id, client);
   });
 }

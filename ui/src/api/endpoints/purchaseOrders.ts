@@ -29,6 +29,7 @@ export type PurchaseOrderCreateInput = {
   orderDate?: string
   expectedDate?: string
   shipToLocationId?: string
+  receivingLocationId?: string
   vendorReference?: string
   notes?: string
   lines: {

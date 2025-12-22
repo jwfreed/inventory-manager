@@ -452,6 +452,7 @@ export type PurchaseOrderReceiptLine = {
   itemId?: string
   itemSku?: string | null
   itemName?: string | null
+  defaultFromLocationId?: string | null
   defaultToLocationId?: string | null
   uom: string
   quantityReceived: number

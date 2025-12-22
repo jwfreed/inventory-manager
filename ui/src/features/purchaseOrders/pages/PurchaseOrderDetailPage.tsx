@@ -22,7 +22,17 @@ export default function PurchaseOrderDetailPage() {
   const [shipToLocationId, setShipToLocationId] = useState('')
   const [receivingLocationId, setReceivingLocationId] = useState('')
   const [status, setStatus] = useState('draft')
+  const [vendorReference, setVendorReference] = useState('')
   const [notes, setNotes] = useState('')
+
+  const normalizeDateInput = (value?: string | null) => {
+    if (!value) return ''
+    // Support either a date-only string ("YYYY-MM-DD") or an ISO timestamp.
+    if (value.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+      return value.slice(0, 10)
+    }
+    return ''
+  }
 
   const poQuery = useQuery<PurchaseOrder, ApiError>({
     queryKey: ['purchase-order', id],
@@ -50,15 +60,17 @@ export default function PurchaseOrderDetailPage() {
   useEffect(() => {
     if (!poQuery.data) return
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    setOrderDate(poQuery.data.orderDate ?? '')
+    setOrderDate(normalizeDateInput(poQuery.data.orderDate))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    setExpectedDate(poQuery.data.expectedDate ?? '')
+    setExpectedDate(normalizeDateInput(poQuery.data.expectedDate))
     // eslint-disable-next-line react-hooks/exhaustive-deps
     setShipToLocationId(poQuery.data.shipToLocationId ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
     setReceivingLocationId(poQuery.data.receivingLocationId ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
     setStatus(poQuery.data.status ?? 'draft')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setVendorReference(poQuery.data.vendorReference ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
     setNotes(poQuery.data.notes ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,10 +79,11 @@ export default function PurchaseOrderDetailPage() {
   const updateMutation = useMutation({
     mutationFn: () =>
       updatePurchaseOrder(id as string, {
-        orderDate: orderDate || undefined,
-        expectedDate: expectedDate || undefined,
+        orderDate: normalizeDateInput(orderDate) || undefined,
+        expectedDate: normalizeDateInput(expectedDate) || undefined,
         shipToLocationId: shipToLocationId || undefined,
         receivingLocationId: receivingLocationId || undefined,
+        vendorReference: vendorReference.trim() || undefined,
         status,
         notes: notes || undefined,
       }),
@@ -162,6 +175,14 @@ export default function PurchaseOrderDetailPage() {
                 onChange={(nextValue) => setReceivingLocationId(nextValue)}
               />
             </div>
+            <label className="space-y-1 text-sm">
+              <span className="text-xs uppercase text-slate-500">Vendor reference</span>
+              <Input
+                value={vendorReference}
+                onChange={(e) => setVendorReference(e.target.value)}
+                placeholder="Optional"
+              />
+            </label>
           </div>
           <label className="mt-3 block space-y-1 text-sm">
             <span className="text-xs uppercase text-slate-500">Notes</span>

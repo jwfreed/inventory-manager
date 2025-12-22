@@ -29,6 +29,7 @@ export default function PurchaseOrderCreatePage() {
 
   const [poNumber, setPoNumber] = useState('')
   const [vendorId, setVendorId] = useState('')
+  const [vendorReference, setVendorReference] = useState('')
   const [shipToLocationId, setShipToLocationId] = useState('')
   const [receivingLocationId, setReceivingLocationId] = useState('')
   const [orderDate, setOrderDate] = useState('')
@@ -135,6 +136,7 @@ export default function PurchaseOrderCreatePage() {
       receivingLocationId: receivingLocationId || undefined,
       orderDate: orderDate || undefined,
       expectedDate: expectedDate || undefined,
+      vendorReference: vendorReference.trim() || undefined,
       notes: notes || undefined,
       lines: validLines.map((line) => ({
         itemId: line.itemId,
@@ -199,6 +201,14 @@ export default function PurchaseOrderCreatePage() {
               <label className="space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">Expected date</span>
                 <Input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-xs uppercase tracking-wide text-slate-500">Vendor reference</span>
+                <Input
+                  value={vendorReference}
+                  onChange={(e) => setVendorReference(e.target.value)}
+                  placeholder="Optional (vendor's reference #)"
+                />
               </label>
               <div>
                 <Combobox

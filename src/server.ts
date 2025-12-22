@@ -28,8 +28,42 @@ import eventsRouter from './routes/events.routes';
 import { requireAuth } from './middleware/auth.middleware';
 
 const PORT = Number(process.env.PORT) || 3000;
+const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 
 const app = express();
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin as string | undefined;
+  if (!origin) {
+    return next();
+  }
+
+  const allowOrigin =
+    CORS_ORIGINS.length === 0
+      ? origin
+      : CORS_ORIGINS.includes(origin)
+        ? origin
+        : null;
+
+  if (allowOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', allowOrigin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  return next();
+});
+
 app.use(express.json());
 app.use(cookieParser());
 
