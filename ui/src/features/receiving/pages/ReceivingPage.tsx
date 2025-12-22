@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { listPurchaseOrders, getPurchaseOrder } from '../../../api/endpoints/purchaseOrders'
 import { createReceipt, type ReceiptCreatePayload, getReceipt, listReceipts, deleteReceiptApi } from '../../../api/endpoints/receipts'
@@ -7,7 +8,7 @@ import type { ApiError, Location, PurchaseOrder, PurchaseOrderReceipt, Putaway }
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
-import { Input } from '../../../components/Inputs'
+import { Input, Textarea } from '../../../components/Inputs'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { listLocations } from '../../../api/endpoints/locations'
@@ -15,11 +16,22 @@ import { Combobox } from '../../../components/Combobox'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { useDebouncedValue } from '../../../lib/useDebouncedValue'
 
+type ReceiptLineInput = {
+  purchaseOrderLineId: string
+  lineNumber: number
+  itemLabel: string
+  uom: string
+  expectedQty: number
+  receivedQty: number | ''
+  discrepancyReason: '' | 'short' | 'over' | 'damaged' | 'substituted'
+  discrepancyNotes: string
+}
+
 export default function ReceivingPage() {
+  const [searchParams] = useSearchParams()
   const [selectedPoId, setSelectedPoId] = useState('')
-  const [poLineInputs, setPoLineInputs] = useState<{ purchaseOrderLineId: string; uom: string; quantity: number | '' }[]>([
-    { purchaseOrderLineId: '', uom: '', quantity: '' },
-  ])
+  const [receiptLineInputs, setReceiptLineInputs] = useState<ReceiptLineInput[]>([])
+  const [receiptNotes, setReceiptNotes] = useState('')
   const [receivedToLocationId, setReceivedToLocationId] = useState('')
   const [receiptIdForPutaway, setReceiptIdForPutaway] = useState('')
   const [putawayLines, setPutawayLines] = useState<
@@ -33,9 +45,10 @@ export default function ReceivingPage() {
   >([{ purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' }])
   const [locationSearch, setLocationSearch] = useState('')
   const [putawayId, setPutawayId] = useState('')
+  const poIdFromQuery = searchParams.get('poId') ?? ''
   const poListQuery = useQuery({
     queryKey: ['purchase-orders'],
-    queryFn: () => listPurchaseOrders({ limit: 50 }),
+    queryFn: () => listPurchaseOrders({ limit: 200 }),
     staleTime: 60_000,
   })
 
@@ -45,11 +58,45 @@ export default function ReceivingPage() {
     enabled: !!selectedPoId,
   })
 
+  const buildReceiptLines = (po: PurchaseOrder): ReceiptLineInput[] => {
+    return (po.lines ?? []).map((line, idx) => {
+      const sku = line.itemSku ?? line.itemId ?? 'Item'
+      const name = line.itemName ?? ''
+      const label = `${sku}${name ? ` — ${name}` : ''}`
+      return {
+        purchaseOrderLineId: line.id,
+        lineNumber: line.lineNumber ?? idx + 1,
+        itemLabel: label,
+        uom: line.uom ?? '',
+        expectedQty: line.quantityOrdered ?? 0,
+        receivedQty: line.quantityOrdered ?? 0,
+        discrepancyReason: '',
+        discrepancyNotes: '',
+      }
+    })
+  }
+
+  const discrepancyLabels: Record<ReceiptLineInput['discrepancyReason'], string> = {
+    '': 'No variance',
+    short: 'Short',
+    over: 'Over',
+    damaged: 'Damaged',
+    substituted: 'Substituted',
+  }
+
+  useEffect(() => {
+    if (poIdFromQuery) {
+      setSelectedPoId(poIdFromQuery)
+    }
+  }, [poIdFromQuery])
+
   useEffect(() => {
     if (!poQuery.data?.id) return
     setReceivedToLocationId(
       poQuery.data.receivingLocationId ?? poQuery.data.shipToLocationId ?? '',
     )
+    setReceiptLineInputs(buildReceiptLines(poQuery.data))
+    setReceiptNotes('')
   }, [poQuery.data?.id])
 
   const getErrorMessage = (error: unknown, fallback: string) => {
@@ -170,24 +217,30 @@ export default function ReceivingPage() {
     [locationsQuery.data],
   )
 
-  const poLinesById = useMemo(() => {
-    const map = new Map<string, { id: string; label: string; uom: string }>()
-    if (poQuery.data?.lines) {
-      poQuery.data.lines.forEach((line) => {
-        const sku = line.itemSku ?? line.itemId ?? ''
-        const name = line.itemName ?? ''
-        const label = `Line ${line.lineNumber ?? ''} — ${sku}${name ? ` — ${name}` : ''} (${line.quantityOrdered ?? ''} ${line.uom ?? ''})`
-        map.set(line.id, { id: line.id, label, uom: line.uom ?? '' })
-      })
+  const receiptLineSummary = useMemo(() => {
+    const lines = receiptLineInputs.map((line) => {
+      const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
+      const expectedQty = line.expectedQty ?? 0
+      const delta = receivedQty - expectedQty
+      const remaining = Math.max(0, expectedQty - receivedQty)
+      return { ...line, receivedQty, expectedQty, delta, remaining }
+    })
+    const receivedLines = lines.filter((line) => line.receivedQty > 0)
+    const discrepancyLines = lines.filter((line) => line.delta !== 0)
+    const missingReasons = discrepancyLines.filter((line) => !line.discrepancyReason)
+    const remainingLines = lines.filter((line) => line.remaining > 0)
+    const totalExpected = lines.reduce((sum, line) => sum + line.expectedQty, 0)
+    const totalReceived = lines.reduce((sum, line) => sum + line.receivedQty, 0)
+    return {
+      lines,
+      receivedLines,
+      discrepancyLines,
+      missingReasons,
+      remainingLines,
+      totalExpected,
+      totalReceived,
     }
-    return map
-  }, [poQuery.data])
-
-  const poLineOptions = useMemo(() => Array.from(poLinesById.values()).map((l) => ({
-    value: l.id,
-    label: l.label,
-    keywords: l.label,
-  })), [poLinesById])
+  }, [receiptLineInputs])
 
   const receiptMutation = useMutation({
     mutationFn: (payload: ReceiptCreatePayload) => createReceipt(payload),
@@ -225,23 +278,13 @@ export default function ReceivingPage() {
     },
   })
 
-  const addPoLineInput = () =>
-    setPoLineInputs((prev) => [...prev, { purchaseOrderLineId: '', uom: '', quantity: '' }])
-
-  const fillFromPo = () => {
-    const poLines = poQuery.data?.lines ?? []
-    if (poLines.length === 0) return
-    setPoLineInputs(
-      poLines.map((l) => ({
-        purchaseOrderLineId: l.id,
-        uom: l.uom ?? '',
-        quantity: l.quantityOrdered ?? '',
-      })),
-    )
+  const resetReceiptLines = () => {
+    if (!poQuery.data) return
+    setReceiptLineInputs(buildReceiptLines(poQuery.data))
   }
 
-  const updatePoLineInput = (idx: number, patch: Partial<{ purchaseOrderLineId: string; uom: string; quantity: number | '' }>) => {
-    setPoLineInputs((prev) => prev.map((line, i) => (i === idx ? { ...line, ...patch } : line)))
+  const updateReceiptLine = (lineId: string, patch: Partial<ReceiptLineInput>) => {
+    setReceiptLineInputs((prev) => prev.map((line) => (line.purchaseOrderLineId === lineId ? { ...line, ...patch } : line)))
   }
 
   const addPutawayLine = () =>
@@ -295,18 +338,29 @@ export default function ReceivingPage() {
     e.preventDefault()
     receiptMutation.reset()
     if (!selectedPoId) return
-    const lines = poLineInputs
-      .filter((l) => l.purchaseOrderLineId && l.uom && l.quantity !== '' && Number(l.quantity) > 0)
-      .map((l) => ({
-        purchaseOrderLineId: l.purchaseOrderLineId,
-        uom: l.uom,
-        quantityReceived: Number(l.quantity),
-      }))
+    if (receiptLineSummary.missingReasons.length > 0) return
+    const lines = receiptLineSummary.receivedLines.map((l) => ({
+      purchaseOrderLineId: l.purchaseOrderLineId,
+      uom: l.uom,
+      quantityReceived: Number(l.receivedQty),
+    }))
     if (lines.length === 0) return
+    const discrepancyNote = receiptLineSummary.discrepancyLines.length
+      ? `Discrepancies: ${receiptLineSummary.discrepancyLines
+          .map((line) => {
+            const reason = discrepancyLabels[line.discrepancyReason] ?? 'Variance'
+            const deltaValue = line.delta < 0 ? Math.abs(line.delta) : line.delta
+            const notes = line.discrepancyNotes ? ` (${line.discrepancyNotes})` : ''
+            return `${line.itemLabel} ${reason} ${deltaValue}${notes}`
+          })
+          .join('; ')}`
+      : ''
+    const composedNotes = [receiptNotes.trim(), discrepancyNote].filter((val) => val).join('\n')
     receiptMutation.mutate({
       purchaseOrderId: selectedPoId,
       receivedAt: new Date().toISOString(),
       receivedToLocationId: receivedToLocationId || undefined,
+      notes: composedNotes || undefined,
       lines,
     })
   }
@@ -336,6 +390,12 @@ export default function ReceivingPage() {
     })
   }
 
+  const canPostReceipt =
+    !!selectedPoId &&
+    receiptLineSummary.receivedLines.length > 0 &&
+    receiptLineSummary.missingReasons.length === 0 &&
+    !receiptMutation.isPending
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -347,7 +407,7 @@ export default function ReceivingPage() {
 
       <Section
         title="Record a receipt"
-        description="Capture what arrived from a purchase order. Incoming counts toward On order / In transit until put away."
+        description="Step 1: confirm what physically arrived. Posting a receipt updates inventory and locks this record."
       >
         <Card>
           <form className="space-y-4" onSubmit={onCreateReceipt}>
@@ -365,14 +425,14 @@ export default function ReceivingPage() {
               <Alert
                 variant="info"
                 title="Saving receipt"
-                message="Creating the receipt and reserving the received quantities. Please wait…"
+                message="Posting the receipt and updating inventory. Please wait…"
               />
             )}
             {receiptMutation.isSuccess && receiptMutation.data && (
               <Alert
                 variant="success"
-                title="Receipt saved"
-                message={`Receipt ${receiptMutation.data.id.slice(0, 8)}… created. Next: review the receipt lines below and create a putaway.`}
+                title="Receipt posted"
+                message={`Receipt ${receiptMutation.data.id.slice(0, 8)}… posted. Inventory is updated. Next: create a putaway when you're ready.`}
                 action={
                   <Button
                     size="sm"
@@ -386,7 +446,7 @@ export default function ReceivingPage() {
             )}
             <div className="grid gap-3 md:grid-cols-2">
               <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Purchase order</span>
+                <span className="text-xs uppercase tracking-wide text-slate-500">Purchase order (open or partial)</span>
                 <select
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   value={selectedPoId}
@@ -398,8 +458,8 @@ export default function ReceivingPage() {
                     .map((po) => (
                       <option key={po.id} value={po.id}>
                         {po.poNumber} ({po.status})
-                  </option>
-                ))}
+                      </option>
+                    ))}
                 </select>
               </label>
               <div>
@@ -412,100 +472,225 @@ export default function ReceivingPage() {
                   placeholder="Search locations (code/name)"
                   onChange={(nextValue) => setReceivedToLocationId(nextValue)}
                 />
+                <p className="mt-1 text-xs text-slate-500">Use a staging/receiving location to defer putaway.</p>
               </div>
             </div>
             {poQuery.isLoading && <LoadingSpinner label="Loading PO..." />}
             {poQuery.isError && poQuery.error && (
               <Alert variant="error" title="PO load failed" message={(poQuery.error as ApiError).message} />
             )}
-              {poQuery.data && (
+            {poQuery.data && (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-sm font-semibold text-slate-800">
+                    PO {poQuery.data.poNumber}
+                  </div>
+                  <div className="text-xs text-slate-600">
+                    Vendor: {poQuery.data.vendorCode ?? poQuery.data.vendorId}
+                    {poQuery.data.vendorName ? ` — ${poQuery.data.vendorName}` : ''}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Expected lines: {receiptLineInputs.length}
+                  </div>
+                </div>
+
                 <div className="rounded-lg border border-slate-200 p-3">
-                  <div className="text-sm font-semibold text-slate-800">Lines</div>
-                  <div className="overflow-hidden rounded border border-slate-200 mt-2">
-                    <table className="min-w-full divide-y divide-slate-200">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Line</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Item</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Qty</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">UOM</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 bg-white">
-                      {poQuery.data.lines?.map((l) => (
-                        <tr key={l.id}>
-                          <td className="px-3 py-2 text-sm text-slate-800">{l.lineNumber}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">
-                            {l.itemSku ?? l.itemId}
-                            {l.itemName ? ` — ${l.itemName}` : ''}
-                          </td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{l.quantityOrdered}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{l.uom}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Step 2: Record receipt lines</div>
+                      <p className="text-xs text-slate-500">
+                        Expected vs received are paired. Lines with 0 received are treated as not received.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={resetReceiptLines}
+                      disabled={receiptLineInputs.length === 0}
+                    >
+                      Reset to expected
+                    </Button>
+                  </div>
+                  {receiptLineInputs.length === 0 ? (
+                    <div className="mt-3 text-sm text-slate-600">No PO lines to receive.</div>
+                  ) : (
+                    <div className="mt-3 overflow-hidden rounded border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Line</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Item</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Expected</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Received</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Delta</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Discrepancy</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {receiptLineInputs.map((line) => {
+                            const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
+                            const expectedQty = line.expectedQty ?? 0
+                            const delta = receivedQty - expectedQty
+                            const hasVariance = delta !== 0
+                            const deltaLabel = hasVariance
+                              ? delta > 0
+                                ? `Over by ${delta}`
+                                : `Short by ${Math.abs(delta)}`
+                              : 'On target'
+                            const deltaTone = hasVariance ? 'text-amber-700' : 'text-slate-500'
+                            const needsReason = hasVariance && !line.discrepancyReason
+                            return (
+                              <tr key={line.purchaseOrderLineId}>
+                                <td className="px-3 py-2 text-sm text-slate-800">{line.lineNumber}</td>
+                                <td className="px-3 py-2 text-sm text-slate-800">{line.itemLabel}</td>
+                                <td className="px-3 py-2 text-sm text-slate-800">
+                                  {expectedQty} {line.uom}
+                                </td>
+                                <td className="px-3 py-2 text-sm text-slate-800">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={line.receivedQty}
+                                    onChange={(e) => {
+                                      const nextValue = e.target.value === '' ? '' : Number(e.target.value)
+                                      const nextReceived = nextValue === '' ? 0 : Number(nextValue)
+                                      const nextDelta = nextReceived - expectedQty
+                                      let nextReason = line.discrepancyReason
+                                      let nextNotes = line.discrepancyNotes
+                                      if (nextDelta === 0) {
+                                        nextReason = ''
+                                        nextNotes = ''
+                                      } else if (!nextReason) {
+                                        nextReason = nextDelta > 0 ? 'over' : 'short'
+                                      }
+                                      updateReceiptLine(line.purchaseOrderLineId, {
+                                        receivedQty: nextValue,
+                                        discrepancyReason: nextReason,
+                                        discrepancyNotes: nextNotes,
+                                      })
+                                    }}
+                                  />
+                                </td>
+                                <td className={`px-3 py-2 text-sm ${deltaTone}`}>{deltaLabel}</td>
+                                <td className="px-3 py-2 text-sm text-slate-800">
+                                  {hasVariance ? (
+                                    <div className="space-y-1">
+                                      <select
+                                        className={`w-full rounded-lg border px-2 py-1 text-sm ${
+                                          needsReason ? 'border-amber-300 bg-amber-50' : 'border-slate-200'
+                                        }`}
+                                        value={line.discrepancyReason}
+                                        onChange={(e) =>
+                                          updateReceiptLine(line.purchaseOrderLineId, {
+                                            discrepancyReason: e.target.value as ReceiptLineInput['discrepancyReason'],
+                                          })
+                                        }
+                                      >
+                                        <option value="">Select reason</option>
+                                        <option value="short">Short</option>
+                                        <option value="over">Over</option>
+                                        <option value="damaged">Damaged</option>
+                                        <option value="substituted">Substituted</option>
+                                      </select>
+                                      {(line.discrepancyReason === 'damaged' || line.discrepancyReason === 'substituted') && (
+                                        <Input
+                                          value={line.discrepancyNotes}
+                                          onChange={(e) =>
+                                            updateReceiptLine(line.purchaseOrderLineId, {
+                                              discrepancyNotes: e.target.value,
+                                            })
+                                          }
+                                          placeholder="Notes (optional)"
+                                        />
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-slate-500">No variance</span>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Receipt notes (optional)</span>
+                  <Textarea
+                    value={receiptNotes}
+                    onChange={(e) => setReceiptNotes(e.target.value)}
+                    placeholder="Context for discrepancies, handling notes, or carrier references."
+                  />
+                </label>
+
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-sm font-semibold text-slate-800">Step 3: Review summary</div>
+                  <div className="mt-2 grid gap-2 md:grid-cols-3 text-sm text-slate-700">
+                    <div>
+                      Lines received: {receiptLineSummary.receivedLines.length} / {receiptLineInputs.length}
+                    </div>
+                    <div>Lines remaining: {receiptLineSummary.remainingLines.length}</div>
+                    <div>Discrepancies: {receiptLineSummary.discrepancyLines.length}</div>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500">
+                    Total expected {receiptLineSummary.totalExpected} · Total received {receiptLineSummary.totalReceived}
+                  </div>
+                  {receiptLineSummary.discrepancyLines.length > 0 && (
+                    <div className="mt-2 text-xs text-slate-600">
+                      <div className="font-semibold text-slate-700">Discrepancies</div>
+                      <ul className="mt-1 list-disc pl-4">
+                        {receiptLineSummary.discrepancyLines.map((line) => {
+                          const deltaLabel =
+                            line.delta > 0 ? `over by ${line.delta}` : `short by ${Math.abs(line.delta)}`
+                          const reason = line.discrepancyReason
+                            ? discrepancyLabels[line.discrepancyReason]
+                            : 'Reason required'
+                          const note = line.discrepancyNotes ? ` — ${line.discrepancyNotes}` : ''
+                          return (
+                            <li key={line.purchaseOrderLineId}>
+                              {line.itemLabel}: expected {line.expectedQty} {line.uom}, received {line.receivedQty}{' '}
+                              {line.uom} ({deltaLabel}) · {reason}
+                              {note}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                  {receiptLineSummary.receivedLines.length === 0 && (
+                    <div className="mt-2">
+                      <Alert
+                        variant="warning"
+                        title="No received quantities"
+                        message="Enter at least one received quantity to post a receipt."
+                      />
+                    </div>
+                  )}
+                  {receiptLineSummary.missingReasons.length > 0 && (
+                    <div className="mt-2">
+                      <Alert
+                        variant="warning"
+                        title="Discrepancy reason required"
+                        message={`Select a reason for ${receiptLineSummary.missingReasons.length} line(s) with a variance.`}
+                      />
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-slate-500">
+                    Posting creates a receipt, updates inventory immediately, and locks this record.
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Discrepancies are recorded in the receipt notes for auditability.
+                  </p>
                 </div>
               </div>
             )}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-800">Receipt lines</div>
-                <div className="flex gap-2">
-                  <Button type="button" variant="secondary" size="sm" onClick={fillFromPo} disabled={!poQuery.data?.lines?.length}>
-                    Fill from PO
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={addPoLineInput}>
-                    Add line
-                  </Button>
-                </div>
-              </div>
-              {poLineInputs.map((line, idx) => (
-                <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
-                  <div className="md:col-span-2">
-                    <SearchableSelect
-                      label="PO line"
-                      value={line.purchaseOrderLineId}
-                      options={poLineOptions}
-                      disabled={!selectedPoId || poLineOptions.length === 0}
-                      onChange={(nextValue) => {
-                        const selected = nextValue ? poLinesById.get(nextValue) : undefined
-                        updatePoLineInput(idx, {
-                          purchaseOrderLineId: nextValue,
-                          uom: selected?.uom || line.uom,
-                        })
-                      }}
-                    />
-                    {line.purchaseOrderLineId && (
-                      <div className="mt-1 text-xs text-slate-500">{poLinesById.get(line.purchaseOrderLineId)?.label}</div>
-                    )}
-                  </div>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
-                    <Input value={line.uom} onChange={(e) => updatePoLineInput(idx, { uom: e.target.value })} />
-                  </label>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">Qty received</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={line.quantity}
-                      onChange={(e) =>
-                        updatePoLineInput(idx, {
-                          quantity: e.target.value === '' ? '' : Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                  <div className="flex items-end">
-                    <div className="text-xs text-slate-500">Use PO line and matching units.</div>
-                  </div>
-                </div>
-              ))}
-            </div>
             <div className="flex justify-end">
-              <Button type="submit" size="sm" disabled={receiptMutation.isPending}>
-                {receiptMutation.isPending ? 'Creating…' : 'Create receipt'}
+              <Button type="submit" size="sm" disabled={!canPostReceipt}>
+                {receiptMutation.isPending ? 'Posting…' : 'Post receipt'}
               </Button>
             </div>
           </form>
@@ -514,7 +699,7 @@ export default function ReceivingPage() {
 
       <Section
         title="Move received items to storage"
-        description="Plan putaway moves from a receipt line into a storage location."
+        description="Step 4: decide where received inventory goes. Putaway can be immediate or deferred."
       >
         <Card>
           <div className="flex items-center justify-between">

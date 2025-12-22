@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { listPurchaseOrders, getPurchaseOrder, createPurchaseOrder } from '../../../api/endpoints/purchaseOrders'
 import type { ApiError, PurchaseOrder } from '../../../api/types'
@@ -25,8 +25,13 @@ const formatError = (err: unknown) => {
 
 export default function PurchaseOrdersListPage() {
   const qc = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [repeatMessage, setRepeatMessage] = useState<string | null>(null)
   const [repeatError, setRepeatError] = useState<string | null>(null)
+
+  const action = (searchParams.get('action') ?? '').toLowerCase()
+  const statusFilter = (searchParams.get('status') ?? (action === 'receive' ? 'submitted' : '')).toLowerCase()
+  const showReceiveAction = action === 'receive' || statusFilter === 'submitted'
 
   const poQuery = useQuery({
     queryKey: ['purchase-orders'],
@@ -75,18 +80,34 @@ export default function PurchaseOrdersListPage() {
   })
 
   const rows = useMemo(() => poQuery.data?.data ?? [], [poQuery.data])
+  const filteredRows = useMemo(() => {
+    if (!statusFilter) return rows
+    return rows.filter((po) => (po.status ?? '').toLowerCase() === statusFilter)
+  }, [rows, statusFilter])
+
+  const statusLabel = statusFilter ? `${statusFilter[0].toUpperCase()}${statusFilter.slice(1)}` : null
+  const emptyMessage = statusLabel ? `No ${statusLabel.toLowerCase()} purchase orders.` : 'No purchase orders yet.'
 
   return (
     <div className="space-y-6">
       <Section title="Purchase Orders" description="View recent POs and repeat them quickly.">
         <div className="flex items-center justify-between">
           <div className="text-sm text-slate-600">
-            Showing last {formatNumber(rows.length)} POs (latest first).
+            {statusLabel
+              ? `Showing ${formatNumber(filteredRows.length)} ${statusLabel} POs.`
+              : `Showing last ${formatNumber(rows.length)} POs (latest first).`}
           </div>
           <Link to="/purchase-orders/new">
             <Button size="sm">Create PO</Button>
           </Link>
         </div>
+        {showReceiveAction && (
+          <Alert
+            variant="info"
+            title="Select a PO to receive"
+            message="Choose a submitted PO to open Receiving with the PO preselected."
+          />
+        )}
         {repeatMessage && <Alert variant="success" title="PO repeated" message={repeatMessage} />}
         {repeatError && <Alert variant="error" title="Repeat failed" message={repeatError} />}
         <Card className="mt-3">
@@ -94,10 +115,10 @@ export default function PurchaseOrdersListPage() {
           {poQuery.isError && poQuery.error && (
             <Alert variant="error" title="Error" message={(poQuery.error as ApiError).message} />
           )}
-          {!poQuery.isLoading && rows.length === 0 && (
-            <div className="py-6 text-sm text-slate-600">No purchase orders yet.</div>
+          {!poQuery.isLoading && filteredRows.length === 0 && (
+            <div className="py-6 text-sm text-slate-600">{emptyMessage}</div>
           )}
-          {!poQuery.isLoading && rows.length > 0 && (
+          {!poQuery.isLoading && filteredRows.length > 0 && (
             <div className="overflow-hidden rounded-lg border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
@@ -126,10 +147,13 @@ export default function PurchaseOrdersListPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white">
-                  {rows.map((po: PurchaseOrder) => (
+                  {filteredRows.map((po: PurchaseOrder) => (
                     <tr key={po.id}>
                       <td className="px-3 py-2 text-sm text-slate-800">
-                        <Link to={`/purchase-orders/${po.id}`} className="text-brand-700 underline">
+                        <Link
+                          to={showReceiveAction ? `/receiving?poId=${po.id}` : `/purchase-orders/${po.id}`}
+                          className="text-brand-700 underline"
+                        >
                           {po.poNumber}
                         </Link>
                       </td>
@@ -143,6 +167,13 @@ export default function PurchaseOrdersListPage() {
                       <td className="px-3 py-2 text-sm text-slate-800">{po.expectedDate ?? '—'}</td>
                       <td className="px-3 py-2 text-right text-sm text-slate-800">
                         <div className="flex justify-end gap-2">
+                          {showReceiveAction && po.status === 'submitted' && (
+                            <Link to={`/receiving?poId=${po.id}`}>
+                              <Button variant="secondary" size="sm">
+                                Receive
+                              </Button>
+                            </Link>
+                          )}
                           <Button
                             variant="secondary"
                             size="sm"
@@ -151,9 +182,6 @@ export default function PurchaseOrdersListPage() {
                           >
                             {repeatMutation.isPending ? 'Repeating…' : 'Repeat'}
                           </Button>
-                          <Link to="/purchase-orders/new">
-                            <Button variant="secondary" size="sm">New</Button>
-                          </Link>
                         </div>
                       </td>
                     </tr>

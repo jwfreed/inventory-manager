@@ -7,6 +7,7 @@ import { listWorkOrders } from '../../../api/endpoints/workOrders'
 import { listInventorySnapshotSummary } from '../../../api/endpoints/inventorySnapshot'
 import { listItems } from '../../../api/endpoints/items'
 import { listLocations } from '../../../api/endpoints/locations'
+import { listPurchaseOrders } from '../../../api/endpoints/purchaseOrders'
 import type { ApiError } from '../../../api/types'
 import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
@@ -14,6 +15,7 @@ import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { Badge } from '../../../components/Badge'
+import { Button } from '../../../components/Button'
 import { KpiCardGrid } from '../components/KpiCardGrid'
 import { SnapshotsTable } from '../components/SnapshotsTable'
 import { formatDateTime } from '../utils'
@@ -107,13 +109,19 @@ export default function DashboardPage() {
     staleTime: 30_000,
   })
 
-  const productionRows =
-    productionQuery.data?.data.map((wo) => ({
-      outputItemId: wo.outputItemId,
-      uom: wo.outputUom,
-      planned: wo.quantityPlanned,
-      completed: wo.quantityCompleted ?? 0,
-    })) ?? []
+  const purchaseOrdersQuery = useQuery({
+    queryKey: ['purchase-orders', 'dashboard'],
+    queryFn: () => listPurchaseOrders({ limit: 200 }),
+    staleTime: 30_000,
+  })
+
+  const workOrders = productionQuery.data?.data ?? []
+  const productionRows = workOrders.map((wo) => ({
+    outputItemId: wo.outputItemId,
+    uom: wo.outputUom,
+    planned: wo.quantityPlanned,
+    completed: wo.quantityCompleted ?? 0,
+  }))
 
   const productionByItem = productionRows.reduce<
     Record<string, { itemId: string; uom: string; planned: number; completed: number }>
@@ -130,6 +138,19 @@ export default function DashboardPage() {
     ...val,
     remaining: Math.max(0, val.planned - val.completed),
   }))
+
+  const openWorkOrdersCount = workOrders.filter(
+    (wo) => (wo.quantityCompleted ?? 0) < wo.quantityPlanned,
+  ).length
+
+  const productionAtRisk = useMemo(
+    () =>
+      productionList
+        .filter((row) => row.remaining > 0)
+        .sort((a, b) => b.remaining - a.remaining)
+        .slice(0, 5),
+    [productionList],
+  )
 
   const itemLookup = useMemo(() => {
     const map = new Map<string, { sku?: string; name?: string }>()
@@ -169,14 +190,159 @@ export default function DashboardPage() {
     [recommendationsQuery.data],
   )
 
-  const availabilityIssues = useMemo(
+  const availabilityIssueRows = useMemo(
     () =>
       (inventorySummaryQuery.data ?? [])
         .filter((row) => row.available <= 0 || row.inventoryPosition <= 0)
+        .sort((a, b) => a.available - b.available),
+    [inventorySummaryQuery.data],
+  )
+
+  const availabilityIssueCount = availabilityIssueRows.length
+  const availabilityIssues = availabilityIssueRows.slice(0, 5)
+
+  const inventoryPreviewRows = useMemo(
+    () =>
+      (inventorySummaryQuery.data ?? [])
+        .slice()
         .sort((a, b) => a.available - b.available)
         .slice(0, 8),
     [inventorySummaryQuery.data],
   )
+
+  const purchaseOrders = purchaseOrdersQuery.data?.data ?? []
+  const draftPoCount = purchaseOrders.filter((po) => po.status === 'draft').length
+  const submittedPurchaseOrders = purchaseOrders.filter((po) => po.status === 'submitted')
+  const submittedPoCount = submittedPurchaseOrders.length
+
+  const exceptionLoading = recommendationsQuery.isLoading || inventorySummaryQuery.isLoading
+  const exceptionError = recommendationsQuery.isError || inventorySummaryQuery.isError
+  const attentionLoading = exceptionLoading || purchaseOrdersQuery.isLoading
+  const attentionError = exceptionError || purchaseOrdersQuery.isError
+  const attentionCount =
+    (purchaseOrdersQuery.isError ? 0 : draftPoCount + submittedPoCount) +
+    reorderNeeded.length +
+    availabilityIssueCount
+
+  type SignalState = 'normal' | 'watch' | 'action' | 'loading' | 'unavailable'
+
+  const signalStyles: Record<
+    SignalState,
+    { label: string; variant: 'neutral' | 'success' | 'warning' | 'danger' | 'info'; helper: string }
+  > = {
+    normal: { label: 'Normal', variant: 'success', helper: 'All clear' },
+    watch: { label: 'Watch', variant: 'warning', helper: 'Review soon' },
+    action: { label: 'Action required', variant: 'danger', helper: 'Needs action now' },
+    loading: { label: 'Loading', variant: 'neutral', helper: 'Fetching data' },
+    unavailable: { label: 'Unavailable', variant: 'danger', helper: 'Data unavailable' },
+  }
+
+  const draftPoSignal: SignalState = purchaseOrdersQuery.isError
+    ? 'unavailable'
+    : purchaseOrdersQuery.isLoading
+      ? 'loading'
+      : draftPoCount > 0
+        ? 'watch'
+        : 'normal'
+  const submittedPoSignal: SignalState = purchaseOrdersQuery.isError
+    ? 'unavailable'
+    : purchaseOrdersQuery.isLoading
+      ? 'loading'
+      : submittedPoCount > 0
+        ? 'action'
+        : 'normal'
+  const reorderSignal: SignalState = recommendationsQuery.isError
+    ? 'unavailable'
+    : recommendationsQuery.isLoading
+      ? 'loading'
+      : reorderNeeded.length > 0
+        ? 'action'
+        : 'normal'
+  const availabilitySignal: SignalState = inventorySummaryQuery.isError
+    ? 'unavailable'
+    : inventorySummaryQuery.isLoading
+      ? 'loading'
+      : availabilityIssueCount > 0
+        ? 'action'
+        : 'normal'
+  const workOrdersSignal: SignalState = productionQuery.isError
+    ? 'unavailable'
+    : productionQuery.isLoading
+      ? 'loading'
+      : openWorkOrdersCount > 0
+        ? 'watch'
+        : 'normal'
+
+  const formatCount = (ready: boolean, value: number) => (ready ? formatNumber(value) : '—')
+
+  const attentionSummary =
+    attentionLoading || attentionError
+      ? null
+      : attentionCount === 0
+        ? { label: 'All caught up', variant: 'success' as const }
+        : { label: `${attentionCount} items need attention`, variant: 'warning' as const }
+
+  const poReady = !purchaseOrdersQuery.isLoading && !purchaseOrdersQuery.isError
+  const reorderReady = !recommendationsQuery.isLoading && !recommendationsQuery.isError
+  const availabilityReady = !inventorySummaryQuery.isLoading && !inventorySummaryQuery.isError
+  const workOrdersReady = !productionQuery.isLoading && !productionQuery.isError
+
+  const attentionTiles = [
+    {
+      key: 'draft-pos',
+      title: 'Draft POs',
+      count: formatCount(poReady, draftPoCount),
+      signal: signalStyles[draftPoSignal],
+      helper: 'Awaiting submission.',
+      cta: { label: 'Review drafts', to: '/purchase-orders?status=draft' },
+    },
+    {
+      key: 'submitted-pos',
+      title: 'Submitted POs',
+      count: formatCount(poReady, submittedPoCount),
+      signal: signalStyles[submittedPoSignal],
+      helper: 'Awaiting receipt.',
+      cta: (() => {
+        if (!poReady) {
+          return { label: 'Open receiving', to: '/receiving' }
+        }
+        if (submittedPoCount === 1) {
+          return { label: 'Receive now', to: `/receiving?poId=${submittedPurchaseOrders[0].id}` }
+        }
+        if (submittedPoCount > 1) {
+          return { label: 'Choose PO', to: '/purchase-orders?status=submitted&action=receive' }
+        }
+        return { label: 'View POs', to: '/purchase-orders?status=submitted' }
+      })(),
+    },
+    {
+      key: 'reorders',
+      title: 'Reorders flagged',
+      count: formatCount(reorderReady, reorderNeeded.length),
+      signal: signalStyles[reorderSignal],
+      helper: 'Policies triggered.',
+      cta: { label: 'Review items', to: '/dashboard' },
+    },
+    {
+      key: 'availability',
+      title: 'Availability breaches',
+      count: formatCount(availabilityReady, availabilityIssueCount),
+      signal: signalStyles[availabilitySignal],
+      helper: 'Zero or negative available.',
+      cta: { label: 'Review items', to: '/dashboard' },
+    },
+    {
+      key: 'work-orders',
+      title: 'Open work orders',
+      count: formatCount(workOrdersReady, openWorkOrdersCount),
+      signal: signalStyles[workOrdersSignal],
+      helper: 'Remaining production.',
+      cta: { label: 'View work orders', to: '/work-orders' },
+    },
+  ]
+
+  const inventoryLoading = inventorySummaryQuery.isLoading || itemsQuery.isLoading || locationsQuery.isLoading
+  const inventoryError = inventorySummaryQuery.isError || itemsQuery.isError || locationsQuery.isError
 
   const fillRateCard = (() => {
     if (fillRateQuery.isLoading) {
@@ -229,419 +395,388 @@ export default function DashboardPage() {
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Dashboard</p>
         <h2 className="text-2xl font-semibold text-slate-900">Dashboard</h2>
         <p className="max-w-3xl text-sm text-slate-600">
-          Quick snapshot of KPIs and production progress. If a data feed is missing, you will see a
-          calm placeholder instead of an error.
+          Start here to resolve exceptions and commitments. Every card points to a next step.
         </p>
+        {attentionSummary && (
+          <div className="flex items-center gap-2">
+            <Badge variant={attentionSummary.variant}>{attentionSummary.label}</Badge>
+            <span className="text-xs text-slate-500">Work pulled forward so you can act fast.</span>
+          </div>
+        )}
       </div>
 
-      <Section
-        title="Action required"
-        description="Exception-first list: reorders flagged by policies and locations with zero/negative coverage."
-      >
-        <Card>
-          {(recommendationsQuery.isLoading || inventorySummaryQuery.isLoading) && (
-            <LoadingSpinner label="Scanning for exceptions..." />
-          )}
-          {(recommendationsQuery.isError || inventorySummaryQuery.isError) && (
-            <Alert
-              variant="error"
-              title="Could not load exceptions"
-              message="Retry to refresh recommendations and inventory coverage."
-              action={
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    void recommendationsQuery.refetch()
-                    void inventorySummaryQuery.refetch()
-                  }}
-                >
-                  Retry
-                </Button>
-              }
-            />
-          )}
-          {!recommendationsQuery.isLoading &&
-            !inventorySummaryQuery.isLoading &&
-            !recommendationsQuery.isError &&
-            !inventorySummaryQuery.isError &&
-            reorderNeeded.length === 0 &&
-            availabilityIssues.length === 0 && (
+      <Section title="Attention required" description="Critical items that need action now.">
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {attentionTiles.map((tile) => (
+              <Card key={tile.key} className="h-full">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">{tile.title}</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-900">{tile.count}</p>
+                    <p className="mt-1 text-xs text-slate-500">{tile.helper}</p>
+                  </div>
+                  <Badge variant={tile.signal.variant}>{tile.signal.label}</Badge>
+                </div>
+                <div className="mt-3">
+                  {tile.key === 'availability' || tile.key === 'reorders' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        const target = document.getElementById('attention-list')
+                        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      }}
+                    >
+                      {tile.cta.label}
+                    </Button>
+                  ) : (
+                    <Link to={tile.cta.to}>
+                      <Button size="sm" variant="secondary">
+                        {tile.cta.label}
+                      </Button>
+                    </Link>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <Card title="Resolution queue" description="Resolve exceptions and commitments before moving on.">
+            {exceptionLoading && <LoadingSpinner label="Scanning for exceptions..." />}
+            {exceptionError && (
+              <Alert
+                variant="error"
+                title="Could not load exceptions"
+                message="Retry to refresh recommendations and inventory coverage."
+                action={
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      void recommendationsQuery.refetch()
+                      void inventorySummaryQuery.refetch()
+                    }}
+                  >
+                    Retry
+                  </Button>
+                }
+              />
+            )}
+            {!exceptionLoading && !exceptionError && reorderNeeded.length === 0 && availabilityIssueCount === 0 && (
               <Alert
                 variant="success"
                 title="No immediate exceptions"
                 message="No reorder flags and no zero/negative availability detected."
               />
             )}
-          <div className="divide-y divide-slate-200">
-            {reorderNeeded.slice(0, 5).map((rec) => {
-              const threshold =
-                rec.policyType === 'q_rop'
-                  ? rec.inputs.reorderPointQty ?? 0
-                  : rec.inputs.orderUpToLevelQty ?? 0
-              const gap = rec.inventory.inventoryPosition - threshold
-              return (
-                <div key={`reorder-${rec.policyId}`} className="py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-slate-900">
-                        Reorder: {formatItem(rec.itemId)} @ {formatLocation(rec.locationId)}
-                      </p>
-                      <p className="text-xs text-slate-600">
-                        Inventory position {formatNumber(rec.inventory.inventoryPosition)} vs threshold {formatNumber(threshold)} · gap {formatNumber(Math.abs(gap))}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        Policy {rec.policyType} · Recommend order {formatNumber(rec.recommendation.recommendedOrderQty)} {rec.uom}{' '}
-                        {rec.recommendation.recommendedOrderDate ? `by ${rec.recommendation.recommendedOrderDate}` : ''}
-                      </p>
-                    </div>
-                    <div className="text-right text-xs text-slate-500 space-y-1">
-                      <Link to={`/items/${rec.itemId}`} className="text-brand-700 hover:underline">
-                        View item
-                      </Link>
-                      <br />
-                      <Link to={`/locations/${rec.locationId}`} className="text-brand-700 hover:underline">
-                        View location
-                      </Link>
-                    </div>
-                  </div>
+            {!exceptionLoading &&
+              !exceptionError &&
+              (reorderNeeded.length > 0 || availabilityIssueCount > 0) && (
+                <div id="attention-list" className="divide-y divide-slate-200">
+                  {reorderNeeded.slice(0, 5).map((rec) => {
+                    const threshold =
+                      rec.policyType === 'q_rop'
+                        ? rec.inputs.reorderPointQty ?? 0
+                        : rec.inputs.orderUpToLevelQty ?? 0
+                    const gap = rec.inventory.inventoryPosition - threshold
+                    const poLink = `/purchase-orders/new?itemId=${encodeURIComponent(rec.itemId)}&locationId=${encodeURIComponent(
+                      rec.locationId,
+                    )}&qty=${encodeURIComponent(
+                      String(rec.recommendation.recommendedOrderQty),
+                    )}&uom=${encodeURIComponent(rec.uom)}`
+                    return (
+                      <div key={`reorder-${rec.policyId}`} className="py-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="danger">Action required</Badge>
+                              <span className="text-xs font-semibold uppercase text-slate-500">Reorder</span>
+                            </div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              Reorder: {formatItem(rec.itemId)} @ {formatLocation(rec.locationId)}
+                            </p>
+                            <p className="text-xs text-slate-600">
+                              Inventory position {formatNumber(rec.inventory.inventoryPosition)} vs threshold{' '}
+                              {formatNumber(threshold)} · gap {formatNumber(Math.abs(gap))}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Policy {rec.policyType} · Recommend order{' '}
+                              {formatNumber(rec.recommendation.recommendedOrderQty)} {rec.uom}{' '}
+                              {rec.recommendation.recommendedOrderDate
+                                ? `by ${rec.recommendation.recommendedOrderDate}`
+                                : ''}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <Link to={poLink}>
+                              <Button size="sm" variant="secondary">
+                                Create PO
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {availabilityIssues.map((row) => {
+                    const availabilitySeverity = row.available < 0 || row.inventoryPosition < 0
+                    const availabilityLabel = availabilitySeverity ? 'Action required' : 'Watch'
+                    const availabilityVariant = availabilitySeverity ? 'danger' : 'warning'
+                    const itemLink = `/items/${row.itemId}?locationId=${encodeURIComponent(row.locationId)}`
+                    return (
+                      <div key={`avail-${row.itemId}-${row.locationId}-${row.uom}`} className="py-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={availabilityVariant}>{availabilityLabel}</Badge>
+                              <span className="text-xs font-semibold uppercase text-slate-500">Availability</span>
+                            </div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              Low/negative availability: {formatItem(row.itemId)} @ {formatLocation(row.locationId)}
+                            </p>
+                            <p className="text-xs text-slate-600">
+                              Available {formatNumber(row.available)} {row.uom} · Inventory position{' '}
+                              {formatNumber(row.inventoryPosition)}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              On hand {formatNumber(row.onHand)} · Reserved {formatNumber(row.reserved)} · Incoming{' '}
+                              {formatNumber(row.onOrder + row.inTransit)}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <Link to={itemLink}>
+                              <Button size="sm" variant="secondary">
+                                Investigate
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              )
-            })}
-            {availabilityIssues.map((row) => (
-              <div key={`avail-${row.itemId}-${row.locationId}-${row.uom}`} className="py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      Low/negative availability: {formatItem(row.itemId)} @ {formatLocation(row.locationId)}
-                    </p>
-                    <p className="text-xs text-slate-600">
-                      Available {formatNumber(row.available)} {row.uom} · Inventory position {formatNumber(row.inventoryPosition)}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      On hand {formatNumber(row.onHand)} · Reserved {formatNumber(row.reserved)} · Incoming {formatNumber(row.onOrder + row.inTransit)}
-                    </p>
-                  </div>
-                  <div className="text-right text-xs text-slate-500 space-y-1">
-                    <Link to={`/items/${row.itemId}`} className="text-brand-700 hover:underline">
-                      View item
-                    </Link>
-                    <br />
-                    <Link to={`/locations/${row.locationId}`} className="text-brand-700 hover:underline">
-                      View location
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+              )}
+          </Card>
+        </div>
       </Section>
 
       <Section
-        title="Production progress"
-        description="Planned versus completed quantities by finished or intermediate item (from work orders)."
+        title="Flow health"
+        description="Signals that show how inventory is moving and where it could stall next."
       >
-        <Card>
-          {productionQuery.isLoading && <LoadingSpinner label="Loading production summary..." />}
-          {productionQuery.isError && productionQuery.error && (
-            <ErrorState error={productionQuery.error as ApiError} onRetry={() => void productionQuery.refetch()} />
-          )}
-          {!productionQuery.isLoading && !productionQuery.isError && productionList.length === 0 && (
-            <EmptyState
-              title="No work orders found"
-              description="Create work orders to see planned vs. completed quantities."
-            />
-          )}
-          {!productionQuery.isLoading && !productionQuery.isError && productionList.length > 0 && (
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Item to make
-                    </th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Planned qty
-                    </th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Completed
-                    </th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Remaining
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {productionList.map((row) => (
-                    <tr key={`${row.itemId}-${row.uom}`}>
-                      <td className="px-3 py-2 text-sm text-slate-800">{formatItem(row.itemId)}</td>
-                      <td className="px-3 py-2 text-right text-sm text-slate-800">
-                        {row.planned} {row.uom}
-                      </td>
-                      <td className="px-3 py-2 text-right text-sm text-slate-800">
-                        {row.completed} {row.uom}
-                      </td>
-                      <td className="px-3 py-2 text-right text-sm text-slate-800">
-                        {row.remaining} {row.uom}
-                      </td>
+        <div className="space-y-4">
+          <Card
+            title="Work in progress at risk"
+            description="Largest remaining quantities across open work orders."
+            action={
+              <Link to="/work-orders">
+                <Button size="sm" variant="secondary">
+                  View work orders
+                </Button>
+              </Link>
+            }
+          >
+            {productionQuery.isLoading && <LoadingSpinner label="Loading production summary..." />}
+            {productionQuery.isError && productionQuery.error && (
+              <ErrorState error={productionQuery.error as ApiError} onRetry={() => void productionQuery.refetch()} />
+            )}
+            {!productionQuery.isLoading && !productionQuery.isError && productionAtRisk.length === 0 && (
+              <EmptyState
+                title="No open work orders"
+                description="When work orders have remaining quantities, they will appear here."
+              />
+            )}
+            {!productionQuery.isLoading && !productionQuery.isError && productionAtRisk.length > 0 && (
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Item to make
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Planned qty
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Completed
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Remaining
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      </Section>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 bg-white">
+                    {productionAtRisk.map((row) => (
+                      <tr key={`${row.itemId}-${row.uom}`}>
+                        <td className="px-3 py-2 text-sm text-slate-800">
+                          <Link
+                            to={`/work-orders?itemId=${encodeURIComponent(row.itemId)}`}
+                            className="text-brand-700 hover:underline"
+                          >
+                            {formatItem(row.itemId)}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2 text-right text-sm text-slate-800">
+                          {row.planned} {row.uom}
+                        </td>
+                        <td className="px-3 py-2 text-right text-sm text-slate-800">
+                          {row.completed} {row.uom}
+                        </td>
+                        <td className="px-3 py-2 text-right text-sm text-slate-800">
+                          {row.remaining} {row.uom}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
 
-      <Section
-        title="Inventory on hand"
-        description="Current on-hand, reserved, and available by item and location (posted movements minus reservations)."
-      >
-        <Card>
-          {(inventorySummaryQuery.isLoading || itemsQuery.isLoading || locationsQuery.isLoading) && (
-            <LoadingSpinner label="Loading inventory..." />
-          )}
-          {(inventorySummaryQuery.isError || itemsQuery.isError || locationsQuery.isError) && (
-            <ErrorState
-              error={
-                (inventorySummaryQuery.error as ApiError) ||
-                (itemsQuery.error as ApiError) ||
-                (locationsQuery.error as ApiError)
-              }
-              onRetry={() => {
-                void inventorySummaryQuery.refetch()
-                void itemsQuery.refetch()
-                void locationsQuery.refetch()
-              }}
-            />
-          )}
-          {!inventorySummaryQuery.isLoading &&
-            !inventorySummaryQuery.isError &&
-            (inventorySummaryQuery.data ?? []).length === 0 && (
+          <Card
+            title="Coverage snapshot"
+            description="Lowest availability across items and locations."
+            action={
+              <Link to="/items">
+                <Button size="sm" variant="secondary">
+                  Browse items
+                </Button>
+              </Link>
+            }
+          >
+            {inventoryLoading && <LoadingSpinner label="Loading inventory..." />}
+            {inventoryError && (
+              <ErrorState
+                error={
+                  (inventorySummaryQuery.error as ApiError) ||
+                  (itemsQuery.error as ApiError) ||
+                  (locationsQuery.error as ApiError)
+                }
+                onRetry={() => {
+                  void inventorySummaryQuery.refetch()
+                  void itemsQuery.refetch()
+                  void locationsQuery.refetch()
+                }}
+              />
+            )}
+            {!inventoryLoading && !inventoryError && inventoryPreviewRows.length === 0 && (
               <EmptyState
                 title="No inventory yet"
                 description="Post receipts or completions to see on-hand by item/location."
               />
             )}
-          {!inventorySummaryQuery.isLoading &&
-            !inventorySummaryQuery.isError &&
-            (inventorySummaryQuery.data ?? []).length > 0 && (
+            {!inventoryLoading && !inventoryError && inventoryPreviewRows.length > 0 && (
               <InventorySnapshotTable
-                rows={inventorySummaryQuery.data ?? []}
+                rows={inventoryPreviewRows}
                 itemLookup={itemLookup}
                 locationLookup={locationLookup}
               />
             )}
-        </Card>
+          </Card>
+
+          <Card
+            title="Fulfillment reliability"
+            description="Measured fill rate from shipped lines."
+            action={
+              <Link to="/shipments">
+                <Button size="sm" variant="secondary">
+                  Review shipments
+                </Button>
+              </Link>
+            }
+          >
+            {fillRateCard}
+          </Card>
+        </div>
       </Section>
 
-      <Section
-        title="Measured fulfillment"
-        description="Fulfillment Fill Rate (measured) from shipped sales order lines. This is a measured proxy, not PPIS."
-      >
-        <Card>
-          {fillRateCard}
-        </Card>
-      </Section>
+      <Section title="Context" description="Secondary metrics and historical signals for deeper investigation.">
+        <div className="space-y-4">
+          <Card title="KPI cards">
+            {snapshotsLoading || snapshotsFetching ? (
+              <LoadingSpinner label="Loading KPI snapshots..." />
+            ) : null}
+            {snapshotsError && snapshotsErrorObj ? (
+              <ErrorState error={snapshotsErrorObj} onRetry={() => void refetchSnapshots()} />
+            ) : null}
+            {!snapshotsLoading && !snapshotsFetching && !snapshotsError && snapshotApiMissing ? (
+              <EmptyState title="KPI API not available yet" description={snapshotUnavailableDescription} />
+            ) : null}
+            {!snapshotsLoading && !snapshotsFetching && snapshotsAvailable && snapshotList.length === 0 ? (
+              <EmptyState
+                title="No KPI snapshots yet."
+                description="Once KPI runs publish snapshots, the latest values will appear here."
+              />
+            ) : null}
+            {!snapshotsLoading && snapshotsAvailable && snapshotList.length > 0 ? (
+              <KpiCardGrid snapshots={snapshotList} />
+            ) : null}
+          </Card>
 
-      <Section
-        title="Replenishment attention"
-        description="Based on inventory position and active policies. Focus on items that need ordering."
-      >
-          <Card>
-            {recommendationsQuery.isLoading && <LoadingSpinner label="Loading recommendations..." />}
-            {recommendationsQuery.isError && recommendationsQuery.error && (
-              <ErrorState error={recommendationsQuery.error as ApiError} onRetry={() => void recommendationsQuery.refetch()} />
+          <Card title="KPI snapshots">
+            {snapshotsLoading || snapshotsFetching ? (
+              <LoadingSpinner label="Loading KPI snapshots..." />
+            ) : null}
+            {snapshotsError && snapshotsErrorObj ? (
+              <ErrorState error={snapshotsErrorObj} onRetry={() => void refetchSnapshots()} />
+            ) : null}
+            {!snapshotsLoading && !snapshotsFetching && snapshotApiMissing ? (
+              <EmptyState title="KPI API not available yet" description={snapshotUnavailableDescription} />
+            ) : null}
+            {!snapshotsLoading && snapshotsAvailable && snapshotList.length === 0 && !snapshotsError ? (
+              <EmptyState
+                title="No KPI snapshots yet."
+                description="Run a KPI computation job to populate snapshots."
+              />
+            ) : null}
+            {snapshotsAvailable && snapshotList.length > 0 ? <SnapshotsTable snapshots={snapshotList} /> : null}
+          </Card>
+
+          <Card title="KPI runs" description="Latest run metadata reported by the API.">
+            {runsLoading && <LoadingSpinner label="Loading KPI runs..." />}
+            {runsError && runsErrorObj && <ErrorState error={runsErrorObj} onRetry={() => void refetchRuns()} />}
+            {runsResult && runsResult.type === 'ApiNotAvailable' && (
+              <EmptyState title="KPI run API not available" description={runUnavailableDescription} />
             )}
-            {!recommendationsQuery.isLoading &&
-              !recommendationsQuery.isError &&
-              (recommendationsQuery.data?.data || []).filter((r) => r.recommendation.reorderNeeded).length === 0 && (
-                <Alert
-                  variant="success"
-                  title="No immediate reorders"
-                  message="No policies currently flag a reorder based on inventory position."
-                />
-              )}
-            {!recommendationsQuery.isLoading && !recommendationsQuery.isError && recommendationsQuery.data?.data && (
+            {runsResult && runsResult.type === 'success' && runsResult.data.length === 0 && (
+              <EmptyState
+                title="No KPI runs yet"
+                description="Run a KPI computation job to populate runs."
+              />
+            )}
+            {runsResult && runsResult.type === 'success' && runsResult.data.length > 0 && (
               <div className="divide-y divide-slate-200">
-                {recommendationsQuery.data.data
-                  .filter((r) => r.recommendation.reorderNeeded)
-                  .slice(0, 5)
-                  .map((rec) => (
-                    <div key={rec.policyId} className="flex items-start justify-between gap-3 py-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {formatItem(rec.itemId)} @ {formatLocation(rec.locationId)}
-                        </p>
-                        <p className="text-xs text-slate-600">
-                          Recommend order {formatNumber(rec.recommendation.recommendedOrderQty)} {rec.uom}{' '}
-                          {rec.recommendation.recommendedOrderDate ? `by ${rec.recommendation.recommendedOrderDate}` : ''}
-                        </p>
-                        <p className="text-xs text-slate-600">
-                          Inventory position {formatNumber(rec.inventory.inventoryPosition)} vs target{' '}
-                          {rec.policyType === 'q_rop'
-                            ? formatNumber(rec.inputs.reorderPointQty ?? 0)
-                            : formatNumber(rec.inputs.orderUpToLevelQty ?? 0)}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          On hand {formatNumber(rec.inventory.onHand)} · Reserved {formatNumber(rec.inventory.reserved)} · Incoming{' '}
-                          {formatNumber(rec.inventory.onOrder + rec.inventory.inTransit)}
-                        </p>
-                        {rec.assumptions.length > 0 && (
-                          <p className="text-xs text-slate-500">Assumptions: {rec.assumptions.join('; ')}</p>
+                {runsResult.data.slice(0, 5).map((run) => (
+                  <div key={run.id || `${run.status}-${run.started_at}`} className="py-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Badge variant="neutral">{run.status}</Badge>
+                        {run.as_of ? (
+                          <span className="text-xs text-slate-500">As of {formatDateTime(run.as_of)}</span>
+                        ) : null}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {run.started_at && <span className="mr-2">Started {formatDateTime(run.started_at)}</span>}
+                        {run.finished_at && (
+                          <span className="text-slate-500">Finished {formatDateTime(run.finished_at)}</span>
                         )}
                       </div>
-                      <div className="text-right text-xs text-slate-500">
-                        <div>Available: {formatNumber(rec.inventory.available)} {rec.uom}</div>
-                        <div>Inv position: {formatNumber(rec.inventory.inventoryPosition)} {rec.uom}</div>
-                        <Link to={`/items/${rec.itemId}`} className="text-brand-700 hover:underline">
-                          Item
-                        </Link>
-                        <br />
-                        <Link to={`/locations/${rec.locationId}`} className="text-brand-700 hover:underline">
-                          Location
-                        </Link>
-                      </div>
                     </div>
-                  ))}
+                    {run.notes ? <p className="mt-2 text-sm text-slate-700">{run.notes}</p> : null}
+                    {(run.window_start || run.window_end) && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Window {formatDateTime(run.window_start) || '—'} →{' '}
+                        {formatDateTime(run.window_end) || '—'}
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </Card>
+        </div>
       </Section>
-
-      <Section title="KPI cards">
-        <Card>
-          {snapshotsLoading || snapshotsFetching ? (
-            <LoadingSpinner label="Loading KPI snapshots..." />
-          ) : null}
-          {snapshotsError && snapshotsErrorObj ? (
-            <ErrorState error={snapshotsErrorObj} onRetry={() => void refetchSnapshots()} />
-          ) : null}
-          {!snapshotsLoading && !snapshotsFetching && !snapshotsError && snapshotApiMissing ? (
-            <EmptyState
-              title="KPI API not available yet"
-              description={snapshotUnavailableDescription}
-            />
-          ) : null}
-          {!snapshotsLoading &&
-          !snapshotsFetching &&
-          snapshotsAvailable &&
-          snapshotList.length === 0 ? (
-            <EmptyState
-              title="No KPI snapshots yet."
-              description="Once KPI runs publish snapshots, the latest values will appear here."
-            />
-          ) : null}
-          {!snapshotsLoading && snapshotsAvailable && snapshotList.length > 0 ? (
-            <KpiCardGrid snapshots={snapshotList} />
-          ) : null}
-        </Card>
-      </Section>
-
-      <Section title="Snapshots table">
-        {snapshotsLoading || snapshotsFetching ? (
-          <Card>
-            <LoadingSpinner label="Loading KPI snapshots..." />
-          </Card>
-        ) : null}
-        {snapshotsError && snapshotsErrorObj ? (
-          <Card>
-            <ErrorState error={snapshotsErrorObj} onRetry={() => void refetchSnapshots()} />
-          </Card>
-        ) : null}
-        {!snapshotsLoading && !snapshotsFetching && snapshotApiMissing ? (
-          <Card>
-            <EmptyState
-              title="KPI API not available yet"
-              description={snapshotUnavailableDescription}
-            />
-          </Card>
-        ) : null}
-        {!snapshotsLoading &&
-        snapshotsAvailable &&
-        snapshotList.length === 0 &&
-        !snapshotsError ? (
-          <Card>
-            <EmptyState
-              title="No KPI snapshots yet."
-              description="Run a KPI computation job to populate snapshots."
-            />
-          </Card>
-        ) : null}
-        {snapshotsAvailable && snapshotList.length > 0 ? (
-          <SnapshotsTable snapshots={snapshotList} />
-        ) : null}
-      </Section>
-
-      {runsResult && runsResult.type === 'success' && runsResult.data.length > 0 && (
-        <Section
-          title="Recent KPI runs (if available)"
-          description="Latest runs reported by the API. Status is shown as provided by the backend."
-        >
-          <Card>
-            <div className="divide-y divide-slate-200">
-              {runsResult.data.slice(0, 5).map((run) => (
-                <div key={run.id || `${run.status}-${run.started_at}`} className="py-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Badge variant="neutral">{run.status}</Badge>
-                      {run.as_of ? (
-                        <span className="text-xs text-slate-500">
-                          As of {formatDateTime(run.as_of)}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {run.started_at && (
-                        <span className="mr-2">Started {formatDateTime(run.started_at)}</span>
-                      )}
-                      {run.finished_at && (
-                        <span className="text-slate-500">
-                          Finished {formatDateTime(run.finished_at)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {run.notes ? <p className="mt-2 text-sm text-slate-700">{run.notes}</p> : null}
-                  {(run.window_start || run.window_end) && (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Window {formatDateTime(run.window_start) || '—'} →{' '}
-                      {formatDateTime(run.window_end) || '—'}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </Card>
-        </Section>
-      )}
-
-      {runsResult && runsResult.type === 'ApiNotAvailable' && (
-        <Section title="KPI runs">
-          <Card>
-            <EmptyState
-              title="KPI run API not available"
-              description={runUnavailableDescription}
-            />
-          </Card>
-        </Section>
-      )}
-
-      {runsError && runsErrorObj && (
-        <Section title="KPI runs">
-          <Card>
-            <ErrorState error={runsErrorObj} onRetry={() => void refetchRuns()} />
-          </Card>
-        </Section>
-      )}
-      {runsLoading && (
-        <Section title="KPI runs">
-          <Card>
-            <LoadingSpinner label="Loading KPI runs..." />
-          </Card>
-        </Section>
-      )}
     </div>
   )
 }
