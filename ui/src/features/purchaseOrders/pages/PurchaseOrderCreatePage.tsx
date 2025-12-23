@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createPurchaseOrder, type PurchaseOrderCreateInput } from '../../../api/endpoints/purchaseOrders'
@@ -36,6 +36,7 @@ export default function PurchaseOrderCreatePage() {
   const [expectedDate, setExpectedDate] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<LineDraft[]>([{ itemId: '', uom: '', quantityOrdered: '' }])
+  const [lastAction, setLastAction] = useState<'draft' | 'submitted' | null>(null)
 
   const vendorsQuery = useQuery<{ data: Vendor[] }, ApiError>({
     queryKey: ['vendors', 'po-create'],
@@ -105,40 +106,58 @@ export default function PurchaseOrderCreatePage() {
 
   const mutation = useMutation({
     mutationFn: (payload: PurchaseOrderCreateInput) => createPurchaseOrder(payload),
-    onSuccess: () => {
-      navigate('/purchase-orders')
+    onSuccess: (created) => {
+      navigate(`/purchase-orders/${created.id}`)
     },
   })
 
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const validLines = lines
-      .map((line, idx) => ({
-        ...line,
-        quantityOrdered: line.quantityOrdered === '' ? 0 : Number(line.quantityOrdered),
-        lineNumber: idx + 1,
-      }))
-      .filter((line) => line.itemId && line.uom && line.quantityOrdered > 0)
+  useEffect(() => {
+    if (!orderDate) {
+      setOrderDate(new Date().toISOString().slice(0, 10))
+    }
+  }, [orderDate])
 
-    if (!vendorId) {
-      mutation.reset()
+  const lineStats = useMemo(() => {
+    const normalized = lines.map((line, idx) => ({
+      ...line,
+      quantityOrdered: line.quantityOrdered === '' ? 0 : Number(line.quantityOrdered),
+      lineNumber: idx + 1,
+    }))
+    const withIntent = normalized.filter(
+      (line) => line.itemId || line.uom || line.quantityOrdered > 0 || (line.notes ?? '').trim().length > 0,
+    )
+    const valid = normalized.filter((line) => line.itemId && line.uom && line.quantityOrdered > 0)
+    const missingCount = withIntent.length - valid.length
+    const totalQty = valid.reduce((sum, line) => sum + line.quantityOrdered, 0)
+    return { normalized, valid, missingCount, totalQty }
+  }, [lines])
+
+  const isReadyForSubmit =
+    !!vendorId &&
+    lineStats.valid.length > 0 &&
+    !!orderDate &&
+    !!expectedDate
+
+  const submitPo = (status: 'draft' | 'submitted') => {
+    mutation.reset()
+    setLastAction(status)
+    if (!vendorId || lineStats.valid.length === 0) {
       return
     }
-    if (validLines.length === 0) {
-      mutation.reset()
+    if (status === 'submitted' && (!orderDate || !expectedDate)) {
       return
     }
-
     const payload: PurchaseOrderCreateInput = {
       poNumber: poNumber.trim() || undefined,
       vendorId,
+      status,
       shipToLocationId: shipToLocationId || undefined,
       receivingLocationId: receivingLocationId || undefined,
       orderDate: orderDate || undefined,
       expectedDate: expectedDate || undefined,
       vendorReference: vendorReference.trim() || undefined,
       notes: notes || undefined,
-      lines: validLines.map((line) => ({
+      lines: lineStats.valid.map((line) => ({
         itemId: line.itemId,
         uom: line.uom,
         quantityOrdered: Number(line.quantityOrdered),
@@ -149,161 +168,230 @@ export default function PurchaseOrderCreatePage() {
     mutation.mutate(payload)
   }
 
-  const successMessage =
-    mutation.isSuccess && mutation.data
-      ? `PO created: ${mutation.data.poNumber} (id ${mutation.data.id})`
-      : null
+  const onSaveDraft = (e: React.FormEvent) => {
+    e.preventDefault()
+    submitPo('draft')
+  }
 
   return (
     <div className="space-y-6">
       <Section
-        title="Create Purchase Order"
-        description="Capture a PO so receipts can be matched. Leave PO number blank to auto-generate."
+        title="New Purchase Order (Draft)"
+        description="Drafts are safe and reversible. Submit only when you are ready to commit."
       >
         <Card>
-          <form className="space-y-4" onSubmit={onSubmit}>
+          <form className="space-y-4" onSubmit={onSaveDraft}>
             {(vendorsQuery.isLoading || locationsQuery.isLoading || itemsQuery.isLoading) && (
               <LoadingSpinner label="Loading reference data..." />
             )}
             {mutation.isError && (
               <Alert
                 variant="error"
-                title="Failed to create PO"
+                title={lastAction === 'submitted' ? 'Failed to submit PO' : 'Failed to save draft'}
                 message={(mutation.error as ApiError)?.message ?? 'Unknown error'}
               />
             )}
-            {successMessage && <Alert variant="success" title="Saved" message={successMessage} />}
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">PO Number</span>
-                <Input
-                  value={poNumber}
-                  onChange={(e) => setPoNumber(e.target.value)}
-                  placeholder="Leave blank to auto-assign (PO-000123)"
-                />
-              </label>
-              <div>
-                <Combobox
-                  label="Vendor"
-                  value={vendorId}
-                  options={vendorOptions}
-                  loading={vendorsQuery.isLoading}
-                  placeholder="Search vendors (code/name)"
-                  onChange={(nextValue) => setVendorId(nextValue)}
-                />
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Order date</span>
-                <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Expected date</span>
-                <Input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Vendor reference</span>
-                <Input
-                  value={vendorReference}
-                  onChange={(e) => setVendorReference(e.target.value)}
-                  placeholder="Optional (vendor's reference #)"
-                />
-              </label>
-              <div>
-                <Combobox
-                  label="Ship-to location"
-                  value={shipToLocationId}
-                  options={locationOptions}
-                  loading={locationsQuery.isLoading}
-                  onQueryChange={setLocationSearch}
-                  placeholder="Search locations (code/name)"
-                  onChange={(nextValue) => setShipToLocationId(nextValue)}
-                />
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="md:col-span-1">
-                <Combobox
-                  label="Default receiving/staging location"
-                  value={receivingLocationId}
-                  options={locationOptions}
-                  loading={locationsQuery.isLoading}
-                  onQueryChange={setLocationSearch}
-                  placeholder="Search locations (code/name)"
-                  onChange={(nextValue) => setReceivingLocationId(nextValue)}
-                />
-              </div>
-            </div>
-            <label className="space-y-1 text-sm">
-              <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
-              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
-            </label>
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="space-y-6">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Draft intent</div>
+                      <p className="text-xs text-slate-500">
+                        Draft POs have no operational impact until submitted.
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Draft</span>
+                  </div>
+                </div>
 
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-800">Lines</div>
-              <div className="flex gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={addLine}>
-                  Add line
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-3">
-              {lines.map((line, idx) => (
-                <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">Step 1: Vendor and identity</div>
+                  <p className="text-xs text-slate-500">Start with the vendor to anchor pricing and lead time.</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
                   <div>
                     <Combobox
-                      label="Item"
-                      value={line.itemId}
-                      options={itemOptions}
-                      loading={itemsQuery.isLoading}
-                      onQueryChange={setItemSearch}
-                      placeholder="Search items (SKU/name)"
-                      onChange={(nextValue) => {
-                        const selected = nextValue ? itemLookup.get(nextValue) : undefined
-                        updateLine(idx, { itemId: nextValue, uom: line.uom || selected?.defaultUom || '' })
-                      }}
+                      label="Vendor"
+                      value={vendorId}
+                      options={vendorOptions}
+                      loading={vendorsQuery.isLoading}
+                      placeholder="Search vendors (code/name)"
+                      onChange={(nextValue) => setVendorId(nextValue)}
                     />
                   </div>
                   <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
-                    <Input value={line.uom} onChange={(e) => updateLine(idx, { uom: e.target.value })} />
+                    <span className="text-xs uppercase tracking-wide text-slate-500">Vendor reference</span>
+                    <Input
+                      value={vendorReference}
+                      onChange={(e) => setVendorReference(e.target.value)}
+                      placeholder="Optional (vendor's reference #)"
+                    />
                   </label>
                   <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">Quantity</span>
+                    <span className="text-xs uppercase tracking-wide text-slate-500">PO Number</span>
                     <Input
-                      type="number"
-                      min={0}
-                      value={line.quantityOrdered}
-                      onChange={(e) =>
-                        updateLine(idx, { quantityOrdered: e.target.value === '' ? '' : Number(e.target.value) })
-                      }
+                      value={poNumber}
+                      onChange={(e) => setPoNumber(e.target.value)}
+                      placeholder="Leave blank to auto-assign (PO-000123)"
                     />
                   </label>
-                  <label className="space-y-1 text-sm md:col-span-2">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
-                    <Textarea
-                      value={line.notes ?? ''}
-                      onChange={(e) => updateLine(idx, { notes: e.target.value })}
-                      placeholder="Optional"
-                    />
-                  </label>
-                  {lines.length > 1 && (
-                    <div className="md:col-span-5">
-                      <Button variant="secondary" size="sm" onClick={() => removeLine(idx)}>
-                        Remove line
-                      </Button>
-                    </div>
-                  )}
                 </div>
-              ))}
-            </div>
 
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-600">PO number auto-generates if left blank. Lines require item, UOM, qty.</p>
-              <Button type="submit" disabled={mutation.isPending}>
-                {mutation.isPending ? 'Saving…' : 'Create PO'}
-              </Button>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">Step 2: Line items</div>
+                    <p className="text-xs text-slate-500">Lines drive cost and inventory impact.</p>
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" onClick={addLine}>
+                    Add line
+                  </Button>
+                </div>
+                <div className="space-y-3">
+                  {lines.map((line, idx) => (
+                    <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
+                      <div>
+                        <Combobox
+                          label="Item"
+                          value={line.itemId}
+                          options={itemOptions}
+                          loading={itemsQuery.isLoading}
+                          onQueryChange={setItemSearch}
+                          placeholder="Search items (SKU/name)"
+                          onChange={(nextValue) => {
+                            const selected = nextValue ? itemLookup.get(nextValue) : undefined
+                            updateLine(idx, { itemId: nextValue, uom: line.uom || selected?.defaultUom || '' })
+                          }}
+                        />
+                      </div>
+                      <label className="space-y-1 text-sm">
+                        <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
+                        <Input value={line.uom} onChange={(e) => updateLine(idx, { uom: e.target.value })} />
+                      </label>
+                      <label className="space-y-1 text-sm">
+                        <span className="text-xs uppercase tracking-wide text-slate-500">Quantity</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={line.quantityOrdered}
+                          onChange={(e) =>
+                            updateLine(idx, { quantityOrdered: e.target.value === '' ? '' : Number(e.target.value) })
+                          }
+                        />
+                      </label>
+                      <label className="space-y-1 text-sm md:col-span-2">
+                        <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
+                        <Textarea
+                          value={line.notes ?? ''}
+                          onChange={(e) => updateLine(idx, { notes: e.target.value })}
+                          placeholder="Optional"
+                        />
+                      </label>
+                      {lines.length > 1 && (
+                        <div className="md:col-span-5">
+                          <Button variant="secondary" size="sm" onClick={() => removeLine(idx)}>
+                            Remove line
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {lineStats.valid.length} line(s) ready · Total qty {lineStats.totalQty}
+                </div>
+
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">Step 3: Dates and logistics</div>
+                  <p className="text-xs text-slate-500">Set the timing and locations for fulfillment.</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="space-y-1 text-sm">
+                    <span className="text-xs uppercase tracking-wide text-slate-500">Order date</span>
+                    <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
+                  </label>
+                  <label className="space-y-1 text-sm">
+                    <span className="text-xs uppercase tracking-wide text-slate-500">Expected date</span>
+                    <Input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
+                  </label>
+                  <div>
+                    <Combobox
+                      label="Ship-to location"
+                      value={shipToLocationId}
+                      options={locationOptions}
+                      loading={locationsQuery.isLoading}
+                      onQueryChange={setLocationSearch}
+                      placeholder="Search locations (code/name)"
+                      onChange={(nextValue) => setShipToLocationId(nextValue)}
+                    />
+                  </div>
+                  <div>
+                    <Combobox
+                      label="Receiving/staging location"
+                      value={receivingLocationId}
+                      options={locationOptions}
+                      loading={locationsQuery.isLoading}
+                      onQueryChange={setLocationSearch}
+                      placeholder="Search locations (code/name)"
+                      onChange={(nextValue) => setReceivingLocationId(nextValue)}
+                    />
+                  </div>
+                </div>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
+                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+                </label>
+
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-slate-600">
+                    Save keeps this draft private. Submit signals a commitment to spend and receive inventory.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      disabled={mutation.isPending || !vendorId || lineStats.valid.length === 0}
+                    >
+                      {mutation.isPending && lastAction === 'draft' ? 'Saving…' : 'Save draft'}
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={mutation.isPending || !isReadyForSubmit}
+                      onClick={() => submitPo('submitted')}
+                    >
+                      {mutation.isPending && lastAction === 'submitted' ? 'Submitting…' : 'Submit PO for approval'}
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Submitting will lock edits and notify Finance for approval.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Submission readiness</div>
+                <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                  <li className="flex items-center justify-between">
+                    <span>Vendor selected</span>
+                    <span>{vendorId ? '✓' : '—'}</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span>At least one line</span>
+                    <span>{lineStats.valid.length > 0 ? '✓' : '—'}</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span>Quantities valid</span>
+                    <span>{lineStats.missingCount === 0 ? '✓' : '—'}</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span>Dates set</span>
+                    <span>{orderDate && expectedDate ? '✓' : '—'}</span>
+                  </li>
+                </ul>
+                <p className="mt-3 text-xs text-slate-500">
+                  Submit becomes available only when all checks are complete.
+                </p>
+              </div>
             </div>
           </form>
         </Card>

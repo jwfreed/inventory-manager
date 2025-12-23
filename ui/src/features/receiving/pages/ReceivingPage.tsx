@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { listPurchaseOrders, getPurchaseOrder } from '../../../api/endpoints/purchaseOrders'
 import { createReceipt, type ReceiptCreatePayload, getReceipt, listReceipts, deleteReceiptApi } from '../../../api/endpoints/receipts'
 import { createPutaway, postPutaway, type PutawayCreatePayload, getPutaway } from '../../../api/endpoints/putaways'
-import type { ApiError, Location, PurchaseOrder, PurchaseOrderReceipt, Putaway } from '../../../api/types'
+import { createQcEvent, listQcEventsForLine, type QcEventCreatePayload } from '../../../api/endpoints/qc'
+import type { ApiError, Location, PurchaseOrder, PurchaseOrderReceipt, Putaway, PurchaseOrderReceiptLine, QcEvent } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -15,6 +16,7 @@ import { listLocations } from '../../../api/endpoints/locations'
 import { Combobox } from '../../../components/Combobox'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { useDebouncedValue } from '../../../lib/useDebouncedValue'
+import { useAuth } from '../../../lib/auth'
 
 type ReceiptLineInput = {
   purchaseOrderLineId: string
@@ -28,12 +30,21 @@ type ReceiptLineInput = {
 }
 
 export default function ReceivingPage() {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const [selectedPoId, setSelectedPoId] = useState('')
   const [receiptLineInputs, setReceiptLineInputs] = useState<ReceiptLineInput[]>([])
   const [receiptNotes, setReceiptNotes] = useState('')
   const [receivedToLocationId, setReceivedToLocationId] = useState('')
   const [receiptIdForPutaway, setReceiptIdForPutaway] = useState('')
+  const [selectedQcLineId, setSelectedQcLineId] = useState('')
+  const [qcEventType, setQcEventType] = useState<'accept' | 'hold' | 'reject'>('accept')
+  const [qcQuantity, setQcQuantity] = useState<number | ''>('')
+  const [qcReasonCode, setQcReasonCode] = useState('')
+  const [qcNotes, setQcNotes] = useState('')
+  const [lastQcEvent, setLastQcEvent] = useState<QcEvent | null>(null)
+  const [putawayFillNotice, setPutawayFillNotice] = useState<string | null>(null)
   const [putawayLines, setPutawayLines] = useState<
     {
       purchaseOrderReceiptLineId: string
@@ -82,6 +93,25 @@ export default function ReceivingPage() {
     over: 'Over',
     damaged: 'Damaged',
     substituted: 'Substituted',
+  }
+
+  const getQcBreakdown = (line: PurchaseOrderReceiptLine) => {
+    const breakdown = line.qcSummary?.breakdown ?? { accept: 0, hold: 0, reject: 0 }
+    const totalQc = breakdown.accept + breakdown.hold + breakdown.reject
+    const remaining =
+      line.qcSummary?.remainingUninspectedQuantity ?? Math.max(0, line.quantityReceived - totalQc)
+    return { ...breakdown, remaining, totalQc }
+  }
+
+  const getQcStatus = (line: PurchaseOrderReceiptLine) => {
+    const { totalQc, remaining } = getQcBreakdown(line)
+    if (totalQc === 0) {
+      return { label: 'QC not started', tone: 'bg-slate-100 text-slate-600' }
+    }
+    if (remaining > 0) {
+      return { label: 'QC in progress', tone: 'bg-amber-100 text-amber-700' }
+    }
+    return { label: 'QC complete', tone: 'bg-emerald-100 text-emerald-700' }
   }
 
   useEffect(() => {
@@ -172,18 +202,73 @@ export default function ReceivingPage() {
     enabled: !!receiptIdForPutaway,
   })
 
-  const receiptLineOptions = useMemo(
-    () =>
-      (receiptQuery.data?.lines ?? []).map((line) => ({
+  const selectedQcLine = useMemo(() => {
+    if (!selectedQcLineId) return undefined
+    return receiptQuery.data?.lines?.find((line) => line.id === selectedQcLineId)
+  }, [receiptQuery.data?.lines, selectedQcLineId])
+
+  const qcEventsQuery = useQuery<{ data: QcEvent[] }, ApiError>({
+    queryKey: ['qc-events', selectedQcLineId],
+    queryFn: () => listQcEventsForLine(selectedQcLineId),
+    enabled: !!selectedQcLineId,
+    staleTime: 30_000,
+  })
+
+  const qcErrorMap: Record<string, string> = {
+    'Receipt line not found.':
+      'That receipt line could not be found. Reload the receipt and try again.',
+    'QC event UOM must match the receipt line UOM.':
+      'UOM mismatch. QC events must use the receipt line UOM.',
+    'QC quantities cannot exceed the received quantity for the line.':
+      'Quantity exceeds the remaining allocable quantity for this line.',
+    'Referenced receipt line does not exist.':
+      'That receipt line no longer exists. Reload the receipt and try again.',
+    'QC quantity must be greater than zero.':
+      'Enter a quantity greater than zero.',
+  }
+
+  const qcEventMutation = useMutation({
+    mutationFn: (payload: QcEventCreatePayload) => createQcEvent(payload),
+    onSuccess: (event) => {
+      setLastQcEvent(event)
+      setQcNotes('')
+      setQcReasonCode('')
+      void queryClient.invalidateQueries({ queryKey: ['receipt', receiptIdForPutaway] })
+      void queryClient.invalidateQueries({ queryKey: ['qc-events', selectedQcLineId] })
+      void recentReceiptsQuery.refetch()
+    },
+  })
+
+  const receiptLineOptions = useMemo(() => {
+    return (receiptQuery.data?.lines ?? []).map((line) => {
+      const qc = line.qcSummary?.breakdown
+      const acceptedQty = qc?.accept ?? 0
+      const availableQty =
+        line.availableForNewPutaway ?? line.remainingQuantityToPutaway ?? acceptedQty
+      const holdQty = qc?.hold ?? 0
+      const rejectQty = qc?.reject ?? 0
+      const remainingQty = line.qcSummary?.remainingUninspectedQuantity ?? 0
+      const qcParts = [`Accept ${acceptedQty}`]
+      if (holdQty > 0) qcParts.push(`Hold ${holdQty}`)
+      if (rejectQty > 0) qcParts.push(`Reject ${rejectQty}`)
+      if (remainingQty > 0) qcParts.push(`Uninspected ${remainingQty}`)
+      qcParts.push(`Avail ${availableQty}`)
+      return {
         value: line.id,
-        label: `Line ${line.id.slice(0, 8)}… — ${line.itemSku ?? line.itemId ?? 'Item'}${line.itemName ? ` — ${line.itemName}` : ''} · ${line.quantityReceived} ${line.uom}`,
+        label: `Line ${line.id.slice(0, 8)}… — ${line.itemSku ?? line.itemId ?? 'Item'}${line.itemName ? ` — ${line.itemName}` : ''} · ${line.quantityReceived} ${line.uom} · QC: ${qcParts.join(', ')}`,
         uom: line.uom,
-        quantity: line.quantityReceived,
+        quantity: availableQty,
+        acceptedQty,
+        availableQty,
+        holdQty,
+        rejectQty,
+        remainingQty,
+        blockedReason: line.putawayBlockedReason ?? '',
         defaultToLocationId: line.defaultToLocationId ?? '',
         defaultFromLocationId: line.defaultFromLocationId ?? receiptQuery.data?.receivedToLocationId ?? '',
-      })),
-    [receiptQuery.data],
-  )
+      }
+    })
+  }, [receiptQuery.data])
 
   const putawayQuery = useQuery<Putaway>({
     queryKey: ['putaway', putawayId],
@@ -262,6 +347,8 @@ export default function ReceivingPage() {
     mutationFn: (payload: PutawayCreatePayload) => createPutaway(payload),
     onSuccess: (p) => {
       setPutawayId(p.id)
+      void queryClient.invalidateQueries({ queryKey: ['receipt', receiptIdForPutaway] })
+      void recentReceiptsQuery.refetch()
     },
   })
 
@@ -282,6 +369,57 @@ export default function ReceivingPage() {
     if (!poQuery.data) return
     setReceiptLineInputs(buildReceiptLines(poQuery.data))
   }
+
+  useEffect(() => {
+    const lines = receiptQuery.data?.lines ?? []
+    if (!lines.length) {
+      setSelectedQcLineId('')
+      return
+    }
+    const hasSelected = lines.some((line) => line.id === selectedQcLineId)
+    if (!selectedQcLineId || !hasSelected) {
+      const nextLine = lines.find((line) => getQcBreakdown(line).remaining > 0) ?? lines[0]
+      setSelectedQcLineId(nextLine.id)
+      return
+    }
+    const selected = lines.find((line) => line.id === selectedQcLineId)
+    if (!selected) return
+    if (getQcBreakdown(selected).remaining <= 0) {
+      const nextLine = lines.find((line) => getQcBreakdown(line).remaining > 0)
+      if (nextLine && nextLine.id !== selectedQcLineId) {
+        setSelectedQcLineId(nextLine.id)
+      }
+    }
+  }, [receiptQuery.data?.lines, selectedQcLineId])
+
+  useEffect(() => {
+    if (!selectedQcLine) {
+      setQcQuantity('')
+      return
+    }
+    setQcEventType('accept')
+    const remaining = getQcBreakdown(selectedQcLine).remaining
+    setQcQuantity((prev) => {
+      if (remaining <= 0) return ''
+      if (prev === '' || prev > remaining) return remaining
+      return prev
+    })
+  }, [selectedQcLine])
+
+  useEffect(() => {
+    setLastQcEvent(null)
+  }, [selectedQcLineId])
+
+  useEffect(() => {
+    if (qcEventType === 'accept') {
+      setQcReasonCode('')
+      setQcNotes('')
+    }
+  }, [qcEventType])
+
+  useEffect(() => {
+    setPutawayFillNotice(null)
+  }, [receiptIdForPutaway])
 
   const updateReceiptLine = (lineId: string, patch: Partial<ReceiptLineInput>) => {
     setReceiptLineInputs((prev) => prev.map((line) => (line.purchaseOrderLineId === lineId ? { ...line, ...patch } : line)))
@@ -305,20 +443,49 @@ export default function ReceivingPage() {
   const fillPutawayFromReceipt = () => {
     const lines = receiptQuery.data?.lines ?? []
     if (!lines.length) return
-    setPutawayLines(
-      lines.map((l) => ({
-        purchaseOrderReceiptLineId: l.id,
-        ...(() => {
-          const defaults = resolvePutawayDefaults({
-            defaultFromLocationId: l.defaultFromLocationId ?? receiptQuery.data?.receivedToLocationId ?? '',
-            defaultToLocationId: l.defaultToLocationId ?? '',
-          })
-          return { toLocationId: defaults.toId, fromLocationId: defaults.fromId }
-        })(),
-        uom: l.uom,
-        quantity: l.quantityReceived,
-      })),
-    )
+    const plannedLines = lines
+      .map((l) => {
+        const acceptedQty = l.qcSummary?.breakdown?.accept ?? 0
+        const availableQty =
+          l.availableForNewPutaway ?? l.remainingQuantityToPutaway ?? acceptedQty
+        if (availableQty <= 0) {
+          return null
+        }
+        return {
+          purchaseOrderReceiptLineId: l.id,
+          ...(() => {
+            const defaults = resolvePutawayDefaults({
+              defaultFromLocationId: l.defaultFromLocationId ?? receiptQuery.data?.receivedToLocationId ?? '',
+              defaultToLocationId: l.defaultToLocationId ?? '',
+            })
+            return { toLocationId: defaults.toId, fromLocationId: defaults.fromId }
+          })(),
+          uom: l.uom,
+          quantity: availableQty,
+        }
+      })
+      .filter((line): line is NonNullable<typeof line> => Boolean(line))
+
+    if (!plannedLines.length) {
+      const hasAccepted = lines.some((l) => (l.qcSummary?.breakdown?.accept ?? 0) > 0)
+      const hasPending = lines.some((l) => {
+        const remaining = l.remainingQuantityToPutaway ?? 0
+        const available =
+          l.availableForNewPutaway ?? l.remainingQuantityToPutaway ?? 0
+        return remaining > 0 && available <= 0
+      })
+      if (!hasAccepted) {
+        setPutawayFillNotice('No accepted quantity yet. Record QC acceptance to enable putaway.')
+      } else if (hasPending) {
+        setPutawayFillNotice('All accepted quantities are already planned in a putaway draft. Post or delete that draft to plan more.')
+      } else {
+        setPutawayFillNotice('No available quantity left to put away.')
+      }
+      return
+    }
+
+    setPutawayFillNotice(null)
+    setPutawayLines(plannedLines)
   }
 
   const updatePutawayLine = (
@@ -365,6 +532,23 @@ export default function ReceivingPage() {
     })
   }
 
+  const onCreateQcEvent = () => {
+    if (!selectedQcLine) return
+    if (qcQuantityInvalid) return
+    qcEventMutation.reset()
+    setLastQcEvent(null)
+    qcEventMutation.mutate({
+      purchaseOrderReceiptLineId: selectedQcLine.id,
+      eventType: qcEventType,
+      quantity: qcQuantityNumber,
+      uom: selectedQcLine.uom,
+      reasonCode: qcReasonCode.trim() ? qcReasonCode.trim() : undefined,
+      notes: qcNotes.trim() ? qcNotes.trim() : undefined,
+      actorType: 'user',
+      actorId: user?.id ?? user?.email ?? undefined,
+    })
+  }
+
   const onCreatePutaway = (e: React.FormEvent) => {
     e.preventDefault()
     const lines = putawayLines
@@ -395,6 +579,43 @@ export default function ReceivingPage() {
     receiptLineSummary.receivedLines.length > 0 &&
     receiptLineSummary.missingReasons.length === 0 &&
     !receiptMutation.isPending
+  const selectedQcStats = selectedQcLine ? getQcBreakdown(selectedQcLine) : null
+  const selectedPutawayAvailable =
+    selectedQcLine?.availableForNewPutaway ?? selectedQcLine?.remainingQuantityToPutaway ?? 0
+  const qcRemaining = selectedQcStats?.remaining ?? 0
+  const qcQuantityNumber = qcQuantity === '' ? 0 : Number(qcQuantity)
+  const qcQuantityInvalid =
+    !selectedQcLine || qcQuantityNumber <= 0 || qcQuantityNumber - qcRemaining > 1e-6
+  const canRecordQc =
+    !qcEventMutation.isPending &&
+    !!selectedQcLine &&
+    qcRemaining > 0 &&
+    !qcQuantityInvalid
+  const putawayQcIssues = putawayLines
+    .map((line, idx) => {
+      if (!line.purchaseOrderReceiptLineId) return null
+      const selected = receiptLineOptions.find((opt) => opt.value === line.purchaseOrderReceiptLineId)
+      if (!selected) return null
+      if ((selected.availableQty ?? 0) > 0) return null
+      return { idx, label: selected.label, reason: selected.blockedReason }
+    })
+    .filter(Boolean)
+  const putawayQuantityIssues = putawayLines
+    .map((line, idx) => {
+      if (!line.purchaseOrderReceiptLineId) return null
+      const selected = receiptLineOptions.find((opt) => opt.value === line.purchaseOrderReceiptLineId)
+      if (!selected) return null
+      const availableQty = selected.availableQty ?? 0
+      const lineQty = line.quantity === '' ? 0 : Number(line.quantity)
+      if (availableQty > 0 && lineQty <= availableQty) return null
+      if (availableQty === 0) return null
+      return { idx, label: selected.label, availableQty }
+    })
+    .filter(Boolean)
+  const canCreatePutaway =
+    !putawayMutation.isPending &&
+    putawayQcIssues.length === 0 &&
+    putawayQuantityIssues.length === 0
 
   return (
     <div className="space-y-6">
@@ -698,8 +919,8 @@ export default function ReceivingPage() {
       </Section>
 
       <Section
-        title="Move received items to storage"
-        description="Step 4: decide where received inventory goes. Putaway can be immediate or deferred."
+        title="Quality check and putaway"
+        description="Step 4: classify usable inventory. Step 5: move accepted inventory to storage."
       >
         <Card>
           <div className="flex items-center justify-between">
@@ -723,6 +944,7 @@ export default function ReceivingPage() {
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Receipt</th>
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">PO</th>
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Received at</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Putaway</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
                   </tr>
                 </thead>
@@ -739,6 +961,17 @@ export default function ReceivingPage() {
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-800">{rec.purchaseOrderId}</td>
                       <td className="px-3 py-2 text-sm text-slate-800">{rec.receivedAt}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            rec.hasPutaway
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {rec.hasPutaway ? 'Putaway started' : 'Not started'}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-right text-sm text-slate-800">
                         <div className="flex justify-end gap-2">
                           <Button
@@ -768,66 +1001,12 @@ export default function ReceivingPage() {
               </table>
             </div>
           )}
-          <form className="space-y-4" onSubmit={onCreatePutaway}>
-            {putawayMutation.isError && (
-              <Alert
-                variant="error"
-                title="Putaway draft not saved"
-                message={
-                  mapErrorMessage(
-                    putawayCreateErrorMap[getErrorMessage(putawayMutation.error, '')] ??
-                      getErrorMessage(putawayMutation.error, ''),
-                    putawayCreateErrorMap,
-                  ) || 'Unable to save the putaway draft. Check the lines and try again.'
-                }
-              />
-            )}
-            {putawayMutation.isPending && (
-              <Alert
-                variant="info"
-                title="Saving putaway draft"
-                message="Planning the move. No inventory has moved yet."
-              />
-            )}
-            {putawayMutation.isSuccess && putawayMutation.data && (
-              <Alert
-                variant="success"
-                title="Putaway draft saved"
-                message={`Draft ${putawayMutation.data.id.slice(0, 8)}… created. Review the lines, then post to move inventory.`}
-              />
-            )}
-            {postPutawayMutation.isError && (
-              <Alert
-                variant={getErrorMessage(postPutawayMutation.error, '') === 'Putaway already posted.' ? 'info' : 'error'}
-                title={getErrorMessage(postPutawayMutation.error, '') === 'Putaway already posted.' ? 'Putaway already posted' : 'Putaway not posted'}
-                message={
-                  mapErrorMessage(
-                    putawayPostErrorMap[getErrorMessage(postPutawayMutation.error, '')] ??
-                      getErrorMessage(postPutawayMutation.error, ''),
-                    putawayPostErrorMap,
-                  ) || 'Unable to post the putaway. Check the lines and try again.'
-                }
-              />
-            )}
-            {postPutawayMutation.isPending && (
-              <Alert
-                variant="warning"
-                title="Posting putaway"
-                message="Creating inventory movements. This action is irreversible."
-              />
-            )}
-            {postPutawayMutation.isSuccess && postPutawayMutation.data && (
-              <Alert
-                variant="success"
-                title="Putaway posted"
-                message={`Inventory moved and recorded. Movement ${postPutawayMutation.data.inventoryMovementId ?? 'created'}; putaway ${postPutawayMutation.data.id.slice(0, 8)}… completed.`}
-              />
-            )}
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="space-y-1 text-sm">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">Receipt ID</span>
-                  <Input
-                    value={receiptIdForPutaway}
+          <div className="mt-4 space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1 text-sm">
+                <span className="text-xs uppercase tracking-wide text-slate-500">Receipt ID</span>
+                <Input
+                  value={receiptIdForPutaway}
                   onChange={(e) => setReceiptIdForPutaway(e.target.value)}
                   placeholder="Receipt UUID"
                 />
@@ -850,49 +1029,370 @@ export default function ReceivingPage() {
             )}
             {receiptQuery.data && (
               <div className="rounded-lg border border-slate-200 p-3">
-                <div className="text-sm font-semibold text-slate-800">Receipt lines</div>
-                <div className="overflow-hidden rounded border border-slate-200 mt-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">Step 4: Quality check</div>
+                    <p className="text-xs text-slate-500">
+                      Classify usable inventory. Remaining quantity is the maximum you can allocate to a QC event.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2 overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-slate-50">
                       <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Line ID</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">PO Line</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Qty received</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">UOM</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Line</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Item</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Received</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Accepted</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Hold</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Reject</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Remaining</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Putaway</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white">
-                      {receiptQuery.data.lines?.map((l) => (
-                        <tr key={l.id}>
-                          <td className="px-3 py-2 text-sm text-slate-800">{l.id}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{l.purchaseOrderLineId}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{l.quantityReceived}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{l.uom}</td>
-                        </tr>
-                      ))}
+                      {receiptQuery.data.lines?.map((line) => {
+                        const qc = getQcBreakdown(line)
+                        const availableQty = line.availableForNewPutaway ?? qc.accept
+                        const remainingQty = line.remainingQuantityToPutaway ?? 0
+                        const blockedReason = line.putawayBlockedReason ?? ''
+                        const status = getQcStatus(line)
+                        const itemLabel = `${line.itemSku ?? line.itemId ?? 'Item'}${line.itemName ? ` - ${line.itemName}` : ''}`
+                        let putawayLabel = 'Blocked'
+                        let putawayTone = 'bg-amber-100 text-amber-700'
+                        if (availableQty > 0) {
+                          putawayLabel = `Available ${availableQty}`
+                          putawayTone = 'bg-emerald-100 text-emerald-700'
+                        } else if (remainingQty > 0) {
+                          putawayLabel = 'Planned in draft'
+                          putawayTone = 'bg-slate-100 text-slate-600'
+                        } else if (qc.accept > 0) {
+                          putawayLabel = 'Putaway complete'
+                          putawayTone = 'bg-slate-100 text-slate-600'
+                        } else if (qc.hold > 0) {
+                          putawayLabel = 'On hold'
+                        } else if (qc.reject > 0) {
+                          putawayLabel = 'Rejected'
+                        }
+                        return (
+                          <tr key={line.id} className={selectedQcLineId === line.id ? 'bg-slate-50' : ''}>
+                            <td className="px-3 py-2 text-sm text-slate-800">{line.id.slice(0, 8)}...</td>
+                            <td className="px-3 py-2 text-sm text-slate-800">{itemLabel}</td>
+                            <td className="px-3 py-2 text-sm text-slate-800">
+                              {line.quantityReceived} {line.uom}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-slate-800">{qc.accept}</td>
+                            <td className="px-3 py-2 text-sm text-slate-800">{qc.hold}</td>
+                            <td className="px-3 py-2 text-sm text-slate-800">{qc.reject}</td>
+                            <td className="px-3 py-2 text-sm text-slate-800">{qc.remaining}</td>
+                            <td className="px-3 py-2 text-sm text-slate-800">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${status.tone}`}>
+                                {status.label}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-sm text-slate-800">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${putawayTone}`}>
+                                {putawayLabel}
+                              </span>
+                              {blockedReason && availableQty <= 0 && (
+                                <div className="mt-1 text-xs text-slate-500">{blockedReason}</div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right text-sm text-slate-800">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={selectedQcLineId === line.id ? 'primary' : 'secondary'}
+                                onClick={() => setSelectedQcLineId(line.id)}
+                              >
+                                QC
+                              </Button>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
               </div>
             )}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-800">Putaway lines</div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={fillPutawayFromReceipt}
-                    disabled={!receiptQuery.data?.lines?.length}
-                  >
-                    Use receipt lines
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={addPutawayLine}>
-                    Add line
+            {receiptQuery.data && !selectedQcLine && (
+              <Alert
+                variant="info"
+                title="Select a line to QC"
+                message="Pick a receipt line to classify accepted, hold, or rejected quantities."
+              />
+            )}
+            {selectedQcLine && (
+              <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+                {qcEventMutation.isError && (
+                  <Alert
+                    variant="error"
+                    title="QC event not recorded"
+                    message={
+                      qcErrorMap[getErrorMessage(qcEventMutation.error, '')] ??
+                      getErrorMessage(qcEventMutation.error, 'Unable to record QC event.')
+                    }
+                  />
+                )}
+                {qcEventMutation.isPending && (
+                  <Alert
+                    variant="info"
+                    title="Recording QC event"
+                    message="Updating QC totals and putaway eligibility."
+                  />
+                )}
+                {lastQcEvent && (
+                  <Alert
+                    variant="success"
+                    title="QC event recorded"
+                    message={`${lastQcEvent.eventType === 'accept' ? 'Accepted' : lastQcEvent.eventType === 'hold' ? 'Held' : 'Rejected'} ${lastQcEvent.quantity} ${lastQcEvent.uom}.`}
+                  />
+                )}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">QC line detail</div>
+                    <div className="text-xs text-slate-600">
+                      {selectedQcLine.itemSku ?? selectedQcLine.itemId ?? 'Item'}
+                      {selectedQcLine.itemName ? ` - ${selectedQcLine.itemName}` : ''}
+                    </div>
+                    <div className="text-xs text-slate-500">Receipt line {selectedQcLine.id.slice(0, 8)}...</div>
+                  </div>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${getQcStatus(selectedQcLine).tone}`}>
+                    {getQcStatus(selectedQcLine).label}
+                  </span>
+                </div>
+                <div className="grid gap-2 md:grid-cols-5 text-sm text-slate-700">
+                  <div>Received: {selectedQcLine.quantityReceived} {selectedQcLine.uom}</div>
+                  <div>Accepted: {selectedQcStats?.accept ?? 0}</div>
+                  <div>On hold: {selectedQcStats?.hold ?? 0}</div>
+                  <div>Rejected: {selectedQcStats?.reject ?? 0}</div>
+                  <div>Remaining: {selectedQcStats?.remaining ?? 0}</div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Classify as</div>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={qcEventType === 'accept' ? 'primary' : 'secondary'}
+                        onClick={() => setQcEventType('accept')}
+                        disabled={qcRemaining <= 0}
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={qcEventType === 'hold' ? 'primary' : 'secondary'}
+                        onClick={() => setQcEventType('hold')}
+                        disabled={qcRemaining <= 0}
+                      >
+                        Hold
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={qcEventType === 'reject' ? 'primary' : 'secondary'}
+                        onClick={() => setQcEventType('reject')}
+                        disabled={qcRemaining <= 0}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Accept makes quantity available for putaway. Hold blocks putaway. Reject removes from usable stock.
+                    </p>
+                    {qcRemaining <= 0 && (
+                      <p className="mt-2 text-xs text-slate-500">
+                        QC is complete for this line. There is no remaining quantity to classify.
+                      </p>
+                    )}
+                  </div>
+                  <label className="space-y-1 text-sm">
+                    <span className="text-xs uppercase tracking-wide text-slate-500">Quantity (max {qcRemaining})</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={qcRemaining}
+                      value={qcQuantity}
+                      onChange={(e) =>
+                        setQcQuantity(e.target.value === '' ? '' : Number(e.target.value))
+                      }
+                      disabled={qcRemaining <= 0}
+                    />
+                    {qcQuantityInvalid && qcRemaining > 0 && (
+                      <div className="text-xs text-amber-700">
+                        Enter a quantity between 1 and {qcRemaining}.
+                      </div>
+                    )}
+                  </label>
+                  <label className="space-y-1 text-sm">
+                    <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
+                    <Input value={selectedQcLine.uom} disabled />
+                  </label>
+                </div>
+                {qcEventType !== 'accept' && (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1 text-sm">
+                      <span className="text-xs uppercase tracking-wide text-slate-500">Reason code (optional)</span>
+                      <Input
+                        value={qcReasonCode}
+                        onChange={(e) => setQcReasonCode(e.target.value)}
+                        placeholder="Optional reason"
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="text-xs uppercase tracking-wide text-slate-500">Notes (optional)</span>
+                      <Textarea
+                        value={qcNotes}
+                        onChange={(e) => setQcNotes(e.target.value)}
+                        placeholder="Notes for hold/reject"
+                      />
+                    </label>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs text-slate-500">
+                    Putaway: {selectedQcStats && selectedQcStats.accept > 0
+                      ? `Available ${selectedPutawayAvailable} ${selectedQcLine.uom}`
+                      : 'Blocked until some quantity is accepted.'}
+                    {selectedQcLine?.putawayBlockedReason ? ` (${selectedQcLine.putawayBlockedReason})` : ''}
+                  </div>
+                  <Button type="button" size="sm" disabled={!canRecordQc} onClick={onCreateQcEvent}>
+                    {qcEventMutation.isPending ? 'Recording...' : 'Record QC'}
                   </Button>
                 </div>
+                <div className="border-t border-slate-200 pt-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">QC events</div>
+                  {qcEventsQuery.isLoading && <LoadingSpinner label="Loading QC events..." />}
+                  {qcEventsQuery.isError && (
+                    <div className="text-xs text-amber-700">Unable to load QC events. Try again.</div>
+                  )}
+                  {!qcEventsQuery.isLoading && !qcEventsQuery.isError && (qcEventsQuery.data?.data?.length ?? 0) === 0 && (
+                    <div className="text-xs text-slate-500">No QC events recorded yet.</div>
+                  )}
+                  {!qcEventsQuery.isLoading && !qcEventsQuery.isError && (qcEventsQuery.data?.data?.length ?? 0) > 0 && (
+                    <ul className="mt-2 space-y-1 text-xs text-slate-600">
+                      {qcEventsQuery.data?.data?.map((event) => (
+                        <li key={event.id}>
+                          {event.eventType.toUpperCase()} {event.quantity} {event.uom}
+                          {event.reasonCode ? ` - ${event.reasonCode}` : ''}{event.notes ? ` (${event.notes})` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
+            )}
+            <form className="space-y-4" onSubmit={onCreatePutaway}>
+              {putawayMutation.isError && (
+                <Alert
+                  variant="error"
+                  title="Putaway draft not saved"
+                  message={
+                    mapErrorMessage(
+                      putawayCreateErrorMap[getErrorMessage(putawayMutation.error, '')] ??
+                        getErrorMessage(putawayMutation.error, ''),
+                      putawayCreateErrorMap,
+                    ) || 'Unable to save the putaway draft. Check the lines and try again.'
+                  }
+                />
+              )}
+              {putawayMutation.isPending && (
+                <Alert
+                  variant="info"
+                  title="Saving putaway draft"
+                  message="Planning the move. No inventory has moved yet."
+                />
+              )}
+              {putawayMutation.isSuccess && putawayMutation.data && (
+                <Alert
+                  variant="success"
+                  title="Putaway draft saved"
+                  message={`Draft ${putawayMutation.data.id.slice(0, 8)}... created. Review the lines, then post to move inventory.`}
+                />
+              )}
+              {postPutawayMutation.isError && (
+                <Alert
+                  variant={getErrorMessage(postPutawayMutation.error, '') === 'Putaway already posted.' ? 'info' : 'error'}
+                  title={getErrorMessage(postPutawayMutation.error, '') === 'Putaway already posted.' ? 'Putaway already posted' : 'Putaway not posted'}
+                  message={
+                    mapErrorMessage(
+                      putawayPostErrorMap[getErrorMessage(postPutawayMutation.error, '')] ??
+                        getErrorMessage(postPutawayMutation.error, ''),
+                      putawayPostErrorMap,
+                    ) || 'Unable to post the putaway. Check the lines and try again.'
+                  }
+                />
+              )}
+              {postPutawayMutation.isPending && (
+                <Alert
+                  variant="warning"
+                  title="Posting putaway"
+                  message="Creating inventory movements. This action is irreversible."
+                />
+              )}
+              {postPutawayMutation.isSuccess && postPutawayMutation.data && (
+                <Alert
+                  variant="success"
+                  title="Putaway posted"
+                  message={`Inventory moved and recorded. Movement ${postPutawayMutation.data.inventoryMovementId ?? 'created'}; putaway ${postPutawayMutation.data.id.slice(0, 8)}... completed.`}
+                />
+              )}
+              {receiptQuery.data && receiptQuery.data.lines?.some((line) => (line.qcSummary?.breakdown?.accept ?? 0) <= 0) && (
+                <Alert
+                  variant="warning"
+                  title="QC acceptance required"
+                  message="Some receipt lines have no accepted quantity yet. Accept QC quantities before planning putaway."
+                />
+              )}
+              {putawayQcIssues.length > 0 && (
+                <Alert
+                  variant="warning"
+                  title="Putaway blocked by QC"
+                  message="Some lines have no available quantity for putaway. Accept QC or wait until pending putaways clear."
+                />
+              )}
+              {putawayQuantityIssues.length > 0 && (
+                <Alert
+                  variant="warning"
+                  title="Reduce putaway quantities"
+                  message="One or more lines exceed the available quantity. Lower the quantities to the available amount."
+                />
+              )}
+              {putawayFillNotice && (
+                <Alert
+                  variant="info"
+                  title="No putaway lines added"
+                  message={putawayFillNotice}
+                />
+              )}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">Step 5: Plan putaway lines</div>
+                    <p className="text-xs text-slate-500">Only accepted quantities can move.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={fillPutawayFromReceipt}
+                      disabled={!receiptQuery.data?.lines?.length}
+                    >
+                      Use receipt lines
+                    </Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={addPutawayLine}>
+                      Add line
+                    </Button>
+                  </div>
+                </div>
               {putawayLines.map((line, idx) => (
                 <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-4">
                   <div>
@@ -903,6 +1403,8 @@ export default function ReceivingPage() {
                       disabled={!receiptLineOptions.length}
                       onChange={(nextValue) => {
                         const selected = receiptLineOptions.find((opt) => opt.value === nextValue)
+                        const acceptedQty = selected?.acceptedQty ?? 0
+                        const availableQty = selected?.availableQty ?? acceptedQty
                         const defaults = resolvePutawayDefaults({
                           defaultFromLocationId: selected?.defaultFromLocationId,
                           defaultToLocationId: selected?.defaultToLocationId,
@@ -910,12 +1412,27 @@ export default function ReceivingPage() {
                         updatePutawayLine(idx, {
                           purchaseOrderReceiptLineId: nextValue,
                           uom: selected?.uom ?? line.uom,
-                          quantity: selected?.quantity ?? line.quantity,
+                          quantity: availableQty > 0 ? availableQty : '',
                           toLocationId: line.toLocationId || defaults.toId,
                           fromLocationId: line.fromLocationId || defaults.fromId,
                         })
                       }}
                     />
+                    {line.purchaseOrderReceiptLineId && (() => {
+                      const selected = receiptLineOptions.find((opt) => opt.value === line.purchaseOrderReceiptLineId)
+                      if (!selected) return null
+                      const acceptedQty = selected.acceptedQty ?? 0
+                      const availableQty = selected.availableQty ?? acceptedQty
+                      const holdQty = selected.holdQty ?? 0
+                      const rejectQty = selected.rejectQty ?? 0
+                      const remainingQty = selected.remainingQty ?? 0
+                      const tone = acceptedQty > 0 ? 'text-slate-500' : 'text-amber-700'
+                      return (
+                        <div className={`mt-1 text-xs ${tone}`}>
+                          QC accepted {acceptedQty} · Hold {holdQty} · Reject {rejectQty} · Uninspected {remainingQty} · Available {availableQty}
+                        </div>
+                      )
+                    })()}
                   </div>
                   <div>
                     <Combobox
@@ -945,6 +1462,11 @@ export default function ReceivingPage() {
                     <Input
                       type="number"
                       min={0}
+                      max={
+                        line.purchaseOrderReceiptLineId
+                          ? (receiptLineOptions.find((opt) => opt.value === line.purchaseOrderReceiptLineId)?.availableQty ?? undefined)
+                          : undefined
+                      }
                       value={line.quantity}
                       onChange={(e) =>
                         updatePutawayLine(idx, {
@@ -957,7 +1479,7 @@ export default function ReceivingPage() {
               ))}
             </div>
             <div className="flex gap-2 justify-end">
-              <Button type="submit" size="sm" disabled={putawayMutation.isPending}>
+              <Button type="submit" size="sm" disabled={!canCreatePutaway}>
                 {putawayMutation.isPending ? 'Saving…' : 'Create putaway'}
               </Button>
               <Button
@@ -978,6 +1500,7 @@ export default function ReceivingPage() {
               Posting creates inventory movements and cannot be undone.
             </p>
           </form>
+          </div>
         </Card>
       </Section>
 

@@ -3,7 +3,12 @@ import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
 import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
 import type { z } from 'zod';
-import { defaultBreakdown, loadQcBreakdown } from './inbound/receivingAggregations';
+import {
+  calculatePutawayAvailability,
+  defaultBreakdown,
+  loadPutawayTotals,
+  loadQcBreakdown
+} from './inbound/receivingAggregations';
 import type { QcBreakdown } from './inbound/receivingAggregations';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
@@ -22,8 +27,27 @@ function buildQcSummary(lineId: string, breakdownMap: Map<string, QcBreakdown>, 
   };
 }
 
-function mapReceiptLine(line: any, qcBreakdown: Map<string, QcBreakdown>) {
+function mapReceiptLine(
+  line: any,
+  qcBreakdown: Map<string, QcBreakdown>,
+  totalsMap: Map<string, { posted: number; pending: number }>
+) {
   const quantityReceived = roundQuantity(toNumber(line.quantity_received));
+  const qc = qcBreakdown.get(line.id) ?? defaultBreakdown();
+  const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0 };
+  const availability = calculatePutawayAvailability(
+    {
+      id: line.id,
+      receiptId: line.purchase_order_receipt_id,
+      purchaseOrderId: line.purchase_order_id ?? '',
+      itemId: line.item_id ?? '',
+      uom: line.uom,
+      quantityReceived,
+      defaultFromLocationId: line.received_to_location_id ?? line.item_default_location_id ?? null
+    },
+    qc,
+    totals
+  );
   return {
     id: line.id,
     purchaseOrderReceiptId: line.purchase_order_receipt_id,
@@ -36,11 +60,19 @@ function mapReceiptLine(line: any, qcBreakdown: Map<string, QcBreakdown>) {
     uom: line.uom,
     quantityReceived,
     createdAt: line.created_at,
-    qcSummary: buildQcSummary(line.id, qcBreakdown, quantityReceived)
+    qcSummary: buildQcSummary(line.id, qcBreakdown, quantityReceived),
+    remainingQuantityToPutaway: availability.remainingAfterPosted,
+    availableForNewPutaway: availability.availableForPlanning,
+    putawayBlockedReason: availability.blockedReason ?? null
   };
 }
 
-function mapReceipt(row: any, lineRows: any[], qcBreakdown: Map<string, QcBreakdown>) {
+function mapReceipt(
+  row: any,
+  lineRows: any[],
+  qcBreakdown: Map<string, QcBreakdown>,
+  totalsMap: Map<string, { posted: number; pending: number }>
+) {
   return {
     id: row.id,
     purchaseOrderId: row.purchase_order_id,
@@ -51,7 +83,7 @@ function mapReceipt(row: any, lineRows: any[], qcBreakdown: Map<string, QcBreakd
     externalRef: row.external_ref,
     notes: row.notes,
     createdAt: row.created_at,
-    lines: lineRows.map((line) => mapReceiptLine(line, qcBreakdown))
+    lines: lineRows.map((line) => mapReceiptLine(line, qcBreakdown, totalsMap))
   };
 }
 
@@ -70,6 +102,7 @@ export async function fetchReceiptById(tenantId: string, id: string, client?: Po
   const linesResult = await executor(
     `SELECT porl.*,
             pol.item_id,
+            pol.purchase_order_id,
             i.sku AS item_sku,
             i.name AS item_name,
             i.default_location_id AS item_default_location_id,
@@ -84,7 +117,8 @@ export async function fetchReceiptById(tenantId: string, id: string, client?: Po
   );
   const lineIds = linesResult.rows.map((line) => line.id);
   const breakdown = await loadQcBreakdown(tenantId, lineIds, client);
-  return mapReceipt(receiptResult.rows[0], linesResult.rows, breakdown);
+  const totals = await loadPutawayTotals(tenantId, lineIds, client);
+  return mapReceipt(receiptResult.rows[0], linesResult.rows, breakdown, totals);
 }
 
 export async function createPurchaseOrderReceipt(tenantId: string, data: PurchaseOrderReceiptInput) {
@@ -174,14 +208,23 @@ export async function createPurchaseOrderReceipt(tenantId: string, data: Purchas
 export async function listReceipts(tenantId: string, limit = 20, offset = 0) {
   const { rows } = await query(
     `SELECT por.id,
-            por.purchase_order_id,
-            po.po_number,
-            por.received_at,
-            por.received_to_location_id,
-            por.inventory_movement_id,
-            por.external_ref,
+            por.purchase_order_id AS "purchaseOrderId",
+            po.po_number AS "purchaseOrderNumber",
+            por.received_at AS "receivedAt",
+            por.received_to_location_id AS "receivedToLocationId",
+            por.inventory_movement_id AS "inventoryMovementId",
+            por.external_ref AS "externalRef",
             por.notes,
-            por.created_at
+            por.created_at AS "createdAt",
+            EXISTS (
+              SELECT 1
+                FROM purchase_order_receipt_lines porl
+                JOIN putaway_lines pl
+                  ON pl.purchase_order_receipt_line_id = porl.id
+                 AND pl.tenant_id = porl.tenant_id
+               WHERE porl.purchase_order_receipt_id = por.id
+                 AND porl.tenant_id = por.tenant_id
+            ) AS "hasPutaway"
        FROM purchase_order_receipts por
        LEFT JOIN purchase_orders po ON po.id = por.purchase_order_id AND po.tenant_id = por.tenant_id
       WHERE por.tenant_id = $1

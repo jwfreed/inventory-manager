@@ -466,6 +466,23 @@ export type PurchaseOrderReceiptLine = {
       hold: number
     }
   }
+  remainingQuantityToPutaway?: number
+  availableForNewPutaway?: number
+  putawayBlockedReason?: string | null
+}
+
+export type QcEvent = {
+  id: string
+  purchaseOrderReceiptLineId: string
+  eventType: 'hold' | 'accept' | 'reject'
+  quantity: number
+  uom: string
+  reasonCode?: string | null
+  notes?: string | null
+  actorType: 'user' | 'system'
+  actorId?: string | null
+  occurredAt: string
+  createdAt?: string
 }
 
 export type PurchaseOrderReceipt = {
@@ -478,6 +495,7 @@ export type PurchaseOrderReceipt = {
   externalRef?: string | null
   notes?: string | null
   createdAt?: string
+  hasPutaway?: boolean | null
   lines?: PurchaseOrderReceiptLine[]
 }
 
