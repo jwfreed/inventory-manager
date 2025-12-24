@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -63,7 +63,7 @@ export default function WorkOrderDetailPage() {
     staleTime: 60_000,
   })
 
-  const itemLabel = (id?: string) => {
+  const itemLabel = useCallback((id?: string) => {
     if (!id) return ''
     const found = itemsLookupQuery.data?.data?.find((itm) => itm.id === id)
     const name = found?.name
@@ -72,14 +72,14 @@ export default function WorkOrderDetailPage() {
     if (name) return name
     if (sku) return sku
     return id
-  }
+  }, [itemsLookupQuery.data])
 
-  const componentLabel = (id: string, name?: string | null, sku?: string | null) => {
+  const componentLabel = useCallback((id: string, name?: string | null, sku?: string | null) => {
     if (name && sku) return `${name} — ${sku}`
     if (name) return name
     if (sku) return sku
     return itemLabel(id)
-  }
+  }, [itemLabel])
 
   const nextBomOptions = useMemo(
     () =>
@@ -92,7 +92,7 @@ export default function WorkOrderDetailPage() {
           keywords: `${bom.bomCode} ${outputLabel}`.trim(),
         }
       }),
-    [nextStepBomsQuery.data, itemsLookupQuery.data],
+    [nextStepBomsQuery.data, itemLabel],
   )
 
   const createNextStep = async () => {

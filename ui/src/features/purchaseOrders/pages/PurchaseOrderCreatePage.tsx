@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createPurchaseOrder, type PurchaseOrderCreateInput } from '../../../api/endpoints/purchaseOrders'
@@ -22,6 +22,8 @@ type LineDraft = {
   notes?: string
 }
 
+const defaultOrderDate = new Date().toISOString().slice(0, 10)
+
 export default function PurchaseOrderCreatePage() {
   const navigate = useNavigate()
   const [locationSearch, setLocationSearch] = useState('')
@@ -32,7 +34,7 @@ export default function PurchaseOrderCreatePage() {
   const [vendorReference, setVendorReference] = useState('')
   const [shipToLocationId, setShipToLocationId] = useState('')
   const [receivingLocationId, setReceivingLocationId] = useState('')
-  const [orderDate, setOrderDate] = useState('')
+  const [orderDate, setOrderDate] = useState(defaultOrderDate)
   const [expectedDate, setExpectedDate] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<LineDraft[]>([{ itemId: '', uom: '', quantityOrdered: '' }])
@@ -110,12 +112,6 @@ export default function PurchaseOrderCreatePage() {
       navigate(`/purchase-orders/${created.id}`)
     },
   })
-
-  useEffect(() => {
-    if (!orderDate) {
-      setOrderDate(new Date().toISOString().slice(0, 10))
-    }
-  }, [orderDate])
 
   const lineStats = useMemo(() => {
     const normalized = lines.map((line, idx) => ({

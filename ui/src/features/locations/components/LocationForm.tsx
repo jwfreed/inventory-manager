@@ -25,7 +25,6 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
   const [parentLocationId, setParentLocationId] = useState(initialLocation?.parentLocationId ?? '')
   const [active, setActive] = useState(initialLocation?.active ?? true)
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!initialLocation) return
     setCode(initialLocation.code)

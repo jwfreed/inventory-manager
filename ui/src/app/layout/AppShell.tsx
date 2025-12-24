@@ -4,23 +4,8 @@ import Breadcrumbs from '../../components/Breadcrumbs'
 import { NavLink } from '../../components/NavLink'
 import { Badge } from '../../components/Badge'
 import { Button } from '../../components/Button'
-import { useAuth } from '../../lib/auth'
-
-const navItems: { to: string; label: string; disabled?: boolean }[] = [
-  { to: '/home', label: 'Home' },
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/movements', label: 'Inventory movements' },
-  { to: '/work-orders', label: 'Work Orders' },
-  { to: '/purchase-orders', label: 'Purchase Orders' },
-  { to: '/vendors', label: 'Vendors' },
-  { to: '/receiving', label: 'Receiving & putaway' },
-  { to: '/items', label: 'Items' },
-  { to: '/locations', label: 'Locations' },
-  { to: '/sales-orders', label: 'OTC — Sales Orders' },
-  { to: '/reservations', label: 'OTC — Reservations' },
-  { to: '/shipments', label: 'OTC — Shipments' },
-  { to: '/returns', label: 'OTC — Returns' },
-]
+import { useAuth } from '../../lib/useAuth'
+import { navItems } from '../routeData'
 
 function AppShell() {
   const { user, tenant, logout } = useAuth()

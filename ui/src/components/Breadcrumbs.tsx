@@ -1,37 +1,33 @@
-import { Link, useLocation } from 'react-router-dom'
-
-function formatLabel(segment: string) {
-  if (!segment) return 'Home'
-  if (segment === 'movements') return 'Inventory movements'
-  return segment
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
-
-function buildPath(segments: string[], index: number) {
-  return `/${segments.slice(0, index + 1).join('/')}`
-}
+import { Link, useMatches } from 'react-router-dom'
+import type { AppRouteHandle } from '../shared/routes'
 
 export default function Breadcrumbs() {
-  const location = useLocation()
-  const segments = location.pathname.split('/').filter(Boolean)
+  const matches = useMatches()
+  const crumbs = matches
+    .map((match) => {
+      const handle = match.handle as AppRouteHandle | undefined
+      const breadcrumb = handle?.breadcrumb
+      if (!breadcrumb) return null
+      const label = typeof breadcrumb === 'function' ? breadcrumb(match.params) : breadcrumb
+      if (!label) return null
+      return { label, path: match.pathname }
+    })
+    .filter((crumb): crumb is { label: string; path: string } => Boolean(crumb))
 
-  const crumbs = segments.length ? segments : ['home']
+  if (crumbs.length === 0) return null
 
   return (
     <nav aria-label="Breadcrumb" className="text-sm text-slate-500">
       <ol className="flex items-center gap-2">
-        {crumbs.map((segment, index) => {
+        {crumbs.map((crumb, index) => {
           const isLast = index === crumbs.length - 1
-          const path = buildPath(crumbs, index)
           return (
-            <li key={path} className="flex items-center gap-2">
+            <li key={crumb.path} className="flex items-center gap-2">
               {isLast ? (
-                <span className="font-medium text-slate-700">{formatLabel(segment)}</span>
+                <span className="font-medium text-slate-700">{crumb.label}</span>
               ) : (
-                <Link to={path} className="hover:text-brand-700">
-                  {formatLabel(segment)}
+                <Link to={crumb.path} className="hover:text-brand-700">
+                  {crumb.label}
                 </Link>
               )}
               {!isLast && <span className="text-slate-300">/</span>}

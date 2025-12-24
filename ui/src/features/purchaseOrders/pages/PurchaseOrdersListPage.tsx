@@ -23,6 +23,8 @@ const formatError = (err: unknown) => {
   }
 }
 
+const staleDraftReferenceTime = Date.now()
+
 export default function PurchaseOrdersListPage() {
   const qc = useQueryClient()
   const [searchParams] = useSearchParams()
@@ -107,16 +109,17 @@ export default function PurchaseOrdersListPage() {
     return groups
   }, [rows])
 
-  const now = Date.now()
   const staleDrafts = useMemo(() => {
     return grouped.draft.filter((po) => {
       if (!po.createdAt) return false
       const created = new Date(po.createdAt).getTime()
       if (Number.isNaN(created)) return false
-      const days = Math.floor((now - created) / (1000 * 60 * 60 * 24))
+      const days = Math.floor(
+        (staleDraftReferenceTime - created) / (1000 * 60 * 60 * 24),
+      )
       return days >= 7
     })
-  }, [grouped.draft, now])
+  }, [grouped.draft])
 
   const groupOrder = [
     { key: 'draft', title: 'Drafts', description: 'Intent in progress. No operational impact yet.' },

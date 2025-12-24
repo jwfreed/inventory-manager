@@ -40,32 +40,18 @@ export function Combobox({
   const [activeIndex, setActiveIndex] = useState(-1)
   const [inputValue, setInputValue] = useState('')
   const [isFocused, setIsFocused] = useState(false)
-  const [lastSelection, setLastSelection] = useState<{ value: string; label: string } | null>(
-    null,
-  )
 
   const selectedOption = useMemo(
     () => options.find((opt) => opt.value === value),
     [options, value],
   )
 
-  useEffect(() => {
-    if (selectedOption) {
-      setLastSelection({ value: selectedOption.value, label: selectedOption.label })
-    }
-  }, [selectedOption])
+  const selectionLabel = useMemo(() => {
+    if (selectedOption?.label) return selectedOption.label
+    return value
+  }, [selectedOption, value])
 
-  useEffect(() => {
-    if (!isFocused && value) {
-      if (selectedOption?.label) {
-        setInputValue(selectedOption.label)
-      } else if (lastSelection?.value === value) {
-        setInputValue(lastSelection.label)
-      } else {
-        setInputValue(value)
-      }
-    }
-  }, [isFocused, lastSelection, selectedOption?.label, value])
+  const displayValue = isFocused ? inputValue : selectionLabel
 
   useEffect(() => {
     const handleOutside = (event: MouseEvent) => {
@@ -110,7 +96,6 @@ export function Combobox({
   const handleSelect = (opt: ComboboxOption) => {
     onChange(opt.value)
     setInputValue(opt.label)
-    setLastSelection({ value: opt.value, label: opt.label })
     closeList()
     inputRef.current?.focus()
   }
@@ -158,20 +143,20 @@ export function Combobox({
           aria-autocomplete="list"
           aria-activedescendant={activeIndex >= 0 ? `${listId}-opt-${activeIndex}` : undefined}
           placeholder={placeholder ?? 'Search...'}
-          value={inputValue}
+          value={displayValue}
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={() => {
             openList()
             if (onQueryChange) {
-              const selectedLabel =
-                selectedOption?.label ??
-                (lastSelection?.value === value ? lastSelection.label : '')
+              const selectedLabel = selectionLabel
               const nextQuery =
                 value && inputValue === selectedLabel ? '' : inputValue
               onQueryChange(nextQuery)
             }
+            setInputValue(selectionLabel)
           }}
           onBlur={() => {
+            setInputValue(selectionLabel)
             setIsFocused(false)
             closeList()
           }}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { listPurchaseOrders, getPurchaseOrder } from '../../../api/endpoints/purchaseOrders'
@@ -16,7 +16,7 @@ import { listLocations } from '../../../api/endpoints/locations'
 import { Combobox } from '../../../components/Combobox'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { useDebouncedValue } from '../../../lib/useDebouncedValue'
-import { useAuth } from '../../../lib/auth'
+import { useAuth } from '../../../lib/useAuth'
 
 type ReceiptLineInput = {
   purchaseOrderLineId: string
@@ -29,20 +29,69 @@ type ReceiptLineInput = {
   discrepancyNotes: string
 }
 
+type QcDraft = {
+  lineId: string
+  eventType: 'accept' | 'hold' | 'reject'
+  quantity: number | ''
+  reasonCode: string
+  notes: string
+}
+
+const buildReceiptLines = (po: PurchaseOrder): ReceiptLineInput[] => {
+  return (po.lines ?? []).map((line, idx) => {
+    const sku = line.itemSku ?? line.itemId ?? 'Item'
+    const name = line.itemName ?? ''
+    const label = `${sku}${name ? ` — ${name}` : ''}`
+    return {
+      purchaseOrderLineId: line.id,
+      lineNumber: line.lineNumber ?? idx + 1,
+      itemLabel: label,
+      uom: line.uom ?? '',
+      expectedQty: line.quantityOrdered ?? 0,
+      receivedQty: line.quantityOrdered ?? 0,
+      discrepancyReason: '',
+      discrepancyNotes: '',
+    }
+  })
+}
+
+const getQcBreakdown = (line: PurchaseOrderReceiptLine) => {
+  const breakdown = line.qcSummary?.breakdown ?? { accept: 0, hold: 0, reject: 0 }
+  const totalQc = breakdown.accept + breakdown.hold + breakdown.reject
+  const remaining =
+    line.qcSummary?.remainingUninspectedQuantity ?? Math.max(0, line.quantityReceived - totalQc)
+  return { ...breakdown, remaining, totalQc }
+}
+
+const getQcStatus = (line: PurchaseOrderReceiptLine) => {
+  const { totalQc, remaining } = getQcBreakdown(line)
+  if (totalQc === 0) {
+    return { label: 'QC not started', tone: 'bg-slate-100 text-slate-600' }
+  }
+  if (remaining > 0) {
+    return { label: 'QC in progress', tone: 'bg-amber-100 text-amber-700' }
+  }
+  return { label: 'QC complete', tone: 'bg-emerald-100 text-emerald-700' }
+}
+
 export default function ReceivingPage() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
-  const [selectedPoId, setSelectedPoId] = useState('')
-  const [receiptLineInputs, setReceiptLineInputs] = useState<ReceiptLineInput[]>([])
+  const poIdFromQuery = searchParams.get('poId') ?? ''
+  const [selectedPoId, setSelectedPoId] = useState(() => poIdFromQuery)
+  const [receiptLineInputs, setReceiptLineInputs] = useState<ReceiptLineInput[] | null>(null)
   const [receiptNotes, setReceiptNotes] = useState('')
-  const [receivedToLocationId, setReceivedToLocationId] = useState('')
+  const [receivedToLocationId, setReceivedToLocationId] = useState<string | null>(null)
   const [receiptIdForPutaway, setReceiptIdForPutaway] = useState('')
   const [selectedQcLineId, setSelectedQcLineId] = useState('')
-  const [qcEventType, setQcEventType] = useState<'accept' | 'hold' | 'reject'>('accept')
-  const [qcQuantity, setQcQuantity] = useState<number | ''>('')
-  const [qcReasonCode, setQcReasonCode] = useState('')
-  const [qcNotes, setQcNotes] = useState('')
+  const [qcDraft, setQcDraft] = useState<QcDraft>({
+    lineId: '',
+    eventType: 'accept',
+    quantity: '',
+    reasonCode: '',
+    notes: '',
+  })
   const [lastQcEvent, setLastQcEvent] = useState<QcEvent | null>(null)
   const [putawayFillNotice, setPutawayFillNotice] = useState<string | null>(null)
   const [putawayLines, setPutawayLines] = useState<
@@ -56,7 +105,6 @@ export default function ReceivingPage() {
   >([{ purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' }])
   const [locationSearch, setLocationSearch] = useState('')
   const [putawayId, setPutawayId] = useState('')
-  const poIdFromQuery = searchParams.get('poId') ?? ''
   const poListQuery = useQuery({
     queryKey: ['purchase-orders'],
     queryFn: () => listPurchaseOrders({ limit: 200 }),
@@ -69,24 +117,6 @@ export default function ReceivingPage() {
     enabled: !!selectedPoId,
   })
 
-  const buildReceiptLines = (po: PurchaseOrder): ReceiptLineInput[] => {
-    return (po.lines ?? []).map((line, idx) => {
-      const sku = line.itemSku ?? line.itemId ?? 'Item'
-      const name = line.itemName ?? ''
-      const label = `${sku}${name ? ` — ${name}` : ''}`
-      return {
-        purchaseOrderLineId: line.id,
-        lineNumber: line.lineNumber ?? idx + 1,
-        itemLabel: label,
-        uom: line.uom ?? '',
-        expectedQty: line.quantityOrdered ?? 0,
-        receivedQty: line.quantityOrdered ?? 0,
-        discrepancyReason: '',
-        discrepancyNotes: '',
-      }
-    })
-  }
-
   const discrepancyLabels: Record<ReceiptLineInput['discrepancyReason'], string> = {
     '': 'No variance',
     short: 'Short',
@@ -95,39 +125,23 @@ export default function ReceivingPage() {
     substituted: 'Substituted',
   }
 
-  const getQcBreakdown = (line: PurchaseOrderReceiptLine) => {
-    const breakdown = line.qcSummary?.breakdown ?? { accept: 0, hold: 0, reject: 0 }
-    const totalQc = breakdown.accept + breakdown.hold + breakdown.reject
-    const remaining =
-      line.qcSummary?.remainingUninspectedQuantity ?? Math.max(0, line.quantityReceived - totalQc)
-    return { ...breakdown, remaining, totalQc }
-  }
-
-  const getQcStatus = (line: PurchaseOrderReceiptLine) => {
-    const { totalQc, remaining } = getQcBreakdown(line)
-    if (totalQc === 0) {
-      return { label: 'QC not started', tone: 'bg-slate-100 text-slate-600' }
-    }
-    if (remaining > 0) {
-      return { label: 'QC in progress', tone: 'bg-amber-100 text-amber-700' }
-    }
-    return { label: 'QC complete', tone: 'bg-emerald-100 text-emerald-700' }
-  }
-
-  useEffect(() => {
-    if (poIdFromQuery) {
-      setSelectedPoId(poIdFromQuery)
-    }
-  }, [poIdFromQuery])
-
-  useEffect(() => {
-    if (!poQuery.data?.id) return
-    setReceivedToLocationId(
-      poQuery.data.receivingLocationId ?? poQuery.data.shipToLocationId ?? '',
-    )
-    setReceiptLineInputs(buildReceiptLines(poQuery.data))
+  const handlePoChange = (nextId: string) => {
+    setSelectedPoId(nextId)
+    setReceiptLineInputs(null)
     setReceiptNotes('')
-  }, [poQuery.data?.id])
+    setReceivedToLocationId(null)
+  }
+
+  const resolvedReceiptLineInputs = useMemo(() => {
+    if (receiptLineInputs) return receiptLineInputs
+    if (!poQuery.data) return []
+    return buildReceiptLines(poQuery.data)
+  }, [receiptLineInputs, poQuery.data])
+
+  const resolvedReceivedToLocationId = useMemo(() => {
+    if (receivedToLocationId !== null) return receivedToLocationId
+    return poQuery.data?.receivingLocationId ?? poQuery.data?.shipToLocationId ?? ''
+  }, [poQuery.data, receivedToLocationId])
 
   const getErrorMessage = (error: unknown, fallback: string) => {
     if (!error) return fallback
@@ -202,15 +216,32 @@ export default function ReceivingPage() {
     enabled: !!receiptIdForPutaway,
   })
 
+  const qcLines = useMemo(() => receiptQuery.data?.lines ?? [], [receiptQuery.data?.lines])
+  const activeQcLineId = useMemo(() => {
+    if (qcLines.length === 0) return ''
+    const hasSelected = qcLines.some((line) => line.id === selectedQcLineId)
+    if (!selectedQcLineId || !hasSelected) {
+      const nextLine = qcLines.find((line) => getQcBreakdown(line).remaining > 0) ?? qcLines[0]
+      return nextLine?.id ?? ''
+    }
+    const selected = qcLines.find((line) => line.id === selectedQcLineId)
+    if (!selected) return ''
+    if (getQcBreakdown(selected).remaining <= 0) {
+      const nextLine = qcLines.find((line) => getQcBreakdown(line).remaining > 0)
+      return nextLine?.id ?? selectedQcLineId
+    }
+    return selectedQcLineId
+  }, [qcLines, selectedQcLineId])
+
   const selectedQcLine = useMemo(() => {
-    if (!selectedQcLineId) return undefined
-    return receiptQuery.data?.lines?.find((line) => line.id === selectedQcLineId)
-  }, [receiptQuery.data?.lines, selectedQcLineId])
+    if (!activeQcLineId) return undefined
+    return qcLines.find((line) => line.id === activeQcLineId)
+  }, [activeQcLineId, qcLines])
 
   const qcEventsQuery = useQuery<{ data: QcEvent[] }, ApiError>({
-    queryKey: ['qc-events', selectedQcLineId],
-    queryFn: () => listQcEventsForLine(selectedQcLineId),
-    enabled: !!selectedQcLineId,
+    queryKey: ['qc-events', activeQcLineId],
+    queryFn: () => listQcEventsForLine(activeQcLineId),
+    enabled: !!activeQcLineId,
     staleTime: 30_000,
   })
 
@@ -233,10 +264,9 @@ export default function ReceivingPage() {
     mutationFn: (payload: QcEventCreatePayload) => createQcEvent(payload),
     onSuccess: (event) => {
       setLastQcEvent(event)
-      setQcNotes('')
-      setQcReasonCode('')
+      updateQcDraft({ reasonCode: '', notes: '' })
       void queryClient.invalidateQueries({ queryKey: ['receipt', receiptIdForPutaway] })
-      void queryClient.invalidateQueries({ queryKey: ['qc-events', selectedQcLineId] })
+      void queryClient.invalidateQueries({ queryKey: ['qc-events', activeQcLineId] })
       void recentReceiptsQuery.refetch()
     },
   })
@@ -305,7 +335,7 @@ export default function ReceivingPage() {
   )
 
   const receiptLineSummary = useMemo(() => {
-    const lines = receiptLineInputs.map((line) => {
+    const lines = resolvedReceiptLineInputs.map((line) => {
       const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
       const expectedQty = line.expectedQty ?? 0
       const delta = receivedQty - expectedQty
@@ -327,12 +357,17 @@ export default function ReceivingPage() {
       totalExpected,
       totalReceived,
     }
-  }, [receiptLineInputs])
+  }, [resolvedReceiptLineInputs])
+
+  const updateReceiptIdForPutaway = (nextId: string) => {
+    setReceiptIdForPutaway(nextId)
+    setPutawayFillNotice(null)
+  }
 
   const receiptMutation = useMutation({
     mutationFn: (payload: ReceiptCreatePayload) => createReceipt(payload),
     onSuccess: (receipt) => {
-      setReceiptIdForPutaway(receipt.id)
+      updateReceiptIdForPutaway(receipt.id)
       setPutawayLines([{ purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' }])
       void recentReceiptsQuery.refetch()
     },
@@ -341,7 +376,7 @@ export default function ReceivingPage() {
     mutationFn: (id: string) => deleteReceiptApi(id),
     onSuccess: () => {
       void recentReceiptsQuery.refetch()
-      if (receiptIdForPutaway) setReceiptIdForPutaway('')
+      if (receiptIdForPutaway) updateReceiptIdForPutaway('')
     },
   })
 
@@ -368,63 +403,27 @@ export default function ReceivingPage() {
   })
 
   const resetReceiptLines = () => {
-    if (!poQuery.data) return
-    setReceiptLineInputs(buildReceiptLines(poQuery.data))
+    setReceiptLineInputs(null)
   }
 
-  useEffect(() => {
-    const lines = receiptQuery.data?.lines ?? []
-    if (!lines.length) {
-      setSelectedQcLineId('')
-      return
-    }
-    const hasSelected = lines.some((line) => line.id === selectedQcLineId)
-    if (!selectedQcLineId || !hasSelected) {
-      const nextLine = lines.find((line) => getQcBreakdown(line).remaining > 0) ?? lines[0]
-      setSelectedQcLineId(nextLine.id)
-      return
-    }
-    const selected = lines.find((line) => line.id === selectedQcLineId)
-    if (!selected) return
-    if (getQcBreakdown(selected).remaining <= 0) {
-      const nextLine = lines.find((line) => getQcBreakdown(line).remaining > 0)
-      if (nextLine && nextLine.id !== selectedQcLineId) {
-        setSelectedQcLineId(nextLine.id)
-      }
-    }
-  }, [receiptQuery.data?.lines, selectedQcLineId])
-
-  useEffect(() => {
-    if (!selectedQcLine) {
-      setQcQuantity('')
-      return
-    }
-    setQcEventType('accept')
-    const remaining = getQcBreakdown(selectedQcLine).remaining
-    setQcQuantity((prev) => {
-      if (remaining <= 0) return ''
-      if (prev === '' || prev > remaining) return remaining
-      return prev
-    })
-  }, [selectedQcLine])
-
-  useEffect(() => {
-    setLastQcEvent(null)
-  }, [selectedQcLineId])
-
-  useEffect(() => {
-    if (qcEventType === 'accept') {
-      setQcReasonCode('')
-      setQcNotes('')
-    }
-  }, [qcEventType])
-
-  useEffect(() => {
-    setPutawayFillNotice(null)
-  }, [receiptIdForPutaway])
-
   const updateReceiptLine = (lineId: string, patch: Partial<ReceiptLineInput>) => {
-    setReceiptLineInputs((prev) => prev.map((line) => (line.purchaseOrderLineId === lineId ? { ...line, ...patch } : line)))
+    setReceiptLineInputs((prev) => {
+      const lines = prev ?? resolvedReceiptLineInputs
+      return lines.map((line) =>
+        line.purchaseOrderLineId === lineId ? { ...line, ...patch } : line,
+      )
+    })
+  }
+
+  const updateQcDraft = (patch: Partial<QcDraft>) => {
+    if (!activeQcLineId) return
+    setQcDraft((prev) => {
+      const base =
+        prev.lineId === activeQcLineId
+          ? prev
+          : { lineId: activeQcLineId, eventType: 'accept', quantity: '', reasonCode: '', notes: '' }
+      return { ...base, ...patch, lineId: activeQcLineId }
+    })
   }
 
   const addPutawayLine = () =>
@@ -528,7 +527,7 @@ export default function ReceivingPage() {
     receiptMutation.mutate({
       purchaseOrderId: selectedPoId,
       receivedAt: new Date().toISOString(),
-      receivedToLocationId: receivedToLocationId || undefined,
+      receivedToLocationId: resolvedReceivedToLocationId || undefined,
       notes: composedNotes || undefined,
       lines,
     })
@@ -581,10 +580,24 @@ export default function ReceivingPage() {
     receiptLineSummary.receivedLines.length > 0 &&
     receiptLineSummary.missingReasons.length === 0 &&
     !receiptMutation.isPending
+  const activeQcDraft =
+    activeQcLineId && qcDraft.lineId === activeQcLineId
+      ? qcDraft
+      : { lineId: activeQcLineId, eventType: 'accept', quantity: '', reasonCode: '', notes: '' }
+  const qcEventType = activeQcDraft.eventType
   const selectedQcStats = selectedQcLine ? getQcBreakdown(selectedQcLine) : null
   const selectedPutawayAvailable =
     selectedQcLine?.availableForNewPutaway ?? selectedQcLine?.remainingQuantityToPutaway ?? 0
   const qcRemaining = selectedQcStats?.remaining ?? 0
+  const qcQuantity = useMemo(() => {
+    if (!selectedQcLine || qcRemaining <= 0) return ''
+    if (activeQcDraft.quantity === '' || activeQcDraft.quantity > qcRemaining) {
+      return qcRemaining
+    }
+    return activeQcDraft.quantity
+  }, [activeQcDraft.quantity, qcRemaining, selectedQcLine])
+  const qcReasonCode = qcEventType === 'accept' ? '' : activeQcDraft.reasonCode
+  const qcNotes = qcEventType === 'accept' ? '' : activeQcDraft.notes
   const qcQuantityNumber = qcQuantity === '' ? 0 : Number(qcQuantity)
   const qcQuantityInvalid =
     !selectedQcLine || qcQuantityNumber <= 0 || qcQuantityNumber - qcRemaining > 1e-6
@@ -593,6 +606,8 @@ export default function ReceivingPage() {
     !!selectedQcLine &&
     qcRemaining > 0 &&
     !qcQuantityInvalid
+  const activeLastQcEvent =
+    lastQcEvent?.purchaseOrderReceiptLineId === activeQcLineId ? lastQcEvent : null
   const putawayQcIssues = putawayLines
     .map((line, idx) => {
       if (!line.purchaseOrderReceiptLineId) return null
@@ -660,7 +675,7 @@ export default function ReceivingPage() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => setReceiptIdForPutaway(receiptMutation.data?.id ?? '')}
+                    onClick={() => updateReceiptIdForPutaway(receiptMutation.data?.id ?? '')}
                   >
                     Load receipt
                   </Button>
@@ -673,7 +688,7 @@ export default function ReceivingPage() {
                 <select
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   value={selectedPoId}
-                  onChange={(e) => setSelectedPoId(e.target.value)}
+                  onChange={(e) => handlePoChange(e.target.value)}
                 >
                   <option value="">Select PO</option>
                   {poListQuery.data?.data
@@ -688,7 +703,7 @@ export default function ReceivingPage() {
               <div>
                 <Combobox
                   label="Received to location"
-                  value={receivedToLocationId}
+                  value={resolvedReceivedToLocationId}
                   options={locationOptions}
                   loading={locationsQuery.isLoading}
                   onQueryChange={setLocationSearch}
@@ -713,7 +728,7 @@ export default function ReceivingPage() {
                     {poQuery.data.vendorName ? ` — ${poQuery.data.vendorName}` : ''}
                   </div>
                   <div className="text-xs text-slate-500">
-                    Expected lines: {receiptLineInputs.length}
+                    Expected lines: {resolvedReceiptLineInputs.length}
                   </div>
                 </div>
 
@@ -730,12 +745,12 @@ export default function ReceivingPage() {
                       variant="secondary"
                       size="sm"
                       onClick={resetReceiptLines}
-                      disabled={receiptLineInputs.length === 0}
+                      disabled={resolvedReceiptLineInputs.length === 0}
                     >
                       Reset to expected
                     </Button>
                   </div>
-                  {receiptLineInputs.length === 0 ? (
+                  {resolvedReceiptLineInputs.length === 0 ? (
                     <div className="mt-3 text-sm text-slate-600">No PO lines to receive.</div>
                   ) : (
                     <div className="mt-3 overflow-hidden rounded border border-slate-200">
@@ -751,7 +766,7 @@ export default function ReceivingPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 bg-white">
-                          {receiptLineInputs.map((line) => {
+                          {resolvedReceiptLineInputs.map((line) => {
                             const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
                             const expectedQty = line.expectedQty ?? 0
                             const delta = receivedQty - expectedQty
@@ -854,7 +869,7 @@ export default function ReceivingPage() {
                   <div className="text-sm font-semibold text-slate-800">Step 3: Review summary</div>
                   <div className="mt-2 grid gap-2 md:grid-cols-3 text-sm text-slate-700">
                     <div>
-                      Lines received: {receiptLineSummary.receivedLines.length} / {receiptLineInputs.length}
+                      Lines received: {receiptLineSummary.receivedLines.length} / {resolvedReceiptLineInputs.length}
                     </div>
                     <div>Lines remaining: {receiptLineSummary.remainingLines.length}</div>
                     <div>Discrepancies: {receiptLineSummary.discrepancyLines.length}</div>
@@ -957,7 +972,7 @@ export default function ReceivingPage() {
                       className="hover:bg-slate-50"
                     >
                       <td className="px-3 py-2 text-sm text-slate-800">
-                        <button type="button" className="text-brand-700 underline" onClick={() => setReceiptIdForPutaway(rec.id)}>
+                        <button type="button" className="text-brand-700 underline" onClick={() => updateReceiptIdForPutaway(rec.id)}>
                           {rec.id.slice(0, 8)}…
                         </button>
                       </td>
@@ -979,7 +994,7 @@ export default function ReceivingPage() {
                           <Button
                             variant="secondary"
                             size="sm"
-                            onClick={() => setReceiptIdForPutaway(rec.id)}
+                            onClick={() => updateReceiptIdForPutaway(rec.id)}
                           >
                             Load
                           </Button>
@@ -1009,7 +1024,7 @@ export default function ReceivingPage() {
                 <span className="text-xs uppercase tracking-wide text-slate-500">Receipt ID</span>
                 <Input
                   value={receiptIdForPutaway}
-                  onChange={(e) => setReceiptIdForPutaway(e.target.value)}
+                  onChange={(e) => updateReceiptIdForPutaway(e.target.value)}
                   placeholder="Receipt UUID"
                 />
               </label>
@@ -1080,7 +1095,7 @@ export default function ReceivingPage() {
                           putawayLabel = 'Rejected'
                         }
                         return (
-                          <tr key={line.id} className={selectedQcLineId === line.id ? 'bg-slate-50' : ''}>
+                          <tr key={line.id} className={activeQcLineId === line.id ? 'bg-slate-50' : ''}>
                             <td className="px-3 py-2 text-sm text-slate-800">{line.id.slice(0, 8)}...</td>
                             <td className="px-3 py-2 text-sm text-slate-800">{itemLabel}</td>
                             <td className="px-3 py-2 text-sm text-slate-800">
@@ -1107,7 +1122,7 @@ export default function ReceivingPage() {
                               <Button
                                 type="button"
                                 size="sm"
-                                variant={selectedQcLineId === line.id ? 'primary' : 'secondary'}
+                                variant={activeQcLineId === line.id ? 'primary' : 'secondary'}
                                 onClick={() => setSelectedQcLineId(line.id)}
                               >
                                 QC
@@ -1147,11 +1162,11 @@ export default function ReceivingPage() {
                     message="Updating QC totals and putaway eligibility."
                   />
                 )}
-                {lastQcEvent && (
+                {activeLastQcEvent && (
                   <Alert
                     variant="success"
                     title="QC event recorded"
-                    message={`${lastQcEvent.eventType === 'accept' ? 'Accepted' : lastQcEvent.eventType === 'hold' ? 'Held' : 'Rejected'} ${lastQcEvent.quantity} ${lastQcEvent.uom}.`}
+                    message={`${activeLastQcEvent.eventType === 'accept' ? 'Accepted' : activeLastQcEvent.eventType === 'hold' ? 'Held' : 'Rejected'} ${activeLastQcEvent.quantity} ${activeLastQcEvent.uom}.`}
                   />
                 )}
                 <div className="flex items-start justify-between gap-3">
@@ -1182,7 +1197,7 @@ export default function ReceivingPage() {
                         type="button"
                         size="sm"
                         variant={qcEventType === 'accept' ? 'primary' : 'secondary'}
-                        onClick={() => setQcEventType('accept')}
+                        onClick={() => updateQcDraft({ eventType: 'accept' })}
                         disabled={qcRemaining <= 0}
                       >
                         Accept
@@ -1191,7 +1206,7 @@ export default function ReceivingPage() {
                         type="button"
                         size="sm"
                         variant={qcEventType === 'hold' ? 'primary' : 'secondary'}
-                        onClick={() => setQcEventType('hold')}
+                        onClick={() => updateQcDraft({ eventType: 'hold' })}
                         disabled={qcRemaining <= 0}
                       >
                         Hold
@@ -1200,7 +1215,7 @@ export default function ReceivingPage() {
                         type="button"
                         size="sm"
                         variant={qcEventType === 'reject' ? 'primary' : 'secondary'}
-                        onClick={() => setQcEventType('reject')}
+                        onClick={() => updateQcDraft({ eventType: 'reject' })}
                         disabled={qcRemaining <= 0}
                       >
                         Reject
@@ -1223,7 +1238,9 @@ export default function ReceivingPage() {
                       max={qcRemaining}
                       value={qcQuantity}
                       onChange={(e) =>
-                        setQcQuantity(e.target.value === '' ? '' : Number(e.target.value))
+                        updateQcDraft({
+                          quantity: e.target.value === '' ? '' : Number(e.target.value),
+                        })
                       }
                       disabled={qcRemaining <= 0}
                     />
@@ -1244,7 +1261,7 @@ export default function ReceivingPage() {
                       <span className="text-xs uppercase tracking-wide text-slate-500">Reason code (optional)</span>
                       <Input
                         value={qcReasonCode}
-                        onChange={(e) => setQcReasonCode(e.target.value)}
+                        onChange={(e) => updateQcDraft({ reasonCode: e.target.value })}
                         placeholder="Optional reason"
                       />
                     </label>
@@ -1252,7 +1269,7 @@ export default function ReceivingPage() {
                       <span className="text-xs uppercase tracking-wide text-slate-500">Notes (optional)</span>
                       <Textarea
                         value={qcNotes}
-                        onChange={(e) => setQcNotes(e.target.value)}
+                        onChange={(e) => updateQcDraft({ notes: e.target.value })}
                         placeholder="Notes for hold/reject"
                       />
                     </label>

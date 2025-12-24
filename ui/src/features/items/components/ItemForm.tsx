@@ -26,7 +26,6 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title }: Props) {
   const [defaultLocationId, setDefaultLocationId] = useState(initialItem?.defaultLocationId ?? '')
   const [active, setActive] = useState(initialItem?.active ?? true)
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!initialItem) return
     setSku(initialItem.sku)

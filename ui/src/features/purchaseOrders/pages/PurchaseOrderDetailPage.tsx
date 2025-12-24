@@ -14,6 +14,7 @@ import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Badge } from '../../../components/Badge'
 import { Input, Textarea } from '../../../components/Inputs'
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from 'react'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { listLocations } from '../../../api/endpoints/locations'
@@ -97,22 +98,14 @@ export default function PurchaseOrderDetailPage() {
 
   useEffect(() => {
     if (!poQuery.data) return
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     setOrderDate(normalizeDateInput(poQuery.data.orderDate))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     setExpectedDate(normalizeDateInput(poQuery.data.expectedDate))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     setShipToLocationId(poQuery.data.shipToLocationId ?? '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     setReceivingLocationId(poQuery.data.receivingLocationId ?? '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     setStatus(poQuery.data.status ?? 'draft')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     setVendorReference(poQuery.data.vendorReference ?? '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     setNotes(poQuery.data.notes ?? '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [poQuery.data?.id])
+  }, [poQuery.data])
 
   useEffect(() => {
     if (!poQuery.data?.status) return

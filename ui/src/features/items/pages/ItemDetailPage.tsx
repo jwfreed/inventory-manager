@@ -33,8 +33,9 @@ export default function ItemDetailPage() {
   const [searchParams] = useSearchParams()
   const [showEdit, setShowEdit] = useState(false)
   const [showBomForm, setShowBomForm] = useState(false)
-  const [selectedLocationId, setSelectedLocationId] = useState('')
-  const [seededLocation, setSeededLocation] = useState(false)
+  const [selectedLocationId, setSelectedLocationId] = useState(
+    () => searchParams.get('locationId') ?? '',
+  )
 
   const itemQuery = useQuery({
     queryKey: ['item', id],
@@ -74,15 +75,6 @@ export default function ItemDetailPage() {
     }
   }, [itemQuery.isError, itemQuery.error, navigate])
 
-  useEffect(() => {
-    if (seededLocation) return
-    const locationIdParam = searchParams.get('locationId') ?? ''
-    if (locationIdParam) {
-      setSelectedLocationId(locationIdParam)
-    }
-    setSeededLocation(true)
-  }, [searchParams, seededLocation])
-
   const copyId = async () => {
     if (!id) return
     try {
@@ -92,7 +84,7 @@ export default function ItemDetailPage() {
     }
   }
 
-  const stockRows = snapshotQuery.data ?? []
+  const stockRows = useMemo(() => snapshotQuery.data ?? [], [snapshotQuery.data])
   const locationLookup = useMemo(() => {
     const map = new Map<string, { code?: string; name?: string }>()
     locationsQuery.data?.data?.forEach((loc) => {

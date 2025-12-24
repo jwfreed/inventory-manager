@@ -87,7 +87,6 @@ export default function WorkOrderCreatePage() {
     [bomsQuery.data],
   )
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     const item = itemsById.get(outputItemId)
     if (!item) return
@@ -96,7 +95,6 @@ export default function WorkOrderCreatePage() {
     setDefaultProduceLocationId((prev) => (prev ? prev : item.defaultLocationId ?? ''))
   }, [itemsById, outputItemId])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     const bomDefault = bomsQuery.data?.boms?.[0]
     if (bomDefault) {

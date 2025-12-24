@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { AuthProvider, useAuth } from '../lib/auth'
+import { AuthProvider } from '../lib/auth'
+import { useAuth } from '../lib/useAuth'
 import { useServerEvents } from '../lib/useServerEvents'
 
 type Props = {

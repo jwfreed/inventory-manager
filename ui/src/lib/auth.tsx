@@ -1,72 +1,20 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { apiGet, apiPost, refreshAccessToken } from '../api/http'
 import { getAccessToken, setAccessToken } from './authStore'
 import { LoadingSpinner } from '../components/Loading'
-
-type AuthUser = {
-  id: string
-  email: string
-  fullName?: string | null
-  active?: boolean
-  createdAt?: string
-  updatedAt?: string
-}
-
-type AuthTenant = {
-  id: string
-  name: string
-  slug: string
-  parentTenantId?: string | null
-  createdAt?: string
-}
-
-type AuthSession = {
-  accessToken: string
-  user: AuthUser
-  tenant: AuthTenant
-  role?: string
-}
-
-type AuthState = {
-  status: 'loading' | 'authenticated' | 'unauthenticated'
-  accessToken: string | null
-  user: AuthUser | null
-  tenant: AuthTenant | null
-  role: string | null
-}
-
-type LoginInput = {
-  email: string
-  password: string
-  tenantId?: string
-  tenantSlug?: string
-}
-
-type BootstrapInput = {
-  tenantName?: string
-  tenantSlug?: string
-  adminEmail: string
-  adminPassword: string
-  adminName?: string
-}
-
-type AuthContextValue = AuthState & {
-  login: (input: LoginInput) => Promise<void>
-  bootstrap: (input: BootstrapInput) => Promise<void>
-  logout: () => Promise<void>
-  refresh: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined)
+import type {
+  AuthContextValue,
+  AuthSession,
+  AuthState,
+  AuthTenant,
+  AuthUser,
+  BootstrapInput,
+  LoginInput,
+} from './authContext'
+import { AuthContext } from './authContext'
+import { useAuth } from './useAuth'
 
 function mapSession(session: AuthSession): AuthState {
   return {
@@ -216,14 +164,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider')
-  }
-  return context
 }
 
 export function RequireAuth({ children }: { children: ReactNode }) {
