@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { listShipments } from '../../../api/endpoints/orderToCash/shipments'
-import type { ApiError } from '../../../api/types'
+import { useShipmentsList } from '../queries'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
@@ -15,14 +13,7 @@ export default function ShipmentsListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
 
-  const { data, isLoading, isError, error, refetch } = useQuery<
-    Awaited<ReturnType<typeof listShipments>>,
-    ApiError
-  >({
-    queryKey: ['shipments'],
-    queryFn: () => listShipments(),
-    retry: 1,
-  })
+  const { data, isLoading, isError, error, refetch } = useShipmentsList()
 
   const filtered = useMemo(() => {
     const list = data?.data ?? []

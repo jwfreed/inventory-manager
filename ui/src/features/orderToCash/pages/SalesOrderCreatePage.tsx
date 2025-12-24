@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { createSalesOrder, type SalesOrderPayload } from '../../../api/endpoints/orderToCash/salesOrders'
+import { createSalesOrder, type SalesOrderPayload } from '../api/salesOrders'
 import type { ApiError } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'

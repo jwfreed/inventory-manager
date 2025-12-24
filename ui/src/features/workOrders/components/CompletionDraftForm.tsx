@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -10,12 +10,12 @@ import {
   postWorkOrderCompletion,
   type CompletionDraftPayload,
   updateWorkOrderDefaultsApi,
-} from '../../../api/endpoints/workOrders'
-import type { ApiError, WorkOrder, WorkOrderCompletion, Item, Location } from '../../../api/types'
+} from '../api/workOrders'
+import type { ApiError, WorkOrder, WorkOrderCompletion, Item } from '../../../api/types'
 import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '../../../lib/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
-import { listLocations } from '../../../api/endpoints/locations'
+import { useLocationsList } from '../../locations/queries'
 import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
 import { useDebouncedValue } from '../../../lib/useDebouncedValue'
@@ -78,13 +78,10 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
 
   const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
 
-  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'wo-completion', debouncedLocationSearch],
-    queryFn: () =>
-      listLocations({ limit: 200, search: debouncedLocationSearch || undefined, active: true }),
-    staleTime: 60_000,
-    retry: 1,
-  })
+  const locationsQuery = useLocationsList(
+    { limit: 200, search: debouncedLocationSearch || undefined, active: true },
+    { staleTime: 60_000, retry: 1 },
+  )
 
   const baseProduceLocationId =
     workOrder.defaultProduceLocationId ??

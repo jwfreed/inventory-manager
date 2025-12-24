@@ -20,8 +20,13 @@ Public surfaces:
 
 Layering rules:
 - app may import from shared and features.
-- features may import from shared and their own submodules; avoid cross-feature imports.
+- features may import from shared, their own submodules, and other features' data modules (`api/` + `queries.ts`). Avoid cross-feature UI/component imports.
 - shared must not import from features; keep it app-agnostic.
+
+Data layer (Phase 3 target):
+- `src/api/types/*`: domain response types (re-exported from `src/api/types`).
+- `src/features/<domain>/api/*`: feature-owned endpoint wrappers.
+- `src/features/<domain>/queries.ts`: standardized React Query keys + hooks.
 
 ## UI ↔ API wiring (as of main)
 

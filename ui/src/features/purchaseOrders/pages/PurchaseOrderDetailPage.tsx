@@ -1,12 +1,11 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import {
   approvePurchaseOrder,
   deletePurchaseOrderApi,
-  getPurchaseOrder,
   updatePurchaseOrder,
-} from '../../../api/endpoints/purchaseOrders'
-import type { ApiError, Location, PurchaseOrder } from '../../../api/types'
+} from '../api/purchaseOrders'
+import type { ApiError } from '../../../api/types'
 import { Section } from '../../../components/Section'
 import { Card } from '../../../components/Card'
 import { LoadingSpinner } from '../../../components/Loading'
@@ -17,7 +16,8 @@ import { Input, Textarea } from '../../../components/Inputs'
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from 'react'
 import { SearchableSelect } from '../../../components/SearchableSelect'
-import { listLocations } from '../../../api/endpoints/locations'
+import { useLocationsList } from '../../locations/queries'
+import { usePurchaseOrder } from '../queries'
 import { formatDate } from '../../../lib/formatters'
 
 export default function PurchaseOrderDetailPage() {
@@ -73,18 +73,9 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
-  const poQuery = useQuery<PurchaseOrder, ApiError>({
-    queryKey: ['purchase-order', id],
-    queryFn: () => getPurchaseOrder(id as string),
-    enabled: !!id,
-  })
+  const poQuery = usePurchaseOrder(id)
 
-  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'po-detail'],
-    queryFn: () => listLocations({ limit: 200, active: true }),
-    staleTime: 60_000,
-    retry: 1,
-  })
+  const locationsQuery = useLocationsList({ limit: 200, active: true }, { staleTime: 60_000, retry: 1 })
 
   const locationOptions = useMemo(
     () =>

@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getReservation } from '../../../api/endpoints/orderToCash/reservations'
+import { useReservation } from '../queries'
 import type { ApiError } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -14,12 +13,7 @@ export default function ReservationDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const query = useQuery({
-    queryKey: ['reservation', id],
-    queryFn: () => getReservation(id as string),
-    enabled: !!id,
-    retry: 1,
-  })
+  const query = useReservation(id)
 
   useEffect(() => {
     const err = query.error as unknown as ApiError | undefined

@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { listPurchaseOrders, getPurchaseOrder } from '../../../api/endpoints/purchaseOrders'
-import { createReceipt, type ReceiptCreatePayload, getReceipt, listReceipts, deleteReceiptApi } from '../../../api/endpoints/receipts'
-import { createPutaway, postPutaway, type PutawayCreatePayload, getPutaway } from '../../../api/endpoints/putaways'
-import { createQcEvent, listQcEventsForLine, type QcEventCreatePayload } from '../../../api/endpoints/qc'
-import type { ApiError, Location, PurchaseOrder, PurchaseOrderReceipt, Putaway, PurchaseOrderReceiptLine, QcEvent } from '../../../api/types'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { createReceipt, type ReceiptCreatePayload, deleteReceiptApi } from '../api/receipts'
+import { createPutaway, postPutaway, type PutawayCreatePayload } from '../api/putaways'
+import { createQcEvent, type QcEventCreatePayload } from '../api/qc'
+import type { ApiError, PurchaseOrder, PurchaseOrderReceiptLine, QcEvent } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { Input, Textarea } from '../../../components/Inputs'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
-import { listLocations } from '../../../api/endpoints/locations'
+import { useLocationsList } from '../../locations/queries'
+import { usePurchaseOrder, usePurchaseOrdersList } from '../../purchaseOrders/queries'
+import { receivingQueryKeys, usePutaway, useQcEventsForLine, useReceipt, useReceiptsList } from '../queries'
 import { Combobox } from '../../../components/Combobox'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { useDebouncedValue } from '../../../lib/useDebouncedValue'
@@ -105,17 +106,9 @@ export default function ReceivingPage() {
   >([{ purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' }])
   const [locationSearch, setLocationSearch] = useState('')
   const [putawayId, setPutawayId] = useState('')
-  const poListQuery = useQuery({
-    queryKey: ['purchase-orders'],
-    queryFn: () => listPurchaseOrders({ limit: 200 }),
-    staleTime: 60_000,
-  })
+  const poListQuery = usePurchaseOrdersList({ limit: 200 }, { staleTime: 60_000 })
 
-  const poQuery = useQuery<PurchaseOrder>({
-    queryKey: ['purchase-order', selectedPoId],
-    queryFn: () => getPurchaseOrder(selectedPoId),
-    enabled: !!selectedPoId,
-  })
+  const poQuery = usePurchaseOrder(selectedPoId)
 
   const discrepancyLabels: Record<ReceiptLineInput['discrepancyReason'], string> = {
     '': 'No variance',
@@ -210,11 +203,7 @@ export default function ReceivingPage() {
     return message
   }
 
-  const receiptQuery = useQuery<PurchaseOrderReceipt>({
-    queryKey: ['receipt', receiptIdForPutaway],
-    queryFn: () => getReceipt(receiptIdForPutaway),
-    enabled: !!receiptIdForPutaway,
-  })
+  const receiptQuery = useReceipt(receiptIdForPutaway)
 
   const qcLines = useMemo(() => receiptQuery.data?.lines ?? [], [receiptQuery.data?.lines])
   const activeQcLineId = useMemo(() => {
@@ -238,12 +227,7 @@ export default function ReceivingPage() {
     return qcLines.find((line) => line.id === activeQcLineId)
   }, [activeQcLineId, qcLines])
 
-  const qcEventsQuery = useQuery<{ data: QcEvent[] }, ApiError>({
-    queryKey: ['qc-events', activeQcLineId],
-    queryFn: () => listQcEventsForLine(activeQcLineId),
-    enabled: !!activeQcLineId,
-    staleTime: 30_000,
-  })
+  const qcEventsQuery = useQcEventsForLine(activeQcLineId, { staleTime: 30_000 })
 
   const qcErrorMap: Record<string, string> = {
     'Receipt line not found.':
@@ -265,8 +249,12 @@ export default function ReceivingPage() {
     onSuccess: (event) => {
       setLastQcEvent(event)
       updateQcDraft({ reasonCode: '', notes: '' })
-      void queryClient.invalidateQueries({ queryKey: ['receipt', receiptIdForPutaway] })
-      void queryClient.invalidateQueries({ queryKey: ['qc-events', activeQcLineId] })
+      void queryClient.invalidateQueries({
+        queryKey: receivingQueryKeys.receipts.detail(receiptIdForPutaway),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: receivingQueryKeys.qcEvents.forLine(activeQcLineId),
+      })
       void recentReceiptsQuery.refetch()
     },
   })
@@ -302,27 +290,16 @@ export default function ReceivingPage() {
     })
   }, [receiptQuery.data])
 
-  const putawayQuery = useQuery<Putaway>({
-    queryKey: ['putaway', putawayId],
-    queryFn: () => getPutaway(putawayId),
-    enabled: !!putawayId,
-  })
+  const putawayQuery = usePutaway(putawayId)
 
-  const recentReceiptsQuery = useQuery({
-    queryKey: ['recent-receipts'],
-    queryFn: () => listReceipts({ limit: 20 }),
-    staleTime: 30_000,
-  })
+  const recentReceiptsQuery = useReceiptsList({ limit: 20 }, { staleTime: 30_000 })
 
   const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
 
-  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'receiving-putaway', debouncedLocationSearch],
-    queryFn: () =>
-      listLocations({ limit: 200, search: debouncedLocationSearch || undefined, active: true }),
-    staleTime: 60_000,
-    retry: 1,
-  })
+  const locationsQuery = useLocationsList(
+    { limit: 200, search: debouncedLocationSearch || undefined, active: true },
+    { staleTime: 60_000, retry: 1 },
+  )
 
   const locationOptions = useMemo(
     () =>
@@ -384,7 +361,9 @@ export default function ReceivingPage() {
     mutationFn: (payload: PutawayCreatePayload) => createPutaway(payload),
     onSuccess: (p) => {
       setPutawayId(p.id)
-      void queryClient.invalidateQueries({ queryKey: ['receipt', receiptIdForPutaway] })
+      void queryClient.invalidateQueries({
+        queryKey: receivingQueryKeys.receipts.detail(receiptIdForPutaway),
+      })
       void recentReceiptsQuery.refetch()
     },
   })

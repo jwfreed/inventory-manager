@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { createPurchaseOrder, type PurchaseOrderCreateInput } from '../../../api/endpoints/purchaseOrders'
-import { listVendors } from '../../../api/endpoints/vendors'
-import { listLocations } from '../../../api/endpoints/locations'
-import { listItems } from '../../../api/endpoints/items'
-import type { ApiError, Item, Location, Vendor } from '../../../api/types'
+import { useMutation } from '@tanstack/react-query'
+import { createPurchaseOrder, type PurchaseOrderCreateInput } from '../api/purchaseOrders'
+import { useVendorsList } from '../../vendors/queries'
+import { useLocationsList } from '../../locations/queries'
+import { useItemsList } from '../../items/queries'
+import type { ApiError, Item } from '../../../api/types'
 import { Card } from '../../../components/Card'
 import { Section } from '../../../components/Section'
 import { Alert } from '../../../components/Alert'
@@ -40,29 +40,20 @@ export default function PurchaseOrderCreatePage() {
   const [lines, setLines] = useState<LineDraft[]>([{ itemId: '', uom: '', quantityOrdered: '' }])
   const [lastAction, setLastAction] = useState<'draft' | 'submitted' | null>(null)
 
-  const vendorsQuery = useQuery<{ data: Vendor[] }, ApiError>({
-    queryKey: ['vendors', 'po-create'],
-    queryFn: () => listVendors({ limit: 200, active: true }),
-    staleTime: 60_000,
-  })
+  const vendorsQuery = useVendorsList({ limit: 200, active: true }, { staleTime: 60_000 })
 
   const debouncedItemSearch = useDebouncedValue(itemSearch, 200)
   const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
 
-  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'po-create', debouncedLocationSearch],
-    queryFn: () =>
-      listLocations({ limit: 200, search: debouncedLocationSearch || undefined, active: true }),
-    staleTime: 60_000,
-    retry: 1,
-  })
+  const locationsQuery = useLocationsList(
+    { limit: 200, search: debouncedLocationSearch || undefined, active: true },
+    { staleTime: 60_000, retry: 1 },
+  )
 
-  const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
-    queryKey: ['items', 'po-create', debouncedItemSearch],
-    queryFn: () => listItems({ limit: 200, search: debouncedItemSearch || undefined, active: true }),
-    staleTime: 60_000,
-    retry: 1,
-  })
+  const itemsQuery = useItemsList(
+    { limit: 200, search: debouncedItemSearch || undefined, active: true },
+    { staleTime: 60_000, retry: 1 },
+  )
 
   const vendorOptions = useMemo(
     () =>

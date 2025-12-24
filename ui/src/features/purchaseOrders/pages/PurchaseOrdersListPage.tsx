@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { listPurchaseOrders, getPurchaseOrder, createPurchaseOrder } from '../../../api/endpoints/purchaseOrders'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { getPurchaseOrder, createPurchaseOrder } from '../api/purchaseOrders'
+import { purchaseOrdersQueryKeys, usePurchaseOrdersList } from '../queries'
 import type { ApiError, PurchaseOrder } from '../../../api/types'
 import { Section } from '../../../components/Section'
 import { Card } from '../../../components/Card'
@@ -38,11 +39,7 @@ export default function PurchaseOrdersListPage() {
   const normalizedStatusFilter =
     statusFilter === 'received' || statusFilter === 'closed' ? 'closed' : statusFilter
 
-  const poQuery = useQuery({
-    queryKey: ['purchase-orders'],
-    queryFn: () => listPurchaseOrders({ limit: 200 }),
-    staleTime: 30_000,
-  })
+  const poQuery = usePurchaseOrdersList({ limit: 200 }, { staleTime: 30_000 })
 
   const repeatMutation = useMutation({
     mutationFn: async (poId: string) => {
@@ -77,7 +74,7 @@ export default function PurchaseOrdersListPage() {
     },
     onSuccess: (created) => {
       setRepeatMessage(`Repeated as ${created.poNumber}`)
-      void qc.invalidateQueries({ queryKey: ['purchase-orders'] })
+      void qc.invalidateQueries({ queryKey: purchaseOrdersQueryKeys.all })
     },
     onError: (err: ApiError | unknown) => {
       setRepeatError(formatError(err))

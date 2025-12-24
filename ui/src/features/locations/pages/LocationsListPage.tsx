@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { createStandardWarehouseTemplate, listLocations } from '../../../api/endpoints/locations'
+import { useMutation } from '@tanstack/react-query'
+import { createStandardWarehouseTemplate } from '../api/locations'
+import { useLocationsList } from '../queries'
 import type { ApiError, Location } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -28,14 +29,9 @@ export default function LocationsListPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [includeReceivingQc, setIncludeReceivingQc] = useState(true)
 
-  const { data, isLoading, isError, error, refetch } = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', active, typeFilter],
-    queryFn: () =>
-      listLocations({
-        active: active === '' ? undefined : active === 'true',
-        type: typeFilter || undefined,
-      }),
-    retry: 1,
+  const { data, isLoading, isError, error, refetch } = useLocationsList({
+    active: active === '' ? undefined : active === 'true',
+    type: typeFilter || undefined,
   })
 
   const filtered = useMemo(() => {

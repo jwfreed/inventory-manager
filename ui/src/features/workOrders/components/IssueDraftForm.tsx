@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -11,11 +11,11 @@ import {
   updateWorkOrderDefaultsApi,
   postWorkOrderIssue,
   type IssueDraftPayload,
-} from '../../../api/endpoints/workOrders'
-import { listItems } from '../../../api/endpoints/items'
-import { listLocations } from '../../../api/endpoints/locations'
+} from '../api/workOrders'
+import { useItemsList } from '../../items/queries'
+import { useLocationsList } from '../../locations/queries'
 import type { ApiError, WorkOrderIssue, WorkOrder } from '../../../api/types'
-import type { Item, Location } from '../../../api/types'
+import type { Item } from '../../../api/types'
 import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '../../../lib/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
@@ -111,20 +111,15 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
   const debouncedItemSearch = useDebouncedValue(itemSearch, 200)
   const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
 
-  const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
-    queryKey: ['items', 'wo-issue', debouncedItemSearch],
-    queryFn: () => listItems({ limit: 200, search: debouncedItemSearch || undefined }),
-    staleTime: 60_000,
-    retry: 1,
-  })
+  const itemsQuery = useItemsList(
+    { limit: 200, search: debouncedItemSearch || undefined },
+    { staleTime: 60_000, retry: 1 },
+  )
 
-  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'wo-issue', debouncedLocationSearch],
-    queryFn: () =>
-      listLocations({ limit: 200, search: debouncedLocationSearch || undefined, active: true }),
-    staleTime: 60_000,
-    retry: 1,
-  })
+  const locationsQuery = useLocationsList(
+    { limit: 200, search: debouncedLocationSearch || undefined, active: true },
+    { staleTime: 60_000, retry: 1 },
+  )
 
   const baseConsumeLocationId =
     workOrder.defaultConsumeLocationId ??

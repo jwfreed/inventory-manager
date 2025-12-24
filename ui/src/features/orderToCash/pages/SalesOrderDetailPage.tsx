@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getSalesOrder } from '../../../api/endpoints/orderToCash/salesOrders'
+import { useSalesOrder } from '../queries'
 import type { ApiError, SalesOrderLine, Shipment } from '../../../api/types'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
@@ -16,12 +15,7 @@ export default function SalesOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const query = useQuery({
-    queryKey: ['sales-order', id],
-    queryFn: () => getSalesOrder(id as string),
-    enabled: !!id,
-    retry: 1,
-  })
+  const query = useSalesOrder(id)
 
   useEffect(() => {
     const err = query.error as unknown as ApiError | undefined

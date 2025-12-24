@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import type { ApiError, Location } from '../../../api/types'
-import { createLocation, updateLocation, type LocationPayload } from '../../../api/endpoints/locations'
+import { createLocation, updateLocation, type LocationPayload } from '../api/locations'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'

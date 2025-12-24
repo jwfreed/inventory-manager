@@ -1,14 +1,12 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getFulfillmentFillRate, listKpiRuns, listKpiSnapshots } from '../../../api/endpoints/kpis'
-import { listReplenishmentRecommendations } from '../../../api/endpoints/planning'
-import { listWorkOrders } from '../../../api/endpoints/workOrders'
-import { listInventorySnapshotSummary } from '../../../api/endpoints/inventorySnapshot'
-import { listItems } from '../../../api/endpoints/items'
-import { listLocations } from '../../../api/endpoints/locations'
-import { listPurchaseOrders } from '../../../api/endpoints/purchaseOrders'
 import type { ApiError } from '../../../api/types'
+import { useInventorySnapshotSummary } from '../../inventory/queries'
+import { useItemsList } from '../../items/queries'
+import { useLocationsList } from '../../locations/queries'
+import { usePurchaseOrdersList } from '../../purchaseOrders/queries'
+import { useWorkOrdersList } from '../../workOrders/queries'
+import { useFulfillmentFillRate, useKpiRuns, useKpiSnapshots, useReplenishmentRecommendations } from '../queries'
 import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
@@ -22,8 +20,8 @@ import { formatDateTime } from '../utils'
 import { formatNumber } from '../../../lib/formatters'
 import { Alert } from '../../../components/Alert'
 
-type SnapshotQueryResult = Awaited<ReturnType<typeof listKpiSnapshots>>
-type RunQueryResult = Awaited<ReturnType<typeof listKpiRuns>>
+type SnapshotQueryResult = ReturnType<typeof useKpiSnapshots>['data']
+type RunQueryResult = ReturnType<typeof useKpiRuns>['data']
 
 function attemptedEndpoints(result?: SnapshotQueryResult | RunQueryResult) {
   if (!result) return []
@@ -40,11 +38,7 @@ export default function DashboardPage() {
     error: snapshotsErrorObj,
     refetch: refetchSnapshots,
     isFetching: snapshotsFetching,
-  } = useQuery<SnapshotQueryResult, ApiError>({
-    queryKey: ['kpi-snapshots'],
-    queryFn: () => listKpiSnapshots({ limit: 200 }),
-    staleTime: 30_000,
-  })
+  } = useKpiSnapshots({ limit: 200 }, { staleTime: 30_000 })
 
   const {
     data: runsResult,
@@ -52,11 +46,7 @@ export default function DashboardPage() {
     isError: runsError,
     error: runsErrorObj,
     refetch: refetchRuns,
-  } = useQuery<RunQueryResult, ApiError>({
-    queryKey: ['kpi-runs'],
-    queryFn: () => listKpiRuns({ limit: 15 }),
-    staleTime: 60_000,
-  })
+  } = useKpiRuns({ limit: 15 }, { staleTime: 60_000 })
 
   const snapshotsAvailable = snapshotsResult && snapshotsResult.type === 'success'
   const snapshotList = snapshotsAvailable ? snapshotsResult.data : []
@@ -72,47 +62,19 @@ export default function DashboardPage() {
       ? `Endpoint not available: ${runAttempts.join(', ')}`
       : 'KPI run endpoints are not implemented in this repository (DB-first only).'
 
-  const productionQuery = useQuery({
-    queryKey: ['production-summary'],
-    queryFn: () => listWorkOrders({ limit: 200 }),
-    staleTime: 30_000,
-  })
+  const productionQuery = useWorkOrdersList({ limit: 200 }, { staleTime: 30_000 })
 
-  const fillRateQuery = useQuery({
-    queryKey: ['fulfillment-fill-rate'],
-    queryFn: () => getFulfillmentFillRate({}),
-    staleTime: 30_000,
-  })
+  const fillRateQuery = useFulfillmentFillRate({}, { staleTime: 30_000 })
 
-  const recommendationsQuery = useQuery({
-    queryKey: ['replenishment-recommendations'],
-    queryFn: () => listReplenishmentRecommendations({ limit: 10 }),
-    staleTime: 30_000,
-  })
+  const recommendationsQuery = useReplenishmentRecommendations({ limit: 10 }, { staleTime: 30_000 })
 
-  const inventorySummaryQuery = useQuery({
-    queryKey: ['inventory-summary'],
-    queryFn: () => listInventorySnapshotSummary({ limit: 500 }),
-    staleTime: 30_000,
-  })
+  const inventorySummaryQuery = useInventorySnapshotSummary({ limit: 500 }, { staleTime: 30_000 })
 
-  const itemsQuery = useQuery({
-    queryKey: ['items', 'inventory-summary'],
-    queryFn: () => listItems({ limit: 500 }),
-    staleTime: 30_000,
-  })
+  const itemsQuery = useItemsList({ limit: 500 }, { staleTime: 30_000 })
 
-  const locationsQuery = useQuery({
-    queryKey: ['locations', 'inventory-summary'],
-    queryFn: () => listLocations({ limit: 500, active: true }),
-    staleTime: 30_000,
-  })
+  const locationsQuery = useLocationsList({ limit: 500, active: true }, { staleTime: 30_000 })
 
-  const purchaseOrdersQuery = useQuery({
-    queryKey: ['purchase-orders', 'dashboard'],
-    queryFn: () => listPurchaseOrders({ limit: 200 }),
-    staleTime: 30_000,
-  })
+  const purchaseOrdersQuery = usePurchaseOrdersList({ limit: 200 }, { staleTime: 30_000 })
 
   const workOrders = productionQuery.data?.data ?? []
   const productionRows = workOrders.map((wo) => ({

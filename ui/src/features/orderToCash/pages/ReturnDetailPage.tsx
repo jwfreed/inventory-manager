@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getReturn } from '../../../api/endpoints/orderToCash/returns'
+import { useReturn } from '../queries'
 import type { ApiError } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -17,12 +16,7 @@ export default function ReturnDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const query = useQuery({
-    queryKey: ['return', id],
-    queryFn: () => getReturn(id as string),
-    enabled: !!id,
-    retry: 1,
-  })
+  const query = useReturn(id)
 
   useEffect(() => {
     const err = query.error as unknown as ApiError | undefined

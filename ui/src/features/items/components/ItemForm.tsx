@@ -1,9 +1,9 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import type { ApiError, Item, Location } from '../../../api/types'
-import { createItem, updateItem, type ItemPayload } from '../../../api/endpoints/items'
-import { listLocations } from '../../../api/endpoints/locations'
+import { useMutation } from '@tanstack/react-query'
+import type { ApiError, Item } from '../../../api/types'
+import { createItem, updateItem, type ItemPayload } from '../api/items'
+import { useLocationsList } from '../../locations/queries'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -37,11 +37,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title }: Props) {
     setActive(initialItem.active)
   }, [initialItem])
 
-  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'for-items'],
-    queryFn: () => listLocations({ active: true, limit: 200 }),
-    staleTime: 60_000,
-  })
+  const locationsQuery = useLocationsList({ active: true, limit: 200 }, { staleTime: 60_000 })
 
   const mutation = useMutation<Item, ApiError, ItemPayload>({
     mutationFn: (payload) =>

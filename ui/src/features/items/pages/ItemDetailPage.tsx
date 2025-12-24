@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getItem } from '../../../api/endpoints/items'
-import { listLocations } from '../../../api/endpoints/locations'
-import { listInventorySnapshotSummary } from '../../../api/endpoints/inventorySnapshot'
-import { listBomsByItem } from '../../../api/endpoints/boms'
+import { useItem } from '../queries'
+import { useLocationsList } from '../../locations/queries'
+import { useInventorySnapshotSummary } from '../../inventory/queries'
+import { useBomsByItem } from '../../boms/queries'
 import type { ApiError } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -37,37 +36,22 @@ export default function ItemDetailPage() {
     () => searchParams.get('locationId') ?? '',
   )
 
-  const itemQuery = useQuery({
-    queryKey: ['item', id],
-    queryFn: () => getItem(id as string),
-    enabled: !!id,
+  const itemQuery = useItem(id, {
     retry: (count, err: ApiError) => err?.status !== 404 && count < 1,
   })
 
-  const locationsQuery = useQuery({
-    queryKey: ['locations', 'active'],
-    queryFn: () => listLocations({ active: true, limit: 100 }),
-    staleTime: 60_000,
-  })
+  const locationsQuery = useLocationsList({ active: true, limit: 100 }, { staleTime: 60_000 })
 
-  const snapshotQuery = useQuery({
-    queryKey: ['inventory-snapshot', id, selectedLocationId],
-    queryFn: () =>
-      listInventorySnapshotSummary({
-        itemId: id as string,
-        locationId: selectedLocationId || undefined,
-        limit: 500,
-      }),
-    enabled: !!id,
-    staleTime: 30_000,
-  })
+  const snapshotQuery = useInventorySnapshotSummary(
+    {
+      itemId: id ?? undefined,
+      locationId: selectedLocationId || undefined,
+      limit: 500,
+    },
+    { enabled: Boolean(id), staleTime: 30_000 },
+  )
 
-  const bomsQuery = useQuery({
-    queryKey: ['item-boms', id],
-    queryFn: () => listBomsByItem(id as string),
-    enabled: !!id,
-    retry: 1,
-  })
+  const bomsQuery = useBomsByItem(id)
 
   useEffect(() => {
     if (itemQuery.isError && itemQuery.error?.status === 404) {

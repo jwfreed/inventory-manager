@@ -1,13 +1,12 @@
 import { useMemo, useState, useCallback } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { Input, Textarea } from '../../../components/Inputs'
 import type { ApiError } from '../../../api/types'
-import { createBom, type BomCreatePayload } from '../../../api/endpoints/boms'
-import { listItems } from '../../../api/endpoints/items'
-import type { Item } from '../../../api/types'
+import { createBom, type BomCreatePayload } from '../api/boms'
+import { useItemsList } from '../../items/queries'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 
 type Props = {
@@ -39,12 +38,7 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
     { lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '' },
   ])
 
-  const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
-    queryKey: ['items', 'bom-form'],
-    queryFn: () => listItems({ limit: 500 }),
-    staleTime: 60_000,
-    retry: 1,
-  })
+  const itemsQuery = useItemsList({ limit: 500 }, { staleTime: 60_000 })
 
   const itemOptions = useMemo(() => {
     const items = itemsQuery.data?.data ?? []

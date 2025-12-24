@@ -1,11 +1,11 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { createWorkOrder, type WorkOrderCreatePayload } from '../../../api/endpoints/workOrders'
-import { listBomsByItem } from '../../../api/endpoints/boms'
-import { listItems } from '../../../api/endpoints/items'
-import { listLocations } from '../../../api/endpoints/locations'
+import { useMutation } from '@tanstack/react-query'
+import { createWorkOrder, type WorkOrderCreatePayload } from '../api/workOrders'
+import { useBomsByItem } from '../../boms/queries'
+import { useItemsList } from '../../items/queries'
+import { useLocationsList } from '../../locations/queries'
 import type { ApiError, Bom, Item } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -43,23 +43,11 @@ export default function WorkOrderCreatePage() {
   const [defaultProduceLocationId, setDefaultProduceLocationId] = useState('')
   const [quantityError, setQuantityError] = useState<string | null>(null)
 
-  const itemsQuery = useQuery({
-    queryKey: ['items', 'wo-create'],
-    queryFn: () => listItems({ limit: 200 }),
-    staleTime: 1000 * 60,
-  })
+  const itemsQuery = useItemsList({ limit: 200 }, { staleTime: 1000 * 60 })
 
-  const locationsQuery = useQuery({
-    queryKey: ['locations', 'wo-create'],
-    queryFn: () => listLocations({ limit: 200, active: true }),
-    staleTime: 1000 * 60,
-  })
+  const locationsQuery = useLocationsList({ limit: 200, active: true }, { staleTime: 1000 * 60 })
 
-  const bomsQuery = useQuery({
-    queryKey: ['item-boms', outputItemId],
-    queryFn: () => listBomsByItem(outputItemId),
-    enabled: !!outputItemId,
-  })
+  const bomsQuery = useBomsByItem(outputItemId)
 
   const itemsById = useMemo(() => {
     const map = new Map<string, Item>()

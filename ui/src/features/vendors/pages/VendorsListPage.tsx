@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { listVendors, createVendor, updateVendor, deleteVendor, type VendorPayload } from '../../../api/endpoints/vendors'
-import type { ApiError, Vendor } from '../../../api/types'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { createVendor, updateVendor, deleteVendor, type VendorPayload } from '../api/vendors'
+import { useVendorsList, vendorsQueryKeys } from '../queries'
+import type { ApiError } from '../../../api/types'
 import { Section } from '../../../components/Section'
 import { Card } from '../../../components/Card'
 import { Alert } from '../../../components/Alert'
@@ -19,11 +20,10 @@ export default function VendorsListPage() {
   const [phone, setPhone] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  const vendorsQuery = useQuery<{ data: Vendor[] }, ApiError>({
-    queryKey: ['vendors', filterActive],
-    queryFn: () => listVendors({ active: filterActive === 'active' ? true : undefined }),
-    staleTime: 60_000,
-  })
+  const vendorsQuery = useVendorsList(
+    { active: filterActive === 'active' ? true : undefined },
+    { staleTime: 60_000 },
+  )
 
   const resetForm = () => {
     setCode('')
@@ -38,7 +38,7 @@ export default function VendorsListPage() {
     mutationFn: (payload: VendorPayload) => createVendor(payload),
     onSuccess: () => {
       resetForm()
-      void qc.invalidateQueries({ queryKey: ['vendors'] })
+      void qc.invalidateQueries({ queryKey: vendorsQueryKeys.all })
     },
   })
 
@@ -46,7 +46,7 @@ export default function VendorsListPage() {
     mutationFn: ({ id, payload }: { id: string; payload: VendorPayload }) => updateVendor(id, payload),
     onSuccess: () => {
       resetForm()
-      void qc.invalidateQueries({ queryKey: ['vendors'] })
+      void qc.invalidateQueries({ queryKey: vendorsQueryKeys.all })
     },
   })
 
@@ -54,7 +54,7 @@ export default function VendorsListPage() {
     mutationFn: (id: string) => deleteVendor(id),
     onSuccess: () => {
       if (editingId === id) resetForm()
-      void qc.invalidateQueries({ queryKey: ['vendors'] })
+      void qc.invalidateQueries({ queryKey: vendorsQueryKeys.all })
     },
   })
 

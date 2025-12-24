@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button } from '../../../components/Button'
 import { Input, Select } from '../../../components/Inputs'
-import type { MovementListParams } from '../../../api/endpoints/ledger'
+import type { MovementListParams } from '../api/ledger'
 
 type Props = {
   initialFilters: MovementListParams

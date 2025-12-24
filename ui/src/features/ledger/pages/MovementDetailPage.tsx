@@ -1,8 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getMovement, getMovementLines } from '../../../api/endpoints/ledger'
-import type { ApiError, MovementLine } from '../../../api/types'
+import type { ApiError } from '../../../api/types'
+import { useMovement, useMovementLines } from '../queries'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -19,18 +18,11 @@ export default function MovementDetailPage() {
   const { movementId } = useParams<{ movementId: string }>()
   const navigate = useNavigate()
 
-  const movementQuery = useQuery({
-    queryKey: ['movement', movementId],
-    queryFn: () => getMovement(movementId as string),
-    enabled: !!movementId,
+  const movementQuery = useMovement(movementId, {
     retry: (failureCount, error: ApiError) => error?.status !== 404 && failureCount < 1,
   })
 
-  const linesQuery = useQuery<MovementLine[], ApiError>({
-    queryKey: ['movementLines', movementId],
-    queryFn: () => getMovementLines(movementId as string),
-    enabled: !!movementId,
-  })
+  const linesQuery = useMovementLines(movementId)
 
   useEffect(() => {
     if (movementQuery.isError && movementQuery.error?.status === 404) {

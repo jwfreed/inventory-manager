@@ -1,5 +1,6 @@
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { activateBomVersion, getBom } from '../../../api/endpoints/boms'
+import { useMutation } from '@tanstack/react-query'
+import { activateBomVersion } from '../api/boms'
+import { useBom } from '../queries'
 import type { ApiError, Bom } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -16,11 +17,7 @@ type Props = {
 }
 
 export function BomCard({ bomId, fallback, onChanged }: Props) {
-  const bomQuery = useQuery({
-    queryKey: ['bom', bomId],
-    queryFn: () => getBom(bomId),
-    placeholderData: fallback,
-  })
+  const bomQuery = useBom(bomId, { placeholderData: fallback })
 
   const activateMutation = useMutation({
     mutationFn: (versionId: string) =>

@@ -1,15 +1,10 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import {
-  getWorkOrder,
-  getWorkOrderExecution,
-  getWorkOrderRequirements,
-} from '../../../api/endpoints/workOrders'
-import { getItem, listItems } from '../../../api/endpoints/items'
-import { listNextStepBoms } from '../../../api/endpoints/boms'
-import { createWorkOrder } from '../../../api/endpoints/workOrders'
-import type { ApiError, WorkOrderRequirements } from '../../../api/types'
+import { useItem, useItemsList } from '../../items/queries'
+import { useNextStepBoms } from '../../boms/queries'
+import { createWorkOrder } from '../api/workOrders'
+import type { ApiError } from '../../../api/types'
+import { useWorkOrder, useWorkOrderExecution, useWorkOrderRequirements } from '../queries'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -36,32 +31,17 @@ export default function WorkOrderDetailPage() {
   const [nextQuantity, setNextQuantity] = useState<number | ''>(1)
   const [createWarning, setCreateWarning] = useState<string | null>(null)
 
-  const workOrderQuery = useQuery({
-    queryKey: ['work-order', id],
-    queryFn: () => getWorkOrder(id as string),
-    enabled: !!id,
+  const workOrderQuery = useWorkOrder(id, {
     retry: (count, err: ApiError) => err?.status !== 404 && count < 1,
   })
 
-  const outputItemQuery = useQuery({
-    queryKey: ['item', 'wo-output', workOrderQuery.data?.outputItemId],
-    queryFn: () => getItem(workOrderQuery.data?.outputItemId as string),
-    enabled: Boolean(workOrderQuery.data?.outputItemId),
+  const outputItemQuery = useItem(workOrderQuery.data?.outputItemId, { staleTime: 60_000 })
+
+  const nextStepBomsQuery = useNextStepBoms(workOrderQuery.data?.outputItemId, {
     staleTime: 60_000,
   })
 
-  const nextStepBomsQuery = useQuery({
-    queryKey: ['next-step-boms', workOrderQuery.data?.outputItemId],
-    queryFn: () => listNextStepBoms(workOrderQuery.data?.outputItemId as string),
-    enabled: Boolean(workOrderQuery.data?.outputItemId),
-    staleTime: 60_000,
-  })
-
-  const itemsLookupQuery = useQuery({
-    queryKey: ['items', 'wo-detail'],
-    queryFn: () => listItems({ limit: 500 }),
-    staleTime: 60_000,
-  })
+  const itemsLookupQuery = useItemsList({ limit: 500 }, { staleTime: 60_000 })
 
   const itemLabel = useCallback((id?: string) => {
     if (!id) return ''
@@ -133,20 +113,9 @@ export default function WorkOrderDetailPage() {
     navigate(`/work-orders/${next.id}`)
   }
 
-  const executionQuery = useQuery({
-    queryKey: ['work-order-execution', id],
-    queryFn: () => getWorkOrderExecution(id as string),
-    enabled: !!id,
-    retry: 1,
-  })
+  const executionQuery = useWorkOrderExecution(id)
 
-  const requirementsQuery = useQuery<WorkOrderRequirements, ApiError>({
-    queryKey: ['work-order-requirements', id],
-    queryFn: () => getWorkOrderRequirements(id as string),
-    enabled: !!id,
-    staleTime: 60_000,
-    retry: 1,
-  })
+  const requirementsQuery = useWorkOrderRequirements(id, undefined, { staleTime: 60_000 })
 
   const refreshAll = () => {
     void workOrderQuery.refetch()

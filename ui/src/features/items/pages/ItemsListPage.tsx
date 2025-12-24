@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { listItems } from '../../../api/endpoints/items'
-import type { ApiError, Item } from '../../../api/types'
+import { useItemsList } from '../queries'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
@@ -32,13 +30,8 @@ export default function ItemsListPage() {
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
 
-  const { data, isLoading, isError, error, refetch } = useQuery<{ data: Item[] }, ApiError>({
-    queryKey: ['items', active],
-    queryFn: () =>
-      listItems({
-        active: active === '' ? undefined : active === 'true',
-      }),
-    retry: 1,
+  const { data, isLoading, isError, error, refetch } = useItemsList({
+    active: active === '' ? undefined : active === 'true',
   })
 
   const filtered = useMemo(() => {

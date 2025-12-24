@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getMovementLines } from '../../../api/endpoints/ledger'
 import {
   addMovementLotAllocations,
-  listLots,
   listMovementLotAllocations,
   type ListLotsParams,
-} from '../../../api/endpoints/lots'
+} from '../../inventory/api/lots'
 import type { ApiError, MovementLine } from '../../../api/types'
+import { useMovementLines } from '../../ledger/queries'
+import { lotsQueryKeys, useLotsList } from '../../inventory/queries'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -26,18 +26,12 @@ export function LotAllocationsCard({ movementId, title }: Props) {
   const [lineDrafts, setLineDrafts] = useState<Record<string, AllocationDraft[]>>({})
   const [lotFilter, setLotFilter] = useState<ListLotsParams>({})
 
-  const linesQuery = useQuery({
-    queryKey: ['movement-lines', movementId],
-    queryFn: () => getMovementLines(movementId),
-  })
+  const linesQuery = useMovementLines(movementId)
 
-  const lotsQuery = useQuery({
-    queryKey: ['lots', lotFilter],
-    queryFn: () => listLots(lotFilter),
-  })
+  const lotsQuery = useLotsList(lotFilter)
 
   const allocationsQuery = useQuery({
-    queryKey: ['movement-lot-allocations', movementId],
+    queryKey: lotsQueryKeys.movementAllocationsSummary(movementId),
     queryFn: async () => {
       const lines = await linesQuery.promise
       if (!lines) return {}
@@ -72,7 +66,9 @@ export function LotAllocationsCard({ movementId, title }: Props) {
     onSuccess: () => {
       setLineDrafts({})
       void allocationsQuery.refetch()
-      queryClient.invalidateQueries({ queryKey: ['movement-lot-allocations', movementId] })
+      queryClient.invalidateQueries({
+        queryKey: lotsQueryKeys.movementAllocationsSummary(movementId),
+      })
     },
   })
 

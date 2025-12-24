@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getLocation, getLocationInventorySummary } from '../../../api/endpoints/locations'
+import { useLocation, useLocationInventorySummary } from '../queries'
 import type { ApiError } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -19,19 +18,11 @@ export default function LocationDetailPage() {
   const navigate = useNavigate()
   const [showEdit, setShowEdit] = useState(false)
 
-  const locationQuery = useQuery({
-    queryKey: ['location', id],
-    queryFn: () => getLocation(id as string),
-    enabled: !!id,
+  const locationQuery = useLocation(id, {
     retry: (count, err: ApiError) => err?.status !== 404 && count < 1,
   })
 
-  const inventoryQuery = useQuery({
-    queryKey: ['location-inventory', id],
-    queryFn: () => getLocationInventorySummary(id as string),
-    enabled: !!id,
-    retry: 0,
-  })
+  const inventoryQuery = useLocationInventorySummary(id, { retry: 0 })
 
   useEffect(() => {
     if (locationQuery.isError && locationQuery.error?.status === 404) {

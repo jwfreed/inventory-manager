@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { listSalesOrders } from '../../../api/endpoints/orderToCash/salesOrders'
-import type { ApiError } from '../../../api/types'
+import { useSalesOrdersList } from '../queries'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
@@ -17,14 +15,7 @@ export default function SalesOrdersListPage() {
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
 
-  const { data, isLoading, isError, error, refetch } = useQuery<
-    Awaited<ReturnType<typeof listSalesOrders>>,
-    ApiError
-  >({
-    queryKey: ['sales-orders'],
-    queryFn: () => listSalesOrders(),
-    retry: 1,
-  })
+  const { data, isLoading, isError, error, refetch } = useSalesOrdersList()
 
   const filtered = useMemo(() => {
     const list = data?.data ?? []

@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getShipment } from '../../../api/endpoints/orderToCash/shipments'
+import { useShipment } from '../queries'
 import type { ApiError, ShipmentLine } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -16,12 +15,7 @@ export default function ShipmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const query = useQuery({
-    queryKey: ['shipment', id],
-    queryFn: () => getShipment(id as string),
-    enabled: !!id,
-    retry: 1,
-  })
+  const query = useShipment(id)
 
   useEffect(() => {
     const err = query.error as unknown as ApiError | undefined

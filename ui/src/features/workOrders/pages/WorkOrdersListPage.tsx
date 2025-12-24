@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { listWorkOrders } from '../../../api/endpoints/workOrders'
-import { listItems } from '../../../api/endpoints/items'
-import type { ApiError, WorkOrder } from '../../../api/types'
+import type { WorkOrder } from '../../../api/types'
+import { useItemsList } from '../../items/queries'
+import { useWorkOrdersList } from '../queries'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -26,18 +25,11 @@ export default function WorkOrdersListPage() {
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
 
-  const itemsQuery = useQuery({
-    queryKey: ['items', 'work-orders-list'],
-    queryFn: () => listItems({ limit: 500 }),
-    staleTime: 60_000,
-  })
+  const itemsQuery = useItemsList({ limit: 500 }, { staleTime: 60_000 })
 
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<
-    Awaited<ReturnType<typeof listWorkOrders>>,
-    ApiError
-  >({
-    queryKey: ['work-orders', status],
-    queryFn: () => listWorkOrders({ status: status || undefined, limit: 50 }),
+  const { data, isLoading, isError, error, refetch, isFetching } = useWorkOrdersList({
+    status: status || undefined,
+    limit: 50,
   })
 
   const itemLookup = useMemo(() => {

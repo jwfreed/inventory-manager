@@ -1,13 +1,12 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { listMovements, type MovementListParams } from '../../../api/endpoints/ledger'
+import { type MovementListParams } from '../api/ledger'
+import { useMovementsList } from '../queries'
 import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { Alert } from '../../../components/Alert'
-import type { ApiError, MovementListResponse } from '../../../api/types'
 import { MovementFilters } from '../components/MovementFilters'
 import { MovementsTable } from '../components/MovementsTable'
 
@@ -16,12 +15,7 @@ const DEFAULT_LIMIT = 20
 export default function MovementsListPage() {
   const [filters, setFilters] = useState<MovementListParams>({ limit: DEFAULT_LIMIT, offset: 0 })
 
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<
-    MovementListResponse,
-    ApiError
-  >({
-    queryKey: ['movements', filters],
-    queryFn: () => listMovements(filters),
+  const { data, isLoading, isError, error, refetch, isFetching } = useMovementsList(filters, {
     placeholderData: (previousData) => previousData,
   })
 

@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { Input, Textarea } from '../../../components/Inputs'
 import { LoadingSpinner } from '../../../components/Loading'
-import { listItems } from '../../../api/endpoints/items'
-import { listLocations } from '../../../api/endpoints/locations'
+import { useItemsList } from '../../items/queries'
+import { useLocationsList } from '../../locations/queries'
 import {
   getWorkOrderRequirements,
   recordWorkOrderBatch,
   updateWorkOrderDefaultsApi,
   type RecordBatchPayload,
-} from '../../../api/endpoints/workOrders'
-import type { ApiError, Item, Location, WorkOrder } from '../../../api/types'
+} from '../api/workOrders'
+import type { ApiError, Item, WorkOrder } from '../../../api/types'
 import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
 import { useDebouncedValue } from '../../../lib/useDebouncedValue'
@@ -98,19 +98,14 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   const debouncedItemSearch = useDebouncedValue(itemSearch, 200)
   const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
 
-  const itemsQuery = useQuery<{ data: Item[] }, ApiError>({
-    queryKey: ['items', 'wo-batch', debouncedItemSearch],
-    queryFn: () => listItems({ limit: 200, search: debouncedItemSearch || undefined }),
-    staleTime: 60_000,
-    retry: 1,
-  })
-  const locationsQuery = useQuery<{ data: Location[] }, ApiError>({
-    queryKey: ['locations', 'wo-batch', debouncedLocationSearch],
-    queryFn: () =>
-      listLocations({ limit: 200, search: debouncedLocationSearch || undefined, active: true }),
-    staleTime: 60_000,
-    retry: 1,
-  })
+  const itemsQuery = useItemsList(
+    { limit: 200, search: debouncedItemSearch || undefined },
+    { staleTime: 60_000, retry: 1 },
+  )
+  const locationsQuery = useLocationsList(
+    { limit: 200, search: debouncedLocationSearch || undefined, active: true },
+    { staleTime: 60_000, retry: 1 },
+  )
 
   const prevDefaultFromRef = useRef<string>('')
   const prevDefaultToRef = useRef<string>('')

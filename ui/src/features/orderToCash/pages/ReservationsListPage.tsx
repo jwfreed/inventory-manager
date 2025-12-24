@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { listReservations } from '../../../api/endpoints/orderToCash/reservations'
-import type { ApiError } from '../../../api/types'
+import { useReservationsList } from '../queries'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
@@ -16,14 +14,7 @@ export default function ReservationsListPage() {
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
 
-  const { data, isLoading, isError, error, refetch } = useQuery<
-    Awaited<ReturnType<typeof listReservations>>,
-    ApiError
-  >({
-    queryKey: ['reservations'],
-    queryFn: () => listReservations(),
-    retry: 1,
-  })
+  const { data, isLoading, isError, error, refetch } = useReservationsList()
 
   const filtered = useMemo(() => {
     const list = data?.data ?? []
