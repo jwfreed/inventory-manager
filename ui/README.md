@@ -6,6 +6,23 @@
 - In dev, the UI calls APIs via `/api/*` and Vite rewrites/proxies those requests to the backend (e.g., `/api/vendors` → `http://localhost:3000/vendors`).
 - The Home page “API connectivity” check uses `GET /vendors` (via the proxy) because it’s a real endpoint that should exist even on an empty database.
 
+## UI module boundaries (Phase 1 target)
+
+Target module map:
+- app: top-level routing, providers, layout, and app shell composition.
+- shared: cross-feature UI kit, helpers, and base client utilities.
+- features: domain-owned screens, feature components, and feature-local hooks/api.
+
+Public surfaces:
+- app: `src/app/index.ts` (App, AppProviders, AppShell).
+- shared: `src/shared/index.ts` (shared UI and common utilities).
+- features: `src/features/<feature>/index.ts` (feature pages/components/hooks).
+
+Layering rules:
+- app may import from shared and features.
+- features may import from shared and their own submodules; avoid cross-feature imports.
+- shared must not import from features; keep it app-agnostic.
+
 ## UI ↔ API wiring (as of main)
 
 - Routes are mounted at `/`; the UI calls `/api/*` which the Vite proxy rewrites to `/`.
