@@ -225,6 +225,8 @@ export default function ReceivingPage() {
       'That receipt line no longer exists. Reload the receipt and try again.',
     'QC quantity must be greater than zero.':
       'Enter a quantity greater than zero.',
+    'Receipt line has no receiving location to post accepted inventory.':
+      'Set a receiving/staging location on the PO before recording acceptance.',
   }
 
   const qcEventMutation = useMutation({
@@ -653,7 +655,7 @@ export default function ReceivingPage() {
               <Alert
                 variant="success"
                 title="Receipt posted"
-                message={`Receipt ${receiptMutation.data.id.slice(0, 8)}… posted. Inventory is updated. Next: create a putaway when you're ready.`}
+                message={`Receipt ${receiptMutation.data.id.slice(0, 8)}… posted. Use Item → Stock for authoritative totals. Next: create a putaway when you're ready.`}
                 action={
                   <Button
                     size="sm"
@@ -1337,13 +1339,13 @@ export default function ReceivingPage() {
                   message="Creating inventory movements. This action is irreversible."
                 />
               )}
-              {postPutawayMutation.isSuccess && postPutawayMutation.data && (
-                <Alert
-                  variant="success"
-                  title="Putaway posted"
-                  message={`Inventory moved and recorded. Movement ${postPutawayMutation.data.inventoryMovementId ?? 'created'}; putaway ${postPutawayMutation.data.id.slice(0, 8)}... completed.`}
-                />
-              )}
+            {postPutawayMutation.isSuccess && postPutawayMutation.data && (
+              <Alert
+                variant="success"
+                title="Putaway posted"
+                message={`Inventory moved and recorded. Movement ${postPutawayMutation.data.inventoryMovementId ?? 'created'}; putaway ${postPutawayMutation.data.id.slice(0, 8)}... completed. Item → Stock is now authoritative for totals.`}
+              />
+            )}
               {receiptQuery.data && receiptQuery.data.lines?.some((line) => (line.qcSummary?.breakdown?.accept ?? 0) <= 0) && (
                 <Alert
                   variant="warning"

@@ -26,6 +26,9 @@ router.post('/qc-events', async (req: Request, res: Response) => {
     if (error?.message === 'QC_EXCEEDS_RECEIPT') {
       return res.status(400).json({ error: 'QC quantities cannot exceed the received quantity for the line.' });
     }
+    if (error?.message === 'QC_ACCEPT_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Receipt line has no receiving location to post accepted inventory.' });
+    }
     const mapped = mapPgErrorToHttp(error, {
       foreignKey: () => ({ status: 400, body: { error: 'Referenced receipt line does not exist.' } }),
       check: () => ({ status: 400, body: { error: 'QC quantity must be greater than zero.' } })

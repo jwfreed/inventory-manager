@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getLocation, getLocationInventorySummary } from '../../../api/endpoints/locations'
 import type { ApiError } from '../../../api/types'
@@ -114,7 +114,10 @@ export default function LocationDetailPage() {
         </Section>
       )}
 
-      <Section title="Inventory snapshot">
+      <Section
+        title="Location inventory (derived)"
+        description="This view is scoped to one location. The authoritative stock totals live in Item → Stock."
+      >
         {inventoryQuery.isLoading && <LoadingSpinner label="Loading inventory..." />}
         {inventoryQuery.isError && (
           <Alert
@@ -154,7 +157,12 @@ export default function LocationDetailPage() {
                 {inventoryQuery.data.map((row, idx) => (
                   <tr key={idx}>
                     <td className="px-4 py-3 text-sm text-slate-800">
-                      {row.itemSku || row.itemName || row.itemId}
+                      <Link
+                        to={`/items/${row.itemId}?locationId=${encodeURIComponent(id ?? '')}`}
+                        className="text-brand-700 hover:underline"
+                      >
+                        {row.itemSku || row.itemName || row.itemId}
+                      </Link>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-800">{row.uom}</td>
                     <td className="px-4 py-3 text-right text-sm text-slate-800">

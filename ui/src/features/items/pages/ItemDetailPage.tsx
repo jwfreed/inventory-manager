@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getItem } from '../../../api/endpoints/items'
 import { listLocations } from '../../../api/endpoints/locations'
-import { getInventorySnapshot } from '../../../api/endpoints/inventorySnapshot'
+import { listInventorySnapshotSummary } from '../../../api/endpoints/inventorySnapshot'
 import { listBomsByItem } from '../../../api/endpoints/boms'
 import type { ApiError } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
@@ -14,7 +14,7 @@ import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
-import { formatDate } from '../../../lib/formatters'
+import { formatDate, formatNumber } from '../../../lib/formatters'
 import { ItemForm } from '../components/ItemForm'
 import { BomForm } from '../../boms/components/BomForm'
 import { BomCard } from '../../boms/components/BomCard'
@@ -30,9 +30,11 @@ const typeLabels: Record<string, string> = {
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [showEdit, setShowEdit] = useState(false)
   const [showBomForm, setShowBomForm] = useState(false)
   const [selectedLocationId, setSelectedLocationId] = useState('')
+  const [seededLocation, setSeededLocation] = useState(false)
 
   const itemQuery = useQuery({
     queryKey: ['item', id],
@@ -49,8 +51,13 @@ export default function ItemDetailPage() {
 
   const snapshotQuery = useQuery({
     queryKey: ['inventory-snapshot', id, selectedLocationId],
-    queryFn: () => getInventorySnapshot({ itemId: id as string, locationId: selectedLocationId }),
-    enabled: !!id && !!selectedLocationId,
+    queryFn: () =>
+      listInventorySnapshotSummary({
+        itemId: id as string,
+        locationId: selectedLocationId || undefined,
+        limit: 500,
+      }),
+    enabled: !!id,
     staleTime: 30_000,
   })
 
@@ -67,6 +74,15 @@ export default function ItemDetailPage() {
     }
   }, [itemQuery.isError, itemQuery.error, navigate])
 
+  useEffect(() => {
+    if (seededLocation) return
+    const locationIdParam = searchParams.get('locationId') ?? ''
+    if (locationIdParam) {
+      setSelectedLocationId(locationIdParam)
+    }
+    setSeededLocation(true)
+  }, [searchParams, seededLocation])
+
   const copyId = async () => {
     if (!id) return
     try {
@@ -75,6 +91,33 @@ export default function ItemDetailPage() {
       // ignore
     }
   }
+
+  const stockRows = snapshotQuery.data ?? []
+  const locationLookup = useMemo(() => {
+    const map = new Map<string, { code?: string; name?: string }>()
+    locationsQuery.data?.data?.forEach((loc) => {
+      map.set(loc.id, { code: loc.code, name: loc.name })
+    })
+    return map
+  }, [locationsQuery.data])
+  const totalsByUom = useMemo(() => {
+    const map = new Map<string, { onHand: number; available: number; reserved: number }>()
+    stockRows.forEach((row) => {
+      const current = map.get(row.uom) ?? { onHand: 0, available: 0, reserved: 0 }
+      current.onHand += row.onHand
+      current.available += row.available
+      current.reserved += row.reserved
+      map.set(row.uom, current)
+    })
+    return Array.from(map.entries()).map(([uom, totals]) => ({ uom, ...totals }))
+  }, [stockRows])
+  const selectedLocationLabel = useMemo(() => {
+    if (!selectedLocationId) return 'All locations'
+    const loc = locationsQuery.data?.data.find((row) => row.id === selectedLocationId)
+    if (!loc) return selectedLocationId
+    const code = loc.code ?? loc.id
+    return loc.name ? `${code} — ${loc.name}` : code
+  }, [locationsQuery.data, selectedLocationId])
 
   return (
     <div className="space-y-6">
@@ -164,12 +207,12 @@ export default function ItemDetailPage() {
       )}
 
       <Section
-        title="Inventory snapshot"
-        description="See what you can ship right now. Available = On hand - Already promised. Inventory position includes incoming."
+        title="Stock (authoritative)"
+        description="This is the definitive view of on-hand and availability for this item. Use the location scope to narrow."
       >
         <div className="flex flex-col gap-2 pb-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-slate-700">
-            Choose a location to see on-hand, reserved, available, incoming, and inventory position.
+            Stock is a property of an item at a location. This view aggregates the movement ledger.
           </div>
           <div className="flex items-center gap-2">
             <label className="text-xs uppercase tracking-wide text-slate-500">Location</label>
@@ -178,7 +221,7 @@ export default function ItemDetailPage() {
               value={selectedLocationId}
               onChange={(e) => setSelectedLocationId(e.target.value)}
             >
-              <option value="">Select</option>
+              <option value="">All locations</option>
               {locationsQuery.data?.data.map((loc) => (
                 <option key={loc.id} value={loc.id}>
                   {loc.code || loc.name || loc.id}
@@ -200,30 +243,48 @@ export default function ItemDetailPage() {
             }
           />
         )}
-        {!selectedLocationId && !locationsQuery.isLoading && (
-          <EmptyState
-            title="Pick a location"
-            description="Choose where you want to view availability. This helps separate on-hand vs incoming per site."
-          />
-        )}
-        {selectedLocationId && snapshotQuery.isLoading && <LoadingSpinner label="Loading inventory snapshot..." />}
-        {selectedLocationId && snapshotQuery.isError && (
+        {snapshotQuery.isLoading && <LoadingSpinner label="Loading stock..." />}
+        {snapshotQuery.isError && (
           <ErrorState error={snapshotQuery.error as ApiError} onRetry={() => void snapshotQuery.refetch()} />
         )}
-        {selectedLocationId && !snapshotQuery.isLoading && !snapshotQuery.isError && (
+        {!snapshotQuery.isLoading && !snapshotQuery.isError && (
           <>
-            {snapshotQuery.data && snapshotQuery.data.length === 0 && (
+            <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">
+              Scope: {selectedLocationLabel}
+            </div>
+            {stockRows.length === 0 && (
               <EmptyState
-                title="No activity yet"
-                description="No on-hand, reservations, or incoming found for this item at the selected location."
+                title="No stock activity yet"
+                description="No on-hand, reservations, or incoming found for this item in the selected scope."
               />
             )}
-            {snapshotQuery.data && snapshotQuery.data.length > 0 && (
-              <InventorySnapshotTable
-                rows={snapshotQuery.data}
-                showItem={false}
-                showLocation={false}
-              />
+            {stockRows.length > 0 && (
+              <>
+                <div className="mb-4 grid gap-3 md:grid-cols-3">
+                  {totalsByUom.map((totals) => (
+                    <div key={totals.uom} className="rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">
+                        Total available (usable) ({totals.uom})
+                      </div>
+                      <div className="mt-1 text-2xl font-semibold text-slate-900">
+                        {formatNumber(totals.available)}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        On hand {formatNumber(totals.onHand)} · Reserved {formatNumber(totals.reserved)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Location breakdown</div>
+                <div className="mt-2">
+                  <InventorySnapshotTable
+                    rows={stockRows}
+                    showItem={false}
+                    showLocation={!selectedLocationId}
+                    locationLookup={locationLookup}
+                  />
+                </div>
+              </>
             )}
           </>
         )}

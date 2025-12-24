@@ -18,6 +18,10 @@ export async function updatePurchaseOrder(id: string, payload: Partial<PurchaseO
   return apiPut<PurchaseOrder>(`/purchase-orders/${id}`, payload)
 }
 
+export async function approvePurchaseOrder(id: string): Promise<PurchaseOrder> {
+  return apiPost<PurchaseOrder>(`/purchase-orders/${id}/approve`, {})
+}
+
 export async function deletePurchaseOrderApi(id: string): Promise<void> {
   await apiDelete(`/purchase-orders/${id}`)
 }
@@ -25,7 +29,7 @@ export async function deletePurchaseOrderApi(id: string): Promise<void> {
 export type PurchaseOrderCreateInput = {
   poNumber?: string
   vendorId: string
-  status?: 'draft' | 'submitted'
+  status?: 'draft' | 'submitted' | 'approved'
   orderDate?: string
   expectedDate?: string
   shipToLocationId?: string

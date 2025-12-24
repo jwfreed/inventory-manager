@@ -99,7 +99,7 @@ function mapPutaway(row: PutawayRow, lines: PutawayLineRow[], contexts: Map<stri
 }
 
 export async function fetchPutawayById(tenantId: string, id: string, client?: PoolClient) {
-  const executor = client ?? query;
+  const executor = client ? client.query.bind(client) : query;
   const putawayResult = await executor<PutawayRow>('SELECT * FROM putaways WHERE id = $1 AND tenant_id = $2', [
     id,
     tenantId

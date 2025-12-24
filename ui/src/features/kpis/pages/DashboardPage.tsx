@@ -21,7 +21,6 @@ import { SnapshotsTable } from '../components/SnapshotsTable'
 import { formatDateTime } from '../utils'
 import { formatNumber } from '../../../lib/formatters'
 import { Alert } from '../../../components/Alert'
-import { InventorySnapshotTable } from '../../inventory/components/InventorySnapshotTable'
 
 type SnapshotQueryResult = Awaited<ReturnType<typeof listKpiSnapshots>>
 type RunQueryResult = Awaited<ReturnType<typeof listKpiRuns>>
@@ -201,26 +200,21 @@ export default function DashboardPage() {
   const availabilityIssueCount = availabilityIssueRows.length
   const availabilityIssues = availabilityIssueRows.slice(0, 5)
 
-  const inventoryPreviewRows = useMemo(
-    () =>
-      (inventorySummaryQuery.data ?? [])
-        .slice()
-        .sort((a, b) => a.available - b.available)
-        .slice(0, 8),
-    [inventorySummaryQuery.data],
-  )
-
   const purchaseOrders = purchaseOrdersQuery.data?.data ?? []
   const draftPoCount = purchaseOrders.filter((po) => po.status === 'draft').length
   const submittedPurchaseOrders = purchaseOrders.filter((po) => po.status === 'submitted')
   const submittedPoCount = submittedPurchaseOrders.length
+  const approvedPurchaseOrders = purchaseOrders.filter(
+    (po) => po.status === 'approved' || po.status === 'partially_received',
+  )
+  const approvedPoCount = approvedPurchaseOrders.length
 
   const exceptionLoading = recommendationsQuery.isLoading || inventorySummaryQuery.isLoading
   const exceptionError = recommendationsQuery.isError || inventorySummaryQuery.isError
   const attentionLoading = exceptionLoading || purchaseOrdersQuery.isLoading
   const attentionError = exceptionError || purchaseOrdersQuery.isError
   const attentionCount =
-    (purchaseOrdersQuery.isError ? 0 : draftPoCount + submittedPoCount) +
+    (purchaseOrdersQuery.isError ? 0 : draftPoCount + submittedPoCount + approvedPoCount) +
     reorderNeeded.length +
     availabilityIssueCount
 
@@ -249,6 +243,13 @@ export default function DashboardPage() {
     : purchaseOrdersQuery.isLoading
       ? 'loading'
       : submittedPoCount > 0
+        ? 'action'
+        : 'normal'
+  const approvedPoSignal: SignalState = purchaseOrdersQuery.isError
+    ? 'unavailable'
+    : purchaseOrdersQuery.isLoading
+      ? 'loading'
+      : approvedPoCount > 0
         ? 'action'
         : 'normal'
   const reorderSignal: SignalState = recommendationsQuery.isError
@@ -301,18 +302,37 @@ export default function DashboardPage() {
       title: 'Submitted POs',
       count: formatCount(poReady, submittedPoCount),
       signal: signalStyles[submittedPoSignal],
+      helper: 'Awaiting approval.',
+      cta: (() => {
+        if (!poReady) {
+          return { label: 'View POs', to: '/purchase-orders?status=submitted' }
+        }
+        if (submittedPoCount === 1) {
+          return { label: 'Review PO', to: `/purchase-orders/${submittedPurchaseOrders[0].id}` }
+        }
+        if (submittedPoCount > 1) {
+          return { label: 'View submitted', to: '/purchase-orders?status=submitted' }
+        }
+        return { label: 'View POs', to: '/purchase-orders?status=submitted' }
+      })(),
+    },
+    {
+      key: 'approved-pos',
+      title: 'Approved POs',
+      count: formatCount(poReady, approvedPoCount),
+      signal: signalStyles[approvedPoSignal],
       helper: 'Awaiting receipt.',
       cta: (() => {
         if (!poReady) {
           return { label: 'Open receiving', to: '/receiving' }
         }
-        if (submittedPoCount === 1) {
-          return { label: 'Receive now', to: `/receiving?poId=${submittedPurchaseOrders[0].id}` }
+        if (approvedPoCount === 1) {
+          return { label: 'Receive now', to: `/receiving?poId=${approvedPurchaseOrders[0].id}` }
         }
-        if (submittedPoCount > 1) {
-          return { label: 'Choose PO', to: '/purchase-orders?status=submitted&action=receive' }
+        if (approvedPoCount > 1) {
+          return { label: 'Choose PO', to: '/purchase-orders?status=approved&action=receive' }
         }
-        return { label: 'View POs', to: '/purchase-orders?status=submitted' }
+        return { label: 'View POs', to: '/purchase-orders?status=approved' }
       })(),
     },
     {
@@ -321,7 +341,7 @@ export default function DashboardPage() {
       count: formatCount(reorderReady, reorderNeeded.length),
       signal: signalStyles[reorderSignal],
       helper: 'Policies triggered.',
-      cta: { label: 'Review items', to: '/dashboard' },
+      cta: { label: 'Review items', to: '/items' },
     },
     {
       key: 'availability',
@@ -329,7 +349,7 @@ export default function DashboardPage() {
       count: formatCount(availabilityReady, availabilityIssueCount),
       signal: signalStyles[availabilitySignal],
       helper: 'Zero or negative available.',
-      cta: { label: 'Review items', to: '/dashboard' },
+      cta: { label: 'Review items', to: '/items' },
     },
     {
       key: 'work-orders',
@@ -474,6 +494,9 @@ export default function DashboardPage() {
               !exceptionError &&
               (reorderNeeded.length > 0 || availabilityIssueCount > 0) && (
                 <div id="attention-list" className="divide-y divide-slate-200">
+                  <div className="py-2 text-xs text-slate-500">
+                    Exceptions only. Open Item → Stock for authoritative totals.
+                  </div>
                   {reorderNeeded.slice(0, 5).map((rec) => {
                     const threshold =
                       rec.policyType === 'q_rop'
@@ -535,13 +558,8 @@ export default function DashboardPage() {
                             <p className="text-sm font-semibold text-slate-900">
                               Low/negative availability: {formatItem(row.itemId)} @ {formatLocation(row.locationId)}
                             </p>
-                            <p className="text-xs text-slate-600">
-                              Available {formatNumber(row.available)} {row.uom} · Inventory position{' '}
-                              {formatNumber(row.inventoryPosition)}
-                            </p>
                             <p className="text-xs text-slate-500">
-                              On hand {formatNumber(row.onHand)} · Reserved {formatNumber(row.reserved)} · Incoming{' '}
-                              {formatNumber(row.onOrder + row.inTransit)}
+                              Open Item → Stock for definitive on-hand, availability, and incoming.
                             </p>
                           </div>
                           <div className="flex flex-col items-end gap-2">
@@ -635,8 +653,8 @@ export default function DashboardPage() {
           </Card>
 
           <Card
-            title="Coverage snapshot"
-            description="Lowest availability across items and locations."
+            title="Availability hot spots"
+            description="Exceptions only. Open Item → Stock for authoritative totals."
             action={
               <Link to="/items">
                 <Button size="sm" variant="secondary">
@@ -660,18 +678,46 @@ export default function DashboardPage() {
                 }}
               />
             )}
-            {!inventoryLoading && !inventoryError && inventoryPreviewRows.length === 0 && (
+            {!inventoryLoading && !inventoryError && availabilityIssues.length === 0 && (
               <EmptyState
-                title="No inventory yet"
-                description="Post receipts or completions to see on-hand by item/location."
+                title="No availability risks"
+                description="No low/negative availability detected in the current snapshot."
               />
             )}
-            {!inventoryLoading && !inventoryError && inventoryPreviewRows.length > 0 && (
-              <InventorySnapshotTable
-                rows={inventoryPreviewRows}
-                itemLookup={itemLookup}
-                locationLookup={locationLookup}
-              />
+            {!inventoryLoading && !inventoryError && availabilityIssues.length > 0 && (
+              <div className="divide-y divide-slate-200">
+                {availabilityIssues.map((row) => {
+                  const availabilitySeverity = row.available < 0 || row.inventoryPosition < 0
+                  const availabilityLabel = availabilitySeverity ? 'Action required' : 'Watch'
+                  const availabilityVariant = availabilitySeverity ? 'danger' : 'warning'
+                  const itemLink = `/items/${row.itemId}?locationId=${encodeURIComponent(row.locationId)}`
+                  return (
+                    <div key={`hotspot-${row.itemId}-${row.locationId}-${row.uom}`} className="py-3">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={availabilityVariant}>{availabilityLabel}</Badge>
+                            <span className="text-xs font-semibold uppercase text-slate-500">Availability</span>
+                          </div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            Risk at {formatItem(row.itemId)} @ {formatLocation(row.locationId)}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Open Item → Stock to see definitive on-hand and availability.
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Link to={itemLink}>
+                            <Button size="sm" variant="secondary">
+                              Open stock
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </Card>
 

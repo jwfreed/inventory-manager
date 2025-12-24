@@ -117,7 +117,7 @@ async function loadOnOrder(
         AND po.tenant_id = $1
         AND pol.item_id = $2
         AND po.ship_to_location_id = $3
-        AND po.status = 'submitted'${uomFilter}
+        AND po.status IN ('approved','partially_received')${uomFilter}
       GROUP BY pol.uom`,
     params
   );

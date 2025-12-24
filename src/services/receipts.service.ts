@@ -88,7 +88,7 @@ function mapReceipt(
 }
 
 export async function fetchReceiptById(tenantId: string, id: string, client?: PoolClient) {
-  const executor = client ?? query;
+  const executor = client ? client.query.bind(client) : query;
   const receiptResult = await executor(
     `SELECT por.*, po.po_number
        FROM purchase_order_receipts por
@@ -134,8 +134,24 @@ export async function createPurchaseOrderReceipt(tenantId: string, data: Purchas
     throw new Error('RECEIPT_PO_NOT_FOUND');
   }
   const poRow = poResult.rows[0];
-  if (['received', 'closed'].includes(poRow.status)) {
+  if (['received', 'closed', 'canceled'].includes(poRow.status)) {
     throw new Error('RECEIPT_PO_ALREADY_RECEIVED');
+  }
+  if (poRow.status === 'draft') {
+    throw new Error('RECEIPT_PO_NOT_APPROVED');
+  }
+  if (poRow.status === 'submitted') {
+    if (process.env.NODE_ENV !== 'production') {
+      await query(
+        `UPDATE purchase_orders
+            SET status = 'approved',
+                updated_at = now()
+          WHERE id = $1 AND tenant_id = $2`,
+        [data.purchaseOrderId, tenantId]
+      );
+    } else {
+      throw new Error('RECEIPT_PO_NOT_APPROVED');
+    }
   }
 
   const { rows: poLineRows } = await query(

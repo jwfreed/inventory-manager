@@ -32,7 +32,7 @@ export async function loadReceiptLineContexts(
   if (lineIds.length === 0) {
     return map;
   }
-  const executor = client ?? query;
+  const executor = client ? client.query.bind(client) : query;
   const { rows } = await executor(
     `SELECT
         prl.id,
@@ -73,7 +73,7 @@ export async function loadPutawayTotals(
   if (lineIds.length === 0) {
     return map;
   }
-  const executor = client ?? query;
+  const executor = client ? client.query.bind(client) : query;
   const { rows } = await executor(
     `SELECT
         purchase_order_receipt_line_id AS line_id,
@@ -104,7 +104,7 @@ export async function loadQcBreakdown(
   if (lineIds.length === 0) {
     return map;
   }
-  const executor = client ?? query;
+  const executor = client ? client.query.bind(client) : query;
   const { rows } = await executor(
     `SELECT purchase_order_receipt_line_id AS line_id, event_type, SUM(quantity) AS total_quantity
        FROM qc_events

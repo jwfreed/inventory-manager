@@ -209,7 +209,7 @@ export async function fetchWorkOrderIssue(
   issueId: string,
   client?: PoolClient
 ) {
-  const executor = client ?? query;
+  const executor = client ? client.query.bind(client) : query;
   const headerResult = await executor<WorkOrderMaterialIssueRow>(
     'SELECT * FROM work_order_material_issues WHERE id = $1 AND work_order_id = $2 AND tenant_id = $3',
     [issueId, workOrderId, tenantId]
@@ -375,7 +375,7 @@ export async function fetchWorkOrderCompletion(
   completionId: string,
   client?: PoolClient
 ) {
-  const executor = client ?? query;
+  const executor = client ? client.query.bind(client) : query;
   const headerResult = await executor<WorkOrderExecutionRow>(
     'SELECT * FROM work_order_executions WHERE id = $1 AND work_order_id = $2 AND tenant_id = $3',
     [completionId, workOrderId, tenantId]

@@ -1,6 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { createPurchaseOrder, deletePurchaseOrder, getPurchaseOrderById, listPurchaseOrders, updatePurchaseOrder } from '../services/purchaseOrders.service';
+import {
+  approvePurchaseOrder,
+  createPurchaseOrder,
+  deletePurchaseOrder,
+  getPurchaseOrderById,
+  listPurchaseOrders,
+  updatePurchaseOrder
+} from '../services/purchaseOrders.service';
 import { purchaseOrderSchema, purchaseOrderUpdateSchema } from '../schemas/purchaseOrders.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
@@ -108,6 +115,41 @@ router.put('/purchase-orders/:id', async (req: Request, res: Response) => {
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to update purchase order.' });
+  }
+});
+
+router.post('/purchase-orders/:id/approve', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid purchase order id.' });
+  }
+  try {
+    const tenantId = req.auth!.tenantId;
+    const po = await approvePurchaseOrder(tenantId, id);
+    const itemIds = Array.from(new Set(po.lines.map((line) => line.itemId)));
+    const locationIds = Array.from(new Set([po.shipToLocationId, po.receivingLocationId].filter(Boolean)));
+    emitEvent(tenantId, 'inventory.purchase_order.approved', {
+      purchaseOrderId: po.id,
+      status: po.status,
+      itemIds,
+      locationIds
+    });
+    return res.json(po);
+  } catch (error: any) {
+    if (error?.message === 'PO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Purchase order not found.' });
+    }
+    if (error?.message === 'PO_ALREADY_APPROVED') {
+      return res.status(409).json({ error: 'Purchase order is already approved.' });
+    }
+    if (error?.message === 'PO_NOT_SUBMITTED') {
+      return res.status(400).json({ error: 'Purchase order must be submitted before approval.' });
+    }
+    if (error?.message === 'PO_NOT_ELIGIBLE') {
+      return res.status(400).json({ error: 'Purchase order cannot be approved in its current state.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to approve purchase order.' });
   }
 });
 

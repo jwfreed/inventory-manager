@@ -49,6 +49,9 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
     if (error?.message === 'RECEIPT_PO_ALREADY_RECEIVED') {
       return res.status(409).json({ error: 'Purchase order is already fully received/closed.' });
     }
+    if (error?.message === 'RECEIPT_PO_NOT_APPROVED') {
+      return res.status(400).json({ error: 'Purchase order must be approved before receiving.' });
+    }
     if (error?.message === 'RECEIPT_PO_NOT_FOUND') {
       return res.status(404).json({ error: 'Purchase order not found.' });
     }

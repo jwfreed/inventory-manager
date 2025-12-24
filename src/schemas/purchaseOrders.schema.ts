@@ -51,7 +51,7 @@ export const purchaseOrderLineSchema = z.object({
 export const purchaseOrderSchema = z.object({
   poNumber: z.string().min(1).max(64).optional(),
   vendorId: z.string().uuid(),
-  status: z.enum(['draft', 'submitted']).optional(),
+  status: z.enum(['draft', 'submitted', 'approved']).optional(),
   orderDate: z.preprocess(toDateString, isoDateString).optional(),
   expectedDate: z.preprocess(toDateString, isoDateString).optional(),
   shipToLocationId: z.string().uuid().optional(),

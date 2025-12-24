@@ -30,8 +30,9 @@ export default function PurchaseOrdersListPage() {
   const [repeatError, setRepeatError] = useState<string | null>(null)
 
   const action = (searchParams.get('action') ?? '').toLowerCase()
-  const statusFilter = (searchParams.get('status') ?? (action === 'receive' ? 'submitted' : '')).toLowerCase()
-  const showReceiveAction = action === 'receive' || statusFilter === 'submitted'
+  const statusFilter = (searchParams.get('status') ?? (action === 'receive' ? 'approved' : '')).toLowerCase()
+  const showReceiveAction =
+    action === 'receive' || ['approved', 'partially_received', 'submitted'].includes(statusFilter)
   const normalizedStatusFilter =
     statusFilter === 'received' || statusFilter === 'closed' ? 'closed' : statusFilter
 
@@ -95,7 +96,7 @@ export default function PurchaseOrdersListPage() {
         groups.draft.push(po)
       } else if (status === 'submitted') {
         groups.submitted.push(po)
-      } else if (status === 'approved') {
+      } else if (status === 'approved' || status === 'partially_received') {
         groups.approved.push(po)
       } else if (status === 'received' || status === 'closed') {
         groups.closed.push(po)
@@ -172,7 +173,7 @@ export default function PurchaseOrdersListPage() {
           <Alert
             variant="info"
             title="Select a PO to receive"
-            message="Choose a submitted PO to open Receiving with the PO preselected."
+            message="Choose an approved PO to open Receiving with the PO preselected."
           />
         )}
         {repeatMessage && <Alert variant="success" title="PO repeated" message={repeatMessage} />}
@@ -231,6 +232,7 @@ export default function PurchaseOrdersListPage() {
                             const isDraft = status === 'draft'
                             const isSubmitted = status === 'submitted'
                             const isApproved = status === 'approved'
+                            const isPartiallyReceived = status === 'partially_received'
                             const createdAt = po.createdAt ? new Date(po.createdAt).getTime() : null
                             const isStaleDraft =
                               isDraft && createdAt && !Number.isNaN(createdAt)
@@ -240,14 +242,17 @@ export default function PurchaseOrdersListPage() {
                               ? 'Complete draft'
                               : isSubmitted
                               ? 'Await approval'
-                              : isApproved
-                              ? 'Receive items'
+                              : isApproved || isPartiallyReceived
+                              ? isPartiallyReceived
+                                ? 'Receive remaining'
+                                : 'Receive items'
                               : 'Closed'
+                            const canReceive = isApproved || isPartiallyReceived
                             return (
                               <tr key={po.id}>
                                 <td className="px-3 py-2 text-sm text-slate-800">
                                   <Link
-                                    to={showReceiveAction ? `/receiving?poId=${po.id}` : `/purchase-orders/${po.id}`}
+                                    to={showReceiveAction && canReceive ? `/receiving?poId=${po.id}` : `/purchase-orders/${po.id}`}
                                     className="text-brand-700 underline"
                                   >
                                     {po.poNumber}
@@ -269,7 +274,7 @@ export default function PurchaseOrdersListPage() {
                                 <td className="px-3 py-2 text-sm text-slate-700">{nextStep}</td>
                                 <td className="px-3 py-2 text-right text-sm text-slate-800">
                                   <div className="flex justify-end gap-2">
-                                    {showReceiveAction && isSubmitted && (
+                                    {showReceiveAction && canReceive && (
                                       <Link to={`/receiving?poId=${po.id}`}>
                                         <Button variant="secondary" size="sm">
                                           Receive

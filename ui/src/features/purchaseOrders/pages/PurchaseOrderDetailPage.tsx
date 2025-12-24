@@ -1,6 +1,11 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { deletePurchaseOrderApi, getPurchaseOrder, updatePurchaseOrder } from '../../../api/endpoints/purchaseOrders'
+import {
+  approvePurchaseOrder,
+  deletePurchaseOrderApi,
+  getPurchaseOrder,
+  updatePurchaseOrder,
+} from '../../../api/endpoints/purchaseOrders'
 import type { ApiError, Location, PurchaseOrder } from '../../../api/types'
 import { Section } from '../../../components/Section'
 import { Card } from '../../../components/Card'
@@ -28,6 +33,8 @@ export default function PurchaseOrderDetailPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [submitMessage, setSubmitMessage] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [approveMessage, setApproveMessage] = useState<string | null>(null)
+  const [approveError, setApproveError] = useState<string | null>(null)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
 
   const normalizeDateInput = (value?: string | null) => {
@@ -152,10 +159,15 @@ export default function PurchaseOrderDetailPage() {
         notes: notes || undefined,
       }),
     onSuccess: (updated) => {
+      const statusValue = updated.status ?? 'submitted'
       const submittedOn = formatDate(updated.updatedAt ?? new Date())
-      setStatus(updated.status ?? 'submitted')
+      const message =
+        statusValue === 'approved'
+          ? `Approved on ${submittedOn}. This PO is authorized for receiving.`
+          : `Submitted on ${submittedOn}. Awaiting approval before receiving.`
+      setStatus(statusValue)
       setSubmitError(null)
-      setSubmitMessage(`Submitted on ${submittedOn}. This PO is now locked and ready for receiving.`)
+      setSubmitMessage(message)
       setSaveMessage(null)
       setSaveError(null)
       setShowSubmitConfirm(false)
@@ -164,6 +176,23 @@ export default function PurchaseOrderDetailPage() {
     onError: (err: ApiError | unknown) => {
       setSubmitMessage(null)
       setSubmitError(formatError(err, 'Submission failed. Check required fields and try again.'))
+    },
+  })
+
+  const approveMutation = useMutation({
+    mutationFn: () => approvePurchaseOrder(id as string),
+    onSuccess: (updated) => {
+      const approvedOn = formatDate(updated.updatedAt ?? new Date())
+      setStatus(updated.status ?? 'approved')
+      setApproveError(null)
+      setApproveMessage(`Approved on ${approvedOn}. This PO is authorized for receiving.`)
+      setSubmitMessage(null)
+      setSubmitError(null)
+      void poQuery.refetch()
+    },
+    onError: (err: ApiError | unknown) => {
+      setApproveMessage(null)
+      setApproveError(formatError(err, 'Approval failed. Check the PO status and try again.'))
     },
   })
 
@@ -196,6 +225,8 @@ export default function PurchaseOrderDetailPage() {
 
   const po = poQuery.data
   const statusKey = (status || po.status || 'draft').toLowerCase()
+  const isSubmitted = statusKey === 'submitted'
+  const canReceive = statusKey === 'approved' || statusKey === 'partially_received'
   const statusMeta: Record<
     string,
     { label: string; variant: 'neutral' | 'success' | 'warning' | 'danger' | 'info'; dot: string; helper: string }
@@ -208,9 +239,21 @@ export default function PurchaseOrderDetailPage() {
     },
     submitted: {
       label: 'Submitted',
+      variant: 'info',
+      dot: 'bg-sky-500',
+      helper: 'Locked. Awaiting approval.',
+    },
+    approved: {
+      label: 'Approved',
       variant: 'success',
-      dot: 'bg-green-500',
-      helper: 'Locked. Ready for receiving.',
+      dot: 'bg-emerald-500',
+      helper: 'Authorized. Ready for receiving.',
+    },
+    partially_received: {
+      label: 'Partially received',
+      variant: 'info',
+      dot: 'bg-sky-500',
+      helper: 'Receiving in progress.',
     },
     received: {
       label: 'Received',
@@ -247,13 +290,16 @@ export default function PurchaseOrderDetailPage() {
   ]
   const missingChecklist = checklist.filter((item) => !item.ok).map((item) => item.label)
   const isReadyToSubmit = missingChecklist.length === 0
-  const isBusy = updateMutation.isPending || submitMutation.isPending || deleteMutation.isPending
+  const isBusy =
+    updateMutation.isPending || submitMutation.isPending || approveMutation.isPending || deleteMutation.isPending
 
   const handleSave = () => {
     setSaveMessage(null)
     setSaveError(null)
     setSubmitMessage(null)
     setSubmitError(null)
+    setApproveMessage(null)
+    setApproveError(null)
     updateMutation.mutate()
   }
 
@@ -262,6 +308,8 @@ export default function PurchaseOrderDetailPage() {
     setSaveError(null)
     setSubmitMessage(null)
     setSubmitError(null)
+    setApproveMessage(null)
+    setApproveError(null)
     if (!isReadyToSubmit) {
       setSubmitError(`Complete required items before submitting: ${missingChecklist.join(', ')}.`)
       return
@@ -272,7 +320,17 @@ export default function PurchaseOrderDetailPage() {
   const handleSubmitConfirm = () => {
     setSubmitMessage(null)
     setSubmitError(null)
+    setApproveMessage(null)
+    setApproveError(null)
     submitMutation.mutate()
+  }
+
+  const handleApprove = () => {
+    setApproveMessage(null)
+    setApproveError(null)
+    setSubmitMessage(null)
+    setSubmitError(null)
+    approveMutation.mutate()
   }
 
   return (
@@ -301,16 +359,33 @@ export default function PurchaseOrderDetailPage() {
                 <Alert
                   variant="info"
                   title="Locked"
-                  message="Submitted purchase orders are read-only. Use Repeat to create a new draft if changes are needed."
+                  message={`This PO is ${currentStatus.label.toLowerCase()} and read-only. Use Repeat to create a new draft if changes are needed.`}
                 />
               )}
               {submitError && <Alert variant="error" title="Submission failed" message={submitError} />}
+              {approveError && <Alert variant="error" title="Approval failed" message={approveError} />}
               {saveError && <Alert variant="error" title="Save failed" message={saveError} />}
               {submitMessage && (
                 <Alert
                   variant="success"
-                  title="PO submitted"
+                  title={statusKey === 'approved' ? 'PO approved' : 'PO submitted'}
                   message={submitMessage}
+                  action={
+                    canReceive ? (
+                      <Link to="/receiving">
+                        <Button size="sm" variant="secondary">
+                          Go to Receiving
+                        </Button>
+                      </Link>
+                    ) : undefined
+                  }
+                />
+              )}
+              {approveMessage && (
+                <Alert
+                  variant="success"
+                  title="PO approved"
+                  message={approveMessage}
                   action={
                     <Link to="/receiving">
                       <Button size="sm" variant="secondary">
@@ -403,7 +478,7 @@ export default function PurchaseOrderDetailPage() {
               <Alert
                 variant="warning"
                 title="Confirm submission"
-                message="Submitting locks this PO and makes it visible for receiving. You can still view it, but edits are disabled."
+                message="Submitting locks this PO and sends it for approval. You can still view it, but edits are disabled."
                 action={
                   <div className="flex gap-2">
                     <Button size="sm" onClick={handleSubmitConfirm} disabled={submitMutation.isPending}>
@@ -422,10 +497,24 @@ export default function PurchaseOrderDetailPage() {
               />
             </div>
           )}
+          {isSubmitted && (
+            <div className="mt-3">
+              <Alert
+                variant="warning"
+                title="Awaiting approval"
+                message="This PO must be approved before receiving can begin."
+                action={
+                  <Button size="sm" onClick={handleApprove} disabled={approveMutation.isPending || isBusy}>
+                    {approveMutation.isPending ? 'Approving…' : 'Approve PO'}
+                  </Button>
+                }
+              />
+            </div>
+          )}
           <div className="mt-4 flex flex-wrap gap-2">
             {isEditable && (
               <Button size="sm" onClick={handleSubmitIntent} disabled={!isReadyToSubmit || isBusy}>
-                {submitMutation.isPending ? 'Submitting…' : 'Submit PO to Receiving'}
+                {submitMutation.isPending ? 'Submitting…' : 'Submit PO for approval'}
               </Button>
             )}
             <Button size="sm" variant="secondary" onClick={handleSave} disabled={isLocked || isBusy}>

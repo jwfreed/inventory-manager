@@ -9,6 +9,8 @@ export type PurchaseOrderInput = z.infer<typeof purchaseOrderSchema>;
 export type PurchaseOrderLineInput = z.infer<typeof purchaseOrderLineSchema>;
 export type PurchaseOrderUpdateInput = z.infer<typeof purchaseOrderUpdateSchema>;
 
+const shouldAutoApprove = () => process.env.NODE_ENV !== 'production';
+
 export function mapPurchaseOrder(row: any, lines: any[]) {
   return {
     id: row.id,
@@ -97,7 +99,8 @@ async function loadLinesWithItems(client: PoolClient, tenantId: string, poId: st
 export async function createPurchaseOrder(tenantId: string, data: PurchaseOrderInput) {
   const poId = uuidv4();
   const now = new Date();
-  const status = data.status ?? 'draft';
+  const requestedStatus = data.status ?? 'draft';
+  const status = requestedStatus === 'submitted' && shouldAutoApprove() ? 'approved' : requestedStatus;
   const normalizedLines = normalizePurchaseOrderLines(data.lines);
 
   return withTransaction(async (client) => {
@@ -150,7 +153,6 @@ export async function createPurchaseOrder(tenantId: string, data: PurchaseOrderI
 
 export async function updatePurchaseOrder(tenantId: string, id: string, data: PurchaseOrderUpdateInput) {
   const now = new Date();
-  const status = data.status ?? 'draft';
   const normalizedLines = data.lines ? normalizePurchaseOrderLines(data.lines) : null;
 
   return withTransaction(async (client) => {
@@ -161,6 +163,9 @@ export async function updatePurchaseOrder(tenantId: string, id: string, data: Pu
     if (poResult.rowCount === 0) {
       throw new Error('PO_NOT_FOUND');
     }
+    const currentStatus = poResult.rows[0]?.status ?? 'draft';
+    const requestedStatus = data.status ?? currentStatus;
+    const status = requestedStatus === 'submitted' && shouldAutoApprove() ? 'approved' : requestedStatus;
 
     const updated = await client.query(
       `UPDATE purchase_orders
@@ -224,6 +229,40 @@ export async function deletePurchaseOrder(tenantId: string, id: string) {
       tenantId
     ]);
     await client.query('DELETE FROM purchase_orders WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+  });
+}
+
+export async function approvePurchaseOrder(tenantId: string, id: string) {
+  return withTransaction(async (client) => {
+    const now = new Date();
+    const poResult = await client.query('SELECT * FROM purchase_orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE', [
+      id,
+      tenantId
+    ]);
+    if (poResult.rowCount === 0) {
+      throw new Error('PO_NOT_FOUND');
+    }
+    const po = poResult.rows[0];
+    if (po.status === 'approved') {
+      throw new Error('PO_ALREADY_APPROVED');
+    }
+    if (po.status === 'closed' || po.status === 'canceled') {
+      throw new Error('PO_NOT_ELIGIBLE');
+    }
+    if (po.status !== 'submitted') {
+      throw new Error('PO_NOT_SUBMITTED');
+    }
+
+    const updated = await client.query(
+      `UPDATE purchase_orders
+          SET status = 'approved',
+              updated_at = $1
+        WHERE id = $2 AND tenant_id = $3
+        RETURNING *`,
+      [now, id, tenantId]
+    );
+    const lines = await loadLinesWithItems(client, tenantId, id);
+    return mapPurchaseOrder(updated.rows[0], lines);
   });
 }
 
