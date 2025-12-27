@@ -11,16 +11,12 @@ import { Section } from '../../../components/Section'
 import { Alert } from '../../../components/Alert'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Button } from '../../../components/Button'
-import { Input, Textarea } from '../../../components/Inputs'
-import { Combobox } from '../../../components/Combobox'
 import { useDebouncedValue } from '../../../lib/useDebouncedValue'
-
-type LineDraft = {
-  itemId: string
-  uom: string
-  quantityOrdered: number | ''
-  notes?: string
-}
+import { PurchaseOrderVendorSection } from '../components/PurchaseOrderVendorSection'
+import { PurchaseOrderLinesSection } from '../components/PurchaseOrderLinesSection'
+import { PurchaseOrderLogisticsSection } from '../components/PurchaseOrderLogisticsSection'
+import { PurchaseOrderReadinessPanel } from '../components/PurchaseOrderReadinessPanel'
+import type { PurchaseOrderLineDraft } from '../types'
 
 const defaultOrderDate = new Date().toISOString().slice(0, 10)
 
@@ -37,7 +33,9 @@ export default function PurchaseOrderCreatePage() {
   const [orderDate, setOrderDate] = useState(defaultOrderDate)
   const [expectedDate, setExpectedDate] = useState('')
   const [notes, setNotes] = useState('')
-  const [lines, setLines] = useState<LineDraft[]>([{ itemId: '', uom: '', quantityOrdered: '' }])
+  const [lines, setLines] = useState<PurchaseOrderLineDraft[]>([
+    { itemId: '', uom: '', quantityOrdered: '' },
+  ])
   const [lastAction, setLastAction] = useState<'draft' | 'submitted' | null>(null)
 
   const vendorsQuery = useVendorsList({ limit: 200, active: true }, { staleTime: 60_000 })
@@ -192,142 +190,44 @@ export default function PurchaseOrderCreatePage() {
                   </div>
                 </div>
 
-                <div>
-                  <div className="text-sm font-semibold text-slate-800">Step 1: Vendor and identity</div>
-                  <p className="text-xs text-slate-500">Start with the vendor to anchor pricing and lead time.</p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div>
-                    <Combobox
-                      label="Vendor"
-                      value={vendorId}
-                      options={vendorOptions}
-                      loading={vendorsQuery.isLoading}
-                      placeholder="Search vendors (code/name)"
-                      onChange={(nextValue) => setVendorId(nextValue)}
-                    />
-                  </div>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">Vendor reference</span>
-                    <Input
-                      value={vendorReference}
-                      onChange={(e) => setVendorReference(e.target.value)}
-                      placeholder="Optional (vendor's reference #)"
-                    />
-                  </label>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">PO Number</span>
-                    <Input
-                      value={poNumber}
-                      onChange={(e) => setPoNumber(e.target.value)}
-                      placeholder="Leave blank to auto-assign (PO-000123)"
-                    />
-                  </label>
-                </div>
+                <PurchaseOrderVendorSection
+                  vendorId={vendorId}
+                  vendorOptions={vendorOptions}
+                  vendorLoading={vendorsQuery.isLoading}
+                  vendorReference={vendorReference}
+                  poNumber={poNumber}
+                  onVendorChange={setVendorId}
+                  onVendorReferenceChange={setVendorReference}
+                  onPoNumberChange={setPoNumber}
+                />
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-800">Step 2: Line items</div>
-                    <p className="text-xs text-slate-500">Lines drive cost and inventory impact.</p>
-                  </div>
-                  <Button type="button" variant="secondary" size="sm" onClick={addLine}>
-                    Add line
-                  </Button>
-                </div>
-                <div className="space-y-3">
-                  {lines.map((line, idx) => (
-                    <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
-                      <div>
-                        <Combobox
-                          label="Item"
-                          value={line.itemId}
-                          options={itemOptions}
-                          loading={itemsQuery.isLoading}
-                          onQueryChange={setItemSearch}
-                          placeholder="Search items (SKU/name)"
-                          onChange={(nextValue) => {
-                            const selected = nextValue ? itemLookup.get(nextValue) : undefined
-                            updateLine(idx, { itemId: nextValue, uom: line.uom || selected?.defaultUom || '' })
-                          }}
-                        />
-                      </div>
-                      <label className="space-y-1 text-sm">
-                        <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
-                        <Input value={line.uom} onChange={(e) => updateLine(idx, { uom: e.target.value })} />
-                      </label>
-                      <label className="space-y-1 text-sm">
-                        <span className="text-xs uppercase tracking-wide text-slate-500">Quantity</span>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={line.quantityOrdered}
-                          onChange={(e) =>
-                            updateLine(idx, { quantityOrdered: e.target.value === '' ? '' : Number(e.target.value) })
-                          }
-                        />
-                      </label>
-                      <label className="space-y-1 text-sm md:col-span-2">
-                        <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
-                        <Textarea
-                          value={line.notes ?? ''}
-                          onChange={(e) => updateLine(idx, { notes: e.target.value })}
-                          placeholder="Optional"
-                        />
-                      </label>
-                      {lines.length > 1 && (
-                        <div className="md:col-span-5">
-                          <Button variant="secondary" size="sm" onClick={() => removeLine(idx)}>
-                            Remove line
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {lineStats.valid.length} line(s) ready · Total qty {lineStats.totalQty}
-                </div>
+                <PurchaseOrderLinesSection
+                  lines={lines}
+                  itemOptions={itemOptions}
+                  itemLookup={itemLookup}
+                  itemsLoading={itemsQuery.isLoading}
+                  lineStats={lineStats}
+                  onAddLine={addLine}
+                  onRemoveLine={removeLine}
+                  onUpdateLine={updateLine}
+                  onItemSearch={setItemSearch}
+                />
 
-                <div>
-                  <div className="text-sm font-semibold text-slate-800">Step 3: Dates and logistics</div>
-                  <p className="text-xs text-slate-500">Set the timing and locations for fulfillment.</p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">Order date</span>
-                    <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
-                  </label>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">Expected date</span>
-                    <Input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
-                  </label>
-                  <div>
-                    <Combobox
-                      label="Ship-to location"
-                      value={shipToLocationId}
-                      options={locationOptions}
-                      loading={locationsQuery.isLoading}
-                      onQueryChange={setLocationSearch}
-                      placeholder="Search locations (code/name)"
-                      onChange={(nextValue) => setShipToLocationId(nextValue)}
-                    />
-                  </div>
-                  <div>
-                    <Combobox
-                      label="Receiving/staging location"
-                      value={receivingLocationId}
-                      options={locationOptions}
-                      loading={locationsQuery.isLoading}
-                      onQueryChange={setLocationSearch}
-                      placeholder="Search locations (code/name)"
-                      onChange={(nextValue) => setReceivingLocationId(nextValue)}
-                    />
-                  </div>
-                </div>
-                <label className="space-y-1 text-sm">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
-                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
-                </label>
+                <PurchaseOrderLogisticsSection
+                  orderDate={orderDate}
+                  expectedDate={expectedDate}
+                  shipToLocationId={shipToLocationId}
+                  receivingLocationId={receivingLocationId}
+                  locationOptions={locationOptions}
+                  locationsLoading={locationsQuery.isLoading}
+                  notes={notes}
+                  onOrderDateChange={setOrderDate}
+                  onExpectedDateChange={setExpectedDate}
+                  onShipToLocationChange={setShipToLocationId}
+                  onReceivingLocationChange={setReceivingLocationId}
+                  onLocationSearch={setLocationSearch}
+                  onNotesChange={setNotes}
+                />
 
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-slate-600">
@@ -355,30 +255,12 @@ export default function PurchaseOrderCreatePage() {
                 </p>
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-500">Submission readiness</div>
-                <ul className="mt-2 space-y-2 text-sm text-slate-700">
-                  <li className="flex items-center justify-between">
-                    <span>Vendor selected</span>
-                    <span>{vendorId ? '✓' : '—'}</span>
-                  </li>
-                  <li className="flex items-center justify-between">
-                    <span>At least one line</span>
-                    <span>{lineStats.valid.length > 0 ? '✓' : '—'}</span>
-                  </li>
-                  <li className="flex items-center justify-between">
-                    <span>Quantities valid</span>
-                    <span>{lineStats.missingCount === 0 ? '✓' : '—'}</span>
-                  </li>
-                  <li className="flex items-center justify-between">
-                    <span>Dates set</span>
-                    <span>{orderDate && expectedDate ? '✓' : '—'}</span>
-                  </li>
-                </ul>
-                <p className="mt-3 text-xs text-slate-500">
-                  Submit becomes available only when all checks are complete.
-                </p>
-              </div>
+              <PurchaseOrderReadinessPanel
+                vendorId={vendorId}
+                lineStats={lineStats}
+                orderDate={orderDate}
+                expectedDate={expectedDate}
+              />
             </div>
           </form>
         </Card>

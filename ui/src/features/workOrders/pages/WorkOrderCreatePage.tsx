@@ -10,10 +10,8 @@ import type { ApiError, Bom, Item } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
-import { Combobox } from '../../../components/Combobox'
-import { Input, Textarea } from '../../../components/Inputs'
-import { LoadingSpinner } from '../../../components/Loading'
-import { Section } from '../../../components/Section'
+import { WorkOrderBomSection } from '../components/WorkOrderBomSection'
+import { WorkOrderHeaderSection } from '../components/WorkOrderHeaderSection'
 
 const formatError = (err: unknown): string => {
   if (!err) return ''
@@ -120,6 +118,24 @@ export default function WorkOrderCreatePage() {
     Boolean(defaultProduceLocationId) &&
     !locationOptions.some((opt) => opt.value === defaultProduceLocationId)
 
+  const handleOutputItemChange = (nextValue: string) => {
+    setOutputItemId(nextValue)
+    setSelectedBomId('')
+    setSelectedVersionId('')
+  }
+
+  const handleQuantityChange = (nextValue: number | '') => {
+    setQuantityPlanned(nextValue)
+    if (quantityError) setQuantityError(null)
+  }
+
+  const handleBomChange = (nextValue: string) => {
+    setSelectedBomId(nextValue)
+    setSelectedVersionId('')
+    const bom = bomsQuery.data?.boms.find((b) => b.id === nextValue)
+    if (bom) setOutputUom((prev) => prev || bom.defaultUom)
+  }
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setQuantityError(null)
@@ -166,222 +182,48 @@ export default function WorkOrderCreatePage() {
           {mutation.isError && (
             <Alert variant="error" title="Create failed" message={formatError(mutation.error as ApiError)} />
           )}
-          <Section title="Header">
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Work order number</span>
-                <Input
-                  value={workOrderNumber}
-                  onChange={(e) => setWorkOrderNumber(e.target.value)}
-                  required
-                  disabled={mutation.isPending}
-                />
-              </label>
-              <label className="space-y-1 text-sm md:col-span-2">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Optional"
-                  disabled={mutation.isPending}
-                />
-              </label>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="space-y-1 text-sm md:col-span-2">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Item to make</span>
-                <select
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  value={outputItemId}
-                  onChange={(e) => {
-                    setOutputItemId(e.target.value)
-                    setSelectedBomId('')
-                    setSelectedVersionId('')
-                  }}
-                  disabled={mutation.isPending || itemsQuery.isLoading}
-                >
-                  <option value="">Select item</option>
-                  {itemsQuery.data?.data.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.sku} — {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Unit of measure</span>
-                <Input
-                  value={outputUom}
-                  onChange={(e) => setOutputUom(e.target.value)}
-                  placeholder="ea"
-                  required
-                  disabled={mutation.isPending}
-                />
-                {selectedItem?.defaultUom && outputUom === selectedItem.defaultUom && (
-                  <p className="text-xs text-slate-500">Auto from item default UOM</p>
-                )}
-              </label>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Quantity planned</span>
-                <Input
-                  type="number"
-                  min={1}
-                  value={quantityPlanned}
-                  onChange={(e) => {
-                    const next = e.target.value === '' ? '' : Number(e.target.value)
-                    setQuantityPlanned(next)
-                    if (quantityError) setQuantityError(null)
-                  }}
-                  required
-                  disabled={mutation.isPending}
-                />
-                {quantityError ? <p className="text-xs text-red-600">{quantityError}</p> : null}
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Scheduled start</span>
-                <Input
-                  type="date"
-                  value={scheduledStartAt}
-                  onChange={(e) => setScheduledStartAt(e.target.value)}
-                  disabled={mutation.isPending}
-                />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Scheduled due</span>
-                <Input
-                  type="date"
-                  value={scheduledDueAt}
-                  onChange={(e) => setScheduledDueAt(e.target.value)}
-                  disabled={mutation.isPending}
-                />
-              </label>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Default consume location</span>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  value={defaultConsumeLocationId}
-                  onChange={(e) => setDefaultConsumeLocationId(e.target.value)}
-                  disabled={mutation.isPending || locationsQuery.isLoading}
-                >
-                  <option value="">None</option>
-                  {locationOptions.map((loc) => (
-                    <option key={loc.value} value={loc.value}>
-                      {loc.label}
-                    </option>
-                  ))}
-                  {consumeMissing && (
-                    <option value={defaultConsumeLocationId}>Current selection</option>
-                  )}
-                </select>
-                {selectedItem?.defaultLocationId &&
-                  defaultConsumeLocationId === selectedItem.defaultLocationId && (
-                    <p className="text-xs text-slate-500">Auto from item default location</p>
-                  )}
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Default produce location</span>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  value={defaultProduceLocationId}
-                  onChange={(e) => setDefaultProduceLocationId(e.target.value)}
-                  disabled={mutation.isPending || locationsQuery.isLoading}
-                >
-                  <option value="">None</option>
-                  {locationOptions.map((loc) => (
-                    <option key={loc.value} value={loc.value}>
-                      {loc.label}
-                    </option>
-                  ))}
-                  {produceMissing && (
-                    <option value={defaultProduceLocationId}>Current selection</option>
-                  )}
-                </select>
-                {selectedItem?.defaultLocationId &&
-                  defaultProduceLocationId === selectedItem.defaultLocationId && (
-                    <p className="text-xs text-slate-500">Auto from item default location</p>
-                  )}
-              </label>
-            </div>
-          </Section>
+          <WorkOrderHeaderSection
+            workOrderNumber={workOrderNumber}
+            notes={notes}
+            outputItemId={outputItemId}
+            outputUom={outputUom}
+            quantityPlanned={quantityPlanned}
+            quantityError={quantityError}
+            scheduledStartAt={scheduledStartAt}
+            scheduledDueAt={scheduledDueAt}
+            defaultConsumeLocationId={defaultConsumeLocationId}
+            defaultProduceLocationId={defaultProduceLocationId}
+            items={itemsQuery.data?.data ?? []}
+            itemsLoading={itemsQuery.isLoading}
+            locationsLoading={locationsQuery.isLoading}
+            selectedItem={selectedItem}
+            locationOptions={locationOptions}
+            consumeMissing={consumeMissing}
+            produceMissing={produceMissing}
+            isPending={mutation.isPending}
+            onWorkOrderNumberChange={setWorkOrderNumber}
+            onNotesChange={setNotes}
+            onOutputItemChange={handleOutputItemChange}
+            onOutputUomChange={setOutputUom}
+            onQuantityPlannedChange={handleQuantityChange}
+            onScheduledStartAtChange={setScheduledStartAt}
+            onScheduledDueAtChange={setScheduledDueAt}
+            onDefaultConsumeLocationChange={setDefaultConsumeLocationId}
+            onDefaultProduceLocationChange={setDefaultProduceLocationId}
+          />
 
-          <Section
-            title="Bill of materials"
-            description="Select the recipe for this item. If multiple versions exist, choose the one you need."
-          >
-            {bomsQuery.isLoading && <LoadingSpinner label="Loading BOMs..." />}
-            {bomsQuery.isError && bomsQuery.error && (
-              <Alert variant="error" title="Failed to load BOMs" message={formatError(bomsQuery.error as ApiError)} />
-            )}
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="md:col-span-2">
-                <Combobox
-                  key={outputItemId || 'bom'}
-                  label="BOM"
-                  value={selectedBomId}
-                  options={bomOptions}
-                  loading={bomsQuery.isLoading}
-                  disabled={mutation.isPending || !outputItemId || bomsQuery.isLoading}
-                  placeholder={outputItemId ? 'Search BOM code' : 'Select item first'}
-                  emptyMessage={outputItemId ? 'No BOMs found' : 'Select an item first'}
-                  onChange={(nextValue) => {
-                    setSelectedBomId(nextValue)
-                    setSelectedVersionId('')
-                    const bom = bomsQuery.data?.boms.find((b) => b.id === nextValue)
-                    if (bom) setOutputUom((prev) => prev || bom.defaultUom)
-                  }}
-                />
-              </div>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Version</span>
-                <select
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  value={selectedVersionId}
-                  onChange={(e) => setSelectedVersionId(e.target.value)}
-                  disabled={mutation.isPending || !selectedBom}
-                >
-                  <option value="">Auto</option>
-                  {selectedBom?.versions.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      v{v.versionNumber} — {v.status}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {selectedBom && (
-              <div className="mt-3 rounded-lg border border-slate-200 p-3">
-                <div className="text-sm font-semibold text-slate-800">Components (v{selectedBom.versions.find((v) => v.id === selectedVersionId)?.versionNumber ?? selectedBom.versions[0]?.versionNumber ?? '—'})</div>
-                <div className="overflow-hidden rounded border border-slate-200 mt-2">
-                  <table className="min-w-full divide-y divide-slate-200">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Line</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Component</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Qty per</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">UOM</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 bg-white">
-                      {(selectedBom.versions.find((v) => v.id === selectedVersionId) ??
-                        selectedBom.versions[0] ??
-                        { components: [] }).components.map((c) => (
-                        <tr key={c.id}>
-                          <td className="px-3 py-2 text-sm text-slate-800">{c.lineNumber}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{c.componentItemId}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{c.quantityPer}</td>
-                          <td className="px-3 py-2 text-sm text-slate-800">{c.uom}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </Section>
+          <WorkOrderBomSection
+            outputItemId={outputItemId}
+            selectedBomId={selectedBomId}
+            selectedVersionId={selectedVersionId}
+            bomOptions={bomOptions}
+            selectedBom={selectedBom}
+            isPending={mutation.isPending}
+            isLoading={bomsQuery.isLoading}
+            error={bomsQuery.isError ? (bomsQuery.error as ApiError) : null}
+            onBomChange={handleBomChange}
+            onVersionChange={setSelectedVersionId}
+          />
 
           <div className="flex justify-end">
             <Button type="submit" size="sm" disabled={mutation.isPending}>

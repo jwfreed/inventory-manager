@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createReceipt, type ReceiptCreatePayload, deleteReceiptApi } from '../api/receipts'
 import { createPutaway, postPutaway, type PutawayCreatePayload } from '../api/putaways'
 import { createQcEvent, type QcEventCreatePayload } from '../api/qc'
-import type { ApiError, PurchaseOrder, PurchaseOrderReceiptLine, QcEvent } from '../../../api/types'
+import type { ApiError, QcEvent } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -15,65 +15,17 @@ import { useLocationsList } from '../../locations/queries'
 import { usePurchaseOrder, usePurchaseOrdersList } from '../../purchaseOrders/queries'
 import { receivingQueryKeys, usePutaway, useQcEventsForLine, useReceipt, useReceiptsList } from '../queries'
 import { Combobox } from '../../../components/Combobox'
-import { SearchableSelect } from '../../../components/SearchableSelect'
 import { useDebouncedValue } from '../../../lib/useDebouncedValue'
 import { useAuth } from '../../../lib/useAuth'
-
-type ReceiptLineInput = {
-  purchaseOrderLineId: string
-  lineNumber: number
-  itemLabel: string
-  uom: string
-  expectedQty: number
-  receivedQty: number | ''
-  discrepancyReason: '' | 'short' | 'over' | 'damaged' | 'substituted'
-  discrepancyNotes: string
-}
-
-type QcDraft = {
-  lineId: string
-  eventType: 'accept' | 'hold' | 'reject'
-  quantity: number | ''
-  reasonCode: string
-  notes: string
-}
-
-const buildReceiptLines = (po: PurchaseOrder): ReceiptLineInput[] => {
-  return (po.lines ?? []).map((line, idx) => {
-    const sku = line.itemSku ?? line.itemId ?? 'Item'
-    const name = line.itemName ?? ''
-    const label = `${sku}${name ? ` — ${name}` : ''}`
-    return {
-      purchaseOrderLineId: line.id,
-      lineNumber: line.lineNumber ?? idx + 1,
-      itemLabel: label,
-      uom: line.uom ?? '',
-      expectedQty: line.quantityOrdered ?? 0,
-      receivedQty: line.quantityOrdered ?? 0,
-      discrepancyReason: '',
-      discrepancyNotes: '',
-    }
-  })
-}
-
-const getQcBreakdown = (line: PurchaseOrderReceiptLine) => {
-  const breakdown = line.qcSummary?.breakdown ?? { accept: 0, hold: 0, reject: 0 }
-  const totalQc = breakdown.accept + breakdown.hold + breakdown.reject
-  const remaining =
-    line.qcSummary?.remainingUninspectedQuantity ?? Math.max(0, line.quantityReceived - totalQc)
-  return { ...breakdown, remaining, totalQc }
-}
-
-const getQcStatus = (line: PurchaseOrderReceiptLine) => {
-  const { totalQc, remaining } = getQcBreakdown(line)
-  if (totalQc === 0) {
-    return { label: 'QC not started', tone: 'bg-slate-100 text-slate-600' }
-  }
-  if (remaining > 0) {
-    return { label: 'QC in progress', tone: 'bg-amber-100 text-amber-700' }
-  }
-  return { label: 'QC complete', tone: 'bg-emerald-100 text-emerald-700' }
-}
+import { ReceiptLinesTable } from '../components/ReceiptLinesTable'
+import { ReceiptSummaryPanel } from '../components/ReceiptSummaryPanel'
+import { RecentReceiptsTable } from '../components/RecentReceiptsTable'
+import { QcLinesTable } from '../components/QcLinesTable'
+import { QcDetailPanel } from '../components/QcDetailPanel'
+import { PutawayLinesEditor } from '../components/PutawayLinesEditor'
+import { PutawaySummaryTable } from '../components/PutawaySummaryTable'
+import type { PutawayLineInput, QcDraft, ReceiptLineInput, ReceiptLineOption, ReceiptLineSummary } from '../types'
+import { buildReceiptLines, getQcBreakdown } from '../utils'
 
 export default function ReceivingPage() {
   const { user } = useAuth()
@@ -95,15 +47,9 @@ export default function ReceivingPage() {
   })
   const [lastQcEvent, setLastQcEvent] = useState<QcEvent | null>(null)
   const [putawayFillNotice, setPutawayFillNotice] = useState<string | null>(null)
-  const [putawayLines, setPutawayLines] = useState<
-    {
-      purchaseOrderReceiptLineId: string
-      toLocationId: string
-      fromLocationId: string
-      uom: string
-      quantity: number | ''
-    }[]
-  >([{ purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' }])
+  const [putawayLines, setPutawayLines] = useState<PutawayLineInput[]>([
+    { purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' },
+  ])
   const [locationSearch, setLocationSearch] = useState('')
   const [putawayId, setPutawayId] = useState('')
   const poListQuery = usePurchaseOrdersList({ limit: 200 }, { staleTime: 60_000 })
@@ -259,7 +205,7 @@ export default function ReceivingPage() {
     },
   })
 
-  const receiptLineOptions = useMemo(() => {
+  const receiptLineOptions = useMemo<ReceiptLineOption[]>(() => {
     return (receiptQuery.data?.lines ?? []).map((line) => {
       const qc = line.qcSummary?.breakdown
       const acceptedQty = qc?.accept ?? 0
@@ -311,7 +257,7 @@ export default function ReceivingPage() {
     [locationsQuery.data],
   )
 
-  const receiptLineSummary = useMemo(() => {
+  const receiptLineSummary = useMemo<ReceiptLineSummary>(() => {
     const lines = resolvedReceiptLineInputs.map((line) => {
       const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
       const expectedQty = line.expectedQty ?? 0
@@ -587,6 +533,7 @@ export default function ReceivingPage() {
     !qcQuantityInvalid
   const activeLastQcEvent =
     lastQcEvent?.purchaseOrderReceiptLineId === activeQcLineId ? lastQcEvent : null
+  const qcEventsList = qcEventsQuery.data?.data ?? []
   const putawayQcIssues = putawayLines
     .map((line, idx) => {
       if (!line.purchaseOrderReceiptLineId) return null
@@ -732,105 +679,12 @@ export default function ReceivingPage() {
                   {resolvedReceiptLineInputs.length === 0 ? (
                     <div className="mt-3 text-sm text-slate-600">No PO lines to receive.</div>
                   ) : (
-                    <div className="mt-3 overflow-hidden rounded border border-slate-200">
-                      <table className="min-w-full divide-y divide-slate-200">
-                        <thead className="bg-slate-50">
-                          <tr>
-                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Line</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Item</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Expected</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Received</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Delta</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Discrepancy</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 bg-white">
-                          {resolvedReceiptLineInputs.map((line) => {
-                            const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
-                            const expectedQty = line.expectedQty ?? 0
-                            const delta = receivedQty - expectedQty
-                            const hasVariance = delta !== 0
-                            const deltaLabel = hasVariance
-                              ? delta > 0
-                                ? `Over by ${delta}`
-                                : `Short by ${Math.abs(delta)}`
-                              : 'On target'
-                            const deltaTone = hasVariance ? 'text-amber-700' : 'text-slate-500'
-                            const needsReason = hasVariance && !line.discrepancyReason
-                            return (
-                              <tr key={line.purchaseOrderLineId}>
-                                <td className="px-3 py-2 text-sm text-slate-800">{line.lineNumber}</td>
-                                <td className="px-3 py-2 text-sm text-slate-800">{line.itemLabel}</td>
-                                <td className="px-3 py-2 text-sm text-slate-800">
-                                  {expectedQty} {line.uom}
-                                </td>
-                                <td className="px-3 py-2 text-sm text-slate-800">
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    value={line.receivedQty}
-                                    onChange={(e) => {
-                                      const nextValue = e.target.value === '' ? '' : Number(e.target.value)
-                                      const nextReceived = nextValue === '' ? 0 : Number(nextValue)
-                                      const nextDelta = nextReceived - expectedQty
-                                      let nextReason = line.discrepancyReason
-                                      let nextNotes = line.discrepancyNotes
-                                      if (nextDelta === 0) {
-                                        nextReason = ''
-                                        nextNotes = ''
-                                      } else if (!nextReason) {
-                                        nextReason = nextDelta > 0 ? 'over' : 'short'
-                                      }
-                                      updateReceiptLine(line.purchaseOrderLineId, {
-                                        receivedQty: nextValue,
-                                        discrepancyReason: nextReason,
-                                        discrepancyNotes: nextNotes,
-                                      })
-                                    }}
-                                  />
-                                </td>
-                                <td className={`px-3 py-2 text-sm ${deltaTone}`}>{deltaLabel}</td>
-                                <td className="px-3 py-2 text-sm text-slate-800">
-                                  {hasVariance ? (
-                                    <div className="space-y-1">
-                                      <select
-                                        className={`w-full rounded-lg border px-2 py-1 text-sm ${
-                                          needsReason ? 'border-amber-300 bg-amber-50' : 'border-slate-200'
-                                        }`}
-                                        value={line.discrepancyReason}
-                                        onChange={(e) =>
-                                          updateReceiptLine(line.purchaseOrderLineId, {
-                                            discrepancyReason: e.target.value as ReceiptLineInput['discrepancyReason'],
-                                          })
-                                        }
-                                      >
-                                        <option value="">Select reason</option>
-                                        <option value="short">Short</option>
-                                        <option value="over">Over</option>
-                                        <option value="damaged">Damaged</option>
-                                        <option value="substituted">Substituted</option>
-                                      </select>
-                                      {(line.discrepancyReason === 'damaged' || line.discrepancyReason === 'substituted') && (
-                                        <Input
-                                          value={line.discrepancyNotes}
-                                          onChange={(e) =>
-                                            updateReceiptLine(line.purchaseOrderLineId, {
-                                              discrepancyNotes: e.target.value,
-                                            })
-                                          }
-                                          placeholder="Notes (optional)"
-                                        />
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-xs text-slate-500">No variance</span>
-                                  )}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
+                    <div className="mt-3">
+                      <ReceiptLinesTable
+                        lines={resolvedReceiptLineInputs}
+                        onLineChange={updateReceiptLine}
+                        emptyMessage="No PO lines to receive."
+                      />
                     </div>
                   )}
                 </div>
@@ -844,65 +698,11 @@ export default function ReceivingPage() {
                   />
                 </label>
 
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-sm font-semibold text-slate-800">Step 3: Review summary</div>
-                  <div className="mt-2 grid gap-2 md:grid-cols-3 text-sm text-slate-700">
-                    <div>
-                      Lines received: {receiptLineSummary.receivedLines.length} / {resolvedReceiptLineInputs.length}
-                    </div>
-                    <div>Lines remaining: {receiptLineSummary.remainingLines.length}</div>
-                    <div>Discrepancies: {receiptLineSummary.discrepancyLines.length}</div>
-                  </div>
-                  <div className="mt-2 text-xs text-slate-500">
-                    Total expected {receiptLineSummary.totalExpected} · Total received {receiptLineSummary.totalReceived}
-                  </div>
-                  {receiptLineSummary.discrepancyLines.length > 0 && (
-                    <div className="mt-2 text-xs text-slate-600">
-                      <div className="font-semibold text-slate-700">Discrepancies</div>
-                      <ul className="mt-1 list-disc pl-4">
-                        {receiptLineSummary.discrepancyLines.map((line) => {
-                          const deltaLabel =
-                            line.delta > 0 ? `over by ${line.delta}` : `short by ${Math.abs(line.delta)}`
-                          const reason = line.discrepancyReason
-                            ? discrepancyLabels[line.discrepancyReason]
-                            : 'Reason required'
-                          const note = line.discrepancyNotes ? ` — ${line.discrepancyNotes}` : ''
-                          return (
-                            <li key={line.purchaseOrderLineId}>
-                              {line.itemLabel}: expected {line.expectedQty} {line.uom}, received {line.receivedQty}{' '}
-                              {line.uom} ({deltaLabel}) · {reason}
-                              {note}
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    </div>
-                  )}
-                  {receiptLineSummary.receivedLines.length === 0 && (
-                    <div className="mt-2">
-                      <Alert
-                        variant="warning"
-                        title="No received quantities"
-                        message="Enter at least one received quantity to post a receipt."
-                      />
-                    </div>
-                  )}
-                  {receiptLineSummary.missingReasons.length > 0 && (
-                    <div className="mt-2">
-                      <Alert
-                        variant="warning"
-                        title="Discrepancy reason required"
-                        message={`Select a reason for ${receiptLineSummary.missingReasons.length} line(s) with a variance.`}
-                      />
-                    </div>
-                  )}
-                  <p className="mt-2 text-xs text-slate-500">
-                    Posting creates a receipt, updates inventory immediately, and locks this record.
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Discrepancies are recorded in the receipt notes for auditability.
-                  </p>
-                </div>
+                <ReceiptSummaryPanel
+                  summary={receiptLineSummary}
+                  totalLines={resolvedReceiptLineInputs.length}
+                  discrepancyLabels={discrepancyLabels}
+                />
               </div>
             )}
             <div className="flex justify-end">
@@ -933,68 +733,13 @@ export default function ReceivingPage() {
           )}
           {recentReceiptsQuery.isLoading && <LoadingSpinner label="Loading recent receipts..." />}
           {!recentReceiptsQuery.isLoading && (recentReceiptsQuery.data?.data?.length ?? 0) > 0 && (
-            <div className="mt-2 overflow-hidden rounded border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Receipt</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">PO</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Received at</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Putaway</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {recentReceiptsQuery.data?.data?.map((rec) => (
-                    <tr
-                      key={rec.id}
-                      className="hover:bg-slate-50"
-                    >
-                      <td className="px-3 py-2 text-sm text-slate-800">
-                        <button type="button" className="text-brand-700 underline" onClick={() => updateReceiptIdForPutaway(rec.id)}>
-                          {rec.id.slice(0, 8)}…
-                        </button>
-                      </td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{rec.purchaseOrderId}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{rec.receivedAt}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            rec.hasPutaway
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {rec.hasPutaway ? 'Putaway started' : 'Not started'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right text-sm text-slate-800">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => updateReceiptIdForPutaway(rec.id)}
-                          >
-                            Load
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={deleteReceiptMutation.isPending}
-                            onClick={() => {
-                              if (confirm('Delete this receipt? (Only allowed if no putaway exists)')) {
-                                deleteReceiptMutation.mutate(rec.id)
-                              }
-                            }}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-2">
+              <RecentReceiptsTable
+                receipts={recentReceiptsQuery.data?.data ?? []}
+                onLoad={updateReceiptIdForPutaway}
+                onDelete={(id) => deleteReceiptMutation.mutate(id)}
+                deleteDisabled={deleteReceiptMutation.isPending}
+              />
             </div>
           )}
           <div className="mt-4 space-y-4">
@@ -1034,84 +779,11 @@ export default function ReceivingPage() {
                   </div>
                 </div>
                 <div className="mt-2 overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Line</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Item</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Received</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Accepted</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Hold</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Reject</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Remaining</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Putaway</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 bg-white">
-                      {receiptQuery.data.lines?.map((line) => {
-                        const qc = getQcBreakdown(line)
-                        const availableQty = line.availableForNewPutaway ?? qc.accept
-                        const remainingQty = line.remainingQuantityToPutaway ?? 0
-                        const blockedReason = line.putawayBlockedReason ?? ''
-                        const status = getQcStatus(line)
-                        const itemLabel = `${line.itemSku ?? line.itemId ?? 'Item'}${line.itemName ? ` - ${line.itemName}` : ''}`
-                        let putawayLabel = 'Blocked'
-                        let putawayTone = 'bg-amber-100 text-amber-700'
-                        if (availableQty > 0) {
-                          putawayLabel = `Available ${availableQty}`
-                          putawayTone = 'bg-emerald-100 text-emerald-700'
-                        } else if (remainingQty > 0) {
-                          putawayLabel = 'Planned in draft'
-                          putawayTone = 'bg-slate-100 text-slate-600'
-                        } else if (qc.accept > 0) {
-                          putawayLabel = 'Putaway complete'
-                          putawayTone = 'bg-slate-100 text-slate-600'
-                        } else if (qc.hold > 0) {
-                          putawayLabel = 'On hold'
-                        } else if (qc.reject > 0) {
-                          putawayLabel = 'Rejected'
-                        }
-                        return (
-                          <tr key={line.id} className={activeQcLineId === line.id ? 'bg-slate-50' : ''}>
-                            <td className="px-3 py-2 text-sm text-slate-800">{line.id.slice(0, 8)}...</td>
-                            <td className="px-3 py-2 text-sm text-slate-800">{itemLabel}</td>
-                            <td className="px-3 py-2 text-sm text-slate-800">
-                              {line.quantityReceived} {line.uom}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-slate-800">{qc.accept}</td>
-                            <td className="px-3 py-2 text-sm text-slate-800">{qc.hold}</td>
-                            <td className="px-3 py-2 text-sm text-slate-800">{qc.reject}</td>
-                            <td className="px-3 py-2 text-sm text-slate-800">{qc.remaining}</td>
-                            <td className="px-3 py-2 text-sm text-slate-800">
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${status.tone}`}>
-                                {status.label}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-sm text-slate-800">
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${putawayTone}`}>
-                                {putawayLabel}
-                              </span>
-                              {blockedReason && availableQty <= 0 && (
-                                <div className="mt-1 text-xs text-slate-500">{blockedReason}</div>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-right text-sm text-slate-800">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={activeQcLineId === line.id ? 'primary' : 'secondary'}
-                                onClick={() => setSelectedQcLineId(line.id)}
-                              >
-                                QC
-                              </Button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                  <QcLinesTable
+                    lines={receiptQuery.data.lines ?? []}
+                    activeLineId={activeQcLineId}
+                    onSelectLine={setSelectedQcLineId}
+                  />
                 </div>
               </div>
             )}
@@ -1123,169 +795,35 @@ export default function ReceivingPage() {
               />
             )}
             {selectedQcLine && (
-              <div className="rounded-lg border border-slate-200 p-3 space-y-3">
-                {qcEventMutation.isError && (
-                  <Alert
-                    variant="error"
-                    title="QC event not recorded"
-                    message={
-                      qcErrorMap[getErrorMessage(qcEventMutation.error, '')] ??
+              <QcDetailPanel
+                line={selectedQcLine}
+                qcStats={selectedQcStats ?? { accept: 0, hold: 0, reject: 0, remaining: 0 }}
+                qcRemaining={qcRemaining}
+                qcEventType={qcEventType}
+                qcQuantity={qcQuantity}
+                qcReasonCode={qcReasonCode}
+                qcNotes={qcNotes}
+                qcQuantityInvalid={qcQuantityInvalid}
+                canRecordQc={canRecordQc}
+                qcEvents={qcEventsList}
+                qcEventsLoading={qcEventsQuery.isLoading}
+                qcEventsError={qcEventsQuery.isError}
+                lastEvent={activeLastQcEvent}
+                mutationErrorMessage={
+                  qcEventMutation.isError
+                    ? qcErrorMap[getErrorMessage(qcEventMutation.error, '')] ??
                       getErrorMessage(qcEventMutation.error, 'Unable to record QC event.')
-                    }
-                  />
-                )}
-                {qcEventMutation.isPending && (
-                  <Alert
-                    variant="info"
-                    title="Recording QC event"
-                    message="Updating QC totals and putaway eligibility."
-                  />
-                )}
-                {activeLastQcEvent && (
-                  <Alert
-                    variant="success"
-                    title="QC event recorded"
-                    message={`${activeLastQcEvent.eventType === 'accept' ? 'Accepted' : activeLastQcEvent.eventType === 'hold' ? 'Held' : 'Rejected'} ${activeLastQcEvent.quantity} ${activeLastQcEvent.uom}.`}
-                  />
-                )}
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-800">QC line detail</div>
-                    <div className="text-xs text-slate-600">
-                      {selectedQcLine.itemSku ?? selectedQcLine.itemId ?? 'Item'}
-                      {selectedQcLine.itemName ? ` - ${selectedQcLine.itemName}` : ''}
-                    </div>
-                    <div className="text-xs text-slate-500">Receipt line {selectedQcLine.id.slice(0, 8)}...</div>
-                  </div>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${getQcStatus(selectedQcLine).tone}`}>
-                    {getQcStatus(selectedQcLine).label}
-                  </span>
-                </div>
-                <div className="grid gap-2 md:grid-cols-5 text-sm text-slate-700">
-                  <div>Received: {selectedQcLine.quantityReceived} {selectedQcLine.uom}</div>
-                  <div>Accepted: {selectedQcStats?.accept ?? 0}</div>
-                  <div>On hold: {selectedQcStats?.hold ?? 0}</div>
-                  <div>Rejected: {selectedQcStats?.reject ?? 0}</div>
-                  <div>Remaining: {selectedQcStats?.remaining ?? 0}</div>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Classify as</div>
-                    <div className="mt-1 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={qcEventType === 'accept' ? 'primary' : 'secondary'}
-                        onClick={() => updateQcDraft({ eventType: 'accept' })}
-                        disabled={qcRemaining <= 0}
-                      >
-                        Accept
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={qcEventType === 'hold' ? 'primary' : 'secondary'}
-                        onClick={() => updateQcDraft({ eventType: 'hold' })}
-                        disabled={qcRemaining <= 0}
-                      >
-                        Hold
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={qcEventType === 'reject' ? 'primary' : 'secondary'}
-                        onClick={() => updateQcDraft({ eventType: 'reject' })}
-                        disabled={qcRemaining <= 0}
-                      >
-                        Reject
-                      </Button>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Accept makes quantity available for putaway. Hold blocks putaway. Reject removes from usable stock.
-                    </p>
-                    {qcRemaining <= 0 && (
-                      <p className="mt-2 text-xs text-slate-500">
-                        QC is complete for this line. There is no remaining quantity to classify.
-                      </p>
-                    )}
-                  </div>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">Quantity (max {qcRemaining})</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={qcRemaining}
-                      value={qcQuantity}
-                      onChange={(e) =>
-                        updateQcDraft({
-                          quantity: e.target.value === '' ? '' : Number(e.target.value),
-                        })
-                      }
-                      disabled={qcRemaining <= 0}
-                    />
-                    {qcQuantityInvalid && qcRemaining > 0 && (
-                      <div className="text-xs text-amber-700">
-                        Enter a quantity between 1 and {qcRemaining}.
-                      </div>
-                    )}
-                  </label>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
-                    <Input value={selectedQcLine.uom} disabled />
-                  </label>
-                </div>
-                {qcEventType !== 'accept' && (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="space-y-1 text-sm">
-                      <span className="text-xs uppercase tracking-wide text-slate-500">Reason code (optional)</span>
-                      <Input
-                        value={qcReasonCode}
-                        onChange={(e) => updateQcDraft({ reasonCode: e.target.value })}
-                        placeholder="Optional reason"
-                      />
-                    </label>
-                    <label className="space-y-1 text-sm">
-                      <span className="text-xs uppercase tracking-wide text-slate-500">Notes (optional)</span>
-                      <Textarea
-                        value={qcNotes}
-                        onChange={(e) => updateQcDraft({ notes: e.target.value })}
-                        placeholder="Notes for hold/reject"
-                      />
-                    </label>
-                  </div>
-                )}
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs text-slate-500">
-                    Putaway: {selectedQcStats && selectedQcStats.accept > 0
-                      ? `Available ${selectedPutawayAvailable} ${selectedQcLine.uom}`
-                      : 'Blocked until some quantity is accepted.'}
-                    {selectedQcLine?.putawayBlockedReason ? ` (${selectedQcLine.putawayBlockedReason})` : ''}
-                  </div>
-                  <Button type="button" size="sm" disabled={!canRecordQc} onClick={onCreateQcEvent}>
-                    {qcEventMutation.isPending ? 'Recording...' : 'Record QC'}
-                  </Button>
-                </div>
-                <div className="border-t border-slate-200 pt-3">
-                  <div className="text-xs uppercase tracking-wide text-slate-500">QC events</div>
-                  {qcEventsQuery.isLoading && <LoadingSpinner label="Loading QC events..." />}
-                  {qcEventsQuery.isError && (
-                    <div className="text-xs text-amber-700">Unable to load QC events. Try again.</div>
-                  )}
-                  {!qcEventsQuery.isLoading && !qcEventsQuery.isError && (qcEventsQuery.data?.data?.length ?? 0) === 0 && (
-                    <div className="text-xs text-slate-500">No QC events recorded yet.</div>
-                  )}
-                  {!qcEventsQuery.isLoading && !qcEventsQuery.isError && (qcEventsQuery.data?.data?.length ?? 0) > 0 && (
-                    <ul className="mt-2 space-y-1 text-xs text-slate-600">
-                      {qcEventsQuery.data?.data?.map((event) => (
-                        <li key={event.id}>
-                          {event.eventType.toUpperCase()} {event.quantity} {event.uom}
-                          {event.reasonCode ? ` - ${event.reasonCode}` : ''}{event.notes ? ` (${event.notes})` : ''}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
+                    : undefined
+                }
+                mutationPending={qcEventMutation.isPending}
+                onEventTypeChange={(eventType) => updateQcDraft({ eventType })}
+                onQuantityChange={(value) => updateQcDraft({ quantity: value })}
+                onReasonCodeChange={(value) => updateQcDraft({ reasonCode: value })}
+                onNotesChange={(value) => updateQcDraft({ notes: value })}
+                onRecord={onCreateQcEvent}
+                putawayAvailable={selectedPutawayAvailable}
+                putawayBlockedReason={selectedQcLine.putawayBlockedReason}
+              />
             )}
             <form className="space-y-4" onSubmit={onCreatePutaway}>
               {putawayMutation.isError && (
@@ -1335,13 +873,13 @@ export default function ReceivingPage() {
                   message="Creating inventory movements. This action is irreversible."
                 />
               )}
-            {postPutawayMutation.isSuccess && postPutawayMutation.data && (
-              <Alert
-                variant="success"
-                title="Putaway posted"
-                message={`Inventory moved and recorded. Movement ${postPutawayMutation.data.inventoryMovementId ?? 'created'}; putaway ${postPutawayMutation.data.id.slice(0, 8)}... completed. Item → Stock is now authoritative for totals.`}
-              />
-            )}
+              {postPutawayMutation.isSuccess && postPutawayMutation.data && (
+                <Alert
+                  variant="success"
+                  title="Putaway posted"
+                  message={`Inventory moved and recorded. Movement ${postPutawayMutation.data.inventoryMovementId ?? 'created'}; putaway ${postPutawayMutation.data.id.slice(0, 8)}... completed. Item → Stock is now authoritative for totals.`}
+                />
+              )}
               {receiptQuery.data && receiptQuery.data.lines?.some((line) => (line.qcSummary?.breakdown?.accept ?? 0) <= 0) && (
                 <Alert
                   variant="warning"
@@ -1391,112 +929,37 @@ export default function ReceivingPage() {
                     </Button>
                   </div>
                 </div>
-              {putawayLines.map((line, idx) => (
-                <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-4">
-                  <div>
-                    <SearchableSelect
-                      label="Receipt line"
-                      value={line.purchaseOrderReceiptLineId}
-                      options={receiptLineOptions}
-                      disabled={!receiptLineOptions.length}
-                      onChange={(nextValue) => {
-                        const selected = receiptLineOptions.find((opt) => opt.value === nextValue)
-                        const acceptedQty = selected?.acceptedQty ?? 0
-                        const availableQty = selected?.availableQty ?? acceptedQty
-                        const defaults = resolvePutawayDefaults({
-                          defaultFromLocationId: selected?.defaultFromLocationId,
-                          defaultToLocationId: selected?.defaultToLocationId,
-                        })
-                        updatePutawayLine(idx, {
-                          purchaseOrderReceiptLineId: nextValue,
-                          uom: selected?.uom ?? line.uom,
-                          quantity: availableQty > 0 ? availableQty : '',
-                          toLocationId: line.toLocationId || defaults.toId,
-                          fromLocationId: line.fromLocationId || defaults.fromId,
-                        })
-                      }}
-                    />
-                    {line.purchaseOrderReceiptLineId && (() => {
-                      const selected = receiptLineOptions.find((opt) => opt.value === line.purchaseOrderReceiptLineId)
-                      if (!selected) return null
-                      const acceptedQty = selected.acceptedQty ?? 0
-                      const availableQty = selected.availableQty ?? acceptedQty
-                      const holdQty = selected.holdQty ?? 0
-                      const rejectQty = selected.rejectQty ?? 0
-                      const remainingQty = selected.remainingQty ?? 0
-                      const tone = acceptedQty > 0 ? 'text-slate-500' : 'text-amber-700'
-                      return (
-                        <div className={`mt-1 text-xs ${tone}`}>
-                          QC accepted {acceptedQty} · Hold {holdQty} · Reject {rejectQty} · Uninspected {remainingQty} · Available {availableQty}
-                        </div>
-                      )
-                    })()}
-                  </div>
-                  <div>
-                    <Combobox
-                      label="To location"
-                      value={line.toLocationId}
-                      options={locationOptions}
-                      loading={locationsQuery.isLoading}
-                      onQueryChange={setLocationSearch}
-                      placeholder="Search locations (code/name)"
-                      onChange={(nextValue) => updatePutawayLine(idx, { toLocationId: nextValue })}
-                    />
-                  </div>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">From location</span>
-                    <Input
-                      value={line.fromLocationId}
-                      onChange={(e) => updatePutawayLine(idx, { fromLocationId: e.target.value })}
-                      placeholder="Defaults from receipt or item"
-                    />
-                  </label>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
-                    <Input value={line.uom} onChange={(e) => updatePutawayLine(idx, { uom: e.target.value })} />
-                  </label>
-                  <label className="space-y-1 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">Qty to move</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={
-                        line.purchaseOrderReceiptLineId
-                          ? (receiptLineOptions.find((opt) => opt.value === line.purchaseOrderReceiptLineId)?.availableQty ?? undefined)
-                          : undefined
-                      }
-                      value={line.quantity}
-                      onChange={(e) =>
-                        updatePutawayLine(idx, {
-                          quantity: e.target.value === '' ? '' : Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button type="submit" size="sm" disabled={!canCreatePutaway}>
-                {putawayMutation.isPending ? 'Saving…' : 'Create putaway'}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={!putawayId || postPutawayMutation.isPending || putawayMutation.isPending}
-                onClick={() => {
-                  if (!putawayId) return
-                  postPutawayMutation.reset()
-                  postPutawayMutation.mutate(putawayId)
-                }}
-              >
-                {postPutawayMutation.isPending ? 'Posting…' : 'Post putaway'}
-              </Button>
-            </div>
-            <p className="text-xs text-slate-500">
-              Posting creates inventory movements and cannot be undone.
-            </p>
+                <PutawayLinesEditor
+                  lines={putawayLines}
+                  receiptLineOptions={receiptLineOptions}
+                  locationOptions={locationOptions}
+                  locationsLoading={locationsQuery.isLoading}
+                  onLocationSearch={setLocationSearch}
+                  onLineChange={updatePutawayLine}
+                  resolvePutawayDefaults={resolvePutawayDefaults}
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button type="submit" size="sm" disabled={!canCreatePutaway}>
+                  {putawayMutation.isPending ? 'Saving…' : 'Create putaway'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={!putawayId || postPutawayMutation.isPending || putawayMutation.isPending}
+                  onClick={() => {
+                    if (!putawayId) return
+                    postPutawayMutation.reset()
+                    postPutawayMutation.mutate(putawayId)
+                  }}
+                >
+                  {postPutawayMutation.isPending ? 'Posting…' : 'Post putaway'}
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500">
+                Posting creates inventory movements and cannot be undone.
+              </p>
           </form>
           </div>
         </Card>
@@ -1505,35 +968,7 @@ export default function ReceivingPage() {
       {putawayQuery.data && (
         <Section title="Last putaway">
           <Card>
-            <div className="text-sm text-slate-700">Status: {putawayQuery.data.status}</div>
-            <div className="overflow-hidden rounded border border-slate-200 mt-2">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Line</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Receipt line</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">From → To</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Qty</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {putawayQuery.data.lines.map((l) => (
-                    <tr key={l.id}>
-                      <td className="px-3 py-2 text-sm text-slate-800">{l.lineNumber}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{l.purchaseOrderReceiptLineId}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">
-                        {l.fromLocationId} → {l.toLocationId}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-slate-800">
-                        {l.quantityPlanned} {l.uom}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{l.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <PutawaySummaryTable putaway={putawayQuery.data} />
           </Card>
         </Section>
       )}

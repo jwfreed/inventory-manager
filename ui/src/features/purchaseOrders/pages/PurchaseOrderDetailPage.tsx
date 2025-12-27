@@ -19,6 +19,7 @@ import { SearchableSelect } from '../../../components/SearchableSelect'
 import { useLocationsList } from '../../locations/queries'
 import { usePurchaseOrder } from '../queries'
 import { formatDate } from '../../../lib/formatters'
+import { PurchaseOrderLinesTable } from '../components/PurchaseOrderLinesTable'
 
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -535,37 +536,7 @@ export default function PurchaseOrderDetailPage() {
           <div className="mb-3 text-xs text-slate-500">
             Ordered vs received/in-transit is not surfaced yet in this UI; use Receiving/Putaway to verify what has arrived.
           </div>
-          {po.lines && po.lines.length > 0 ? (
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Line</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Item</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Qty</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">UOM</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {po.lines.map((line) => (
-                    <tr key={line.id}>
-                      <td className="px-3 py-2 text-sm text-slate-800">{line.lineNumber}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">
-                        {line.itemSku ?? line.itemId}
-                        {line.itemName ? ` — ${line.itemName}` : ''}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{line.quantityOrdered}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{line.uom}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{line.notes ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="py-4 text-sm text-slate-600">No lines.</div>
-          )}
+          <PurchaseOrderLinesTable lines={po.lines ?? []} />
         </Card>
       </Section>
     </div>

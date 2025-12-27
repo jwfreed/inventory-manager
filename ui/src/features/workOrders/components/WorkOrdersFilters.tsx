@@ -1,0 +1,58 @@
+import { FilterBar } from '../../../shared'
+import { Button } from '../../../components/Button'
+import { Section } from '../../../components/Section'
+
+const statusOptions = [
+  { label: 'All statuses', value: '' },
+  { label: 'Draft', value: 'draft' },
+  { label: 'In Progress', value: 'in_progress' },
+  { label: 'Completed', value: 'completed' },
+  { label: 'Canceled', value: 'canceled' },
+]
+
+type Props = {
+  status: string
+  search: string
+  isFetching: boolean
+  onStatusChange: (next: string) => void
+  onSearchChange: (next: string) => void
+  onRefresh: () => void
+}
+
+export function WorkOrdersFilters({
+  status,
+  search,
+  isFetching,
+  onStatusChange,
+  onSearchChange,
+  onRefresh,
+}: Props) {
+  return (
+    <Section title="Filters">
+      <FilterBar>
+        <select
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          value={status}
+          onChange={(e) => onStatusChange(e.target.value)}
+          disabled={isFetching}
+        >
+          {statusOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <input
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          placeholder="Search work order number"
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          disabled={isFetching}
+        />
+        <Button variant="secondary" size="sm" onClick={onRefresh}>
+          Refresh
+        </Button>
+      </FilterBar>
+    </Section>
+  )
+}

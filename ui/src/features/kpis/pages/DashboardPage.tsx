@@ -13,12 +13,12 @@ import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { Badge } from '../../../components/Badge'
-import { Button } from '../../../components/Button'
 import { KpiCardGrid } from '../components/KpiCardGrid'
 import { SnapshotsTable } from '../components/SnapshotsTable'
 import { formatDateTime } from '../utils'
 import { formatNumber } from '../../../lib/formatters'
-import { Alert } from '../../../components/Alert'
+import { AttentionRequiredSection } from '../components/AttentionRequiredSection'
+import { FlowHealthSection } from '../components/FlowHealthSection'
 
 type SnapshotQueryResult = ReturnType<typeof useKpiSnapshots>['data']
 type RunQueryResult = ReturnType<typeof useKpiRuns>['data']
@@ -304,6 +304,7 @@ export default function DashboardPage() {
       signal: signalStyles[reorderSignal],
       helper: 'Policies triggered.',
       cta: { label: 'Review items', to: '/items' },
+      scrollTarget: true,
     },
     {
       key: 'availability',
@@ -312,6 +313,7 @@ export default function DashboardPage() {
       signal: signalStyles[availabilitySignal],
       helper: 'Zero or negative available.',
       cta: { label: 'Review items', to: '/items' },
+      scrollTarget: true,
     },
     {
       key: 'work-orders',
@@ -387,317 +389,43 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <Section title="Attention required" description="Critical items that need action now.">
-        <div className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {attentionTiles.map((tile) => (
-              <Card key={tile.key} className="h-full">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">{tile.title}</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-900">{tile.count}</p>
-                    <p className="mt-1 text-xs text-slate-500">{tile.helper}</p>
-                  </div>
-                  <Badge variant={tile.signal.variant}>{tile.signal.label}</Badge>
-                </div>
-                <div className="mt-3">
-                  {tile.key === 'availability' || tile.key === 'reorders' ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        const target = document.getElementById('attention-list')
-                        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                      }}
-                    >
-                      {tile.cta.label}
-                    </Button>
-                  ) : (
-                    <Link to={tile.cta.to}>
-                      <Button size="sm" variant="secondary">
-                        {tile.cta.label}
-                      </Button>
-                    </Link>
-                  )}
-                </div>
-              </Card>
-            ))}
-          </div>
+      <AttentionRequiredSection
+        tiles={attentionTiles}
+        exceptionLoading={exceptionLoading}
+        exceptionError={exceptionError}
+        reorderNeeded={reorderNeeded}
+        availabilityIssues={availabilityIssues}
+        formatItem={formatItem}
+        formatLocation={formatLocation}
+        onRetry={() => {
+          void recommendationsQuery.refetch()
+          void inventorySummaryQuery.refetch()
+        }}
+      />
 
-          <Card title="Resolution queue" description="Resolve exceptions and commitments before moving on.">
-            {exceptionLoading && <LoadingSpinner label="Scanning for exceptions..." />}
-            {exceptionError && (
-              <Alert
-                variant="error"
-                title="Could not load exceptions"
-                message="Retry to refresh recommendations and inventory coverage."
-                action={
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      void recommendationsQuery.refetch()
-                      void inventorySummaryQuery.refetch()
-                    }}
-                  >
-                    Retry
-                  </Button>
-                }
-              />
-            )}
-            {!exceptionLoading && !exceptionError && reorderNeeded.length === 0 && availabilityIssueCount === 0 && (
-              <Alert
-                variant="success"
-                title="No immediate exceptions"
-                message="No reorder flags and no zero/negative availability detected."
-              />
-            )}
-            {!exceptionLoading &&
-              !exceptionError &&
-              (reorderNeeded.length > 0 || availabilityIssueCount > 0) && (
-                <div id="attention-list" className="divide-y divide-slate-200">
-                  <div className="py-2 text-xs text-slate-500">
-                    Exceptions only. Open Item → Stock for authoritative totals.
-                  </div>
-                  {reorderNeeded.slice(0, 5).map((rec) => {
-                    const threshold =
-                      rec.policyType === 'q_rop'
-                        ? rec.inputs.reorderPointQty ?? 0
-                        : rec.inputs.orderUpToLevelQty ?? 0
-                    const gap = rec.inventory.inventoryPosition - threshold
-                    const poLink = `/purchase-orders/new?itemId=${encodeURIComponent(rec.itemId)}&locationId=${encodeURIComponent(
-                      rec.locationId,
-                    )}&qty=${encodeURIComponent(
-                      String(rec.recommendation.recommendedOrderQty),
-                    )}&uom=${encodeURIComponent(rec.uom)}`
-                    return (
-                      <div key={`reorder-${rec.policyId}`} className="py-3">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="danger">Action required</Badge>
-                              <span className="text-xs font-semibold uppercase text-slate-500">Reorder</span>
-                            </div>
-                            <p className="text-sm font-semibold text-slate-900">
-                              Reorder: {formatItem(rec.itemId)} @ {formatLocation(rec.locationId)}
-                            </p>
-                            <p className="text-xs text-slate-600">
-                              Inventory position {formatNumber(rec.inventory.inventoryPosition)} vs threshold{' '}
-                              {formatNumber(threshold)} · gap {formatNumber(Math.abs(gap))}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              Policy {rec.policyType} · Recommend order{' '}
-                              {formatNumber(rec.recommendation.recommendedOrderQty)} {rec.uom}{' '}
-                              {rec.recommendation.recommendedOrderDate
-                                ? `by ${rec.recommendation.recommendedOrderDate}`
-                                : ''}
-                            </p>
-                          </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <Link to={poLink}>
-                              <Button size="sm" variant="secondary">
-                                Create PO
-                              </Button>
-                            </Link>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {availabilityIssues.map((row) => {
-                    const availabilitySeverity = row.available < 0 || row.inventoryPosition < 0
-                    const availabilityLabel = availabilitySeverity ? 'Action required' : 'Watch'
-                    const availabilityVariant = availabilitySeverity ? 'danger' : 'warning'
-                    const itemLink = `/items/${row.itemId}?locationId=${encodeURIComponent(row.locationId)}`
-                    return (
-                      <div key={`avail-${row.itemId}-${row.locationId}-${row.uom}`} className="py-3">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant={availabilityVariant}>{availabilityLabel}</Badge>
-                              <span className="text-xs font-semibold uppercase text-slate-500">Availability</span>
-                            </div>
-                            <p className="text-sm font-semibold text-slate-900">
-                              Low/negative availability: {formatItem(row.itemId)} @ {formatLocation(row.locationId)}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              Open Item → Stock for definitive on-hand, availability, and incoming.
-                            </p>
-                          </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <Link to={itemLink}>
-                              <Button size="sm" variant="secondary">
-                                Investigate
-                              </Button>
-                            </Link>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-          </Card>
-        </div>
-      </Section>
-
-      <Section
-        title="Flow health"
-        description="Signals that show how inventory is moving and where it could stall next."
-      >
-        <div className="space-y-4">
-          <Card
-            title="Work in progress at risk"
-            description="Largest remaining quantities across open work orders."
-            action={
-              <Link to="/work-orders">
-                <Button size="sm" variant="secondary">
-                  View work orders
-                </Button>
-              </Link>
-            }
-          >
-            {productionQuery.isLoading && <LoadingSpinner label="Loading production summary..." />}
-            {productionQuery.isError && productionQuery.error && (
-              <ErrorState error={productionQuery.error as ApiError} onRetry={() => void productionQuery.refetch()} />
-            )}
-            {!productionQuery.isLoading && !productionQuery.isError && productionAtRisk.length === 0 && (
-              <EmptyState
-                title="No open work orders"
-                description="When work orders have remaining quantities, they will appear here."
-              />
-            )}
-            {!productionQuery.isLoading && !productionQuery.isError && productionAtRisk.length > 0 && (
-              <div className="overflow-hidden rounded-lg border border-slate-200">
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Item to make
-                      </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Planned qty
-                      </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Completed
-                      </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Remaining
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white">
-                    {productionAtRisk.map((row) => (
-                      <tr key={`${row.itemId}-${row.uom}`}>
-                        <td className="px-3 py-2 text-sm text-slate-800">
-                          <Link
-                            to={`/work-orders?itemId=${encodeURIComponent(row.itemId)}`}
-                            className="text-brand-700 hover:underline"
-                          >
-                            {formatItem(row.itemId)}
-                          </Link>
-                        </td>
-                        <td className="px-3 py-2 text-right text-sm text-slate-800">
-                          {row.planned} {row.uom}
-                        </td>
-                        <td className="px-3 py-2 text-right text-sm text-slate-800">
-                          {row.completed} {row.uom}
-                        </td>
-                        <td className="px-3 py-2 text-right text-sm text-slate-800">
-                          {row.remaining} {row.uom}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-
-          <Card
-            title="Availability hot spots"
-            description="Exceptions only. Open Item → Stock for authoritative totals."
-            action={
-              <Link to="/items">
-                <Button size="sm" variant="secondary">
-                  Browse items
-                </Button>
-              </Link>
-            }
-          >
-            {inventoryLoading && <LoadingSpinner label="Loading inventory..." />}
-            {inventoryError && (
-              <ErrorState
-                error={
-                  (inventorySummaryQuery.error as ApiError) ||
-                  (itemsQuery.error as ApiError) ||
-                  (locationsQuery.error as ApiError)
-                }
-                onRetry={() => {
-                  void inventorySummaryQuery.refetch()
-                  void itemsQuery.refetch()
-                  void locationsQuery.refetch()
-                }}
-              />
-            )}
-            {!inventoryLoading && !inventoryError && availabilityIssues.length === 0 && (
-              <EmptyState
-                title="No availability risks"
-                description="No low/negative availability detected in the current snapshot."
-              />
-            )}
-            {!inventoryLoading && !inventoryError && availabilityIssues.length > 0 && (
-              <div className="divide-y divide-slate-200">
-                {availabilityIssues.map((row) => {
-                  const availabilitySeverity = row.available < 0 || row.inventoryPosition < 0
-                  const availabilityLabel = availabilitySeverity ? 'Action required' : 'Watch'
-                  const availabilityVariant = availabilitySeverity ? 'danger' : 'warning'
-                  const itemLink = `/items/${row.itemId}?locationId=${encodeURIComponent(row.locationId)}`
-                  return (
-                    <div key={`hotspot-${row.itemId}-${row.locationId}-${row.uom}`} className="py-3">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={availabilityVariant}>{availabilityLabel}</Badge>
-                            <span className="text-xs font-semibold uppercase text-slate-500">Availability</span>
-                          </div>
-                          <p className="text-sm font-semibold text-slate-900">
-                            Risk at {formatItem(row.itemId)} @ {formatLocation(row.locationId)}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            Open Item → Stock to see definitive on-hand and availability.
-                          </p>
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <Link to={itemLink}>
-                            <Button size="sm" variant="secondary">
-                              Open stock
-                            </Button>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </Card>
-
-          <Card
-            title="Fulfillment reliability"
-            description="Measured fill rate from shipped lines."
-            action={
-              <Link to="/shipments">
-                <Button size="sm" variant="secondary">
-                  Review shipments
-                </Button>
-              </Link>
-            }
-          >
-            {fillRateCard}
-          </Card>
-        </div>
-      </Section>
+      <FlowHealthSection
+        productionRows={productionAtRisk}
+        productionLoading={productionQuery.isLoading}
+        productionError={productionQuery.isError}
+        productionErrorObj={productionQuery.error as ApiError}
+        onProductionRetry={() => void productionQuery.refetch()}
+        availabilityIssues={availabilityIssues}
+        inventoryLoading={inventoryLoading}
+        inventoryError={inventoryError}
+        inventoryErrorObj={
+          (inventorySummaryQuery.error as ApiError) ||
+          (itemsQuery.error as ApiError) ||
+          (locationsQuery.error as ApiError)
+        }
+        onInventoryRetry={() => {
+          void inventorySummaryQuery.refetch()
+          void itemsQuery.refetch()
+          void locationsQuery.refetch()
+        }}
+        formatItem={formatItem}
+        formatLocation={formatLocation}
+        fillRateCard={fillRateCard}
+      />
 
       <Section title="Context" description="Secondary metrics and historical signals for deeper investigation.">
         <div className="space-y-4">
