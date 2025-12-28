@@ -27,6 +27,11 @@ const refreshSchema = z.object({
   tenantSlug: z.string().min(2).optional()
 });
 
+const profileUpdateSchema = z.object({
+  email: z.string().email().optional(),
+  fullName: z.string().optional()
+});
+
 function mapUser(row: any) {
   return {
     id: row.id,
@@ -325,6 +330,82 @@ router.get('/auth/me', requireAuth, async (req: Request, res: Response) => {
     tenant: mapTenant(membership),
     role: membership.role
   });
+});
+
+router.patch('/auth/me', requireAuth, async (req: Request, res: Response) => {
+  const auth = req.auth;
+  if (!auth) {
+    return res.status(401).json({ error: 'Unauthorized.' });
+  }
+
+  const parsed = profileUpdateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const emailInput = parsed.data.email?.trim();
+  const fullNameInput = parsed.data.fullName?.trim();
+
+  if (!emailInput && !fullNameInput && fullNameInput !== '') {
+    return res.status(400).json({ error: 'No profile changes provided.' });
+  }
+
+  if (emailInput && auth.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can update email.' });
+  }
+
+  try {
+    const updated = await withTransaction(async (client) => {
+      const userRes = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [auth.userId]);
+      if (userRes.rowCount === 0) {
+        throw new Error('USER_NOT_FOUND');
+      }
+      const existing = userRes.rows[0];
+      const nextEmail = emailInput ?? existing.email;
+      const nextFullName = fullNameInput === undefined ? existing.full_name : (fullNameInput || null);
+
+      if (emailInput) {
+        const dupRes = await client.query('SELECT id FROM users WHERE email = $1 AND id <> $2', [
+          nextEmail,
+          auth.userId
+        ]);
+        if (dupRes.rowCount > 0) {
+          throw new Error('USER_EMAIL_IN_USE');
+        }
+      }
+
+      const result = await client.query(
+        `UPDATE users
+            SET email = $1,
+                full_name = $2,
+                updated_at = now()
+          WHERE id = $3
+          RETURNING *`,
+        [nextEmail, nextFullName, auth.userId]
+      );
+      return result.rows[0];
+    });
+
+    const membership = await resolveMembership(auth.userId, auth.tenantId);
+    if (!membership) {
+      return res.status(404).json({ error: 'Membership not found.' });
+    }
+
+    return res.json({
+      user: mapUser(updated),
+      tenant: mapTenant(membership),
+      role: membership.role
+    });
+  } catch (error: any) {
+    if (error?.message === 'USER_NOT_FOUND') {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    if (error?.message === 'USER_EMAIL_IN_USE') {
+      return res.status(409).json({ error: 'Email is already in use.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update profile.' });
+  }
 });
 
 export default router;

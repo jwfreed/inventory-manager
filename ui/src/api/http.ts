@@ -131,5 +131,8 @@ export const apiPost = <T>(path: string, body?: unknown, options?: RequestOption
 export const apiPut = <T>(path: string, body?: unknown, options?: RequestOptions) =>
   request<T>(path, { ...options, method: 'PUT', body: JSON.stringify(body) })
 
+export const apiPatch = <T>(path: string, body?: unknown, options?: RequestOptions) =>
+  request<T>(path, { ...options, method: 'PATCH', body: JSON.stringify(body) })
+
 export const apiDelete = <T>(path: string, options?: RequestOptions) =>
   request<T>(path, { ...options, method: 'DELETE' })

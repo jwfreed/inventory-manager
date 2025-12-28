@@ -10,6 +10,7 @@ import { purchaseOrderRoutes } from '../features/purchaseOrders'
 import { receivingRoutes } from '../features/receiving'
 import { vendorRoutes } from '../features/vendors'
 import { workOrderRoutes } from '../features/workOrders'
+import { profileRoutes } from '../features/profile'
 
 const coreRoutes: AppRouteObject[] = [
   {
@@ -37,6 +38,7 @@ export const appShellRoutes: AppRouteObject[] = [
   ...itemRoutes,
   ...locationRoutes,
   ...orderToCashRoutes,
+  ...profileRoutes,
   {
     path: 'not-found',
     element: <NotFoundPage />,

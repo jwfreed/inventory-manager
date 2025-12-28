@@ -1,14 +1,15 @@
 import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { apiGet } from '../api/http'
 import type { ApiError } from '../api/types'
 import { Alert } from '../components/Alert'
+import { Badge } from '../components/Badge'
 import { Button } from '../components/Button'
 import { Card } from '../components/Card'
-import { EmptyState } from '../components/EmptyState'
 import { LoadingSpinner } from '../components/Loading'
 import { Section } from '../components/Section'
-import { Table } from '../components/Table'
+import { useAuth } from '../shared/auth'
 
 type ConnectivityResult =
   | { status: 'ok'; message: string }
@@ -51,6 +52,7 @@ async function fetchConnectivity(): Promise<ConnectivityResult> {
 }
 
 export default function HomePage() {
+  const { user, tenant, role } = useAuth()
   const {
     data: connectivity,
     isLoading,
@@ -72,15 +74,58 @@ export default function HomePage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Foundation</p>
-        <h2 className="text-2xl font-semibold text-slate-900">Welcome to the Inventory UI</h2>
+        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Home</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-2xl font-semibold text-slate-900">Start today&#39;s inventory work</h2>
+          {role && <Badge variant="info">{role}</Badge>}
+        </div>
         <p className="max-w-3xl text-sm text-slate-600">
-          Phase A focuses on a sturdy shell: consistent layout, routing, API plumbing, and a small
-          component kit. Domain screens will plug into this in later phases.
+          Jump into the most common workflows or check system status before you begin.
         </p>
+        {(user?.email || tenant?.name || tenant?.slug) && (
+          <div className="text-xs text-slate-500">
+            Signed in as {user?.fullName || user?.email || 'user'} · Tenant {tenant?.name || tenant?.slug || '—'}
+          </div>
+        )}
       </div>
 
-      <Section title="API connectivity" description="Quick reachability check to the backend.">
+      <Section title="Start work" description="Primary workflows for receiving, purchasing, and stock review.">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card title="Receive inbound" description="QC and putaway receipts.">
+            <Link to="/receiving">
+              <Button size="sm">Start receiving</Button>
+            </Link>
+          </Card>
+          <Card title="Purchase orders" description="Create or review open POs.">
+            <div className="flex gap-2">
+              <Link to="/purchase-orders/new">
+                <Button size="sm">Create PO</Button>
+              </Link>
+              <Link to="/purchase-orders">
+                <Button size="sm" variant="secondary">
+                  View list
+                </Button>
+              </Link>
+            </div>
+          </Card>
+          <Card title="Items & stock" description="Browse items and review stock summaries.">
+            <Link to="/items">
+              <Button size="sm" variant="secondary">
+                View items
+              </Button>
+            </Link>
+          </Card>
+          <Card title="Movement ledger" description="Explain inventory changes by movement.">
+            <Link to="/movements">
+              <Button size="sm" variant="secondary">
+                Open ledger
+              </Button>
+            </Link>
+          </Card>
+        </div>
+      </Section>
+
+      <Section title="System status" description="Quick reachability check to the backend.">
         <Card>
           {isLoading && <LoadingSpinner label="Checking API..." />}
           {isError && error && (
@@ -114,39 +159,6 @@ export default function HomePage() {
             />
           )}
         </Card>
-      </Section>
-
-      <Section
-        title="Design system primer"
-        description="A minimal set of reusable pieces to keep early pages consistent."
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card
-            title="Empty state"
-            description="Use when a dataset has no results or a feature is upcoming."
-          >
-            <EmptyState
-              title="Nothing here yet"
-              description="Future inventory and work order views will live here."
-              action={<Button disabled>Configure source</Button>}
-            />
-          </Card>
-
-          <Card title="Table" description="Simple table with stubbed pagination controls.">
-            <Table
-              columns={[
-                { header: 'Name', accessor: 'name' },
-                { header: 'Status', accessor: 'status' },
-                { header: 'Owner', accessor: 'owner' },
-              ]}
-              data={[
-                { name: 'Placeholder row', status: 'Draft', owner: 'Ops' },
-                { name: 'Another row', status: 'Planned', owner: 'Manufacturing' },
-              ]}
-              pagination={{ page: 1, pageCount: 1 }}
-            />
-          </Card>
-        </div>
       </Section>
     </div>
   )
