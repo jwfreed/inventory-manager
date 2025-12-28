@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
 import type { ApiError } from '@api/types'
 import { useInventorySnapshotSummary } from '@features/inventory/queries'
 import { useItemsList } from '@features/items/queries'
