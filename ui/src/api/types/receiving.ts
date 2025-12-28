@@ -42,6 +42,7 @@ export type PurchaseOrderReceipt = {
   id: string
   purchaseOrderId: string
   purchaseOrderNumber?: string
+  status?: 'posted' | 'voided'
   receivedAt: string
   receivedToLocationId?: string | null
   inventoryMovementId?: string | null

@@ -2,7 +2,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import {
   approvePurchaseOrder,
-  deletePurchaseOrderApi,
+  cancelPurchaseOrderApi,
   updatePurchaseOrder,
 } from '../api/purchaseOrders'
 import type { ApiError } from '@api/types'
@@ -179,10 +179,10 @@ export default function PurchaseOrderDetailPage() {
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: () => deletePurchaseOrderApi(id as string),
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelPurchaseOrderApi(id as string),
     onSuccess: () => {
-      navigate('/purchase-orders')
+      void poQuery.refetch()
     },
   })
 
@@ -250,6 +250,12 @@ export default function PurchaseOrderDetailPage() {
       dot: 'bg-slate-400',
       helper: 'Locked. Closed out.',
     },
+    canceled: {
+      label: 'Canceled',
+      variant: 'danger',
+      dot: 'bg-red-500',
+      helper: 'Canceled. No longer actionable.',
+    },
   }
   const currentStatus =
     statusMeta[statusKey] ?? {
@@ -260,6 +266,7 @@ export default function PurchaseOrderDetailPage() {
     }
   const isEditable = statusKey === 'draft'
   const isLocked = !isEditable
+  const isCancelable = ['draft', 'submitted', 'approved'].includes(statusKey)
   const poLines = po.lines ?? []
   const hasLines = poLines.length > 0
   const quantitiesValid = hasLines && poLines.every((line) => (line.quantityOrdered ?? 0) > 0)
@@ -274,7 +281,7 @@ export default function PurchaseOrderDetailPage() {
   const missingChecklist = checklist.filter((item) => !item.ok).map((item) => item.label)
   const isReadyToSubmit = missingChecklist.length === 0
   const isBusy =
-    updateMutation.isPending || submitMutation.isPending || approveMutation.isPending || deleteMutation.isPending
+    updateMutation.isPending || submitMutation.isPending || approveMutation.isPending || cancelMutation.isPending
 
   const handleSave = () => {
     setSaveMessage(null)
@@ -401,9 +408,13 @@ export default function PurchaseOrderDetailPage() {
             isBusy={isBusy}
             submitPending={submitMutation.isPending}
             savePending={updateMutation.isPending}
+            canCancel={isCancelable}
             onSubmitIntent={handleSubmitIntent}
             onSave={handleSave}
-            onDelete={() => deleteMutation.mutate()}
+            onCancel={() => {
+              if (!isCancelable) return
+              cancelMutation.mutate()
+            }}
           />
         </Card>
       </Section>

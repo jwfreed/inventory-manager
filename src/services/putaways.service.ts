@@ -46,6 +46,24 @@ type PutawayRow = {
   updated_at: string;
 };
 
+async function assertReceiptLinesNotVoided(tenantId: string, lineIds: string[]) {
+  if (lineIds.length === 0) return;
+  const { rows } = await query(
+    `SELECT prl.id, por.status
+       FROM purchase_order_receipt_lines prl
+       JOIN purchase_order_receipts por ON por.id = prl.purchase_order_receipt_id AND por.tenant_id = prl.tenant_id
+      WHERE prl.id = ANY($1::uuid[]) AND prl.tenant_id = $2`,
+    [lineIds, tenantId]
+  );
+  for (const row of rows) {
+    if (row.status === 'voided') {
+      const error: any = new Error('PUTAWAY_RECEIPT_VOIDED');
+      error.lineId = row.id;
+      throw error;
+    }
+  }
+}
+
 function mapPutawayLine(
   line: PutawayLineRow,
   context: ReceiptLineContext,
@@ -121,6 +139,7 @@ export async function fetchPutawayById(tenantId: string, id: string, client?: Po
 export async function createPutaway(tenantId: string, data: PutawayInput) {
   const lineIds = data.lines.map((line) => line.purchaseOrderReceiptLineId);
   const uniqueLineIds = Array.from(new Set(lineIds));
+  await assertReceiptLinesNotVoided(tenantId, uniqueLineIds);
   const contexts = await loadReceiptLineContexts(tenantId, uniqueLineIds);
   if (contexts.size !== uniqueLineIds.length) {
     throw new Error('PUTAWAY_LINES_NOT_FOUND');
@@ -267,6 +286,7 @@ export async function postPutaway(tenantId: string, id: string) {
     }
 
     const receiptLineIds = pendingLines.map((line) => line.purchase_order_receipt_line_id);
+    await assertReceiptLinesNotVoided(tenantId, receiptLineIds);
     const contexts = await loadReceiptLineContexts(tenantId, receiptLineIds);
     const qcBreakdown = await loadQcBreakdown(tenantId, receiptLineIds);
     const totals = await loadPutawayTotals(tenantId, receiptLineIds);

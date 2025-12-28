@@ -26,6 +26,7 @@ import drpRouter from './routes/drp.routes';
 import complianceRouter from './routes/compliance.routes';
 import eventsRouter from './routes/events.routes';
 import { requireAuth } from './middleware/auth.middleware';
+import { destructiveGuard } from './middleware/destructiveGuard.middleware';
 
 const PORT = Number(process.env.PORT) || 3000;
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
@@ -69,6 +70,7 @@ app.use(cookieParser());
 
 app.use(authRouter);
 app.use(requireAuth);
+app.use(destructiveGuard);
 
 // Refactor map:
 // - Vendors + Purchase Orders routes are defined under src/routes/*.routes.ts.

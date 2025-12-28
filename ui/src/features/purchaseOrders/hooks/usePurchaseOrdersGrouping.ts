@@ -8,6 +8,7 @@ const groupOrder = [
   { key: 'submitted', title: 'Submitted', description: 'Commitment sent. Awaiting approval.' },
   { key: 'approved', title: 'Approved', description: 'Authorized. Awaiting receipt.' },
   { key: 'closed', title: 'Closed / Received', description: 'Completed commitments.' },
+  { key: 'canceled', title: 'Canceled', description: 'Canceled commitments.' },
 ] as const
 
 export function usePurchaseOrdersGrouping(rows: PurchaseOrder[], statusFilter: string) {
@@ -17,6 +18,7 @@ export function usePurchaseOrdersGrouping(rows: PurchaseOrder[], statusFilter: s
       submitted: [] as PurchaseOrder[],
       approved: [] as PurchaseOrder[],
       closed: [] as PurchaseOrder[],
+      canceled: [] as PurchaseOrder[],
     }
     rows.forEach((po) => {
       const status = (po.status ?? '').toLowerCase()
@@ -28,6 +30,8 @@ export function usePurchaseOrdersGrouping(rows: PurchaseOrder[], statusFilter: s
         groups.approved.push(po)
       } else if (status === 'received' || status === 'closed') {
         groups.closed.push(po)
+      } else if (status === 'canceled') {
+        groups.canceled.push(po)
       } else {
         groups.submitted.push(po)
       }

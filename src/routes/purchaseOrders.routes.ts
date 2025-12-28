@@ -2,8 +2,8 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import {
   approvePurchaseOrder,
+  cancelPurchaseOrder,
   createPurchaseOrder,
-  deletePurchaseOrder,
   getPurchaseOrderById,
   listPurchaseOrders,
   updatePurchaseOrder
@@ -36,6 +36,9 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
     });
     return res.status(201).json(purchaseOrder);
   } catch (error: any) {
+    if (error?.message?.startsWith?.('PO_SUBMIT_')) {
+      return res.status(409).json({ error: 'Purchase order is not ready to submit.' });
+    }
     if (error?.message === 'PO_DUPLICATE_LINE_NUMBERS') {
       return res.status(400).json({ error: 'Line numbers must be unique within a purchase order.' });
     }
@@ -107,6 +110,27 @@ router.put('/purchase-orders/:id', async (req: Request, res: Response) => {
     if (error?.message === 'PO_NOT_FOUND') {
       return res.status(404).json({ error: 'Purchase order not found.' });
     }
+    if (error?.message === 'PO_LINES_LOCKED') {
+      return res.status(409).json({ error: 'Purchase order lines are locked after submission.' });
+    }
+    if (error?.message === 'PO_EDIT_LOCKED') {
+      return res.status(409).json({ error: 'Purchase order is locked after submission.' });
+    }
+    if (error?.message === 'PO_STATUS_INVALID_TRANSITION') {
+      return res.status(409).json({ error: 'Invalid purchase order status transition.' });
+    }
+    if (error?.message === 'PO_CANCEL_USE_ENDPOINT') {
+      return res.status(409).json({ error: 'Use the cancel endpoint to cancel a purchase order.' });
+    }
+    if (error?.message === 'PO_APPROVE_USE_ENDPOINT') {
+      return res.status(409).json({ error: 'Use the approve endpoint to approve a purchase order.' });
+    }
+    if (error?.message === 'PO_STATUS_MANAGED_BY_RECEIPTS') {
+      return res.status(409).json({ error: 'Purchase order status is managed by receipts.' });
+    }
+    if (error?.message?.startsWith?.('PO_SUBMIT_')) {
+      return res.status(409).json({ error: 'Purchase order is not ready to submit.' });
+    }
     const mapped = mapPgErrorToHttp(error, {
       foreignKey: () => ({ status: 400, body: { error: 'Referenced vendor, item, or location does not exist.' } })
     });
@@ -154,18 +178,36 @@ router.post('/purchase-orders/:id/approve', async (req: Request, res: Response) 
 });
 
 router.delete('/purchase-orders/:id', async (req: Request, res: Response) => {
+  return res
+    .status(409)
+    .json({ error: 'Purchase order deletes are disabled. Use the cancel endpoint instead.' });
+});
+
+router.post('/purchase-orders/:id/cancel', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid purchase order id.' });
   }
   try {
     const tenantId = req.auth!.tenantId;
-    await deletePurchaseOrder(tenantId, id);
-    emitEvent(tenantId, 'inventory.purchase_order.deleted', { purchaseOrderId: id });
-    return res.status(204).send();
-  } catch (error) {
+    const po = await cancelPurchaseOrder(tenantId, id, { type: 'user', id: req.auth!.userId });
+    emitEvent(tenantId, 'inventory.purchase_order.canceled', { purchaseOrderId: id, status: po.status });
+    return res.json(po);
+  } catch (error: any) {
+    if (error?.message === 'PO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Purchase order not found.' });
+    }
+    if (error?.message === 'PO_ALREADY_CANCELED') {
+      return res.status(409).json({ error: 'Purchase order already canceled.' });
+    }
+    if (error?.message === 'PO_NOT_ELIGIBLE') {
+      return res.status(409).json({ error: 'Purchase order cannot be canceled in its current state.' });
+    }
+    if (error?.message === 'PO_HAS_RECEIPTS') {
+      return res.status(409).json({ error: 'Purchase order has receipts and cannot be canceled.' });
+    }
     console.error(error);
-    return res.status(500).json({ error: 'Failed to delete purchase order.' });
+    return res.status(500).json({ error: 'Failed to cancel purchase order.' });
   }
 });
 

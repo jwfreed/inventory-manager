@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiDelete } from '../../../api/http'
+import { apiGet, apiPost, apiPut } from '../../../api/http'
 import type { PurchaseOrder } from '../../../api/types'
 
 export type PurchaseOrderListResponse = {
@@ -22,8 +22,8 @@ export async function approvePurchaseOrder(id: string): Promise<PurchaseOrder> {
   return apiPost<PurchaseOrder>(`/purchase-orders/${id}/approve`, {})
 }
 
-export async function deletePurchaseOrderApi(id: string): Promise<void> {
-  await apiDelete(`/purchase-orders/${id}`)
+export async function cancelPurchaseOrderApi(id: string): Promise<PurchaseOrder> {
+  return apiPost<PurchaseOrder>(`/purchase-orders/${id}/cancel`, {})
 }
 
 export type PurchaseOrderCreateInput = {

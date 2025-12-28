@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
-import { createPurchaseOrderReceipt, deleteReceipt, fetchReceiptById, listReceipts } from '../services/receipts.service';
+import { createPurchaseOrderReceipt, fetchReceiptById, listReceipts, voidReceipt } from '../services/receipts.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 
@@ -108,21 +108,36 @@ router.get('/purchase-order-receipts', async (req: Request, res: Response) => {
 });
 
 router.delete('/purchase-order-receipts/:id', async (req: Request, res: Response) => {
+  return res
+    .status(409)
+    .json({ error: 'Receipt deletes are disabled. Use the void endpoint instead.' });
+});
+
+router.post('/purchase-order-receipts/:id/void', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid receipt id.' });
   }
   try {
     const tenantId = req.auth!.tenantId;
-    await deleteReceipt(tenantId, id);
-    emitEvent(tenantId, 'inventory.receipt.deleted', { receiptId: id });
-    return res.status(204).send();
+    const receipt = await voidReceipt(tenantId, id, {
+      type: 'user',
+      id: req.auth!.userId
+    });
+    emitEvent(tenantId, 'inventory.receipt.voided', { receiptId: id });
+    return res.json(receipt);
   } catch (error: any) {
+    if (error?.message === 'RECEIPT_NOT_FOUND') {
+      return res.status(404).json({ error: 'Receipt not found.' });
+    }
+    if (error?.message === 'RECEIPT_ALREADY_VOIDED') {
+      return res.status(409).json({ error: 'Receipt is already voided.' });
+    }
     if (error?.message === 'RECEIPT_HAS_PUTAWAYS_POSTED') {
-      return res.status(409).json({ error: 'Receipt has posted putaway lines and cannot be deleted.' });
+      return res.status(409).json({ error: 'Receipt has posted putaway lines and cannot be voided.' });
     }
     console.error(error);
-    return res.status(500).json({ error: 'Failed to delete receipt.' });
+    return res.status(500).json({ error: 'Failed to void receipt.' });
   }
 });
 

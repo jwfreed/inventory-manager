@@ -5,7 +5,7 @@ import { Button, Card, DataTable } from '@shared/ui'
 const staleDraftReferenceTime = Date.now()
 
 type Group = {
-  key: 'draft' | 'submitted' | 'approved' | 'closed'
+  key: 'draft' | 'submitted' | 'approved' | 'closed' | 'canceled'
   title: string
   description: string
 }
@@ -101,6 +101,7 @@ export function PurchaseOrdersGroupTable({
                 const isSubmitted = status === 'submitted'
                 const isApproved = status === 'approved'
                 const isPartiallyReceived = status === 'partially_received'
+                const isCanceled = status === 'canceled'
                 return isDraft
                   ? 'Complete draft'
                   : isSubmitted
@@ -109,6 +110,8 @@ export function PurchaseOrdersGroupTable({
                   ? isPartiallyReceived
                     ? 'Receive remaining'
                     : 'Receive items'
+                  : isCanceled
+                  ? 'Canceled'
                   : 'Closed'
               },
             },

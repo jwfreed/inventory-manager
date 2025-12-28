@@ -8,9 +8,10 @@ type Props = {
   isBusy: boolean
   submitPending: boolean
   savePending: boolean
+  canCancel: boolean
   onSubmitIntent: () => void
   onSave: () => void
-  onDelete: () => void
+  onCancel: () => void
 }
 
 export function PurchaseOrderActionBar({
@@ -20,9 +21,10 @@ export function PurchaseOrderActionBar({
   isBusy,
   submitPending,
   savePending,
+  canCancel,
   onSubmitIntent,
   onSave,
-  onDelete,
+  onCancel,
 }: Props) {
   return (
     <div className="mt-4 flex flex-wrap gap-2">
@@ -34,18 +36,20 @@ export function PurchaseOrderActionBar({
       <Button size="sm" variant="secondary" onClick={onSave} disabled={isLocked || isBusy}>
         {savePending ? 'Saving…' : 'Save draft'}
       </Button>
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() => {
-          if (confirm('Delete this purchase order?')) {
-            onDelete()
-          }
-        }}
-        disabled={isBusy}
-      >
-        Delete
-      </Button>
+      {canCancel && (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            if (confirm('Cancel this purchase order?')) {
+              onCancel()
+            }
+          }}
+          disabled={isBusy}
+        >
+          Cancel
+        </Button>
+      )}
       <Link to="/purchase-orders">
         <Button variant="secondary" size="sm">
           Back to list

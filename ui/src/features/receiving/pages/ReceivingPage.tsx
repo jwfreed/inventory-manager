@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createReceipt, type ReceiptCreatePayload, deleteReceiptApi } from '../api/receipts'
+import { createReceipt, type ReceiptCreatePayload, voidReceiptApi } from '../api/receipts'
 import { createPutaway, postPutaway, type PutawayCreatePayload } from '../api/putaways'
 import { createQcEvent, type QcEventCreatePayload } from '../api/qc'
 import type { ApiError, QcEvent } from '@api/types'
@@ -112,6 +112,8 @@ export default function ReceivingPage() {
       'Select a receipt before creating a putaway.',
     'One or more receipt lines were not found.':
       'One or more receipt lines are invalid. Reload the receipt and try again.',
+    'Receipt is voided; putaway cannot be created.':
+      'This receipt is voided. Putaway is locked.',
   }
 
   const putawayPostErrorMap: Record<string, string> = {
@@ -129,6 +131,8 @@ export default function ReceivingPage() {
       'Reduce quantities or record QC acceptance before posting.',
     'Requested putaway quantity exceeds accepted quantity.':
       'Reduce quantities or record QC acceptance before posting.',
+    'Receipt is voided; putaway cannot be posted.':
+      'This receipt is voided. Putaway is locked.',
   }
 
   const mapErrorMessage = (message: string, map: Record<string, string>) => {
@@ -182,6 +186,8 @@ export default function ReceivingPage() {
       'Enter a quantity greater than zero.',
     'Receipt line has no receiving location to post accepted inventory.':
       'Set a receiving/staging location on the PO before recording acceptance.',
+    'Receipt is voided; QC events are not allowed.':
+      'This receipt is voided. QC events are locked.',
   }
 
   const qcEventMutation = useMutation({
@@ -289,8 +295,8 @@ export default function ReceivingPage() {
       void recentReceiptsQuery.refetch()
     },
   })
-  const deleteReceiptMutation = useMutation({
-    mutationFn: (id: string) => deleteReceiptApi(id),
+  const voidReceiptMutation = useMutation({
+    mutationFn: (id: string) => voidReceiptApi(id),
     onSuccess: () => {
       void recentReceiptsQuery.refetch()
       if (receiptIdForPutaway) updateReceiptIdForPutaway('')
@@ -612,7 +618,7 @@ export default function ReceivingPage() {
                 >
                   <option value="">Select PO</option>
                   {poListQuery.data?.data
-                    .filter((po) => po.status !== 'received' && po.status !== 'closed')
+                    .filter((po) => po.status !== 'received' && po.status !== 'closed' && po.status !== 'canceled')
                     .map((po) => (
                       <option key={po.id} value={po.id}>
                         {po.poNumber} ({po.status})
@@ -731,8 +737,8 @@ export default function ReceivingPage() {
               <RecentReceiptsTable
                 receipts={recentReceiptsQuery.data?.data ?? []}
                 onLoad={updateReceiptIdForPutaway}
-                onDelete={(id) => deleteReceiptMutation.mutate(id)}
-                deleteDisabled={deleteReceiptMutation.isPending}
+                onVoid={(id) => voidReceiptMutation.mutate(id)}
+                voidDisabled={voidReceiptMutation.isPending}
               />
             </div>
           )}

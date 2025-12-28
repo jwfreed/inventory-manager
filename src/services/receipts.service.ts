@@ -14,6 +14,7 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
 import { query as baseQuery } from '../db';
 import { updatePoStatusFromReceipts } from './status/purchaseOrdersStatus.service';
+import { recordAuditLog } from '../lib/audit';
 
 type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
 
@@ -77,6 +78,7 @@ function mapReceipt(
     id: row.id,
     purchaseOrderId: row.purchase_order_id,
     purchaseOrderNumber: row.po_number ?? null,
+    status: row.status ?? 'posted',
     receivedAt: row.received_at,
     receivedToLocationId: row.received_to_location_id,
     inventoryMovementId: row.inventory_movement_id,
@@ -188,13 +190,14 @@ export async function createPurchaseOrderReceipt(tenantId: string, data: Purchas
   await withTransaction(async (client) => {
     await client.query(
       `INSERT INTO purchase_order_receipts (
-          id, tenant_id, purchase_order_id, received_at, received_to_location_id,
+          id, tenant_id, purchase_order_id, status, received_at, received_to_location_id,
           inventory_movement_id, external_ref, notes
        ) VALUES ($1, $2, $3, $4, $5, NULL, $6, $7)`,
       [
         receiptId,
         tenantId,
         data.purchaseOrderId,
+        'posted',
         new Date(data.receivedAt),
         resolvedReceivedToLocationId,
         data.externalRef ?? null,
@@ -226,6 +229,7 @@ export async function listReceipts(tenantId: string, limit = 20, offset = 0) {
     `SELECT por.id,
             por.purchase_order_id AS "purchaseOrderId",
             po.po_number AS "purchaseOrderNumber",
+            por.status AS "status",
             por.received_at AS "receivedAt",
             por.received_to_location_id AS "receivedToLocationId",
             por.inventory_movement_id AS "inventoryMovementId",
@@ -293,6 +297,63 @@ export async function deleteReceipt(tenantId: string, id: string) {
       [id, tenantId]
     );
     await client.query('DELETE FROM purchase_order_receipts WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+  });
+}
+
+export async function voidReceipt(tenantId: string, id: string, actor: { type: 'user' | 'system'; id?: string | null }) {
+  return withTransaction(async (client) => {
+    const receiptResult = await client.query(
+      'SELECT id, status FROM purchase_order_receipts WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+      [id, tenantId]
+    );
+    if (receiptResult.rowCount === 0) {
+      throw new Error('RECEIPT_NOT_FOUND');
+    }
+    const receipt = receiptResult.rows[0];
+    if (receipt.status === 'voided') {
+      throw new Error('RECEIPT_ALREADY_VOIDED');
+    }
+
+    const { rows: putawayRefs } = await client.query(
+      `SELECT pl.id,
+              pl.status AS line_status,
+              p.status AS putaway_status,
+              pl.inventory_movement_id
+         FROM putaway_lines pl
+         JOIN putaways p ON p.id = pl.putaway_id AND p.tenant_id = pl.tenant_id
+        WHERE pl.purchase_order_receipt_line_id IN (
+              SELECT id FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1 AND tenant_id = $2
+            )
+          AND pl.tenant_id = $2`,
+      [id, tenantId]
+    );
+    if (putawayRefs.length > 0) {
+      const hasPosted = putawayRefs.some(
+        (r) => r.line_status === 'completed' || r.putaway_status === 'completed' || r.inventory_movement_id
+      );
+      if (hasPosted) {
+        throw new Error('RECEIPT_HAS_PUTAWAYS_POSTED');
+      }
+    }
+
+    await client.query(
+      `UPDATE purchase_order_receipts
+          SET status = 'voided'
+        WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId]
+    );
+
+    await recordAuditLog({
+      tenantId,
+      actorType: actor.type,
+      actorId: actor.id ?? null,
+      action: 'update',
+      entityType: 'purchase_order_receipt',
+      entityId: id,
+      metadata: { statusFrom: receipt.status, statusTo: 'voided' }
+    }, client);
+
+    return fetchReceiptById(tenantId, id, client);
   });
 }
 async function findDefaultReceivingLocation(tenantId: string): Promise<string | null> {

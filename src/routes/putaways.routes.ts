@@ -40,6 +40,9 @@ router.post('/putaways', async (req: Request, res: Response) => {
     if (error?.message === 'PUTAWAY_RECEIPT_REQUIRED') {
       return res.status(400).json({ error: 'purchaseOrderReceiptId is required for receipt-based putaways.' });
     }
+    if (error?.message === 'PUTAWAY_RECEIPT_VOIDED') {
+      return res.status(409).json({ error: 'Receipt is voided; putaway cannot be created.' });
+    }
     if (error?.message === 'PUTAWAY_NOT_FOUND_AFTER_CREATE') {
       return res.status(500).json({ error: 'Putaway was created but could not be reloaded.' });
     }
@@ -121,6 +124,9 @@ router.post('/putaways/:id/post', async (req: Request, res: Response) => {
     }
     if (error?.message === 'PUTAWAY_QC_BLOCKED') {
       return res.status(409).json({ error: 'QC hold or missing acceptance prevents posting this putaway.' });
+    }
+    if (error?.message === 'PUTAWAY_RECEIPT_VOIDED') {
+      return res.status(409).json({ error: 'Receipt is voided; putaway cannot be posted.' });
     }
     if (error?.message === 'PUTAWAY_QUANTITY_EXCEEDED') {
       return res.status(409).json({ error: 'Putaway quantity exceeds available accepted quantity.' });

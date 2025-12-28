@@ -30,6 +30,7 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
               prl.uom,
               prl.quantity_received,
               por.received_to_location_id,
+              por.status AS receipt_status,
               pol.item_id
          FROM purchase_order_receipt_lines prl
          JOIN purchase_order_receipts por ON por.id = prl.purchase_order_receipt_id AND por.tenant_id = prl.tenant_id
@@ -42,6 +43,9 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
       throw new Error('QC_LINE_NOT_FOUND');
     }
     const line = lineResult.rows[0];
+    if (line.receipt_status === 'voided') {
+      throw new Error('QC_RECEIPT_VOIDED');
+    }
     if (line.uom !== data.uom) {
       throw new Error('QC_UOM_MISMATCH');
     }

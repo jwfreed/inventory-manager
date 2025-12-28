@@ -4,12 +4,45 @@ import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
 import type { purchaseOrderSchema, purchaseOrderLineSchema, purchaseOrderUpdateSchema } from '../schemas/purchaseOrders.schema';
 import { normalizeQuantityByUom } from '../lib/uom';
+import { recordAuditLog } from '../lib/audit';
 
 export type PurchaseOrderInput = z.infer<typeof purchaseOrderSchema>;
 export type PurchaseOrderLineInput = z.infer<typeof purchaseOrderLineSchema>;
 export type PurchaseOrderUpdateInput = z.infer<typeof purchaseOrderUpdateSchema>;
 
 const shouldAutoApprove = () => process.env.NODE_ENV !== 'production';
+
+type PurchaseOrderStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved'
+  | 'partially_received'
+  | 'received'
+  | 'closed'
+  | 'canceled';
+
+function validateReadyForSubmit(input: {
+  vendorId?: string | null;
+  shipToLocationId?: string | null;
+  receivingLocationId?: string | null;
+  expectedDate?: string | null;
+  lines?: { quantityOrdered?: number | null }[];
+}) {
+  if (!input.vendorId) throw new Error('PO_SUBMIT_MISSING_VENDOR');
+  if (!input.shipToLocationId) throw new Error('PO_SUBMIT_MISSING_SHIP_TO');
+  if (!input.receivingLocationId) throw new Error('PO_SUBMIT_MISSING_RECEIVING');
+  if (!input.expectedDate) throw new Error('PO_SUBMIT_MISSING_EXPECTED_DATE');
+  if (!input.lines || input.lines.length === 0) throw new Error('PO_SUBMIT_MISSING_LINES');
+  const hasInvalidQty = input.lines.some((line) => (line.quantityOrdered ?? 0) <= 0);
+  if (hasInvalidQty) throw new Error('PO_SUBMIT_INVALID_QUANTITY');
+}
+
+function assertAllowedStatusTransition(current: PurchaseOrderStatus, requested: PurchaseOrderStatus) {
+  if (current === requested) return;
+  if (current === 'draft' && requested === 'submitted') return;
+  if (current === 'submitted' && requested === 'approved') return;
+  throw new Error('PO_STATUS_INVALID_TRANSITION');
+}
 
 export function mapPurchaseOrder(row: any, lines: any[]) {
   return {
@@ -103,6 +136,16 @@ export async function createPurchaseOrder(tenantId: string, data: PurchaseOrderI
   const status = requestedStatus === 'submitted' && shouldAutoApprove() ? 'approved' : requestedStatus;
   const normalizedLines = normalizePurchaseOrderLines(data.lines);
 
+  if (requestedStatus === 'submitted' || requestedStatus === 'approved') {
+    validateReadyForSubmit({
+      vendorId: data.vendorId,
+      shipToLocationId: data.shipToLocationId ?? null,
+      receivingLocationId: data.receivingLocationId ?? null,
+      expectedDate: data.expectedDate ?? null,
+      lines: normalizedLines
+    });
+  }
+
   return withTransaction(async (client) => {
     const poNumber = (data.poNumber ?? '').trim() || (await generatePoNumber(client));
     const insertedOrder = await client.query(
@@ -163,8 +206,45 @@ export async function updatePurchaseOrder(tenantId: string, id: string, data: Pu
     if (poResult.rowCount === 0) {
       throw new Error('PO_NOT_FOUND');
     }
-    const currentStatus = poResult.rows[0]?.status ?? 'draft';
-    const requestedStatus = data.status ?? currentStatus;
+    const currentStatus = (poResult.rows[0]?.status ?? 'draft') as PurchaseOrderStatus;
+    const requestedStatus = (data.status ?? currentStatus) as PurchaseOrderStatus;
+
+    if (data.status === 'canceled') {
+      throw new Error('PO_CANCEL_USE_ENDPOINT');
+    }
+    if (data.status === 'approved' && currentStatus !== 'submitted') {
+      throw new Error('PO_APPROVE_USE_ENDPOINT');
+    }
+    if (data.status === 'received' || data.status === 'closed' || data.status === 'partially_received') {
+      throw new Error('PO_STATUS_MANAGED_BY_RECEIPTS');
+    }
+
+    assertAllowedStatusTransition(currentStatus, requestedStatus === 'approved' && shouldAutoApprove() ? 'approved' : requestedStatus);
+
+    if (currentStatus !== 'draft') {
+      const attemptedStructuralChange =
+        data.vendorId !== undefined ||
+        data.orderDate !== undefined ||
+        data.expectedDate !== undefined ||
+        data.shipToLocationId !== undefined ||
+        data.receivingLocationId !== undefined ||
+        normalizedLines !== null;
+      if (attemptedStructuralChange) {
+        throw new Error(normalizedLines ? 'PO_LINES_LOCKED' : 'PO_EDIT_LOCKED');
+      }
+    }
+
+    if (requestedStatus === 'submitted') {
+      const existingLines = normalizedLines ?? (await loadLinesWithItems(client, tenantId, id));
+      validateReadyForSubmit({
+        vendorId: data.vendorId ?? poResult.rows[0]?.vendor_id,
+        shipToLocationId: data.shipToLocationId ?? poResult.rows[0]?.ship_to_location_id ?? null,
+        receivingLocationId: data.receivingLocationId ?? poResult.rows[0]?.receiving_location_id ?? null,
+        expectedDate: data.expectedDate ?? poResult.rows[0]?.expected_date ?? null,
+        lines: existingLines.map((line) => ({ quantityOrdered: line.quantity_ordered }))
+      });
+    }
+
     const status = requestedStatus === 'submitted' && shouldAutoApprove() ? 'approved' : requestedStatus;
 
     const updated = await client.query(
@@ -229,6 +309,62 @@ export async function deletePurchaseOrder(tenantId: string, id: string) {
       tenantId
     ]);
     await client.query('DELETE FROM purchase_orders WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+  });
+}
+
+export async function cancelPurchaseOrder(
+  tenantId: string,
+  id: string,
+  actor: { type: 'user' | 'system'; id?: string | null }
+) {
+  return withTransaction(async (client) => {
+    const poResult = await client.query('SELECT id, status FROM purchase_orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE', [
+      id,
+      tenantId
+    ]);
+    if (poResult.rowCount === 0) {
+      throw new Error('PO_NOT_FOUND');
+    }
+    const po = poResult.rows[0];
+    if (po.status === 'canceled') {
+      throw new Error('PO_ALREADY_CANCELED');
+    }
+    if (po.status === 'received' || po.status === 'closed') {
+      throw new Error('PO_NOT_ELIGIBLE');
+    }
+
+    const receiptResult = await client.query(
+      'SELECT id FROM purchase_order_receipts WHERE purchase_order_id = $1 AND tenant_id = $2 LIMIT 1',
+      [id, tenantId]
+    );
+    if (receiptResult.rowCount > 0) {
+      throw new Error('PO_HAS_RECEIPTS');
+    }
+
+    const updated = await client.query(
+      `UPDATE purchase_orders
+          SET status = 'canceled',
+              updated_at = $1
+        WHERE id = $2 AND tenant_id = $3
+        RETURNING *`,
+      [new Date(), id, tenantId]
+    );
+
+    await recordAuditLog(
+      {
+        tenantId,
+        actorType: actor.type,
+        actorId: actor.id ?? null,
+        action: 'update',
+        entityType: 'purchase_order',
+        entityId: id,
+        metadata: { statusFrom: po.status, statusTo: 'canceled' }
+      },
+      client
+    );
+
+    const lines = await loadLinesWithItems(client, tenantId, id);
+    return mapPurchaseOrder(updated.rows[0], lines);
   });
 }
 

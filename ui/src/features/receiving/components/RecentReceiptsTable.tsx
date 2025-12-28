@@ -4,11 +4,11 @@ import { Button, DataTable } from '@shared/ui'
 type Props = {
   receipts: PurchaseOrderReceipt[]
   onLoad: (id: string) => void
-  onDelete: (id: string) => void
-  deleteDisabled?: boolean
+  onVoid: (id: string) => void
+  voidDisabled?: boolean
 }
 
-export function RecentReceiptsTable({ receipts, onLoad, onDelete, deleteDisabled }: Props) {
+export function RecentReceiptsTable({ receipts, onLoad, onVoid, voidDisabled }: Props) {
   return (
     <DataTable
       rows={receipts}
@@ -51,6 +51,19 @@ export function RecentReceiptsTable({ receipts, onLoad, onDelete, deleteDisabled
           ),
         },
         {
+          id: 'status',
+          header: 'Status',
+          cell: (rec) => (
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                rec.status === 'voided' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {rec.status === 'voided' ? 'Voided' : 'Posted'}
+            </span>
+          ),
+        },
+        {
           id: 'actions',
           header: 'Actions',
           align: 'right',
@@ -62,14 +75,14 @@ export function RecentReceiptsTable({ receipts, onLoad, onDelete, deleteDisabled
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={deleteDisabled}
+                disabled={voidDisabled || rec.status === 'voided'}
                 onClick={() => {
-                  if (confirm('Delete this receipt? (Only allowed if no putaway exists)')) {
-                    onDelete(rec.id)
+                  if (confirm('Void this receipt? (Only allowed if no putaway exists)')) {
+                    onVoid(rec.id)
                   }
                 }}
               >
-                Delete
+                Void
               </Button>
             </div>
           ),

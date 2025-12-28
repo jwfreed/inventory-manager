@@ -12,6 +12,8 @@
     "db:reset:migrate": "npm run db:reset && npm run migrate",
     "dev:seed": "ts-node --transpile-only -r dotenv/config scripts/dev-seed.ts",
     "dev:seed:chocolate": "ts-node --transpile-only -r dotenv/config scripts/chocolate-seed.ts",
+    "seed:phase0": "ts-node --transpile-only -r dotenv/config scripts/phase0-seed.ts",
+    "test:api": "node --test tests/api/*.test.mjs",
     "start": "node dist/server.js"
   },
   "dependencies": {
