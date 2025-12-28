@@ -1,5 +1,4 @@
-import { Combobox, type ComboboxOption } from '../../../components/Combobox'
-import { Input, Textarea } from '../../../components/Inputs'
+import { Combobox, type ComboboxOption, Input, Textarea } from '@shared/ui'
 
 export type LocationOption = ComboboxOption
 

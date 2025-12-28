@@ -2,7 +2,7 @@ import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Alert } from '../../../components/Alert'
-import { formatNumber } from '../../../lib/formatters'
+import { formatNumber } from '@shared/formatters'
 import type { WorkOrderExecutionSummary } from '../../../api/types'
 
 type Props = {

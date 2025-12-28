@@ -1,7 +1,5 @@
 import type { ReceiptLineOption, PutawayLineInput } from '../types'
-import { Combobox } from '../../../components/Combobox'
-import { Input } from '../../../components/Inputs'
-import { SearchableSelect } from '../../../components/SearchableSelect'
+import { Combobox, Input, SearchableSelect } from '@shared/ui'
 
 type LocationOption = {
   value: string

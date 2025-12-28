@@ -1,10 +1,7 @@
 import { Outlet } from 'react-router-dom'
 import { useMemo } from 'react'
-import Breadcrumbs from '../../components/Breadcrumbs'
-import { NavLink } from '../../components/NavLink'
-import { Badge } from '../../components/Badge'
-import { Button } from '../../components/Button'
-import { useAuth } from '../../lib/useAuth'
+import { Badge, Breadcrumbs, Button, NavLink } from '@shared/ui'
+import { useAuth } from '@shared/auth'
 import { navItems } from '../routeData'
 
 function AppShell() {

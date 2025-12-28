@@ -1,5 +1,5 @@
 import type { ReceiptLineInput, ReceiptLineSummary } from '../types'
-import { Alert } from '../../../components/Alert'
+import { Alert } from '@shared/ui'
 
 type Props = {
   summary: ReceiptLineSummary

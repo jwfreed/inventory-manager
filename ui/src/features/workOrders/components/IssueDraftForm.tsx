@@ -12,16 +12,15 @@ import {
   postWorkOrderIssue,
   type IssueDraftPayload,
 } from '../api/workOrders'
-import { useItemsList } from '../../items/queries'
-import { useLocationsList } from '../../locations/queries'
-import type { ApiError, WorkOrderIssue, WorkOrder } from '../../../api/types'
-import type { Item } from '../../../api/types'
+import { useItemsList } from '@features/items/queries'
+import { useLocationsList } from '@features/locations/queries'
+import type { ApiError, Item, WorkOrder, WorkOrderIssue } from '@api/types'
 import { PostConfirmModal } from './PostConfirmModal'
-import { formatNumber } from '../../../lib/formatters'
+import { formatNumber } from '@shared/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
 import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
-import { useDebouncedValue } from '../../../lib/useDebouncedValue'
+import { useDebouncedValue } from '@shared'
 
 type Line = {
   componentItemId: string

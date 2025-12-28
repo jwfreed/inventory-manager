@@ -1,5 +1,5 @@
-import { Card } from '../../../components/Card'
-import type { PurchaseOrder } from '../../../api/types'
+import type { PurchaseOrder } from '@api/types'
+import { Card } from '@shared/ui'
 
 type Props = {
   grouped: {

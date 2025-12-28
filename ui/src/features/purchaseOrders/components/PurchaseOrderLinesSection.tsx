@@ -1,7 +1,5 @@
-import { Button } from '../../../components/Button'
-import { Combobox, type ComboboxOption } from '../../../components/Combobox'
-import { Input, Textarea } from '../../../components/Inputs'
-import type { Item } from '../../../api/types'
+import { Button, Combobox, type ComboboxOption, Input, Textarea } from '@shared/ui'
+import type { Item } from '@api/types'
 import type { PurchaseOrderLineDraft, PurchaseOrderLineStats } from '../types'
 
 export type ItemOption = ComboboxOption

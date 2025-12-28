@@ -1,9 +1,5 @@
-import { Alert } from '../../../components/Alert'
-import { Combobox } from '../../../components/Combobox'
-import { LoadingSpinner } from '../../../components/Loading'
-import { Section } from '../../../components/Section'
-import type { ApiError, Bom } from '../../../api/types'
-import { DataTable } from '../../../shared'
+import { Alert, Combobox, DataTable, LoadingSpinner, Section } from '@shared/ui'
+import type { ApiError, Bom } from '@api/types'
 
 type Props = {
   outputItemId: string

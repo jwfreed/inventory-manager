@@ -1,5 +1,5 @@
 import type { InventorySnapshotRow } from '../../../api/types'
-import { formatNumber } from '../../../lib/formatters'
+import { formatNumber } from '@shared/formatters'
 
 type Lookup = Map<string, { sku?: string; name?: string }>
 

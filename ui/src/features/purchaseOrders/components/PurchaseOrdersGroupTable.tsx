@@ -1,8 +1,6 @@
 import { Link } from 'react-router-dom'
-import type { PurchaseOrder } from '../../../api/types'
-import { Button } from '../../../components/Button'
-import { Card } from '../../../components/Card'
-import { DataTable } from '../../../shared'
+import type { PurchaseOrder } from '@api/types'
+import { Button, Card, DataTable } from '@shared/ui'
 
 const staleDraftReferenceTime = Date.now()
 

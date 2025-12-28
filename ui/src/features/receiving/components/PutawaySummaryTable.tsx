@@ -1,5 +1,5 @@
-import type { Putaway } from '../../../api/types'
-import { DataTable } from '../../../shared'
+import type { Putaway } from '@api/types'
+import { DataTable } from '@shared/ui'
 
 type Props = {
   putaway: Putaway

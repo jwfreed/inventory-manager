@@ -1,25 +1,23 @@
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import {
   approvePurchaseOrder,
   deletePurchaseOrderApi,
   updatePurchaseOrder,
 } from '../api/purchaseOrders'
-import type { ApiError } from '../../../api/types'
-import { Section } from '../../../components/Section'
-import { Card } from '../../../components/Card'
-import { LoadingSpinner } from '../../../components/Loading'
-import { Alert } from '../../../components/Alert'
-import { Button } from '../../../components/Button'
-import { Badge } from '../../../components/Badge'
-import { Input, Textarea } from '../../../components/Inputs'
+import type { ApiError } from '@api/types'
+import { Alert, Button, Card, LoadingSpinner, Section } from '@shared/ui'
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from 'react'
-import { SearchableSelect } from '../../../components/SearchableSelect'
-import { useLocationsList } from '../../locations/queries'
+import { useLocationsList } from '@features/locations/queries'
 import { usePurchaseOrder } from '../queries'
-import { formatDate } from '../../../lib/formatters'
+import { formatDate } from '@shared/formatters'
 import { PurchaseOrderLinesTable } from '../components/PurchaseOrderLinesTable'
+import { PurchaseOrderStatusHeader } from '../components/PurchaseOrderStatusHeader'
+import { PurchaseOrderAlerts } from '../components/PurchaseOrderAlerts'
+import { PurchaseOrderDetailsForm } from '../components/PurchaseOrderDetailsForm'
+import { PurchaseOrderChecklistPanel } from '../components/PurchaseOrderChecklistPanel'
+import { PurchaseOrderActionBar } from '../components/PurchaseOrderActionBar'
 
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -322,142 +320,42 @@ export default function PurchaseOrderDetailPage() {
     <div className="space-y-4">
       <Section title={`Purchase Order ${po.poNumber}`} description="Full details and lines.">
         <Card>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="text-sm text-slate-700">
-              <div className="font-medium">
-                Vendor: {po.vendorCode ?? po.vendorId} {po.vendorName ? `— ${po.vendorName}` : ''}
-              </div>
-              <div className="text-xs text-slate-500">PO {po.poNumber}</div>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
-              <div className="mt-1 flex items-center gap-2">
-                <span className={`h-2 w-2 rounded-full ${currentStatus.dot}`} aria-hidden="true" />
-                <Badge variant={currentStatus.variant}>{currentStatus.label}</Badge>
-              </div>
-              <div className="mt-1 text-xs text-slate-600">{currentStatus.helper}</div>
-            </div>
-          </div>
-          {(isLocked || submitError || saveError || submitMessage || saveMessage) && (
-            <div className="mt-3 space-y-2">
-              {isLocked && (
-                <Alert
-                  variant="info"
-                  title="Locked"
-                  message={`This PO is ${currentStatus.label.toLowerCase()} and read-only. Use Repeat to create a new draft if changes are needed.`}
-                />
-              )}
-              {submitError && <Alert variant="error" title="Submission failed" message={submitError} />}
-              {approveError && <Alert variant="error" title="Approval failed" message={approveError} />}
-              {saveError && <Alert variant="error" title="Save failed" message={saveError} />}
-              {submitMessage && (
-                <Alert
-                  variant="success"
-                  title={statusKey === 'approved' ? 'PO approved' : 'PO submitted'}
-                  message={submitMessage}
-                  action={
-                    canReceive ? (
-                      <Link to="/receiving">
-                        <Button size="sm" variant="secondary">
-                          Go to Receiving
-                        </Button>
-                      </Link>
-                    ) : undefined
-                  }
-                />
-              )}
-              {approveMessage && (
-                <Alert
-                  variant="success"
-                  title="PO approved"
-                  message={approveMessage}
-                  action={
-                    <Link to="/receiving">
-                      <Button size="sm" variant="secondary">
-                        Go to Receiving
-                      </Button>
-                    </Link>
-                  }
-                />
-              )}
-              {saveMessage && <Alert variant="success" title="Draft saved" message={saveMessage} />}
-            </div>
-          )}
-          <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3 text-sm text-slate-800">
-            <div>
-              <div className="text-xs uppercase text-slate-500">PO Number</div>
-              <div className="font-semibold">{po.poNumber}</div>
-            </div>
-            <label className="space-y-1 text-sm">
-              <span className="text-xs uppercase text-slate-500">Order date</span>
-              <Input
-                type="date"
-                value={orderDate}
-                onChange={(e) => setOrderDate(e.target.value)}
-                disabled={isLocked || isBusy}
-              />
-            </label>
-            <label className="space-y-1 text-sm">
-              <span className="text-xs uppercase text-slate-500">Expected date</span>
-              <Input
-                type="date"
-                value={expectedDate}
-                onChange={(e) => setExpectedDate(e.target.value)}
-                disabled={isLocked || isBusy}
-              />
-            </label>
-            <div>
-              <SearchableSelect
-                label="Ship-to"
-                value={shipToLocationId}
-                options={locationOptions}
-                disabled={locationsQuery.isLoading || isLocked || isBusy}
-                onChange={(nextValue) => setShipToLocationId(nextValue)}
-              />
-            </div>
-            <div>
-              <SearchableSelect
-                label="Receiving/staging"
-                value={receivingLocationId}
-                options={locationOptions}
-                disabled={locationsQuery.isLoading || isLocked || isBusy}
-                onChange={(nextValue) => setReceivingLocationId(nextValue)}
-              />
-            </div>
-            <label className="space-y-1 text-sm">
-              <span className="text-xs uppercase text-slate-500">Vendor reference</span>
-              <Input
-                value={vendorReference}
-                onChange={(e) => setVendorReference(e.target.value)}
-                placeholder="Optional"
-                disabled={isLocked || isBusy}
-              />
-            </label>
-          </div>
-          <label className="mt-3 block space-y-1 text-sm">
-            <span className="text-xs uppercase text-slate-500">Notes</span>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} disabled={isLocked || isBusy} />
-          </label>
-          {isEditable && (
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Ready to submit</div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {checklist.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`flex items-center justify-between rounded-md border px-2 py-1 text-sm ${
-                      item.ok ? 'border-green-200 bg-white text-slate-700' : 'border-amber-200 bg-amber-50 text-amber-900'
-                    }`}
-                  >
-                    <span>{item.label}</span>
-                    <span className={`text-xs font-semibold uppercase ${item.ok ? 'text-green-700' : 'text-amber-700'}`}>
-                      {item.ok ? 'Ready' : 'Missing'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <PurchaseOrderStatusHeader
+            vendorLabel={`${po.vendorCode ?? po.vendorId}${po.vendorName ? ` — ${po.vendorName}` : ''}`}
+            poNumber={po.poNumber}
+            status={currentStatus}
+          />
+          <PurchaseOrderAlerts
+            isLocked={isLocked}
+            statusLabel={currentStatus.label}
+            canReceive={canReceive}
+            submitError={submitError}
+            approveError={approveError}
+            saveError={saveError}
+            submitMessage={submitMessage}
+            approveMessage={approveMessage}
+            saveMessage={saveMessage}
+          />
+          <PurchaseOrderDetailsForm
+            poNumber={po.poNumber}
+            orderDate={orderDate}
+            expectedDate={expectedDate}
+            shipToLocationId={shipToLocationId}
+            receivingLocationId={receivingLocationId}
+            vendorReference={vendorReference}
+            notes={notes}
+            locationOptions={locationOptions}
+            locationsLoading={locationsQuery.isLoading}
+            isLocked={isLocked}
+            isBusy={isBusy}
+            onOrderDateChange={setOrderDate}
+            onExpectedDateChange={setExpectedDate}
+            onShipToChange={setShipToLocationId}
+            onReceivingChange={setReceivingLocationId}
+            onVendorReferenceChange={setVendorReference}
+            onNotesChange={setNotes}
+          />
+          <PurchaseOrderChecklistPanel visible={isEditable} items={checklist} />
           {isEditable && showSubmitConfirm && (
             <div className="mt-3">
               <Alert
@@ -496,38 +394,17 @@ export default function PurchaseOrderDetailPage() {
               />
             </div>
           )}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {isEditable && (
-              <Button size="sm" onClick={handleSubmitIntent} disabled={!isReadyToSubmit || isBusy}>
-                {submitMutation.isPending ? 'Submitting…' : 'Submit PO for approval'}
-              </Button>
-            )}
-            <Button size="sm" variant="secondary" onClick={handleSave} disabled={isLocked || isBusy}>
-              {updateMutation.isPending ? 'Saving…' : 'Save draft'}
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                if (confirm('Delete this purchase order?')) {
-                  deleteMutation.mutate()
-                }
-              }}
-              disabled={isBusy}
-            >
-              Delete
-            </Button>
-            <Link to="/purchase-orders">
-              <Button variant="secondary" size="sm">
-                Back to list
-              </Button>
-            </Link>
-            <Link to="/purchase-orders/new">
-              <Button variant="secondary" size="sm">
-                New PO
-              </Button>
-            </Link>
-          </div>
+          <PurchaseOrderActionBar
+            isEditable={isEditable}
+            isReadyToSubmit={isReadyToSubmit}
+            isLocked={isLocked}
+            isBusy={isBusy}
+            submitPending={submitMutation.isPending}
+            savePending={updateMutation.isPending}
+            onSubmitIntent={handleSubmitIntent}
+            onSave={handleSave}
+            onDelete={() => deleteMutation.mutate()}
+          />
         </Card>
       </Section>
 

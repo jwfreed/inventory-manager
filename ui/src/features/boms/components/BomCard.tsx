@@ -8,7 +8,7 @@ import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { LoadingSpinner } from '../../../components/Loading'
 import { ErrorState } from '../../../components/ErrorState'
-import { formatDate } from '../../../lib/formatters'
+import { formatDate } from '@shared/formatters'
 
 type Props = {
   bomId: string

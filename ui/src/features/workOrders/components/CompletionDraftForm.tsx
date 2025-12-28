@@ -11,14 +11,14 @@ import {
   type CompletionDraftPayload,
   updateWorkOrderDefaultsApi,
 } from '../api/workOrders'
-import type { ApiError, WorkOrder, WorkOrderCompletion, Item } from '../../../api/types'
+import type { ApiError, Item, WorkOrder, WorkOrderCompletion } from '@api/types'
 import { PostConfirmModal } from './PostConfirmModal'
-import { formatNumber } from '../../../lib/formatters'
+import { formatNumber } from '@shared/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
-import { useLocationsList } from '../../locations/queries'
+import { useLocationsList } from '@features/locations/queries'
 import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
-import { useDebouncedValue } from '../../../lib/useDebouncedValue'
+import { useDebouncedValue } from '@shared'
 
 type Line = {
   outputItemId: string

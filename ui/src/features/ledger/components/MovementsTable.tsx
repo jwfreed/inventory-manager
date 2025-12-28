@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { formatDate } from '../../../lib/formatters'
+import { formatDate } from '@shared/formatters'
 import { cn } from '../../../lib/utils'
 import type { Movement } from '../../../api/types'
 import { MovementStatusBadge } from './MovementStatusBadge'

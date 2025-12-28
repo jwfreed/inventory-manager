@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import type { WorkOrderRequirementLine } from '../../../api/types'
-import { DataTable } from '../../../shared'
+import type { WorkOrderRequirementLine } from '@api/types'
+import { DataTable } from '@shared/ui'
 
 type IssuedTotal = {
   componentItemId: string

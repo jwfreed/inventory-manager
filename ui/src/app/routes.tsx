@@ -1,8 +1,8 @@
 import { Navigate, createBrowserRouter } from 'react-router-dom'
 import AppShell from './layout/AppShell'
-import { RequireAuth } from '../lib/auth'
+import { RequireAuth } from '@shared/auth'
 import LoginPage from '../pages/Login'
-import type { AppRouteObject } from '../shared/routes'
+import type { AppRouteObject } from '@shared/routes'
 import { appShellRoutes } from './routeData'
 
 const shellRoutes: AppRouteObject[] = [

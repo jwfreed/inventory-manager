@@ -8,7 +8,7 @@ import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
-import { formatDate } from '../../../lib/formatters'
+import { formatDate } from '@shared/formatters'
 import { ItemForm } from '../components/ItemForm'
 
 const activeOptions = [

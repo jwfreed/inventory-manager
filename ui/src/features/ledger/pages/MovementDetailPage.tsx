@@ -10,7 +10,7 @@ import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { Badge } from '../../../components/Badge'
-import { formatDate, formatNumber } from '../../../lib/formatters'
+import { formatDate, formatNumber } from '@shared/formatters'
 import { MovementStatusBadge } from '../components/MovementStatusBadge'
 import { MovementLinesTable } from '../components/MovementLinesTable'
 

@@ -1,6 +1,5 @@
-import type { PurchaseOrderReceipt } from '../../../api/types'
-import { Button } from '../../../components/Button'
-import { DataTable } from '../../../shared'
+import type { PurchaseOrderReceipt } from '@api/types'
+import { Button, DataTable } from '@shared/ui'
 
 type Props = {
   receipts: PurchaseOrderReceipt[]

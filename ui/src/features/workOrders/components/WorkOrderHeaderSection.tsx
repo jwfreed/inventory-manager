@@ -1,6 +1,5 @@
-import type { Item } from '../../../api/types'
-import { Input, Textarea } from '../../../components/Inputs'
-import { Section } from '../../../components/Section'
+import type { Item } from '@api/types'
+import { Input, Section, Textarea } from '@shared/ui'
 
 export type SelectOption = {
   value: string

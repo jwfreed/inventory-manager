@@ -1,5 +1,5 @@
-import type { KpiSnapshot } from '../../../api/types'
-import { formatNumber } from '../../../lib/formatters'
+import type { KpiSnapshot } from '@api/types'
+import { formatNumber } from '@shared/formatters'
 import { formatDateTime } from '../utils'
 
 type Props = {

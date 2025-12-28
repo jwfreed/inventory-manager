@@ -1,14 +1,7 @@
 import type { ReactNode } from 'react'
-import type { ApiError, InventorySnapshotRow } from '../../../api/types'
+import type { ApiError, InventorySnapshotRow } from '@api/types'
 import { Link } from 'react-router-dom'
-import { Badge } from '../../../components/Badge'
-import { Button } from '../../../components/Button'
-import { Card } from '../../../components/Card'
-import { EmptyState } from '../../../components/EmptyState'
-import { ErrorState } from '../../../components/ErrorState'
-import { LoadingSpinner } from '../../../components/Loading'
-import { Section } from '../../../components/Section'
-import { DataTable } from '../../../shared'
+import { Badge, Button, Card, DataTable, EmptyState, ErrorState, LoadingSpinner, Section } from '@shared/ui'
 
 type ProductionRow = {
   itemId: string

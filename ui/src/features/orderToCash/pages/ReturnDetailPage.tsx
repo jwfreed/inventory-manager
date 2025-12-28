@@ -10,7 +10,7 @@ import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
-import { formatNumber } from '../../../lib/formatters'
+import { formatNumber } from '@shared/formatters'
 
 export default function ReturnDetailPage() {
   const { id } = useParams<{ id: string }>()

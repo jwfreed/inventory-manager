@@ -1,6 +1,5 @@
 import type { ReceiptLineInput } from '../types'
-import { Input } from '../../../components/Inputs'
-import { DataTable } from '../../../shared'
+import { DataTable, Input } from '@shared/ui'
 
 type Props = {
   lines: ReceiptLineInput[]

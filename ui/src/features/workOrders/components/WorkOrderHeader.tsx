@@ -1,6 +1,6 @@
 import { Badge } from '../../../components/Badge'
 import { Card } from '../../../components/Card'
-import { formatNumber } from '../../../lib/formatters'
+import { formatNumber } from '@shared/formatters'
 import type { WorkOrder } from '../../../api/types'
 
 type Props = {

@@ -1,12 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { ApiError } from '../api/types'
-import { Alert } from '../components/Alert'
-import { Button } from '../components/Button'
-import { Card } from '../components/Card'
-import { Input } from '../components/Inputs'
-import { LoadingSpinner } from '../components/Loading'
-import { useAuth } from '../lib/useAuth'
+import type { ApiError } from '@api/types'
+import { Alert, Button, Card, Input, LoadingSpinner } from '@shared/ui'
+import { useAuth } from '@shared/auth'
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (typeof error === 'string') return error

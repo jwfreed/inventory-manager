@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { KpiSnapshot } from '../../../api/types'
+import type { KpiSnapshot } from '@api/types'
 import { Card } from '../../../components/Card'
 import { Input, Select } from '../../../components/Inputs'
 import { Table } from '../../../components/Table'
-import { formatNumber } from '../../../lib/formatters'
+import { formatNumber } from '@shared/formatters'
 import { formatDateTime } from '../utils'
 import { DimensionsCell } from './DimensionsCell'
 

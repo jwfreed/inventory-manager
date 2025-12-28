@@ -1,4 +1,4 @@
-import { formatNumber } from '../../../lib/formatters'
+import { formatNumber } from '@shared/formatters'
 import type { MovementLine } from '../../../api/types'
 import { cn } from '../../../lib/utils'
 

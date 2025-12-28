@@ -5,18 +5,18 @@ import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { Input, Textarea } from '../../../components/Inputs'
 import { LoadingSpinner } from '../../../components/Loading'
-import { useItemsList } from '../../items/queries'
-import { useLocationsList } from '../../locations/queries'
+import { useItemsList } from '@features/items/queries'
+import { useLocationsList } from '@features/locations/queries'
 import {
   getWorkOrderRequirements,
   recordWorkOrderBatch,
   updateWorkOrderDefaultsApi,
   type RecordBatchPayload,
 } from '../api/workOrders'
-import type { ApiError, Item, WorkOrder } from '../../../api/types'
+import type { ApiError, Item, WorkOrder } from '@api/types'
 import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
-import { useDebouncedValue } from '../../../lib/useDebouncedValue'
+import { useDebouncedValue } from '@shared'
 
 const formatError = (err: unknown): string => {
   if (!err) return ''

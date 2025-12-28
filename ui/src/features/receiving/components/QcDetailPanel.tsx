@@ -1,8 +1,5 @@
-import type { PurchaseOrderReceiptLine, QcEvent } from '../../../api/types'
-import { Alert } from '../../../components/Alert'
-import { Button } from '../../../components/Button'
-import { Input, Textarea } from '../../../components/Inputs'
-import { LoadingSpinner } from '../../../components/Loading'
+import type { PurchaseOrderReceiptLine, QcEvent } from '@api/types'
+import { Alert, Button, Input, LoadingSpinner, Textarea } from '@shared/ui'
 import { getQcStatus } from '../utils'
 
 type Props = {

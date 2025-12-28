@@ -1,4 +1,4 @@
-import type { PurchaseOrder, PurchaseOrderReceiptLine } from '../../api/types'
+import type { PurchaseOrder, PurchaseOrderReceiptLine } from '@api/types'
 import type { ReceiptLineInput } from './types'
 
 export const buildReceiptLines = (po: PurchaseOrder): ReceiptLineInput[] => {

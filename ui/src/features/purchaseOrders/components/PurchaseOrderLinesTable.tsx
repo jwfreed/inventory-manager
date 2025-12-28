@@ -1,5 +1,5 @@
-import type { PurchaseOrderLine } from '../../../api/types'
-import { DataTable } from '../../../shared'
+import type { PurchaseOrderLine } from '@api/types'
+import { DataTable } from '@shared/ui'
 
 const emptyMessage = 'No lines on this purchase order.'
 

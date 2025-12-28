@@ -1,6 +1,5 @@
-import type { PurchaseOrderReceiptLine } from '../../../api/types'
-import { Button } from '../../../components/Button'
-import { DataTable } from '../../../shared'
+import type { PurchaseOrderReceiptLine } from '@api/types'
+import { Button, DataTable } from '@shared/ui'
 import { getQcBreakdown, getQcStatus } from '../utils'
 
 type Props = {

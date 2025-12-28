@@ -1,13 +1,7 @@
-import type { ReplenishmentRecommendation, InventorySnapshotRow } from '../../../api/types'
+import type { InventorySnapshotRow, ReplenishmentRecommendation } from '@api/types'
 import { Link } from 'react-router-dom'
-import { Badge } from '../../../components/Badge'
-import { Button } from '../../../components/Button'
-import { Card } from '../../../components/Card'
-import { Alert } from '../../../components/Alert'
-import { EmptyState } from '../../../components/EmptyState'
-import { LoadingSpinner } from '../../../components/Loading'
-import { Section } from '../../../components/Section'
-import { formatNumber } from '../../../lib/formatters'
+import { Alert, Badge, Button, Card, LoadingSpinner, Section } from '@shared/ui'
+import { formatNumber } from '@shared/formatters'
 
 type AttentionTile = {
   key: string

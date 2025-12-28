@@ -10,7 +10,7 @@ import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
-import { formatDate, formatNumber } from '../../../lib/formatters'
+import { formatDate, formatNumber } from '@shared/formatters'
 import { LocationForm } from '../components/LocationForm'
 
 export default function LocationDetailPage() {

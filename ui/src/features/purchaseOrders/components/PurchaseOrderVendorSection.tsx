@@ -1,6 +1,5 @@
-import type { ComboboxOption } from '../../../components/Combobox'
-import { Combobox } from '../../../components/Combobox'
-import { Input } from '../../../components/Inputs'
+import type { ComboboxOption } from '@shared/ui'
+import { Combobox, Input } from '@shared/ui'
 
 export type VendorOption = ComboboxOption
 

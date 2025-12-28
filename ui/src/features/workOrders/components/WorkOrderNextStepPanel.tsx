@@ -1,8 +1,6 @@
-import type { ComboboxOption } from '../../../components/Combobox'
-import { Combobox } from '../../../components/Combobox'
-import { Button } from '../../../components/Button'
-import { Card } from '../../../components/Card'
-import type { ApiError } from '../../../api/types'
+import type { ComboboxOption } from '@shared/ui'
+import { Button, Card, Combobox } from '@shared/ui'
+import type { ApiError } from '@api/types'
 
 type Props = {
   isOpen: boolean

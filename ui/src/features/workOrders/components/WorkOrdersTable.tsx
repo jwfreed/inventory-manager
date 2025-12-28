@@ -1,7 +1,6 @@
-import type { WorkOrder } from '../../../api/types'
-import { Badge } from '../../../components/Badge'
-import { DataTable } from '../../../shared'
-import { formatNumber } from '../../../lib/formatters'
+import type { WorkOrder } from '@api/types'
+import { Badge, DataTable } from '@shared/ui'
+import { formatNumber } from '@shared/formatters'
 
 type Props = {
   rows: WorkOrder[]
