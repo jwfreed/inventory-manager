@@ -82,8 +82,11 @@ export function QcLinesTable({ lines, activeLineId, onSelectLine }: Props) {
             } else if (remainingQty > 0) {
               putawayLabel = 'Planned in draft'
               putawayTone = 'bg-slate-100 text-slate-600'
-            } else if (qc.accept > 0) {
+            } else if (line.putawayStatus === 'complete') {
               putawayLabel = 'Putaway complete'
+              putawayTone = 'bg-slate-100 text-slate-600'
+            } else if (line.putawayStatus === 'partial') {
+              putawayLabel = 'Partially put away'
               putawayTone = 'bg-slate-100 text-slate-600'
             } else if (qc.hold > 0) {
               putawayLabel = 'On hold'

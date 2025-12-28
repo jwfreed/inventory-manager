@@ -5,6 +5,7 @@ import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
 import type { z } from 'zod';
 import {
   calculatePutawayAvailability,
+  calculateAcceptedQuantity,
   defaultBreakdown,
   loadPutawayTotals,
   loadQcBreakdown
@@ -36,6 +37,18 @@ function mapReceiptLine(
   const quantityReceived = roundQuantity(toNumber(line.quantity_received));
   const qc = qcBreakdown.get(line.id) ?? defaultBreakdown();
   const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0 };
+  const acceptedQuantity = calculateAcceptedQuantity(quantityReceived, qc);
+  const postedQuantity = roundQuantity(totals.posted ?? 0);
+  let putawayStatus = 'not_available';
+  if (acceptedQuantity > 0) {
+    if (postedQuantity <= 0) {
+      putawayStatus = 'not_started';
+    } else if (postedQuantity + 1e-6 < acceptedQuantity) {
+      putawayStatus = 'partial';
+    } else {
+      putawayStatus = 'complete';
+    }
+  }
   const availability = calculatePutawayAvailability(
     {
       id: line.id,
@@ -65,6 +78,9 @@ function mapReceiptLine(
     discrepancyNotes: line.discrepancy_notes ?? null,
     createdAt: line.created_at,
     qcSummary: buildQcSummary(line.id, qcBreakdown, quantityReceived),
+    putawayAcceptedQuantity: roundQuantity(acceptedQuantity),
+    putawayPostedQuantity: postedQuantity,
+    putawayStatus,
     remainingQuantityToPutaway: availability.remainingAfterPosted,
     availableForNewPutaway: availability.availableForPlanning,
     putawayBlockedReason: availability.blockedReason ?? null

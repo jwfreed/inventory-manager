@@ -2,7 +2,7 @@ import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import type { ApiError, PurchaseOrderReceipt, Putaway, QcEvent } from '../../api/types'
 import { getReceipt, listReceipts } from './api/receipts'
 import { getPutaway } from './api/putaways'
-import { listQcEventsForLine } from './api/qc'
+import { getQcEvent, listQcEventsForLine } from './api/qc'
 
 export const receivingQueryKeys = {
   receipts: {
@@ -14,6 +14,7 @@ export const receivingQueryKeys = {
   qcEvents: {
     all: ['qc-events'] as const,
     forLine: (lineId: string) => [...receivingQueryKeys.qcEvents.all, 'line', lineId] as const,
+    detail: (id: string) => [...receivingQueryKeys.qcEvents.all, 'detail', id] as const,
   },
   putaways: {
     all: ['putaways'] as const,
@@ -32,6 +33,7 @@ type ReceiptOptions = Omit<
 >
 
 type QcEventsOptions = Omit<UseQueryOptions<{ data: QcEvent[] }, ApiError>, 'queryKey' | 'queryFn'>
+type QcEventOptions = Omit<UseQueryOptions<QcEvent, ApiError>, 'queryKey' | 'queryFn'>
 
 type PutawayOptions = Omit<UseQueryOptions<Putaway, ApiError>, 'queryKey' | 'queryFn'>
 
@@ -62,6 +64,16 @@ export function useQcEventsForLine(lineId?: string, options: QcEventsOptions = {
     queryKey: receivingQueryKeys.qcEvents.forLine(lineId ?? ''),
     queryFn: () => listQcEventsForLine(lineId as string),
     enabled: Boolean(lineId),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useQcEvent(id?: string, options: QcEventOptions = {}) {
+  return useQuery({
+    queryKey: receivingQueryKeys.qcEvents.detail(id ?? ''),
+    queryFn: () => getQcEvent(id as string),
+    enabled: Boolean(id),
     retry: 1,
     ...options,
   })

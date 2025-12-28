@@ -167,3 +167,9 @@ export async function listQcEventsForLine(tenantId: string, lineId: string) {
   );
   return rows.map(mapQcEvent);
 }
+
+export async function getQcEventById(tenantId: string, id: string) {
+  const { rows } = await query('SELECT * FROM qc_events WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+  if (rows.length === 0) return null;
+  return mapQcEvent(rows[0]);
+}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useItem } from '../queries'
 import { useLocationsList } from '../../locations/queries'
 import { useInventorySnapshotSummary } from '../../inventory/queries'
@@ -77,12 +77,14 @@ export default function ItemDetailPage() {
     return map
   }, [locationsQuery.data])
   const totalsByUom = useMemo(() => {
-    const map = new Map<string, { onHand: number; available: number; reserved: number }>()
+    const map = new Map<string, { onHand: number; available: number; reserved: number; held: number; rejected: number }>()
     stockRows.forEach((row) => {
-      const current = map.get(row.uom) ?? { onHand: 0, available: 0, reserved: 0 }
+      const current = map.get(row.uom) ?? { onHand: 0, available: 0, reserved: 0, held: 0, rejected: 0 }
       current.onHand += row.onHand
       current.available += row.available
       current.reserved += row.reserved
+      current.held += row.held
+      current.rejected += row.rejected
       map.set(row.uom, current)
     })
     return Array.from(map.entries()).map(([uom, totals]) => ({ uom, ...totals }))
@@ -204,6 +206,14 @@ export default function ItemDetailPage() {
                 </option>
               ))}
             </select>
+            {id && (
+              <Link
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                to={`/movements?itemId=${id}${selectedLocationId ? `&locationId=${selectedLocationId}` : ''}`}
+              >
+                View movements
+              </Link>
+            )}
           </div>
         </div>
         {locationsQuery.isLoading && <LoadingSpinner label="Loading locations..." />}
@@ -246,7 +256,8 @@ export default function ItemDetailPage() {
                         {formatNumber(totals.available)}
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        On hand {formatNumber(totals.onHand)} · Reserved {formatNumber(totals.reserved)}
+                        On hand {formatNumber(totals.onHand)} · Reserved {formatNumber(totals.reserved)} · Held{' '}
+                        {formatNumber(totals.held)} · Rejected {formatNumber(totals.rejected)}
                       </div>
                     </div>
                   ))}

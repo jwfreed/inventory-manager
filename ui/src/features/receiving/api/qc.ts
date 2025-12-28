@@ -23,3 +23,7 @@ export async function listQcEventsForLine(
     `/purchase-order-receipt-lines/${lineId}/qc-events`,
   )
 }
+
+export async function getQcEvent(id: string): Promise<QcEvent> {
+  return apiGet<QcEvent>(`/qc-events/${id}`)
+}

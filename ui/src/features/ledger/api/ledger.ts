@@ -7,6 +7,8 @@ export type MovementListParams = {
   externalRef?: string
   occurredFrom?: string
   occurredTo?: string
+  itemId?: string
+  locationId?: string
   limit?: number
   offset?: number
 }
@@ -76,6 +78,8 @@ export async function listMovements(params: MovementListParams = {}): Promise<Mo
   if (params.externalRef) queryParams.external_ref = params.externalRef
   if (params.occurredFrom) queryParams.occurred_from = params.occurredFrom
   if (params.occurredTo) queryParams.occurred_to = params.occurredTo
+  if (params.itemId) queryParams.item_id = params.itemId
+  if (params.locationId) queryParams.location_id = params.locationId
   if (params.limit) queryParams.limit = params.limit
   if (params.offset !== undefined) queryParams.offset = params.offset
 

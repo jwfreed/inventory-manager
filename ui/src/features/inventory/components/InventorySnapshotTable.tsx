@@ -74,6 +74,15 @@ export function InventorySnapshotTable({
               Available
             </th>
             <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Held
+            </th>
+            <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Rejected
+            </th>
+            <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Non-usable
+            </th>
+            <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
               On order
             </th>
             <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -106,6 +115,15 @@ export function InventorySnapshotTable({
               </td>
               <td className="px-3 py-2 text-right text-sm text-slate-800">
                 {formatNumber(row.available)}
+              </td>
+              <td className="px-3 py-2 text-right text-sm text-slate-800">
+                {formatNumber(row.held)}
+              </td>
+              <td className="px-3 py-2 text-right text-sm text-slate-800">
+                {formatNumber(row.rejected)}
+              </td>
+              <td className="px-3 py-2 text-right text-sm text-slate-800">
+                {formatNumber(row.nonUsable)}
               </td>
               <td className="px-3 py-2 text-right text-sm text-slate-800">
                 {formatNumber(row.onOrder)}

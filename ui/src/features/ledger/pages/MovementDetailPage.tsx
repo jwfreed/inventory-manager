@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { ApiError } from '../../../api/types'
 import { useMovement, useMovementLines } from '../queries'
 import { Alert } from '../../../components/Alert'
@@ -51,6 +51,20 @@ export default function MovementDetailPage() {
       // ignore clipboard errors
     }
   }
+
+  const sourceLink = useMemo(() => {
+    const ref = movementQuery.data?.externalRef
+    if (!ref) return null
+    if (ref.startsWith('putaway:')) {
+      const id = ref.split(':')[1]
+      return { label: `Putaway ${id.slice(0, 8)}…`, to: `/receiving?putawayId=${id}` }
+    }
+    if (ref.startsWith('qc_accept:')) {
+      const id = ref.split(':')[1]
+      return { label: `QC event ${id.slice(0, 8)}…`, to: `/qc-events/${id}` }
+    }
+    return null
+  }, [movementQuery.data?.externalRef])
 
   return (
     <div className="space-y-6">
@@ -108,6 +122,16 @@ export default function MovementDetailPage() {
                 <div className="text-sm text-slate-700">
                   <span className="font-semibold">Notes:</span>{' '}
                   {movementQuery.data.notes || '—'}
+                </div>
+                <div className="text-sm text-slate-700">
+                  <span className="font-semibold">Source:</span>{' '}
+                  {sourceLink ? (
+                    <Link className="text-brand-700 underline" to={sourceLink.to}>
+                      {sourceLink.label}
+                    </Link>
+                  ) : (
+                    movementQuery.data.externalRef || '—'
+                  )}
                 </div>
               </div>
             </div>

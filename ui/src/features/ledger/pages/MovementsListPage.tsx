@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { type MovementListParams } from '../api/ledger'
 import { useMovementsList } from '../queries'
 import { Card } from '../../../components/Card'
@@ -13,7 +14,13 @@ import { MovementsTable } from '../components/MovementsTable'
 const DEFAULT_LIMIT = 20
 
 export default function MovementsListPage() {
-  const [filters, setFilters] = useState<MovementListParams>({ limit: DEFAULT_LIMIT, offset: 0 })
+  const [searchParams] = useSearchParams()
+  const initialFilters = useMemo<MovementListParams>(() => {
+    const itemId = searchParams.get('itemId') ?? undefined
+    const locationId = searchParams.get('locationId') ?? undefined
+    return { limit: DEFAULT_LIMIT, offset: 0, itemId, locationId }
+  }, [searchParams])
+  const [filters, setFilters] = useState<MovementListParams>(initialFilters)
 
   const { data, isLoading, isError, error, refetch, isFetching } = useMovementsList(filters, {
     placeholderData: (previousData) => previousData,

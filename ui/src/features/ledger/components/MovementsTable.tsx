@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { formatDate } from '@shared/formatters'
 import { cn } from '../../../lib/utils'
 import type { Movement } from '../../../api/types'
@@ -13,6 +13,19 @@ type Props = {
 
 export function MovementsTable({ movements, page, pageCount, onPageChange }: Props) {
   const navigate = useNavigate()
+
+  const getSourceLink = (externalRef?: string | null) => {
+    if (!externalRef) return null
+    if (externalRef.startsWith('putaway:')) {
+      const id = externalRef.split(':')[1]
+      return { label: `Putaway ${id.slice(0, 8)}…`, to: `/receiving?putawayId=${id}` }
+    }
+    if (externalRef.startsWith('qc_accept:')) {
+      const id = externalRef.split(':')[1]
+      return { label: `QC event ${id.slice(0, 8)}…`, to: `/qc-events/${id}` }
+    }
+    return null
+  }
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -60,7 +73,19 @@ export function MovementsTable({ movements, page, pageCount, onPageChange }: Pro
                   <MovementStatusBadge status={movement.status} />
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-700">
-                  {movement.externalRef || '—'}
+                  {(() => {
+                    const source = getSourceLink(movement.externalRef)
+                    if (!movement.externalRef) return '—'
+                    if (!source) return movement.externalRef
+                    return (
+                      <div className="flex flex-col">
+                        <Link className="text-brand-700 underline" to={source.to}>
+                          {source.label}
+                        </Link>
+                        <span className="text-xs text-slate-500">{movement.externalRef}</span>
+                      </div>
+                    )
+                  })()}
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-800">
                   {movement.postedAt ? formatDate(movement.postedAt) : '—'}

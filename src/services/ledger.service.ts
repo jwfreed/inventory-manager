@@ -34,6 +34,8 @@ export async function listMovements(tenantId: string, filters: {
   externalRef?: string;
   occurredFrom?: string;
   occurredTo?: string;
+  itemId?: string;
+  locationId?: string;
   limit: number;
   offset: number;
 }) {
@@ -59,6 +61,28 @@ export async function listMovements(tenantId: string, filters: {
   if (filters.occurredTo) {
     params.push(filters.occurredTo);
     conditions.push(`occurred_at <= $${params.length}`);
+  }
+  if (filters.itemId) {
+    params.push(filters.itemId);
+    conditions.push(
+      `EXISTS (
+        SELECT 1 FROM inventory_movement_lines iml
+         WHERE iml.movement_id = inventory_movements.id
+           AND iml.tenant_id = inventory_movements.tenant_id
+           AND iml.item_id = $${params.length}
+      )`
+    );
+  }
+  if (filters.locationId) {
+    params.push(filters.locationId);
+    conditions.push(
+      `EXISTS (
+        SELECT 1 FROM inventory_movement_lines iml
+         WHERE iml.movement_id = inventory_movements.id
+           AND iml.tenant_id = inventory_movements.tenant_id
+           AND iml.location_id = $${params.length}
+      )`
+    );
   }
 
   params.push(filters.limit, filters.offset);

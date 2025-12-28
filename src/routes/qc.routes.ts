@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { qcEventSchema } from '../schemas/qc.schema';
-import { createQcEvent, listQcEventsForLine } from '../services/qc.service';
+import { createQcEvent, getQcEventById, listQcEventsForLine } from '../services/qc.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
@@ -59,6 +59,24 @@ router.get('/purchase-order-receipt-lines/:id/qc-events', async (req: Request, r
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to list QC events.' });
+  }
+});
+
+router.get('/qc-events/:id', async (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid QC event id.' });
+  }
+
+  try {
+    const event = await getQcEventById(req.auth!.tenantId, id);
+    if (!event) {
+      return res.status(404).json({ error: 'QC event not found.' });
+    }
+    return res.json(event);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fetch QC event.' });
   }
 });
 

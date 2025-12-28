@@ -1,5 +1,6 @@
 import type { AppRouteObject } from '../../shared/routes'
 import ReceivingPage from './pages/ReceivingPage'
+import QcEventDetailPage from './pages/QcEventDetailPage'
 
 export const receivingRoutes: AppRouteObject[] = [
   {
@@ -12,6 +13,13 @@ export const receivingRoutes: AppRouteObject[] = [
         to: '/receiving',
         order: 7,
       },
+    },
+  },
+  {
+    path: 'qc-events/:qcEventId',
+    element: <QcEventDetailPage />,
+    handle: {
+      breadcrumb: 'QC event',
     },
   },
 ]

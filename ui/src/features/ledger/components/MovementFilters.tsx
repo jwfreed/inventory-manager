@@ -104,6 +104,28 @@ export function MovementFilters({ initialFilters, onApply, disabled }: Props) {
             disabled={disabled}
           />
         </div>
+        <div className="space-y-1">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Item ID
+          </label>
+          <Input
+            placeholder="Filter item"
+            value={filters.itemId || ''}
+            onChange={(e) => handleChange('itemId', e.target.value)}
+            disabled={disabled}
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Location ID
+          </label>
+          <Input
+            placeholder="Filter location"
+            value={filters.locationId || ''}
+            onChange={(e) => handleChange('locationId', e.target.value)}
+            disabled={disabled}
+          />
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button
@@ -127,7 +149,7 @@ export function MovementFilters({ initialFilters, onApply, disabled }: Props) {
           Reset
         </Button>
         <span className="text-xs text-slate-500">
-          Item/location filters will appear once the backend exposes them.
+          Use item/location filters to trace stock movements for a specific scope.
         </span>
       </div>
     </div>

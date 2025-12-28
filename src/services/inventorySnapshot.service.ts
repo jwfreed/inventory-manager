@@ -15,6 +15,9 @@ export type InventorySnapshotRow = {
   onHand: number;
   reserved: number;
   available: number;
+  held: number;
+  rejected: number;
+  nonUsable: number;
   onOrder: number;
   inTransit: number;
   backordered: number;
@@ -186,6 +189,41 @@ async function loadInTransit(
   return map;
 }
 
+async function loadQcBuckets(
+  tenantId: string,
+  itemId: string,
+  locationId: string,
+  uom?: string
+): Promise<Map<string, { held: number; rejected: number }>> {
+  const params: any[] = [tenantId, itemId, locationId];
+  const uomFilter = uom ? ` AND prl.uom = $${params.push(uom)}` : '';
+  const { rows } = await query(
+    `SELECT prl.uom,
+            SUM(CASE WHEN qe.event_type = 'hold' THEN qe.quantity ELSE 0 END) AS held_qty,
+            SUM(CASE WHEN qe.event_type = 'reject' THEN qe.quantity ELSE 0 END) AS rejected_qty
+       FROM qc_events qe
+       JOIN purchase_order_receipt_lines prl ON prl.id = qe.purchase_order_receipt_line_id AND prl.tenant_id = qe.tenant_id
+       JOIN purchase_order_receipts por ON por.id = prl.purchase_order_receipt_id AND por.tenant_id = prl.tenant_id
+       JOIN purchase_order_lines pol ON pol.id = prl.purchase_order_line_id AND pol.tenant_id = prl.tenant_id
+       JOIN purchase_orders po ON po.id = pol.purchase_order_id AND po.tenant_id = pol.tenant_id
+      WHERE qe.tenant_id = $1
+        AND pol.item_id = $2
+        AND COALESCE(por.received_to_location_id, po.ship_to_location_id) = $3
+        AND por.status <> 'voided'${uomFilter}
+      GROUP BY prl.uom`,
+    params
+  );
+
+  const map = new Map<string, { held: number; rejected: number }>();
+  rows.forEach((row: any) => {
+    map.set(row.uom, {
+      held: normalizeQuantity(row.held_qty),
+      rejected: normalizeQuantity(row.rejected_qty)
+    });
+  });
+  return map;
+}
+
 export async function getInventorySnapshot(
   tenantId: string,
   params: InventorySnapshotParams
@@ -198,12 +236,14 @@ export async function getInventorySnapshot(
     loadOnOrder(tenantId, itemId, locationId, uom),
     loadInTransit(tenantId, itemId, locationId, uom)
   ]);
+  const qcBucketsMap = await loadQcBuckets(tenantId, itemId, locationId, uom);
 
   const uoms = new Set<string>();
   onHandMap.forEach((_v, key) => uoms.add(key));
   reservedMap.forEach((_v, key) => uoms.add(key));
   onOrderMap.forEach((_v, key) => uoms.add(key));
   inTransitMap.forEach((_v, key) => uoms.add(key));
+  qcBucketsMap.forEach((_v, key) => uoms.add(key));
   if (uom) {
     uoms.add(uom);
   }
@@ -216,6 +256,10 @@ export async function getInventorySnapshot(
       const reserved = reservedMap.get(entryUom) ?? 0;
       const onOrder = onOrderMap.get(entryUom) ?? 0;
       const inTransit = inTransitMap.get(entryUom) ?? 0;
+      const qcBuckets = qcBucketsMap.get(entryUom) ?? { held: 0, rejected: 0 };
+      const held = qcBuckets.held ?? 0;
+      const rejected = qcBuckets.rejected ?? 0;
+      const nonUsable = roundQuantity(held + rejected);
       const backordered = 0;
 
       const available = roundQuantity(onHand - reserved);
@@ -228,6 +272,9 @@ export async function getInventorySnapshot(
         onHand,
         reserved,
         available,
+        held,
+        rejected,
+        nonUsable,
         onOrder,
         inTransit,
         backordered,
@@ -246,15 +293,18 @@ export async function getInventorySnapshotSummary(
 ): Promise<InventorySnapshotRow[]> {
   const clauses: string[] = [];
   const reservedClauses: string[] = [];
+  const qcClauses: string[] = [];
   const paramsList: any[] = [tenantId];
 
   if (params.itemId) {
     clauses.push(`iml.item_id = $${paramsList.push(params.itemId)}`);
     reservedClauses.push(`r.item_id = $${paramsList.length}`);
+    qcClauses.push(`pol.item_id = $${paramsList.length}`);
   }
   if (params.locationId) {
     clauses.push(`iml.location_id = $${paramsList.push(params.locationId)}`);
     reservedClauses.push(`r.location_id = $${paramsList.length}`);
+    qcClauses.push(`COALESCE(por.received_to_location_id, po.ship_to_location_id) = $${paramsList.length}`);
   }
 
   const limit = params.limit ?? 500;
@@ -262,6 +312,7 @@ export async function getInventorySnapshotSummary(
 
   const whereOnHand = clauses.length ? `AND ${clauses.join(' AND ')}` : '';
   const whereReserved = reservedClauses.length ? `AND ${reservedClauses.join(' AND ')}` : '';
+  const whereQc = qcClauses.length ? `AND ${qcClauses.join(' AND ')}` : '';
 
   const { rows } = await query(
     `WITH on_hand AS (
@@ -288,6 +339,30 @@ export async function getInventorySnapshotSummary(
           ${whereReserved}
         GROUP BY r.item_id, r.location_id, r.uom
      ),
+     qc_buckets AS (
+       SELECT pol.item_id,
+              COALESCE(por.received_to_location_id, po.ship_to_location_id) AS location_id,
+              prl.uom,
+              SUM(CASE WHEN qe.event_type = 'hold' THEN qe.quantity ELSE 0 END) AS held_qty,
+              SUM(CASE WHEN qe.event_type = 'reject' THEN qe.quantity ELSE 0 END) AS rejected_qty
+         FROM qc_events qe
+         JOIN purchase_order_receipt_lines prl
+           ON prl.id = qe.purchase_order_receipt_line_id
+          AND prl.tenant_id = qe.tenant_id
+         JOIN purchase_order_receipts por
+           ON por.id = prl.purchase_order_receipt_id
+          AND por.tenant_id = prl.tenant_id
+         JOIN purchase_order_lines pol
+           ON pol.id = prl.purchase_order_line_id
+          AND pol.tenant_id = prl.tenant_id
+         JOIN purchase_orders po
+           ON po.id = pol.purchase_order_id
+          AND po.tenant_id = pol.tenant_id
+        WHERE qe.tenant_id = $1
+          AND por.status <> 'voided'
+          ${whereQc}
+        GROUP BY pol.item_id, COALESCE(por.received_to_location_id, po.ship_to_location_id), prl.uom
+     ),
      combined AS (
        SELECT COALESCE(oh.item_id, rs.item_id) AS item_id,
               COALESCE(oh.location_id, rs.location_id) AS location_id,
@@ -300,18 +375,25 @@ export async function getInventorySnapshotSummary(
           AND oh.location_id = rs.location_id
           AND oh.uom = rs.uom
      )
-    SELECT item_id,
-           location_id,
-           uom,
-           on_hand,
-           reserved,
-           (on_hand - reserved) AS available,
+    SELECT combined.item_id,
+           combined.location_id,
+           combined.uom,
+           combined.on_hand,
+           combined.reserved,
+           (combined.on_hand - combined.reserved) AS available,
+           COALESCE(qc.held_qty, 0) AS held,
+           COALESCE(qc.rejected_qty, 0) AS rejected,
+           (COALESCE(qc.held_qty, 0) + COALESCE(qc.rejected_qty, 0)) AS non_usable,
            0 AS on_order,
            0 AS in_transit,
            0 AS backordered,
-           (on_hand - reserved) AS inventory_position
+           (combined.on_hand - combined.reserved) AS inventory_position
       FROM combined
-     WHERE on_hand <> 0 OR reserved <> 0
+      LEFT JOIN qc_buckets qc
+        ON qc.item_id = combined.item_id
+       AND qc.location_id = combined.location_id
+       AND qc.uom = combined.uom
+     WHERE combined.on_hand <> 0 OR combined.reserved <> 0 OR COALESCE(qc.held_qty, 0) <> 0 OR COALESCE(qc.rejected_qty, 0) <> 0
      ORDER BY item_id, location_id, uom
      LIMIT $${paramsList.push(limit)} OFFSET $${paramsList.push(offset)};`,
     paramsList
@@ -324,6 +406,9 @@ export async function getInventorySnapshotSummary(
     onHand: normalizeQuantity(row.on_hand),
     reserved: normalizeQuantity(row.reserved),
     available: normalizeQuantity(row.available),
+    held: normalizeQuantity(row.held),
+    rejected: normalizeQuantity(row.rejected),
+    nonUsable: normalizeQuantity(row.non_usable),
     onOrder: normalizeQuantity(row.on_order),
     inTransit: normalizeQuantity(row.in_transit),
     backordered: normalizeQuantity(row.backordered),

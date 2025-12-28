@@ -25,6 +25,9 @@ export type PurchaseOrderReceiptLine = {
   remainingQuantityToPutaway?: number
   availableForNewPutaway?: number
   putawayBlockedReason?: string | null
+  putawayAcceptedQuantity?: number
+  putawayPostedQuantity?: number
+  putawayStatus?: 'not_available' | 'not_started' | 'partial' | 'complete'
 }
 
 export type QcEvent = {

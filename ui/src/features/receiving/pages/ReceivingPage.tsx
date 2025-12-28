@@ -26,11 +26,13 @@ export default function ReceivingPage() {
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const poIdFromQuery = searchParams.get('poId') ?? ''
+  const receiptIdFromQuery = searchParams.get('receiptId') ?? ''
+  const putawayIdFromQuery = searchParams.get('putawayId') ?? ''
   const [selectedPoId, setSelectedPoId] = useState(() => poIdFromQuery)
   const [receiptLineInputs, setReceiptLineInputs] = useState<ReceiptLineInput[] | null>(null)
   const [receiptNotes, setReceiptNotes] = useState('')
   const [receivedToLocationId, setReceivedToLocationId] = useState<string | null>(null)
-  const [receiptIdForPutaway, setReceiptIdForPutaway] = useState('')
+  const [receiptIdForPutaway, setReceiptIdForPutaway] = useState(() => receiptIdFromQuery)
   const [selectedQcLineId, setSelectedQcLineId] = useState('')
   const [qcDraft, setQcDraft] = useState<QcDraft>({
     lineId: '',
@@ -45,7 +47,7 @@ export default function ReceivingPage() {
     { purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' },
   ])
   const [locationSearch, setLocationSearch] = useState('')
-  const [putawayId, setPutawayId] = useState('')
+  const [putawayId, setPutawayId] = useState(() => putawayIdFromQuery)
   const poListQuery = usePurchaseOrdersList({ limit: 200 }, { staleTime: 60_000 })
 
   const poQuery = usePurchaseOrder(selectedPoId)

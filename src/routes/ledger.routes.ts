@@ -11,7 +11,7 @@ router.get('/inventory-movements', async (req: Request, res: Response) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { movement_type, status, external_ref, occurred_from, occurred_to, limit, offset } =
+  const { movement_type, status, external_ref, occurred_from, occurred_to, item_id, location_id, limit, offset } =
     parsed.data;
 
   try {
@@ -21,6 +21,8 @@ router.get('/inventory-movements', async (req: Request, res: Response) => {
       externalRef: external_ref,
       occurredFrom: occurred_from,
       occurredTo: occurred_to,
+      itemId: item_id,
+      locationId: location_id,
       limit: limit ?? 50,
       offset: offset ?? 0
     });
