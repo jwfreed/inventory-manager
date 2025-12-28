@@ -59,7 +59,10 @@ function mapReceiptLine(
     itemName: line.item_name ?? null,
     defaultToLocationId: line.item_default_location_id ?? null,
     uom: line.uom,
+    expectedQuantity: roundQuantity(toNumber(line.expected_quantity ?? 0)),
     quantityReceived,
+    discrepancyReason: line.discrepancy_reason ?? null,
+    discrepancyNotes: line.discrepancy_notes ?? null,
     createdAt: line.created_at,
     qcSummary: buildQcSummary(line.id, qcBreakdown, quantityReceived),
     remainingQuantityToPutaway: availability.remainingAfterPosted,
@@ -161,15 +164,19 @@ export async function createPurchaseOrderReceipt(
   }
 
   const { rows: poLineRows } = await query(
-    'SELECT id, purchase_order_id, uom FROM purchase_order_lines WHERE id = ANY($1::uuid[]) AND tenant_id = $2',
+    'SELECT id, purchase_order_id, uom, quantity_ordered FROM purchase_order_lines WHERE id = ANY($1::uuid[]) AND tenant_id = $2',
     [uniqueLineIds, tenantId]
   );
   if (poLineRows.length !== uniqueLineIds.length) {
     throw new Error('RECEIPT_PO_LINES_NOT_FOUND');
   }
-  const poLineMap = new Map<string, { purchase_order_id: string; uom: string }>();
+  const poLineMap = new Map<string, { purchase_order_id: string; uom: string; quantity_ordered: number }>();
   for (const row of poLineRows) {
-    poLineMap.set(row.id, { purchase_order_id: row.purchase_order_id, uom: row.uom });
+    poLineMap.set(row.id, {
+      purchase_order_id: row.purchase_order_id,
+      uom: row.uom,
+      quantity_ordered: roundQuantity(toNumber(row.quantity_ordered ?? 0))
+    });
   }
   for (const line of data.lines) {
     const poLine = poLineMap.get(line.purchaseOrderLineId);
@@ -212,11 +219,27 @@ export async function createPurchaseOrderReceipt(
 
     for (const line of data.lines) {
       const normalized = normalizeQuantityByUom(line.quantityReceived, line.uom);
+      const expectedQty = roundQuantity(toNumber(poLineMap.get(line.purchaseOrderLineId)?.quantity_ordered ?? 0));
+      const hasDiscrepancy = Math.abs(roundQuantity(normalized.quantity) - expectedQty) > 1e-6;
+      if (hasDiscrepancy && !line.discrepancyReason) {
+        throw new Error('RECEIPT_DISCREPANCY_REASON_REQUIRED');
+      }
       await client.query(
         `INSERT INTO purchase_order_receipt_lines (
-            id, tenant_id, purchase_order_receipt_id, purchase_order_line_id, uom, quantity_received
-         ) VALUES ($1, $2, $3, $4, $5, $6)`,
-        [uuidv4(), tenantId, receiptId, line.purchaseOrderLineId, normalized.uom, normalized.quantity]
+            id, tenant_id, purchase_order_receipt_id, purchase_order_line_id, uom,
+            quantity_received, expected_quantity, discrepancy_reason, discrepancy_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          uuidv4(),
+          tenantId,
+          receiptId,
+          line.purchaseOrderLineId,
+          normalized.uom,
+          normalized.quantity,
+          expectedQty,
+          line.discrepancyReason ?? null,
+          line.discrepancyNotes ?? null
+        ]
       );
     }
 

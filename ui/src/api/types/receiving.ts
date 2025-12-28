@@ -8,7 +8,10 @@ export type PurchaseOrderReceiptLine = {
   defaultFromLocationId?: string | null
   defaultToLocationId?: string | null
   uom: string
+  expectedQuantity?: number
   quantityReceived: number
+  discrepancyReason?: string | null
+  discrepancyNotes?: string | null
   createdAt: string
   qcSummary?: {
     totalQcQuantity: number

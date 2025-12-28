@@ -11,6 +11,8 @@ export type ReceiptCreatePayload = {
     purchaseOrderLineId: string
     uom: string
     quantityReceived: number
+    discrepancyReason?: 'short' | 'over' | 'damaged' | 'substituted'
+    discrepancyNotes?: string
   }[]
 }
 

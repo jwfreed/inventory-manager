@@ -78,6 +78,11 @@ export default function PurchaseOrderDetailPage() {
 
   const locationsQuery = useLocationsList({ limit: 200, active: true }, { staleTime: 60_000, retry: 1 })
 
+  const auditQuery = useAuditLog(
+    { entityType: 'purchase_order', entityId: id ?? '', limit: 50, offset: 0 },
+    { enabled: Boolean(id) },
+  )
+
   const locationOptions = useMemo(
     () =>
       (locationsQuery.data?.data ?? []).map((loc) => ({
@@ -284,11 +289,6 @@ export default function PurchaseOrderDetailPage() {
   const isReadyToSubmit = missingChecklist.length === 0
   const isBusy =
     updateMutation.isPending || submitMutation.isPending || approveMutation.isPending || cancelMutation.isPending
-
-  const auditQuery = useAuditLog(
-    { entityType: 'purchase_order', entityId: po.id, limit: 50, offset: 0 },
-    { enabled: Boolean(po.id) },
-  )
 
   const handleSave = () => {
     setSaveMessage(null)

@@ -58,6 +58,9 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
     if (error?.message === 'RECEIPT_LINE_UOM_MISMATCH') {
       return res.status(400).json({ error: 'Receipt line UOM must match the purchase order line UOM.' });
     }
+    if (error?.message === 'RECEIPT_DISCREPANCY_REASON_REQUIRED') {
+      return res.status(400).json({ error: 'Discrepancy reason is required when received quantity differs from expected.' });
+    }
     if (error?.message === 'RECEIPT_NOT_FOUND_AFTER_CREATE') {
       return res
         .status(500)

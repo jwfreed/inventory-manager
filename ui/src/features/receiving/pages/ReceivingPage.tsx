@@ -95,6 +95,8 @@ export default function ReceivingPage() {
       'One or more PO lines are invalid. Re-select the PO lines and try again.',
     'All receipt lines must reference the provided purchase order.':
       'Each receipt line must belong to the selected PO.',
+    'Discrepancy reason is required when received quantity differs from expected.':
+      'Select a discrepancy reason for each line that differs from expected.',
   }
 
   const putawayCreateErrorMap: Record<string, string> = {
@@ -436,6 +438,8 @@ export default function ReceivingPage() {
       purchaseOrderLineId: l.purchaseOrderLineId,
       uom: l.uom,
       quantityReceived: Number(l.receivedQty),
+      discrepancyReason: l.discrepancyReason || undefined,
+      discrepancyNotes: l.discrepancyNotes || undefined,
     }))
     if (lines.length === 0) return
     const discrepancyNote = receiptLineSummary.discrepancyLines.length

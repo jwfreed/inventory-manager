@@ -3,7 +3,9 @@ import { z } from 'zod';
 const receiptLineSchema = z.object({
   purchaseOrderLineId: z.string().uuid(),
   uom: z.string().min(1).max(32),
-  quantityReceived: z.number().positive()
+  quantityReceived: z.number().positive(),
+  discrepancyReason: z.enum(['short', 'over', 'damaged', 'substituted']).optional(),
+  discrepancyNotes: z.string().max(2000).optional()
 });
 
 export const purchaseOrderReceiptSchema = z.object({
