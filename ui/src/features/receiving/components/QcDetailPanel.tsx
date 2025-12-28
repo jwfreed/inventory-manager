@@ -1,5 +1,6 @@
 import type { PurchaseOrderReceiptLine, QcEvent } from '@api/types'
-import { Alert, Button, Input, LoadingSpinner, Textarea } from '@shared/ui'
+import { Alert, Badge, Button, Input, LoadingSpinner, Textarea } from '@shared/ui'
+import { formatDate } from '@shared/formatters'
 import { getQcStatus } from '../utils'
 
 type Props = {
@@ -83,9 +84,7 @@ export function QcDetailPanel({
           </div>
           <div className="text-xs text-slate-500">Receipt line {line.id.slice(0, 8)}...</div>
         </div>
-        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${status.tone}`}>
-          {status.label}
-        </span>
+        <Badge variant={status.variant}>{status.label}</Badge>
       </div>
       <div className="grid gap-2 md:grid-cols-5 text-sm text-slate-700">
         <div>
@@ -189,13 +188,24 @@ export function QcDetailPanel({
         )}
         {!qcEventsLoading && !qcEventsError && qcEvents.length > 0 && (
           <ul className="mt-2 space-y-1 text-xs text-slate-600">
-            {qcEvents.map((event) => (
-              <li key={event.id}>
-                {event.eventType.toUpperCase()} {event.quantity} {event.uom}
-                {event.reasonCode ? ` - ${event.reasonCode}` : ''}
-                {event.notes ? ` (${event.notes})` : ''}
-              </li>
-            ))}
+            {qcEvents.map((event) => {
+              const actorLabel =
+                event.actorType === 'system'
+                  ? 'System'
+                  : event.actorId
+                    ? `User ${event.actorId.slice(0, 8)}`
+                    : 'User'
+              const occurredLabel = formatDate(event.occurredAt)
+              return (
+                <li key={event.id}>
+                  {event.eventType.toUpperCase()} {event.quantity} {event.uom}
+                  {event.reasonCode ? ` - ${event.reasonCode}` : ''}
+                  {event.notes ? ` (${event.notes})` : ''}
+                  {occurredLabel ? ` · ${occurredLabel}` : ''}
+                  {actorLabel ? ` · ${actorLabel}` : ''}
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

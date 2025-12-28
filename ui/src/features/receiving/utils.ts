@@ -30,10 +30,10 @@ export const getQcBreakdown = (line: PurchaseOrderReceiptLine) => {
 export const getQcStatus = (line: PurchaseOrderReceiptLine) => {
   const { totalQc, remaining } = getQcBreakdown(line)
   if (totalQc === 0) {
-    return { label: 'QC not started', tone: 'bg-slate-100 text-slate-600' }
+    return { label: 'QC not started', variant: 'neutral' as const }
   }
   if (remaining > 0) {
-    return { label: 'QC in progress', tone: 'bg-amber-100 text-amber-700' }
+    return { label: 'QC in progress', variant: 'warning' as const }
   }
-  return { label: 'QC complete', tone: 'bg-emerald-100 text-emerald-700' }
+  return { label: 'QC complete', variant: 'success' as const }
 }

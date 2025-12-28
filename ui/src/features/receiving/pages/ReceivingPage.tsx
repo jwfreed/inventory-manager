@@ -28,12 +28,13 @@ export default function ReceivingPage() {
   const poIdFromQuery = searchParams.get('poId') ?? ''
   const receiptIdFromQuery = searchParams.get('receiptId') ?? ''
   const putawayIdFromQuery = searchParams.get('putawayId') ?? ''
+  const qcLineIdFromQuery = searchParams.get('qcLineId') ?? ''
   const [selectedPoId, setSelectedPoId] = useState(() => poIdFromQuery)
   const [receiptLineInputs, setReceiptLineInputs] = useState<ReceiptLineInput[] | null>(null)
   const [receiptNotes, setReceiptNotes] = useState('')
   const [receivedToLocationId, setReceivedToLocationId] = useState<string | null>(null)
   const [receiptIdForPutaway, setReceiptIdForPutaway] = useState(() => receiptIdFromQuery)
-  const [selectedQcLineId, setSelectedQcLineId] = useState('')
+  const [selectedQcLineId, setSelectedQcLineId] = useState(() => qcLineIdFromQuery)
   const [qcDraft, setQcDraft] = useState<QcDraft>({
     lineId: '',
     eventType: 'accept',
@@ -160,12 +161,6 @@ export default function ReceivingPage() {
     if (!selectedQcLineId || !hasSelected) {
       const nextLine = qcLines.find((line) => getQcBreakdown(line).remaining > 0) ?? qcLines[0]
       return nextLine?.id ?? ''
-    }
-    const selected = qcLines.find((line) => line.id === selectedQcLineId)
-    if (!selected) return ''
-    if (getQcBreakdown(selected).remaining <= 0) {
-      const nextLine = qcLines.find((line) => getQcBreakdown(line).remaining > 0)
-      return nextLine?.id ?? selectedQcLineId
     }
     return selectedQcLineId
   }, [qcLines, selectedQcLineId])
@@ -577,7 +572,7 @@ export default function ReceivingPage() {
 
       <Section
         title="Record a receipt"
-        description="Step 1: confirm what physically arrived. Posting a receipt updates inventory and locks this record."
+        description="Step 1: confirm what physically arrived. Posting a receipt records the arrival; inventory becomes available after QC accept and putaway."
       >
         <Card>
           <form className="space-y-4" onSubmit={onCreateReceipt}>
@@ -595,14 +590,14 @@ export default function ReceivingPage() {
               <Alert
                 variant="info"
                 title="Saving receipt"
-                message="Posting the receipt and updating inventory. Please wait…"
+                message="Posting the receipt. Inventory becomes available after QC accept and putaway."
               />
             )}
             {receiptMutation.isSuccess && receiptMutation.data && (
               <Alert
                 variant="success"
                 title="Receipt posted"
-                message={`Receipt ${receiptMutation.data.id.slice(0, 8)}… posted. Use Item → Stock for authoritative totals. Next: create a putaway when you're ready.`}
+                message={`Receipt ${receiptMutation.data.id.slice(0, 8)}… posted. Next: record QC acceptance, then create a putaway to make inventory available.`}
                 action={
                   <Button
                     size="sm"
@@ -789,6 +784,7 @@ export default function ReceivingPage() {
                     lines={receiptQuery.data.lines ?? []}
                     activeLineId={activeQcLineId}
                     onSelectLine={setSelectedQcLineId}
+                    receiptId={receiptQuery.data.id}
                   />
                 </div>
               </div>

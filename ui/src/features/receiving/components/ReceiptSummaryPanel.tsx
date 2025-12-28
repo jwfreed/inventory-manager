@@ -61,10 +61,10 @@ export function ReceiptSummaryPanel({ summary, totalLines, discrepancyLabels }: 
         </div>
       )}
       <p className="mt-2 text-xs text-slate-500">
-        Posting creates a receipt, updates inventory immediately, and locks this record.
+        Posting creates an auditable receipt record. Inventory becomes available only after QC acceptance and putaway.
       </p>
       <p className="mt-1 text-xs text-slate-500">
-        Discrepancies are recorded in the receipt notes for auditability.
+        Discrepancy reasons and notes are stored per line for auditability.
       </p>
     </div>
   )

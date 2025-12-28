@@ -1,14 +1,24 @@
 import type { PurchaseOrderReceiptLine } from '@api/types'
-import { Button, DataTable } from '@shared/ui'
+import { Badge, Button, DataTable } from '@shared/ui'
 import { getQcBreakdown, getQcStatus } from '../utils'
 
 type Props = {
   lines: PurchaseOrderReceiptLine[]
   activeLineId: string
   onSelectLine: (id: string) => void
+  receiptId?: string
 }
 
-export function QcLinesTable({ lines, activeLineId, onSelectLine }: Props) {
+export function QcLinesTable({ lines, activeLineId, onSelectLine, receiptId }: Props) {
+  const buildQcLink = (lineId: string) => {
+    if (!receiptId) return ''
+    const params = new URLSearchParams({
+      receiptId,
+      qcLineId: lineId,
+    })
+    return `/receiving?${params.toString()}`
+  }
+
   return (
     <DataTable
       rows={lines}
@@ -57,13 +67,7 @@ export function QcLinesTable({ lines, activeLineId, onSelectLine }: Props) {
           header: 'Status',
           cell: (line) => {
             const status = getQcStatus(line)
-            return (
-              <span
-                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${status.tone}`}
-              >
-                {status.label}
-              </span>
-            )
+            return <Badge variant={status.variant}>{status.label}</Badge>
           },
         },
         {
@@ -75,31 +79,29 @@ export function QcLinesTable({ lines, activeLineId, onSelectLine }: Props) {
             const remainingQty = line.remainingQuantityToPutaway ?? 0
             const blockedReason = line.putawayBlockedReason ?? ''
             let putawayLabel = 'Blocked'
-            let putawayTone = 'bg-amber-100 text-amber-700'
-            if (availableQty > 0) {
-              putawayLabel = `Available ${availableQty}`
-              putawayTone = 'bg-emerald-100 text-emerald-700'
-            } else if (remainingQty > 0) {
-              putawayLabel = 'Planned in draft'
-              putawayTone = 'bg-slate-100 text-slate-600'
-            } else if (line.putawayStatus === 'complete') {
+            let putawayVariant: 'neutral' | 'success' | 'warning' | 'danger' | 'info' = 'warning'
+            if (line.putawayStatus === 'complete') {
               putawayLabel = 'Putaway complete'
-              putawayTone = 'bg-slate-100 text-slate-600'
+              putawayVariant = 'success'
             } else if (line.putawayStatus === 'partial') {
               putawayLabel = 'Partially put away'
-              putawayTone = 'bg-slate-100 text-slate-600'
+              putawayVariant = 'info'
+            } else if (availableQty > 0) {
+              putawayLabel = `Available ${availableQty}`
+              putawayVariant = 'success'
+            } else if (remainingQty > 0) {
+              putawayLabel = 'Planned in draft'
+              putawayVariant = 'neutral'
             } else if (qc.hold > 0) {
               putawayLabel = 'On hold'
+              putawayVariant = 'warning'
             } else if (qc.reject > 0) {
               putawayLabel = 'Rejected'
+              putawayVariant = 'danger'
             }
             return (
               <div>
-                <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${putawayTone}`}
-                >
-                  {putawayLabel}
-                </span>
+                <Badge variant={putawayVariant}>{putawayLabel}</Badge>
                 {blockedReason && availableQty <= 0 && (
                   <div className="mt-1 text-xs text-slate-500">{blockedReason}</div>
                 )}
@@ -111,16 +113,26 @@ export function QcLinesTable({ lines, activeLineId, onSelectLine }: Props) {
           id: 'action',
           header: 'Action',
           align: 'right',
-          cell: (line) => (
-            <Button
-              type="button"
-              size="sm"
-              variant={activeLineId === line.id ? 'primary' : 'secondary'}
-              onClick={() => onSelectLine(line.id)}
-            >
-              QC
-            </Button>
-          ),
+          cell: (line) => {
+            const qcLink = buildQcLink(line.id)
+            return (
+              <div className="flex justify-end gap-2">
+                {qcLink && (
+                  <a className="text-xs text-slate-500 underline" href={qcLink}>
+                    Link
+                  </a>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={activeLineId === line.id ? 'primary' : 'secondary'}
+                  onClick={() => onSelectLine(line.id)}
+                >
+                  QC
+                </Button>
+              </div>
+            )
+          },
         },
       ]}
     />

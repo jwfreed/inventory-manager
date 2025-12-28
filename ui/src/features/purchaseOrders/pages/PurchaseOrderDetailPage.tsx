@@ -21,6 +21,29 @@ import { PurchaseOrderActionBar } from '../components/PurchaseOrderActionBar'
 import { useAuditLog } from '../../audit/queries'
 import { AuditTrailTable } from '../../audit/components/AuditTrailTable'
 
+function AuditTrailPanel({ entityId }: { entityId?: string }) {
+  const auditQuery = useAuditLog(
+    { entityType: 'purchase_order', entityId: entityId ?? '', limit: 50, offset: 0 },
+    { enabled: Boolean(entityId) },
+  )
+
+  return (
+    <Section title="Audit trail" subtitle="Authoritative history of key actions.">
+      <Card>
+        {auditQuery.isLoading && <LoadingSpinner label="Loading audit trail..." />}
+        {auditQuery.isError && (
+          <Alert
+            variant="error"
+            title="Audit trail unavailable"
+            message={(auditQuery.error as ApiError)?.message ?? 'Could not load audit trail.'}
+          />
+        )}
+        {!auditQuery.isLoading && !auditQuery.isError && <AuditTrailTable entries={auditQuery.data ?? []} />}
+      </Card>
+    </Section>
+  )
+}
+
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -77,11 +100,6 @@ export default function PurchaseOrderDetailPage() {
   const poQuery = usePurchaseOrder(id)
 
   const locationsQuery = useLocationsList({ limit: 200, active: true }, { staleTime: 60_000, retry: 1 })
-
-  const auditQuery = useAuditLog(
-    { entityType: 'purchase_order', entityId: id ?? '', limit: 50, offset: 0 },
-    { enabled: Boolean(id) },
-  )
 
   const locationOptions = useMemo(
     () =>
@@ -435,21 +453,7 @@ export default function PurchaseOrderDetailPage() {
         </Card>
       </Section>
 
-      <Section title="Audit trail">
-        <Card>
-          {auditQuery.isLoading && <LoadingSpinner label="Loading audit trail..." />}
-          {auditQuery.isError && (
-            <Alert
-              variant="error"
-              title="Audit trail unavailable"
-              message={(auditQuery.error as ApiError)?.message ?? 'Could not load audit trail.'}
-            />
-          )}
-          {!auditQuery.isLoading && !auditQuery.isError && (
-            <AuditTrailTable entries={auditQuery.data ?? []} />
-          )}
-        </Card>
-      </Section>
+      <AuditTrailPanel entityId={id} />
     </div>
   )
 }

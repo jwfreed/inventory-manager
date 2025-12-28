@@ -1,5 +1,5 @@
 import type { PurchaseOrderReceipt } from '@api/types'
-import { Button, DataTable } from '@shared/ui'
+import { Badge, Button, DataTable } from '@shared/ui'
 
 type Props = {
   receipts: PurchaseOrderReceipt[]
@@ -38,29 +38,37 @@ export function RecentReceiptsTable({ receipts, onLoad, onVoid, voidDisabled }: 
           cell: (rec) => rec.receivedAt,
         },
         {
+          id: 'qc',
+          header: 'QC',
+          cell: (rec) => {
+            const firstLineId = rec.lines?.[0]?.id ?? ''
+            const params = new URLSearchParams({
+              receiptId: rec.id,
+              ...(firstLineId ? { qcLineId: firstLineId } : {}),
+            })
+            return (
+              <a className="text-xs text-slate-500 underline" href={`/receiving?${params.toString()}`}>
+                Review QC
+              </a>
+            )
+          },
+        },
+        {
           id: 'putaway',
           header: 'Putaway',
           cell: (rec) => (
-            <span
-              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                rec.hasPutaway ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
+            <Badge variant={rec.hasPutaway ? 'info' : 'neutral'}>
               {rec.hasPutaway ? 'Putaway started' : 'Not started'}
-            </span>
+            </Badge>
           ),
         },
         {
           id: 'status',
           header: 'Status',
           cell: (rec) => (
-            <span
-              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                rec.status === 'voided' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
+            <Badge variant={rec.status === 'voided' ? 'danger' : 'info'}>
               {rec.status === 'voided' ? 'Voided' : 'Posted'}
-            </span>
+            </Badge>
           ),
         },
         {
