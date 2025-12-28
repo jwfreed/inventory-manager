@@ -25,6 +25,7 @@ import planningRouter from './routes/planning.routes';
 import drpRouter from './routes/drp.routes';
 import complianceRouter from './routes/compliance.routes';
 import eventsRouter from './routes/events.routes';
+import auditRouter from './routes/audit.routes';
 import { requireAuth } from './middleware/auth.middleware';
 import { destructiveGuard } from './middleware/destructiveGuard.middleware';
 
@@ -103,6 +104,7 @@ app.use(planningRouter);
 app.use(drpRouter);
 app.use(complianceRouter);
 app.use(eventsRouter);
+app.use(auditRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });

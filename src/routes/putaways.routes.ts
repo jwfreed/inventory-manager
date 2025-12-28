@@ -15,7 +15,10 @@ router.post('/putaways', async (req: Request, res: Response) => {
   }
 
   try {
-    const putaway = await createPutaway(req.auth!.tenantId, parsed.data);
+    const putaway = await createPutaway(req.auth!.tenantId, parsed.data, {
+      type: 'user',
+      id: req.auth!.userId
+    });
     return res.status(201).json(putaway);
   } catch (error: any) {
     if (error?.message === 'PUTAWAY_LINES_NOT_FOUND') {
@@ -89,7 +92,7 @@ router.post('/putaways/:id/post', async (req: Request, res: Response) => {
 
   try {
     const tenantId = req.auth!.tenantId;
-    const putaway = await postPutaway(tenantId, id);
+    const putaway = await postPutaway(tenantId, id, { type: 'user', id: req.auth!.userId });
     const itemIds = Array.from(new Set(putaway.lines.map((line) => line.itemId)));
     const locationIds = Array.from(
       new Set(

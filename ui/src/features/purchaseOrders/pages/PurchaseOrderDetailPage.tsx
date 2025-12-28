@@ -18,6 +18,8 @@ import { PurchaseOrderAlerts } from '../components/PurchaseOrderAlerts'
 import { PurchaseOrderDetailsForm } from '../components/PurchaseOrderDetailsForm'
 import { PurchaseOrderChecklistPanel } from '../components/PurchaseOrderChecklistPanel'
 import { PurchaseOrderActionBar } from '../components/PurchaseOrderActionBar'
+import { useAuditLog } from '../../audit/queries'
+import { AuditTrailTable } from '../../audit/components/AuditTrailTable'
 
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -283,6 +285,11 @@ export default function PurchaseOrderDetailPage() {
   const isBusy =
     updateMutation.isPending || submitMutation.isPending || approveMutation.isPending || cancelMutation.isPending
 
+  const auditQuery = useAuditLog(
+    { entityType: 'purchase_order', entityId: po.id, limit: 50, offset: 0 },
+    { enabled: Boolean(po.id) },
+  )
+
   const handleSave = () => {
     setSaveMessage(null)
     setSaveError(null)
@@ -425,6 +432,22 @@ export default function PurchaseOrderDetailPage() {
             Ordered vs received/in-transit is not surfaced yet in this UI; use Receiving/Putaway to verify what has arrived.
           </div>
           <PurchaseOrderLinesTable lines={po.lines ?? []} />
+        </Card>
+      </Section>
+
+      <Section title="Audit trail">
+        <Card>
+          {auditQuery.isLoading && <LoadingSpinner label="Loading audit trail..." />}
+          {auditQuery.isError && (
+            <Alert
+              variant="error"
+              title="Audit trail unavailable"
+              message={(auditQuery.error as ApiError)?.message ?? 'Could not load audit trail.'}
+            />
+          )}
+          {!auditQuery.isLoading && !auditQuery.isError && (
+            <AuditTrailTable entries={auditQuery.data ?? []} />
+          )}
         </Card>
       </Section>
     </div>

@@ -5,6 +5,7 @@ import { pool, withTransaction } from '../db';
 import { inventoryAdjustmentSchema } from '../schemas/adjustments.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
+import { recordAuditLog } from '../lib/audit';
 
 type InventoryAdjustmentInput = z.infer<typeof inventoryAdjustmentSchema>;
 
@@ -91,7 +92,11 @@ function normalizeAdjustmentLines(data: InventoryAdjustmentInput) {
   });
 }
 
-export async function createInventoryAdjustment(tenantId: string, data: InventoryAdjustmentInput) {
+export async function createInventoryAdjustment(
+  tenantId: string,
+  data: InventoryAdjustmentInput,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
   const normalizedLines = normalizeAdjustmentLines(data);
   const now = new Date();
   const adjustmentId = uuidv4();
@@ -123,6 +128,22 @@ export async function createInventoryAdjustment(tenantId: string, data: Inventor
         ]
       );
     }
+
+    if (actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'create',
+          entityType: 'inventory_adjustment',
+          entityId: adjustmentId,
+          occurredAt: now,
+          metadata: { status: 'draft', lineCount: normalizedLines.length }
+        },
+        client
+      );
+    }
   });
 
   const adjustment = await fetchInventoryAdjustmentById(tenantId, adjustmentId);
@@ -136,7 +157,11 @@ export async function getInventoryAdjustment(tenantId: string, id: string) {
   return fetchInventoryAdjustmentById(tenantId, id);
 }
 
-export async function postInventoryAdjustment(tenantId: string, id: string) {
+export async function postInventoryAdjustment(
+  tenantId: string,
+  id: string,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
   const adjustment = await withTransaction(async (client: PoolClient) => {
     const now = new Date();
     const adjustmentResult = await client.query<InventoryAdjustmentRow>(
@@ -201,6 +226,22 @@ export async function postInventoryAdjustment(tenantId: string, id: string) {
        WHERE id = $3 AND tenant_id = $4`,
       [movementId, now, id, tenantId]
     );
+
+    if (actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'post',
+          entityType: 'inventory_adjustment',
+          entityId: id,
+          occurredAt: now,
+          metadata: { movementId }
+        },
+        client
+      );
+    }
 
     return fetchInventoryAdjustmentById(tenantId, id, client);
   });

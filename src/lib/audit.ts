@@ -9,6 +9,7 @@ type AuditInput = {
   action: 'create' | 'update' | 'delete' | 'post' | 'unpost';
   entityType: string;
   entityId: string;
+  occurredAt?: Date;
   requestId?: string | null;
   metadata?: Record<string, unknown> | null;
   before?: Record<string, unknown> | null;
@@ -23,6 +24,7 @@ export async function recordAuditLog(input: AuditInput, client?: PoolClient) {
     action,
     entityType,
     entityId,
+    occurredAt,
     requestId,
     metadata,
     before,
@@ -32,8 +34,8 @@ export async function recordAuditLog(input: AuditInput, client?: PoolClient) {
   const executor = client ? client.query.bind(client) : query;
   await executor(
     `INSERT INTO audit_log (
-        id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, request_id, metadata, before, after
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, metadata, before, after
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [
       uuidv4(),
       tenantId,
@@ -42,6 +44,7 @@ export async function recordAuditLog(input: AuditInput, client?: PoolClient) {
       action,
       entityType,
       entityId,
+      occurredAt ?? new Date(),
       requestId ?? null,
       metadata ?? null,
       before ?? null,

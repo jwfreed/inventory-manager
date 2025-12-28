@@ -4,6 +4,7 @@ import { query, withTransaction } from '../db';
 import { qcEventSchema } from '../schemas/qc.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
+import { recordAuditLog } from '../lib/audit';
 
 export type QcEventInput = z.infer<typeof qcEventSchema>;
 
@@ -81,6 +82,26 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
       ]
     );
     const created = rows[0];
+
+    await recordAuditLog(
+      {
+        tenantId,
+        actorType: data.actorType,
+        actorId: data.actorId ?? null,
+        action: 'create',
+        entityType: 'qc_event',
+        entityId: created.id,
+        occurredAt: created.occurred_at ? new Date(created.occurred_at) : new Date(),
+        metadata: {
+          receiptLineId: data.purchaseOrderReceiptLineId,
+          eventType: data.eventType,
+          quantity: normalized.quantity,
+          uom: normalized.uom,
+          reasonCode: data.reasonCode ?? null
+        }
+      },
+      client
+    );
 
     if (data.eventType === 'accept') {
       let itemDefaultLocationId: string | null = null;

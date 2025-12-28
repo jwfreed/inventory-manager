@@ -129,7 +129,11 @@ async function loadLinesWithItems(client: PoolClient, tenantId: string, poId: st
   return rows;
 }
 
-export async function createPurchaseOrder(tenantId: string, data: PurchaseOrderInput) {
+export async function createPurchaseOrder(
+  tenantId: string,
+  data: PurchaseOrderInput,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
   const poId = uuidv4();
   const now = new Date();
   const requestedStatus = data.status ?? 'draft';
@@ -190,11 +194,35 @@ export async function createPurchaseOrder(tenantId: string, data: PurchaseOrderI
     }
 
     const enrichedLines = await loadLinesWithItems(client, tenantId, poId);
-    return mapPurchaseOrder(insertedOrder.rows[0], enrichedLines);
+    const mapped = mapPurchaseOrder(insertedOrder.rows[0], enrichedLines);
+    if (actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'create',
+          entityType: 'purchase_order',
+          entityId: poId,
+          occurredAt: now,
+          metadata: {
+            status: mapped.status,
+            lineCount: enrichedLines.length
+          }
+        },
+        client
+      );
+    }
+    return mapped;
   });
 }
 
-export async function updatePurchaseOrder(tenantId: string, id: string, data: PurchaseOrderUpdateInput) {
+export async function updatePurchaseOrder(
+  tenantId: string,
+  id: string,
+  data: PurchaseOrderUpdateInput,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
   const now = new Date();
   const normalizedLines = data.lines ? normalizePurchaseOrderLines(data.lines) : null;
 
@@ -298,7 +326,29 @@ export async function updatePurchaseOrder(tenantId: string, id: string, data: Pu
     }
 
     const lines = await loadLinesWithItems(client, tenantId, id);
-    return mapPurchaseOrder(updated.rows[0], lines);
+    const mapped = mapPurchaseOrder(updated.rows[0], lines);
+    if (actor) {
+      const changedFields = Object.keys(data).filter((key) => data[key as keyof PurchaseOrderUpdateInput] !== undefined);
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'update',
+          entityType: 'purchase_order',
+          entityId: id,
+          occurredAt: now,
+          metadata: {
+            statusFrom: currentStatus,
+            statusTo: mapped.status,
+            changedFields,
+            lineCount: lines.length
+          }
+        },
+        client
+      );
+    }
+    return mapped;
   });
 }
 
@@ -368,7 +418,11 @@ export async function cancelPurchaseOrder(
   });
 }
 
-export async function approvePurchaseOrder(tenantId: string, id: string) {
+export async function approvePurchaseOrder(
+  tenantId: string,
+  id: string,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
   return withTransaction(async (client) => {
     const now = new Date();
     const poResult = await client.query('SELECT * FROM purchase_orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE', [
@@ -398,7 +452,23 @@ export async function approvePurchaseOrder(tenantId: string, id: string) {
       [now, id, tenantId]
     );
     const lines = await loadLinesWithItems(client, tenantId, id);
-    return mapPurchaseOrder(updated.rows[0], lines);
+    const mapped = mapPurchaseOrder(updated.rows[0], lines);
+    if (actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'update',
+          entityType: 'purchase_order',
+          entityId: id,
+          occurredAt: now,
+          metadata: { statusFrom: po.status, statusTo: mapped.status }
+        },
+        client
+      );
+    }
+    return mapped;
   });
 }
 

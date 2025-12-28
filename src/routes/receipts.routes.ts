@@ -16,7 +16,7 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
 
   try {
     const tenantId = req.auth!.tenantId;
-    const receipt = await createPurchaseOrderReceipt(tenantId, parsed.data);
+    const receipt = await createPurchaseOrderReceipt(tenantId, parsed.data, { type: 'user', id: req.auth!.userId });
     const itemIds = Array.from(new Set(receipt.lines.map((line: any) => line.itemId).filter(Boolean)));
     const locationIds = Array.from(
       new Set(

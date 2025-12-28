@@ -123,7 +123,11 @@ export async function fetchReceiptById(tenantId: string, id: string, client?: Po
   return mapReceipt(receiptResult.rows[0], linesResult.rows, breakdown, totals);
 }
 
-export async function createPurchaseOrderReceipt(tenantId: string, data: PurchaseOrderReceiptInput) {
+export async function createPurchaseOrderReceipt(
+  tenantId: string,
+  data: PurchaseOrderReceiptInput,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
   const receiptId = uuidv4();
   const uniqueSet = new Set(data.lines.map((line) => line.purchaseOrderLineId));
   const uniqueLineIds = Array.from(uniqueSet);
@@ -187,6 +191,7 @@ export async function createPurchaseOrderReceipt(tenantId: string, data: Purchas
     resolvedReceivedToLocationId = receivingLoc ?? poRow.ship_to_location_id ?? null;
   }
 
+  const now = new Date();
   await withTransaction(async (client) => {
     await client.query(
       `INSERT INTO purchase_order_receipts (
@@ -212,6 +217,26 @@ export async function createPurchaseOrderReceipt(tenantId: string, data: Purchas
             id, tenant_id, purchase_order_receipt_id, purchase_order_line_id, uom, quantity_received
          ) VALUES ($1, $2, $3, $4, $5, $6)`,
         [uuidv4(), tenantId, receiptId, line.purchaseOrderLineId, normalized.uom, normalized.quantity]
+      );
+    }
+
+    if (actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'create',
+          entityType: 'purchase_order_receipt',
+          entityId: receiptId,
+          occurredAt: now,
+          metadata: {
+            purchaseOrderId: data.purchaseOrderId,
+            status: 'posted',
+            lineCount: data.lines.length
+          }
+        },
+        client
       );
     }
   });

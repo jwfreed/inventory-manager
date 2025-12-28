@@ -1,5 +1,6 @@
 export * from './boms'
 export * from './common'
+export * from './audit'
 export * from './inventory'
 export * from './items'
 export * from './kpis'

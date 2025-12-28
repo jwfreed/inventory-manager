@@ -5,6 +5,7 @@ import { putawaySchema } from '../schemas/putaways.schema';
 import type { z } from 'zod';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
+import { recordAuditLog } from '../lib/audit';
 import {
   calculateAcceptedQuantity,
   calculatePutawayAvailability,
@@ -136,7 +137,11 @@ export async function fetchPutawayById(tenantId: string, id: string, client?: Po
   return mapPutaway(putawayResult.rows[0], linesResult.rows, contexts, qcBreakdown, totals);
 }
 
-export async function createPutaway(tenantId: string, data: PutawayInput) {
+export async function createPutaway(
+  tenantId: string,
+  data: PutawayInput,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
   const lineIds = data.lines.map((line) => line.purchaseOrderReceiptLineId);
   const uniqueLineIds = Array.from(new Set(lineIds));
   await assertReceiptLinesNotVoided(tenantId, uniqueLineIds);
@@ -246,6 +251,26 @@ export async function createPutaway(tenantId: string, data: PutawayInput) {
         ]
       );
     }
+
+    if (actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'create',
+          entityType: 'putaway',
+          entityId: putawayId,
+          occurredAt: now,
+          metadata: {
+            sourceType: data.sourceType,
+            purchaseOrderReceiptId: receiptIdForPutaway ?? null,
+            lineCount: normalizedLines.length
+          }
+        },
+        client
+      );
+    }
   });
 
   const putaway = await fetchPutawayById(tenantId, putawayId);
@@ -255,7 +280,11 @@ export async function createPutaway(tenantId: string, data: PutawayInput) {
   return putaway;
 }
 
-export async function postPutaway(tenantId: string, id: string) {
+export async function postPutaway(
+  tenantId: string,
+  id: string,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
   return withTransaction(async (client) => {
     const now = new Date();
     const putawayResult = await client.query<PutawayRow>(
@@ -357,6 +386,22 @@ export async function postPutaway(tenantId: string, id: string) {
       'UPDATE putaways SET status = $1, inventory_movement_id = $2, updated_at = $3 WHERE id = $4 AND tenant_id = $5',
       ['completed', movementId, now, id, tenantId]
     );
+
+    if (actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'post',
+          entityType: 'putaway',
+          entityId: id,
+          occurredAt: now,
+          metadata: { movementId }
+        },
+        client
+      );
+    }
 
     return fetchPutawayById(tenantId, id, client);
   });

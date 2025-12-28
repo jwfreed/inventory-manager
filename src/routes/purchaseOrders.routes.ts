@@ -23,7 +23,7 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
 
   try {
     const tenantId = req.auth!.tenantId;
-    const purchaseOrder = await createPurchaseOrder(tenantId, parsed.data);
+    const purchaseOrder = await createPurchaseOrder(tenantId, parsed.data, { type: 'user', id: req.auth!.userId });
     const itemIds = Array.from(new Set(purchaseOrder.lines.map((line) => line.itemId)));
     const locationIds = Array.from(
       new Set([purchaseOrder.shipToLocationId, purchaseOrder.receivingLocationId].filter(Boolean))
@@ -96,7 +96,7 @@ router.put('/purchase-orders/:id', async (req: Request, res: Response) => {
   }
   try {
     const tenantId = req.auth!.tenantId;
-    const po = await updatePurchaseOrder(tenantId, id, parsed.data);
+    const po = await updatePurchaseOrder(tenantId, id, parsed.data, { type: 'user', id: req.auth!.userId });
     const itemIds = Array.from(new Set(po.lines.map((line) => line.itemId)));
     const locationIds = Array.from(new Set([po.shipToLocationId, po.receivingLocationId].filter(Boolean)));
     emitEvent(tenantId, 'inventory.purchase_order.updated', {
@@ -149,7 +149,7 @@ router.post('/purchase-orders/:id/approve', async (req: Request, res: Response) 
   }
   try {
     const tenantId = req.auth!.tenantId;
-    const po = await approvePurchaseOrder(tenantId, id);
+    const po = await approvePurchaseOrder(tenantId, id, { type: 'user', id: req.auth!.userId });
     const itemIds = Array.from(new Set(po.lines.map((line) => line.itemId)));
     const locationIds = Array.from(new Set([po.shipToLocationId, po.receivingLocationId].filter(Boolean)));
     emitEvent(tenantId, 'inventory.purchase_order.approved', {

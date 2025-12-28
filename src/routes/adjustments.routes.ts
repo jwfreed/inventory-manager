@@ -19,7 +19,10 @@ router.post('/inventory-adjustments', async (req: Request, res: Response) => {
   }
 
   try {
-    const adjustment = await createInventoryAdjustment(req.auth!.tenantId, parsed.data);
+    const adjustment = await createInventoryAdjustment(req.auth!.tenantId, parsed.data, {
+      type: 'user',
+      id: req.auth!.userId
+    });
     return res.status(201).json(adjustment);
   } catch (error: any) {
     if (error?.message === 'ADJUSTMENT_DUPLICATE_LINE') {
@@ -65,7 +68,10 @@ router.post('/inventory-adjustments/:id/post', async (req: Request, res: Respons
 
   try {
     const tenantId = req.auth!.tenantId;
-    const adjustment = await postInventoryAdjustment(tenantId, id);
+    const adjustment = await postInventoryAdjustment(tenantId, id, {
+      type: 'user',
+      id: req.auth!.userId
+    });
     const itemIds = Array.from(new Set(adjustment.lines.map((line) => line.itemId)));
     const locationIds = Array.from(new Set(adjustment.lines.map((line) => line.locationId)));
     emitEvent(tenantId, 'inventory.adjustment.posted', {
