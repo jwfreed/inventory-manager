@@ -108,6 +108,15 @@ export default function ItemDetailPage() {
           <Button variant="secondary" size="sm" onClick={() => navigate('/items')}>
             Back to list
           </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              if (id) navigate(`/inventory-adjustments/new?itemId=${id}`)
+            }}
+          >
+            Adjust stock
+          </Button>
           <Button variant="secondary" size="sm" onClick={copyId}>
             Copy ID
           </Button>
@@ -166,21 +175,21 @@ export default function ItemDetailPage() {
       )}
 
       {itemQuery.data && (
+        <div className="flex justify-end pb-2">
+          <Button variant="secondary" size="sm" onClick={() => setShowEdit((v) => !v)}>
+            {showEdit ? 'Hide form' : 'Edit item'}
+          </Button>
+        </div>
+      )}
+      {itemQuery.data && showEdit && (
         <Section title="Edit item">
-          <div className="flex justify-end pb-2">
-            <Button variant="secondary" size="sm" onClick={() => setShowEdit((v) => !v)}>
-              {showEdit ? 'Hide form' : 'Edit item'}
-            </Button>
-          </div>
-          {showEdit && (
-            <ItemForm
-              initialItem={itemQuery.data}
-              onSuccess={() => {
-                setShowEdit(false)
-                void itemQuery.refetch()
-              }}
-            />
-          )}
+          <ItemForm
+            initialItem={itemQuery.data}
+            onSuccess={() => {
+              setShowEdit(false)
+              void itemQuery.refetch()
+            }}
+          />
         </Section>
       )}
 

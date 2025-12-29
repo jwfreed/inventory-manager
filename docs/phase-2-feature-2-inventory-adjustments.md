@@ -21,6 +21,7 @@ Out of scope:
 
 - Inventory is authoritative in the movement ledger.
 - Adjustments are new ledger entries that correct prior mistakes; they do not edit history.
+- Corrections are represented by a new adjustment that reverses the original deltas and links back to the source.
 
 ## Proposed Relational Schema (PostgreSQL)
 
@@ -36,6 +37,7 @@ Document header for an adjustment transaction. The inventory effect is represent
 | `status` | `text` | no | enum-like: `draft`, `posted`, `canceled` |
 | `occurred_at` | `timestamptz` | no | Business-effective time |
 | `inventory_movement_id` | `uuid` | yes | FK → `inventory_movements(id)`; expected `movement_type='adjustment'` |
+| `corrected_from_adjustment_id` | `uuid` | yes | FK → `inventory_adjustments(id)`; links reversal adjustments |
 | `notes` | `text` | yes | |
 | `created_at` | `timestamptz` | no | default now() |
 | `updated_at` | `timestamptz` | no | |
@@ -43,8 +45,10 @@ Document header for an adjustment transaction. The inventory effect is represent
 Constraints / indexes:
 - `check (status in ('draft','posted','canceled'))`
 - `foreign key (inventory_movement_id) references inventory_movements(id)`
+- `foreign key (corrected_from_adjustment_id) references inventory_adjustments(id)`
 - `unique (inventory_movement_id)` (one adjustment doc per movement)
 - `index (status, occurred_at)`
+- `index (corrected_from_adjustment_id)`
 
 ### `inventory_adjustment_lines`
 

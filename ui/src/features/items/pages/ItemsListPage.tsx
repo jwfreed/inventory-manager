@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useItemsList } from '../queries'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -29,6 +29,8 @@ export default function ItemsListPage() {
   const [active, setActive] = useState('')
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  const [typeFilter, setTypeFilter] = useState('')
+  const createSectionRef = useRef<HTMLDivElement | null>(null)
 
   const { data, isLoading, isError, error, refetch } = useItemsList({
     active: active === '' ? undefined : active === 'true',
@@ -44,32 +46,47 @@ export default function ItemsListPage() {
     )
   }, [data?.data, search])
 
+  const filteredByType = useMemo(() => {
+    if (!typeFilter) return filtered
+    return filtered.filter((item) => item.type === typeFilter)
+  }, [filtered, typeFilter])
+
+  useEffect(() => {
+    if (!showCreate) return
+    if (!createSectionRef.current) return
+    createSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [showCreate])
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Master data</p>
-        <h2 className="text-2xl font-semibold text-slate-900">Items</h2>
-        <p className="max-w-3xl text-sm text-slate-600">
-          Browse items or add new ones. Use the form below or click a row to view details and edit.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Master data</p>
+          <h2 className="text-2xl font-semibold text-slate-900">Items</h2>
+          <p className="max-w-3xl text-sm text-slate-600">
+            Browse items or add new ones. Use filters to narrow the list.
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setShowCreate(true)}>
+          New item
+        </Button>
       </div>
 
-      <Section title="Create item">
-        <div className="flex justify-end pb-2">
-          <Button variant="secondary" size="sm" onClick={() => setShowCreate((v) => !v)}>
-            {showCreate ? 'Hide form' : 'New item'}
-          </Button>
-        </div>
-        {showCreate && (
-          <ItemForm
-            onSuccess={(item) => {
-              setShowCreate(false)
-              void refetch()
-              navigate(`/items/${item.id}`)
-            }}
-          />
-        )}
-      </Section>
+      {showCreate && (
+        <Section title="Create item">
+          <div ref={createSectionRef} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <ItemForm
+              autoFocusSku
+              onCancel={() => setShowCreate(false)}
+              onSuccess={(item) => {
+                setShowCreate(false)
+                void refetch()
+                navigate(`/items/${item.id}`)
+              }}
+            />
+          </div>
+        </Section>
+      )}
 
       <Section title="Filters">
         <div className="flex flex-wrap items-center gap-3">
@@ -84,20 +101,32 @@ export default function ItemsListPage() {
               </option>
             ))}
           </select>
+          <select
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+          >
+            <option value="">All types</option>
+            {Object.entries(typeLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
           <input
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
             placeholder="Search by SKU or name"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <Button variant="secondary" size="sm" onClick={() => void refetch()}>
-            Refresh
-          </Button>
+        </div>
+        <div className="pt-2 text-sm text-slate-600">
+          Showing {filteredByType.length} of {data?.data?.length ?? 0} items
         </div>
       </Section>
 
       <Section title="Items">
-        <Card>
+        <Card className={showCreate ? 'opacity-80' : undefined}>
           {isLoading && <LoadingSpinner label="Loading items..." />}
           {isError && error && (
             <Alert
@@ -111,13 +140,13 @@ export default function ItemsListPage() {
               }
             />
           )}
-          {!isLoading && !isError && filtered.length === 0 && (
+          {!isLoading && !isError && filteredByType.length === 0 && (
             <EmptyState
               title="No items yet"
               description="Create items with the form above or via API/migrations."
             />
           )}
-          {!isLoading && !isError && filtered.length > 0 && (
+          {!isLoading && !isError && filteredByType.length > 0 && (
             <div className="overflow-hidden rounded-xl border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
@@ -143,16 +172,28 @@ export default function ItemsListPage() {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Created
                     </th>
+                    {/* TODO: Add a lightweight operational signal (last movement / has stock) when a cheap endpoint exists. */}
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <span className="sr-only">Details</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white">
-                  {filtered.map((item) => (
+                  {filteredByType.map((item) => (
                     <tr
                       key={item.id}
-                      className="cursor-pointer hover:bg-slate-50"
+                      className="group cursor-pointer hover:bg-slate-50"
                       onClick={() => navigate(`/items/${item.id}`)}
                     >
-                      <td className="px-4 py-3 text-sm font-semibold text-slate-900">{item.sku}</td>
+                      <td className="px-4 py-3 text-sm font-semibold text-slate-900">
+                        <Link
+                          to={`/items/${item.id}`}
+                          className="text-brand-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {item.sku}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-800">{item.name}</td>
                       <td className="px-4 py-3 text-sm text-slate-800">
                         <Badge variant="neutral">{typeLabels[item.type] ?? item.type}</Badge>
@@ -170,6 +211,11 @@ export default function ItemsListPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-700">
                         {item.createdAt ? formatDate(item.createdAt) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm text-slate-400">
+                        <span className="opacity-0 transition-opacity group-hover:opacity-100">
+                          ›
+                        </span>
                       </td>
                     </tr>
                   ))}

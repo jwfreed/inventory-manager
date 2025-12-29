@@ -12,6 +12,17 @@ export const adjustmentLineSchema = z.object({
 
 export const inventoryAdjustmentSchema = z.object({
   occurredAt: z.string().datetime(),
+  correctedFromAdjustmentId: z.string().uuid().optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(adjustmentLineSchema).min(1)
+});
+
+export const adjustmentListQuerySchema = z.object({
+  status: z.string().optional(),
+  occurred_from: z.string().optional(),
+  occurred_to: z.string().optional(),
+  item_id: z.string().uuid().optional(),
+  location_id: z.string().uuid().optional(),
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  offset: z.coerce.number().int().nonnegative().optional()
 });

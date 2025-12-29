@@ -4,6 +4,7 @@ import NotFoundPage from '../pages/NotFound'
 import { itemRoutes } from '../features/items'
 import { kpiRoutes } from '../features/kpis'
 import { ledgerRoutes } from '../features/ledger'
+import { adjustmentRoutes } from '../features/adjustments'
 import { locationRoutes } from '../features/locations'
 import { orderToCashRoutes } from '../features/orderToCash'
 import { purchaseOrderRoutes } from '../features/purchaseOrders'
@@ -31,6 +32,7 @@ export const appShellRoutes: AppRouteObject[] = [
   ...coreRoutes,
   ...kpiRoutes,
   ...ledgerRoutes,
+  ...adjustmentRoutes,
   ...workOrderRoutes,
   ...purchaseOrderRoutes,
   ...vendorRoutes,

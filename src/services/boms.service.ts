@@ -39,6 +39,8 @@ type BomVersionLineRow = {
   bom_version_id: string;
   line_number: number;
   component_item_id: string;
+  component_item_sku?: string | null;
+  component_item_name?: string | null;
   component_quantity: string | number;
   component_uom: string;
   scrap_factor: string | number | null;
@@ -53,6 +55,8 @@ export type BomVersionLine = {
   bomVersionId: string;
   lineNumber: number;
   componentItemId: string;
+  componentItemSku?: string | null;
+  componentItemName?: string | null;
   quantityPer: number;
   uom: string;
   scrapFactor: number | null;
@@ -97,6 +101,8 @@ function mapBomVersionLine(row: BomVersionLineRow): BomVersionLine {
     bomVersionId: row.bom_version_id,
     lineNumber: row.line_number,
     componentItemId: row.component_item_id,
+    componentItemSku: row.component_item_sku ?? null,
+    componentItemName: row.component_item_name ?? null,
     quantityPer: roundQuantity(toNumber(row.component_quantity)),
     uom: row.component_uom,
     scrapFactor: row.scrap_factor !== null ? roundQuantity(toNumber(row.scrap_factor)) : null,
@@ -155,7 +161,13 @@ export async function fetchBomById(tenantId: string, id: string, client?: PoolCl
   let lineRows: BomVersionLineRow[] = [];
   if (versionIds.length > 0) {
     const { rows } = await executor.query<BomVersionLineRow>(
-      'SELECT * FROM bom_version_lines WHERE bom_version_id = ANY($1::uuid[]) AND tenant_id = $2 ORDER BY line_number ASC',
+      `SELECT bvl.*,
+              i.sku AS component_item_sku,
+              i.name AS component_item_name
+         FROM bom_version_lines bvl
+         LEFT JOIN items i ON i.id = bvl.component_item_id AND i.tenant_id = bvl.tenant_id
+        WHERE bvl.bom_version_id = ANY($1::uuid[]) AND bvl.tenant_id = $2
+        ORDER BY bvl.line_number ASC`,
       [versionIds, tenantId]
     );
     lineRows = rows;

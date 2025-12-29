@@ -1,8 +1,9 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ApiError, Item } from '../../../api/types'
 import { createItem, updateItem, type ItemPayload } from '../api/items'
+import { itemsQueryKeys } from '../queries'
 import { useLocationsList } from '../../locations/queries'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -14,10 +15,12 @@ type Props = {
   onSuccess?: (item: Item) => void
   onCancel?: () => void
   title?: string
+  autoFocusSku?: boolean
 }
 
-export function ItemForm({ initialItem, onSuccess, onCancel, title }: Props) {
+export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku }: Props) {
   const isEdit = Boolean(initialItem?.id)
+  const queryClient = useQueryClient()
   const [sku, setSku] = useState(initialItem?.sku ?? '')
   const [name, setName] = useState(initialItem?.name ?? '')
   const [description, setDescription] = useState(initialItem?.description ?? '')
@@ -43,6 +46,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title }: Props) {
     mutationFn: (payload) =>
       isEdit && initialItem?.id ? updateItem(initialItem.id, payload) : createItem(payload),
     onSuccess: (item) => {
+      void queryClient.invalidateQueries({ queryKey: itemsQueryKeys.all })
       onSuccess?.(item)
     },
   })
@@ -78,6 +82,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title }: Props) {
               onChange={(e) => setSku(e.target.value)}
               placeholder="ABC-123"
               required
+              autoFocus={autoFocusSku}
               disabled={mutation.isPending}
             />
           </label>

@@ -105,7 +105,7 @@ Idempotency:
 - `POST /qc-events`, `GET /purchase-order-receipt-lines/:id/qc-events`
 - `POST /putaways`, `GET /putaways/:id`, `POST /putaways/:id/post`
 - `POST /purchase-order-receipts/:id/close`, `POST /purchase-orders/:id/close`
-- `POST /inventory-adjustments`, `GET /inventory-adjustments/:id`, `POST /inventory-adjustments/:id/post`
+- `GET /inventory-adjustments`, `POST /inventory-adjustments`, `PUT /inventory-adjustments/:id`, `GET /inventory-adjustments/:id`, `POST /inventory-adjustments/:id/post`, `POST /inventory-adjustments/:id/cancel`
 - `POST /inventory-counts`, `GET /inventory-counts/:id`, `POST /inventory-counts/:id/post`
 - `POST /boms`, `GET /boms/:id`, `GET /items/:id/boms`, `POST /boms/:id/activate`, `GET /items/:id/bom?asOf=ISO_DATE`
 - `POST /work-orders`, `GET /work-orders/:id`, `GET /work-orders`
@@ -248,6 +248,15 @@ curl -s -X POST http://localhost:3000/inventory-adjustments \
 
 # 16) Post the adjustment
 curl -s -X POST http://localhost:3000/inventory-adjustments/<ADJUSTMENT_ID>/post | jq .
+```
+
+### Inventory adjustments manual QA (UI)
+
+1. Navigate to `/inventory-adjustments` and click “New adjustment”.
+2. Enter a reason, occurred-at time, and one line with a negative delta; save draft then post.
+3. Confirm the detail page shows Posted status, audit trail entries, and a movement link.
+4. Click “Correct / reverse”, post the reversal, then verify the original shows “Corrected”.
+5. Use “Adjust stock” from an Item and a Location detail page to confirm scoped prefill.
 
 ## Phase 5 — Planning read-models API (CRUD only, no computation)
 

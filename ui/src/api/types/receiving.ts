@@ -56,6 +56,7 @@ export type PurchaseOrderReceipt = {
   notes?: string | null
   createdAt?: string
   hasPutaway?: boolean | null
+  draftPutawayId?: string | null
   lines?: PurchaseOrderReceiptLine[]
 }
 

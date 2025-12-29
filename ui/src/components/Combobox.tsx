@@ -168,7 +168,7 @@ export function Combobox({
           <div
             id={listId}
             role="listbox"
-            className="absolute z-20 mt-2 w-full rounded-lg border border-slate-200 bg-white shadow-lg"
+            className="absolute z-20 mt-2 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"
           >
             {loading && (
               <div className="px-3 py-2 text-xs text-slate-500">Loading...</div>

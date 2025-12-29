@@ -50,6 +50,15 @@ export default function LocationDetailPage() {
           <Button variant="secondary" size="sm" onClick={() => navigate('/locations')}>
             Back to list
           </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              if (id) navigate(`/inventory-adjustments/new?locationId=${id}`)
+            }}
+          >
+            Adjust stock
+          </Button>
           <Button variant="secondary" size="sm" onClick={copyId}>
             Copy ID
           </Button>

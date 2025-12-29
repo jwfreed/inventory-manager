@@ -3,6 +3,8 @@ export type BomVersionComponent = {
   bomVersionId: string
   lineNumber: number
   componentItemId: string
+  componentItemSku?: string | null
+  componentItemName?: string | null
   quantityPer: number
   uom: string
   scrapFactor: number | null

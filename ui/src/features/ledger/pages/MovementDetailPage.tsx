@@ -63,6 +63,10 @@ export default function MovementDetailPage() {
       const id = ref.split(':')[1]
       return { label: `QC event ${id.slice(0, 8)}…`, to: `/qc-events/${id}` }
     }
+    if (ref.startsWith('inventory_adjustment:')) {
+      const id = ref.split(':')[1]
+      return { label: `Adjustment ${id.slice(0, 8)}…`, to: `/inventory-adjustments/${id}` }
+    }
     return null
   }, [movementQuery.data?.externalRef])
 

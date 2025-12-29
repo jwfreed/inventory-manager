@@ -104,6 +104,8 @@ function mapReceipt(
     externalRef: row.external_ref,
     notes: row.notes,
     createdAt: row.created_at,
+    hasPutaway: row.has_putaway ?? null,
+    draftPutawayId: row.draft_putaway_id ?? null,
     lines: lineRows.map((line) => mapReceiptLine(line, qcBreakdown, totalsMap))
   };
 }
@@ -111,7 +113,26 @@ function mapReceipt(
 export async function fetchReceiptById(tenantId: string, id: string, client?: PoolClient) {
   const executor = client ? client.query.bind(client) : query;
   const receiptResult = await executor(
-    `SELECT por.*, po.po_number
+    `SELECT por.*,
+            po.po_number,
+            EXISTS (
+              SELECT 1
+                FROM purchase_order_receipt_lines porl
+                JOIN putaway_lines pl
+                  ON pl.purchase_order_receipt_line_id = porl.id
+                 AND pl.tenant_id = porl.tenant_id
+               WHERE porl.purchase_order_receipt_id = por.id
+                 AND porl.tenant_id = por.tenant_id
+            ) AS has_putaway,
+            (
+              SELECT p.id
+                FROM putaways p
+               WHERE p.purchase_order_receipt_id = por.id
+                 AND p.tenant_id = por.tenant_id
+                 AND p.status IN ('draft','in_progress')
+               ORDER BY p.created_at DESC
+               LIMIT 1
+            ) AS draft_putaway_id
        FROM purchase_order_receipts por
        LEFT JOIN purchase_orders po ON po.id = por.purchase_order_id AND po.tenant_id = por.tenant_id
       WHERE por.id = $1 AND por.tenant_id = $2`,
@@ -220,7 +241,7 @@ export async function createPurchaseOrderReceipt(
       `INSERT INTO purchase_order_receipts (
           id, tenant_id, purchase_order_id, status, received_at, received_to_location_id,
           inventory_movement_id, external_ref, notes
-       ) VALUES ($1, $2, $3, $4, $5, NULL, $6, $7)`,
+       ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8)`,
       [
         receiptId,
         tenantId,

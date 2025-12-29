@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { activateBomVersion } from '../api/boms'
 import { useBom } from '../queries'
 import type { ApiError, Bom } from '../../../api/types'
@@ -101,7 +102,25 @@ export function BomCard({ bomId, fallback, onChanged }: Props) {
                   {version.components.map((c) => (
                     <tr key={c.id}>
                       <td className="px-3 py-2 text-sm text-slate-800">{c.lineNumber}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{c.componentItemId}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">
+                        <Link
+                          to={`/items/${c.componentItemId}`}
+                          className="text-brand-700 hover:underline"
+                        >
+                          {c.componentItemSku || c.componentItemName ? (
+                            <div>
+                              <div className="font-medium">
+                                {c.componentItemSku || c.componentItemName}
+                              </div>
+                              {c.componentItemSku && c.componentItemName && (
+                                <div className="text-xs text-slate-500">{c.componentItemName}</div>
+                              )}
+                            </div>
+                          ) : (
+                            c.componentItemId
+                          )}
+                        </Link>
+                      </td>
                       <td className="px-3 py-2 text-sm text-slate-800">{c.quantityPer}</td>
                       <td className="px-3 py-2 text-sm text-slate-800">{c.uom}</td>
                       <td className="px-3 py-2 text-sm text-slate-800">
