@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
-const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@example.com'
-const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!'
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com'
+const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local'
 const tenantSlug = process.env.SEED_TENANT_SLUG || 'default'
 
 async function apiRequest(method, path, { token, body, params } = {}) {
