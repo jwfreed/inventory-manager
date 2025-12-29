@@ -10,11 +10,12 @@ Supports:
 - Recording counted quantities per item and UOM.
 - Computing variances against ledger-derived on-hand.
 - Posting variances as ledger-correcting movements (inventory adjustments).
+- Capturing audit context (counter, approver) without punitive language.
 
 Out of scope:
 - Lot/serial counting.
 - Directed count scheduling / ABC classification.
-- Approval workflows.
+- Approval workflows beyond capturing optional approval metadata.
 
 ## Conceptual Model
 
@@ -23,6 +24,7 @@ Out of scope:
 - A cycle count records what was physically observed at a point in time.
 - The inventory ledger remains authoritative for “what the system thinks”.
 - Posting a count produces an adjustment movement equal to the **variance**: `counted - on_hand_as_of_count_time`.
+- Variances are diagnostic signals; capture reasons and approvals as audit metadata, not as blame.
 
 ## Proposed Relational Schema (PostgreSQL)
 
@@ -37,8 +39,12 @@ All timestamps are UTC.
 | `counted_at` | `timestamptz` | no | The time the count is considered effective (as-of time) |
 | `location_id` | `uuid` | no | FK → `locations(id)`; the primary counted location |
 | `notes` | `text` | yes | |
+| `counter_id` | `uuid` | yes | FK → `users(id)`; who performed the count |
+| `approved_by` | `uuid` | yes | FK → `users(id)`; who approved posting (if required) |
+| `approved_at` | `timestamptz` | yes | |
 | `inventory_adjustment_id` | `uuid` | yes | FK → `inventory_adjustments(id)`; variance document linkage |
 | `inventory_movement_id` | `uuid` | yes | FK → `inventory_movements(id)`; expected `movement_type='adjustment'` |
+| `posted_at` | `timestamptz` | yes | Posting timestamp; immutable once set |
 | `created_at` | `timestamptz` | no | default now() |
 | `updated_at` | `timestamptz` | no | |
 
@@ -66,6 +72,7 @@ Constraints / indexes:
 | `counted_quantity` | `numeric(18,6)` | no | Must be ≥ 0 |
 | `system_quantity` | `numeric(18,6)` | yes | Optional cached on-hand snapshot at posting time |
 | `variance_quantity` | `numeric(18,6)` | yes | Optional cached variance at posting time |
+| `reason_code` | `text` | yes | Required when `variance_quantity != 0` |
 | `notes` | `text` | yes | |
 | `created_at` | `timestamptz` | no | default now() |
 
@@ -153,6 +160,7 @@ Posting-time validation:
 Posting-time validation:
 - Cycle count lines are unique per `(item_id, uom)` within a count.
 - No unit conversions; `uom` must be consistent with ledger aggregation.
+ - If `variance_quantity != 0`, a `reason_code` is required (non-punitive language: “variance reason” vs “error”).
 
 ### Negative on-hand boundary
 
@@ -164,6 +172,7 @@ Posting-time validation:
 
 Posting-time validation:
 - Posted cycle counts are immutable; corrections require a new cycle count (or a new adjustment) rather than editing prior posted results.
+- Posting-time snapshots (`system_quantity`, `variance_quantity`) are immutable once `posted_at` is set.
 
 ## Acceptance Criteria (Schemas + Computations Only)
 

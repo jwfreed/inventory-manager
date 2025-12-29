@@ -68,6 +68,7 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
     const itemIds = Array.from(new Set(count.lines.map((line) => line.itemId)));
     emitEvent(tenantId, 'inventory.count.posted', {
       countId: count.id,
+      adjustmentId: count.inventoryAdjustmentId,
       movementId: count.inventoryMovementId,
       locationId: count.locationId,
       itemIds
@@ -81,10 +82,15 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
       return res.status(409).json({ error: 'Inventory count already posted.' });
     }
     if (error?.message === 'COUNT_CANCELED') {
-      return res.status(400).json({ error: 'Canceled counts cannot be posted.' });
+      return res.status(409).json({ error: 'Canceled counts cannot be posted.' });
     }
     if (error?.message === 'COUNT_NO_LINES') {
       return res.status(400).json({ error: 'Inventory count has no lines to post.' });
+    }
+    if (error?.message === 'COUNT_REASON_REQUIRED') {
+      return res.status(409).json({
+        error: 'Reason code required for any line with a non-zero variance.'
+      });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post inventory count.' });

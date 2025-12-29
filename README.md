@@ -482,7 +482,7 @@ curl -s -X POST http://localhost:3000/inventory-counts \
     "countedAt": "2024-01-18T10:00:00Z",
     "locationId": "<BIN_LOCATION_UUID>",
     "lines": [
-      {"itemId": "<ITEM_UUID>", "uom": "kg", "countedQuantity": 7}
+      {"itemId": "<ITEM_UUID>", "uom": "kg", "countedQuantity": 7, "reasonCode": "cycle_count_variance"}
     ]
   }' | jq .
 
@@ -492,12 +492,15 @@ curl -s http://localhost:3000/inventory-counts/<COUNT_ID> | jq .
 # 21) Post the cycle count
 curl -s -X POST http://localhost:3000/inventory-counts/<COUNT_ID>/post | jq .
 
-# 22) Verify a `movement_type='count'` entry exists and on-hand now equals the counted quantity
+# Posting a count creates an inventory adjustment + adjustment movement linked to the count response for audit.
+# Use neutral, process-focused reason codes (e.g., "variance_detected") rather than punitive language.
+
+# 22) Verify a `movement_type='adjustment'` entry exists and on-hand now equals the counted quantity
 psql "$DATABASE_URL" -c "
 SELECT m.id, m.movement_type, m.occurred_at, l.quantity_delta
 FROM inventory_movements m
 JOIN inventory_movement_lines l ON l.movement_id = m.id
-WHERE m.movement_type = 'count'
+WHERE m.movement_type = 'adjustment'
 ORDER BY m.created_at DESC
 LIMIT 10;
 "
@@ -510,7 +513,7 @@ GROUP BY item_id, location_id, uom;
 "
 ```
 
-Successful responses confirm vendors/POs work end-to-end, receipts insert atomically, QC events enforce the service validations, putaway posting creates balanced transfer movements, reconciliation detects blockers, closeout endpoints enforce the gating rules, inventory adjustments correct stock with immutable movements, and cycle counts recompute on-hand via `movement_type='count'` deltas.
+Successful responses confirm vendors/POs work end-to-end, receipts insert atomically, QC events enforce the service validations, putaway posting creates balanced transfer movements, reconciliation detects blockers, closeout endpoints enforce the gating rules, inventory adjustments correct stock with immutable movements, and cycle counts recompute on-hand via `movement_type='adjustment'` deltas.
 
 ## Phase 3 — Feature 1 BOM / Recipe Management
 
