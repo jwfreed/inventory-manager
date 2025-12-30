@@ -229,8 +229,11 @@ export async function getWorkOrderRequirements(
   if (!bom) {
     throw new Error('WO_BOM_NOT_FOUND');
   }
+  const requestedVersion = wo.bom_version_id
+    ? bom.versions.find((v) => v.id === wo.bom_version_id)
+    : null;
   const version =
-    (wo.bom_version_id && bom.versions.find((v) => v.id === wo.bom_version_id)) ||
+    (requestedVersion && requestedVersion.status !== 'retired' ? requestedVersion : null) ||
     bom.versions.find((v) => v.status === 'active') ||
     bom.versions[0];
   if (!version) {
