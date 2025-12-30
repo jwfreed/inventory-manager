@@ -188,6 +188,27 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
     )
   }, [effectiveDefaultFrom, baseOutputUom])
 
+  useEffect(() => {
+    if (!itemsQuery.data?.data?.length) return
+    setLines((prev) => {
+      let changed = false
+      const next = prev.map((line) => {
+        if (!line.componentItemId) return line
+        const component = itemsLookup.get(line.componentItemId)
+        const componentLocation = component?.defaultLocationId
+        if (!componentLocation) return line
+        if (!line.fromLocationId || line.fromLocationId === normalizedDefaultFrom) {
+          if (line.fromLocationId !== componentLocation) {
+            changed = true
+            return { ...line, fromLocationId: componentLocation }
+          }
+        }
+        return line
+      })
+      return changed ? next : prev
+    })
+  }, [itemsQuery.data, itemsLookup, normalizedDefaultFrom])
+
   const addLine = () =>
     setLines((prev) => [
       ...prev,

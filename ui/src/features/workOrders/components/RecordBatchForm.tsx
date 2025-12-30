@@ -219,6 +219,27 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   }, [normalizedDefaultFrom])
 
   useEffect(() => {
+    if (!itemsQuery.data?.data?.length) return
+    setConsumeLines((prev) => {
+      let changed = false
+      const next = prev.map((line) => {
+        if (!line.componentItemId) return line
+        const component = itemsLookup.get(line.componentItemId)
+        const componentLocation = component?.defaultLocationId
+        if (!componentLocation) return line
+        if (!line.fromLocationId || line.fromLocationId === normalizedDefaultFrom) {
+          if (line.fromLocationId !== componentLocation) {
+            changed = true
+            return { ...line, fromLocationId: componentLocation }
+          }
+        }
+        return line
+      })
+      return changed ? next : prev
+    })
+  }, [itemsQuery.data, itemsLookup, normalizedDefaultFrom])
+
+  useEffect(() => {
     setProduceLines((prev) =>
       prev.map((line) => ({
         ...line,
