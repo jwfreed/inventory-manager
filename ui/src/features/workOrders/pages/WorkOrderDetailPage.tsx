@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useItem, useItemsList } from '@features/items/queries'
-import { useNextStepBoms } from '@features/boms/queries'
-import { createWorkOrder } from '../api/workOrders'
+import { useBom, useNextStepBoms } from '@features/boms/queries'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { createWorkOrder, useActiveBomVersion } from '../api/workOrders'
 import type { ApiError } from '@api/types'
 import { useWorkOrder, useWorkOrderExecution, useWorkOrderRequirements } from '../queries'
-import { Alert, Button, Card, EmptyState, ErrorState, LoadingSpinner, Section } from '@shared/ui'
+import { Alert, Button, Card, EmptyState, ErrorState, LoadingSpinner, Modal, Section } from '@shared/ui'
 import { WorkOrderHeader } from '../components/WorkOrderHeader'
 import { ExecutionSummaryPanel } from '../components/ExecutionSummaryPanel'
 import { IssueDraftForm } from '../components/IssueDraftForm'
@@ -25,12 +26,20 @@ export default function WorkOrderDetailPage() {
   const [selectedBomId, setSelectedBomId] = useState('')
   const [nextQuantity, setNextQuantity] = useState<number | ''>(1)
   const [createWarning, setCreateWarning] = useState<string | null>(null)
+  const [showBomSwitchConfirm, setShowBomSwitchConfirm] = useState(false)
+  const [bomSwitchError, setBomSwitchError] = useState<string | null>(null)
+
+  const queryClient = useQueryClient()
 
   const workOrderQuery = useWorkOrder(id, {
     retry: (count, err: ApiError) => err?.status !== 404 && count < 1,
   })
 
   const outputItemQuery = useItem(workOrderQuery.data?.outputItemId, { staleTime: 60_000 })
+  const bomQuery = useBom(workOrderQuery.data?.bomId, {
+    staleTime: 60_000,
+    enabled: Boolean(workOrderQuery.data?.bomId),
+  })
 
   const nextStepBomsQuery = useNextStepBoms(workOrderQuery.data?.outputItemId, {
     staleTime: 60_000,
@@ -116,6 +125,35 @@ export default function WorkOrderDetailPage() {
     enabled: Boolean(id) && Boolean(workOrderQuery.data) && !isDisassembly,
   })
 
+  const activeBomVersion = useMemo(() => {
+    return bomQuery.data?.versions.find((version) => version.status === 'active')
+  }, [bomQuery.data])
+  const activeVersionId = activeBomVersion?.id ?? requirementsQuery.data?.bomVersionId ?? null
+  const activeVersionLabel = activeBomVersion?.versionNumber ?? null
+
+  const usedBomVersion = useMemo(() => {
+    const usedId =
+      workOrderQuery.data?.bomVersionId ?? requirementsQuery.data?.bomVersionId ?? null
+    if (!usedId) return null
+    return bomQuery.data?.versions.find((version) => version.id === usedId) ?? null
+  }, [bomQuery.data, workOrderQuery.data?.bomVersionId, requirementsQuery.data?.bomVersionId])
+
+  const switchBomMutation = useMutation({
+    mutationFn: () => useActiveBomVersion(id as string),
+    onSuccess: () => {
+      setShowBomSwitchConfirm(false)
+      setBomSwitchError(null)
+      void workOrderQuery.refetch()
+      void requirementsQuery.refetch()
+      void bomQuery.refetch()
+      void queryClient.invalidateQueries({ queryKey: ['work-orders'] })
+    },
+    onError: (err: ApiError | unknown) => {
+      const apiErr = err as ApiError
+      setBomSwitchError(apiErr?.message ?? 'Failed to switch BOM version.')
+    },
+  })
+
   const refreshAll = () => {
     void workOrderQuery.refetch()
     void executionQuery.refetch()
@@ -193,6 +231,45 @@ export default function WorkOrderDetailPage() {
           )}
           {requirementsQuery.data && executionQuery.data && (
             <Card>
+              {usedBomVersion && (
+                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">BOM version used</div>
+                      <div className="mt-1 font-semibold text-slate-900">
+                        v{usedBomVersion.versionNumber}{' '}
+                        <span className="text-slate-500">({usedBomVersion.status})</span>
+                      </div>
+                      {activeVersionId && activeVersionId !== usedBomVersion.id && (
+                        <div className="mt-1 text-xs text-slate-600">
+                          Active version:{' '}
+                          {activeVersionLabel ? `v${activeVersionLabel}` : 'current'}.{' '}
+                          <button
+                            type="button"
+                            className="font-semibold text-brand-700 underline"
+                            onClick={() => navigate(`/items/${workOrderQuery.data?.outputItemId}`)}
+                          >
+                            View active BOM
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {activeVersionId &&
+                      activeVersionId !== usedBomVersion.id && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            setBomSwitchError(null)
+                            setShowBomSwitchConfirm(true)
+                          }}
+                        >
+                          Switch to active
+                        </Button>
+                      )}
+                  </div>
+                </div>
+              )}
               <WorkOrderRequirementsTable
                 lines={requirementsQuery.data.lines}
                 issuedTotals={executionQuery.data.issuedTotals}
@@ -299,6 +376,39 @@ export default function WorkOrderDetailPage() {
           />
         )}
       </Section>
+
+      <Modal
+        isOpen={showBomSwitchConfirm}
+        onClose={() => setShowBomSwitchConfirm(false)}
+        title="Switch to active BOM version?"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowBomSwitchConfirm(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => switchBomMutation.mutate()}
+              disabled={switchBomMutation.isPending}
+            >
+              Switch to active
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-sm text-slate-700">
+          <p>
+            This will update the work order to use the current active BOM version. The change is
+            audited and does not modify any posted issues or completions.
+          </p>
+          {activeVersionId && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Active version: {activeVersionLabel ? `v${activeVersionLabel}` : 'current'}
+            </div>
+          )}
+          {bomSwitchError && <Alert variant="error" title="Switch failed" message={bomSwitchError} />}
+        </div>
+      </Modal>
 
       {executionQuery.data?.workOrder.completedAt && (
         <Alert
