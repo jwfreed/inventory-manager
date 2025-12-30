@@ -245,13 +245,17 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
     onSuccess: (req) => {
       const nextLines: ConsumeLine[] = req.lines
         .sort((a, b) => a.lineNumber - b.lineNumber)
-        .map((line) => ({
-          componentItemId: line.componentItemId,
-          fromLocationId: normalizedDefaultFrom,
-          uom: line.uom,
-          quantity: line.quantityRequired,
-          usesPackSize: line.usesPackSize,
-        }))
+        .map((line) => {
+          const component = itemsLookup.get(line.componentItemId)
+          const componentLocation = component?.defaultLocationId || ''
+          return {
+            componentItemId: line.componentItemId,
+            fromLocationId: componentLocation || normalizedDefaultFrom,
+            uom: line.uom,
+            quantity: line.quantityRequired,
+            usesPackSize: line.usesPackSize,
+          }
+        })
       setConsumeLines(nextLines.length > 0 ? nextLines : consumeLines)
       setConsumeDetailsOpen(
         Array.from({ length: nextLines.length > 0 ? nextLines.length : consumeLines.length }, () => false),

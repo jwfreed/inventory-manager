@@ -88,12 +88,16 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
     onSuccess: (req) => {
       const nextLines: Line[] = req.lines
         .sort((a, b) => a.lineNumber - b.lineNumber)
-        .map((line) => ({
-          componentItemId: line.componentItemId,
-          fromLocationId: effectiveDefaultFrom,
-          uom: line.uom,
-          quantityIssued: line.quantityRequired,
-        }))
+        .map((line) => {
+          const component = itemsLookup.get(line.componentItemId)
+          const componentLocation = component?.defaultLocationId || ''
+          return {
+            componentItemId: line.componentItemId,
+            fromLocationId: componentLocation || effectiveDefaultFrom,
+            uom: line.uom,
+            quantityIssued: line.quantityRequired,
+          }
+        })
       setLines(
         nextLines.length > 0
           ? nextLines
