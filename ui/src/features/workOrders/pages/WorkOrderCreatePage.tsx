@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { createWorkOrder, type WorkOrderCreatePayload } from '../api/workOrders'
 import { useBomsByItem } from '@features/boms/queries'
@@ -26,7 +26,9 @@ const formatError = (err: unknown): string => {
 
 export default function WorkOrderCreatePage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [workOrderNumber, setWorkOrderNumber] = useState('')
+  const [kind, setKind] = useState<'production' | 'disassembly'>('production')
   const [outputItemId, setOutputItemId] = useState('')
   const [outputUom, setOutputUom] = useState('')
   const [quantityPlanned, setQuantityPlanned] = useState<number | ''>(1)
@@ -38,12 +40,29 @@ export default function WorkOrderCreatePage() {
   const [defaultConsumeLocationId, setDefaultConsumeLocationId] = useState('')
   const [defaultProduceLocationId, setDefaultProduceLocationId] = useState('')
   const [quantityError, setQuantityError] = useState<string | null>(null)
+  const [notesError, setNotesError] = useState<string | null>(null)
+  const prefillDoneRef = useRef(false)
 
   const itemsQuery = useItemsList({ limit: 200 }, { staleTime: 1000 * 60 })
 
   const locationsQuery = useLocationsList({ limit: 200, active: true }, { staleTime: 1000 * 60 })
 
   const bomsQuery = useBomsByItem(outputItemId)
+
+  useEffect(() => {
+    if (prefillDoneRef.current) return
+    const outputItemParam = searchParams.get('outputItemId')
+    const bomIdParam = searchParams.get('bomId')
+    if (outputItemParam) {
+      setOutputItemId(outputItemParam)
+    }
+    if (bomIdParam) {
+      setSelectedBomId(bomIdParam)
+    }
+    if (outputItemParam || bomIdParam) {
+      prefillDoneRef.current = true
+    }
+  }, [searchParams])
 
   const itemsById = useMemo(() => {
     const map = new Map<string, Item>()
@@ -96,6 +115,15 @@ export default function WorkOrderCreatePage() {
     }
   }, [bomsQuery.data])
 
+  useEffect(() => {
+    if (kind === 'disassembly') {
+      setSelectedBomId('')
+      setSelectedVersionId('')
+    } else if (notesError) {
+      setNotesError(null)
+    }
+  }, [kind])
+
   const mutation = useMutation({
     mutationFn: (payload: WorkOrderCreatePayload) => createWorkOrder(payload),
     onSuccess: (wo) => {
@@ -137,7 +165,13 @@ export default function WorkOrderCreatePage() {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setQuantityError(null)
-    if (!workOrderNumber || !selectedBomId || !outputItemId || !outputUom || quantityPlanned === '') {
+    setNotesError(null)
+    if (!workOrderNumber || !outputItemId || !outputUom || quantityPlanned === '') {
+      return
+    }
+    if (kind === 'production' && !selectedBomId) return
+    if (kind === 'disassembly' && !notes.trim()) {
+      setNotesError('Notes are required for disassembly.')
       return
     }
     if (!(Number(quantityPlanned) > 0)) {
@@ -150,8 +184,9 @@ export default function WorkOrderCreatePage() {
 
     mutation.mutate({
       workOrderNumber,
-      bomId: selectedBomId,
-      bomVersionId: selectedVersionId || undefined,
+      kind,
+      bomId: kind === 'production' ? selectedBomId : undefined,
+      bomVersionId: kind === 'production' ? selectedVersionId || undefined : undefined,
       outputItemId,
       outputUom,
       quantityPlanned: Number(quantityPlanned),
@@ -180,6 +215,31 @@ export default function WorkOrderCreatePage() {
           {mutation.isError && (
             <Alert variant="error" title="Create failed" message={formatError(mutation.error as ApiError)} />
           )}
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Work order type</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(['production', 'disassembly'] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                    kind === option
+                      ? 'border-brand-400 bg-brand-50 text-brand-700'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                  onClick={() => setKind(option)}
+                  disabled={mutation.isPending}
+                >
+                  {option === 'production' ? 'Production' : 'Disassembly'}
+                </button>
+              ))}
+            </div>
+            {kind === 'disassembly' && (
+              <p className="mt-2 text-xs text-slate-500">
+                Disassembly consumes the selected item in issues and produces recovered outputs in completions.
+              </p>
+            )}
+          </div>
           <WorkOrderHeaderSection
             workOrderNumber={workOrderNumber}
             notes={notes}
@@ -187,6 +247,8 @@ export default function WorkOrderCreatePage() {
             outputUom={outputUom}
             quantityPlanned={quantityPlanned}
             quantityError={quantityError}
+            itemLabel={kind === 'disassembly' ? 'Item to disassemble' : undefined}
+            quantityLabel={kind === 'disassembly' ? 'Quantity to disassemble' : undefined}
             scheduledStartAt={scheduledStartAt}
             scheduledDueAt={scheduledDueAt}
             defaultConsumeLocationId={defaultConsumeLocationId}
@@ -200,7 +262,10 @@ export default function WorkOrderCreatePage() {
             produceMissing={produceMissing}
             isPending={mutation.isPending}
             onWorkOrderNumberChange={setWorkOrderNumber}
-            onNotesChange={setNotes}
+            onNotesChange={(value) => {
+              setNotes(value)
+              if (notesError) setNotesError(null)
+            }}
             onOutputItemChange={handleOutputItemChange}
             onOutputUomChange={setOutputUom}
             onQuantityPlannedChange={handleQuantityChange}
@@ -209,19 +274,22 @@ export default function WorkOrderCreatePage() {
             onDefaultConsumeLocationChange={setDefaultConsumeLocationId}
             onDefaultProduceLocationChange={setDefaultProduceLocationId}
           />
+          {notesError && <Alert variant="warning" title="Notes required" message={notesError} />}
 
-          <WorkOrderBomSection
-            outputItemId={outputItemId}
-            selectedBomId={selectedBomId}
-            selectedVersionId={selectedVersionId}
-            bomOptions={bomOptions}
-            selectedBom={selectedBom}
-            isPending={mutation.isPending}
-            isLoading={bomsQuery.isLoading}
-            error={bomsQuery.isError ? (bomsQuery.error as ApiError) : null}
-            onBomChange={handleBomChange}
-            onVersionChange={setSelectedVersionId}
-          />
+          {kind === 'production' && (
+            <WorkOrderBomSection
+              outputItemId={outputItemId}
+              selectedBomId={selectedBomId}
+              selectedVersionId={selectedVersionId}
+              bomOptions={bomOptions}
+              selectedBom={selectedBom}
+              isPending={mutation.isPending}
+              isLoading={bomsQuery.isLoading}
+              error={bomsQuery.isError ? (bomsQuery.error as ApiError) : null}
+              onBomChange={handleBomChange}
+              onVersionChange={setSelectedVersionId}
+            />
+          )}
 
           <div className="flex justify-end">
             <Button type="submit" size="sm" disabled={mutation.isPending}>

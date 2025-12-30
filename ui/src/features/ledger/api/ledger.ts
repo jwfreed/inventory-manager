@@ -19,6 +19,7 @@ type MovementApiRow = Partial<Movement> & {
   occurred_at?: string
   posted_at?: string | null
   external_ref?: string | null
+  metadata?: Record<string, unknown> | null
   created_at?: string
   updated_at?: string
 }
@@ -48,6 +49,7 @@ function toCamelMovement(row: MovementApiRow): Movement {
     postedAt: row.postedAt ?? row.posted_at ?? null,
     externalRef: row.externalRef ?? row.external_ref ?? null,
     notes: row.notes ?? null,
+    metadata: row.metadata ?? null,
     createdAt: row.createdAt ?? row.created_at,
     updatedAt: row.updatedAt ?? row.updated_at,
   }

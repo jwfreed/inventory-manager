@@ -177,8 +177,11 @@ export async function updateInventoryAdjustment(
   return toCamelAdjustment(adjustment)
 }
 
-export async function postInventoryAdjustment(id: string): Promise<InventoryAdjustment> {
-  const adjustment = await apiPost<AdjustmentApiRow>(`/inventory-adjustments/${id}/post`)
+export async function postInventoryAdjustment(
+  id: string,
+  payload?: { overrideNegative?: boolean; overrideReason?: string | null },
+): Promise<InventoryAdjustment> {
+  const adjustment = await apiPost<AdjustmentApiRow>(`/inventory-adjustments/${id}/post`, payload)
   return toCamelAdjustment(adjustment)
 }
 

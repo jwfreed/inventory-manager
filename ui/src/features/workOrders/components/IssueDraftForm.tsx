@@ -27,6 +27,7 @@ type Line = {
   fromLocationId: string
   uom: string
   quantityIssued: number | ''
+  reasonCode?: string
   notes?: string
 }
 
@@ -37,6 +38,7 @@ type Props = {
 }
 
 export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
+  const isDisassembly = workOrder.kind === 'disassembly'
   const localDefaults = getWorkOrderDefaults(workOrder.id)
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
@@ -44,7 +46,12 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
   const [locationSearch, setLocationSearch] = useState('')
   const [defaultFromLocationId, setDefaultFromLocationId] = useState<string>('')
   const [lines, setLines] = useState<Line[]>([
-    { componentItemId: '', fromLocationId: '', uom: '', quantityIssued: '' },
+    {
+      componentItemId: isDisassembly ? workOrder.outputItemId : '',
+      fromLocationId: '',
+      uom: '',
+      quantityIssued: '',
+    },
   ])
   const [createdIssue, setCreatedIssue] = useState<WorkOrderIssue | null>(null)
   const [showPostConfirm, setShowPostConfirm] = useState(false)
@@ -180,7 +187,12 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
   const addLine = () =>
     setLines((prev) => [
       ...prev,
-      { componentItemId: '', fromLocationId: normalizedDefaultFrom, uom: baseOutputUom, quantityIssued: '' },
+      {
+        componentItemId: isDisassembly ? workOrder.outputItemId : '',
+        fromLocationId: normalizedDefaultFrom,
+        uom: baseOutputUom,
+        quantityIssued: '',
+      },
     ])
 
   const onComponentChange = (index: number, nextValue: string) => {
@@ -222,6 +234,9 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
       if (!line.componentItemId || !line.fromLocationId || !line.uom || line.quantityIssued === '') {
         return 'All line fields are required.'
       }
+      if (isDisassembly && line.componentItemId !== workOrder.outputItemId) {
+        return 'Disassembly issues must consume the selected item to disassemble.'
+      }
       if (!validLocationIds.has(line.fromLocationId)) return 'Select a valid consume location.'
       if (Number(line.quantityIssued) <= 0) return 'Quantities must be greater than zero.'
     }
@@ -250,6 +265,7 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
         fromLocationId: line.fromLocationId,
         uom: line.uom,
         quantityIssued: Number(line.quantityIssued),
+        reasonCode: line.reasonCode || undefined,
         notes: line.notes,
       })),
     })
@@ -263,7 +279,10 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
   const isPosted = createdIssue?.status === 'posted'
 
   return (
-    <Card title="Create material issue" description="Draft first, then post to create inventory movement.">
+    <Card
+      title={isDisassembly ? 'Record disassembly input' : 'Create material issue'}
+      description="Draft first, then post to create inventory movement."
+    >
       {issueMutation.isPending && <LoadingSpinner label="Creating issue..." />}
       {postMutation.isPending && <LoadingSpinner label="Posting issue..." />}
       {warning && <Alert variant="warning" title="Fix validation" message={warning} />}
@@ -310,9 +329,11 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold text-slate-800">Lines</div>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => requirementsMutation.mutate()}>
-              {requirementsMutation.isPending ? 'Loading…' : 'Load from BOM'}
-            </Button>
+            {!isDisassembly && (
+              <Button variant="secondary" size="sm" onClick={() => requirementsMutation.mutate()}>
+                {requirementsMutation.isPending ? 'Loading…' : 'Load from BOM'}
+              </Button>
+            )}
             <Button variant="secondary" size="sm" onClick={addLine}>
               Add line
             </Button>
@@ -342,11 +363,11 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
         {lines.map((line, idx) => (
           <div
             key={idx}
-            className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5"
+            className={`grid gap-3 rounded-lg border border-slate-200 p-3 ${isDisassembly ? 'md:grid-cols-6' : 'md:grid-cols-5'}`}
           >
             <div>
               <Combobox
-                label="Component item"
+                label={isDisassembly ? 'Input item' : 'Component item'}
                 value={line.componentItemId}
                 options={itemOptions}
                 loading={itemsQuery.isLoading}
@@ -383,6 +404,16 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
                 }
               />
             </label>
+            {isDisassembly && (
+              <label className="space-y-1 text-sm">
+                <span className="text-xs uppercase tracking-wide text-slate-500">Reason code</span>
+                <Input
+                  value={line.reasonCode || ''}
+                  onChange={(e) => updateLine(idx, { reasonCode: e.target.value })}
+                  placeholder="breakage, rework"
+                />
+              </label>
+            )}
             <div className="flex items-start gap-2">
               <label className="flex-1 space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
@@ -401,25 +432,25 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
         ))}
       </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-slate-700">
-            Total to issue:{' '}
-            <span className="font-semibold text-red-600">-{formatNumber(totalIssued)}</span>{' '}
-            {lines[0]?.uom || ''}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={onSubmitDraft} disabled={issueMutation.isPending}>
-              Save issue draft
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setShowPostConfirm(true)}
-              disabled={!createdIssue || isPosted || postMutation.isPending}
-            >
-              Post issue to inventory
-            </Button>
-          </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-slate-700">
+          Total to issue:{' '}
+          <span className="font-semibold text-red-600">-{formatNumber(totalIssued)}</span>{' '}
+          {lines[0]?.uom || ''}
         </div>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={onSubmitDraft} disabled={issueMutation.isPending}>
+            Save issue draft
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setShowPostConfirm(true)}
+            disabled={!createdIssue || isPosted || postMutation.isPending}
+          >
+            Post issue to inventory
+          </Button>
+        </div>
+      </div>
 
       <PostConfirmModal
         isOpen={showPostConfirm}

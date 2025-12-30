@@ -62,6 +62,9 @@ export function WorkOrdersTable({ rows, onSelect, formatOutput, remaining }: Pro
           cell: (row) => (
             <div className="flex items-center gap-2">
               <Badge variant={statusVariant(row.status)}>{formatStatus(row.status)}</Badge>
+              <Badge variant={row.kind === 'disassembly' ? 'info' : 'neutral'}>
+                {row.kind === 'disassembly' ? 'Disassembly' : 'Production'}
+              </Badge>
               {row.status?.toLowerCase() === 'draft' && (
                 <span className="text-xs text-slate-500">No inventory impact</span>
               )}
@@ -74,6 +77,9 @@ export function WorkOrdersTable({ rows, onSelect, formatOutput, remaining }: Pro
           cell: (row) => (
             <div>
               <div className="font-medium text-slate-900">{formatOutput(row)}</div>
+              {row.kind === 'disassembly' && (
+                <div className="text-xs text-slate-500">Input item</div>
+              )}
               {!row.outputItemName && !row.outputItemSku && (
                 <div className="text-xs text-slate-500">{row.outputItemId}</div>
               )}

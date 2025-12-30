@@ -698,3 +698,47 @@ GROUP BY item_id, location_id, uom;
 # 9) Execution summary
 curl -s http://localhost:3000/work-orders/<WORK_ORDER_ID>/execution | jq .
 ```
+
+### Disassembly / rework (ledger transformation, not adjustments)
+
+Disassembly consumes finished goods and produces recovered outputs via the same issue/receive postings.
+Use `kind: "disassembly"` and provide a short note for traceability.
+
+```bash
+# 0) Create a disassembly work order (no BOM required)
+curl -s -X POST http://localhost:3000/work-orders \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "workOrderNumber": "WO-DIS-0001",
+    "kind": "disassembly",
+    "outputItemId": "<FINISHED_ITEM_ID>",
+    "outputUom": "ea",
+    "quantityPlanned": 5,
+    "notes": "Broken bars from WO-0001"
+  }' | jq .
+
+# 1) Issue the finished goods to consume
+curl -s -X POST http://localhost:3000/work-orders/<WORK_ORDER_ID>/issues \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "occurredAt": "2024-02-20T13:00:00Z",
+    "notes": "Consume 5 broken bars",
+    "lines": [
+      {"lineNumber": 1, "componentItemId": "<FINISHED_ITEM_ID>", "fromLocationId": "<FG_LOC_ID>", "uom": "ea", "quantityIssued": 5, "reasonCode": "breakage"}
+    ]
+  }' | jq .
+curl -s -X POST http://localhost:3000/work-orders/<WORK_ORDER_ID>/issues/<ISSUE_ID>/post | jq .
+
+# 2) Post recovered outputs (rework + optional scrap)
+curl -s -X POST http://localhost:3000/work-orders/<WORK_ORDER_ID>/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "occurredAt": "2024-02-20T14:00:00Z",
+    "notes": "Recovered rework + scrap",
+    "lines": [
+      {"outputItemId": "<REWORK_ITEM_ID>", "toLocationId": "<REWORK_LOC_ID>", "uom": "kg", "quantityCompleted": 4.6, "reasonCode": "rework"},
+      {"outputItemId": "<SCRAP_ITEM_ID>", "toLocationId": "<SCRAP_LOC_ID>", "uom": "kg", "quantityCompleted": 0.2, "reasonCode": "scrap"}
+    ]
+  }' | jq .
+curl -s -X POST http://localhost:3000/work-orders/<WORK_ORDER_ID>/completions/<COMPLETION_ID>/post | jq .
+```

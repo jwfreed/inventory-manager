@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useItemsList } from '../queries'
+import { useInventorySnapshotSummary } from '../../inventory/queries'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
@@ -8,7 +9,7 @@ import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
-import { formatDate } from '@shared/formatters'
+import { formatDate, formatNumber } from '@shared/formatters'
 import { ItemForm } from '../components/ItemForm'
 
 const activeOptions = [
@@ -36,6 +37,13 @@ export default function ItemsListPage() {
     active: active === '' ? undefined : active === 'true',
   })
 
+  const snapshotSummaryQuery = useInventorySnapshotSummary(
+    {
+      limit: data?.data?.length ? Math.max(data.data.length, 200) : 200,
+    },
+    { enabled: Boolean(data?.data?.length) },
+  )
+
   const filtered = useMemo(() => {
     const list = data?.data ?? []
     if (!search) return list
@@ -50,6 +58,16 @@ export default function ItemsListPage() {
     if (!typeFilter) return filtered
     return filtered.filter((item) => item.type === typeFilter)
   }, [filtered, typeFilter])
+
+  const availableByItem = useMemo(() => {
+    const map = new Map<string, Map<string, number>>()
+    ;(snapshotSummaryQuery.data ?? []).forEach((row) => {
+      const itemMap = map.get(row.itemId) ?? new Map<string, number>()
+      itemMap.set(row.uom, (itemMap.get(row.uom) ?? 0) + row.available)
+      map.set(row.itemId, itemMap)
+    })
+    return map
+  }, [snapshotSummaryQuery.data])
 
   useEffect(() => {
     if (!showCreate) return
@@ -167,6 +185,9 @@ export default function ItemsListPage() {
                       Default location
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Available
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Active
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -203,6 +224,15 @@ export default function ItemsListPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-800">
                         {item.defaultLocationCode || item.defaultLocationName || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-800">
+                        {(() => {
+                          const totals = availableByItem.get(item.id)
+                          if (!totals || totals.size === 0) return '—'
+                          return Array.from(totals.entries())
+                            .map(([uom, qty]) => `${formatNumber(qty)} ${uom}`)
+                            .join(' · ')
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-800">
                         <Badge variant={item.active ? 'success' : 'danger'}>

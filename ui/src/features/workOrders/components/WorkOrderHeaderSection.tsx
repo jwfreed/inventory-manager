@@ -13,6 +13,8 @@ type Props = {
   outputUom: string
   quantityPlanned: number | ''
   quantityError: string | null
+  itemLabel?: string
+  quantityLabel?: string
   scheduledStartAt: string
   scheduledDueAt: string
   defaultConsumeLocationId: string
@@ -43,6 +45,8 @@ export function WorkOrderHeaderSection({
   outputUom,
   quantityPlanned,
   quantityError,
+  itemLabel = 'Item to make',
+  quantityLabel = 'Quantity planned',
   scheduledStartAt,
   scheduledDueAt,
   defaultConsumeLocationId,
@@ -89,7 +93,7 @@ export function WorkOrderHeaderSection({
       </div>
       <div className="grid gap-3 md:grid-cols-3">
         <label className="space-y-1 text-sm md:col-span-2">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Item to make</span>
+          <span className="text-xs uppercase tracking-wide text-slate-500">{itemLabel}</span>
           <select
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={outputItemId}
@@ -120,7 +124,7 @@ export function WorkOrderHeaderSection({
       </div>
       <div className="grid gap-3 md:grid-cols-3">
         <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Quantity planned</span>
+          <span className="text-xs uppercase tracking-wide text-slate-500">{quantityLabel}</span>
           <Input
             type="number"
             min={1}

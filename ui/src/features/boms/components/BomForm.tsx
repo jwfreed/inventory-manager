@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
@@ -12,6 +12,30 @@ import { SearchableSelect } from '../../../components/SearchableSelect'
 type Props = {
   outputItemId: string
   defaultUom?: string
+  initialBom?: {
+    bom?: {
+      id: string
+      bomCode: string
+      defaultUom: string
+      notes?: string | null
+      versions?: { versionNumber: number }[]
+    }
+    version?: {
+      id: string
+      versionNumber: number
+      yieldQuantity: number
+      yieldUom: string
+      notes?: string | null
+      components: {
+        lineNumber: number
+        componentItemId: string
+        uom: string
+        quantityPer: number
+        scrapFactor: number | null
+        notes?: string | null
+      }[]
+    }
+  }
   onSuccess?: () => void
 }
 
@@ -25,7 +49,7 @@ type ComponentDraft = {
   notes?: string
 }
 
-export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
+export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Props) {
   const [bomCode, setBomCode] = useState('')
   const [yieldUom, setYieldUom] = useState(defaultUom ?? '')
   const [defaultBomUom, setDefaultBomUom] = useState(defaultUom ?? '')
@@ -59,8 +83,6 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
   const resolvedDefaultBomUom = defaultBomUom || outputItem?.defaultUom || ''
   const resolvedYieldUom = yieldUom || outputItem?.defaultUom || ''
 
-
-
   const mutation = useMutation({
     mutationFn: (payload: BomCreatePayload) => createBom(payload),
     onSuccess: () => {
@@ -74,6 +96,48 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
       onSuccess?.()
     },
   })
+
+  useEffect(() => {
+    if (!outputItemId) return
+    if (!initialBom) {
+      setBomCode('')
+      setYieldUom(defaultUom ?? '')
+      setDefaultBomUom(defaultUom ?? '')
+      setYieldQuantity(1)
+      setEffectiveFrom('')
+      setNotes('')
+      setRatioMode(false)
+      setTargetOutputWeight('')
+      setComponents([{ lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '' }])
+      return
+    }
+    const bom = initialBom.bom
+    const version = initialBom.version
+    const nextVersionNumber = (bom?.versions?.length ?? 0) + 1
+    const suggestedCode = bom ? `${bom.bomCode}-v${nextVersionNumber}` : ''
+    setBomCode(suggestedCode)
+    setYieldUom(version?.yieldUom ?? bom?.defaultUom ?? defaultUom ?? '')
+    setDefaultBomUom(bom?.defaultUom ?? defaultUom ?? '')
+    setYieldQuantity(version?.yieldQuantity ?? 1)
+    setEffectiveFrom('')
+    setNotes(bom?.notes ?? '')
+    setRatioMode(false)
+    setTargetOutputWeight('')
+    if (version?.components?.length) {
+      setComponents(
+        version.components.map((c, index) => ({
+          lineNumber: c.lineNumber || index + 1,
+          componentItemId: c.componentItemId,
+          uom: c.uom || defaultUom || '',
+          quantityPer: c.quantityPer,
+          scrapFactor: c.scrapFactor ?? '',
+          notes: c.notes ?? '',
+        })),
+      )
+    } else {
+      setComponents([{ lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '' }])
+    }
+  }, [defaultUom, initialBom, outputItemId])
 
   const addComponent = () =>
     setComponents((prev) => [
@@ -156,8 +220,13 @@ export function BomForm({ outputItemId, defaultUom, onSuccess }: Props) {
     )
   }
 
+  const formTitle = initialBom ? 'New BOM version' : 'Create BOM'
+  const formDescription = initialBom
+    ? 'Duplicate a version to create a new recipe without rewriting history.'
+    : 'Define components and first version for this item.'
+
   return (
-    <Card title="Create BOM" description="Define components and first version for this item.">
+    <Card title={formTitle} description={formDescription}>
       <form className="space-y-4" onSubmit={onSubmit}>
         {mutation.isError && (
           <Alert variant="error" title="Create failed" message={(mutation.error as ApiError).message} />

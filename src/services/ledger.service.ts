@@ -9,6 +9,7 @@ export function mapMovement(row: any) {
     occurredAt: row.occurred_at,
     postedAt: row.posted_at,
     notes: row.notes,
+    metadata: row.metadata ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

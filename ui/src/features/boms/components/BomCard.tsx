@@ -1,7 +1,8 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { activateBomVersion } from '../api/boms'
-import { useBom } from '../queries'
+import { bomsQueryKeys, useBom } from '../queries'
 import type { ApiError, Bom } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -9,22 +10,28 @@ import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { LoadingSpinner } from '../../../components/Loading'
 import { ErrorState } from '../../../components/ErrorState'
+import { Modal } from '../../../components/Modal'
 import { formatDate } from '@shared/formatters'
 
 type Props = {
   bomId: string
   fallback?: Bom
   onChanged?: () => void
+  onDuplicate?: (bom: Bom, version: Bom['versions'][number]) => void
 }
 
-export function BomCard({ bomId, fallback, onChanged }: Props) {
+export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
+  const queryClient = useQueryClient()
   const bomQuery = useBom(bomId, { placeholderData: fallback })
+  const [pendingActivation, setPendingActivation] = useState<Bom['versions'][number] | null>(null)
 
   const activateMutation = useMutation({
     mutationFn: (versionId: string) =>
       activateBomVersion(versionId, { effectiveFrom: new Date().toISOString() }),
     onSuccess: () => {
       void bomQuery.refetch()
+      void queryClient.invalidateQueries({ queryKey: bomsQueryKeys.all })
+      setPendingActivation(null)
       onChanged?.()
     },
   })
@@ -35,6 +42,10 @@ export function BomCard({ bomId, fallback, onChanged }: Props) {
   }
 
   const bom = bomQuery.data
+  const activeVersion = useMemo(
+    () => bom.versions.find((version) => version.status === 'active'),
+    [bom.versions],
+  )
 
   return (
     <Card title={`BOM ${bom.bomCode}`} description={`Output UOM: ${bom.defaultUom}`}>
@@ -62,15 +73,26 @@ export function BomCard({ bomId, fallback, onChanged }: Props) {
                   Yield: {version.yieldQuantity} {version.yieldUom}
                 </span>
               </div>
-              {version.status !== 'active' && (
-                <Button
-                  size="sm"
-                  onClick={() => activateMutation.mutate(version.id)}
-                  disabled={activateMutation.isPending}
-                >
-                  Activate
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {onDuplicate && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onDuplicate(bom, version)}
+                  >
+                    New version
+                  </Button>
+                )}
+                {version.status !== 'active' && (
+                  <Button
+                    size="sm"
+                    onClick={() => setPendingActivation(version)}
+                    disabled={activateMutation.isPending}
+                  >
+                    Activate
+                  </Button>
+                )}
+              </div>
             </div>
             <div className="text-xs text-slate-600">
               Effective: {version.effectiveFrom ? formatDate(version.effectiveFrom) : '—'} →{' '}
@@ -142,6 +164,35 @@ export function BomCard({ bomId, fallback, onChanged }: Props) {
         ))}
         {bom.versions.length === 0 && <div className="text-sm text-slate-600">No versions yet.</div>}
       </div>
+      <Modal
+        isOpen={Boolean(pendingActivation)}
+        onClose={() => setPendingActivation(null)}
+        title="Activate BOM version"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setPendingActivation(null)}>
+              Cancel
+            </Button>
+            {pendingActivation && (
+              <Button onClick={() => activateMutation.mutate(pendingActivation.id)}>
+                Activate
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <div className="space-y-2 text-sm text-slate-700">
+          <div>
+            Activating this version will deactivate{' '}
+            {activeVersion ? `v${activeVersion.versionNumber}` : 'any current active version'}.
+          </div>
+          {pendingActivation && (
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              Activate v{pendingActivation.versionNumber} for BOM {bom.bomCode}
+            </div>
+          )}
+        </div>
+      </Modal>
     </Card>
   )
 }

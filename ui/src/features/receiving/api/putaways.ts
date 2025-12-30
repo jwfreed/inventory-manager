@@ -20,8 +20,11 @@ export async function createPutaway(payload: PutawayCreatePayload): Promise<Puta
   return apiPost<Putaway>('/putaways', payload)
 }
 
-export async function postPutaway(id: string): Promise<Putaway> {
-  return apiPost<Putaway>(`/putaways/${id}/post`)
+export async function postPutaway(
+  id: string,
+  payload?: { overrideNegative?: boolean; overrideReason?: string | null },
+): Promise<Putaway> {
+  return apiPost<Putaway>(`/putaways/${id}/post`, payload)
 }
 
 export async function getPutaway(id: string): Promise<Putaway> {

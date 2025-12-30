@@ -11,6 +11,7 @@ type Props = {
 export function WorkOrderHeader({ workOrder, outputItemLabel }: Props) {
   const remaining =
     (workOrder.quantityPlanned || 0) - (workOrder.quantityCompleted ?? 0)
+  const isDisassembly = workOrder.kind === 'disassembly'
 
   const statusVariant =
     workOrder.status === 'completed'
@@ -32,25 +33,35 @@ export function WorkOrderHeader({ workOrder, outputItemLabel }: Props) {
           <div className="mt-2 flex items-center gap-2">
             <Badge variant={statusVariant}>{workOrder.status}</Badge>
             <Badge variant="neutral">
-              Output: {outputItemLabel || workOrder.outputItemName || workOrder.outputItemSku || workOrder.outputItemId}
+              {isDisassembly ? 'Input' : 'Output'}:{' '}
+              {outputItemLabel || workOrder.outputItemName || workOrder.outputItemSku || workOrder.outputItemId}
+            </Badge>
+            <Badge variant={isDisassembly ? 'info' : 'neutral'}>
+              {isDisassembly ? 'Disassembly' : 'Production'}
             </Badge>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3 text-right text-sm text-slate-700">
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Planned</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">
+              {isDisassembly ? 'Planned to disassemble' : 'Planned'}
+            </div>
             <div className="mt-1 font-semibold">
               {formatNumber(workOrder.quantityPlanned)} {workOrder.outputUom}
             </div>
           </div>
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Completed</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">
+              {isDisassembly ? 'Disassembled' : 'Completed'}
+            </div>
             <div className="mt-1 font-semibold">
               {formatNumber(workOrder.quantityCompleted ?? 0)} {workOrder.outputUom}
             </div>
           </div>
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Remaining</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">
+              {isDisassembly ? 'Remaining to disassemble' : 'Remaining'}
+            </div>
             <div className="mt-1 font-semibold">
               {formatNumber(Math.max(0, remaining))} {workOrder.outputUom}
             </div>

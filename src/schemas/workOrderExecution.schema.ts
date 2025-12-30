@@ -6,6 +6,7 @@ export const workOrderIssueLineSchema = z.object({
   fromLocationId: z.string().uuid(),
   uom: z.string().min(1).max(32),
   quantityIssued: z.number().positive(),
+  reasonCode: z.string().max(64).optional(),
   notes: z.string().max(2000).optional()
 });
 
@@ -21,6 +22,7 @@ export const workOrderCompletionLineSchema = z.object({
   uom: z.string().min(1).max(32),
   quantityCompleted: z.number().positive(),
   packSize: z.number().positive().optional(),
+  reasonCode: z.string().max(64).optional(),
   notes: z.string().max(2000).optional()
 });
 
@@ -33,12 +35,15 @@ export const workOrderCompletionCreateSchema = z.object({
 export const workOrderBatchSchema = z.object({
   occurredAt: z.string().datetime(),
   notes: z.string().max(2000).optional(),
+  overrideNegative: z.boolean().optional(),
+  overrideReason: z.string().max(2000).optional(),
   consumeLines: z.array(
     z.object({
       componentItemId: z.string().uuid(),
       fromLocationId: z.string().uuid(),
       uom: z.string().min(1).max(32),
       quantity: z.number().positive(),
+      reasonCode: z.string().max(64).optional(),
       notes: z.string().max(2000).optional()
     })
   ).min(1),
@@ -49,7 +54,13 @@ export const workOrderBatchSchema = z.object({
       uom: z.string().min(1).max(32),
       quantity: z.number().positive(),
       packSize: z.number().positive().optional(),
+      reasonCode: z.string().max(64).optional(),
       notes: z.string().max(2000).optional()
     })
   ).min(1)
+});
+
+export const workOrderIssuePostSchema = z.object({
+  overrideNegative: z.boolean().optional(),
+  overrideReason: z.string().max(2000).optional()
 });

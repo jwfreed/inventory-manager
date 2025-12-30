@@ -12,10 +12,12 @@ type Props = {
   status: string
   search: string
   plannedDate: string
+  kind: string
   isFetching: boolean
   onStatusChange: (next: string) => void
   onSearchChange: (next: string) => void
   onPlannedDateChange: (next: string) => void
+  onKindChange: (next: string) => void
   onRefresh: () => void
 }
 
@@ -23,10 +25,12 @@ export function WorkOrdersFilters({
   status,
   search,
   plannedDate,
+  kind,
   isFetching,
   onStatusChange,
   onSearchChange,
   onPlannedDateChange,
+  onKindChange,
   onRefresh,
 }: Props) {
   return (
@@ -51,6 +55,27 @@ export function WorkOrdersFilters({
           onChange={(e) => onSearchChange(e.target.value)}
           disabled={isFetching}
         />
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {[
+            { label: 'All', value: '' },
+            { label: 'Production', value: 'production' },
+            { label: 'Disassembly', value: 'disassembly' },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`rounded-full border px-3 py-1 font-semibold uppercase tracking-wide ${
+                kind === option.value
+                  ? 'border-brand-400 bg-brand-50 text-brand-700'
+                  : 'border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+              onClick={() => onKindChange(option.value)}
+              disabled={isFetching}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <input
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
           type="date"

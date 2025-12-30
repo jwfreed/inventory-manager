@@ -4,6 +4,8 @@ import type { z } from 'zod';
 import { pool, withTransaction } from '../db';
 import { inventoryCountSchema } from '../schemas/counts.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { recordAuditLog } from '../lib/audit';
+import { validateSufficientStock } from './stockValidation.service';
 
 type InventoryCountInput = z.infer<typeof inventoryCountSchema>;
 
@@ -311,7 +313,15 @@ export async function getInventoryCount(tenantId: string, id: string) {
   return fetchCycleCountById(tenantId, id);
 }
 
-export async function postInventoryCount(tenantId: string, id: string) {
+export async function postInventoryCount(
+  tenantId: string,
+  id: string,
+  context?: {
+    actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
+    overrideRequested?: boolean;
+    overrideReason?: string | null;
+  }
+) {
   const count = await withTransaction(async (client: PoolClient) => {
     const now = new Date();
     const countResult = await client.query<CycleCountRow>(
@@ -367,6 +377,23 @@ export async function postInventoryCount(tenantId: string, id: string) {
       throw new Error('COUNT_REASON_REQUIRED');
     }
 
+    const negativeLines = deltas
+      .filter((delta) => delta.variance < 0)
+      .map((delta) => ({
+        itemId: delta.line.item_id,
+        locationId: cycleCount.location_id,
+        uom: delta.line.uom,
+        quantityToConsume: roundQuantity(Math.abs(delta.variance))
+      }));
+    const validation = negativeLines.length
+      ? await validateSufficientStock(tenantId, new Date(cycleCount.counted_at), negativeLines, {
+          actorId: context?.actor?.id ?? null,
+          actorRole: context?.actor?.role ?? null,
+          overrideRequested: context?.overrideRequested,
+          overrideReason: context?.overrideReason ?? null
+        })
+      : {};
+
     const adjustmentId = uuidv4();
     await client.query(
       `INSERT INTO inventory_adjustments (
@@ -399,9 +426,17 @@ export async function postInventoryCount(tenantId: string, id: string) {
     const movementId = uuidv4();
     await client.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, $2, 'adjustment', 'posted', $3, $4, $5, $6, $5, $5)`,
-      [movementId, tenantId, `inventory_adjustment:${adjustmentId}`, cycleCount.counted_at, now, cycleCount.notes ?? null]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
+       ) VALUES ($1, $2, 'adjustment', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
+      [
+        movementId,
+        tenantId,
+        `inventory_adjustment:${adjustmentId}`,
+        cycleCount.counted_at,
+        now,
+        cycleCount.notes ?? null,
+        validation.overrideMetadata ?? null
+      ]
     );
 
     for (const delta of deltas) {
@@ -452,6 +487,26 @@ export async function postInventoryCount(tenantId: string, id: string) {
        WHERE id = $4 AND tenant_id = $5`,
       [adjustmentId, movementId, now, id, tenantId]
     );
+
+    if (validation.overrideMetadata && context?.actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: context.actor.type,
+          actorId: context.actor.id ?? null,
+          action: 'negative_override',
+          entityType: 'inventory_movement',
+          entityId: movementId,
+          occurredAt: now,
+          metadata: {
+            reason: validation.overrideMetadata.override_reason ?? null,
+            cycleCountId: id,
+            lines: negativeLines
+          }
+        },
+        client
+      );
+    }
 
     return fetchCycleCountById(tenantId, id, client);
   });

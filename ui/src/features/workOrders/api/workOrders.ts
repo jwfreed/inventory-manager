@@ -10,6 +10,7 @@ import type {
 
 export type WorkOrderListParams = {
   status?: string
+  kind?: string
   plannedFrom?: string
   plannedTo?: string
   limit?: number
@@ -48,12 +49,16 @@ export async function getWorkOrderRequirements(
 
 export type WorkOrderCreatePayload = {
   workOrderNumber: string
-  bomId: string
+  kind?: 'production' | 'disassembly'
+  bomId?: string
   bomVersionId?: string
+  relatedWorkOrderId?: string
   outputItemId: string
   outputUom: string
   quantityPlanned: number
   quantityCompleted?: number
+  defaultConsumeLocationId?: string
+  defaultProduceLocationId?: string
   scheduledStartAt?: string
   scheduledDueAt?: string
   notes?: string
@@ -72,6 +77,7 @@ export type IssueDraftPayload = {
     fromLocationId: string
     uom: string
     quantityIssued: number
+    reasonCode?: string | null
     notes?: string | null
   }[]
 }
@@ -86,8 +92,9 @@ export async function createWorkOrderIssue(
 export async function postWorkOrderIssue(
   workOrderId: string,
   issueId: string,
+  payload?: { overrideNegative?: boolean; overrideReason?: string | null },
 ): Promise<WorkOrderIssue> {
-  return apiPost<WorkOrderIssue>(`/work-orders/${workOrderId}/issues/${issueId}/post`)
+  return apiPost<WorkOrderIssue>(`/work-orders/${workOrderId}/issues/${issueId}/post`, payload)
 }
 
 export type CompletionDraftPayload = {
@@ -99,6 +106,7 @@ export type CompletionDraftPayload = {
     uom: string
     quantityCompleted: number
     packSize?: number
+    reasonCode?: string | null
     notes?: string | null
   }[]
 }
@@ -132,11 +140,14 @@ export async function updateWorkOrderDefaultsApi(
 export type RecordBatchPayload = {
   occurredAt: string
   notes?: string | null
+  overrideNegative?: boolean
+  overrideReason?: string | null
   consumeLines: {
     componentItemId: string
     fromLocationId: string
     uom: string
     quantity: number
+    reasonCode?: string | null
     notes?: string | null
   }[]
   produceLines: {
@@ -145,6 +156,7 @@ export type RecordBatchPayload = {
     uom: string
     quantity: number
     packSize?: number
+    reasonCode?: string | null
     notes?: string | null
   }[]
 }

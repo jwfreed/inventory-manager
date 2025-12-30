@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useItem } from '../queries'
 import { useLocationsList } from '../../locations/queries'
 import { useInventorySnapshotSummary } from '../../inventory/queries'
 import { useBomsByItem } from '../../boms/queries'
-import type { ApiError } from '../../../api/types'
+import type { ApiError, Bom, BomVersion } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
@@ -12,6 +12,7 @@ import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
+import { Modal } from '../../../components/Modal'
 import { Section } from '../../../components/Section'
 import { formatDate, formatNumber } from '@shared/formatters'
 import { ItemForm } from '../components/ItemForm'
@@ -29,12 +30,19 @@ const typeLabels: Record<string, string> = {
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [showEdit, setShowEdit] = useState(false)
   const [showBomForm, setShowBomForm] = useState(false)
+  const [showBomModal, setShowBomModal] = useState(false)
+  const [bomDraftSource, setBomDraftSource] = useState<{
+    bom?: Bom
+    version?: BomVersion
+  } | null>(null)
+  const [bomMessage, setBomMessage] = useState<string | null>(null)
   const [selectedLocationId, setSelectedLocationId] = useState(
     () => searchParams.get('locationId') ?? '',
   )
+  const editFormRef = useRef<HTMLDivElement | null>(null)
 
   const itemQuery = useItem(id, {
     retry: (count, err: ApiError) => err?.status !== 404 && count < 1,
@@ -58,6 +66,22 @@ export default function ItemDetailPage() {
       navigate('/not-found', { replace: true })
     }
   }, [itemQuery.isError, itemQuery.error, navigate])
+
+  useEffect(() => {
+    const locationId = searchParams.get('locationId') ?? ''
+    setSelectedLocationId(locationId)
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!showEdit) return
+    const node = editFormRef.current
+    if (!node) return
+    node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const focusable = node.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+      'input, textarea, select',
+    )
+    focusable?.focus()
+  }, [showEdit])
 
   const copyId = async () => {
     if (!id) return
@@ -97,12 +121,51 @@ export default function ItemDetailPage() {
     return loc.name ? `${code} — ${loc.name}` : code
   }, [locationsQuery.data, selectedLocationId])
 
+  const bomSummary = useMemo(() => {
+    const boms = bomsQuery.data?.boms ?? []
+    const activeBom = boms.find((bom) => bom.versions.some((version) => version.status === 'active'))
+    const activeVersion = activeBom?.versions.find((version) => version.status === 'active')
+    const versionCount = boms.reduce((sum, bom) => sum + bom.versions.length, 0)
+    return { activeBom, activeVersion, versionCount }
+  }, [bomsQuery.data?.boms])
+
+  const openBomModal = (source?: { bom?: Bom; version?: BomVersion }) => {
+    setBomDraftSource(source ?? null)
+    setShowBomModal(true)
+  }
+
+  const closeBomModal = () => {
+    setShowBomModal(false)
+    setBomDraftSource(null)
+  }
+
+  const updateLocationScope = (nextLocationId: string) => {
+    setSelectedLocationId(nextLocationId)
+    const nextParams = new URLSearchParams(searchParams)
+    if (nextLocationId) {
+      nextParams.set('locationId', nextLocationId)
+    } else {
+      nextParams.delete('locationId')
+    }
+    setSearchParams(nextParams)
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Master data</p>
           <h2 className="text-2xl font-semibold text-slate-900">Item detail</h2>
+          {itemQuery.data && (
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+              <span className="font-semibold text-slate-900">
+                {itemQuery.data.sku} — {itemQuery.data.name}
+              </span>
+              <Badge variant={itemQuery.data.active ? 'success' : 'danger'}>
+                {itemQuery.data.active ? 'Active' : 'Inactive'}
+              </Badge>
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => navigate('/items')}>
@@ -138,11 +201,6 @@ export default function ItemDetailPage() {
               {itemQuery.data.description && (
                 <div className="mt-2 text-sm text-slate-600">{itemQuery.data.description}</div>
               )}
-              <div className="mt-2 flex items-center gap-2">
-                <Badge variant={itemQuery.data.active ? 'success' : 'danger'}>
-                  {itemQuery.data.active ? 'Active' : 'Inactive'}
-                </Badge>
-              </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-3 text-sm text-slate-700">
                 <div>
                   <div className="text-xs uppercase tracking-wide text-slate-500">Type</div>
@@ -166,31 +224,34 @@ export default function ItemDetailPage() {
                 </div>
               </div>
             </div>
-            <div className="grid gap-2 text-right text-sm text-slate-700">
+            <div className="grid gap-3 text-right text-sm text-slate-700">
+              <div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowEdit((v) => !v)}
+                >
+                  {showEdit ? 'Close edit' : 'Edit item'}
+                </Button>
+              </div>
               <div>Created: {itemQuery.data.createdAt ? formatDate(itemQuery.data.createdAt) : '—'}</div>
               <div>Updated: {itemQuery.data.updatedAt ? formatDate(itemQuery.data.updatedAt) : '—'}</div>
             </div>
           </div>
         </Card>
       )}
-
-      {itemQuery.data && (
-        <div className="flex justify-end pb-2">
-          <Button variant="secondary" size="sm" onClick={() => setShowEdit((v) => !v)}>
-            {showEdit ? 'Hide form' : 'Edit item'}
-          </Button>
-        </div>
-      )}
       {itemQuery.data && showEdit && (
-        <Section title="Edit item">
-          <ItemForm
-            initialItem={itemQuery.data}
-            onSuccess={() => {
-              setShowEdit(false)
-              void itemQuery.refetch()
-            }}
-          />
-        </Section>
+        <div ref={editFormRef}>
+          <Section title="Edit item">
+            <ItemForm
+              initialItem={itemQuery.data}
+              onSuccess={() => {
+                setShowEdit(false)
+                void itemQuery.refetch()
+              }}
+            />
+          </Section>
+        </div>
       )}
 
       <Section
@@ -206,7 +267,7 @@ export default function ItemDetailPage() {
             <select
               className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
               value={selectedLocationId}
-              onChange={(e) => setSelectedLocationId(e.target.value)}
+              onChange={(e) => updateLocationScope(e.target.value)}
             >
               <option value="">All locations</option>
               {locationsQuery.data?.data.map((loc) => (
@@ -216,12 +277,19 @@ export default function ItemDetailPage() {
               ))}
             </select>
             {id && (
-              <Link
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                to={`/movements?itemId=${id}${selectedLocationId ? `&locationId=${selectedLocationId}` : ''}`}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  navigate(
+                    `/movements?itemId=${id}${
+                      selectedLocationId ? `&locationId=${selectedLocationId}` : ''
+                    }`,
+                  )
+                }
               >
                 View movements
-              </Link>
+              </Button>
             )}
           </div>
         </div>
@@ -265,8 +333,39 @@ export default function ItemDetailPage() {
                         {formatNumber(totals.available)}
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        On hand {formatNumber(totals.onHand)} · Reserved {formatNumber(totals.reserved)} · Held{' '}
-                        {formatNumber(totals.held)} · Rejected {formatNumber(totals.rejected)}
+                        On hand {formatNumber(totals.onHand)} ·{' '}
+                        <span className="inline-flex items-center gap-1">
+                          Reserved {formatNumber(totals.reserved)}
+                          <button
+                            type="button"
+                            className="text-brand-700 underline"
+                            title="Reserved stock is allocated to orders and not available."
+                          >
+                            Explain
+                          </button>
+                        </span>{' '}
+                        ·{' '}
+                        <span className="inline-flex items-center gap-1">
+                          Held {formatNumber(totals.held)}
+                          <button
+                            type="button"
+                            className="text-brand-700 underline"
+                            title="Held stock is quarantined or awaiting QC and not usable."
+                          >
+                            Explain
+                          </button>
+                        </span>{' '}
+                        ·{' '}
+                        <span className="inline-flex items-center gap-1">
+                          Rejected {formatNumber(totals.rejected)}
+                          <button
+                            type="button"
+                            className="text-brand-700 underline"
+                            title="Rejected stock is non-usable and should not be put away."
+                          >
+                            Explain
+                          </button>
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -284,6 +383,9 @@ export default function ItemDetailPage() {
             )}
           </>
         )}
+        <div className="pt-3 text-xs text-slate-500">
+          Stock is derived from the movement ledger (append-only).
+        </div>
       </Section>
 
       <Section title="BOMs">
@@ -291,20 +393,54 @@ export default function ItemDetailPage() {
         {bomsQuery.isError && bomsQuery.error && (
           <ErrorState error={bomsQuery.error as unknown as ApiError} onRetry={() => void bomsQuery.refetch()} />
         )}
-        <div className="flex justify-between items-center pb-2">
+        <div className="flex flex-wrap items-start justify-between gap-3 pb-2">
           <div className="text-sm text-slate-700">
-            Define the recipe for this item. Activate a version before using it in a work order.
+            BOMs are versioned recipes. Activate exactly one version to use in work orders.
           </div>
-          <Button variant="secondary" size="sm" onClick={() => setShowBomForm((v) => !v)}>
-            {showBomForm ? 'Hide form' : 'Add BOM'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setShowBomForm((v) => !v)
+                if (!showBomForm) setBomMessage(null)
+              }}
+            >
+              {showBomForm ? 'Close panel' : 'New BOM version'}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                if (!bomSummary.activeBom || !id) return
+                navigate(`/work-orders/new?outputItemId=${id}&bomId=${bomSummary.activeBom.id}`)
+              }}
+              disabled={!bomSummary.activeBom || !id}
+            >
+              Create work order
+            </Button>
+          </div>
         </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 pb-3">
+          <span>
+            Active BOM:{' '}
+            {bomSummary.activeBom && bomSummary.activeVersion
+              ? `${bomSummary.activeBom.bomCode} (v${bomSummary.activeVersion.versionNumber})`
+              : 'No active BOM'}
+          </span>
+          <span>Versions: {bomSummary.versionCount}</span>
+          {!bomSummary.activeBom && (
+            <span className="text-xs text-slate-500">Activate a version to create work orders.</span>
+          )}
+        </div>
+        {bomMessage && <Alert variant="success" title="BOM updated" message={bomMessage} className="mb-3" />}
         {showBomForm && itemQuery.data && (
-          <div className="pb-4">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
             <BomForm
               outputItemId={itemQuery.data.id}
+              defaultUom={itemQuery.data.defaultUom || undefined}
               onSuccess={() => {
                 setShowBomForm(false)
+                setBomMessage('BOM created.')
                 void bomsQuery.refetch()
               }}
             />
@@ -318,10 +454,38 @@ export default function ItemDetailPage() {
         )}
         <div className="grid gap-4">
           {bomsQuery.data?.boms.map((bom) => (
-            <BomCard key={bom.id} bomId={bom.id} fallback={bom} onChanged={() => void bomsQuery.refetch()} />
+            <BomCard
+              key={bom.id}
+              bomId={bom.id}
+              fallback={bom}
+              onChanged={() => void bomsQuery.refetch()}
+              onDuplicate={(sourceBom, sourceVersion) => openBomModal({ bom: sourceBom, version: sourceVersion })}
+            />
           ))}
         </div>
       </Section>
+
+      <Modal
+        isOpen={showBomModal}
+        onClose={closeBomModal}
+        title={bomDraftSource ? 'New BOM version' : 'Create BOM'}
+        className="max-h-[92vh] w-full max-w-[90vw] overflow-hidden"
+      >
+        <div className="max-h-[80vh] overflow-y-auto pr-4">
+          {itemQuery.data && (
+            <BomForm
+              outputItemId={itemQuery.data.id}
+              defaultUom={itemQuery.data.defaultUom || undefined}
+              initialBom={bomDraftSource ?? undefined}
+              onSuccess={() => {
+                closeBomModal()
+                setBomMessage('BOM created.')
+                void bomsQuery.refetch()
+              }}
+            />
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }

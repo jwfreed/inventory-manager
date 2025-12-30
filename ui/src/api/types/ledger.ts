@@ -6,6 +6,7 @@ export type Movement = {
   postedAt?: string | null
   externalRef?: string | null
   notes?: string | null
+  metadata?: Record<string, unknown> | null
   createdAt?: string
   updatedAt?: string
 }

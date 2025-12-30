@@ -15,6 +15,8 @@ type Props = {
 
 export function Modal({ isOpen, onClose, title, children, footer, className }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null)
+  const hasCustomMaxWidth = typeof className === 'string' && className.includes('max-w-')
+  const maxWidthClass = hasCustomMaxWidth ? '' : 'max-w-lg'
 
   useEffect(() => {
     if (!isOpen) return
@@ -40,7 +42,8 @@ export function Modal({ isOpen, onClose, title, children, footer, className }: P
         ref={dialogRef}
         tabIndex={-1}
         className={cn(
-          'w-full max-w-lg rounded-xl bg-white shadow-card outline-none',
+          'w-full rounded-xl bg-white shadow-card outline-none',
+          maxWidthClass,
           className,
         )}
       >

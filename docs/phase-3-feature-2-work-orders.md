@@ -9,6 +9,7 @@ Supports:
 - Creating work orders to produce an output item using a BOM version (Phase 3 Feature 1).
 - Planning a target output quantity and tracking work order status.
 - Recording execution results (component consumption + output production) as inventory movements.
+- Disassembly / rework work orders that consume finished goods and produce recovered outputs (no inventory adjustments).
 
 Out of scope (Phase 3 Feature 2):
 - Detailed routing/operations, labor tracking, equipment scheduling.
@@ -25,6 +26,7 @@ Out of scope (Phase 3 Feature 2):
   - Output production is represented as positive deltas (typically `receive` or `adjustment` per policy).
   - If you want a single balanced transaction, use a policy of paired movements (or a future `manufacture` movement type); Phase 3 documents linkages only.
   - Movement type selection for consumption/production (e.g., `issue`/`receive` vs `adjustment`) is an implementation-time policy; regardless, the sign and location semantics must match the execution lines.
+- Disassembly/rework is modeled as a work order kind and uses the same issue/receive ledger postings (never inventory adjustments).
 
 ### UOM Assumption
 
@@ -42,8 +44,10 @@ All timestamps are UTC.
 | `id` | `uuid` | no | PK |
 | `work_order_number` | `text` | no | Unique business identifier |
 | `status` | `text` | no | enum-like: `draft`, `released`, `in_progress`, `completed`, `canceled` |
-| `bom_id` | `uuid` | no | FK → `boms(id)` |
+| `kind` | `text` | no | enum-like: `production`, `disassembly` |
+| `bom_id` | `uuid` | yes | FK → `boms(id)`; optional for disassembly |
 | `bom_version_id` | `uuid` | yes | FK → `bom_versions(id)`; resolved at release time if not set |
+| `related_work_order_id` | `uuid` | yes | Optional traceability back to a production WO |
 | `output_item_id` | `uuid` | no | FK → `items(id)`; should match BOM output |
 | `output_uom` | `text` | no | Should match BOM default/yield UOM |
 | `quantity_planned` | `numeric(18,6)` | no | Must be > 0 |
@@ -127,6 +131,7 @@ Records the quantities consumed/produced for an execution event.
 | `quantity` | `numeric(18,6)` | no | Must be > 0 |
 | `from_location_id` | `uuid` | yes | For consumption lines |
 | `to_location_id` | `uuid` | yes | For production lines |
+| `reason_code` | `text` | yes | Optional execution context (e.g., breakage, rework) |
 | `notes` | `text` | yes | |
 | `created_at` | `timestamptz` | no | default now() |
 

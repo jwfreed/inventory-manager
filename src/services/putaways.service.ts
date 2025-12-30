@@ -6,6 +6,7 @@ import type { z } from 'zod';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
 import { recordAuditLog } from '../lib/audit';
+import { validateSufficientStock } from './stockValidation.service';
 import {
   calculateAcceptedQuantity,
   calculatePutawayAvailability,
@@ -283,7 +284,11 @@ export async function createPutaway(
 export async function postPutaway(
   tenantId: string,
   id: string,
-  actor?: { type: 'user' | 'system'; id?: string | null }
+  context?: {
+    actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
+    overrideRequested?: boolean;
+    overrideReason?: string | null;
+  }
 ) {
   return withTransaction(async (client) => {
     const now = new Date();
@@ -348,11 +353,28 @@ export async function postPutaway(
       }
     }
 
+    const validation = await validateSufficientStock(
+      tenantId,
+      now,
+      pendingLines.map((line) => ({
+        itemId: line.item_id,
+        locationId: line.from_location_id,
+        uom: line.uom,
+        quantityToConsume: roundQuantity(toNumber(line.quantity_planned ?? 0))
+      })),
+      {
+        actorId: context?.actor?.id ?? null,
+        actorRole: context?.actor?.role ?? null,
+        overrideRequested: context?.overrideRequested,
+        overrideReason: context?.overrideReason ?? null
+      }
+    );
+
     await client.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, $2, 'transfer', 'posted', $3, $4, $4, $5, $4, $4)`,
-      [movementId, tenantId, `putaway:${id}`, now, `Putaway ${id}`]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
+       ) VALUES ($1, $2, 'transfer', 'posted', $3, $4, $4, $5, $6, $4, $4)`,
+      [movementId, tenantId, `putaway:${id}`, now, `Putaway ${id}`, validation.overrideMetadata ?? null]
     );
 
     for (const line of pendingLines) {
@@ -387,17 +409,42 @@ export async function postPutaway(
       ['completed', movementId, now, id, tenantId]
     );
 
-    if (actor) {
+    if (context?.actor) {
       await recordAuditLog(
         {
           tenantId,
-          actorType: actor.type,
-          actorId: actor.id ?? null,
+          actorType: context.actor.type,
+          actorId: context.actor.id ?? null,
           action: 'post',
           entityType: 'putaway',
           entityId: id,
           occurredAt: now,
           metadata: { movementId }
+        },
+        client
+      );
+    }
+
+    if (validation.overrideMetadata && context?.actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: context.actor.type,
+          actorId: context.actor.id ?? null,
+          action: 'negative_override',
+          entityType: 'inventory_movement',
+          entityId: movementId,
+          occurredAt: now,
+          metadata: {
+            reason: validation.overrideMetadata.override_reason ?? null,
+            putawayId: id,
+            lines: pendingLines.map((line) => ({
+              itemId: line.item_id,
+              locationId: line.from_location_id,
+              uom: line.uom,
+              quantity: roundQuantity(toNumber(line.quantity_planned ?? 0))
+            }))
+          }
         },
         client
       );

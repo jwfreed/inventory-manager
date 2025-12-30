@@ -55,6 +55,23 @@ export default function MovementDetailPage() {
   const sourceLink = useMemo(() => {
     const ref = movementQuery.data?.externalRef
     if (!ref) return null
+    const workOrderLink = (label: string) => {
+      const parts = ref.split(':')
+      const id = parts[1]
+      const workOrderId = parts[2]
+      return workOrderId
+        ? { label: `${label} ${id.slice(0, 8)}…`, to: `/work-orders/${workOrderId}` }
+        : null
+    }
+    const disassemblyLink = () => {
+      const parts = ref.split(':')
+      const workOrderId = parts[2] ?? parts[1]
+      if (!workOrderId) return null
+      return {
+        label: `Disassembly WO ${workOrderId.slice(0, 8)}…`,
+        to: `/work-orders/${workOrderId}`,
+      }
+    }
     if (ref.startsWith('putaway:')) {
       const id = ref.split(':')[1]
       return { label: `Putaway ${id.slice(0, 8)}…`, to: `/receiving?putawayId=${id}` }
@@ -67,8 +84,37 @@ export default function MovementDetailPage() {
       const id = ref.split(':')[1]
       return { label: `Adjustment ${id.slice(0, 8)}…`, to: `/inventory-adjustments/${id}` }
     }
+    if (ref.startsWith('work_order_issue:')) {
+      return workOrderLink('Work order issue')
+    }
+    if (ref.startsWith('work_order_completion:')) {
+      return workOrderLink('Work order completion')
+    }
+    if (ref.startsWith('work_order_disassembly_issue:')) {
+      return disassemblyLink()
+    }
+    if (ref.startsWith('work_order_disassembly_completion:')) {
+      return disassemblyLink()
+    }
+    if (ref.startsWith('work_order_batch_issue:')) {
+      return workOrderLink('Batch issue')
+    }
+    if (ref.startsWith('work_order_batch_completion:')) {
+      return workOrderLink('Batch completion')
+    }
     return null
   }, [movementQuery.data?.externalRef])
+
+  const negativeOverride = useMemo(() => {
+    const metadata = movementQuery.data?.metadata as
+      | { negative_override?: boolean; override_reason?: string; override_actor_id?: string }
+      | null
+    if (!metadata?.negative_override) return null
+    return {
+      reason: metadata.override_reason,
+      actorId: metadata.override_actor_id,
+    }
+  }, [movementQuery.data?.metadata])
 
   return (
     <div className="space-y-6">
@@ -105,6 +151,7 @@ export default function MovementDetailPage() {
                 <div className="flex items-center gap-3">
                   <Badge variant="info">{movementQuery.data.movementType}</Badge>
                   <MovementStatusBadge status={movementQuery.data.status} />
+                  {negativeOverride && <Badge variant="danger">Negative override</Badge>}
                 </div>
                 <div className="text-sm text-slate-700">
                   <span className="font-semibold">Occurred:</span>{' '}
@@ -118,6 +165,12 @@ export default function MovementDetailPage() {
                   <span className="font-semibold">External ref:</span>{' '}
                   {movementQuery.data.externalRef || '—'}
                 </div>
+                {negativeOverride && (
+                  <div className="text-sm text-slate-700">
+                    <span className="font-semibold">Override reason:</span>{' '}
+                    {negativeOverride.reason || '—'}
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <div className="text-sm text-slate-700">
@@ -137,6 +190,12 @@ export default function MovementDetailPage() {
                     movementQuery.data.externalRef || '—'
                   )}
                 </div>
+                {negativeOverride && (
+                  <div className="text-sm text-slate-700">
+                    <span className="font-semibold">Override actor:</span>{' '}
+                    {negativeOverride.actorId || '—'}
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -13,7 +13,8 @@ import {
 import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
-  workOrderBatchSchema
+  workOrderBatchSchema,
+  workOrderIssuePostSchema
 } from '../schemas/workOrderExecution.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
@@ -86,10 +87,18 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
   if (!uuidSchema.safeParse(issueId).success) {
     return res.status(400).json({ error: 'Invalid issue id.' });
   }
+  const parsed = workOrderIssuePostSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
 
   try {
     const tenantId = req.auth!.tenantId;
-    const issue = await postWorkOrderIssue(tenantId, workOrderId, issueId);
+    const issue = await postWorkOrderIssue(tenantId, workOrderId, issueId, {
+      actor: { type: 'user', id: req.auth!.userId, role: req.auth!.role },
+      overrideRequested: parsed.data.overrideNegative,
+      overrideReason: parsed.data.overrideReason
+    });
     const itemIds = Array.from(new Set(issue.lines.map((line) => line.componentItemId)));
     const locationIds = Array.from(new Set(issue.lines.map((line) => line.fromLocationId)));
     emitEvent(tenantId, 'inventory.work_order.issue.posted', {
@@ -101,6 +110,29 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
     });
     return res.json(issue);
   } catch (error: any) {
+    if (error?.code === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({
+        error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
+      return res.status(403).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_NOT_ALLOWED',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
+      return res.status(409).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
     if (error?.message === 'WO_NOT_FOUND') {
       return res.status(404).json({ error: 'Work order not found.' });
     }
@@ -121,6 +153,9 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
     }
     if (error?.message === 'WO_ISSUE_INVALID_QUANTITY') {
       return res.status(400).json({ error: 'Issue quantities must be greater than zero.' });
+    }
+    if (error?.message === 'WO_DISASSEMBLY_INPUT_MISMATCH') {
+      return res.status(400).json({ error: 'Disassembly issues must consume the selected item.' });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post work order issue.' });
@@ -263,7 +298,11 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
 
   try {
     const tenantId = req.auth!.tenantId;
-    const result = await recordWorkOrderBatch(tenantId, workOrderId, parsed.data);
+    const result = await recordWorkOrderBatch(tenantId, workOrderId, parsed.data, {
+      actor: { type: 'user', id: req.auth!.userId, role: req.auth!.role },
+      overrideRequested: parsed.data.overrideNegative,
+      overrideReason: parsed.data.overrideReason
+    });
     const itemIds = Array.from(
       new Set([
         ...parsed.data.consumeLines.map((line) => line.componentItemId),
@@ -285,6 +324,29 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
     });
     return res.status(201).json(result);
   } catch (error: any) {
+    if (error?.code === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({
+        error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
+      return res.status(403).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_NOT_ALLOWED',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
+      return res.status(409).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
     if (error?.message === 'WO_NOT_FOUND') {
       return res.status(404).json({ error: 'Work order not found.' });
     }
@@ -293,6 +355,9 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
     }
     if (error?.message === 'WO_BATCH_ITEM_MISMATCH') {
       return res.status(400).json({ error: 'Output item mismatch with work order.' });
+    }
+    if (error?.message === 'WO_DISASSEMBLY_INPUT_MISMATCH') {
+      return res.status(400).json({ error: 'Disassembly consumption must match the selected item.' });
     }
     if (error?.message?.startsWith('WO_BATCH_ITEMS_MISSING')) {
       const missing = error.message.split(':')[1] ?? '';

@@ -370,19 +370,6 @@ export async function listNextStepBomsByComponentItem(tenantId: string, componen
   }));
 }
 
-function rangesOverlap(
-  existingFrom: string | null,
-  existingTo: string | null,
-  candidateFrom: Date,
-  candidateTo: Date | null
-): boolean {
-  const existingFromTime = existingFrom ? new Date(existingFrom).getTime() : Number.NEGATIVE_INFINITY;
-  const existingToTime = existingTo ? new Date(existingTo).getTime() : Number.POSITIVE_INFINITY;
-  const candidateFromTime = candidateFrom.getTime();
-  const candidateToTime = candidateTo ? candidateTo.getTime() : Number.POSITIVE_INFINITY;
-  return candidateFromTime <= existingToTime && existingFromTime <= candidateToTime;
-}
-
 export async function activateBomVersion(
   tenantId: string,
   versionId: string,
@@ -420,13 +407,25 @@ export async function activateBomVersion(
         WHERE b.output_item_id = $1
           AND v.status = 'active'
           AND v.id <> $2
-          AND v.tenant_id = $3`,
+          AND v.tenant_id = $3
+        FOR UPDATE`,
       [versionRow.output_item_id, versionId, tenantId]
     );
-    for (const row of activeRows) {
-      if (rangesOverlap(row.effective_from, row.effective_to, effectiveFrom, effectiveTo)) {
-        throw new Error('BOM_EFFECTIVE_RANGE_OVERLAP');
-      }
+
+    const closeAt = new Date(effectiveFrom.getTime() - 1);
+    if (activeRows.length > 0) {
+      await client.query(
+        `UPDATE bom_versions
+            SET status = 'retired',
+                effective_to = CASE
+                  WHEN effective_to IS NULL OR effective_to > $1 THEN $1
+                  ELSE effective_to
+                END,
+                updated_at = $2
+          WHERE id = ANY($3)
+            AND tenant_id = $4`,
+        [closeAt.toISOString(), now, activeRows.map((row) => row.id), tenantId]
+      );
     }
 
     await client.query(

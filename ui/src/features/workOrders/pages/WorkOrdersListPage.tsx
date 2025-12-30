@@ -12,6 +12,7 @@ export default function WorkOrdersListPage() {
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
   const [plannedDate, setPlannedDate] = useState('')
+  const [kind, setKind] = useState('')
 
   const itemsQuery = useItemsList({ limit: 500 }, { staleTime: 60_000 })
 
@@ -20,6 +21,7 @@ export default function WorkOrdersListPage() {
 
   const { data, isLoading, isError, error, refetch, isFetching } = useWorkOrdersList({
     status: status || undefined,
+    kind: kind || undefined,
     plannedFrom,
     plannedTo,
     limit: 50,
@@ -51,10 +53,12 @@ export default function WorkOrdersListPage() {
         status={status}
         search={search}
         plannedDate={plannedDate}
+        kind={kind}
         isFetching={isFetching}
         onStatusChange={setStatus}
         onSearchChange={setSearch}
         onPlannedDateChange={setPlannedDate}
+        onKindChange={setKind}
         onRefresh={() => void refetch()}
       />
 
@@ -62,7 +66,7 @@ export default function WorkOrdersListPage() {
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
           <div>
             Showing {filtered.length} work orders
-            {(status || search || plannedDate) ? ' (filtered)' : ''}
+            {(status || search || plannedDate || kind) ? ' (filtered)' : ''}
           </div>
           {isFetching && <span className="text-xs uppercase tracking-wide text-slate-400">Updating…</span>}
         </div>

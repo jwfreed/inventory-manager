@@ -3,7 +3,8 @@ import { z } from 'zod';
 export const workOrderCreateSchema = z
   .object({
     workOrderNumber: z.string().min(1).max(255),
-    bomId: z.string().uuid(),
+    kind: z.enum(['production', 'disassembly']).default('production'),
+    bomId: z.string().uuid().optional(),
     bomVersionId: z.string().uuid().optional(),
     outputItemId: z.string().uuid(),
     outputUom: z.string().min(1).max(32),
@@ -13,9 +14,24 @@ export const workOrderCreateSchema = z
     defaultProduceLocationId: z.string().uuid().optional(),
     scheduledStartAt: z.string().datetime().optional(),
     scheduledDueAt: z.string().datetime().optional(),
-    notes: z.string().max(2000).optional()
+    notes: z.string().max(2000).optional(),
+    relatedWorkOrderId: z.string().uuid().optional()
   })
   .superRefine((data, ctx) => {
+    if (data.kind === 'production' && !data.bomId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'bomId is required for production work orders.',
+        path: ['bomId']
+      });
+    }
+    if (data.kind === 'disassembly' && !data.notes) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'notes are required for disassembly work orders.',
+        path: ['notes']
+      });
+    }
     if (data.scheduledStartAt && data.scheduledDueAt) {
       const start = new Date(data.scheduledStartAt);
       const due = new Date(data.scheduledDueAt);
@@ -39,6 +55,7 @@ export const workOrderCreateSchema = z
 
 export const workOrderListQuerySchema = z.object({
   status: z.enum(['draft', 'released', 'in_progress', 'completed', 'canceled']).optional(),
+  kind: z.enum(['production', 'disassembly']).optional(),
   plannedFrom: z.string().datetime().optional(),
   plannedTo: z.string().datetime().optional(),
   limit: z.string().optional(),

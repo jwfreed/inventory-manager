@@ -1,4 +1,4 @@
-import { Button, Input, SearchableSelect } from '@shared/ui'
+import { Button, Combobox, Input } from '@shared/ui'
 import { cn } from '@lib/utils'
 import type { AdjustmentLineDraft } from '../types'
 
@@ -23,6 +23,10 @@ type Props = {
   lockLocationId?: string | null
   lineErrors?: Record<string, LineError>
   showErrors?: boolean
+  itemsLoading?: boolean
+  locationsLoading?: boolean
+  onItemSearchChange?: (query: string) => void
+  onLocationSearchChange?: (query: string) => void
   onLineChange: (index: number, patch: Partial<AdjustmentLineDraft>) => void
   onAddLine: () => void
   onDuplicateLine: (index: number) => void
@@ -37,6 +41,10 @@ export function AdjustmentLinesEditor({
   lockLocationId,
   lineErrors,
   showErrors,
+  itemsLoading,
+  locationsLoading,
+  onItemSearchChange,
+  onLocationSearchChange,
   onLineChange,
   onAddLine,
   onDuplicateLine,
@@ -52,10 +60,13 @@ export function AdjustmentLinesEditor({
         return (
           <div key={line.key} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-6">
             <div className="md:col-span-2">
-              <SearchableSelect
+              <Combobox
                 label="Item"
                 value={line.itemId}
                 options={itemOptions}
+                loading={itemsLoading}
+                onQueryChange={onItemSearchChange}
+                emptyMessage="No matching items"
                 disabled={Boolean(lockItemId)}
                 onChange={(value) => onLineChange(idx, { itemId: value })}
               />
@@ -64,10 +75,13 @@ export function AdjustmentLinesEditor({
               )}
             </div>
             <div className="md:col-span-2">
-              <SearchableSelect
+              <Combobox
                 label="Location"
                 value={line.locationId}
                 options={locationOptions}
+                loading={locationsLoading}
+                onQueryChange={onLocationSearchChange}
+                emptyMessage="No matching locations"
                 disabled={Boolean(lockLocationId)}
                 onChange={(value) => onLineChange(idx, { locationId: value })}
               />

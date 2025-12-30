@@ -110,7 +110,11 @@ export default function WorkOrderDetailPage() {
 
   const executionQuery = useWorkOrderExecution(id)
 
-  const requirementsQuery = useWorkOrderRequirements(id, undefined, { staleTime: 60_000 })
+  const isDisassembly = workOrderQuery.data?.kind === 'disassembly'
+  const requirementsQuery = useWorkOrderRequirements(id, undefined, {
+    staleTime: 60_000,
+    enabled: Boolean(id) && Boolean(workOrderQuery.data) && !isDisassembly,
+  })
 
   const refreshAll = () => {
     void workOrderQuery.refetch()
@@ -145,6 +149,17 @@ export default function WorkOrderDetailPage() {
           Back to list
         </Button>
       </div>
+      {workOrderQuery.data && (
+        <div className="flex justify-end">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data!.id)}`)}
+          >
+            View movements
+          </Button>
+        </div>
+      )}
 
       {workOrderQuery.isLoading && <LoadingSpinner label="Loading work order..." />}
       {workOrderQuery.isError && workOrderQuery.error && (
@@ -167,27 +182,29 @@ export default function WorkOrderDetailPage() {
         />
       </Section>
 
-      <Section title="Requirements vs issued">
-        {requirementsQuery.isLoading && <LoadingSpinner label="Loading requirements..." />}
-        {requirementsQuery.isError && (
-          <ErrorState
-            error={requirementsQuery.error}
-            onRetry={() => void requirementsQuery.refetch()}
-          />
-        )}
-        {requirementsQuery.data && executionQuery.data && (
-          <Card>
-            <WorkOrderRequirementsTable
-              lines={requirementsQuery.data.lines}
-              issuedTotals={executionQuery.data.issuedTotals}
-              componentLabel={componentLabel}
+      {!isDisassembly && (
+        <Section title="Requirements vs issued">
+          {requirementsQuery.isLoading && <LoadingSpinner label="Loading requirements..." />}
+          {requirementsQuery.isError && (
+            <ErrorState
+              error={requirementsQuery.error}
+              onRetry={() => void requirementsQuery.refetch()}
             />
-            <div className="mt-3 text-xs text-slate-500">
-              Material availability at consume locations is not shown here yet; check item inventory snapshots before issuing to avoid stalled WIP.
-            </div>
-          </Card>
-        )}
-      </Section>
+          )}
+          {requirementsQuery.data && executionQuery.data && (
+            <Card>
+              <WorkOrderRequirementsTable
+                lines={requirementsQuery.data.lines}
+                issuedTotals={executionQuery.data.issuedTotals}
+                componentLabel={componentLabel}
+              />
+              <div className="mt-3 text-xs text-slate-500">
+                Material availability at consume locations is not shown here yet; check item inventory snapshots before issuing to avoid stalled WIP.
+              </div>
+            </Card>
+          )}
+        </Section>
+      )}
 
       <Section title="Actions">
         <div className="flex gap-2 border-b border-slate-200">
@@ -208,17 +225,19 @@ export default function WorkOrderDetailPage() {
                     : 'Record Batch'}
             </button>
           ))}
-          <button
-            className={`px-3 py-2 text-sm font-semibold ${
-              showNextStep ? 'border-b-2 border-brand-600 text-brand-700' : 'text-slate-600'
-            }`}
-            onClick={() => setShowNextStep((v) => !v)}
-          >
-            Create next step WO
-          </button>
+          {!isDisassembly && (
+            <button
+              className={`px-3 py-2 text-sm font-semibold ${
+                showNextStep ? 'border-b-2 border-brand-600 text-brand-700' : 'text-slate-600'
+              }`}
+              onClick={() => setShowNextStep((v) => !v)}
+            >
+              Create next step WO
+            </button>
+          )}
         </div>
 
-        {workOrderQuery.data && (
+        {workOrderQuery.data && !isDisassembly && (
           <WorkOrderNextStepPanel
             isOpen={showNextStep}
             nextWorkOrderNumber={nextWorkOrderNumber}
@@ -242,7 +261,8 @@ export default function WorkOrderDetailPage() {
           <Card>
             <div className="text-sm text-slate-700">
               Posted issues create issue movements (negative). Posted completions create receive
-              movements (positive). Remaining to complete:{' '}
+              movements (positive).{' '}
+              {isDisassembly ? 'Remaining to disassemble' : 'Remaining to complete'}:{' '}
               <span className="font-semibold">{remaining}</span>{' '}
               {workOrderQuery.data?.outputUom} of {itemLabel(workOrderQuery.data?.outputItemId)}
             </div>

@@ -13,8 +13,10 @@ type WorkOrderRow = {
   id: string;
   work_order_number: string;
   status: string;
-  bom_id: string;
+  kind: string;
+  bom_id: string | null;
   bom_version_id: string | null;
+  related_work_order_id: string | null;
   output_item_id: string;
   output_uom: string;
   quantity_planned: string | number;
@@ -35,8 +37,10 @@ function mapWorkOrder(row: WorkOrderRow) {
     id: row.id,
     workOrderNumber: row.work_order_number,
     status: row.status,
+    kind: row.kind,
     bomId: row.bom_id,
     bomVersionId: row.bom_version_id,
+    relatedWorkOrderId: row.related_work_order_id,
     outputItemId: row.output_item_id,
     outputUom: row.output_uom,
     quantityPlanned: roundQuantity(Number(row.quantity_planned)),
@@ -57,6 +61,7 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
   const now = new Date();
   const id = uuidv4();
   const status = 'draft';
+  const kind = data.kind ?? 'production';
   const outputItemRes = await query<{ default_location_id: string | null; default_uom: string | null }>(
     'SELECT default_location_id, default_uom FROM items WHERE id = $1 AND tenant_id = $2',
     [data.outputItemId, tenantId]
@@ -70,51 +75,57 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
   const normalizedQty = normalizeQuantityByUom(Number(data.quantityPlanned), outputUom);
 
   return withTransaction(async (client) => {
-    // Validate BOM exists and matches output item
-    const bomResult = await client.query('SELECT id, output_item_id FROM boms WHERE id = $1 AND tenant_id = $2', [
-      data.bomId,
-      tenantId
-    ]);
-    if (bomResult.rowCount === 0) {
-      throw new Error('WO_BOM_NOT_FOUND');
-    }
-    const bom = bomResult.rows[0];
-    if (bom.output_item_id !== data.outputItemId) {
-      throw new Error('WO_BOM_ITEM_MISMATCH');
-    }
-
-    if (data.bomVersionId) {
-      const versionResult = await client.query('SELECT id, bom_id FROM bom_versions WHERE id = $1 AND tenant_id = $2', [
-        data.bomVersionId,
+    if (kind === 'production' || data.bomId) {
+      // Validate BOM exists and matches output item
+      const bomResult = await client.query('SELECT id, output_item_id FROM boms WHERE id = $1 AND tenant_id = $2', [
+        data.bomId,
         tenantId
       ]);
-      if (versionResult.rowCount === 0) {
-        throw new Error('WO_BOM_VERSION_NOT_FOUND');
+      if (bomResult.rowCount === 0) {
+        throw new Error('WO_BOM_NOT_FOUND');
       }
-      if (versionResult.rows[0].bom_id !== data.bomId) {
-        throw new Error('WO_BOM_VERSION_MISMATCH');
+      const bom = bomResult.rows[0];
+      if (bom.output_item_id !== data.outputItemId) {
+        throw new Error('WO_BOM_ITEM_MISMATCH');
+      }
+
+      if (data.bomVersionId) {
+        const versionResult = await client.query('SELECT id, bom_id FROM bom_versions WHERE id = $1 AND tenant_id = $2', [
+          data.bomVersionId,
+          tenantId
+        ]);
+        if (versionResult.rowCount === 0) {
+          throw new Error('WO_BOM_VERSION_NOT_FOUND');
+        }
+        if (versionResult.rows[0].bom_id !== data.bomId) {
+          throw new Error('WO_BOM_VERSION_MISMATCH');
+        }
       }
     }
 
     const inserted = await client.query(
       `INSERT INTO work_orders (
-          id, tenant_id, work_order_number, status, bom_id, bom_version_id, output_item_id, output_uom,
+          id, tenant_id, work_order_number, status, kind, bom_id, bom_version_id, related_work_order_id,
+          output_item_id, output_uom,
           quantity_planned, quantity_completed, default_consume_location_id, default_produce_location_id,
           scheduled_start_at, scheduled_due_at, released_at,
           completed_at, notes, created_at, updated_at
        ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12,
-          $13, $14, NULL,
-          NULL, $15, $16, $16
+          $9, $10,
+          $11, $12, $13, $14,
+          $15, $16, NULL,
+          NULL, $17, $18, $18
        ) RETURNING *`,
       [
         id,
         tenantId,
         data.workOrderNumber,
         status,
-        data.bomId,
+        kind,
+        data.bomId ?? null,
         data.bomVersionId ?? null,
+        data.relatedWorkOrderId ?? null,
         data.outputItemId,
         normalizedQty.uom,
         normalizedQty.quantity,
@@ -153,6 +164,10 @@ export async function listWorkOrders(tenantId: string, filters: WorkOrderListQue
   if (filters.status) {
     params.push(filters.status);
     clauses.push(`status = $${params.length}`);
+  }
+  if (filters.kind) {
+    params.push(filters.kind);
+    clauses.push(`kind = $${params.length}`);
   }
   if (filters.plannedFrom) {
     params.push(new Date(filters.plannedFrom));
@@ -206,6 +221,9 @@ export async function getWorkOrderRequirements(
   ]);
   if (woRes.rowCount === 0) return null;
   const wo = woRes.rows[0];
+  if (!wo.bom_id) {
+    throw new Error('WO_BOM_NOT_FOUND');
+  }
 
   const bom = await fetchBomById(tenantId, wo.bom_id);
   if (!bom) {

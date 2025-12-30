@@ -2,8 +2,10 @@ export type WorkOrder = {
   id: string
   workOrderNumber: string
   status: string
+  kind?: 'production' | 'disassembly'
   bomId?: string
   bomVersionId?: string | null
+  relatedWorkOrderId?: string | null
   outputItemId: string
   outputItemSku?: string
   outputItemName?: string
@@ -12,6 +14,10 @@ export type WorkOrder = {
   quantityCompleted?: number | null
   defaultConsumeLocationId?: string | null
   defaultProduceLocationId?: string | null
+  scheduledStartAt?: string | null
+  scheduledDueAt?: string | null
+  releasedAt?: string | null
+  completedAt?: string | null
   notes?: string | null
 }
 
@@ -46,15 +52,15 @@ export type WorkOrderExecutionSummary = {
   workOrder: {
     id: string
     status: string
-    bomId: string
-    bomVersionId: string | null
+    kind?: 'production' | 'disassembly'
+    bomId?: string | null
+    bomVersionId?: string | null
     outputItemId: string
     outputUom: string
     quantityPlanned: number
     quantityCompleted: number
     completedAt?: string | null
   }
-  issuedTotals: { componentItemId: string; uom: string; quantityIssued: number }[]
   issuedTotals: {
     componentItemId: string
     componentItemSku?: string
@@ -86,6 +92,7 @@ export type WorkOrderIssue = {
     fromLocationId: string
     uom: string
     quantityIssued: number
+    reasonCode?: string | null
     notes?: string | null
   }[]
 }
@@ -105,6 +112,7 @@ export type WorkOrderCompletion = {
     uom: string
     quantity: number
     packSize?: number | null
+    reasonCode?: string | null
     notes?: string | null
   }[]
 }

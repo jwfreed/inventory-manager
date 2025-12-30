@@ -4,6 +4,8 @@ import type { z } from 'zod';
 import { query, withTransaction } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { fetchBomById } from './boms.service';
+import { recordAuditLog } from '../lib/audit';
+import { validateSufficientStock } from './stockValidation.service';
 import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
@@ -11,14 +13,24 @@ import {
 } from '../schemas/workOrderExecution.schema';
 import { normalizeQuantityByUom } from '../lib/uom';
 
+// Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
+// (never inventory_adjustments). External refs include work order ids for traceability.
+
 type WorkOrderIssueCreateInput = z.infer<typeof workOrderIssueCreateSchema>;
 type WorkOrderCompletionCreateInput = z.infer<typeof workOrderCompletionCreateSchema>;
 type WorkOrderBatchInput = z.infer<typeof workOrderBatchSchema>;
 
+type NegativeOverrideContext = {
+  actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
+  overrideRequested?: boolean;
+  overrideReason?: string | null;
+};
+
 type WorkOrderRow = {
   id: string;
   status: string;
-  bom_id: string;
+  kind: string;
+  bom_id: string | null;
   bom_version_id: string | null;
   output_item_id: string;
   output_uom: string;
@@ -47,6 +59,7 @@ type WorkOrderMaterialIssueLineRow = {
   uom: string;
   quantity_issued: string | number;
   from_location_id: string;
+  reason_code: string | null;
   notes: string | null;
   created_at: string;
 };
@@ -72,6 +85,7 @@ type WorkOrderExecutionLineRow = {
   pack_size: string | number | null;
   from_location_id: string | null;
   to_location_id: string | null;
+  reason_code: string | null;
   notes: string | null;
   created_at: string;
 };
@@ -93,6 +107,7 @@ function mapMaterialIssue(row: WorkOrderMaterialIssueRow, lines: WorkOrderMateri
       fromLocationId: line.from_location_id,
       uom: line.uom,
       quantityIssued: roundQuantity(toNumber(line.quantity_issued)),
+      reasonCode: line.reason_code,
       notes: line.notes,
       createdAt: line.created_at
     }))
@@ -118,6 +133,7 @@ function mapExecution(row: WorkOrderExecutionRow, lines: WorkOrderExecutionLineR
       packSize: line.pack_size !== null ? roundQuantity(toNumber(line.pack_size)) : null,
       fromLocationId: line.from_location_id,
       toLocationId: line.to_location_id,
+      reasonCode: line.reason_code,
       notes: line.notes,
       createdAt: line.created_at
     }))
@@ -152,6 +168,7 @@ export async function createWorkOrderIssue(tenantId: string, workOrderId: string
       fromLocationId: line.fromLocationId,
       uom: normalized.uom,
       quantityIssued: normalized.quantity,
+      reasonCode: line.reasonCode ?? null,
       notes: line.notes ?? null
     };
   });
@@ -178,8 +195,8 @@ export async function createWorkOrderIssue(tenantId: string, workOrderId: string
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO work_order_material_issue_lines (
-            id, tenant_id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, notes, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            id, tenant_id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, reason_code, notes, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           uuidv4(),
           tenantId,
@@ -189,6 +206,7 @@ export async function createWorkOrderIssue(tenantId: string, workOrderId: string
           line.uom,
           line.quantityIssued,
           line.fromLocationId,
+          line.reasonCode,
           line.notes,
           now
         ]
@@ -224,12 +242,18 @@ export async function fetchWorkOrderIssue(
   return mapMaterialIssue(headerResult.rows[0], linesResult.rows);
 }
 
-export async function postWorkOrderIssue(tenantId: string, workOrderId: string, issueId: string) {
+export async function postWorkOrderIssue(
+  tenantId: string,
+  workOrderId: string,
+  issueId: string,
+  context: NegativeOverrideContext = {}
+) {
   return withTransaction(async (client) => {
     const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
     }
+    const isDisassembly = workOrder.kind === 'disassembly';
     if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
       throw new Error('WO_INVALID_STATE');
     }
@@ -258,24 +282,60 @@ export async function postWorkOrderIssue(tenantId: string, workOrderId: string, 
     }
 
     const now = new Date();
+    const occurredAt = new Date(issue.occurred_at);
+    const validation = await validateSufficientStock(
+      tenantId,
+      occurredAt,
+      linesResult.rows.map((line) => ({
+        itemId: line.component_item_id,
+        locationId: line.from_location_id,
+        uom: line.uom,
+        quantityToConsume: roundQuantity(toNumber(line.quantity_issued))
+      })),
+      {
+        actorId: context.actor?.id ?? null,
+        actorRole: context.actor?.role ?? null,
+        overrideRequested: context.overrideRequested,
+        overrideReason: context.overrideReason ?? null
+      }
+    );
     const movementId = uuidv4();
     await client.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, $2, 'issue', 'posted', $3, $4, $5, $6, $5, $5)`,
-      [movementId, tenantId, `work_order_issue:${issueId}`, issue.occurred_at, now, issue.notes ?? null]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
+       ) VALUES ($1, $2, 'issue', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
+      [
+        movementId,
+        tenantId,
+        isDisassembly
+          ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
+          : `work_order_issue:${issueId}:${workOrderId}`,
+        occurredAt,
+        now,
+        issue.notes ?? null,
+        validation.overrideMetadata ?? null
+      ]
     );
 
+    const issuedTotal = linesResult.rows.reduce((sum, line) => {
+      const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity_issued)), line.uom);
+      return sum + normalized.quantity;
+    }, 0);
+
     for (const line of linesResult.rows) {
+      if (isDisassembly && line.component_item_id !== workOrder.output_item_id) {
+        throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
+      }
       const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity_issued)), line.uom);
       const qty = normalized.quantity;
       if (qty <= 0) {
         throw new Error('WO_ISSUE_INVALID_QUANTITY');
       }
+      const reasonCode = line.reason_code ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue');
       await client.query(
         `INSERT INTO inventory_movement_lines (
             id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'work_order_issue', $8)`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           uuidv4(),
           tenantId,
@@ -284,6 +344,7 @@ export async function postWorkOrderIssue(tenantId: string, workOrderId: string, 
           line.from_location_id,
           roundQuantity(-qty),
           normalized.uom,
+          reasonCode,
           line.notes ?? `Work order issue ${issueId} line ${line.line_number}`
         ]
       );
@@ -302,6 +363,49 @@ export async function postWorkOrderIssue(tenantId: string, workOrderId: string, 
       await client.query(
         `UPDATE work_orders SET status = 'in_progress', updated_at = $2 WHERE id = $1 AND tenant_id = $3`,
         [workOrderId, now, tenantId]
+      );
+    }
+
+    if (isDisassembly) {
+      const currentCompleted = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
+      const newCompleted = roundQuantity(currentCompleted + issuedTotal);
+      const planned = roundQuantity(toNumber(workOrder.quantity_planned));
+      const completedAt = newCompleted >= planned ? now : null;
+      const nextStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
+      await client.query(
+        `UPDATE work_orders
+            SET quantity_completed = $2,
+                status = $3,
+                completed_at = COALESCE(completed_at, $4),
+                updated_at = $5
+          WHERE id = $1 AND tenant_id = $6`,
+        [workOrderId, newCompleted, nextStatus, completedAt, now, tenantId]
+      );
+    }
+
+    if (validation.overrideMetadata && context.actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: context.actor.type,
+          actorId: context.actor.id ?? null,
+          action: 'negative_override',
+          entityType: 'inventory_movement',
+          entityId: movementId,
+          occurredAt: now,
+          metadata: {
+            reason: validation.overrideMetadata.override_reason ?? null,
+            workOrderId,
+            issueId,
+            lines: linesResult.rows.map((line) => ({
+              itemId: line.component_item_id,
+              locationId: line.from_location_id,
+              uom: line.uom,
+              quantity: roundQuantity(toNumber(line.quantity_issued))
+            }))
+          }
+        },
+        client
       );
     }
 
@@ -344,8 +448,8 @@ export async function createWorkOrderCompletion(
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO work_order_execution_lines (
-            id, tenant_id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, notes, created_at
-         ) VALUES ($1, $2, $3, 'produce', $4, $5, $6, $7, NULL, $8, $9, $10)`,
+            id, tenant_id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, reason_code, notes, created_at
+         ) VALUES ($1, $2, $3, 'produce', $4, $5, $6, $7, NULL, $8, $9, $10, $11)`,
         [
           uuidv4(),
           tenantId,
@@ -355,6 +459,7 @@ export async function createWorkOrderCompletion(
           roundQuantity(line.quantityCompleted),
           line.packSize ?? null,
           line.toLocationId,
+          line.reasonCode ?? null,
           line.notes ?? null,
           now
         ]
@@ -400,6 +505,7 @@ export async function postWorkOrderCompletion(
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
     }
+    const isDisassembly = workOrder.kind === 'disassembly';
     if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
       throw new Error('WO_INVALID_STATE');
     }
@@ -434,7 +540,7 @@ export async function postWorkOrderCompletion(
       if (line.line_type !== 'produce') {
         throw new Error('WO_COMPLETION_INVALID_LINE_TYPE');
       }
-      if (line.item_id !== workOrder.output_item_id) {
+      if (!isDisassembly && line.item_id !== workOrder.output_item_id) {
         throw new Error('WO_COMPLETION_ITEM_MISMATCH');
       }
       if (!line.to_location_id) {
@@ -453,16 +559,26 @@ export async function postWorkOrderCompletion(
       `INSERT INTO inventory_movements (
           id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
        ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $5, $6, $5, $5)`,
-      [movementId, tenantId, `work_order_completion:${completionId}`, execution.occurred_at, now, execution.notes ?? null]
+      [
+        movementId,
+        tenantId,
+        isDisassembly
+          ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
+          : `work_order_completion:${completionId}:${workOrderId}`,
+        execution.occurred_at,
+        now,
+        execution.notes ?? null
+      ]
     );
 
     for (const line of linesResult.rows) {
       const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity)), line.uom);
       const qty = normalized.quantity;
+      const reasonCode = line.reason_code ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion');
       await client.query(
         `INSERT INTO inventory_movement_lines (
             id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'work_order_completion', $8)`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           uuidv4(),
           tenantId,
@@ -471,6 +587,7 @@ export async function postWorkOrderCompletion(
           line.to_location_id,
           qty,
           normalized.uom,
+          reasonCode,
           line.notes ?? `Work order completion ${completionId}`
         ]
       );
@@ -484,21 +601,28 @@ export async function postWorkOrderCompletion(
       [movementId, completionId, tenantId]
     );
 
-    const currentCompleted = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
-    const newCompleted = roundQuantity(currentCompleted + producedRounded);
-    const planned = roundQuantity(toNumber(workOrder.quantity_planned));
-    const completedAt = newCompleted >= planned ? now : null;
-    const newStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
+    if (!isDisassembly) {
+      const currentCompleted = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
+      const newCompleted = roundQuantity(currentCompleted + producedRounded);
+      const planned = roundQuantity(toNumber(workOrder.quantity_planned));
+      const completedAt = newCompleted >= planned ? now : null;
+      const newStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
 
-    await client.query(
-      `UPDATE work_orders
-          SET quantity_completed = $2,
-              status = $3,
-              completed_at = COALESCE(completed_at, $4),
-              updated_at = $5
-        WHERE id = $1 AND tenant_id = $6`,
-      [workOrderId, newCompleted, newStatus, completedAt, now, tenantId]
-    );
+      await client.query(
+        `UPDATE work_orders
+            SET quantity_completed = $2,
+                status = $3,
+                completed_at = COALESCE(completed_at, $4),
+                updated_at = $5
+          WHERE id = $1 AND tenant_id = $6`,
+        [workOrderId, newCompleted, newStatus, completedAt, now, tenantId]
+      );
+    } else if (workOrder.status === 'draft') {
+      await client.query(
+        `UPDATE work_orders SET status = 'in_progress', updated_at = $2 WHERE id = $1 AND tenant_id = $3`,
+        [workOrderId, now, tenantId]
+      );
+    }
 
     const posted = await fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client);
     if (!posted) {
@@ -556,12 +680,13 @@ export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId
   const planned = roundQuantity(toNumber(workOrder.quantity_planned));
   const completed = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
 
-  const bom = await fetchBomById(tenantId, workOrder.bom_id);
+  const bom = workOrder.bom_id ? await fetchBomById(tenantId, workOrder.bom_id) : null;
 
   return {
     workOrder: {
       id: workOrder.id,
       status: workOrder.status,
+      kind: workOrder.kind,
       bomId: workOrder.bom_id,
       bomVersionId: workOrder.bom_version_id,
       outputItemId: workOrder.output_item_id,
@@ -592,21 +717,22 @@ export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId
 export async function recordWorkOrderBatch(
   tenantId: string,
   workOrderId: string,
-  data: WorkOrderBatchInput
+  data: WorkOrderBatchInput,
+  context: NegativeOverrideContext = {}
 ) {
   const normalizedConsumes = data.consumeLines.map((line) => {
     const normalized = normalizeQuantityByUom(line.quantity, line.uom);
     if (normalized.quantity <= 0) {
       throw new Error('WO_BATCH_INVALID_CONSUME_QTY');
     }
-    return { ...line, quantity: normalized.quantity, uom: normalized.uom };
+    return { ...line, quantity: normalized.quantity, uom: normalized.uom, reasonCode: line.reasonCode ?? null };
   });
   const normalizedProduces = data.produceLines.map((line) => {
     const normalized = normalizeQuantityByUom(line.quantity, line.uom);
     if (normalized.quantity <= 0) {
       throw new Error('WO_BATCH_INVALID_PRODUCE_QTY');
     }
-    return { ...line, quantity: normalized.quantity, uom: normalized.uom };
+    return { ...line, quantity: normalized.quantity, uom: normalized.uom, reasonCode: line.reasonCode ?? null };
   });
 
   return withTransaction(async (client) => {
@@ -614,12 +740,21 @@ export async function recordWorkOrderBatch(
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
     }
+    const isDisassembly = workOrder.kind === 'disassembly';
     if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
       throw new Error('WO_INVALID_STATE');
     }
-    for (const line of normalizedProduces) {
-      if (line.outputItemId !== workOrder.output_item_id) {
-        throw new Error('WO_BATCH_ITEM_MISMATCH');
+    if (!isDisassembly) {
+      for (const line of normalizedProduces) {
+        if (line.outputItemId !== workOrder.output_item_id) {
+          throw new Error('WO_BATCH_ITEM_MISMATCH');
+        }
+      }
+    } else {
+      for (const line of normalizedConsumes) {
+        if (line.componentItemId !== workOrder.output_item_id) {
+          throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
+        }
       }
     }
 
@@ -667,19 +802,54 @@ export async function recordWorkOrderBatch(
     const receiveMovementId = uuidv4();
     const now = new Date();
     const occurredAt = new Date(data.occurredAt);
+    const validation = await validateSufficientStock(
+      tenantId,
+      occurredAt,
+      normalizedConsumes.map((line) => ({
+        itemId: line.componentItemId,
+        locationId: line.fromLocationId,
+        uom: line.uom,
+        quantityToConsume: roundQuantity(line.quantity)
+      })),
+      {
+        actorId: context.actor?.id ?? null,
+        actorRole: context.actor?.role ?? null,
+        overrideRequested: context.overrideRequested,
+        overrideReason: context.overrideReason ?? null
+      }
+    );
 
     // Create movements first to satisfy FKs
     await client.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, $2, 'issue', 'posted', $3, $4, $5, $6, $5, $5)`,
-      [issueMovementId, tenantId, `work_order_batch_issue:${issueId}`, occurredAt, now, data.notes ?? null]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
+       ) VALUES ($1, $2, 'issue', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
+      [
+        issueMovementId,
+        tenantId,
+        isDisassembly
+          ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
+          : `work_order_batch_issue:${issueId}:${workOrderId}`,
+        occurredAt,
+        now,
+        data.notes ?? null,
+        validation.overrideMetadata ?? null
+      ]
     );
     await client.query(
       `INSERT INTO inventory_movements (
           id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
        ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $5, $6, $5, $5)`,
-      [receiveMovementId, tenantId, `work_order_batch_completion:${executionId}`, occurredAt, now, data.notes ?? null]
+      [
+        receiveMovementId,
+        tenantId,
+        isDisassembly
+          ? `work_order_disassembly_completion:${executionId}:${workOrderId}`
+          : `work_order_batch_completion:${executionId}:${workOrderId}`,
+        occurredAt,
+        now,
+        data.notes ?? null
+      ]
     );
 
     // Material issue header + lines
@@ -693,8 +863,8 @@ export async function recordWorkOrderBatch(
       const line = normalizedConsumes[i];
       await client.query(
         `INSERT INTO work_order_material_issue_lines (
-            id, tenant_id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, notes, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            id, tenant_id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, reason_code, notes, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           uuidv4(),
           tenantId,
@@ -704,16 +874,18 @@ export async function recordWorkOrderBatch(
           line.uom,
           roundQuantity(line.quantity),
           line.fromLocationId,
+          line.reasonCode,
           line.notes ?? null,
           now
         ]
       );
     }
     for (const line of normalizedConsumes) {
+      const reasonCode = line.reasonCode ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue');
       await client.query(
         `INSERT INTO inventory_movement_lines (
             id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'work_order_issue', $8)`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           uuidv4(),
           tenantId,
@@ -722,6 +894,7 @@ export async function recordWorkOrderBatch(
           line.fromLocationId,
           roundQuantity(-line.quantity),
           line.uom,
+          reasonCode,
           line.notes ?? null
         ]
       );
@@ -738,8 +911,8 @@ export async function recordWorkOrderBatch(
       const line = normalizedProduces[i];
       await client.query(
         `INSERT INTO work_order_execution_lines (
-            id, tenant_id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, notes, created_at
-         ) VALUES ($1, $2, $3, 'produce', $4, $5, $6, $7, NULL, $8, $9, $10)`,
+            id, tenant_id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, reason_code, notes, created_at
+         ) VALUES ($1, $2, $3, 'produce', $4, $5, $6, $7, NULL, $8, $9, $10, $11)`,
         [
           uuidv4(),
           tenantId,
@@ -749,16 +922,18 @@ export async function recordWorkOrderBatch(
           roundQuantity(line.quantity),
           line.packSize ?? null,
           line.toLocationId,
+          line.reasonCode,
           line.notes ?? null,
           now
         ]
       );
     }
     for (const line of normalizedProduces) {
+      const reasonCode = line.reasonCode ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion');
       await client.query(
         `INSERT INTO inventory_movement_lines (
             id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'work_order_completion', $8)`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           uuidv4(),
           tenantId,
@@ -767,6 +942,7 @@ export async function recordWorkOrderBatch(
           line.toLocationId,
           roundQuantity(line.quantity),
           line.uom,
+          reasonCode,
           line.notes ?? null
         ]
       );
@@ -774,8 +950,10 @@ export async function recordWorkOrderBatch(
 
     // Update work order progress
     const producedTotal = normalizedProduces.reduce((sum, line) => sum + roundQuantity(line.quantity), 0);
+    const consumedTotal = normalizedConsumes.reduce((sum, line) => sum + roundQuantity(line.quantity), 0);
     const currentCompleted = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
-    const newCompleted = roundQuantity(currentCompleted + producedTotal);
+    const progressQty = isDisassembly ? consumedTotal : producedTotal;
+    const newCompleted = roundQuantity(currentCompleted + progressQty);
     const planned = roundQuantity(toNumber(workOrder.quantity_planned));
     const completedAt = newCompleted >= planned ? now : null;
     const newStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
@@ -789,6 +967,32 @@ export async function recordWorkOrderBatch(
         WHERE id = $1 AND tenant_id = $6`,
       [workOrderId, newCompleted, newStatus, completedAt, now, tenantId]
     );
+
+    if (validation.overrideMetadata && context.actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: context.actor.type,
+          actorId: context.actor.id ?? null,
+          action: 'negative_override',
+          entityType: 'inventory_movement',
+          entityId: issueMovementId,
+          occurredAt: now,
+          metadata: {
+            reason: validation.overrideMetadata.override_reason ?? null,
+            workOrderId,
+            executionId,
+            lines: normalizedConsumes.map((line) => ({
+              itemId: line.componentItemId,
+              locationId: line.fromLocationId,
+              uom: line.uom,
+              quantity: roundQuantity(line.quantity)
+            }))
+          }
+        },
+        client
+      );
+    }
 
     return {
       workOrderId,

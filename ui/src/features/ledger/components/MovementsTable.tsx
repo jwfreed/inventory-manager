@@ -17,6 +17,16 @@ export function MovementsTable({ movements, page, pageCount, onPageChange }: Pro
 
   const getSourceLink = (externalRef?: string | null) => {
     if (!externalRef) return null
+    const workOrderLink = (prefix: string, type: string) => {
+      const parts = externalRef.split(':')
+      const issueId = parts[1]
+      const workOrderId = parts[2]
+      return {
+        label: `${type} ${issueId?.slice(0, 8)}…`,
+        type,
+        to: workOrderId ? `/work-orders/${workOrderId}` : undefined,
+      }
+    }
     if (externalRef.startsWith('putaway:')) {
       const id = externalRef.split(':')[1]
       return { label: `Putaway ${id.slice(0, 8)}…`, type: 'Putaway', to: `/receiving?putawayId=${id}` }
@@ -30,20 +40,25 @@ export function MovementsTable({ movements, page, pageCount, onPageChange }: Pro
       return { label: `Adjustment ${id.slice(0, 8)}…`, type: 'Adjustment', to: `/inventory-adjustments/${id}` }
     }
     if (externalRef.startsWith('work_order_issue:')) {
-      const id = externalRef.split(':')[1]
-      return { label: `Work order issue ${id.slice(0, 8)}…`, type: 'Work order issue' }
+      return workOrderLink('work_order_issue', 'Work order issue')
     }
     if (externalRef.startsWith('work_order_completion:')) {
-      const id = externalRef.split(':')[1]
-      return { label: `Work order completion ${id.slice(0, 8)}…`, type: 'Work order completion' }
+      return workOrderLink('work_order_completion', 'Work order completion')
+    }
+    if (externalRef.startsWith('work_order_disassembly_issue:') || externalRef.startsWith('work_order_disassembly_completion:')) {
+      const parts = externalRef.split(':')
+      const workOrderId = parts[2] ?? parts[1]
+      return {
+        label: `WO ${workOrderId?.slice(0, 8)}…`,
+        type: 'Disassembly',
+        to: workOrderId ? `/work-orders/${workOrderId}` : undefined,
+      }
     }
     if (externalRef.startsWith('work_order_batch_issue:')) {
-      const id = externalRef.split(':')[1]
-      return { label: `Batch issue ${id.slice(0, 8)}…`, type: 'Work order issue' }
+      return workOrderLink('work_order_batch_issue', 'Batch issue')
     }
     if (externalRef.startsWith('work_order_batch_completion:')) {
-      const id = externalRef.split(':')[1]
-      return { label: `Batch completion ${id.slice(0, 8)}…`, type: 'Work order completion' }
+      return workOrderLink('work_order_batch_completion', 'Batch completion')
     }
     return { label: externalRef, type: 'External ref' }
   }
@@ -59,6 +74,8 @@ export function MovementsTable({ movements, page, pageCount, onPageChange }: Pro
   // TODO: flag large adjustments when list endpoint includes total absolute delta.
   const isAdjustment = (movement: Movement) =>
     movement.movementType?.toLowerCase() === 'adjustment'
+  const hasNegativeOverride = (movement: Movement) =>
+    Boolean((movement.metadata as { negative_override?: boolean } | null)?.negative_override)
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -128,6 +145,9 @@ export function MovementsTable({ movements, page, pageCount, onPageChange }: Pro
                     )}
                     {isAdjustment(movement) && (
                       <Badge variant="info">Adjustment</Badge>
+                    )}
+                    {hasNegativeOverride(movement) && (
+                      <Badge variant="danger">Negative override</Badge>
                     )}
                   </div>
                   {movement.status?.toLowerCase() === 'draft' && (

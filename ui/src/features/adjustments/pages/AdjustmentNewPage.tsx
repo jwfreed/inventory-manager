@@ -15,6 +15,7 @@ import { AdjustmentLinesEditor } from '../components/AdjustmentLinesEditor'
 import { adjustmentReasonOptions, type AdjustmentLineDraft } from '../types'
 import { buildTotalsByUom, makeLineKey, toDateTimeLocal, toIsoFromDateTimeLocal } from '../utils'
 import { formatNumber } from '@shared/formatters'
+import { useDebouncedValue } from '@shared'
 
 type LineError = {
   itemId?: string
@@ -65,6 +66,8 @@ export default function AdjustmentNewPage() {
   const [occurredAt, setOccurredAt] = useState(() => toDateTimeLocal(new Date().toISOString()))
   const [reasonCode, setReasonCode] = useState('')
   const [notes, setNotes] = useState('')
+  const [itemSearch, setItemSearch] = useState('')
+  const [locationSearch, setLocationSearch] = useState('')
   const [lines, setLines] = useState<AdjustmentLineDraft[]>(() => [
     defaultLine({ itemId: itemIdFromQuery, locationId: locationIdFromQuery }),
   ])
@@ -74,8 +77,17 @@ export default function AdjustmentNewPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [prefillApplied, setPrefillApplied] = useState(false)
 
-  const itemsQuery = useItemsList({ active: true, limit: 200 }, { staleTime: 60_000 })
-  const locationsQuery = useLocationsList({ active: true, limit: 200 }, { staleTime: 60_000 })
+  const debouncedItemSearch = useDebouncedValue(itemSearch, 200)
+  const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
+
+  const itemsQuery = useItemsList(
+    { active: true, limit: 200, search: debouncedItemSearch || undefined },
+    { staleTime: 60_000 },
+  )
+  const locationsQuery = useLocationsList(
+    { active: true, limit: 200, search: debouncedLocationSearch || undefined },
+    { staleTime: 60_000 },
+  )
   const itemDetailQuery = useItem(itemIdFromQuery || undefined, { enabled: Boolean(itemIdFromQuery) })
   const locationDetailQuery = useLocation(locationIdFromQuery || undefined, {
     enabled: Boolean(locationIdFromQuery),
@@ -344,19 +356,23 @@ export default function AdjustmentNewPage() {
           </Section>
 
           <Section title="Lines" description="Each line is a signed delta at a specific item and location.">
-            <AdjustmentLinesEditor
-              lines={lines}
-              itemOptions={itemOptions}
-              locationOptions={locationOptions}
-              lockItemId={lockItemId}
-              lockLocationId={lockLocationId}
-              lineErrors={lineErrors}
-              showErrors={showErrors}
-              onLineChange={updateLine}
-              onAddLine={addLine}
-              onDuplicateLine={duplicateLine}
-              onRemoveLine={removeLine}
-            />
+          <AdjustmentLinesEditor
+            lines={lines}
+            itemOptions={itemOptions}
+            locationOptions={locationOptions}
+            lockItemId={lockItemId}
+            lockLocationId={lockLocationId}
+            lineErrors={lineErrors}
+            showErrors={showErrors}
+            itemsLoading={itemsQuery.isLoading}
+            locationsLoading={locationsQuery.isLoading}
+            onItemSearchChange={setItemSearch}
+            onLocationSearchChange={setLocationSearch}
+            onLineChange={updateLine}
+            onAddLine={addLine}
+            onDuplicateLine={duplicateLine}
+            onRemoveLine={removeLine}
+          />
           </Section>
         </div>
 

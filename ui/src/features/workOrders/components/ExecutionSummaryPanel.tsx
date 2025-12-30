@@ -50,6 +50,8 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
       />
     )
 
+  const isDisassembly = summary.workOrder.kind === 'disassembly'
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card title="Issued totals" description="Posted component issues">
@@ -88,11 +90,13 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
           </ul>
         )}
       </Card>
-      <Card title="Remaining to complete">
+      <Card title={isDisassembly ? 'Remaining to disassemble' : 'Remaining to complete'}>
         <div className="text-2xl font-semibold text-slate-900">
           {formatNumber(summary.remainingToComplete)} {summary.workOrder.outputUom}
         </div>
-        <div className="mt-1 text-sm text-slate-600">Based on posted completions.</div>
+        <div className="mt-1 text-sm text-slate-600">
+          {isDisassembly ? 'Based on posted issues.' : 'Based on posted completions.'}
+        </div>
       </Card>
     </div>
   )

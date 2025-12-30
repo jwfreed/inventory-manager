@@ -62,6 +62,15 @@ function deriveReasonCode(lines: InventoryAdjustmentLine[]) {
   return ''
 }
 
+type StockShortageDetail = {
+  itemId: string
+  locationId: string
+  uom: string
+  requested: number
+  available: number
+  shortage: number
+}
+
 export default function AdjustmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -75,6 +84,11 @@ export default function AdjustmentDetailPage() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [postError, setPostError] = useState<string | null>(null)
+  const [shortageDetails, setShortageDetails] = useState<StockShortageDetail[] | null>(null)
+  const [overrideAllowed, setOverrideAllowed] = useState(false)
+  const [overrideRequiresReason, setOverrideRequiresReason] = useState(false)
+  const [overrideNegative, setOverrideNegative] = useState(false)
+  const [overrideReason, setOverrideReason] = useState('')
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [showCorrectionModal, setShowCorrectionModal] = useState(false)
   const [correctionReason, setCorrectionReason] = useState('correction')
@@ -181,6 +195,7 @@ export default function AdjustmentDetailPage() {
   )
 
   const itemMap = useMemo(() => new Map(items.map((item) => [item.id, item])), [items])
+  const locationMap = useMemo(() => new Map(locations.map((loc) => [loc.id, loc])), [locations])
 
   const updateLine = (index: number, patch: Partial<AdjustmentLineDraft>) => {
     setLines((prev) =>
@@ -272,14 +287,44 @@ export default function AdjustmentDetailPage() {
   })
 
   const postMutation = useMutation({
-    mutationFn: () => postInventoryAdjustment(id as string),
+    mutationFn: () =>
+      postInventoryAdjustment(id as string, {
+        overrideNegative: overrideNegative || undefined,
+        overrideReason: overrideNegative ? overrideReason.trim() || undefined : undefined,
+      }),
     onSuccess: () => {
       setPostError(null)
+      setShortageDetails(null)
+      setOverrideAllowed(false)
+      setOverrideRequiresReason(false)
+      setOverrideNegative(false)
+      setOverrideReason('')
       setSaveMessage('Adjustment posted. The record is now immutable.')
       void adjustmentQuery.refetch()
       void queryClient.invalidateQueries({ queryKey: ['inventory-adjustments'] })
     },
     onError: (err) => {
+      const apiErr = err as ApiError
+      const detailPayload = apiErr?.details as { error?: any } | undefined
+      const errorBody = detailPayload?.error ?? detailPayload
+      if (errorBody?.code === 'INSUFFICIENT_STOCK') {
+        const details = errorBody.details ?? {}
+        setShortageDetails((details.lines as StockShortageDetail[]) ?? [])
+        setOverrideAllowed(Boolean(details.overrideAllowed))
+        setOverrideRequiresReason(Boolean(details.overrideRequiresReason))
+        setPostError(errorBody.message ?? 'Insufficient usable stock to post this adjustment.')
+        return
+      }
+      if (errorBody?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
+        setPostError(errorBody.message ?? 'Override reason is required.')
+        setOverrideAllowed(true)
+        setOverrideRequiresReason(true)
+        return
+      }
+      if (errorBody?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
+        setPostError(errorBody.message ?? 'Negative inventory override is not allowed.')
+        return
+      }
       setPostError(formatApiError(err, 'Failed to post adjustment.'))
     },
   })
@@ -312,6 +357,11 @@ export default function AdjustmentDetailPage() {
       setPostError('Fix validation issues before posting.')
       return
     }
+    if (overrideNegative && overrideRequiresReason && !overrideReason.trim()) {
+      setPostError('Override reason is required.')
+      return
+    }
+    setShortageDetails(null)
     postMutation.mutate()
   }
 
@@ -438,6 +488,65 @@ export default function AdjustmentDetailPage() {
       {saveMessage && <Alert variant="success" title="Saved" message={saveMessage} />}
       {saveError && <Alert variant="error" title="Save failed" message={saveError} />}
       {postError && <Alert variant="error" title="Post failed" message={postError} />}
+      {shortageDetails && shortageDetails.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold">Insufficient usable stock</div>
+          <div className="mt-1 text-xs text-amber-800">
+            One or more adjustment lines would drive usable stock below zero.
+          </div>
+          <div className="mt-3 grid gap-2">
+            {shortageDetails.map((line, index) => {
+              const item = itemMap.get(line.itemId)
+              const location = locationMap.get(line.locationId)
+              const itemText = item ? `${item.sku} — ${item.name}` : line.itemId
+              const locationText = location ? `${location.code} — ${location.name}` : line.locationId
+              return (
+                <div
+                  key={`${line.itemId}-${line.locationId}-${line.uom}-${index}`}
+                  className="rounded-md border border-amber-200 bg-white px-3 py-2 text-xs text-amber-900"
+                >
+                  <div className="font-semibold">{itemText}</div>
+                  <div className="mt-1 text-amber-800">
+                    {locationText} · {line.uom}
+                  </div>
+                  <div className="mt-1 text-amber-800">
+                    Requested {formatNumber(line.requested)} · Available {formatNumber(line.available)} · Shortage {formatNumber(line.shortage)}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {overrideAllowed && (
+            <div className="mt-3 border-t border-amber-200 pt-3">
+              <label className="flex items-center gap-2 text-xs text-amber-900">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-amber-300"
+                  checked={overrideNegative}
+                  onChange={(event) => {
+                    setOverrideNegative(event.target.checked)
+                    if (!event.target.checked) {
+                      setOverrideReason('')
+                    }
+                  }}
+                />
+                Allow negative inventory for this post (audited)
+              </label>
+              {overrideNegative && (
+                <label className="mt-2 block text-xs text-amber-900">
+                  <span className="font-semibold">Override reason</span>
+                  <Input
+                    className="mt-1"
+                    value={overrideReason}
+                    onChange={(event) => setOverrideReason(event.target.value)}
+                    placeholder="Explain why this override is necessary"
+                  />
+                </label>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <Section title="Header">
         <Card>

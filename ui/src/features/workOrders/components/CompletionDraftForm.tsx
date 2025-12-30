@@ -16,6 +16,7 @@ import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '@shared/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
 import { useLocationsList } from '@features/locations/queries'
+import { useItemsList } from '@features/items/queries'
 import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
 import { useDebouncedValue } from '@shared'
@@ -26,6 +27,7 @@ type Line = {
   uom: string
   quantityCompleted: number | ''
   packSize?: number
+  reasonCode?: string
   notes?: string
 }
 
@@ -36,14 +38,16 @@ type Props = {
 }
 
 export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props) {
+  const isDisassembly = workOrder.kind === 'disassembly'
   const defaults = getWorkOrderDefaults(workOrder.id)
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [locationSearch, setLocationSearch] = useState('')
+  const [itemSearch, setItemSearch] = useState('')
   const [defaultToLocationId, setDefaultToLocationId] = useState<string>('')
   const [lines, setLines] = useState<Line[]>([
     {
-      outputItemId: workOrder.outputItemId,
+      outputItemId: isDisassembly ? '' : workOrder.outputItemId,
       toLocationId: '',
       uom: '',
       quantityCompleted: '',
@@ -77,19 +81,23 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
   })
 
   const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
+  const debouncedItemSearch = useDebouncedValue(itemSearch, 200)
 
   const locationsQuery = useLocationsList(
     { limit: 200, search: debouncedLocationSearch || undefined, active: true },
     { staleTime: 60_000, retry: 1 },
   )
+  const itemsQuery = useItemsList(
+    { limit: 200, search: debouncedItemSearch || undefined },
+    { staleTime: 60_000, retry: 1 },
+  )
 
   const baseProduceLocationId =
     workOrder.defaultProduceLocationId ??
-    outputItem?.defaultLocationId ??
-    defaults.produceLocationId ??
-    ''
+    (isDisassembly ? defaults.produceLocationId ?? '' : outputItem?.defaultLocationId ?? defaults.produceLocationId ?? '')
   const baseOutputUom = outputItem?.defaultUom || workOrder.outputUom
   const usingItemProduceDefault =
+    !isDisassembly &&
     !workOrder.defaultProduceLocationId &&
     !defaults.produceLocationId &&
     outputItem?.defaultLocationId &&
@@ -111,6 +119,20 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
     [locationsQuery.data],
   )
   const validLocationIds = useMemo(() => new Set(locationOptions.map((o) => o.value)), [locationOptions])
+  const itemOptions = useMemo(
+    () =>
+      (itemsQuery.data?.data ?? []).map((item) => ({
+        value: item.id,
+        label: `${item.sku} — ${item.name}`,
+        keywords: `${item.sku} ${item.name}`,
+      })),
+    [itemsQuery.data],
+  )
+  const itemsLookup = useMemo(() => {
+    const map = new Map<string, Item>()
+    itemsQuery.data?.data?.forEach((item) => map.set(item.id, item))
+    return map
+  }, [itemsQuery.data])
   const normalizedDefaultTo = validLocationIds.has(defaultToLocationId) ? defaultToLocationId : ''
 
   useEffect(() => {
@@ -127,7 +149,7 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
     setLines((prev) => [
       ...prev,
       {
-        outputItemId: workOrder.outputItemId,
+        outputItemId: isDisassembly ? '' : workOrder.outputItemId,
         toLocationId: normalizedDefaultTo || baseProduceLocationId,
         uom: baseOutputUom,
         quantityCompleted: '',
@@ -158,6 +180,9 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
       if (!line.toLocationId || !line.uom || line.quantityCompleted === '') {
         return 'All line fields are required.'
       }
+      if (isDisassembly && !line.outputItemId) {
+        return 'Select an output item for each line.'
+      }
       if (!validLocationIds.has(line.toLocationId)) return 'Select a valid production location.'
       if (Number(line.quantityCompleted) <= 0) return 'Quantities must be greater than zero.'
     }
@@ -181,11 +206,12 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
       occurredAt: new Date(occurredAt).toISOString(),
       notes: notes || undefined,
       lines: lines.map((line) => ({
-        outputItemId: workOrder.outputItemId,
+        outputItemId: isDisassembly ? line.outputItemId : workOrder.outputItemId,
         toLocationId: line.toLocationId,
         uom: line.uom,
         quantityCompleted: Number(line.quantityCompleted),
         packSize: line.packSize ? Number(line.packSize) : undefined,
+        reasonCode: line.reasonCode || undefined,
         notes: line.notes,
       })),
     })
@@ -199,7 +225,10 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
   const isPosted = createdCompletion?.status === 'posted'
 
   return (
-    <Card title="Create completion" description="Draft first, then post to create production movement.">
+    <Card
+      title={isDisassembly ? 'Record recovered outputs' : 'Create completion'}
+      description="Draft first, then post to create production movement."
+    >
       {completionMutation.isPending && <LoadingSpinner label="Creating completion..." />}
       {postMutation.isPending && <LoadingSpinner label="Posting completion..." />}
       {warning && <Alert variant="warning" title="Fix validation" message={warning} />}
@@ -261,26 +290,46 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
               disabled={locationsQuery.isLoading}
             >
               <option value="">Select location</option>
-      {locationOptions.map((loc) => (
-        <option key={loc.value} value={loc.value}>
-          {loc.label}
-        </option>
-      ))}
-    </select>
-    {usingItemProduceDefault && (
-      <p className="text-xs text-slate-500">Auto from item default location</p>
-    )}
-  </label>
+              {locationOptions.map((loc) => (
+                <option key={loc.value} value={loc.value}>
+                  {loc.label}
+                </option>
+              ))}
+            </select>
+            {usingItemProduceDefault && (
+              <p className="text-xs text-slate-500">Auto from item default location</p>
+            )}
+          </label>
         </div>
         {lines.map((line, idx) => (
           <div
             key={idx}
-            className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5"
+            className={`grid gap-3 rounded-lg border border-slate-200 p-3 ${isDisassembly ? 'md:grid-cols-6' : 'md:grid-cols-5'}`}
           >
-            <label className="space-y-1 text-sm">
-              <span className="text-xs uppercase tracking-wide text-slate-500">Output Item ID</span>
-              <Input value={workOrder.outputItemId} readOnly />
-            </label>
+            {isDisassembly ? (
+              <div>
+                <Combobox
+                  label="Output item"
+                  value={line.outputItemId}
+                  options={itemOptions}
+                  loading={itemsQuery.isLoading}
+                  onQueryChange={setItemSearch}
+                  placeholder="Search items (SKU/name)"
+                  onChange={(nextValue) => {
+                    const selected = itemsLookup.get(nextValue)
+                    updateLine(idx, {
+                      outputItemId: nextValue,
+                      uom: line.uom || selected?.defaultUom || baseOutputUom,
+                    })
+                  }}
+                />
+              </div>
+            ) : (
+              <label className="space-y-1 text-sm">
+                <span className="text-xs uppercase tracking-wide text-slate-500">Output Item ID</span>
+                <Input value={workOrder.outputItemId} readOnly />
+              </label>
+            )}
             <div>
               <Combobox
                 label="To location"
@@ -322,6 +371,16 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
                 }
               />
             </label>
+            {isDisassembly && (
+              <label className="space-y-1 text-sm">
+                <span className="text-xs uppercase tracking-wide text-slate-500">Reason code</span>
+                <Input
+                  value={line.reasonCode || ''}
+                  onChange={(e) => updateLine(idx, { reasonCode: e.target.value })}
+                  placeholder="rework, scrap"
+                />
+              </label>
+            )}
             <div className="flex items-start gap-2">
               <label className="flex-1 space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
@@ -340,30 +399,30 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
         ))}
       </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-slate-700">
-            Total to complete:{' '}
-            <span className="font-semibold text-green-700">+{formatNumber(totalCompleted)}</span>{' '}
-            {lines[0]?.uom || ''}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onSubmitDraft}
-              disabled={completionMutation.isPending}
-            >
-              Save completion draft
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setShowPostConfirm(true)}
-              disabled={!createdCompletion || isPosted || postMutation.isPending}
-            >
-              Post completion to inventory
-            </Button>
-          </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-slate-700">
+          Total to complete:{' '}
+          <span className="font-semibold text-green-700">+{formatNumber(totalCompleted)}</span>{' '}
+          {lines[0]?.uom || ''}
         </div>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onSubmitDraft}
+            disabled={completionMutation.isPending}
+          >
+            Save completion draft
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setShowPostConfirm(true)}
+            disabled={!createdCompletion || isPosted || postMutation.isPending}
+          >
+            Post completion to inventory
+          </Button>
+        </div>
+      </div>
 
       <PostConfirmModal
         isOpen={showPostConfirm}

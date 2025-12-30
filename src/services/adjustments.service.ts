@@ -6,6 +6,7 @@ import { inventoryAdjustmentSchema } from '../schemas/adjustments.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
 import { recordAuditLog } from '../lib/audit';
+import { validateSufficientStock } from './stockValidation.service';
 
 type InventoryAdjustmentInput = z.infer<typeof inventoryAdjustmentSchema>;
 
@@ -500,7 +501,11 @@ export async function cancelInventoryAdjustment(
 export async function postInventoryAdjustment(
   tenantId: string,
   id: string,
-  actor?: { type: 'user' | 'system'; id?: string | null }
+  context?: {
+    actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
+    overrideRequested?: boolean;
+    overrideReason?: string | null;
+  }
 ) {
   const adjustment = await withTransaction(async (client: PoolClient) => {
     const now = new Date();
@@ -527,12 +532,42 @@ export async function postInventoryAdjustment(
       throw new Error('ADJUSTMENT_NO_LINES');
     }
 
+    const negativeLines = linesResult.rows
+      .map((line) => {
+        const qty = roundQuantity(toNumber(line.quantity_delta));
+        if (qty >= 0) return null;
+        return {
+          itemId: line.item_id,
+          locationId: line.location_id,
+          uom: line.uom,
+          quantityToConsume: roundQuantity(Math.abs(qty))
+        };
+      })
+      .filter(Boolean) as { itemId: string; locationId: string; uom: string; quantityToConsume: number }[];
+
+    const validation = negativeLines.length
+      ? await validateSufficientStock(tenantId, new Date(adjustmentRow.occurred_at), negativeLines, {
+          actorId: context?.actor?.id ?? null,
+          actorRole: context?.actor?.role ?? null,
+          overrideRequested: context?.overrideRequested,
+          overrideReason: context?.overrideReason ?? null
+        })
+      : {};
+
     const movementId = uuidv4();
     await client.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, $2, 'adjustment', 'posted', $3, $4, $5, $6, $5, $5)`,
-      [movementId, tenantId, `inventory_adjustment:${id}`, adjustmentRow.occurred_at, now, adjustmentRow.notes ?? null]
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
+       ) VALUES ($1, $2, 'adjustment', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
+      [
+        movementId,
+        tenantId,
+        `inventory_adjustment:${id}`,
+        adjustmentRow.occurred_at,
+        now,
+        adjustmentRow.notes ?? null,
+        validation.overrideMetadata ?? null
+      ]
     );
 
     for (const line of linesResult.rows) {
@@ -567,17 +602,37 @@ export async function postInventoryAdjustment(
       [movementId, now, id, tenantId]
     );
 
-    if (actor) {
+    if (context?.actor) {
       await recordAuditLog(
         {
           tenantId,
-          actorType: actor.type,
-          actorId: actor.id ?? null,
+          actorType: context.actor.type,
+          actorId: context.actor.id ?? null,
           action: 'post',
           entityType: 'inventory_adjustment',
           entityId: id,
           occurredAt: now,
           metadata: { movementId }
+        },
+        client
+      );
+    }
+
+    if (validation.overrideMetadata && context?.actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: context.actor.type,
+          actorId: context.actor.id ?? null,
+          action: 'negative_override',
+          entityType: 'inventory_movement',
+          entityId: movementId,
+          occurredAt: now,
+          metadata: {
+            reason: validation.overrideMetadata.override_reason ?? null,
+            adjustmentId: id,
+            lines: negativeLines
+          }
         },
         client
       );

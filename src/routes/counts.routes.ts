@@ -61,10 +61,23 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid inventory count id.' });
   }
+  const overrideSchema = z
+    .object({
+      overrideNegative: z.boolean().optional(),
+      overrideReason: z.string().max(2000).optional()
+    })
+    .safeParse(req.body ?? {});
+  if (!overrideSchema.success) {
+    return res.status(400).json({ error: overrideSchema.error.flatten() });
+  }
 
   try {
     const tenantId = req.auth!.tenantId;
-    const count = await postInventoryCount(tenantId, id);
+    const count = await postInventoryCount(tenantId, id, {
+      actor: { type: 'user', id: req.auth!.userId, role: req.auth!.role },
+      overrideRequested: overrideSchema.data.overrideNegative,
+      overrideReason: overrideSchema.data.overrideReason
+    });
     const itemIds = Array.from(new Set(count.lines.map((line) => line.itemId)));
     emitEvent(tenantId, 'inventory.count.posted', {
       countId: count.id,
@@ -75,6 +88,29 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
     });
     return res.json(count);
   } catch (error: any) {
+    if (error?.code === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({
+        error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
+      return res.status(403).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_NOT_ALLOWED',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
+      return res.status(409).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
     if (error?.message === 'COUNT_NOT_FOUND') {
       return res.status(404).json({ error: 'Inventory count not found.' });
     }
