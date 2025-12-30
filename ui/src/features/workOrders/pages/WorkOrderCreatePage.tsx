@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { createWorkOrder, type WorkOrderCreatePayload } from '../api/workOrders'
-import { useBomsByItem } from '@features/boms/queries'
+import { useBom, useBomsByItem } from '@features/boms/queries'
 import { useItemsList } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
 import type { ApiError, Bom, Item } from '@api/types'
@@ -48,6 +48,7 @@ export default function WorkOrderCreatePage() {
   const locationsQuery = useLocationsList({ limit: 200, active: true }, { staleTime: 1000 * 60 })
 
   const bomsQuery = useBomsByItem(outputItemId)
+  const bomDetailQuery = useBom(selectedBomId, { enabled: Boolean(selectedBomId) })
 
   useEffect(() => {
     if (prefillDoneRef.current) return
@@ -132,8 +133,8 @@ export default function WorkOrderCreatePage() {
   })
 
   const selectedBom: Bom | undefined = useMemo(
-    () => bomsQuery.data?.boms.find((b) => b.id === selectedBomId),
-    [bomsQuery.data, selectedBomId],
+    () => bomDetailQuery.data ?? bomsQuery.data?.boms.find((b) => b.id === selectedBomId),
+    [bomDetailQuery.data, bomsQuery.data, selectedBomId],
   )
   const selectedItem = itemsById.get(outputItemId)
 
@@ -161,6 +162,17 @@ export default function WorkOrderCreatePage() {
     const bom = bomsQuery.data?.boms.find((b) => b.id === nextValue)
     if (bom) setOutputUom((prev) => prev || bom.defaultUom)
   }
+
+  useEffect(() => {
+    if (!bomDetailQuery.data) return
+    if (!selectedVersionId || !bomDetailQuery.data.versions.some((v) => v.id === selectedVersionId)) {
+      const active = bomDetailQuery.data.versions.find((v) => v.status === 'active') ?? bomDetailQuery.data.versions[0]
+      if (active) {
+        setSelectedVersionId(active.id)
+        setOutputUom((prev) => prev || active.yieldUom || bomDetailQuery.data?.defaultUom || '')
+      }
+    }
+  }, [bomDetailQuery.data, selectedVersionId])
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -284,8 +296,14 @@ export default function WorkOrderCreatePage() {
               bomOptions={bomOptions}
               selectedBom={selectedBom}
               isPending={mutation.isPending}
-              isLoading={bomsQuery.isLoading}
-              error={bomsQuery.isError ? (bomsQuery.error as ApiError) : null}
+              isLoading={bomsQuery.isLoading || bomDetailQuery.isLoading}
+              error={
+                bomsQuery.isError
+                  ? (bomsQuery.error as ApiError)
+                  : bomDetailQuery.isError
+                    ? (bomDetailQuery.error as ApiError)
+                    : null
+              }
               onBomChange={handleBomChange}
               onVersionChange={setSelectedVersionId}
             />
