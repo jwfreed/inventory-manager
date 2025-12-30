@@ -76,12 +76,10 @@ export default function HomePage() {
       <div className="flex flex-col gap-2">
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Home</p>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-2xl font-semibold text-slate-900">Start today&#39;s inventory work</h2>
+          <h2 className="text-2xl font-semibold text-slate-900">Home</h2>
           {role && <Badge variant="info">{role}</Badge>}
         </div>
-        <p className="max-w-3xl text-sm text-slate-600">
-          Jump into the most common workflows or check system status before you begin.
-        </p>
+        <p className="max-w-3xl text-sm text-slate-600">Your work today.</p>
         {(user?.email || tenant?.name || tenant?.slug) && (
           <div className="text-xs text-slate-500">
             Signed in as {user?.fullName || user?.email || 'user'} · Tenant {tenant?.name || tenant?.slug || '—'}
@@ -89,77 +87,80 @@ export default function HomePage() {
         )}
       </div>
 
-      <Section title="Start work" description="Primary workflows for receiving, purchasing, and stock review.">
+      <Section title="Needs attention" description="Short list of next steps that are likely time-sensitive.">
+        {/* TODO: Add lightweight counts for QC / PO drafts when cheap endpoints exist. */}
+        <Card>
+          <div className="text-sm text-slate-700">Nothing urgent right now.</div>
+        </Card>
+      </Section>
+
+      <Section title="Start work" description="Pick the next action and keep the flow moving.">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card title="Receive inbound" description="QC and putaway receipts.">
+          <Card title="Receive inbound" description="Record receipts, QC, and putaway.">
             <Link to="/receiving">
               <Button size="sm">Start receiving</Button>
             </Link>
           </Card>
-          <Card title="Purchase orders" description="Create or review open POs.">
+          <Card title="Submit purchase orders" description="Create or review open POs.">
             <div className="flex gap-2">
               <Link to="/purchase-orders/new">
                 <Button size="sm">Create PO</Button>
               </Link>
               <Link to="/purchase-orders">
                 <Button size="sm" variant="secondary">
-                  View list
+                  Review POs
                 </Button>
               </Link>
             </div>
           </Card>
-          <Card title="Items & stock" description="Browse items and review stock summaries.">
+          <Card title="Review items & stock" description="Browse items and their on-hand view.">
             <Link to="/items">
               <Button size="sm" variant="secondary">
-                View items
+                Open items
               </Button>
             </Link>
           </Card>
-          <Card title="Movement ledger" description="Explain inventory changes by movement.">
+          <Card title="Explain stock changes" description="Audit inventory movements by date and type.">
             <Link to="/movements">
               <Button size="sm" variant="secondary">
-                Open ledger
+                View ledger
               </Button>
             </Link>
           </Card>
         </div>
       </Section>
 
-      <Section title="System status" description="Quick reachability check to the backend.">
-        <Card>
-          {isLoading && <LoadingSpinner label="Checking API..." />}
-          {isError && error && (
-            <Alert
-              variant="error"
-              title="API unreachable"
-              message={error.message || 'Unable to reach API.'}
-              action={
-                <Button size="sm" variant="secondary" onClick={() => void refetch()}>
-                  Retry
-                </Button>
-              }
-            />
-          )}
-          {!isLoading && !isError && (
-            <Alert
-              variant={apiStatus === 'ok' ? 'success' : apiStatus === 'down' ? 'error' : 'info'}
-              title={
-                apiStatus === 'ok'
-                  ? 'API reachable'
-                  : apiStatus === 'down'
-                    ? 'API unreachable'
-                    : 'Connectivity check'
-              }
-              message={connectivity?.message || 'Connectivity check completed.'}
-              action={
-                <Button size="sm" variant="secondary" onClick={() => void refetch()}>
-                  Recheck
-                </Button>
-              }
-            />
-          )}
-        </Card>
-      </Section>
+      {apiStatus !== 'ok' && (
+        <Section title="System connectivity" description="Only shown when the API is unhealthy.">
+          <Card>
+            {isLoading && <LoadingSpinner label="Checking API..." />}
+            {isError && error && (
+              <Alert
+                variant="error"
+                title="API unreachable"
+                message={error.message || 'Unable to reach API.'}
+                action={
+                  <Button size="sm" variant="secondary" onClick={() => void refetch()}>
+                    Retry
+                  </Button>
+                }
+              />
+            )}
+            {!isLoading && !isError && (
+              <Alert
+                variant={apiStatus === 'down' ? 'error' : 'info'}
+                title={apiStatus === 'down' ? 'API unreachable' : 'Connectivity check'}
+                message={connectivity?.message || 'Connectivity check completed.'}
+                action={
+                  <Button size="sm" variant="secondary" onClick={() => void refetch()}>
+                    Recheck
+                  </Button>
+                }
+              />
+            )}
+          </Card>
+        </Section>
+      )}
     </div>
   )
 }

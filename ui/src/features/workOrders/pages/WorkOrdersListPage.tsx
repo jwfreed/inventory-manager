@@ -11,11 +11,17 @@ export default function WorkOrdersListPage() {
   const navigate = useNavigate()
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
+  const [plannedDate, setPlannedDate] = useState('')
 
   const itemsQuery = useItemsList({ limit: 500 }, { staleTime: 60_000 })
 
+  const plannedFrom = plannedDate ? `${plannedDate}T00:00:00` : undefined
+  const plannedTo = plannedDate ? `${plannedDate}T23:59:59.999` : undefined
+
   const { data, isLoading, isError, error, refetch, isFetching } = useWorkOrdersList({
     status: status || undefined,
+    plannedFrom,
+    plannedTo,
     limit: 50,
   })
 
@@ -30,9 +36,10 @@ export default function WorkOrdersListPage() {
       <div className="flex flex-col gap-2">
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Execution</p>
         <h2 className="text-2xl font-semibold text-slate-900">Work Orders</h2>
-        <p className="max-w-3xl text-sm text-slate-600">
-          Drafts do not affect inventory. Posting issues creates issue movements; posting completions creates receive movements.
-        </p>
+        <div className="max-w-3xl space-y-1 text-sm text-slate-600">
+          <p>Drafts do not affect inventory.</p>
+          <p>Posting issues creates issue movements; posting completions creates receive movements.</p>
+        </div>
         <div>
           <Button size="sm" onClick={() => navigate('/work-orders/new')}>
             New work order
@@ -43,13 +50,22 @@ export default function WorkOrdersListPage() {
       <WorkOrdersFilters
         status={status}
         search={search}
+        plannedDate={plannedDate}
         isFetching={isFetching}
         onStatusChange={setStatus}
         onSearchChange={setSearch}
+        onPlannedDateChange={setPlannedDate}
         onRefresh={() => void refetch()}
       />
 
       <Section title="Work orders">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+          <div>
+            Showing {filtered.length} work orders
+            {(status || search || plannedDate) ? ' (filtered)' : ''}
+          </div>
+          {isFetching && <span className="text-xs uppercase tracking-wide text-slate-400">Updating…</span>}
+        </div>
         <Card>
           {isLoading && <LoadingSpinner label="Loading work orders..." />}
           {isError && error && (
@@ -67,7 +83,7 @@ export default function WorkOrdersListPage() {
           {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
               title="No work orders found"
-              description="Adjust filters or create a work order via API."
+              description="Adjust filters or create a new work order."
             />
           )}
           {!isLoading && !isError && filtered.length > 0 && (

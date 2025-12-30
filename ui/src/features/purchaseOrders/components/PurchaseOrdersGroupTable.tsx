@@ -16,7 +16,8 @@ type Props = {
   showReceiveAction: boolean
   showEmptyState: boolean
   onRepeat: (poId: string) => void
-  repeatPending: boolean
+  repeatPendingId: string | null
+  onClearFilters?: () => void
 }
 
 export function PurchaseOrdersGroupTable({
@@ -25,7 +26,8 @@ export function PurchaseOrdersGroupTable({
   showReceiveAction,
   showEmptyState,
   onRepeat,
-  repeatPending,
+  repeatPendingId,
+  onClearFilters,
 }: Props) {
   if (!showEmptyState && rows.length === 0) return null
 
@@ -36,12 +38,30 @@ export function PurchaseOrdersGroupTable({
         <p className="text-xs text-slate-500">{group.description}</p>
       </div>
       {rows.length === 0 ? (
-        <div className="px-4 py-4 text-sm text-slate-600">No {group.title.toLowerCase()}.</div>
+        <div className="px-4 py-4 text-sm text-slate-600">
+          <div>No {group.title.toLowerCase()}.</div>
+          {onClearFilters && (
+            <button
+              type="button"
+              className="mt-2 text-xs font-semibold uppercase text-brand-700"
+              onClick={onClearFilters}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
       ) : (
         <DataTable
           className="rounded-none rounded-b-lg border-t-0"
           rows={rows}
           rowKey={(row) => row.id}
+          rowClassName={(row) => {
+            const status = (row.status ?? '').toLowerCase()
+            if (showReceiveAction && status !== 'approved' && status !== 'partially_received') {
+              return 'opacity-60'
+            }
+            return undefined
+          }}
           columns={[
             {
               id: 'poNumber',
@@ -49,18 +69,15 @@ export function PurchaseOrdersGroupTable({
               cell: (po) => {
                 const status = (po.status ?? '').toLowerCase()
                 const isDraft = status === 'draft'
-                const isApproved = status === 'approved' || status === 'partially_received'
                 const createdAt = po.createdAt ? new Date(po.createdAt).getTime() : null
                 const isStaleDraft =
                   isDraft && createdAt && !Number.isNaN(createdAt)
                     ? Math.floor((staleDraftReferenceTime - createdAt) / (1000 * 60 * 60 * 24)) >= 7
                     : false
-                const target =
-                  showReceiveAction && isApproved ? `/receiving?poId=${po.id}` : `/purchase-orders/${po.id}`
 
                 return (
                   <div>
-                    <Link to={target} className="text-brand-700 underline">
+                    <Link to={`/purchase-orders/${po.id}`} className="text-brand-700 underline">
                       {po.poNumber}
                     </Link>
                     {isStaleDraft && (
@@ -122,6 +139,7 @@ export function PurchaseOrdersGroupTable({
               cell: (po) => {
                 const status = (po.status ?? '').toLowerCase()
                 const canReceive = status === 'approved' || status === 'partially_received'
+                const isRepeating = repeatPendingId === po.id
                 return (
                   <div className="flex justify-end gap-2">
                     {showReceiveAction && canReceive && (
@@ -140,9 +158,16 @@ export function PurchaseOrdersGroupTable({
                       variant="secondary"
                       size="sm"
                       onClick={() => onRepeat(po.id)}
-                      disabled={repeatPending}
+                      disabled={isRepeating}
                     >
-                      {repeatPending ? 'Repeating…' : 'Repeat'}
+                      {isRepeating ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-3 w-3 animate-spin rounded-full border border-slate-300 border-t-slate-600" />
+                          Repeating…
+                        </span>
+                      ) : (
+                        'Repeat'
+                      )}
                     </Button>
                   </div>
                 )

@@ -32,8 +32,8 @@ export default function MovementsListPage() {
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Ledger</p>
         <h2 className="text-2xl font-semibold text-slate-900">Inventory movements</h2>
         <p className="max-w-3xl text-sm text-slate-600">
-          Movements are the source of truth for stock changes. Filter by occurred date, type, and
-          status. Item/location filters are hidden until the backend exposes them.
+          Movements are the append-only ledger of all stock changes. Use filters to explain
+          discrepancies, trace documents, and audit adjustments.
         </p>
       </div>
 
@@ -43,14 +43,29 @@ export default function MovementsListPage() {
           onApply={(next) => setFilters(next)}
           disabled={isFetching}
         />
+      </Section>
+
+      <Section title="Movements">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+          <div>
+            Showing {data?.data?.length ?? 0} movements
+            {filters.movementType ||
+            filters.status ||
+            filters.externalRef ||
+            filters.occurredFrom ||
+            filters.occurredTo ||
+            filters.itemId ||
+            filters.locationId
+              ? ' (filtered)'
+              : ''}
+          </div>
+          {isFetching && <span className="text-xs uppercase tracking-wide text-slate-400">Updating…</span>}
+        </div>
         <Alert
           variant="info"
           title="Exception focus"
           message="Draft or late-posted movements and large adjustments are typical exceptions. Narrow the date range and sort by occurred date to spot them quickly."
         />
-      </Section>
-
-      <Section title="Movements">
         <Card>
           {isLoading && <LoadingSpinner label="Loading movements..." />}
           {isError && error && (

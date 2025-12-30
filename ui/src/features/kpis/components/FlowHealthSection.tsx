@@ -25,6 +25,7 @@ type Props = {
   formatItem: (id: string) => string
   formatLocation: (id: string) => string
   fillRateCard: ReactNode
+  summary?: { label: string; variant: 'neutral' | 'success' | 'warning' | 'danger' | 'info'; icon?: string }
 }
 
 export function FlowHealthSection({
@@ -41,12 +42,20 @@ export function FlowHealthSection({
   formatItem,
   formatLocation,
   fillRateCard,
+  summary,
 }: Props) {
   return (
     <Section
       title="Flow health"
       description="Signals that show how inventory is moving and where it could stall next."
     >
+      {summary && (
+        <div className="mb-2 flex items-center gap-2 text-sm">
+          <span className="text-xs font-semibold uppercase text-slate-500">Flow health:</span>
+          {summary.icon && <span className="text-xs font-semibold text-slate-500">{summary.icon}</span>}
+          <Badge variant={summary.variant}>{summary.label}</Badge>
+        </div>
+      )}
       <div className="space-y-4">
         <Card
           title="Work in progress at risk"

@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { ApiError } from '@api/types'
 import { useInventorySnapshotSummary } from '@features/inventory/queries'
 import { useItemsList } from '@features/items/queries'
@@ -6,13 +7,13 @@ import { useLocationsList } from '@features/locations/queries'
 import { usePurchaseOrdersList } from '@features/purchaseOrders/queries'
 import { useWorkOrdersList } from '@features/workOrders/queries'
 import { useFulfillmentFillRate, useKpiRuns, useKpiSnapshots, useReplenishmentRecommendations } from '../queries'
-import { Badge, Card, EmptyState, ErrorState, LoadingSpinner, Section } from '@shared/ui'
+import { Alert, Badge, Button, Card, EmptyState, ErrorState, LoadingSpinner, Section } from '@shared/ui'
 import { KpiCardGrid } from '../components/KpiCardGrid'
 import { SnapshotsTable } from '../components/SnapshotsTable'
 import { formatDateTime } from '../utils'
 import { formatNumber } from '@shared/formatters'
-import { AttentionRequiredSection } from '../components/AttentionRequiredSection'
 import { FlowHealthSection } from '../components/FlowHealthSection'
+import { useAuth } from '@shared/auth'
 
 type SnapshotQueryResult = ReturnType<typeof useKpiSnapshots>['data']
 type RunQueryResult = ReturnType<typeof useKpiRuns>['data']
@@ -25,6 +26,7 @@ function attemptedEndpoints(result?: SnapshotQueryResult | RunQueryResult) {
 }
 
 export default function DashboardPage() {
+  const { role } = useAuth()
   const {
     data: snapshotsResult,
     isLoading: snapshotsLoading,
@@ -239,12 +241,88 @@ export default function DashboardPage() {
         ? { label: 'All caught up', variant: 'success' as const }
         : { label: `${attentionCount} items need attention`, variant: 'warning' as const }
 
+  const flowHealthStatus =
+    availabilityIssueCount > 0 || submittedPoCount > 0 || approvedPoCount > 0 ? 'at-risk' : 'stable'
+  const flowHealthBadge =
+    flowHealthStatus === 'at-risk'
+      ? { label: 'At risk', variant: 'danger' as const, icon: '!' }
+      : { label: 'Stable', variant: 'success' as const, icon: 'OK' }
+
+  const isPrivileged = useMemo(() => {
+    const normalized = (role ?? '').toLowerCase()
+    return normalized.includes('admin') || normalized.includes('manager')
+  }, [role])
+  const [analyticsExpanded, setAnalyticsExpanded] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    const stored = window.localStorage.getItem('dashboard-analytics-expanded')
+    if (stored !== null) return stored === 'true'
+    return false
+  })
+  const [showAllSignals, setShowAllSignals] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const stored = window.localStorage.getItem('dashboard-analytics-expanded')
+    if (stored !== null) return
+    setAnalyticsExpanded(isPrivileged)
+  }, [isPrivileged])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('dashboard-analytics-expanded', String(analyticsExpanded))
+  }, [analyticsExpanded])
+
+  const previewItems = (values: string[]) => {
+    const top = values.filter(Boolean).slice(0, 2)
+    if (top.length === 0) return null
+    return `Top: ${top.join(' · ')}`
+  }
+
+  const draftPreview = previewItems(
+    purchaseOrders.filter((po) => po.status === 'draft').map((po) => po.poNumber ?? po.id.slice(0, 8)),
+  )
+  const submittedPreview = previewItems(
+    submittedPurchaseOrders.map((po) => po.poNumber ?? po.id.slice(0, 8)),
+  )
+  const approvedPreview = previewItems(
+    approvedPurchaseOrders.map((po) => po.poNumber ?? po.id.slice(0, 8)),
+  )
+  const reorderPreview = previewItems(
+    reorderNeeded.map(
+      (rec) =>
+        `${formatItem(rec.itemId)} (${formatNumber(rec.recommendation.recommendedOrderQty)} ${rec.uom})`,
+    ),
+  )
+  const availabilityPreview = previewItems(
+    availabilityIssues.map(
+      (row) =>
+        `${formatItem(row.itemId)} @ ${formatLocation(row.locationId)} (${formatNumber(row.available)})`,
+    ),
+  )
+  const workOrderPreview = previewItems(
+    productionAtRisk.map(
+      (row) => `${formatItem(row.itemId)} (${formatNumber(row.remaining)} ${row.uom})`,
+    ),
+  )
+
+  type AttentionTier = 'act' | 'review' | 'info'
+  type AttentionTile = {
+    key: string
+    title: string
+    count: string
+    helper: string
+    signal: { label: string; variant: 'neutral' | 'success' | 'warning' | 'danger' | 'info' }
+    cta: { label: string; to: string }
+    preview?: string | null
+    tier: AttentionTier
+  }
+
   const poReady = !purchaseOrdersQuery.isLoading && !purchaseOrdersQuery.isError
   const reorderReady = !recommendationsQuery.isLoading && !recommendationsQuery.isError
   const availabilityReady = !inventorySummaryQuery.isLoading && !inventorySummaryQuery.isError
   const workOrdersReady = !productionQuery.isLoading && !productionQuery.isError
 
-  const attentionTiles = [
+  const attentionTiles: AttentionTile[] = [
     {
       key: 'draft-pos',
       title: 'Draft POs',
@@ -252,6 +330,8 @@ export default function DashboardPage() {
       signal: signalStyles[draftPoSignal],
       helper: 'Awaiting submission.',
       cta: { label: 'Review drafts', to: '/purchase-orders?status=draft' },
+      preview: draftPoCount > 0 ? draftPreview : null,
+      tier: 'review',
     },
     {
       key: 'submitted-pos',
@@ -271,6 +351,8 @@ export default function DashboardPage() {
         }
         return { label: 'View POs', to: '/purchase-orders?status=submitted' }
       })(),
+      preview: submittedPoCount > 0 ? submittedPreview : null,
+      tier: 'act',
     },
     {
       key: 'approved-pos',
@@ -290,6 +372,8 @@ export default function DashboardPage() {
         }
         return { label: 'View POs', to: '/purchase-orders?status=approved' }
       })(),
+      preview: approvedPoCount > 0 ? approvedPreview : null,
+      tier: 'act',
     },
     {
       key: 'reorders',
@@ -297,8 +381,9 @@ export default function DashboardPage() {
       count: formatCount(reorderReady, reorderNeeded.length),
       signal: signalStyles[reorderSignal],
       helper: 'Policies triggered.',
-      cta: { label: 'Review items', to: '/items' },
-      scrollTarget: true,
+      cta: { label: 'Review reorders', to: '/items' },
+      preview: reorderNeeded.length > 0 ? reorderPreview : null,
+      tier: 'info',
     },
     {
       key: 'availability',
@@ -306,8 +391,9 @@ export default function DashboardPage() {
       count: formatCount(availabilityReady, availabilityIssueCount),
       signal: signalStyles[availabilitySignal],
       helper: 'Zero or negative available.',
-      cta: { label: 'Review items', to: '/items' },
-      scrollTarget: true,
+      cta: { label: 'Investigate availability', to: '/items' },
+      preview: availabilityIssueCount > 0 ? availabilityPreview : null,
+      tier: 'act',
     },
     {
       key: 'work-orders',
@@ -315,9 +401,15 @@ export default function DashboardPage() {
       count: formatCount(workOrdersReady, openWorkOrdersCount),
       signal: signalStyles[workOrdersSignal],
       helper: 'Remaining production.',
-      cta: { label: 'View work orders', to: '/work-orders' },
+      cta: { label: 'Review work orders', to: '/work-orders' },
+      preview: openWorkOrdersCount > 0 ? workOrderPreview : null,
+      tier: 'review',
     },
   ]
+
+  const tier1Tiles = attentionTiles.filter((tile) => tile.tier === 'act')
+  const tier2Tiles = attentionTiles.filter((tile) => tile.tier === 'review')
+  const tier3Tiles = attentionTiles.filter((tile) => tile.tier === 'info')
 
   const inventoryLoading = inventorySummaryQuery.isLoading || itemsQuery.isLoading || locationsQuery.isLoading
   const inventoryError = inventorySummaryQuery.isError || itemsQuery.isError || locationsQuery.isError
@@ -373,7 +465,7 @@ export default function DashboardPage() {
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Dashboard</p>
         <h2 className="text-2xl font-semibold text-slate-900">Dashboard</h2>
         <p className="max-w-3xl text-sm text-slate-600">
-          Start here to resolve exceptions and commitments. Every card points to a next step.
+          Operational health &amp; exceptions.
         </p>
         {attentionSummary && (
           <div className="flex items-center gap-2">
@@ -383,19 +475,235 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <AttentionRequiredSection
-        tiles={attentionTiles}
-        exceptionLoading={exceptionLoading}
-        exceptionError={exceptionError}
-        reorderNeeded={reorderNeeded}
-        availabilityIssues={availabilityIssues}
-        formatItem={formatItem}
-        formatLocation={formatLocation}
-        onRetry={() => {
-          void recommendationsQuery.refetch()
-          void inventorySummaryQuery.refetch()
-        }}
-      />
+      <Section title="Attention required" description="Operational exceptions that need action now.">
+        <div className="space-y-4">
+          <div className="rounded-xl border border-red-200 bg-red-50/30 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-900">Act now</div>
+              <Badge variant="danger">Critical</Badge>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {tier1Tiles.map((tile) => (
+                <div
+                  key={tile.key}
+                  tabIndex={0}
+                  className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+                >
+                  <Card className="h-full border-red-200">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">{tile.title}</p>
+                        <p className="mt-2 text-2xl font-semibold text-slate-900">{tile.count}</p>
+                        <p className="mt-1 text-xs text-slate-500">{tile.helper}</p>
+                        {tile.preview && (
+                          <p className="mt-2 text-xs text-slate-600">{tile.preview}</p>
+                        )}
+                      </div>
+                      <Badge variant={tile.signal.variant}>{tile.signal.label}</Badge>
+                    </div>
+                    <div className="mt-3">
+                      <Link to={tile.cta.to}>
+                        <Button size="sm">{tile.cta.label}</Button>
+                      </Link>
+                    </div>
+                  </Card>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-900">Review soon</div>
+              <Badge variant="warning">Watch</Badge>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {tier2Tiles.map((tile) => (
+                <div
+                  key={tile.key}
+                  tabIndex={0}
+                  className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
+                >
+                  <Card className="h-full">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">{tile.title}</p>
+                        <p className="mt-2 text-2xl font-semibold text-slate-900">{tile.count}</p>
+                        <p className="mt-1 text-xs text-slate-500">{tile.helper}</p>
+                        {tile.preview && (
+                          <p className="mt-2 text-xs text-slate-600">{tile.preview}</p>
+                        )}
+                      </div>
+                      <Badge variant={tile.signal.variant}>{tile.signal.label}</Badge>
+                    </div>
+                    <div className="mt-3">
+                      <Link to={tile.cta.to}>
+                        <Button size="sm" variant="secondary">
+                          {tile.cta.label}
+                        </Button>
+                      </Link>
+                    </div>
+                  </Card>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-900">Informational</div>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setShowAllSignals((prev) => !prev)}
+              >
+                {showAllSignals ? 'Hide signals' : 'View all signals'}
+              </Button>
+            </div>
+            {showAllSignals && (
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {tier3Tiles.map((tile) => (
+                  <div
+                    key={tile.key}
+                    tabIndex={0}
+                    className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
+                  >
+                    <Card className="h-full">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-500">{tile.title}</p>
+                          <p className="mt-2 text-2xl font-semibold text-slate-900">{tile.count}</p>
+                          <p className="mt-1 text-xs text-slate-500">{tile.helper}</p>
+                          {tile.preview && (
+                            <p className="mt-2 text-xs text-slate-600">{tile.preview}</p>
+                          )}
+                        </div>
+                        <Badge variant={tile.signal.variant}>{tile.signal.label}</Badge>
+                      </div>
+                      <div className="mt-3">
+                        <Link to={tile.cta.to}>
+                          <Button size="sm" variant="secondary">
+                            {tile.cta.label}
+                          </Button>
+                        </Link>
+                      </div>
+                    </Card>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <Card title="Resolution queue" description="Resolve exceptions and commitments before moving on.">
+            {exceptionLoading && <LoadingSpinner label="Scanning for exceptions..." />}
+            {exceptionError && (
+              <Alert
+                variant="error"
+                title="Could not load exceptions"
+                message="Retry to refresh recommendations and inventory coverage."
+                action={
+                  <Button size="sm" variant="secondary" onClick={() => {
+                    void recommendationsQuery.refetch()
+                    void inventorySummaryQuery.refetch()
+                  }}>
+                    Retry
+                  </Button>
+                }
+              />
+            )}
+            {!exceptionLoading && !exceptionError && reorderNeeded.length === 0 && availabilityIssues.length === 0 && (
+              <Alert
+                variant="success"
+                title="No immediate exceptions"
+                message="No reorder flags and no zero/negative availability detected."
+              />
+            )}
+            {!exceptionLoading &&
+              !exceptionError &&
+              (reorderNeeded.length > 0 || availabilityIssues.length > 0) && (
+                <div className="divide-y divide-slate-200">
+                  <div className="py-2 text-xs text-slate-500">
+                    Exceptions only. Open Item → Stock for authoritative totals.
+                  </div>
+                  {reorderNeeded.slice(0, 5).map((rec) => {
+                    const threshold =
+                      rec.policyType === 'q_rop'
+                        ? rec.inputs.reorderPointQty ?? 0
+                        : rec.inputs.orderUpToLevelQty ?? 0
+                    const gap = rec.inventory.inventoryPosition - threshold
+                    const poLink = `/purchase-orders/new?itemId=${encodeURIComponent(rec.itemId)}&locationId=${encodeURIComponent(
+                      rec.locationId,
+                    )}&qty=${encodeURIComponent(String(rec.recommendation.recommendedOrderQty))}&uom=${encodeURIComponent(rec.uom)}`
+                    return (
+                      <div key={`reorder-${rec.policyId}`} className="py-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="danger">Action required</Badge>
+                              <span className="text-xs font-semibold uppercase text-slate-500">Reorder</span>
+                            </div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              Reorder: {formatItem(rec.itemId)} @ {formatLocation(rec.locationId)}
+                            </p>
+                            <p className="text-xs text-slate-600">
+                              Inventory position {formatNumber(rec.inventory.inventoryPosition)} vs threshold{' '}
+                              {formatNumber(threshold)} · gap {formatNumber(Math.abs(gap))}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Policy {rec.policyType} · Recommend order{' '}
+                              {formatNumber(rec.recommendation.recommendedOrderQty)} {rec.uom}{' '}
+                              {rec.recommendation.recommendedOrderDate
+                                ? `by ${rec.recommendation.recommendedOrderDate}`
+                                : ''}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <Link to={poLink}>
+                              <Button size="sm" variant="secondary">
+                                Create PO
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {availabilityIssues.slice(0, 5).map((row) => {
+                    const availabilitySeverity = row.available < 0 || row.inventoryPosition < 0
+                    const availabilityLabel = availabilitySeverity ? 'Action required' : 'Watch'
+                    const availabilityVariant = availabilitySeverity ? 'danger' : 'warning'
+                    const itemLink = `/items/${row.itemId}?locationId=${encodeURIComponent(row.locationId)}`
+                    return (
+                      <div key={`avail-${row.itemId}-${row.locationId}-${row.uom}`} className="py-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={availabilityVariant}>{availabilityLabel}</Badge>
+                              <span className="text-xs font-semibold uppercase text-slate-500">Availability</span>
+                            </div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              Low/negative availability: {formatItem(row.itemId)} @ {formatLocation(row.locationId)}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Open Item → Stock for definitive on-hand, availability, and incoming.
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <Link to={itemLink}>
+                              <Button size="sm" variant="secondary">
+                                Investigate
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+          </Card>
+        </div>
+      </Section>
 
       <FlowHealthSection
         productionRows={productionAtRisk}
@@ -419,11 +727,21 @@ export default function DashboardPage() {
         formatItem={formatItem}
         formatLocation={formatLocation}
         fillRateCard={fillRateCard}
+        summary={flowHealthBadge}
       />
 
-      <Section title="Context" description="Secondary metrics and historical signals for deeper investigation.">
-        <div className="space-y-4">
-          <Card title="KPI cards">
+      <Section
+        title="Analytical context"
+        description="Advanced metrics for deeper investigation."
+        action={
+          <Button size="sm" variant="secondary" onClick={() => setAnalyticsExpanded((prev) => !prev)}>
+            {analyticsExpanded ? 'Hide analytics' : 'Show analytics'}
+          </Button>
+        }
+      >
+        {analyticsExpanded && (
+          <div className="space-y-4">
+            <Card title="KPI cards">
             {snapshotsLoading || snapshotsFetching ? (
               <LoadingSpinner label="Loading KPI snapshots..." />
             ) : null}
@@ -505,7 +823,8 @@ export default function DashboardPage() {
               </div>
             )}
           </Card>
-        </div>
+          </div>
+        )}
       </Section>
     </div>
   )

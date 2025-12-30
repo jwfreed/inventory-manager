@@ -11,18 +11,22 @@ const statusOptions = [
 type Props = {
   status: string
   search: string
+  plannedDate: string
   isFetching: boolean
   onStatusChange: (next: string) => void
   onSearchChange: (next: string) => void
+  onPlannedDateChange: (next: string) => void
   onRefresh: () => void
 }
 
 export function WorkOrdersFilters({
   status,
   search,
+  plannedDate,
   isFetching,
   onStatusChange,
   onSearchChange,
+  onPlannedDateChange,
   onRefresh,
 }: Props) {
   return (
@@ -42,9 +46,16 @@ export function WorkOrdersFilters({
         </select>
         <input
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          placeholder="Search work order number"
+          placeholder="Search work order or item"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
+          disabled={isFetching}
+        />
+        <input
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          type="date"
+          value={plannedDate}
+          onChange={(e) => onPlannedDateChange(e.target.value)}
           disabled={isFetching}
         />
         <Button variant="secondary" size="sm" onClick={onRefresh}>
