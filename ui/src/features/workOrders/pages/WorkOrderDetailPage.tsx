@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useItem, useItemsList } from '@features/items/queries'
-import { useBom, useNextStepBoms } from '@features/boms/queries'
+import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createWorkOrder, useActiveBomVersion } from '../api/workOrders'
 import type { ApiError } from '@api/types'
@@ -39,6 +39,10 @@ export default function WorkOrderDetailPage() {
   const bomQuery = useBom(workOrderQuery.data?.bomId, {
     staleTime: 60_000,
     enabled: Boolean(workOrderQuery.data?.bomId),
+  })
+  const bomsByItemQuery = useBomsByItem(workOrderQuery.data?.outputItemId, {
+    staleTime: 60_000,
+    enabled: Boolean(workOrderQuery.data?.outputItemId),
   })
 
   const nextStepBomsQuery = useNextStepBoms(workOrderQuery.data?.outputItemId, {
@@ -125,11 +129,18 @@ export default function WorkOrderDetailPage() {
     enabled: Boolean(id) && Boolean(workOrderQuery.data) && !isDisassembly,
   })
 
-  const activeBomVersion = useMemo(() => {
-    return bomQuery.data?.versions.find((version) => version.status === 'active')
-  }, [bomQuery.data])
-  const activeVersionId = activeBomVersion?.id ?? requirementsQuery.data?.bomVersionId ?? null
-  const activeVersionLabel = activeBomVersion?.versionNumber ?? null
+  const activeBomInfo = useMemo(() => {
+    const boms = bomsByItemQuery.data?.boms ?? []
+    for (const bom of boms) {
+      const version = bom.versions.find((entry) => entry.status === 'active')
+      if (version) return { bom, version }
+    }
+    return null
+  }, [bomsByItemQuery.data])
+
+  const activeVersionId = activeBomInfo?.version.id ?? requirementsQuery.data?.bomVersionId ?? null
+  const activeVersionLabel = activeBomInfo?.version.versionNumber ?? null
+  const activeBomCode = activeBomInfo?.bom.bomCode ?? null
 
   const usedBomVersion = useMemo(() => {
     const usedId =
@@ -146,6 +157,7 @@ export default function WorkOrderDetailPage() {
       void workOrderQuery.refetch()
       void requirementsQuery.refetch()
       void bomQuery.refetch()
+      void bomsByItemQuery.refetch()
       void queryClient.invalidateQueries({ queryKey: ['work-orders'] })
     },
     onError: (err: ApiError | unknown) => {
@@ -242,7 +254,8 @@ export default function WorkOrderDetailPage() {
                       </div>
                       {activeVersionId && activeVersionId !== usedBomVersion.id && (
                         <div className="mt-1 text-xs text-slate-600">
-                          Active version:{' '}
+                          Active BOM:{' '}
+                          {activeBomCode ? `${activeBomCode} ` : ''}
                           {activeVersionLabel ? `v${activeVersionLabel}` : 'current'}.{' '}
                           <button
                             type="button"
@@ -403,7 +416,7 @@ export default function WorkOrderDetailPage() {
           </p>
           {activeVersionId && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              Active version: {activeVersionLabel ? `v${activeVersionLabel}` : 'current'}
+              Active BOM: {activeBomCode ? `${activeBomCode} ` : ''}{activeVersionLabel ? `v${activeVersionLabel}` : 'current'}
             </div>
           )}
           {bomSwitchError && <Alert variant="error" title="Switch failed" message={bomSwitchError} />}

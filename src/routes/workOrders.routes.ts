@@ -6,7 +6,14 @@ import {
   workOrderListQuerySchema,
   workOrderRequirementsQuerySchema
 } from '../schemas/workOrders.schema';
-import { createWorkOrder, getWorkOrderById, getWorkOrderRequirements, listWorkOrders, updateWorkOrderDefaults } from '../services/workOrders.service';
+import {
+  createWorkOrder,
+  getWorkOrderById,
+  getWorkOrderRequirements,
+  listWorkOrders,
+  updateWorkOrderDefaults,
+  useActiveBomVersion
+} from '../services/workOrders.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
@@ -141,6 +148,42 @@ router.patch('/work-orders/:id/default-locations', async (req: Request, res: Res
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to update default locations.' });
+  }
+});
+
+router.post('/work-orders/:id/use-active-bom', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+
+  try {
+    const updated = await useActiveBomVersion(req.auth!.tenantId, id, {
+      type: 'user',
+      id: req.auth!.userId
+    });
+    if (!updated) {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    return res.json(updated);
+  } catch (error: any) {
+    if (error?.message === 'WO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    if (error?.message === 'WO_BOM_NOT_FOUND') {
+      return res.status(400).json({ error: 'Work order has no BOM to switch.' });
+    }
+    if (error?.message === 'WO_BOM_VERSION_NOT_FOUND') {
+      return res.status(400).json({ error: 'No active BOM version found.' });
+    }
+    if (error?.message === 'WO_BOM_UNSUPPORTED') {
+      return res.status(400).json({ error: 'Disassembly work orders do not use BOM versions.' });
+    }
+    if (error?.message === 'WO_BOM_UOM_MISMATCH') {
+      return res.status(409).json({ error: 'Active BOM yield UOM does not match the work order output UOM.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to switch work order BOM version.' });
   }
 });
 

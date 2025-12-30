@@ -4,7 +4,8 @@ import { query, withTransaction } from '../db';
 import { workOrderCreateSchema, workOrderListQuerySchema } from '../schemas/workOrders.schema';
 import { roundQuantity } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
-import { fetchBomById } from './boms.service';
+import { fetchBomById, resolveEffectiveBom } from './boms.service';
+import { recordAuditLog } from '../lib/audit';
 
 type WorkOrderCreateInput = z.infer<typeof workOrderCreateSchema>;
 type WorkOrderListQuery = z.infer<typeof workOrderListQuerySchema>;
@@ -306,5 +307,85 @@ export async function updateWorkOrderDefaults(
   const sql = `UPDATE work_orders SET ${sets.join(', ')} WHERE id = $1 AND tenant_id = $${params.length + 1}`;
   params.push(tenantId);
   await query(sql, params);
+  return getWorkOrderById(tenantId, workOrderId);
+}
+
+export async function useActiveBomVersion(
+  tenantId: string,
+  workOrderId: string,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
+  await withTransaction(async (client) => {
+    const now = new Date();
+    const workOrderRes = await client.query<WorkOrderRow>(
+      'SELECT * FROM work_orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+      [workOrderId, tenantId]
+    );
+    if (workOrderRes.rowCount === 0) {
+      throw new Error('WO_NOT_FOUND');
+    }
+    const workOrder = workOrderRes.rows[0];
+    if (workOrder.kind === 'disassembly') {
+      throw new Error('WO_BOM_UNSUPPORTED');
+    }
+
+    let activeMatch: Awaited<ReturnType<typeof resolveEffectiveBom>>;
+    try {
+      activeMatch = await resolveEffectiveBom(tenantId, workOrder.output_item_id, now.toISOString());
+    } catch {
+      activeMatch = null;
+    }
+    if (!activeMatch) {
+      throw new Error('WO_BOM_VERSION_NOT_FOUND');
+    }
+
+    const versionRes = await client.query<{ id: string; bom_id: string; yield_uom: string }>(
+      `SELECT id, bom_id, yield_uom
+         FROM bom_versions
+        WHERE id = $1 AND tenant_id = $2`,
+      [activeMatch.version.id, tenantId]
+    );
+    if (versionRes.rowCount === 0) {
+      throw new Error('WO_BOM_VERSION_NOT_FOUND');
+    }
+    const versionRow = versionRes.rows[0];
+    if (versionRow.yield_uom && versionRow.yield_uom !== workOrder.output_uom) {
+      throw new Error('WO_BOM_UOM_MISMATCH');
+    }
+
+    if (workOrder.bom_version_id !== versionRow.id || workOrder.bom_id !== versionRow.bom_id) {
+      await client.query(
+        `UPDATE work_orders
+            SET bom_id = $1,
+                bom_version_id = $2,
+                updated_at = $3
+          WHERE id = $4 AND tenant_id = $5`,
+        [versionRow.bom_id, versionRow.id, now, workOrderId, tenantId]
+      );
+    }
+
+    if (actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'update',
+          entityType: 'work_order',
+          entityId: workOrderId,
+          occurredAt: now,
+          metadata: {
+            field: 'bom_version_id',
+            previous: workOrder.bom_version_id ?? null,
+            next: versionRow.id,
+            bomId: versionRow.bom_id,
+            previousBomId: workOrder.bom_id ?? null
+          }
+        },
+        client
+      );
+    }
+  });
+
   return getWorkOrderById(tenantId, workOrderId);
 }

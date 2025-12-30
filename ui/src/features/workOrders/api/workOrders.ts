@@ -137,6 +137,10 @@ export async function updateWorkOrderDefaultsApi(
   return apiPost<WorkOrder>(`/work-orders/${workOrderId}/default-locations`, payload, { method: 'PATCH' })
 }
 
+export async function useActiveBomVersion(workOrderId: string): Promise<WorkOrder> {
+  return apiPost<WorkOrder>(`/work-orders/${workOrderId}/use-active-bom`)
+}
+
 export type RecordBatchPayload = {
   occurredAt: string
   notes?: string | null
