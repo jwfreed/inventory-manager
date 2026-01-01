@@ -10,7 +10,7 @@ export type Item = {
   defaultLocationId?: string | null
   defaultLocationCode?: string | null
   defaultLocationName?: string | null
-  active: boolean
+  lifecycleStatus: 'Active' | 'In-Development' | 'Obsolete' | 'Phase-Out'
   createdAt?: string
   updatedAt?: string
 }

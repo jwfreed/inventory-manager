@@ -25,9 +25,11 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
   const [name, setName] = useState(initialItem?.name ?? '')
   const [description, setDescription] = useState(initialItem?.description ?? '')
   const [type, setType] = useState<Item['type']>(initialItem?.type ?? 'raw')
+  const [lifecycleStatus, setLifecycleStatus] = useState<Item['lifecycleStatus']>(
+    initialItem?.lifecycleStatus ?? 'Active',
+  )
   const [defaultUom, setDefaultUom] = useState(initialItem?.defaultUom ?? '')
   const [defaultLocationId, setDefaultLocationId] = useState(initialItem?.defaultLocationId ?? '')
-  const [active, setActive] = useState(initialItem?.active ?? true)
 
   useEffect(() => {
     if (!initialItem) return
@@ -35,9 +37,9 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
     setName(initialItem.name)
     setDescription(initialItem.description ?? '')
     setType(initialItem.type ?? 'raw')
+    setLifecycleStatus(initialItem.lifecycleStatus ?? 'Active')
     setDefaultUom(initialItem.defaultUom ?? '')
     setDefaultLocationId(initialItem.defaultLocationId ?? '')
-    setActive(initialItem.active)
   }, [initialItem])
 
   const locationsQuery = useLocationsList({ active: true, limit: 200 }, { staleTime: 60_000 })
@@ -58,9 +60,9 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
       name,
       description: description || undefined,
       type,
+      lifecycleStatus,
       defaultUom: defaultUom.trim() ? defaultUom.trim() : undefined,
       defaultLocationId: defaultLocationId || null,
-      active,
     })
   }
 
@@ -99,17 +101,17 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Type</span>
+            <span className="text-xs uppercase tracking-wide text-slate-500">Status</span>
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              value={type}
-              onChange={(e) => setType(e.target.value as Item['type'])}
+              value={lifecycleStatus}
+              onChange={(e) => setLifecycleStatus(e.target.value as Item['lifecycleStatus'])}
               disabled={mutation.isPending}
             >
-              <option value="raw">Raw material</option>
-              <option value="wip">Work in progress</option>
-              <option value="finished">Finished good</option>
-              <option value="packaging">Packaging</option>
+              <option value="Active">Active</option>
+              <option value="In-Development">In-Development</option>
+              <option value="Phase-Out">Phase-Out</option>
+              <option value="Obsolete">Obsolete</option>
             </select>
           </label>
           <label className="space-y-1 text-sm">
@@ -158,15 +160,6 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
             placeholder="Optional details"
             disabled={mutation.isPending}
           />
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={active}
-            onChange={(e) => setActive(e.target.checked)}
-            disabled={mutation.isPending}
-          />
-          <span>Active</span>
         </label>
         <div className="flex gap-2">
           {onCancel && (

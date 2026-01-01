@@ -16,13 +16,13 @@ export type ItemPayload = {
   name: string
   description?: string
   type?: Item['type']
+  lifecycleStatus?: Item['lifecycleStatus']
   defaultUom?: string | null
   defaultLocationId?: string | null
-  active?: boolean
 }
 
 export type ListItemsParams = {
-  active?: boolean
+  lifecycleStatus?: string
   search?: string
   limit?: number
   offset?: number
@@ -35,11 +35,11 @@ function mapItem(row: ItemApiRow): Item {
     name: row.name,
     description: row.description,
     type: row.type ?? 'raw',
+    lifecycleStatus: row.lifecycleStatus,
     defaultUom: row.defaultUom ?? row.default_uom ?? null,
     defaultLocationId: row.defaultLocationId ?? row.default_location_id ?? null,
     defaultLocationCode: row.defaultLocationCode ?? row.default_location_code ?? null,
     defaultLocationName: row.defaultLocationName ?? row.default_location_name ?? null,
-    active: row.active,
     createdAt: row.createdAt ?? row.created_at,
     updatedAt: row.updatedAt ?? row.updated_at,
   }
@@ -48,7 +48,7 @@ function mapItem(row: ItemApiRow): Item {
 export async function listItems(params: ListItemsParams = {}): Promise<{ data: Item[] }> {
   const response = await apiGet<{ data?: Item[] } | Item[]>('/items', {
     params: {
-      ...(params.active !== undefined ? { active: params.active } : {}),
+      ...(params.lifecycleStatus ? { lifecycleStatus: params.lifecycleStatus } : {}),
       ...(params.search ? { search: params.search } : {}),
       ...(params.limit ? { limit: params.limit } : {}),
       ...(params.offset !== undefined ? { offset: params.offset } : {}),

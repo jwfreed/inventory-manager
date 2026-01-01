@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query, withTransaction } from '../db';
 import type { itemSchema, locationSchema } from '../schemas/masterData.schema';
+import { ItemLifecycleStatus } from '../types/item';
 
 export type ItemInput = z.infer<typeof itemSchema>;
 export type LocationInput = z.infer<typeof locationSchema>;
@@ -14,7 +15,7 @@ const itemSelectColumns = `
   i.type,
   i.default_uom,
   i.default_location_id,
-  i.active,
+  i.lifecycle_status,
   i.created_at,
   i.updated_at,
   l.code AS default_location_code,
@@ -32,7 +33,7 @@ export function mapItem(row: any) {
     defaultLocationId: row.defaultLocationId ?? row.default_location_id ?? null,
     defaultLocationCode: row.defaultLocationCode ?? row.default_location_code ?? null,
     defaultLocationName: row.defaultLocationName ?? row.default_location_name ?? null,
-    active: row.active,
+    lifecycleStatus: row.lifecycle_status,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -41,13 +42,13 @@ export function mapItem(row: any) {
 export async function createItem(tenantId: string, data: ItemInput) {
   const now = new Date();
   const id = uuidv4();
-  const active = data.active ?? true;
+  const lifecycleStatus = data.lifecycleStatus ?? ItemLifecycleStatus.ACTIVE;
   const type = data.type ?? 'raw';
   const defaultUom = data.defaultUom ?? null;
   const defaultLocationId = data.defaultLocationId ?? null;
   await query(
     `INSERT INTO items (
-        id, tenant_id, sku, name, description, type, default_uom, default_location_id, active, created_at, updated_at
+        id, tenant_id, sku, name, description, type, default_uom, default_location_id, lifecycle_status, created_at, updated_at
      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)`,
     [
       id,
@@ -58,7 +59,7 @@ export async function createItem(tenantId: string, data: ItemInput) {
       type,
       defaultUom,
       defaultLocationId,
-      active,
+      lifecycleStatus,
       now
     ]
   );
@@ -86,6 +87,7 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
   const type = data.type ?? 'raw';
   const defaultUom = data.defaultUom ?? null;
   const defaultLocationId = data.defaultLocationId ?? null;
+  const lifecycleStatus = data.lifecycleStatus ?? ItemLifecycleStatus.ACTIVE;
   const res = await query(
     `UPDATE items
        SET sku = $1,
@@ -94,7 +96,7 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
            type = $4,
            default_uom = $5,
            default_location_id = $6,
-           active = $7,
+           lifecycle_status = $7,
            updated_at = $8
      WHERE id = $9 AND tenant_id = $10
      RETURNING id`,
@@ -105,27 +107,26 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
       type,
       defaultUom,
       defaultLocationId,
-      data.active ?? true,
+      lifecycleStatus,
       now,
       id,
       tenantId
     ]
   );
-  if (res.rowCount === 0) return null;
   const updated = await getItem(tenantId, id);
-  if (!updated) throw new Error('Failed to load item after update.');
+  if (!updated) throw new Error('Failed to update item.');
   return updated;
 }
 
 export async function listItems(
   tenantId: string,
-  filters: { active?: boolean; search?: string; limit: number; offset: number }
+  filters: { lifecycleStatus?: ItemLifecycleStatus[]; search?: string; limit: number; offset: number }
 ) {
   const conditions: string[] = ['i.tenant_id = $1'];
   const params: any[] = [tenantId];
-  if (filters.active !== undefined) {
-    params.push(filters.active);
-    conditions.push(`i.active = $${params.length}`);
+  if (filters.lifecycleStatus && filters.lifecycleStatus.length > 0) {
+    params.push(filters.lifecycleStatus);
+    conditions.push(`i.lifecycle_status = ANY($${params.length}::text[])`);
   }
   if (filters.search) {
     params.push(`%${filters.search}%`);

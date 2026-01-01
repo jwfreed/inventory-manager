@@ -161,8 +161,17 @@ export default function ItemDetailPage() {
               <span className="font-semibold text-slate-900">
                 {itemQuery.data.sku} — {itemQuery.data.name}
               </span>
-              <Badge variant={itemQuery.data.active ? 'success' : 'danger'}>
-                {itemQuery.data.active ? 'Active' : 'Inactive'}
+              <Badge
+                variant={
+                  itemQuery.data.lifecycleStatus === 'Active'
+                    ? 'success'
+                    : itemQuery.data.lifecycleStatus === 'Obsolete' ||
+                      itemQuery.data.lifecycleStatus === 'Phase-Out'
+                    ? 'danger'
+                    : 'neutral'
+                }
+              >
+                {itemQuery.data.lifecycleStatus}
               </Badge>
             </div>
           )}

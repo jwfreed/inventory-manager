@@ -13,6 +13,7 @@ import {
   updateItem,
   updateLocation
 } from '../services/masterData.service';
+import { ItemLifecycleStatus } from '../types/item';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -46,13 +47,15 @@ router.post('/items', async (req: Request, res: Response) => {
 });
 
 router.get('/items', async (req: Request, res: Response) => {
-  const active =
-    typeof req.query.active === 'string' ? req.query.active.toLowerCase() === 'true' : undefined;
+  const lifecycleStatus =
+    typeof req.query.lifecycleStatus === 'string'
+      ? (req.query.lifecycleStatus.split(',') as ItemLifecycleStatus[])
+      : undefined;
   const search = typeof req.query.search === 'string' ? req.query.search : undefined;
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const items = await listItems(req.auth!.tenantId, { active, search, limit, offset });
+    const items = await listItems(req.auth!.tenantId, { lifecycleStatus, search, limit, offset });
     return res.json({ data: items, paging: { limit, offset } });
   } catch (error) {
     console.error(error);

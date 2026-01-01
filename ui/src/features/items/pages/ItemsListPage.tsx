@@ -12,10 +12,10 @@ import { Section } from '../../../components/Section'
 import { formatDate, formatNumber } from '@shared/formatters'
 import { ItemForm } from '../components/ItemForm'
 
-const activeOptions = [
+const lifecycleStatusOptions = [
   { label: 'All', value: '' },
-  { label: 'Active', value: 'true' },
-  { label: 'Inactive', value: 'false' },
+  { label: 'Active', value: 'Active' },
+  { label: 'Inactive', value: 'Obsolete,Phase-Out' },
 ]
 
 const typeLabels: Record<string, string> = {
@@ -27,14 +27,14 @@ const typeLabels: Record<string, string> = {
 
 export default function ItemsListPage() {
   const navigate = useNavigate()
-  const [active, setActive] = useState('')
+  const [lifecycleStatus, setLifecycleStatus] = useState('Active')
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [typeFilter, setTypeFilter] = useState('')
   const createSectionRef = useRef<HTMLDivElement | null>(null)
 
   const { data, isLoading, isError, error, refetch } = useItemsList({
-    active: active === '' ? undefined : active === 'true',
+    lifecycleStatus: lifecycleStatus,
   })
 
   const snapshotSummaryQuery = useInventorySnapshotSummary(
@@ -110,10 +110,10 @@ export default function ItemsListPage() {
         <div className="flex flex-wrap items-center gap-3">
           <select
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            value={active}
-            onChange={(e) => setActive(e.target.value)}
+            value={lifecycleStatus}
+            onChange={(e) => setLifecycleStatus(e.target.value)}
           >
-            {activeOptions.map((opt) => (
+            {lifecycleStatusOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -188,7 +188,7 @@ export default function ItemsListPage() {
                       Available
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Active
+                      Status
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Created
@@ -235,8 +235,17 @@ export default function ItemsListPage() {
                         })()}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-800">
-                        <Badge variant={item.active ? 'success' : 'danger'}>
-                          {item.active ? 'Active' : 'Inactive'}
+                        <Badge
+                          variant={
+                            item.lifecycleStatus === 'Active'
+                              ? 'success'
+                              : item.lifecycleStatus === 'Obsolete' ||
+                                item.lifecycleStatus === 'Phase-Out'
+                              ? 'danger'
+                              : 'neutral'
+                          }
+                        >
+                          {item.lifecycleStatus}
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-700">

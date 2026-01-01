@@ -1,13 +1,14 @@
 import { z } from 'zod';
+import { ItemLifecycleStatus } from '../types/item';
 
 export const itemSchema = z.object({
   sku: z.string().min(1).max(255),
   name: z.string().min(1).max(255),
   description: z.string().max(2000).optional(),
+  lifecycleStatus: z.nativeEnum(ItemLifecycleStatus).default(ItemLifecycleStatus.ACTIVE),
   type: z.enum(['raw', 'wip', 'finished', 'packaging']).default('raw'),
   defaultUom: z.string().min(1).max(50).nullable().optional(),
-  defaultLocationId: z.string().uuid().nullable().optional(),
-  active: z.boolean().optional()
+  defaultLocationId: z.string().uuid().nullable().optional()
 });
 
 export const locationSchema = z.object({
