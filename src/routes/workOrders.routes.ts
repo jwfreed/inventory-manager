@@ -4,7 +4,8 @@ import {
   workOrderCreateSchema,
   workOrderDefaultLocationsSchema,
   workOrderListQuerySchema,
-  workOrderRequirementsQuerySchema
+  workOrderRequirementsQuerySchema,
+  workOrderUpdateSchema
 } from '../schemas/workOrders.schema';
 import {
   createWorkOrder,
@@ -12,6 +13,7 @@ import {
   getWorkOrderRequirements,
   listWorkOrders,
   updateWorkOrderDefaults,
+  updateWorkOrderDescription,
   useActiveBomVersion
 } from '../services/workOrders.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
@@ -42,7 +44,7 @@ router.post('/work-orders', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'BOM version does not belong to the specified BOM.' });
     }
     const mapped = mapPgErrorToHttp(error, {
-      unique: () => ({ status: 409, body: { error: 'workOrderNumber must be unique.' } }),
+      unique: () => ({ status: 409, body: { error: 'Work order number must be unique.' } }),
       foreignKey: () => ({ status: 400, body: { error: 'Referenced BOM, BOM version, or item does not exist.' } }),
       check: () => ({ status: 400, body: { error: 'Quantity planned must be positive.' } }),
       notNull: () => ({ status: 400, body: { error: 'Missing required fields.' } })
@@ -52,6 +54,28 @@ router.post('/work-orders', async (req: Request, res: Response) => {
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create work order.' });
+  }
+});
+
+router.patch('/work-orders/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+  const parsed = workOrderUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    const updated = await updateWorkOrderDescription(req.auth!.tenantId, id, parsed.data.description ?? null);
+    if (!updated) {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    return res.json(updated);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update work order.' });
   }
 });
 

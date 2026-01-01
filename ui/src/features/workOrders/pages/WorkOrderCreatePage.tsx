@@ -27,20 +27,18 @@ const formatError = (err: unknown): string => {
 export default function WorkOrderCreatePage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [workOrderNumber, setWorkOrderNumber] = useState('')
+  const [description, setDescription] = useState('')
   const [kind, setKind] = useState<'production' | 'disassembly'>('production')
   const [outputItemId, setOutputItemId] = useState('')
   const [outputUom, setOutputUom] = useState('')
   const [quantityPlanned, setQuantityPlanned] = useState<number | ''>(1)
   const [scheduledStartAt, setScheduledStartAt] = useState('')
   const [scheduledDueAt, setScheduledDueAt] = useState('')
-  const [notes, setNotes] = useState('')
   const [selectedBomId, setSelectedBomId] = useState('')
   const [selectedVersionId, setSelectedVersionId] = useState('')
   const [defaultConsumeLocationId, setDefaultConsumeLocationId] = useState('')
   const [defaultProduceLocationId, setDefaultProduceLocationId] = useState('')
   const [quantityError, setQuantityError] = useState<string | null>(null)
-  const [notesError, setNotesError] = useState<string | null>(null)
   const prefillDoneRef = useRef(false)
 
   const itemsQuery = useItemsList({ limit: 200 }, { staleTime: 1000 * 60 })
@@ -120,8 +118,6 @@ export default function WorkOrderCreatePage() {
     if (kind === 'disassembly') {
       setSelectedBomId('')
       setSelectedVersionId('')
-    } else if (notesError) {
-      setNotesError(null)
     }
   }, [kind])
 
@@ -177,15 +173,10 @@ export default function WorkOrderCreatePage() {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setQuantityError(null)
-    setNotesError(null)
-    if (!workOrderNumber || !outputItemId || !outputUom || quantityPlanned === '') {
+    if (!outputItemId || !outputUom || quantityPlanned === '') {
       return
     }
     if (kind === 'production' && !selectedBomId) return
-    if (kind === 'disassembly' && !notes.trim()) {
-      setNotesError('Notes are required for disassembly.')
-      return
-    }
     if (!(Number(quantityPlanned) > 0)) {
       setQuantityError('Quantity planned must be greater than 0.')
       return
@@ -195,7 +186,6 @@ export default function WorkOrderCreatePage() {
     const due = toDateTime(scheduledDueAt)
 
     mutation.mutate({
-      workOrderNumber,
       kind,
       bomId: kind === 'production' ? selectedBomId : undefined,
       bomVersionId: kind === 'production' ? selectedVersionId || undefined : undefined,
@@ -206,7 +196,7 @@ export default function WorkOrderCreatePage() {
       defaultProduceLocationId: defaultProduceLocationId || undefined,
       scheduledStartAt: start || undefined,
       scheduledDueAt: due || undefined,
-      notes: notes || undefined,
+      description: description || undefined,
     })
   }
 
@@ -253,8 +243,7 @@ export default function WorkOrderCreatePage() {
             )}
           </div>
           <WorkOrderHeaderSection
-            workOrderNumber={workOrderNumber}
-            notes={notes}
+            description={description}
             outputItemId={outputItemId}
             outputUom={outputUom}
             quantityPlanned={quantityPlanned}
@@ -273,11 +262,7 @@ export default function WorkOrderCreatePage() {
             consumeMissing={consumeMissing}
             produceMissing={produceMissing}
             isPending={mutation.isPending}
-            onWorkOrderNumberChange={setWorkOrderNumber}
-            onNotesChange={(value) => {
-              setNotes(value)
-              if (notesError) setNotesError(null)
-            }}
+            onDescriptionChange={setDescription}
             onOutputItemChange={handleOutputItemChange}
             onOutputUomChange={setOutputUom}
             onQuantityPlannedChange={handleQuantityChange}
@@ -286,8 +271,6 @@ export default function WorkOrderCreatePage() {
             onDefaultConsumeLocationChange={setDefaultConsumeLocationId}
             onDefaultProduceLocationChange={setDefaultProduceLocationId}
           />
-          {notesError && <Alert variant="warning" title="Notes required" message={notesError} />}
-
           {kind === 'production' && (
             <WorkOrderBomSection
               outputItemId={outputItemId}

@@ -47,13 +47,16 @@ export function WorkOrdersTable({ rows, onSelect, formatOutput, remaining }: Pro
           id: 'number',
           header: 'WO Number',
           cell: (row) => (
-            <Link
-              className="font-semibold text-brand-700 underline"
-              to={`/work-orders/${row.id}`}
-              onClick={(event) => event.stopPropagation()}
-            >
-              {row.workOrderNumber}
-            </Link>
+            <div className="space-y-1">
+              <Link
+                className="font-semibold text-brand-700 underline"
+                to={`/work-orders/${row.id}`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {row.number}
+              </Link>
+              {row.description && <div className="text-xs text-slate-500">{row.description}</div>}
+            </div>
           ),
         },
         {

@@ -74,7 +74,7 @@ type StockShortageDetail = {
 type Props = {
   workOrder: WorkOrder
   outputItem?: Item
-  onRefetch: () => void
+  onRefetch: (options?: { showSummaryToast?: boolean }) => void
 }
 
 export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
@@ -141,6 +141,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
     lineType: 'consume' | 'produce'
     index: number
   } | null>(null)
+  const outputQtyRef = useRef<HTMLInputElement | null>(null)
 
   const debouncedItemSearch = useDebouncedValue(activeSearch?.type === 'item' ? itemSearch : '', 200)
   const debouncedLocationSearch = useDebouncedValue(activeSearch?.type === 'location' ? locationSearch : '', 200)
@@ -252,6 +253,19 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
     prevDefaultToRef.current = normalizedDefaultTo
   }, [normalizedDefaultTo])
 
+  useEffect(() => {
+    if (isDisassembly || remaining <= 0) return
+    setProduceLines((prev) => {
+      if (prev.length === 0) return prev
+      const first = prev[0]
+      if (first.quantity !== '') return prev
+      const next = prev.map((line, index) =>
+        index === 0 ? { ...line, quantity: remaining } : line,
+      )
+      return next
+    })
+  }, [isDisassembly, remaining])
+
   const defaultsConsumeMutation = useMutation({
     mutationFn: (locId: string) =>
       updateWorkOrderDefaultsApi(workOrder.id, { defaultConsumeLocationId: locId || null }),
@@ -303,7 +317,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
       setOverrideRequiresReason(false)
       setOverrideNegative(false)
       setOverrideReason('')
-      void onRefetch()
+      void onRefetch({ showSummaryToast: true })
     },
     onError: (err: ApiError | unknown) => {
       const apiErr = err as ApiError
@@ -571,13 +585,35 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
     prevDefaultToRef.current = normalizedDefaultTo
   }
 
+  const consumeFillCount = useMemo(() => {
+    if (!normalizedDefaultFrom) return 0
+    return consumeLines.filter(
+      (line) =>
+        (!line.fromLocationId || line.fromLocationId === prevDefaultFromRef.current) &&
+        line.fromLocationId !== normalizedDefaultFrom,
+    ).length
+  }, [consumeLines, normalizedDefaultFrom])
+
+  const produceFillCount = useMemo(() => {
+    if (!normalizedDefaultTo) return 0
+    return produceLines.filter(
+      (line) =>
+        (!line.toLocationId || line.toLocationId === prevDefaultToRef.current) &&
+        line.toLocationId !== normalizedDefaultTo,
+    ).length
+  }, [produceLines, normalizedDefaultTo])
+
   const setOutputToRemaining = () => {
-    if (produceLines.length === 0) return
+    if (produceLines.length === 0 || remaining <= 0) return
     setProduceLines((prev) =>
       prev.map((line, index) =>
         index === 0 ? { ...line, quantity: remaining } : line,
       ),
     )
+    setTimeout(() => {
+      outputQtyRef.current?.focus()
+      outputQtyRef.current?.select?.()
+    }, 0)
   }
 
   const handleItemSearch = (lineType: 'consume' | 'produce', index: number, value: string) => {
@@ -593,7 +629,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   const submitDisabled = itemsQuery.isLoading || locationsQuery.isLoading || recordBatchMutation.isPending
 
   return (
-    <Card title="Record batch (issue + receive)" description="Posts consumption and production in one action.">
+    <Card title="Issue & complete (batch)" description="Posts consumption and production in one action.">
       {(itemsQuery.isLoading || locationsQuery.isLoading || recordBatchMutation.isPending) && (
         <LoadingSpinner label="Processing..." />
       )}
@@ -709,9 +745,17 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
           <span>Completed: {formatNumber(workOrder.quantityCompleted ?? 0)} {workOrder.outputUom}</span>
           <span className="font-semibold text-slate-900">Remaining: {formatNumber(remaining)} {workOrder.outputUom}</span>
           {!isDisassembly && (
-            <Button size="sm" variant="secondary" onClick={setOutputToRemaining}>
-              Set output qty to remaining
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={setOutputToRemaining}
+                disabled={remaining <= 0}
+              >
+                Set output qty to remaining
+              </Button>
+              {remaining <= 0 && <span className="text-xs text-slate-500">No remaining quantity.</span>}
+            </div>
           )}
         </div>
       </div>
@@ -808,10 +852,17 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
                 size="sm"
                 variant="secondary"
                 onClick={applyConsumeLocationToAll}
-                disabled={!normalizedDefaultFrom}
+                disabled={!normalizedDefaultFrom || consumeFillCount === 0}
               >
-                Apply to all consume lines
+                Fill empty lines with default
               </Button>
+              {normalizedDefaultFrom && (
+                <div className="mt-1 text-xs text-slate-500">
+                  {consumeFillCount > 0
+                    ? `Will update ${consumeFillCount} line${consumeFillCount > 1 ? 's' : ''}.`
+                    : 'No empty lines to update.'}
+                </div>
+              )}
             </div>
           </label>
         </div>
@@ -972,10 +1023,17 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
                 size="sm"
                 variant="secondary"
                 onClick={applyProduceLocationToAll}
-                disabled={!normalizedDefaultTo}
+                disabled={!normalizedDefaultTo || produceFillCount === 0}
               >
-                Apply to all output lines
+                Fill empty lines with default
               </Button>
+              {normalizedDefaultTo && (
+                <div className="mt-1 text-xs text-slate-500">
+                  {produceFillCount > 0
+                    ? `Will update ${produceFillCount} line${produceFillCount > 1 ? 's' : ''}.`
+                    : 'No empty lines to update.'}
+                </div>
+              )}
             </div>
           </label>
         </div>
@@ -1060,6 +1118,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
                   type="number"
                   min={0}
                   value={line.quantity}
+                  ref={idx === 0 ? outputQtyRef : undefined}
                   onChange={(e) =>
                     updateProduceLine(idx, {
                       quantity: e.target.value === '' ? '' : Number(e.target.value),

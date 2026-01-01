@@ -15,7 +15,7 @@ export function useWorkOrdersListData(workOrders: WorkOrder[], items: Item[], se
     const needle = search.toLowerCase()
     return workOrders.filter((wo) => {
       const lookup = itemLookup.get(wo.outputItemId)
-      const hay = `${wo.workOrderNumber} ${wo.outputItemSku ?? ''} ${wo.outputItemName ?? ''} ${lookup?.name ?? ''} ${lookup?.sku ?? ''} ${wo.outputItemId}`.toLowerCase()
+      const hay = `${wo.number ?? ''} ${wo.description ?? ''} ${wo.outputItemSku ?? ''} ${wo.outputItemName ?? ''} ${lookup?.name ?? ''} ${lookup?.sku ?? ''} ${wo.outputItemId}`.toLowerCase()
       return hay.includes(needle)
     })
   }, [workOrders, search, itemLookup])

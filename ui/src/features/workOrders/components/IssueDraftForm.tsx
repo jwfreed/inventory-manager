@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueries } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -12,9 +12,10 @@ import {
   postWorkOrderIssue,
   type IssueDraftPayload,
 } from '../api/workOrders'
-import { useItemsList } from '@features/items/queries'
+import { itemsQueryKeys, useItemsList } from '@features/items/queries'
+import { getItemInventorySummary } from '@features/items/api/items'
 import { useLocationsList } from '@features/locations/queries'
-import type { ApiError, Item, WorkOrder, WorkOrderIssue } from '@api/types'
+import type { ApiError, Item, ItemInventoryRow, WorkOrder, WorkOrderIssue } from '@api/types'
 import { PostConfirmModal } from './PostConfirmModal'
 import { formatNumber } from '@shared/formatters'
 import { LotAllocationsCard } from './LotAllocationsCard'
@@ -34,7 +35,7 @@ type Line = {
 type Props = {
   workOrder: WorkOrder
   outputItem?: Item
-  onRefetch: () => void
+  onRefetch: (options?: { showSummaryToast?: boolean }) => void
 }
 
 export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
@@ -71,7 +72,7 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
     onSuccess: (issue) => {
       setCreatedIssue(issue)
       setShowPostConfirm(false)
-      void onRefetch()
+      void onRefetch({ showSummaryToast: true })
     },
   })
 
@@ -163,6 +164,37 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
     itemsQuery.data?.data?.forEach((item) => map.set(item.id, item))
     return map
   }, [itemsQuery.data])
+
+  const availabilityItemIds = useMemo(
+    () => Array.from(new Set(lines.map((line) => line.componentItemId).filter(Boolean))),
+    [lines],
+  )
+
+  const availabilityQueries = useQueries({
+    queries: availabilityItemIds.map((itemId) => ({
+      queryKey: itemsQueryKeys.inventorySummary(itemId),
+      queryFn: () => getItemInventorySummary(itemId),
+      enabled: Boolean(itemId),
+      staleTime: 30_000,
+      retry: 1,
+    })),
+  })
+
+  const availabilityByItem = useMemo(() => {
+    const map = new Map<string, { rows: ItemInventoryRow[]; isLoading: boolean; isError: boolean }>()
+    availabilityItemIds.forEach((itemId, index) => {
+      const query = availabilityQueries[index]
+      if (!query) return
+      map.set(itemId, {
+        rows: (query.data ?? []) as ItemInventoryRow[],
+        isLoading: query.isLoading,
+        isError: query.isError,
+      })
+    })
+    return map
+  }, [availabilityItemIds, availabilityQueries])
+
+  const availabilityError = availabilityQueries.some((query) => query.isError)
 
   const locationOptions = useMemo(
     () =>
@@ -305,8 +337,8 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
 
   return (
     <Card
-      title={isDisassembly ? 'Record disassembly input' : 'Create material issue'}
-      description="Draft first, then post to create inventory movement."
+      title={isDisassembly ? 'Use materials (disassembly)' : 'Use materials'}
+      description="Save a draft, then post to create the inventory movement."
     >
       {issueMutation.isPending && <LoadingSpinner label="Creating issue..." />}
       {postMutation.isPending && <LoadingSpinner label="Posting issue..." />}
@@ -320,6 +352,13 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
       )}
       {postMutation.isError && (
         <Alert variant="error" title="Post failed" message={postMutation.error.message} />
+      )}
+      {availabilityError && (
+        <Alert
+          variant="warning"
+          title="Availability unavailable"
+          message="Check item inventory snapshots before issuing to avoid stalled work."
+        />
       )}
       {createdIssue && (
         <Alert
@@ -446,6 +485,29 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
                   value={line.notes || ''}
                   onChange={(e) => updateLine(idx, { notes: e.target.value })}
                 />
+                {line.componentItemId && line.fromLocationId && line.uom && (
+                  <div className="text-xs text-slate-500">
+                    {(() => {
+                      const availability = availabilityByItem.get(line.componentItemId)
+                      if (!availability) return 'Available: —'
+                      if (availability.isLoading) return 'Available: …'
+                      if (availability.isError) return 'Availability unavailable'
+                      const match = availability.rows.find(
+                        (row) => row.locationId === line.fromLocationId && row.uom === line.uom,
+                      )
+                      const availableQty = match?.onHand ?? 0
+                      const qty = Number(line.quantityIssued)
+                      const hasQty = line.quantityIssued !== '' && Number.isFinite(qty)
+                      const after = hasQty ? availableQty - qty : null
+                      return (
+                        <span className={after !== null && after < 0 ? 'text-red-600' : undefined}>
+                          Available: {formatNumber(availableQty)} {line.uom}
+                          {after !== null ? ` · After issue: ${formatNumber(after)} ${line.uom}` : ''}
+                        </span>
+                      )
+                    })()}
+                  </div>
+                )}
               </label>
               {lines.length > 1 && (
                 <Button variant="secondary" size="sm" onClick={() => removeLine(idx)}>
@@ -465,14 +527,14 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={onSubmitDraft} disabled={issueMutation.isPending}>
-            Save issue draft
+            Save draft
           </Button>
           <Button
             size="sm"
             onClick={() => setShowPostConfirm(true)}
             disabled={!createdIssue || isPosted || postMutation.isPending}
           >
-            Post issue to inventory
+            Post issue (affects inventory)
           </Button>
         </div>
       </div>
@@ -482,7 +544,7 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
         onCancel={() => setShowPostConfirm(false)}
         onConfirm={onConfirmPost}
         title="Post Issue?"
-        body="This will create exactly 1 inventory movement (type: issue) with negative deltas for the lines below. Drafts do not affect inventory until posted."
+        body="Posting creates an inventory movement and cannot be edited. Drafts do not affect inventory until posted."
         preview={
           <div className="space-y-1 text-sm text-slate-800">
             {createdIssue?.lines.map((line) => (

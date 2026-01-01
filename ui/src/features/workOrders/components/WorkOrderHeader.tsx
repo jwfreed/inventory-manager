@@ -28,8 +28,11 @@ export function WorkOrderHeader({ workOrder, outputItemLabel }: Props) {
         <div>
           <div className="text-xs uppercase tracking-wide text-slate-500">Work order</div>
           <div className="mt-1 text-2xl font-semibold text-slate-900">
-            {workOrder.workOrderNumber}
+            {workOrder.number}
           </div>
+          {workOrder.description && (
+            <div className="mt-1 text-sm text-slate-600">{workOrder.description}</div>
+          )}
           <div className="mt-2 flex items-center gap-2">
             <Badge variant={statusVariant}>{workOrder.status}</Badge>
             <Badge variant="neutral">

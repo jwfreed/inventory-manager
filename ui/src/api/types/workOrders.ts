@@ -1,6 +1,6 @@
 export type WorkOrder = {
   id: string
-  workOrderNumber: string
+  number: string
   status: string
   kind?: 'production' | 'disassembly'
   bomId?: string
@@ -18,7 +18,7 @@ export type WorkOrder = {
   scheduledDueAt?: string | null
   releasedAt?: string | null
   completedAt?: string | null
-  notes?: string | null
+  description?: string | null
 }
 
 export type WorkOrderListResponse = {

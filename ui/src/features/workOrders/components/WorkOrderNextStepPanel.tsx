@@ -4,7 +4,6 @@ import type { ApiError } from '@api/types'
 
 type Props = {
   isOpen: boolean
-  nextWorkOrderNumber: string
   selectedBomId: string
   nextQuantity: number | ''
   nextBomOptions: ComboboxOption[]
@@ -13,7 +12,6 @@ type Props = {
   error?: ApiError | null
   createWarning: string | null
   consumeLocationHint: string
-  onWorkOrderNumberChange: (value: string) => void
   onBomChange: (value: string) => void
   onQuantityChange: (value: number | '') => void
   onCreate: () => void
@@ -22,7 +20,6 @@ type Props = {
 
 export function WorkOrderNextStepPanel({
   isOpen,
-  nextWorkOrderNumber,
   selectedBomId,
   nextQuantity,
   nextBomOptions,
@@ -31,7 +28,6 @@ export function WorkOrderNextStepPanel({
   error,
   createWarning,
   consumeLocationHint,
-  onWorkOrderNumberChange,
   onBomChange,
   onQuantityChange,
   onCreate,
@@ -40,21 +36,13 @@ export function WorkOrderNextStepPanel({
   if (!isOpen) return null
 
   return (
-    <Card>
+    <Card title="Continue production" description="Create the next work order from the active BOM.">
       <div className="space-y-3">
         <div className="text-sm text-slate-700">
-          Suggests BOMs where this WO output is a component. Defaults consume location to this WO's
-          production location and falls back to the item default location.
+          Suggests BOMs where this output is a component. Consume location defaults to this work
+          order’s production location.
         </div>
         <div className="grid gap-3 md:grid-cols-3">
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Work order number</span>
-            <input
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              value={nextWorkOrderNumber}
-              onChange={(e) => onWorkOrderNumberChange(e.target.value)}
-            />
-          </label>
           <label className="space-y-1 text-sm md:col-span-2">
             <Combobox
               label="Next BOM"

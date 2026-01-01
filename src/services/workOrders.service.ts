@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
+import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
 import { workOrderCreateSchema, workOrderListQuerySchema } from '../schemas/workOrders.schema';
 import { roundQuantity } from '../lib/numbers';
@@ -13,6 +14,7 @@ type WorkOrderListQuery = z.infer<typeof workOrderListQuerySchema>;
 type WorkOrderRow = {
   id: string;
   work_order_number: string;
+  number: string | null;
   status: string;
   kind: string;
   bom_id: string | null;
@@ -29,6 +31,7 @@ type WorkOrderRow = {
   released_at: string | null;
   completed_at: string | null;
   notes: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -36,7 +39,7 @@ type WorkOrderRow = {
 function mapWorkOrder(row: WorkOrderRow) {
   return {
     id: row.id,
-    workOrderNumber: row.work_order_number,
+    number: row.number ?? row.work_order_number,
     status: row.status,
     kind: row.kind,
     bomId: row.bom_id,
@@ -52,10 +55,36 @@ function mapWorkOrder(row: WorkOrderRow) {
     scheduledDueAt: row.scheduled_due_at,
     releasedAt: row.released_at,
     completedAt: row.completed_at,
-    notes: row.notes,
+    description: row.description ?? row.notes ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+async function generateWorkOrderNumber(tenantId: string, client: PoolClient) {
+  await client.query(
+    `INSERT INTO work_order_sequences (tenant_id, next_number)
+     VALUES ($1, 1)
+     ON CONFLICT (tenant_id) DO NOTHING`,
+    [tenantId]
+  );
+
+  const seqResult = await client.query<{ next_number: number }>(
+    'SELECT next_number FROM work_order_sequences WHERE tenant_id = $1 FOR UPDATE',
+    [tenantId]
+  );
+  if (seqResult.rowCount === 0) {
+    throw new Error('WO_SEQUENCE_MISSING');
+  }
+  const nextNumber = Number(seqResult.rows[0].next_number);
+  const formatted = `WO-${String(nextNumber).padStart(6, '0')}`;
+
+  await client.query(
+    'UPDATE work_order_sequences SET next_number = $2 WHERE tenant_id = $1',
+    [tenantId, nextNumber + 1]
+  );
+
+  return formatted;
 }
 
 export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInput) {
@@ -75,73 +104,86 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
     data.defaultProduceLocationId ?? outputItemDefaults?.default_location_id ?? null;
   const normalizedQty = normalizeQuantityByUom(Number(data.quantityPlanned), outputUom);
 
-  return withTransaction(async (client) => {
-    if (kind === 'production' || data.bomId) {
-      // Validate BOM exists and matches output item
-      const bomResult = await client.query('SELECT id, output_item_id FROM boms WHERE id = $1 AND tenant_id = $2', [
-        data.bomId,
-        tenantId
-      ]);
-      if (bomResult.rowCount === 0) {
-        throw new Error('WO_BOM_NOT_FOUND');
-      }
-      const bom = bomResult.rows[0];
-      if (bom.output_item_id !== data.outputItemId) {
-        throw new Error('WO_BOM_ITEM_MISMATCH');
-      }
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await withTransaction(async (client) => {
+        if (kind === 'production' || data.bomId) {
+          // Validate BOM exists and matches output item
+          const bomResult = await client.query(
+            'SELECT id, output_item_id FROM boms WHERE id = $1 AND tenant_id = $2',
+            [data.bomId, tenantId]
+          );
+          if (bomResult.rowCount === 0) {
+            throw new Error('WO_BOM_NOT_FOUND');
+          }
+          const bom = bomResult.rows[0];
+          if (bom.output_item_id !== data.outputItemId) {
+            throw new Error('WO_BOM_ITEM_MISMATCH');
+          }
 
-      if (data.bomVersionId) {
-        const versionResult = await client.query('SELECT id, bom_id FROM bom_versions WHERE id = $1 AND tenant_id = $2', [
-          data.bomVersionId,
-          tenantId
-        ]);
-        if (versionResult.rowCount === 0) {
-          throw new Error('WO_BOM_VERSION_NOT_FOUND');
+          if (data.bomVersionId) {
+            const versionResult = await client.query(
+              'SELECT id, bom_id FROM bom_versions WHERE id = $1 AND tenant_id = $2',
+              [data.bomVersionId, tenantId]
+            );
+            if (versionResult.rowCount === 0) {
+              throw new Error('WO_BOM_VERSION_NOT_FOUND');
+            }
+            if (versionResult.rows[0].bom_id !== data.bomId) {
+              throw new Error('WO_BOM_VERSION_MISMATCH');
+            }
+          }
         }
-        if (versionResult.rows[0].bom_id !== data.bomId) {
-          throw new Error('WO_BOM_VERSION_MISMATCH');
-        }
+
+        const number = await generateWorkOrderNumber(tenantId, client);
+        const inserted = await client.query(
+          `INSERT INTO work_orders (
+              id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, related_work_order_id,
+              output_item_id, output_uom,
+              quantity_planned, quantity_completed, default_consume_location_id, default_produce_location_id,
+              scheduled_start_at, scheduled_due_at, released_at,
+              completed_at, description, created_at, updated_at
+           ) VALUES (
+              $1, $2, $3, $4, $5, $6, $7, $8, $9,
+              $10, $11,
+              $12, $13, $14, $15,
+              $16, $17, NULL,
+              NULL, $18, $19, $19
+           ) RETURNING *`,
+          [
+            id,
+            tenantId,
+            number,
+            number,
+            status,
+            kind,
+            data.bomId ?? null,
+            data.bomVersionId ?? null,
+            data.relatedWorkOrderId ?? null,
+            data.outputItemId,
+            normalizedQty.uom,
+            normalizedQty.quantity,
+            data.quantityCompleted ?? null,
+            defaultConsumeLocationId,
+            defaultProduceLocationId,
+            data.scheduledStartAt ? new Date(data.scheduledStartAt) : null,
+            data.scheduledDueAt ? new Date(data.scheduledDueAt) : null,
+            data.description ?? null,
+            now
+          ]
+        );
+
+        return mapWorkOrder(inserted.rows[0]);
+      });
+    } catch (error: any) {
+      if (error?.code === '23505' && error?.constraint === 'idx_work_orders_tenant_number_unique' && attempt === 0) {
+        continue;
       }
+      throw error;
     }
+  }
 
-    const inserted = await client.query(
-      `INSERT INTO work_orders (
-          id, tenant_id, work_order_number, status, kind, bom_id, bom_version_id, related_work_order_id,
-          output_item_id, output_uom,
-          quantity_planned, quantity_completed, default_consume_location_id, default_produce_location_id,
-          scheduled_start_at, scheduled_due_at, released_at,
-          completed_at, notes, created_at, updated_at
-       ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10,
-          $11, $12, $13, $14,
-          $15, $16, NULL,
-          NULL, $17, $18, $18
-       ) RETURNING *`,
-      [
-        id,
-        tenantId,
-        data.workOrderNumber,
-        status,
-        kind,
-        data.bomId ?? null,
-        data.bomVersionId ?? null,
-        data.relatedWorkOrderId ?? null,
-        data.outputItemId,
-        normalizedQty.uom,
-        normalizedQty.quantity,
-        data.quantityCompleted ?? null,
-        defaultConsumeLocationId,
-        defaultProduceLocationId,
-        data.scheduledStartAt ? new Date(data.scheduledStartAt) : null,
-        data.scheduledDueAt ? new Date(data.scheduledDueAt) : null,
-        data.notes ?? null,
-        now
-      ]
-    );
-
-    return mapWorkOrder(inserted.rows[0]);
-  });
+  throw new Error('WO_NUMBER_GENERATION_FAILED');
 }
 
 export async function getWorkOrderById(tenantId: string, id: string) {
@@ -307,6 +349,22 @@ export async function updateWorkOrderDefaults(
   const sql = `UPDATE work_orders SET ${sets.join(', ')} WHERE id = $1 AND tenant_id = $${params.length + 1}`;
   params.push(tenantId);
   await query(sql, params);
+  return getWorkOrderById(tenantId, workOrderId);
+}
+
+export async function updateWorkOrderDescription(
+  tenantId: string,
+  workOrderId: string,
+  description: string | null
+) {
+  const now = new Date();
+  await query(
+    `UPDATE work_orders
+        SET description = $1,
+            updated_at = $2
+      WHERE id = $3 AND tenant_id = $4`,
+    [description, now, workOrderId, tenantId]
+  );
   return getWorkOrderById(tenantId, workOrderId);
 }
 

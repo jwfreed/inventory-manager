@@ -1,12 +1,12 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useItem, useItemsList } from '@features/items/queries'
 import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createWorkOrder, useActiveBomVersion } from '../api/workOrders'
+import { createWorkOrder, updateWorkOrderDescription, useActiveBomVersion } from '../api/workOrders'
 import type { ApiError } from '@api/types'
-import { useWorkOrder, useWorkOrderExecution, useWorkOrderRequirements } from '../queries'
-import { Alert, Button, Card, EmptyState, ErrorState, LoadingSpinner, Modal, Section } from '@shared/ui'
+import { useWorkOrder, useWorkOrderExecution, useWorkOrderRequirements, workOrdersQueryKeys } from '../queries'
+import { Alert, Button, Card, EmptyState, ErrorState, LoadingSpinner, Modal, Section, Textarea } from '@shared/ui'
 import { WorkOrderHeader } from '../components/WorkOrderHeader'
 import { ExecutionSummaryPanel } from '../components/ExecutionSummaryPanel'
 import { IssueDraftForm } from '../components/IssueDraftForm'
@@ -22,12 +22,13 @@ export default function WorkOrderDetailPage() {
   const navigate = useNavigate()
   const [tab, setTab] = useState<TabKey>('summary')
   const [showNextStep, setShowNextStep] = useState(false)
-  const [nextWorkOrderNumber, setNextWorkOrderNumber] = useState('')
   const [selectedBomId, setSelectedBomId] = useState('')
   const [nextQuantity, setNextQuantity] = useState<number | ''>(1)
   const [createWarning, setCreateWarning] = useState<string | null>(null)
   const [showBomSwitchConfirm, setShowBomSwitchConfirm] = useState(false)
   const [bomSwitchError, setBomSwitchError] = useState<string | null>(null)
+  const [descriptionDraft, setDescriptionDraft] = useState('')
+  const [summaryFlash, setSummaryFlash] = useState(false)
 
   const queryClient = useQueryClient()
 
@@ -90,10 +91,6 @@ export default function WorkOrderDetailPage() {
       setCreateWarning('Select a BOM')
       return
     }
-    if (!nextWorkOrderNumber) {
-      setCreateWarning('Work order number required')
-      return
-    }
     const qty = nextQuantity === '' ? 0 : Number(nextQuantity)
     if (!(qty > 0)) {
       setCreateWarning('Quantity must be positive')
@@ -106,7 +103,6 @@ export default function WorkOrderDetailPage() {
       null
     const produceLoc = outputItemQuery.data?.defaultLocationId ?? null
     const next = await createWorkOrder({
-      workOrderNumber: nextWorkOrderNumber,
       bomId: bom.id,
       outputItemId: bom.outputItemId,
       outputUom: bom.defaultUom,
@@ -116,12 +112,17 @@ export default function WorkOrderDetailPage() {
     })
     setShowNextStep(false)
     setSelectedBomId('')
-    setNextWorkOrderNumber('')
     setNextQuantity(1)
     navigate(`/work-orders/${next.id}`)
   }
 
   const executionQuery = useWorkOrderExecution(id)
+  const descriptionBase = workOrderQuery.data?.description ?? ''
+  const hasDescriptionChanges = descriptionDraft !== descriptionBase
+
+  useEffect(() => {
+    setDescriptionDraft(workOrderQuery.data?.description ?? '')
+  }, [workOrderQuery.data?.description])
 
   const isDisassembly = workOrderQuery.data?.kind === 'disassembly'
   const requirementsQuery = useWorkOrderRequirements(id, undefined, {
@@ -166,9 +167,22 @@ export default function WorkOrderDetailPage() {
     },
   })
 
-  const refreshAll = () => {
+  const descriptionMutation = useMutation({
+    mutationFn: (nextValue: string) =>
+      updateWorkOrderDescription(id as string, { description: nextValue.trim() ? nextValue : null }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(workOrdersQueryKeys.detail(id as string), updated)
+      void queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.all })
+      setDescriptionDraft(updated.description ?? '')
+    },
+  })
+
+  const refreshAll = (options?: { showSummaryToast?: boolean }) => {
     void workOrderQuery.refetch()
     void executionQuery.refetch()
+    if (options?.showSummaryToast) {
+      setSummaryFlash(true)
+    }
   }
 
   const remaining = useMemo(() => {
@@ -178,11 +192,24 @@ export default function WorkOrderDetailPage() {
       (workOrderQuery.data.quantityPlanned || 0) - (workOrderQuery.data.quantityCompleted ?? 0),
     )
   }, [workOrderQuery.data])
+  const issuedTotal = useMemo(() => {
+    if (!executionQuery.data?.issuedTotals?.length) return 0
+    return executionQuery.data.issuedTotals.reduce((sum, row) => sum + (row.quantityIssued || 0), 0)
+  }, [executionQuery.data])
+  const hasIssued = issuedTotal > 0
+  const currentStep = !hasIssued ? 1 : remaining > 0 ? 2 : 3
+  const nextStepAvailable = !isDisassembly && (nextStepBomsQuery.data?.data?.length ?? 0) > 0
   const consumeLocationHint = workOrderQuery.data
     ? `Consume location defaults to ${
         workOrderQuery.data.defaultProduceLocationId || outputItemQuery.data?.defaultLocationId || '—'
       }.`
     : ''
+
+  useEffect(() => {
+    if (!summaryFlash) return
+    const timeout = setTimeout(() => setSummaryFlash(false), 4000)
+    return () => clearTimeout(timeout)
+  }, [summaryFlash])
 
   if (workOrderQuery.isError && workOrderQuery.error?.status === 404) {
     return <ErrorState error={workOrderQuery.error} />
@@ -222,7 +249,49 @@ export default function WorkOrderDetailPage() {
         />
       )}
 
+      {workOrderQuery.data && (
+        <Section title="Description">
+          <Card>
+            <div className="space-y-3">
+              <Textarea
+                value={descriptionDraft}
+                onChange={(event) => setDescriptionDraft(event.target.value)}
+                placeholder="Optional note for humans"
+                disabled={descriptionMutation.isPending}
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setDescriptionDraft(descriptionBase)}
+                  disabled={!hasDescriptionChanges || descriptionMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => descriptionMutation.mutate(descriptionDraft)}
+                  disabled={!hasDescriptionChanges || descriptionMutation.isPending}
+                >
+                  Save description
+                </Button>
+              </div>
+              {descriptionMutation.isError && (
+                <Alert
+                  variant="error"
+                  title="Update failed"
+                  message={(descriptionMutation.error as ApiError)?.message ?? 'Failed to update description.'}
+                />
+              )}
+            </div>
+          </Card>
+        </Section>
+      )}
+
       <Section title="Execution summary">
+        {summaryFlash && (
+          <Alert variant="success" title="Summary updated" message="Execution totals refreshed." />
+        )}
         <ExecutionSummaryPanel
           summary={executionQuery.data}
           isLoading={executionQuery.isLoading}
@@ -231,6 +300,63 @@ export default function WorkOrderDetailPage() {
           errorMessage={executionQuery.error?.message}
         />
       </Section>
+
+      {workOrderQuery.data && (
+        <Section title="Primary execution path">
+          <div className="grid gap-3 md:grid-cols-3">
+            {[
+              {
+                step: 1,
+                title: 'Use materials',
+                detail: 'Issue components to start work.',
+                cta: 'Issue materials',
+                onClick: () => setTab('issues'),
+              },
+              {
+                step: 2,
+                title: 'Make product',
+                detail: 'Post completions as output is produced.',
+                cta: 'Post completion',
+                onClick: () => setTab('completions'),
+              },
+              {
+                step: 3,
+                title: 'Review & continue',
+                detail: remaining === 0 ? 'Finish this step or continue production.' : 'Review movements and next steps.',
+                cta: remaining === 0 && nextStepAvailable ? 'Create next step WO' : 'View movements',
+                onClick: () => {
+                  if (remaining === 0 && nextStepAvailable) {
+                    setShowNextStep(true)
+                  } else if (workOrderQuery.data) {
+                    navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data.id)}`)
+                  }
+                },
+              },
+            ].map((step) => (
+              <div
+                key={step.step}
+                className={`rounded-lg border px-4 py-3 ${
+                  currentStep === step.step ? 'border-brand-400 bg-brand-50' : 'border-slate-200'
+                }`}
+              >
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Step {step.step}
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">{step.title}</div>
+                <div className="mt-1 text-xs text-slate-600">{step.detail}</div>
+                <Button
+                  size="sm"
+                  variant={currentStep === step.step ? 'primary' : 'secondary'}
+                  className="mt-3"
+                  onClick={step.onClick}
+                >
+                  {step.cta}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
 
       {!isDisassembly && (
         <Section title="Requirements vs issued">
@@ -288,9 +414,6 @@ export default function WorkOrderDetailPage() {
                 issuedTotals={executionQuery.data.issuedTotals}
                 componentLabel={componentLabel}
               />
-              <div className="mt-3 text-xs text-slate-500">
-                Material availability at consume locations is not shown here yet; check item inventory snapshots before issuing to avoid stalled WIP.
-              </div>
             </Card>
           )}
         </Section>
@@ -307,54 +430,25 @@ export default function WorkOrderDetailPage() {
               onClick={() => setTab(key)}
             >
               {key === 'summary'
-                ? 'Execution Summary'
+                ? 'Overview'
                 : key === 'issues'
-                  ? 'Issues'
+                  ? 'Use materials'
                   : key === 'completions'
-                    ? 'Completions'
-                    : 'Record Batch'}
+                    ? 'Make product'
+                    : 'Issue & complete'}
             </button>
           ))}
-          {!isDisassembly && (
-            <button
-              className={`px-3 py-2 text-sm font-semibold ${
-                showNextStep ? 'border-b-2 border-brand-600 text-brand-700' : 'text-slate-600'
-              }`}
-              onClick={() => setShowNextStep((v) => !v)}
-            >
-              Create next step WO
-            </button>
-          )}
         </div>
-
-        {workOrderQuery.data && !isDisassembly && (
-          <WorkOrderNextStepPanel
-            isOpen={showNextStep}
-            nextWorkOrderNumber={nextWorkOrderNumber}
-            selectedBomId={selectedBomId}
-            nextQuantity={nextQuantity}
-            nextBomOptions={nextBomOptions}
-            isLoading={nextStepBomsQuery.isLoading}
-            isError={nextStepBomsQuery.isError}
-            error={nextStepBomsQuery.error as ApiError}
-            createWarning={createWarning}
-            consumeLocationHint={consumeLocationHint}
-            onWorkOrderNumberChange={setNextWorkOrderNumber}
-            onBomChange={setSelectedBomId}
-            onQuantityChange={setNextQuantity}
-            onCreate={createNextStep}
-            onCancel={() => setShowNextStep(false)}
-          />
-        )}
 
         {tab === 'summary' && (
           <Card>
             <div className="text-sm text-slate-700">
-              Posted issues create issue movements (negative). Posted completions create receive
-              movements (positive).{' '}
-              {isDisassembly ? 'Remaining to disassemble' : 'Remaining to complete'}:{' '}
-              <span className="font-semibold">{remaining}</span>{' '}
-              {workOrderQuery.data?.outputUom} of {itemLabel(workOrderQuery.data?.outputItemId)}
+              Use materials to issue components, then make product to post completions. Posting
+              creates inventory movements and cannot be edited.{' '}
+              <span className="font-semibold">
+                {isDisassembly ? 'Remaining to disassemble' : 'Remaining to complete'}:{' '}
+                {remaining} {workOrderQuery.data?.outputUom}
+              </span>
             </div>
             {!executionQuery.data && !executionQuery.isLoading && (
               <EmptyState
@@ -387,6 +481,42 @@ export default function WorkOrderDetailPage() {
             outputItem={outputItemQuery.data}
             onRefetch={refreshAll}
           />
+        )}
+
+        {!isDisassembly && workOrderQuery.data && (
+          <div className="mt-4">
+            {remaining === 0 || showNextStep ? (
+              <WorkOrderNextStepPanel
+                isOpen={true}
+                selectedBomId={selectedBomId}
+                nextQuantity={nextQuantity}
+                nextBomOptions={nextBomOptions}
+                isLoading={nextStepBomsQuery.isLoading}
+                isError={nextStepBomsQuery.isError}
+                error={nextStepBomsQuery.error as ApiError}
+                createWarning={createWarning}
+                consumeLocationHint={consumeLocationHint}
+                onBomChange={setSelectedBomId}
+                onQuantityChange={setNextQuantity}
+                onCreate={createNextStep}
+                onCancel={() => setShowNextStep(false)}
+              />
+            ) : (
+              <Card>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Continue production</div>
+                    <div className="text-xs text-slate-500">
+                      Create the next work order from the active BOM.
+                    </div>
+                  </div>
+                  <Button size="sm" variant="secondary" onClick={() => setShowNextStep(true)}>
+                    Next step…
+                  </Button>
+                </div>
+              </Card>
+            )}
+          </div>
         )}
       </Section>
 

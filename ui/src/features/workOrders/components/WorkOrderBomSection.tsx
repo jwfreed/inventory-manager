@@ -1,5 +1,5 @@
 import { Alert, Combobox, DataTable, LoadingSpinner, Section } from '@shared/ui'
-import type { ApiError, Bom } from '@api/types'
+import type { ApiError, Bom, BomVersionComponent } from '@api/types'
 
 type Props = {
   outputItemId: string
@@ -28,6 +28,14 @@ export function WorkOrderBomSection({
 }: Props) {
   const activeVersion =
     selectedBom?.versions.find((v) => v.id === selectedVersionId) ?? selectedBom?.versions[0]
+  const renderComponentLabel = (row: BomVersionComponent) => {
+    const name = row.componentItemName ?? ''
+    const sku = row.componentItemSku ?? ''
+    if (name && sku) return `${name} — ${sku}`
+    if (name) return name
+    if (sku) return sku
+    return row.componentItemId
+  }
 
   return (
     <Section
@@ -78,7 +86,7 @@ export function WorkOrderBomSection({
               rowKey={(row) => row.id}
               columns={[
                 { id: 'line', header: 'Line', cell: (row) => row.lineNumber },
-                { id: 'component', header: 'Component', cell: (row) => row.componentItemId },
+                { id: 'component', header: 'Component', cell: (row) => renderComponentLabel(row) },
                 { id: 'qty', header: 'Qty per', cell: (row) => row.quantityPer },
                 { id: 'uom', header: 'UOM', cell: (row) => row.uom },
               ]}

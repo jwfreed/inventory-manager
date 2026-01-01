@@ -34,11 +34,15 @@ type Line = {
 type Props = {
   workOrder: WorkOrder
   outputItem?: Item
-  onRefetch: () => void
+  onRefetch: (options?: { showSummaryToast?: boolean }) => void
 }
 
 export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props) {
   const isDisassembly = workOrder.kind === 'disassembly'
+  const remaining = Math.max(
+    0,
+    (workOrder.quantityPlanned || 0) - (workOrder.quantityCompleted ?? 0),
+  )
   const defaults = getWorkOrderDefaults(workOrder.id)
   const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
@@ -76,7 +80,7 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
     onSuccess: (completion) => {
       setCreatedCompletion(completion)
       setShowPostConfirm(false)
-      void onRefetch()
+      void onRefetch({ showSummaryToast: true })
     },
   })
 
@@ -118,6 +122,11 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
       })),
     [locationsQuery.data],
   )
+  const locationLookup = useMemo(() => {
+    const map = new Map<string, string>()
+    locationOptions.forEach((loc) => map.set(loc.value, loc.label))
+    return map
+  }, [locationOptions])
   const validLocationIds = useMemo(() => new Set(locationOptions.map((o) => o.value)), [locationOptions])
   const itemOptions = useMemo(
     () =>
@@ -134,6 +143,21 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
     return map
   }, [itemsQuery.data])
   const normalizedDefaultTo = validLocationIds.has(defaultToLocationId) ? defaultToLocationId : ''
+  const formatOutputLabel = (itemId: string) => {
+    if (!isDisassembly && outputItem) {
+      const parts = [outputItem.name, outputItem.sku].filter(Boolean)
+      if (parts.length) return parts.join(' — ')
+    }
+    const item = itemsLookup.get(itemId)
+    if (item?.name && item?.sku) return `${item.name} — ${item.sku}`
+    if (item?.name) return item.name
+    if (item?.sku) return item.sku
+    return itemId
+  }
+  const formatLocationLabel = (locationId?: string | null) => {
+    if (!locationId) return 'n/a'
+    return locationLookup.get(locationId) ?? locationId
+  }
 
   useEffect(() => {
     setLines((prev) =>
@@ -171,6 +195,15 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
     defaultsMutation.mutate(locId)
     setLines((prev) =>
       prev.map((line) => ({ ...line, toLocationId: line.toLocationId || locId })),
+    )
+  }
+
+  const setOutputToRemaining = () => {
+    if (remaining <= 0) return
+    setLines((prev) =>
+      prev.map((line, index) =>
+        index === 0 ? { ...line, quantityCompleted: remaining } : line,
+      ),
     )
   }
 
@@ -226,8 +259,8 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
 
   return (
     <Card
-      title={isDisassembly ? 'Record recovered outputs' : 'Create completion'}
-      description="Draft first, then post to create production movement."
+      title={isDisassembly ? 'Make product (disassembly outputs)' : 'Make product'}
+      description="Save a draft, then post to create the production movement."
     >
       {completionMutation.isPending && <LoadingSpinner label="Creating completion..." />}
       {postMutation.isPending && <LoadingSpinner label="Posting completion..." />}
@@ -276,9 +309,16 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
       <div className="mt-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold text-slate-800">Lines</div>
-          <Button variant="secondary" size="sm" onClick={addLine}>
-            Add line
-          </Button>
+          <div className="flex gap-2">
+            {!isDisassembly && (
+              <Button variant="secondary" size="sm" onClick={setOutputToRemaining} disabled={remaining <= 0}>
+                Set output to remaining
+              </Button>
+            )}
+            <Button variant="secondary" size="sm" onClick={addLine}>
+              Add line
+            </Button>
+          </div>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1 text-sm">
@@ -412,14 +452,14 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
             onClick={onSubmitDraft}
             disabled={completionMutation.isPending}
           >
-            Save completion draft
+            Save draft
           </Button>
           <Button
             size="sm"
             onClick={() => setShowPostConfirm(true)}
             disabled={!createdCompletion || isPosted || postMutation.isPending}
           >
-            Post completion to inventory
+            Post completion (affects inventory)
           </Button>
         </div>
       </div>
@@ -429,13 +469,13 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
         onCancel={() => setShowPostConfirm(false)}
         onConfirm={onConfirmPost}
         title="Post Completion?"
-        body="This will create exactly 1 inventory movement (type: receive) with positive deltas and update this work order’s quantity completed."
+        body="Posting creates an inventory movement and cannot be edited."
         preview={
           <div className="space-y-1 text-sm text-slate-800">
             {createdCompletion?.lines.map((line) => (
               <div key={line.id} className="flex justify-between">
                 <span>
-                  {line.itemId} → {line.toLocationId || 'n/a'}
+                  {formatOutputLabel(line.itemId)} → {formatLocationLabel(line.toLocationId)}
                 </span>
                 <span className="text-green-700">
                   +{formatNumber(line.quantity)} {line.uom}

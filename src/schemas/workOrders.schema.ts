@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 export const workOrderCreateSchema = z
   .object({
-    workOrderNumber: z.string().min(1).max(255),
     kind: z.enum(['production', 'disassembly']).default('production'),
     bomId: z.string().uuid().optional(),
     bomVersionId: z.string().uuid().optional(),
@@ -14,7 +13,7 @@ export const workOrderCreateSchema = z
     defaultProduceLocationId: z.string().uuid().optional(),
     scheduledStartAt: z.string().datetime().optional(),
     scheduledDueAt: z.string().datetime().optional(),
-    notes: z.string().max(2000).optional(),
+    description: z.string().max(2000).optional(),
     relatedWorkOrderId: z.string().uuid().optional()
   })
   .superRefine((data, ctx) => {
@@ -23,13 +22,6 @@ export const workOrderCreateSchema = z
         code: z.ZodIssueCode.custom,
         message: 'bomId is required for production work orders.',
         path: ['bomId']
-      });
-    }
-    if (data.kind === 'disassembly' && !data.notes) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'notes are required for disassembly work orders.',
-        path: ['notes']
       });
     }
     if (data.scheduledStartAt && data.scheduledDueAt) {
@@ -70,4 +62,8 @@ export const workOrderRequirementsQuerySchema = z.object({
 export const workOrderDefaultLocationsSchema = z.object({
   defaultConsumeLocationId: z.string().uuid().nullable().optional(),
   defaultProduceLocationId: z.string().uuid().nullable().optional()
+});
+
+export const workOrderUpdateSchema = z.object({
+  description: z.string().max(2000).optional()
 });

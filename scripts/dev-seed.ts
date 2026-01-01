@@ -505,7 +505,7 @@ async function runManufacturingOptional(
   }
 
   const bomCode = `${config.prefix}-BOM-FG-01`
-  const woNumber = `${config.prefix}-WO-01`
+  const woDescription = `Seeded ${config.prefix} WO 01`
 
   // Find existing BOM for FG
   let bomId: string | null = null
@@ -565,23 +565,22 @@ async function runManufacturingOptional(
   let workOrder: any | null = null
   const woList = await apiRequest<any>(config, 'GET', '/work-orders', { params: { limit: 50, offset: 0 } })
   const woRows = woList?.data ?? []
-  workOrder = woRows.find((w: any) => (w?.workOrderNumber ?? w?.work_order_number) === woNumber) ?? null
+  workOrder = woRows.find((w: any) => w?.description === woDescription) ?? null
 
   if (!workOrder) {
     const created = await apiRequest<any>(config, 'POST', '/work-orders', {
       body: {
-        workOrderNumber: woNumber,
         bomId,
         outputItemId: seeded.fg.id,
         outputUom: 'ea',
         quantityPlanned: 5,
-        notes: `Seeded by ${config.prefix}`,
+        description: woDescription,
       },
     })
     workOrder = created
-    log.info(`Work order created: ${woNumber} (${workOrder.id})`)
+    log.info(`Work order created: ${workOrder.number} (${workOrder.id})`)
   } else {
-    log.info(`Work order exists: ${woNumber} (${workOrder.id})`)
+    log.info(`Work order exists: ${workOrder.number} (${workOrder.id})`)
   }
 
   // If already has posted execution totals, skip adding issues/completions.

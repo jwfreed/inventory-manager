@@ -628,7 +628,6 @@ Run the steps below after Phase 3 Feature 1 BOM creation/activation.
 curl -s -X POST http://localhost:3000/work-orders \
   -H 'Content-Type: application/json' \
   -d '{
-    "workOrderNumber": "WO-0001",
     "bomId": "<BOM_ID>",
     "bomVersionId": "<BOM_VERSION_ID>",
     "outputItemId": "<FINISHED_ITEM_ID>",
@@ -636,7 +635,7 @@ curl -s -X POST http://localhost:3000/work-orders \
     "quantityPlanned": 100,
     "scheduledStartAt": "2024-02-20T08:00:00Z",
     "scheduledDueAt": "2024-02-21T08:00:00Z",
-    "notes": "First production run"
+    "description": "First production run"
   }' | jq .
 
 # 1) Fetch by id
@@ -709,12 +708,11 @@ Use `kind: "disassembly"` and provide a short note for traceability.
 curl -s -X POST http://localhost:3000/work-orders \
   -H 'Content-Type: application/json' \
   -d '{
-    "workOrderNumber": "WO-DIS-0001",
     "kind": "disassembly",
     "outputItemId": "<FINISHED_ITEM_ID>",
     "outputUom": "ea",
     "quantityPlanned": 5,
-    "notes": "Broken bars from WO-0001"
+    "description": "Broken bars from WO-0001"
   }' | jq .
 
 # 1) Issue the finished goods to consume

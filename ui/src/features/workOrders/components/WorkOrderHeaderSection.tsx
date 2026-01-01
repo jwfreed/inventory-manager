@@ -7,8 +7,7 @@ export type SelectOption = {
 }
 
 type Props = {
-  workOrderNumber: string
-  notes: string
+  description: string
   outputItemId: string
   outputUom: string
   quantityPlanned: number | ''
@@ -27,8 +26,7 @@ type Props = {
   consumeMissing: boolean
   produceMissing: boolean
   isPending: boolean
-  onWorkOrderNumberChange: (value: string) => void
-  onNotesChange: (value: string) => void
+  onDescriptionChange: (value: string) => void
   onOutputItemChange: (value: string) => void
   onOutputUomChange: (value: string) => void
   onQuantityPlannedChange: (value: number | '') => void
@@ -39,8 +37,7 @@ type Props = {
 }
 
 export function WorkOrderHeaderSection({
-  workOrderNumber,
-  notes,
+  description,
   outputItemId,
   outputUom,
   quantityPlanned,
@@ -59,8 +56,7 @@ export function WorkOrderHeaderSection({
   consumeMissing,
   produceMissing,
   isPending,
-  onWorkOrderNumberChange,
-  onNotesChange,
+  onDescriptionChange,
   onOutputItemChange,
   onOutputUomChange,
   onQuantityPlannedChange,
@@ -71,22 +67,13 @@ export function WorkOrderHeaderSection({
 }: Props) {
   return (
     <Section title="Header">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3">
         <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Work order number</span>
-          <Input
-            value={workOrderNumber}
-            onChange={(e) => onWorkOrderNumberChange(e.target.value)}
-            required
-            disabled={isPending}
-          />
-        </label>
-        <label className="space-y-1 text-sm md:col-span-2">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
+          <span className="text-xs uppercase tracking-wide text-slate-500">Description</span>
           <Textarea
-            value={notes}
-            onChange={(e) => onNotesChange(e.target.value)}
-            placeholder="Optional"
+            value={description}
+            onChange={(e) => onDescriptionChange(e.target.value)}
+            placeholder="Optional note for humans"
             disabled={isPending}
           />
         </label>

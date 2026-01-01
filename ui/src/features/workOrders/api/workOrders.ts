@@ -48,7 +48,6 @@ export async function getWorkOrderRequirements(
 }
 
 export type WorkOrderCreatePayload = {
-  workOrderNumber: string
   kind?: 'production' | 'disassembly'
   bomId?: string
   bomVersionId?: string
@@ -61,7 +60,7 @@ export type WorkOrderCreatePayload = {
   defaultProduceLocationId?: string
   scheduledStartAt?: string
   scheduledDueAt?: string
-  notes?: string
+  description?: string
 }
 
 export async function createWorkOrder(payload: WorkOrderCreatePayload): Promise<WorkOrder> {
@@ -139,6 +138,13 @@ export async function updateWorkOrderDefaultsApi(
 
 export async function useActiveBomVersion(workOrderId: string): Promise<WorkOrder> {
   return apiPost<WorkOrder>(`/work-orders/${workOrderId}/use-active-bom`)
+}
+
+export async function updateWorkOrderDescription(
+  workOrderId: string,
+  payload: { description?: string | null },
+): Promise<WorkOrder> {
+  return apiPost<WorkOrder>(`/work-orders/${workOrderId}`, payload, { method: 'PATCH' })
 }
 
 export type RecordBatchPayload = {

@@ -75,12 +75,11 @@ test('posting work order issue and batch blocks on insufficient usable stock', a
   const workOrderRes = await apiRequest('POST', '/work-orders', {
     token,
     body: {
-      workOrderNumber: `WO-NEG-${unique}`,
       kind: 'disassembly',
       outputItemId: itemId,
       outputUom: 'g',
       quantityPlanned: 10,
-      notes: 'Negative stock disassembly test',
+      description: 'Negative stock disassembly test',
     },
   })
   assert.equal(workOrderRes.res.status, 201)

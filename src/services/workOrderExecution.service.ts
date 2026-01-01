@@ -28,6 +28,8 @@ type NegativeOverrideContext = {
 
 type WorkOrderRow = {
   id: string;
+  work_order_number: string;
+  number: string | null;
   status: string;
   kind: string;
   bom_id: string | null;
@@ -299,6 +301,12 @@ export async function postWorkOrderIssue(
         overrideReason: context.overrideReason ?? null
       }
     );
+    const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
+    const movementMetadata = {
+      workOrderId,
+      workOrderNumber,
+      ...(validation.overrideMetadata ?? {})
+    };
     const movementId = uuidv4();
     await client.query(
       `INSERT INTO inventory_movements (
@@ -313,7 +321,7 @@ export async function postWorkOrderIssue(
         occurredAt,
         now,
         issue.notes ?? null,
-        validation.overrideMetadata ?? null
+        movementMetadata
       ]
     );
 
@@ -554,11 +562,12 @@ export async function postWorkOrderCompletion(
     }
 
     const now = new Date();
+    const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
     const movementId = uuidv4();
     await client.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $5, $6, $5, $5)`,
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
+       ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
       [
         movementId,
         tenantId,
@@ -567,7 +576,8 @@ export async function postWorkOrderCompletion(
           : `work_order_completion:${completionId}:${workOrderId}`,
         execution.occurred_at,
         now,
-        execution.notes ?? null
+        execution.notes ?? null,
+        { workOrderId, workOrderNumber }
       ]
     );
 
@@ -802,6 +812,7 @@ export async function recordWorkOrderBatch(
     const receiveMovementId = uuidv4();
     const now = new Date();
     const occurredAt = new Date(data.occurredAt);
+    const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
     const validation = await validateSufficientStock(
       tenantId,
       occurredAt,
@@ -833,13 +844,17 @@ export async function recordWorkOrderBatch(
         occurredAt,
         now,
         data.notes ?? null,
-        validation.overrideMetadata ?? null
+        {
+          workOrderId,
+          workOrderNumber,
+          ...(validation.overrideMetadata ?? {})
+        }
       ]
     );
     await client.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-       ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $5, $6, $5, $5)`,
+          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
+       ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
       [
         receiveMovementId,
         tenantId,
@@ -848,7 +863,8 @@ export async function recordWorkOrderBatch(
           : `work_order_batch_completion:${executionId}:${workOrderId}`,
         occurredAt,
         now,
-        data.notes ?? null
+        data.notes ?? null,
+        { workOrderId, workOrderNumber }
       ]
     );
 

@@ -22,6 +22,12 @@ router.post('/items', async (req: Request, res: Response) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  const reservedWorkOrderSku = /^WO-\d+$/i;
+  if (reservedWorkOrderSku.test(parsed.data.sku.trim())) {
+    return res
+      .status(400)
+      .json({ error: 'SKU is reserved for work order identifiers. Choose a different SKU.' });
+  }
   try {
     const item = await createItem(req.auth!.tenantId, parsed.data);
     return res.status(201).json(item);
@@ -77,6 +83,12 @@ router.put('/items/:id', async (req: Request, res: Response) => {
   const parsed = itemSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const reservedWorkOrderSku = /^WO-\d+$/i;
+  if (reservedWorkOrderSku.test(parsed.data.sku.trim())) {
+    return res
+      .status(400)
+      .json({ error: 'SKU is reserved for work order identifiers. Choose a different SKU.' });
   }
   try {
     const item = await updateItem(req.auth!.tenantId, id, parsed.data);
