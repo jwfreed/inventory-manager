@@ -1,11 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query, withTransaction } from '../db';
-import type { itemSchema, locationSchema } from '../schemas/masterData.schema';
+import type { itemSchema, locationSchema, uomConversionSchema } from '../schemas/masterData.schema';
 import { ItemLifecycleStatus } from '../types/item';
 
 export type ItemInput = z.infer<typeof itemSchema>;
 export type LocationInput = z.infer<typeof locationSchema>;
+export type UomConversionInput = z.infer<typeof uomConversionSchema>;
 
 const itemSelectColumns = `
   i.id,
@@ -288,4 +289,50 @@ export async function createStandardWarehouseTemplate(
       skipped: Array.from(existingCodes)
     };
   });
+}
+
+export async function createUomConversion(tenantId: string, data: UomConversionInput) {
+  const now = new Date();
+  const id = uuidv4();
+  await query(
+    `INSERT INTO uom_conversions (
+        id, tenant_id, item_id, from_uom, to_uom, factor, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
+    [
+      id,
+      tenantId,
+      data.itemId,
+      data.fromUom,
+      data.toUom,
+      data.factor,
+      now
+    ]
+  );
+  const created = await getUomConversion(tenantId, id);
+  if (!created) throw new Error('Failed to create UoM conversion.');
+  return created;
+}
+
+export async function getUomConversion(tenantId: string, id: string) {
+  const res = await query(
+    `SELECT * FROM uom_conversions WHERE id = $1 AND tenant_id = $2`,
+    [id, tenantId]
+  );
+  if (res.rowCount === 0) return null;
+  return res.rows[0];
+}
+
+export async function listUomConversionsByItem(tenantId: string, itemId: string) {
+  const res = await query(
+    `SELECT * FROM uom_conversions WHERE item_id = $1 AND tenant_id = $2 ORDER BY from_uom, to_uom`,
+    [itemId, tenantId]
+  );
+  return res.rows;
+}
+
+export async function deleteUomConversion(tenantId: string, id: string) {
+  await query(
+    `DELETE FROM uom_conversions WHERE id = $1 AND tenant_id = $2`,
+    [id, tenantId]
+  );
 }

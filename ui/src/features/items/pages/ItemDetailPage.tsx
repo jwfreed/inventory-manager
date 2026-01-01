@@ -4,6 +4,7 @@ import { useItem } from '../queries'
 import { useLocationsList } from '../../locations/queries'
 import { useInventorySnapshotSummary } from '../../inventory/queries'
 import { useBomsByItem } from '../../boms/queries'
+import { useUomConversionsList } from '../api/uomConversions'
 import type { ApiError, Bom, BomVersion } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -19,6 +20,7 @@ import { ItemForm } from '../components/ItemForm'
 import { BomForm } from '../../boms/components/BomForm'
 import { BomCard } from '../../boms/components/BomCard'
 import { InventorySnapshotTable } from '../../inventory/components/InventorySnapshotTable'
+import { UomConversionsCard } from '../components/UomConversionsCard'
 
 const typeLabels: Record<string, string> = {
   raw: 'Raw',
@@ -60,6 +62,8 @@ export default function ItemDetailPage() {
   )
 
   const bomsQuery = useBomsByItem(id)
+
+  const uomConversionsQuery = useUomConversionsList(id)
 
   useEffect(() => {
     if (itemQuery.isError && itemQuery.error?.status === 404) {
@@ -471,6 +475,12 @@ export default function ItemDetailPage() {
               onDuplicate={(sourceBom, sourceVersion) => openBomModal({ bom: sourceBom, version: sourceVersion })}
             />
           ))}
+        </div>
+      </Section>
+
+      <Section title="UoM Conversions">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <UomConversionsCard item={itemQuery.data} conversions={uomConversionsQuery.data ?? []} />
         </div>
       </Section>
 

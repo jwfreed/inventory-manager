@@ -1,15 +1,18 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
-import { itemSchema, locationSchema } from '../schemas/masterData.schema';
+import { itemSchema, locationSchema, uomConversionSchema } from '../schemas/masterData.schema';
 import {
   createItem,
   createLocation,
   createStandardWarehouseTemplate,
+  createUomConversion,
+  deleteUomConversion,
   getItem,
   getLocation,
   listItems,
   listLocations,
+  listUomConversionsByItem,
   updateItem,
   updateLocation
 } from '../services/masterData.service';
@@ -215,6 +218,50 @@ router.post('/locations/templates/standard-warehouse', async (req: Request, res:
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to create standard warehouse template.' });
+  }
+});
+
+router.get('/items/:itemId/uom-conversions', async (req: Request, res: Response) => {
+  const { itemId } = req.params;
+  try {
+    const conversions = await listUomConversionsByItem(req.auth!.tenantId, itemId);
+    return res.json(conversions);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to list UoM conversions.' });
+  }
+});
+
+router.post('/items/:itemId/uom-conversions', async (req: Request, res: Response) => {
+  const { itemId } = req.params;
+  const parsed = uomConversionSchema.safeParse({ ...req.body, itemId });
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const conversion = await createUomConversion(req.auth!.tenantId, parsed.data);
+    return res.status(201).json(conversion);
+  } catch (error) {
+    const mapped = mapPgErrorToHttp(error, {
+      unique: () => ({ status: 409, body: { error: 'Conversion already exists.' } }),
+      foreignKey: () => ({ status: 400, body: { error: 'Item must exist.' } }),
+    });
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to create UoM conversion.' });
+  }
+});
+
+router.delete('/uom-conversions/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    await deleteUomConversion(req.auth!.tenantId, id);
+    return res.status(204).send();
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to delete UoM conversion.' });
   }
 });
 

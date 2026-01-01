@@ -18,3 +18,10 @@ export const locationSchema = z.object({
   active: z.boolean().optional(),
   parentLocationId: z.string().uuid().nullable().optional()
 });
+
+export const uomConversionSchema = z.object({
+  itemId: z.string().uuid(),
+  fromUom: z.string().min(1).max(50),
+  toUom: z.string().min(1).max(50),
+  factor: z.number().positive(),
+});

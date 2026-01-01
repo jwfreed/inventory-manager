@@ -22,3 +22,13 @@ export type ItemInventoryRow = {
   uom: string
   onHand: number
 }
+
+export type UomConversion = {
+  id: string;
+  itemId: string;
+  fromUom: string;
+  toUom: string;
+  factor: number;
+  createdAt: string;
+  updatedAt: string;
+};
