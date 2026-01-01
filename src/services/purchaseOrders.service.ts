@@ -1,50 +1,6 @@
-import { v4 as uuidv4 } from 'uuid';
-import type { z } from 'zod';
-import type { PoolClient } from 'pg';
-import { query, withTransaction } from '../db';
-import type { purchaseOrderSchema, purchaseOrderLineSchema, purchaseOrderUpdateSchema } from '../schemas/purchaseOrders.schema';
-import { normalizeQuantityByUom } from '../lib/uom';
-import { recordAuditLog } from '../lib/audit';
-
-export type PurchaseOrderInput = z.infer<typeof purchaseOrderSchema>;
-export type PurchaseOrderLineInput = z.infer<typeof purchaseOrderLineSchema>;
-export type PurchaseOrderUpdateInput = z.infer<typeof purchaseOrderUpdateSchema>;
-
-const shouldAutoApprove = () => process.env.NODE_ENV !== 'production';
-
-type PurchaseOrderStatus =
-  | 'draft'
-  | 'submitted'
-  | 'approved'
-  | 'partially_received'
-  | 'received'
-  | 'closed'
-  | 'canceled';
-
-function validateReadyForSubmit(input: {
-  vendorId?: string | null;
-  shipToLocationId?: string | null;
-  receivingLocationId?: string | null;
-  expectedDate?: string | null;
-  lines?: { quantityOrdered?: number | null }[];
-}) {
-  if (!input.vendorId) throw new Error('PO_SUBMIT_MISSING_VENDOR');
-  if (!input.shipToLocationId) throw new Error('PO_SUBMIT_MISSING_SHIP_TO');
-  if (!input.receivingLocationId) throw new Error('PO_SUBMIT_MISSING_RECEIVING');
-  if (!input.expectedDate) throw new Error('PO_SUBMIT_MISSING_EXPECTED_DATE');
-  if (!input.lines || input.lines.length === 0) throw new Error('PO_SUBMIT_MISSING_LINES');
-  const hasInvalidQty = input.lines.some((line) => (line.quantityOrdered ?? 0) <= 0);
-  if (hasInvalidQty) throw new Error('PO_SUBMIT_INVALID_QUANTITY');
-}
-
-function assertAllowedStatusTransition(current: PurchaseOrderStatus, requested: PurchaseOrderStatus) {
-  if (current === requested) return;
-  if (current === 'draft' && requested === 'submitted') return;
-  if (current === 'submitted' && requested === 'approved') return;
-  throw new Error('PO_STATUS_INVALID_TRANSITION');
-}
-
-export function mapPurchaseOrder(row: any, lines: any[]) {
+// This file has been refactored into modular services under src/services/purchaseOrders/
+// Please use: import { ... } from './purchaseOrders'
+export * from './purchaseOrders';
   return {
     id: row.id,
     poNumber: row.po_number,
