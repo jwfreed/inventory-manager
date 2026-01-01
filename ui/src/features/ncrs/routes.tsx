@@ -1,4 +1,4 @@
-import { AppRouteObject } from '../../shared/routes'
+import type { AppRouteObject } from '../../shared/routes'
 import NcrListPage from './pages/NcrListPage'
 import NcrDetailPage from './pages/NcrDetailPage'
 
