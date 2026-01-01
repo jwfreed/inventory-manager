@@ -7,6 +7,7 @@ export const itemSchema = z.object({
   description: z.string().max(2000).optional(),
   lifecycleStatus: z.nativeEnum(ItemLifecycleStatus).default(ItemLifecycleStatus.ACTIVE),
   type: z.enum(['raw', 'wip', 'finished', 'packaging']).default('raw'),
+  isPhantom: z.boolean().default(false),
   defaultUom: z.string().min(1).max(50).nullable().optional(),
   defaultLocationId: z.string().uuid().nullable().optional()
 });

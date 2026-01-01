@@ -6,6 +6,7 @@ export type Item = {
   name: string
   description?: string | null
   type: ItemType
+  isPhantom?: boolean
   defaultUom?: string | null
   defaultLocationId?: string | null
   defaultLocationCode?: string | null

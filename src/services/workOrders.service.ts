@@ -5,7 +5,8 @@ import { query, withTransaction } from '../db';
 import { workOrderCreateSchema, workOrderListQuerySchema } from '../schemas/workOrders.schema';
 import { roundQuantity } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
-import { fetchBomById, resolveEffectiveBom } from './boms.service';
+import { fetchBomById, resolveEffectiveBom, type BomVersionLine } from './boms.service';
+import { getItem } from './masterData.service';
 import { recordAuditLog } from '../lib/audit';
 
 type WorkOrderCreateInput = z.infer<typeof workOrderCreateSchema>;
@@ -252,6 +253,57 @@ export type WorkOrderRequirements = {
   lines: WorkOrderRequirementLine[];
 };
 
+async function resolveRequirements(
+  tenantId: string,
+  components: BomVersionLine[],
+  factor: number,
+  packSize?: number
+): Promise<WorkOrderRequirementLine[]> {
+  const lines: WorkOrderRequirementLine[] = [];
+
+  for (const c of components) {
+    const item = await getItem(tenantId, c.componentItemId);
+    
+    if (item && item.isPhantom) {
+       const phantomBom = await resolveEffectiveBom(tenantId, item.id, new Date().toISOString());
+       if (phantomBom) {
+          const phantomVersion = phantomBom.version;
+          const normalizedComp = normalizeQuantityByUom(c.quantityPer, c.uom);
+          const componentScrap = c.scrapFactor ?? 0;
+          
+          const baseQuantity = c.usesPackSize && packSize !== undefined ? packSize : normalizedComp.quantity;
+          const requiredPhantomQty = baseQuantity * factor * (1 + componentScrap);
+          
+          const phantomYield = normalizeQuantityByUom(phantomVersion.yieldQuantity, phantomVersion.yieldUom);
+          const phantomYieldFactor = phantomVersion.yieldFactor ?? 1.0;
+          
+          const childFactor = requiredPhantomQty / (phantomYield.quantity * phantomYieldFactor);
+          
+          const childLines = await resolveRequirements(tenantId, phantomVersion.components, childFactor, packSize);
+          lines.push(...childLines);
+          continue;
+       }
+    }
+
+    const normalizedComp = normalizeQuantityByUom(c.quantityPer, c.uom);
+    const baseQuantity = c.usesPackSize && packSize !== undefined ? packSize : normalizedComp.quantity;
+    const uom = c.usesPackSize && c.variableUom ? c.variableUom : normalizedComp.uom;
+    const componentScrap = c.scrapFactor ?? 0;
+    const required = roundQuantity(baseQuantity * factor * (1 + componentScrap));
+    
+    lines.push({
+      lineNumber: c.lineNumber,
+      componentItemId: c.componentItemId,
+      uom,
+      quantityRequired: required,
+      usesPackSize: c.usesPackSize,
+      variableUom: c.variableUom ?? null,
+      scrapFactor: c.scrapFactor
+    });
+  }
+  return lines;
+}
+
 export async function getWorkOrderRequirements(
   tenantId: string,
   workOrderId: string,
@@ -297,22 +349,7 @@ export async function getWorkOrderRequirements(
   const yieldFactor = version.yieldFactor ?? 1.0;
   const factor = roundQuantity(normalizedRequested.quantity / (normalizedYield.quantity * yieldFactor));
 
-  const lines: WorkOrderRequirementLine[] = version.components.map((c) => {
-    const normalizedComp = normalizeQuantityByUom(c.quantityPer, c.uom);
-    const baseQuantity = c.usesPackSize && packSize !== undefined ? packSize : normalizedComp.quantity;
-    const uom = c.usesPackSize && c.variableUom ? c.variableUom : normalizedComp.uom;
-    const scrap = c.scrapFactor ?? 0;
-    const required = roundQuantity(baseQuantity * factor * (1 + scrap));
-    return {
-      lineNumber: c.lineNumber,
-      componentItemId: c.componentItemId,
-      uom,
-      quantityRequired: required,
-      usesPackSize: c.usesPackSize,
-      variableUom: c.variableUom ?? null,
-      scrapFactor: c.scrapFactor
-    };
-  });
+  const lines = await resolveRequirements(tenantId, version.components, factor, packSize);
 
   return {
     workOrderId: wo.id,

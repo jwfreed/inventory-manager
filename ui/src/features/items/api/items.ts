@@ -16,6 +16,7 @@ export type ItemPayload = {
   name: string
   description?: string
   type?: Item['type']
+  isPhantom?: boolean
   lifecycleStatus?: Item['lifecycleStatus']
   defaultUom?: string | null
   defaultLocationId?: string | null
@@ -35,6 +36,7 @@ function mapItem(row: ItemApiRow): Item {
     name: row.name,
     description: row.description,
     type: row.type ?? 'raw',
+    isPhantom: !!row.isPhantom,
     lifecycleStatus: row.lifecycleStatus,
     defaultUom: row.defaultUom ?? row.default_uom ?? null,
     defaultLocationId: row.defaultLocationId ?? row.default_location_id ?? null,

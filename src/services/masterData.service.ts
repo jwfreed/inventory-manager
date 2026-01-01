@@ -14,6 +14,7 @@ const itemSelectColumns = `
   i.name,
   i.description,
   i.type,
+  i.is_phantom,
   i.default_uom,
   i.default_location_id,
   i.lifecycle_status,
@@ -29,6 +30,7 @@ export function mapItem(row: any) {
     sku: row.sku,
     name: row.name,
     description: row.description,
+    isPhantom: !!row.is_phantom,
     type: row.type ?? 'raw',
     defaultUom: row.defaultUom ?? row.default_uom ?? null,
     defaultLocationId: row.defaultLocationId ?? row.default_location_id ?? null,
@@ -44,20 +46,21 @@ export async function createItem(tenantId: string, data: ItemInput) {
   const now = new Date();
   const id = uuidv4();
   const lifecycleStatus = data.lifecycleStatus ?? ItemLifecycleStatus.ACTIVE;
-  const type = data.type ?? 'raw';
+  const isPhantom = data.isPhantom ?? false;
   const defaultUom = data.defaultUom ?? null;
   const defaultLocationId = data.defaultLocationId ?? null;
   await query(
     `INSERT INTO items (
-        id, tenant_id, sku, name, description, type, default_uom, default_location_id, lifecycle_status, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)`,
+        id, tenant_id, sku, name, description, type, is_phantom, default_uom, default_location_id, lifecycle_status, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)`,
     [
       id,
       tenantId,
       data.sku,
       data.name,
       data.description ?? null,
-      type,
+      data.type,
+      isPhantom,
       defaultUom,
       defaultLocationId,
       lifecycleStatus,
@@ -86,6 +89,7 @@ export async function getItem(tenantId: string, id: string) {
 export async function updateItem(tenantId: string, id: string, data: ItemInput) {
   const now = new Date();
   const type = data.type ?? 'raw';
+  const isPhantom = data.isPhantom ?? false;
   const defaultUom = data.defaultUom ?? null;
   const defaultLocationId = data.defaultLocationId ?? null;
   const lifecycleStatus = data.lifecycleStatus ?? ItemLifecycleStatus.ACTIVE;
@@ -95,17 +99,19 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
            name = $2,
            description = $3,
            type = $4,
-           default_uom = $5,
-           default_location_id = $6,
-           lifecycle_status = $7,
-           updated_at = $8
-     WHERE id = $9 AND tenant_id = $10
+           is_phantom = $5,
+           default_uom = $6,
+           default_location_id = $7,
+           lifecycle_status = $8,
+           updated_at = $9
+     WHERE id = $10 AND tenant_id = $11
      RETURNING id`,
     [
       data.sku,
       data.name,
       data.description ?? null,
       type,
+      isPhantom,
       defaultUom,
       defaultLocationId,
       lifecycleStatus,
