@@ -13,6 +13,9 @@ export type LocationPayload = {
   type: string
   active?: boolean
   parentLocationId?: string | null
+  maxWeight?: number | null
+  maxVolume?: number | null
+  zone?: string | null
 }
 
 export type ListLocationsParams = {
@@ -33,6 +36,9 @@ function mapLocation(row: LocationApiRow): Location {
     parentLocationId: row.parentLocationId ?? row.parent_location_id,
     path: row.path,
     depth: row.depth,
+    maxWeight: row.maxWeight,
+    maxVolume: row.maxVolume,
+    zone: row.zone,
     createdAt: row.createdAt ?? row.created_at,
     updatedAt: row.updatedAt ?? row.updated_at,
   }

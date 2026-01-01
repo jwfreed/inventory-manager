@@ -158,8 +158,11 @@ export function mapLocation(row: any) {
     parentLocationId: row.parent_location_id,
     path: row.path,
     depth: row.depth,
+    maxWeight: row.max_weight,
+    maxVolume: row.max_volume,
+    zone: row.zone,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
   };
 }
 
@@ -171,10 +174,22 @@ export async function createLocation(tenantId: string, data: LocationInput) {
   return withTransaction(async (client) => {
     const res = await client.query(
       `INSERT INTO locations (
-          id, tenant_id, code, name, type, active, parent_location_id, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+          id, tenant_id, code, name, type, active, parent_location_id, max_weight, max_volume, zone, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
        RETURNING *`,
-      [id, tenantId, data.code, data.name, data.type, active, data.parentLocationId ?? null, now]
+      [
+        id,
+        tenantId,
+        data.code,
+        data.name,
+        data.type,
+        active,
+        data.parentLocationId ?? null,
+        data.maxWeight ?? null,
+        data.maxVolume ?? null,
+        data.zone ?? null,
+        now,
+      ]
     );
     return mapLocation(res.rows[0]);
   });
@@ -197,10 +212,25 @@ export async function updateLocation(tenantId: string, id: string, data: Locatio
              type = $3,
              active = $4,
              parent_location_id = $5,
-             updated_at = $6
-       WHERE id = $7 AND tenant_id = $8
+             max_weight = $6,
+             max_volume = $7,
+             zone = $8,
+             updated_at = $9
+       WHERE id = $10 AND tenant_id = $11
        RETURNING *`,
-      [data.code, data.name, data.type, active, data.parentLocationId ?? null, now, id, tenantId]
+      [
+        data.code,
+        data.name,
+        data.type,
+        active,
+        data.parentLocationId ?? null,
+        data.maxWeight ?? null,
+        data.maxVolume ?? null,
+        data.zone ?? null,
+        now,
+        id,
+        tenantId,
+      ]
     );
     if (res.rowCount === 0) return null;
     return mapLocation(res.rows[0]);
@@ -279,7 +309,7 @@ export async function createStandardWarehouseTemplate(
          RETURNING *`,
         [id, tenantId, loc.code, loc.name, loc.type, now]
       );
-      if (res.rowCount > 0) {
+      if (res && (res.rowCount ?? 0) > 0) {
         created.push(mapLocation(res.rows[0]));
       }
     }

@@ -26,6 +26,7 @@ import drpRouter from './routes/drp.routes';
 import complianceRouter from './routes/compliance.routes';
 import eventsRouter from './routes/events.routes';
 import auditRouter from './routes/audit.routes';
+import routingsRouter from './routes/routings.routes';
 import { requireAuth } from './middleware/auth.middleware';
 import { destructiveGuard } from './middleware/destructiveGuard.middleware';
 
@@ -90,6 +91,7 @@ app.use(closeoutRouter);
 app.use(adjustmentsRouter);
 app.use(countsRouter);
 app.use(bomsRouter);
+app.use(routingsRouter);
 app.use(workOrdersRouter);
 app.use(workOrderExecutionRouter);
 app.use(orderToCashRouter);

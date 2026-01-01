@@ -24,6 +24,9 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
   const [type, setType] = useState(initialLocation?.type ?? locationTypes[0])
   const [parentLocationId, setParentLocationId] = useState(initialLocation?.parentLocationId ?? '')
   const [active, setActive] = useState(initialLocation?.active ?? true)
+  const [maxWeight, setMaxWeight] = useState(initialLocation?.maxWeight ?? '')
+  const [maxVolume, setMaxVolume] = useState(initialLocation?.maxVolume ?? '')
+  const [zone, setZone] = useState(initialLocation?.zone ?? '')
 
   useEffect(() => {
     if (!initialLocation) return
@@ -32,6 +35,9 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
     setType(initialLocation.type)
     setParentLocationId(initialLocation.parentLocationId ?? '')
     setActive(initialLocation.active)
+    setMaxWeight(initialLocation.maxWeight ?? '')
+    setMaxVolume(initialLocation.maxVolume ?? '')
+    setZone(initialLocation.zone ?? '')
   }, [initialLocation])
 
   const mutation = useMutation<Location, ApiError, LocationPayload>({
@@ -52,6 +58,9 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
       type,
       active,
       parentLocationId: parentLocationId ? parentLocationId : null,
+      maxWeight: maxWeight ? Number(maxWeight) : null,
+      maxVolume: maxVolume ? Number(maxVolume) : null,
+      zone: zone || null,
     })
   }
 
@@ -105,6 +114,37 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
               value={parentLocationId}
               onChange={(e) => setParentLocationId(e.target.value)}
               placeholder="Optional"
+              disabled={mutation.isPending}
+            />
+          </label>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Max Weight</span>
+            <Input
+              type="number"
+              value={maxWeight}
+              onChange={(e) => setMaxWeight(e.target.value)}
+              placeholder="e.g. 1000"
+              disabled={mutation.isPending}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Max Volume</span>
+            <Input
+              type="number"
+              value={maxVolume}
+              onChange={(e) => setMaxVolume(e.target.value)}
+              placeholder="e.g. 100"
+              disabled={mutation.isPending}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Zone</span>
+            <Input
+              value={zone}
+              onChange={(e) => setZone(e.target.value)}
+              placeholder="e.g. Flammable"
               disabled={mutation.isPending}
             />
           </label>

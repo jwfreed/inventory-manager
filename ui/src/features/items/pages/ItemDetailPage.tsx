@@ -21,6 +21,7 @@ import { BomForm } from '../../boms/components/BomForm'
 import { BomCard } from '../../boms/components/BomCard'
 import { InventorySnapshotTable } from '../../inventory/components/InventorySnapshotTable'
 import { UomConversionsCard } from '../components/UomConversionsCard'
+import { RoutingsCard } from '../../routings/components/RoutingsCard'
 
 const typeLabels: Record<string, string> = {
   raw: 'Raw',
@@ -478,11 +479,21 @@ export default function ItemDetailPage() {
         </div>
       </Section>
 
-      <Section title="UoM Conversions">
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <UomConversionsCard item={itemQuery.data} conversions={uomConversionsQuery.data ?? []} />
-        </div>
-      </Section>
+      {itemQuery.data && (
+        <Section title="UoM Conversions">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <UomConversionsCard item={itemQuery.data} conversions={uomConversionsQuery.data ?? []} />
+          </div>
+        </Section>
+      )}
+
+      {itemQuery.data && (
+        <Section title="Production Routings">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <RoutingsCard itemId={itemQuery.data.id} />
+          </div>
+        </Section>
+      )}
 
       <Modal
         isOpen={showBomModal}

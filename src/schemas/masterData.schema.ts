@@ -16,7 +16,10 @@ export const locationSchema = z.object({
   name: z.string().min(1).max(255),
   type: z.enum(['warehouse', 'bin', 'store', 'customer', 'vendor', 'scrap', 'virtual']),
   active: z.boolean().optional(),
-  parentLocationId: z.string().uuid().nullable().optional()
+  parentLocationId: z.string().uuid().nullable().optional(),
+  maxWeight: z.number().positive().nullable().optional(),
+  maxVolume: z.number().positive().nullable().optional(),
+  zone: z.string().max(255).nullable().optional(),
 });
 
 export const uomConversionSchema = z.object({

@@ -7,6 +7,9 @@ export type Location = {
   parentLocationId?: string | null
   path?: string | null
   depth?: number | null
+  maxWeight?: number | null
+  maxVolume?: number | null
+  zone?: string | null
   createdAt?: string
   updatedAt?: string
 }
