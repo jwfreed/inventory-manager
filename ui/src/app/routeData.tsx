@@ -12,7 +12,7 @@ import { receivingRoutes } from '../features/receiving'
 import { vendorRoutes } from '../features/vendors'
 import { workOrderRoutes } from '../features/workOrders'
 import { profileRoutes } from '../features/profile'
-import { routingsRoutes } from '../features/routings'
+import { routingsRoutes } from '../features/routings/index'
 
 const coreRoutes: AppRouteObject[] = [
   {
