@@ -9,6 +9,8 @@ import {
   shipmentSchema,
 } from '../schemas/orderToCash.schema';
 import { normalizeQuantityByUom } from '../lib/uom';
+import { getItem } from './masterData.service';
+import { ItemLifecycleStatus } from '../types/item';
 
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
 export type ReservationInput = z.infer<typeof reservationSchema>;
@@ -84,6 +86,12 @@ export async function createSalesOrder(tenantId: string, data: SalesOrderInput) 
 
     const lines: any[] = [];
     for (const line of normalizedLines) {
+      const item = await getItem(tenantId, line.itemId);
+      if (!item) throw new Error(`ITEM_NOT_FOUND: ${line.itemId}`);
+      if (item.lifecycleStatus !== ItemLifecycleStatus.ACTIVE) {
+        throw new Error(`ITEM_NOT_ACTIVE: ${item.sku} is ${item.lifecycleStatus}`);
+      }
+
       const lineResult = await client.query(
         `INSERT INTO sales_order_lines (
           id, tenant_id, sales_order_id, line_number, item_id, uom, quantity_ordered, notes

@@ -4,9 +4,9 @@ const TABLE_NAME = 'locations';
 
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.addColumns(TABLE_NAME, {
-    max_weight: { type: 'decimal(18, 4)', nullable: true },
-    max_volume: { type: 'decimal(18, 4)', nullable: true },
-    zone: { type: 'text', nullable: true },
+    max_weight: { type: 'decimal(18, 4)', notNull: false },
+    max_volume: { type: 'decimal(18, 4)', notNull: false },
+    zone: { type: 'text', notNull: false },
   });
 }
 

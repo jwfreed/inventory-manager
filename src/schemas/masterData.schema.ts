@@ -9,7 +9,11 @@ export const itemSchema = z.object({
   type: z.enum(['raw', 'wip', 'finished', 'packaging']).default('raw'),
   isPhantom: z.boolean().default(false),
   defaultUom: z.string().min(1).max(50).nullable().optional(),
-  defaultLocationId: z.string().uuid().nullable().optional()
+  defaultLocationId: z.string().uuid().nullable().optional(),
+  weight: z.number().positive().nullable().optional(),
+  weightUom: z.string().max(50).nullable().optional(),
+  volume: z.number().positive().nullable().optional(),
+  volumeUom: z.string().max(50).nullable().optional(),
 });
 
 export const locationSchema = z.object({

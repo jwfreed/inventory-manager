@@ -1,6 +1,7 @@
 import { getInventoryNegativePolicy } from '../config/inventoryPolicy';
-import { getInventorySnapshot } from './inventorySnapshot.service';
+import { getInventorySnapshot, getInventorySnapshotSummary } from './inventorySnapshot.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { getLocation, getItem, convertQuantity } from './masterData.service';
 
 export type StockValidationLine = {
   itemId: string;
@@ -175,4 +176,62 @@ export async function validateSufficientStock(
       overrideRequiresRole: policy.overrideRequiresRole
     }
   );
+}
+
+export async function validateLocationCapacity(
+  tenantId: string,
+  locationId: string,
+  incomingItems: { itemId: string; quantity: number; uom: string }[]
+) {
+  const location = await getLocation(tenantId, locationId);
+  if (!location) throw new Error('LOCATION_NOT_FOUND');
+
+  // If no limits, skip
+  if (!location.maxWeight && !location.maxVolume) return;
+
+  // Get current inventory
+  const currentInventory = await getInventorySnapshotSummary(tenantId, { locationId, limit: 10000 });
+  
+  let currentWeight = 0;
+  let currentVolume = 0;
+
+  // Calculate current utilization
+  for (const row of currentInventory) {
+    const item = await getItem(tenantId, row.itemId);
+    if (!item) continue;
+
+    if (location.maxWeight && item.weight) {
+      const qtyInDefaultUom = await convertQuantity(tenantId, row.itemId, row.onHand, row.uom, item.defaultUom || 'ea');
+      currentWeight += qtyInDefaultUom * item.weight;
+    }
+    
+    if (location.maxVolume && item.volume) {
+       const qtyInDefaultUom = await convertQuantity(tenantId, row.itemId, row.onHand, row.uom, item.defaultUom || 'ea');
+       currentVolume += qtyInDefaultUom * item.volume;
+    }
+  }
+
+  // Add incoming items
+  for (const incoming of incomingItems) {
+    const item = await getItem(tenantId, incoming.itemId);
+    if (!item) continue;
+
+    if (location.maxWeight && item.weight) {
+      const qtyInDefaultUom = await convertQuantity(tenantId, incoming.itemId, incoming.quantity, incoming.uom, item.defaultUom || 'ea');
+      currentWeight += qtyInDefaultUom * item.weight;
+    }
+
+    if (location.maxVolume && item.volume) {
+      const qtyInDefaultUom = await convertQuantity(tenantId, incoming.itemId, incoming.quantity, incoming.uom, item.defaultUom || 'ea');
+      currentVolume += qtyInDefaultUom * item.volume;
+    }
+  }
+
+  // Check limits
+  if (location.maxWeight && currentWeight > location.maxWeight) {
+    throw new StockValidationError('LOCATION_CAPACITY_EXCEEDED', `Location ${location.name} weight limit exceeded.`);
+  }
+  if (location.maxVolume && currentVolume > location.maxVolume) {
+    throw new StockValidationError('LOCATION_CAPACITY_EXCEEDED', `Location ${location.name} volume limit exceeded.`);
+  }
 }

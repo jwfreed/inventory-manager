@@ -18,6 +18,10 @@ const itemSelectColumns = `
   i.default_uom,
   i.default_location_id,
   i.lifecycle_status,
+  i.weight,
+  i.weight_uom,
+  i.volume,
+  i.volume_uom,
   i.created_at,
   i.updated_at,
   l.code AS default_location_code,
@@ -37,6 +41,10 @@ export function mapItem(row: any) {
     defaultLocationCode: row.defaultLocationCode ?? row.default_location_code ?? null,
     defaultLocationName: row.defaultLocationName ?? row.default_location_name ?? null,
     lifecycleStatus: row.lifecycle_status,
+    weight: row.weight ? Number(row.weight) : null,
+    weightUom: row.weight_uom ?? null,
+    volume: row.volume ? Number(row.volume) : null,
+    volumeUom: row.volume_uom ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -51,8 +59,8 @@ export async function createItem(tenantId: string, data: ItemInput) {
   const defaultLocationId = data.defaultLocationId ?? null;
   await query(
     `INSERT INTO items (
-        id, tenant_id, sku, name, description, type, is_phantom, default_uom, default_location_id, lifecycle_status, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)`,
+        id, tenant_id, sku, name, description, type, is_phantom, default_uom, default_location_id, lifecycle_status, weight, weight_uom, volume, volume_uom, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)`,
     [
       id,
       tenantId,
@@ -64,6 +72,10 @@ export async function createItem(tenantId: string, data: ItemInput) {
       defaultUom,
       defaultLocationId,
       lifecycleStatus,
+      data.weight ?? null,
+      data.weightUom ?? null,
+      data.volume ?? null,
+      data.volumeUom ?? null,
       now
     ]
   );
@@ -103,8 +115,12 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
            default_uom = $6,
            default_location_id = $7,
            lifecycle_status = $8,
-           updated_at = $9
-     WHERE id = $10 AND tenant_id = $11
+           weight = $9,
+           weight_uom = $10,
+           volume = $11,
+           volume_uom = $12,
+           updated_at = $13
+     WHERE id = $14 AND tenant_id = $15
      RETURNING id`,
     [
       data.sku,
@@ -115,6 +131,10 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
       defaultUom,
       defaultLocationId,
       lifecycleStatus,
+      data.weight ?? null,
+      data.weightUom ?? null,
+      data.volume ?? null,
+      data.volumeUom ?? null,
       now,
       id,
       tenantId
@@ -371,4 +391,36 @@ export async function deleteUomConversion(tenantId: string, id: string) {
     `DELETE FROM uom_conversions WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId]
   );
+}
+
+export async function convertQuantity(
+  tenantId: string,
+  itemId: string,
+  quantity: number,
+  fromUom: string,
+  toUom: string
+): Promise<number> {
+  if (fromUom === toUom) return quantity;
+
+  // Try direct conversion
+  const direct = await query<{ factor: string }>(
+    `SELECT factor FROM uom_conversions 
+     WHERE tenant_id = $1 AND item_id = $2 AND from_uom = $3 AND to_uom = $4`,
+    [tenantId, itemId, fromUom, toUom]
+  );
+  if (direct.rowCount && direct.rowCount > 0) {
+    return quantity * Number(direct.rows[0].factor);
+  }
+
+  // Try reverse conversion
+  const reverse = await query<{ factor: string }>(
+    `SELECT factor FROM uom_conversions 
+     WHERE tenant_id = $1 AND item_id = $2 AND from_uom = $4 AND to_uom = $3`,
+    [tenantId, itemId, fromUom, toUom]
+  );
+  if (reverse.rowCount && reverse.rowCount > 0) {
+    return quantity / Number(reverse.rows[0].factor);
+  }
+
+  throw new Error(`UOM_CONVERSION_MISSING: ${fromUom} to ${toUom} for item ${itemId}`);
 }

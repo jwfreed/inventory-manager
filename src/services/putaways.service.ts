@@ -6,7 +6,7 @@ import type { z } from 'zod';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
 import { recordAuditLog } from '../lib/audit';
-import { validateSufficientStock } from './stockValidation.service';
+import { validateSufficientStock, validateLocationCapacity } from './stockValidation.service';
 import {
   calculateAcceptedQuantity,
   calculatePutawayAvailability,
@@ -202,6 +202,18 @@ export async function createPutaway(
       error.lineId = lineId;
       throw error;
     }
+  }
+
+  // Validate location capacity
+  const itemsByLocation = new Map<string, { itemId: string; quantity: number; uom: string }[]>();
+  for (const line of normalizedLines) {
+    const items = itemsByLocation.get(line.toLocationId) ?? [];
+    items.push({ itemId: line.itemId, quantity: line.quantity, uom: line.uom });
+    itemsByLocation.set(line.toLocationId, items);
+  }
+
+  for (const [locationId, items] of itemsByLocation.entries()) {
+    await validateLocationCapacity(tenantId, locationId, items);
   }
 
   let receiptIdForPutaway = data.purchaseOrderReceiptId ?? null;
