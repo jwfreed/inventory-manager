@@ -78,6 +78,11 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
       overrideRequested: overrideSchema.data.overrideNegative,
       overrideReason: overrideSchema.data.overrideReason
     });
+
+    if (!count) {
+      throw new Error('Failed to retrieve count after posting');
+    }
+
     const itemIds = Array.from(new Set(count.lines.map((line) => line.itemId)));
     emitEvent(tenantId, 'inventory.count.posted', {
       countId: count.id,

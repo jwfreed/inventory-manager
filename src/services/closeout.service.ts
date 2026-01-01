@@ -224,7 +224,7 @@ export async function closePurchaseOrder(tenantId: string, id: string, _data: Pu
       [id, tenantId]
     );
     const blocking = receiptsResult.rows.filter((row: any) => row.status !== 'closed');
-    if (receiptsResult.rowCount > 0 && blocking.length > 0) {
+    if ((receiptsResult.rowCount ?? 0) > 0 && blocking.length > 0) {
       throw new Error('PO_RECEIPTS_OPEN');
     }
 

@@ -338,8 +338,7 @@ export async function listBomsByItem(tenantId: string, itemId: string) {
         yieldFactor: roundQuantity(toNumber(row.yield_factor ?? 1)),
         notes: row.version_notes,
         createdAt: row.version_created_at,
-        updatedAt: row.version_updated_at,
-        components: []
+        updatedAt: row.version_updated_at
       });
     }
   }

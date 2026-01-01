@@ -212,6 +212,11 @@ router.post('/inventory-adjustments/:id/post', async (req: Request, res: Respons
       overrideRequested: overrideSchema.data.overrideNegative,
       overrideReason: overrideSchema.data.overrideReason
     });
+
+    if (!adjustment) {
+      throw new Error('Failed to retrieve adjustment after posting');
+    }
+
     const itemIds = Array.from(new Set(adjustment.lines.map((line) => line.itemId)));
     const locationIds = Array.from(new Set(adjustment.lines.map((line) => line.locationId)));
     emitEvent(tenantId, 'inventory.adjustment.posted', {

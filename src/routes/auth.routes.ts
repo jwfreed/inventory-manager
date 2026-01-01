@@ -153,7 +153,7 @@ router.post('/auth/bootstrap', async (req: Request, res: Response) => {
   const { tenantName, tenantSlug, adminEmail, adminPassword, adminName } = parsed.data;
 
   const existingUser = await query('SELECT id FROM users LIMIT 1');
-  if (existingUser.rowCount > 0) {
+  if ((existingUser.rowCount ?? 0) > 0) {
     return res.status(409).json({ error: 'Bootstrap already completed.' });
   }
 
@@ -161,13 +161,13 @@ router.post('/auth/bootstrap', async (req: Request, res: Response) => {
   const tenantNameFinal = tenantName ?? 'Default Tenant';
   const tenantSlugFinal = tenantSlug ?? 'default';
   const existingTenant = await query('SELECT id FROM tenants WHERE slug = $1', [tenantSlugFinal]);
-  const tenantId = existingTenant.rowCount > 0 ? existingTenant.rows[0].id : uuidv4();
+  const tenantId = (existingTenant.rowCount ?? 0) > 0 ? existingTenant.rows[0].id : uuidv4();
   const userId = uuidv4();
 
   try {
     const passwordHash = await hashPassword(adminPassword);
     const result = await withTransaction(async (client) => {
-      if (existingTenant.rowCount === 0) {
+      if ((existingTenant.rowCount ?? 0) === 0) {
         await client.query(
           `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
            VALUES ($1, $2, $3, NULL, $4)`,
@@ -369,7 +369,7 @@ router.patch('/auth/me', requireAuth, async (req: Request, res: Response) => {
           nextEmail,
           auth.userId
         ]);
-        if (dupRes.rowCount > 0) {
+        if ((dupRes.rowCount ?? 0) > 0) {
           throw new Error('USER_EMAIL_IN_USE');
         }
       }

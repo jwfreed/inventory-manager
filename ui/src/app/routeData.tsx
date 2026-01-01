@@ -13,6 +13,7 @@ import { vendorRoutes } from '../features/vendors'
 import { workOrderRoutes } from '../features/workOrders'
 import { profileRoutes } from '../features/profile'
 import { routingsRoutes } from '../features/routings/index'
+import { ncrRoutes } from '../features/ncrs/routes'
 
 const coreRoutes: AppRouteObject[] = [
   {
@@ -43,6 +44,7 @@ export const appShellRoutes: AppRouteObject[] = [
   ...orderToCashRoutes,
   ...profileRoutes,
   ...routingsRoutes,
+  ...ncrRoutes,
   {
     path: 'not-found',
     element: <NotFoundPage />,

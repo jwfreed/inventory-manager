@@ -106,6 +106,11 @@ router.post('/putaways/:id/post', async (req: Request, res: Response) => {
       overrideRequested: overrideSchema.data.overrideNegative,
       overrideReason: overrideSchema.data.overrideReason
     });
+
+    if (!putaway) {
+      throw new Error('Failed to retrieve putaway after posting');
+    }
+
     const itemIds = Array.from(new Set(putaway.lines.map((line) => line.itemId)));
     const locationIds = Array.from(
       new Set(

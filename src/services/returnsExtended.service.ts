@@ -156,7 +156,7 @@ export async function listReturnReceipts(tenantId: string, limit: number, offset
      LIMIT $2 OFFSET $3`,
     [tenantId, limit, offset],
   )
-  return rows.map(mapReturnReceipt)
+  return rows.map((row) => mapReturnReceipt(row))
 }
 
 export async function getReturnReceipt(tenantId: string, id: string) {
@@ -271,7 +271,7 @@ export async function listReturnDispositions(tenantId: string, limit: number, of
      LIMIT $2 OFFSET $3`,
     [tenantId, limit, offset],
   )
-  return rows.map(mapReturnDisposition)
+  return rows.map((row) => mapReturnDisposition(row))
 }
 
 export async function getReturnDisposition(tenantId: string, id: string) {

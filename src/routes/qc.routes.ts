@@ -1,7 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { qcEventSchema } from '../schemas/qc.schema';
-import { createQcEvent, getQcEventById, listQcEventsForLine } from '../services/qc.service';
+import { 
+  createQcEvent, 
+  getQcEventById, 
+  listQcEventsForLine, 
+  listQcEventsForWorkOrder, 
+  listQcEventsForExecutionLine 
+} from '../services/qc.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
@@ -20,20 +26,35 @@ router.post('/qc-events', async (req: Request, res: Response) => {
     if (error?.message === 'QC_LINE_NOT_FOUND') {
       return res.status(404).json({ error: 'Receipt line not found.' });
     }
+    if (error?.message === 'QC_WORK_ORDER_NOT_FOUND') {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    if (error?.message === 'QC_EXECUTION_LINE_NOT_FOUND') {
+      return res.status(404).json({ error: 'Work order execution line not found.' });
+    }
     if (error?.message === 'QC_RECEIPT_VOIDED') {
       return res.status(409).json({ error: 'Receipt is voided; QC events are not allowed.' });
     }
     if (error?.message === 'QC_UOM_MISMATCH') {
-      return res.status(400).json({ error: 'QC event UOM must match the receipt line UOM.' });
+      return res.status(400).json({ error: 'QC event UOM must match the source UOM.' });
     }
     if (error?.message === 'QC_EXCEEDS_RECEIPT') {
       return res.status(400).json({ error: 'QC quantities cannot exceed the received quantity for the line.' });
     }
+    if (error?.message === 'QC_EXCEEDS_EXECUTION') {
+      return res.status(400).json({ error: 'QC quantities cannot exceed the execution quantity.' });
+    }
+    if (error?.message === 'QC_EXCEEDS_WORK_ORDER') {
+      return res.status(400).json({ error: 'QC quantities cannot exceed the work order completed quantity.' });
+    }
     if (error?.message === 'QC_ACCEPT_LOCATION_REQUIRED') {
-      return res.status(400).json({ error: 'Receipt line has no receiving location to post accepted inventory.' });
+      return res.status(400).json({ error: 'Source has no receiving location to post accepted inventory.' });
+    }
+    if (error?.message === 'QC_SOURCE_REQUIRED') {
+      return res.status(400).json({ error: 'A valid source (receipt line, work order, or execution line) is required.' });
     }
     const mapped = mapPgErrorToHttp(error, {
-      foreignKey: () => ({ status: 400, body: { error: 'Referenced receipt line does not exist.' } }),
+      foreignKey: () => ({ status: 400, body: { error: 'Referenced source does not exist.' } }),
       check: () => ({ status: 400, body: { error: 'QC quantity must be greater than zero.' } })
     });
     if (mapped) {
@@ -56,6 +77,42 @@ router.get('/purchase-order-receipt-lines/:id/qc-events', async (req: Request, r
   } catch (error: any) {
     if (error?.message === 'QC_LINE_NOT_FOUND') {
       return res.status(404).json({ error: 'Receipt line not found.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to list QC events.' });
+  }
+});
+
+router.get('/work-orders/:id/qc-events', async (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+
+  try {
+    const events = await listQcEventsForWorkOrder(req.auth!.tenantId, id);
+    return res.json({ data: events });
+  } catch (error: any) {
+    if (error?.message === 'QC_WORK_ORDER_NOT_FOUND') {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to list QC events.' });
+  }
+});
+
+router.get('/work-order-execution-lines/:id/qc-events', async (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid execution line id.' });
+  }
+
+  try {
+    const events = await listQcEventsForExecutionLine(req.auth!.tenantId, id);
+    return res.json({ data: events });
+  } catch (error: any) {
+    if (error?.message === 'QC_EXECUTION_LINE_NOT_FOUND') {
+      return res.status(404).json({ error: 'Execution line not found.' });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to list QC events.' });
