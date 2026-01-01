@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useMutation } from '@tanstack/react-query'
 import { useSalesOrdersList } from '../queries'
+import { createWave } from '../api/picking'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
@@ -14,8 +16,20 @@ export default function SalesOrdersListPage() {
   const navigate = useNavigate()
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const { data, isLoading, isError, error, refetch } = useSalesOrdersList()
+
+  const waveMutation = useMutation({
+    mutationFn: createWave,
+    onSuccess: (res) => {
+      alert(`Wave created with ${res.tasks.length} tasks!`)
+      setSelectedIds(new Set())
+    },
+    onError: (err: Error) => {
+      alert(`Failed to create wave: ${err.message}`)
+    },
+  })
 
   const filtered = useMemo(() => {
     const list = data?.data ?? []
@@ -29,19 +43,45 @@ export default function SalesOrdersListPage() {
     )
   }, [data?.data, search, status])
 
+  const toggleSelection = (id: string) => {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelectedIds(next)
+  }
+
+  const toggleAll = () => {
+    if (selectedIds.size === filtered.length) setSelectedIds(new Set())
+    else setSelectedIds(new Set(filtered.map((so) => so.id)))
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Order to Cash</p>
-        <h2 className="text-2xl font-semibold text-slate-900">Sales Orders</h2>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Order to Cash</p>
+            <h2 className="text-2xl font-semibold text-slate-900">Sales Orders</h2>
+          </div>
+          <div className="flex gap-2">
+            {selectedIds.size > 0 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => waveMutation.mutate(Array.from(selectedIds))}
+                disabled={waveMutation.isPending}
+              >
+                {waveMutation.isPending ? 'Creating...' : `Create Wave (${selectedIds.size})`}
+              </Button>
+            )}
+            <Button size="sm" onClick={() => navigate('/sales-orders/new')}>
+              New sales order
+            </Button>
+          </div>
+        </div>
         <p className="max-w-3xl text-sm text-slate-600">
           Create and browse orders. Documents do not change inventory unless linked to posted movements.
         </p>
-        <div>
-          <Button size="sm" onClick={() => navigate('/sales-orders/new')}>
-            New sales order
-          </Button>
-        </div>
       </div>
 
       <Section title="Filters">
@@ -88,6 +128,14 @@ export default function SalesOrdersListPage() {
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
                   <tr>
+                    <th className="w-8 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        checked={selectedIds.size === filtered.length && filtered.length > 0}
+                        onChange={toggleAll}
+                      />
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       SO Number
                     </th>
@@ -112,6 +160,14 @@ export default function SalesOrdersListPage() {
                       className="cursor-pointer hover:bg-slate-50"
                       onClick={() => navigate(`/sales-orders/${so.id}`)}
                     >
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          checked={selectedIds.has(so.id)}
+                          onChange={() => toggleSelection(so.id)}
+                        />
+                      </td>
                       <td className="px-4 py-3 text-sm font-semibold text-slate-900">
                         {so.soNumber}
                       </td>

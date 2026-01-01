@@ -4,6 +4,7 @@ import { pickBatchSchema, pickTaskSchema } from '../schemas/picking.schema';
 import {
   createPickBatch,
   createPickTask,
+  createWave,
   getPickBatch,
   getPickTask,
   listPickBatches,
@@ -13,6 +14,23 @@ import { mapPgErrorToHttp } from '../lib/pgErrors';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
+const createWaveSchema = z.object({
+  salesOrderIds: z.array(z.string().uuid()).min(1),
+});
+
+router.post('/waves', async (req: Request, res: Response) => {
+  const parsed = createWaveSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const result = await createWave(req.auth!.tenantId, parsed.data.salesOrderIds);
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to create wave.' });
+  }
+});
 
 router.post('/pick-batches', async (req: Request, res: Response) => {
   const parsed = pickBatchSchema.safeParse(req.body);

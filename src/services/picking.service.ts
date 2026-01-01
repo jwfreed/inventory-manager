@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
-import { query } from '../db';
+import { query, withTransaction } from '../db';
 import type { pickBatchSchema, pickTaskSchema } from '../schemas/picking.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 
@@ -105,6 +105,61 @@ export async function createPickTask(tenantId: string, data: PickTaskInput) {
     if (mapped) throw Object.assign(new Error(), { http: mapped });
     throw error;
   }
+}
+
+export async function createWave(tenantId: string, salesOrderIds: string[]) {
+  return withTransaction(async (client) => {
+    const now = new Date();
+    const batchId = uuidv4();
+
+    // 1. Create Pick Batch
+    const batchRes = await client.query(
+      `INSERT INTO pick_batches (id, tenant_id, status, pick_type, notes, created_at, updated_at)
+       VALUES ($1, $2, 'draft', 'batch', $3, $4, $4)
+       RETURNING *`,
+      [batchId, tenantId, `Wave for ${salesOrderIds.length} orders`, now]
+    );
+    const batch = mapPickBatch(batchRes.rows[0]);
+
+    // 2. Find reservations for these orders
+    const reservationsRes = await client.query(
+      `SELECT r.*, sol.sales_order_id
+       FROM inventory_reservations r
+       JOIN sales_order_lines sol ON r.demand_id = sol.id
+       WHERE sol.sales_order_id = ANY($1)
+       AND r.demand_type = 'sales_order_line'
+       AND r.status = 'open'`,
+      [salesOrderIds]
+    );
+
+    // 3. Create Pick Tasks for each reservation
+    const tasks = [];
+    for (const res of reservationsRes.rows) {
+      const taskId = uuidv4();
+      const taskRes = await client.query(
+        `INSERT INTO pick_tasks (
+          id, tenant_id, pick_batch_id, status, inventory_reservation_id, sales_order_line_id,
+          item_id, uom, from_location_id, quantity_requested, quantity_picked, created_at, updated_at
+        ) VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, 0, $10, $10)
+        RETURNING *`,
+        [
+          taskId,
+          tenantId,
+          batchId,
+          res.id, // inventory_reservation_id
+          res.demand_id, // sales_order_line_id
+          res.item_id,
+          res.uom,
+          res.location_id,
+          res.quantity_reserved,
+          now
+        ]
+      );
+      tasks.push(mapPickTask(taskRes.rows[0]));
+    }
+
+    return { batch, tasks };
+  });
 }
 
 export async function listPickTasks(tenantId: string, limit: number, offset: number) {
