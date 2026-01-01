@@ -7,6 +7,7 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock, validateLocationCapacity } from './stockValidation.service';
+import { calculateMovementCost } from './costing.service';
 import {
   calculateAcceptedQuantity,
   calculatePutawayAvailability,
@@ -393,17 +394,25 @@ export async function postPutaway(
       const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity_planned)), line.uom);
       const qty = normalized.quantity;
       const lineNote = `Putaway ${id} line ${line.line_number}`;
+      
+      // Calculate cost for this movement
+      const costData = await calculateMovementCost(tenantId, line.item_id, -qty, client);
+      
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'putaway', $8)`,
-        [uuidv4(), tenantId, movementId, line.item_id, line.from_location_id, -qty, normalized.uom, lineNote]
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'putaway', $10)`,
+        [uuidv4(), tenantId, movementId, line.item_id, line.from_location_id, -qty, normalized.uom, costData.unitCost, costData.extendedCost, lineNote]
       );
+      
+      // Positive movement uses same unit cost, but positive extended cost
+      const costDataPositive = await calculateMovementCost(tenantId, line.item_id, qty, client);
+      
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'putaway', $8)`,
-        [uuidv4(), tenantId, movementId, line.item_id, line.to_location_id, qty, normalized.uom, lineNote]
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'putaway', $10)`,
+        [uuidv4(), tenantId, movementId, line.item_id, line.to_location_id, qty, normalized.uom, costDataPositive.unitCost, costDataPositive.extendedCost, lineNote]
       );
       await client.query(
         `UPDATE putaway_lines

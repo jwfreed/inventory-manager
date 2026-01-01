@@ -14,6 +14,10 @@ export const itemSchema = z.object({
   weightUom: z.string().max(50).nullable().optional(),
   volume: z.number().positive().nullable().optional(),
   volumeUom: z.string().max(50).nullable().optional(),
+  standardCost: z.preprocess((val) => {
+    const num = typeof val === 'string' ? Number(val) : val;
+    return num;
+  }, z.number().nonnegative().nullable().optional()),
 });
 
 export const locationSchema = z.object({

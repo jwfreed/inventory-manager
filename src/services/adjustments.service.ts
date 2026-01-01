@@ -7,6 +7,7 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
+import { calculateMovementCost } from './costing.service';
 
 type InventoryAdjustmentInput = z.infer<typeof inventoryAdjustmentSchema>;
 
@@ -575,10 +576,14 @@ export async function postInventoryAdjustment(
       if (qty === 0) {
         throw new Error('ADJUSTMENT_LINE_ZERO');
       }
+      
+      // Calculate cost for adjustment movement
+      const costData = await calculateMovementCost(tenantId, line.item_id, qty, client);
+      
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           uuidv4(),
           tenantId,
@@ -587,6 +592,8 @@ export async function postInventoryAdjustment(
           line.location_id,
           qty,
           line.uom,
+          costData.unitCost,
+          costData.extendedCost,
           line.reason_code,
           line.notes ?? `Adjustment ${id} line ${line.line_number}`
         ]

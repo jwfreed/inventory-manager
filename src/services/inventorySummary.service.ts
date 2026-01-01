@@ -7,7 +7,7 @@ export async function assertItemExists(tenantId: string, id: string) {
 
 export async function assertLocationExists(tenantId: string, id: string) {
   const res = await query('SELECT 1 FROM locations WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
-  return (res.rowCount ?? 0)t ?? 0) > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 export async function getItemInventorySummary(tenantId: string, itemId: string) {

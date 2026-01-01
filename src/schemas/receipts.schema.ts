@@ -4,6 +4,10 @@ const receiptLineSchema = z.object({
   purchaseOrderLineId: z.string().uuid(),
   uom: z.string().min(1).max(32),
   quantityReceived: z.number().positive(),
+  unitCost: z.preprocess(
+    (val) => (typeof val === 'string' ? Number(val) : val),
+    z.number().nonnegative().nullable().optional()
+  ),
   discrepancyReason: z.enum(['short', 'over', 'damaged', 'substituted']).optional(),
   discrepancyNotes: z.string().max(2000).optional()
 });

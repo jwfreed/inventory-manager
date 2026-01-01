@@ -45,6 +45,10 @@ export const purchaseOrderLineSchema = z.object({
     const num = typeof val === 'string' ? Number(val) : val;
     return num;
   }, z.number().positive()),
+  unitPrice: z.preprocess((val) => {
+    const num = typeof val === 'string' ? Number(val) : val;
+    return num;
+  }, z.number().nonnegative().nullable().optional()),
   notes: z.string().max(1000).optional()
 });
 

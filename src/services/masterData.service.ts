@@ -22,6 +22,7 @@ const itemSelectColumns = `
   i.weight_uom,
   i.volume,
   i.volume_uom,
+  i.standard_cost,
   i.created_at,
   i.updated_at,
   l.code AS default_location_code,
@@ -45,6 +46,7 @@ export function mapItem(row: any) {
     weightUom: row.weight_uom ?? null,
     volume: row.volume ? Number(row.volume) : null,
     volumeUom: row.volume_uom ?? null,
+    standardCost: row.standard_cost != null ? Number(row.standard_cost) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -59,8 +61,8 @@ export async function createItem(tenantId: string, data: ItemInput) {
   const defaultLocationId = data.defaultLocationId ?? null;
   await query(
     `INSERT INTO items (
-        id, tenant_id, sku, name, description, type, is_phantom, default_uom, default_location_id, lifecycle_status, weight, weight_uom, volume, volume_uom, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)`,
+        id, tenant_id, sku, name, description, type, is_phantom, default_uom, default_location_id, lifecycle_status, weight, weight_uom, volume, volume_uom, standard_cost, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)`,
     [
       id,
       tenantId,
@@ -76,6 +78,7 @@ export async function createItem(tenantId: string, data: ItemInput) {
       data.weightUom ?? null,
       data.volume ?? null,
       data.volumeUom ?? null,
+      data.standardCost ?? null,
       now
     ]
   );
@@ -119,8 +122,9 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
            weight_uom = $10,
            volume = $11,
            volume_uom = $12,
-           updated_at = $13
-     WHERE id = $14 AND tenant_id = $15
+           standard_cost = $13,
+           updated_at = $14
+     WHERE id = $15 AND tenant_id = $16
      RETURNING id`,
     [
       data.sku,
@@ -135,6 +139,7 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
       data.weightUom ?? null,
       data.volume ?? null,
       data.volumeUom ?? null,
+      data.standardCost ?? null,
       now,
       id,
       tenantId

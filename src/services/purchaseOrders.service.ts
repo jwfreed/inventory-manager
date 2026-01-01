@@ -71,6 +71,7 @@ export function mapPurchaseOrder(row: any, lines: any[]) {
       itemName: line.item_name ?? null,
       uom: line.uom,
       quantityOrdered: line.quantity_ordered,
+      unitPrice: line.unit_price != null ? Number(line.unit_price) : null,
       notes: line.notes,
       createdAt: line.created_at
     }))
@@ -177,8 +178,8 @@ export async function createPurchaseOrder(
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO purchase_order_lines (
-            id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered, notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered, unit_price, notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
         [
           uuidv4(),
@@ -188,6 +189,7 @@ export async function createPurchaseOrder(
           line.itemId,
           line.uom,
           line.quantityOrdered,
+          line.unitPrice ?? null,
           line.notes ?? null
         ]
       );
@@ -309,8 +311,8 @@ export async function updatePurchaseOrder(
       for (const line of normalizedLines) {
         await client.query(
           `INSERT INTO purchase_order_lines (
-              id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered, notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered, unit_price, notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
           [
             uuidv4(),
             tenantId,
@@ -319,6 +321,7 @@ export async function updatePurchaseOrder(
             line.itemId,
             line.uom,
             line.quantityOrdered,
+            line.unitPrice ?? null,
             line.notes ?? null
           ]
         );
@@ -387,7 +390,7 @@ export async function cancelPurchaseOrder(
       'SELECT id FROM purchase_order_receipts WHERE purchase_order_id = $1 AND tenant_id = $2 LIMIT 1',
       [id, tenantId]
     );
-    if (receiptResult.rowCount > 0) {
+    if ((receiptResult.rowCount ?? 0) > 0) {
       throw new Error('PO_HAS_RECEIPTS');
     }
 

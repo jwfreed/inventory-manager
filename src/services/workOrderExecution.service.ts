@@ -6,6 +6,7 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { fetchBomById } from './boms.service';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
+import { calculateMovementCost } from './costing.service';
 import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
@@ -340,10 +341,14 @@ export async function postWorkOrderIssue(
         throw new Error('WO_ISSUE_INVALID_QUANTITY');
       }
       const reasonCode = line.reason_code ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue');
+      
+      // Calculate cost for material issue (negative movement = consumption)
+      const costData = await calculateMovementCost(tenantId, line.component_item_id, roundQuantity(-qty), client);
+      
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           uuidv4(),
           tenantId,
@@ -352,6 +357,8 @@ export async function postWorkOrderIssue(
           line.from_location_id,
           roundQuantity(-qty),
           normalized.uom,
+          costData.unitCost,
+          costData.extendedCost,
           reasonCode,
           line.notes ?? `Work order issue ${issueId} line ${line.line_number}`
         ]
@@ -585,10 +592,14 @@ export async function postWorkOrderCompletion(
       const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity)), line.uom);
       const qty = normalized.quantity;
       const reasonCode = line.reason_code ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion');
+      
+      // Calculate cost for work order completion (positive movement = production)
+      const costData = await calculateMovementCost(tenantId, line.item_id, qty, client);
+      
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           uuidv4(),
           tenantId,
@@ -597,6 +608,8 @@ export async function postWorkOrderCompletion(
           line.to_location_id,
           qty,
           normalized.uom,
+          costData.unitCost,
+          costData.extendedCost,
           reasonCode,
           line.notes ?? `Work order completion ${completionId}`
         ]
@@ -898,10 +911,14 @@ export async function recordWorkOrderBatch(
     }
     for (const line of normalizedConsumes) {
       const reasonCode = line.reasonCode ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue');
+      
+      // Calculate cost for backflush material consumption
+      const costData = await calculateMovementCost(tenantId, line.componentItemId, roundQuantity(-line.quantity), client);
+      
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           uuidv4(),
           tenantId,
@@ -910,6 +927,8 @@ export async function recordWorkOrderBatch(
           line.fromLocationId,
           roundQuantity(-line.quantity),
           line.uom,
+          costData.unitCost,
+          costData.extendedCost,
           reasonCode,
           line.notes ?? null
         ]
@@ -946,10 +965,14 @@ export async function recordWorkOrderBatch(
     }
     for (const line of normalizedProduces) {
       const reasonCode = line.reasonCode ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion');
+      
+      // Calculate cost for backflush production
+      const costData = await calculateMovementCost(tenantId, line.outputItemId, roundQuantity(line.quantity), client);
+      
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           uuidv4(),
           tenantId,
@@ -958,6 +981,8 @@ export async function recordWorkOrderBatch(
           line.toLocationId,
           roundQuantity(line.quantity),
           line.uom,
+          costData.unitCost,
+          costData.extendedCost,
           reasonCode,
           line.notes ?? null
         ]

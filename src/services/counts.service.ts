@@ -6,6 +6,7 @@ import { inventoryCountSchema } from '../schemas/counts.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
+import { calculateMovementCost } from './costing.service';
 
 type InventoryCountInput = z.infer<typeof inventoryCountSchema>;
 
@@ -449,10 +450,13 @@ export async function postInventoryCount(
       );
 
       if (delta.variance !== 0) {
+        // Calculate cost for cycle count adjustment
+        const costData = await calculateMovementCost(tenantId, delta.line.item_id, delta.variance, client);
+        
         await client.query(
           `INSERT INTO inventory_movement_lines (
-              id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             uuidv4(),
             tenantId,
@@ -461,6 +465,8 @@ export async function postInventoryCount(
             cycleCount.location_id,
             delta.variance,
             delta.line.uom,
+            costData.unitCost,
+            costData.extendedCost,
             delta.line.reason_code,
             delta.line.notes ?? `Cycle count ${id} line ${delta.line.line_number}`
           ]

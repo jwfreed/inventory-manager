@@ -6,6 +6,7 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { normalizeQuantityByUom } from '../lib/uom';
 import { recordAuditLog } from '../lib/audit';
 import { createNcr, findMrbLocation } from './ncr.service';
+import { calculateMovementCost } from './costing.service';
 
 export type QcEventInput = z.infer<typeof qcEventSchema>;
 
@@ -207,6 +208,7 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
         // PO Receipt: Create new inventory (Receive)
         const loc = destLocationId; // For receipt, we receive INTO the target (Stock or MRB)
         if (!loc) throw new Error('QC_LOCATION_REQUIRED');
+        if (!itemId) throw new Error('QC_ITEM_ID_REQUIRED');
         
         const now = new Date();
         const movementId = uuidv4();
@@ -216,10 +218,14 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
            ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $4, $5, $4, $4)`,
           [movementId, tenantId, `qc_${data.eventType}:${created.id}`, now, notes]
         );
+        
+        // Calculate cost for QC receive movement
+        const costData = await calculateMovementCost(tenantId, itemId, normalized.quantity, client);
+        
         await client.query(
           `INSERT INTO inventory_movement_lines (
-              id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             uuidv4(),
             tenantId,
@@ -228,6 +234,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
             loc,
             normalized.quantity,
             normalized.uom,
+            costData.unitCost,
+            costData.extendedCost,
             reasonCode,
             `QC ${data.eventType} ${normalized.quantity} ${normalized.uom}`
           ]
@@ -240,6 +248,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
         );
       } else if (sourceLocationId && destLocationId && sourceLocationId !== destLocationId) {
          // WO / Execution: Transfer inventory
+         if (!itemId) throw new Error('QC_ITEM_ID_REQUIRED');
+         
          const now = new Date();
          const movementId = uuidv4();
          await client.query(
@@ -248,10 +258,14 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
              ) VALUES ($1, $2, 'transfer', 'posted', $3, $4, $4, $5, $4, $4)`,
             [movementId, tenantId, `qc_${data.eventType}:${created.id}`, now, notes]
           );
+          
+          // Calculate cost for QC transfer movements
+          const costDataOut = await calculateMovementCost(tenantId, itemId, -normalized.quantity, client);
+          
           await client.query(
             `INSERT INTO inventory_movement_lines (
-                id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
             [
               uuidv4(),
               tenantId,
@@ -260,14 +274,19 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
               sourceLocationId,
               -normalized.quantity,
               normalized.uom,
+              costDataOut.unitCost,
+              costDataOut.extendedCost,
               `${reasonCode}_out`,
               `QC ${data.eventType} transfer out`
             ]
           );
+          
+          const costDataIn = await calculateMovementCost(tenantId, itemId, normalized.quantity, client);
+          
            await client.query(
             `INSERT INTO inventory_movement_lines (
-                id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
             [
               uuidv4(),
               tenantId,
@@ -276,6 +295,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
               destLocationId,
               normalized.quantity,
               normalized.uom,
+              costDataIn.unitCost,
+              costDataIn.extendedCost,
               `${reasonCode}_in`,
               `QC ${data.eventType} transfer in`
             ]

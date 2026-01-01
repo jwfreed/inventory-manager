@@ -74,6 +74,7 @@ function mapReceiptLine(
     uom: line.uom,
     expectedQuantity: roundQuantity(toNumber(line.expected_quantity ?? 0)),
     quantityReceived,
+    unitCost: line.unit_cost != null ? Number(line.unit_cost) : null,
     discrepancyReason: line.discrepancy_reason ?? null,
     discrepancyNotes: line.discrepancy_notes ?? null,
     createdAt: line.created_at,
@@ -201,18 +202,19 @@ export async function createPurchaseOrderReceipt(
   }
 
   const { rows: poLineRows } = await query(
-    'SELECT id, purchase_order_id, uom, quantity_ordered FROM purchase_order_lines WHERE id = ANY($1::uuid[]) AND tenant_id = $2',
+    'SELECT id, purchase_order_id, uom, quantity_ordered, unit_price FROM purchase_order_lines WHERE id = ANY($1::uuid[]) AND tenant_id = $2',
     [uniqueLineIds, tenantId]
   );
   if (poLineRows.length !== uniqueLineIds.length) {
     throw new Error('RECEIPT_PO_LINES_NOT_FOUND');
   }
-  const poLineMap = new Map<string, { purchase_order_id: string; uom: string; quantity_ordered: number }>();
+  const poLineMap = new Map<string, { purchase_order_id: string; uom: string; quantity_ordered: number; unit_price: number | null }>();
   for (const row of poLineRows) {
     poLineMap.set(row.id, {
       purchase_order_id: row.purchase_order_id,
       uom: row.uom,
-      quantity_ordered: roundQuantity(toNumber(row.quantity_ordered ?? 0))
+      quantity_ordered: roundQuantity(toNumber(row.quantity_ordered ?? 0)),
+      unit_price: row.unit_price != null ? Number(row.unit_price) : null
     });
   }
   for (const line of data.lines) {
@@ -261,11 +263,16 @@ export async function createPurchaseOrderReceipt(
       if (hasDiscrepancy && !line.discrepancyReason) {
         throw new Error('RECEIPT_DISCREPANCY_REASON_REQUIRED');
       }
+
+      // Default unit_cost to PO line's unit_price if not explicitly provided
+      const poLine = poLineMap.get(line.purchaseOrderLineId);
+      const unitCost = line.unitCost !== undefined ? line.unitCost : (poLine?.unit_price ?? null);
+
       await client.query(
         `INSERT INTO purchase_order_receipt_lines (
             id, tenant_id, purchase_order_receipt_id, purchase_order_line_id, uom,
-            quantity_received, expected_quantity, discrepancy_reason, discrepancy_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            quantity_received, expected_quantity, unit_cost, discrepancy_reason, discrepancy_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           uuidv4(),
           tenantId,
@@ -274,6 +281,7 @@ export async function createPurchaseOrderReceipt(
           normalized.uom,
           normalized.quantity,
           expectedQty,
+          unitCost,
           line.discrepancyReason ?? null,
           line.discrepancyNotes ?? null
         ]
