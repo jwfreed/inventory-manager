@@ -23,6 +23,7 @@ export type BomVersion = {
   effectiveTo: string | null
   yieldQuantity: number
   yieldUom: string
+  yieldFactor?: number
   notes: string | null
   createdAt: string
   updatedAt: string

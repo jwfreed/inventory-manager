@@ -18,6 +18,7 @@ export const bomVersionInputSchema = z
     effectiveTo: z.string().datetime().optional(),
     yieldQuantity: z.number().positive(),
     yieldUom: z.string().min(1).max(32),
+    yieldFactor: z.number().gt(0).lte(1).default(1.0),
     notes: z.string().max(2000).optional(),
     components: z.array(bomComponentInputSchema).min(1)
   })

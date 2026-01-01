@@ -71,6 +71,7 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
                 </Badge>
                 <span className="text-slate-600">
                   Yield: {version.yieldQuantity} {version.yieldUom}
+                  {version.yieldFactor !== undefined && version.yieldFactor !== 1 && ` (Factor: ${version.yieldFactor})`}
                 </span>
               </div>
               <div className="flex items-center gap-2">

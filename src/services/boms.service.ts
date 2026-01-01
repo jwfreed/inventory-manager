@@ -29,6 +29,7 @@ type BomVersionRow = {
   effective_to: string | null;
   yield_quantity: string | number;
   yield_uom: string;
+  yield_factor: string | number;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -75,6 +76,7 @@ export type BomVersion = {
   effectiveTo: string | null;
   yieldQuantity: number;
   yieldUom: string;
+  yieldFactor: number;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -122,6 +124,7 @@ function mapBomVersion(row: BomVersionRow, lines: BomVersionLineRow[]): BomVersi
     effectiveFrom: row.effective_from,
     effectiveTo: row.effective_to,
     yieldQuantity: roundQuantity(toNumber(row.yield_quantity)),
+    yieldFactor: roundQuantity(toNumber(row.yield_factor)),
     yieldUom: row.yield_uom,
     notes: row.notes,
     createdAt: row.created_at,
@@ -211,8 +214,8 @@ export async function createBom(tenantId: string, data: BomCreateInput): Promise
     await client.query(
       `INSERT INTO bom_versions (
           id, tenant_id, bom_id, version_number, status, effective_from, effective_to,
-          yield_quantity, yield_uom, notes, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7, $8, $9, $10, $10)`,
+          yield_quantity, yield_uom, yield_factor, notes, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7, $8, $9, $10, $11, $11)`,
       [
         versionId,
         tenantId,
@@ -222,6 +225,7 @@ export async function createBom(tenantId: string, data: BomCreateInput): Promise
         data.version.effectiveTo ?? null,
         normalizedYield.quantity,
         normalizedYield.uom,
+        data.version.yieldFactor ?? 1.0,
         data.version.notes ?? null,
         now
       ]
@@ -279,6 +283,7 @@ export async function listBomsByItem(tenantId: string, itemId: string) {
         v.effective_to,
         v.yield_quantity,
         v.yield_uom,
+        v.yield_factor,
         v.notes AS version_notes,
         v.created_at AS version_created_at,
         v.updated_at AS version_updated_at
@@ -330,6 +335,7 @@ export async function listBomsByItem(tenantId: string, itemId: string) {
         effectiveTo: row.effective_to,
         yieldQuantity: roundQuantity(toNumber(row.yield_quantity ?? 0)),
         yieldUom: row.yield_uom,
+        yieldFactor: roundQuantity(toNumber(row.yield_factor ?? 1)),
         notes: row.version_notes,
         createdAt: row.version_created_at,
         updatedAt: row.version_updated_at,

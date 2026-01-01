@@ -23,6 +23,7 @@ export type BomVersionInput = {
   effectiveTo?: string
   yieldQuantity: number
   yieldUom: string
+  yieldFactor?: number
   notes?: string
   components: BomComponentInput[]
 }

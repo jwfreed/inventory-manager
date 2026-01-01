@@ -25,6 +25,7 @@ type Props = {
       versionNumber: number
       yieldQuantity: number
       yieldUom: string
+      yieldFactor?: number
       notes?: string | null
       components: {
         lineNumber: number
@@ -54,6 +55,7 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
   const [yieldUom, setYieldUom] = useState(defaultUom ?? '')
   const [defaultBomUom, setDefaultBomUom] = useState(defaultUom ?? '')
   const [yieldQuantity, setYieldQuantity] = useState<number | ''>(1)
+  const [yieldFactor, setYieldFactor] = useState<number | ''>(1)
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [notes, setNotes] = useState('')
   const [targetOutputWeight, setTargetOutputWeight] = useState<number | ''>('')
@@ -90,6 +92,7 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
       setYieldUom(defaultUom ?? '')
       setDefaultBomUom(defaultUom ?? '')
       setYieldQuantity(1)
+      setYieldFactor(1)
       setEffectiveFrom('')
       setNotes('')
       setComponents([{ lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '', ratio: '' }])
@@ -104,6 +107,7 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
       setYieldUom(defaultUom ?? '')
       setDefaultBomUom(defaultUom ?? '')
       setYieldQuantity(1)
+      setYieldFactor(1)
       setEffectiveFrom('')
       setNotes('')
       setRatioMode(false)
@@ -118,6 +122,7 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
     setBomCode(suggestedCode)
     setYieldUom(version?.yieldUom ?? bom?.defaultUom ?? defaultUom ?? '')
     setDefaultBomUom(bom?.defaultUom ?? defaultUom ?? '')
+    setYieldFactor(version?.yieldFactor ?? 1)
     setYieldQuantity(version?.yieldQuantity ?? 1)
     setEffectiveFrom('')
     setNotes(bom?.notes ?? '')
@@ -189,6 +194,7 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
         versionNumber: 1,
         effectiveFrom: effectiveFromIso,
         yieldQuantity: Number(yieldQuantity || 0) || 1,
+        yieldFactor: Number(yieldFactor || 0) || 1,
         yieldUom: resolvedYieldUom,
         components: cleanComponents.map((c, idx) => ({
           lineNumber: c.lineNumber || idx + 1,
@@ -277,6 +283,20 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
             />
           </label>
           <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Yield factor</span>
+            <Input
+              type="number"
+              min={0}
+              max={1}
+              step={0.0001}
+              value={yieldFactor}
+              onChange={(e) =>
+                setYieldFactor(e.target.value === '' ? '' : Number(e.target.value))
+              }
+              disabled={mutation.isPending}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Effective from</span>
             <Input
               type="date"
@@ -285,7 +305,7 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
               disabled={mutation.isPending}
             />
           </label>
-          <label className="space-y-1 text-sm md:col-span-2">
+          <label className="space-y-1 text-sm md:col-span-3">
             <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
             <Textarea
               value={notes}

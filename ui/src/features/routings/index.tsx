@@ -1,4 +1,4 @@
-import { RouteObject } from 'react-router-dom';
+import type { RouteObject } from 'react-router-dom';
 import { WorkCentersPage } from './pages/WorkCentersPage';
 
 export const routingsRoutes: RouteObject[] = [

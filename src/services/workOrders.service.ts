@@ -294,7 +294,8 @@ export async function getWorkOrderRequirements(
     throw new Error('WO_REQUIREMENTS_INVALID_YIELD');
   }
 
-  const factor = roundQuantity(normalizedRequested.quantity / normalizedYield.quantity);
+  const yieldFactor = version.yieldFactor ?? 1.0;
+  const factor = roundQuantity(normalizedRequested.quantity / (normalizedYield.quantity * yieldFactor));
 
   const lines: WorkOrderRequirementLine[] = version.components.map((c) => {
     const normalizedComp = normalizeQuantityByUom(c.quantityPer, c.uom);
