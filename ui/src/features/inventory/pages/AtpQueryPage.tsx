@@ -31,7 +31,7 @@ export function AtpQueryPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Available to Promise</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Query inventory available for new orders (on-hand minus reservations)
         </p>
       </div>
@@ -121,7 +121,7 @@ function AtpResultsTable({ results }: { results: AtpResult[] }) {
             <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider font-mono">
               <span className="inline-flex items-center">
                 Available to Promise
-                <span className="ml-1 text-green-600">✓</span>
+                <span className="ml-1 text-emerald-600">✓</span>
               </span>
             </th>
           </tr>
@@ -152,7 +152,7 @@ function AtpResultsTable({ results }: { results: AtpResult[] }) {
                 {Number(result.reserved).toLocaleString()}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold font-mono">
-                <span className={result.availableToPromise > 0 ? 'text-green-600' : 'text-slate-400'}>
+                <span className={result.availableToPromise > 0 ? 'text-emerald-600' : 'text-slate-400'}>
                   {Number(result.availableToPromise).toLocaleString()}
                 </span>
               </td>

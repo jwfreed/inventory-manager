@@ -22,7 +22,7 @@ export function LicensePlatesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">License Plates</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Track inventory by LPN for advanced warehouse management
         </p>
       </div>
@@ -113,9 +113,9 @@ function LpnTable({ lpns }: { lpns: LicensePlate[] }) {
         <tbody className="bg-white divide-y divide-slate-200">
           {lpns.map((lpn) => {
             const borderColor = 
-              lpn.status === 'active' ? 'border-l-4 border-l-green-500' :
+              lpn.status === 'active' ? 'border-l-4 border-l-emerald-500' :
               lpn.status === 'quarantine' ? 'border-l-4 border-l-amber-500' :
-              lpn.status === 'damaged' || lpn.status === 'expired' ? 'border-l-4 border-l-red-500' :
+              lpn.status === 'damaged' || lpn.status === 'expired' ? 'border-l-4 border-l-rose-500' :
               'border-l-4 border-l-slate-200'
             
             return (
@@ -123,7 +123,7 @@ function LpnTable({ lpns }: { lpns: LicensePlate[] }) {
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm font-medium text-slate-900">{lpn.lpn}</div>
                   {lpn.containerType && (
-                    <div className="text-xs text-slate-500">{lpn.containerType}</div>
+                    <div className="text-xs text-slate-600">{lpn.containerType}</div>
                   )}
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
@@ -131,7 +131,7 @@ function LpnTable({ lpns }: { lpns: LicensePlate[] }) {
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-slate-900">{lpn.itemId}</div>
-                  {lpn.lotId && <div className="text-xs text-slate-500">Lot: {lpn.lotId}</div>}
+                  {lpn.lotId && <div className="text-xs text-slate-600">Lot: {lpn.lotId}</div>}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
                   {lpn.locationId}

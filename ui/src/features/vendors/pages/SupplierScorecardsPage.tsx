@@ -51,7 +51,7 @@ export function SupplierScorecardsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Supplier Scorecards</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Track vendor performance across delivery and quality metrics
         </p>
       </div>
@@ -60,7 +60,7 @@ export function SupplierScorecardsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <div className="p-4">
-            <div className="text-sm font-medium text-slate-500 uppercase tracking-wider">Total Suppliers</div>
+            <div className="text-sm font-medium text-slate-600 uppercase tracking-wider">Total Suppliers</div>
             <div className="mt-2 text-3xl font-bold text-slate-900">
               {allQuery.data?.data?.length || 0}
             </div>
@@ -68,20 +68,20 @@ export function SupplierScorecardsPage() {
         </Card>
         <Card>
           <div className="p-4">
-            <div className="text-sm font-medium text-slate-500 uppercase tracking-wider">Top Performers</div>
-            <div className="mt-2 text-3xl font-bold text-green-600">
+            <div className="text-sm font-medium text-slate-600 uppercase tracking-wider">Top Performers</div>
+            <div className="mt-2 text-3xl font-bold text-emerald-600">
               {deliveryQuery.data?.data?.filter(s => s.onTimeDeliveryRate >= 95).length || 0}
             </div>
-            <div className="text-xs text-slate-500 mt-1">≥95% on-time delivery</div>
+            <div className="text-xs text-slate-600 mt-1">≥95% on-time delivery</div>
           </div>
         </Card>
         <Card>
           <div className="p-4">
-            <div className="text-sm font-medium text-slate-500 uppercase tracking-wider">Quality Issues</div>
+            <div className="text-sm font-medium text-slate-600 uppercase tracking-wider">Quality Issues</div>
             <div className="mt-2 text-3xl font-bold text-amber-600">
               {issuesQuery.data?.data?.length || 0}
             </div>
-            <div className="text-xs text-slate-500 mt-1">Suppliers with concerns</div>
+            <div className="text-xs text-slate-600 mt-1">Suppliers with concerns</div>
           </div>
         </Card>
       </div>
@@ -188,7 +188,7 @@ function ScorecardTable({
             </th>
             <th
               className={`px-6 py-3 text-center text-xs font-medium uppercase tracking-wider ${
-                highlightMetric === 'delivery' ? 'bg-green-50 text-green-700' : 'text-slate-500'
+                highlightMetric === 'delivery' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500'
               }`}
             >
               On-Time Delivery
@@ -210,25 +210,25 @@ function ScorecardTable({
             <tr key={scorecard.vendorId} className="hover:bg-slate-50">
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="text-sm font-medium text-slate-900">{scorecard.vendorName}</div>
-                <div className="text-sm text-slate-500">{scorecard.vendorCode}</div>
+                <div className="text-sm text-slate-600">{scorecard.vendorCode}</div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-slate-600">
                 {scorecard.totalPurchaseOrders}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-center">
                 <div className="text-sm text-slate-900">{scorecard.totalReceipts}</div>
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-slate-600">
                   {scorecard.onTimeReceipts} on-time, {scorecard.lateReceipts} late
                 </div>
               </td>
               <td
                 className={`px-6 py-4 whitespace-nowrap text-center ${
-                  highlightMetric === 'delivery' ? 'bg-green-50' : ''
+                  highlightMetric === 'delivery' ? 'bg-emerald-50' : ''
                 }`}
               >
                 <RateBadge rate={scorecard.onTimeDeliveryRate} />
                 {scorecard.averageDaysLate && scorecard.averageDaysLate > 0 && (
-                  <div className="text-xs text-slate-500 mt-1">
+                  <div className="text-xs text-slate-600 mt-1">
                     Avg {scorecard.averageDaysLate.toFixed(1)}d late
                   </div>
                 )}
@@ -240,7 +240,7 @@ function ScorecardTable({
               >
                 <RateBadge rate={scorecard.qualityRate} />
                 {scorecard.totalQcEvents > 0 && (
-                  <div className="text-xs text-slate-500 mt-1">
+                  <div className="text-xs text-slate-600 mt-1">
                     {scorecard.acceptedQuantity} accepted, {scorecard.rejectedQuantity} rejected
                   </div>
                 )}
