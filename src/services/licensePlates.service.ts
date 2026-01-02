@@ -67,7 +67,7 @@ export async function createLicensePlate(
       'SELECT id FROM license_plates WHERE tenant_id = $1 AND lpn = $2',
       [tenantId, lpn]
     );
-    if (existing.rowCount > 0) {
+    if (existing.rowCount && existing.rowCount > 0) {
       throw new Error('LPN_ALREADY_EXISTS');
     }
 
@@ -465,7 +465,7 @@ export async function moveLicensePlate(
           tenantId,
           actorType: actor.type,
           actorId: actor.id ?? null,
-          action: 'move',
+          action: 'update',
           entityType: 'license_plate',
           entityId: data.licensePlateId,
           occurredAt: now,
