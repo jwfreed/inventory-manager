@@ -136,7 +136,7 @@ export async function getLicensePlateById(tenantId: string, id: string, client?:
             i.name AS item_name,
             l.code AS location_code,
             l.name AS location_name,
-            lot.lot_number
+            lot.lot_code
      FROM license_plates lp
      INNER JOIN items i ON i.id = lp.item_id
      INNER JOIN locations l ON l.id = lp.location_id
@@ -158,7 +158,7 @@ export async function getLicensePlateById(tenantId: string, id: string, client?:
     itemSku: row.item_sku,
     itemName: row.item_name,
     lotId: row.lot_id,
-    lotNumber: row.lot_number ?? null,
+    lotNumber: row.lot_code ?? null,
     locationId: row.location_id,
     locationCode: row.location_code,
     locationName: row.location_name,
@@ -249,7 +249,7 @@ export async function listLicensePlates(
             i.name AS item_name,
             l.code AS location_code,
             l.name AS location_name,
-            lot.lot_number
+            lot.lot_code
      FROM license_plates lp
      INNER JOIN items i ON i.id = lp.item_id
      INNER JOIN locations l ON l.id = lp.location_id
@@ -268,7 +268,7 @@ export async function listLicensePlates(
     itemSku: row.item_sku,
     itemName: row.item_name,
     lotId: row.lot_id,
-    lotNumber: row.lot_number ?? null,
+    lotNumber: row.lot_code ?? null,
     locationId: row.location_id,
     locationCode: row.location_code,
     locationName: row.location_name,
