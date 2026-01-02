@@ -29,6 +29,7 @@ import eventsRouter from './routes/events.routes';
 import auditRouter from './routes/audit.routes';
 import routingsRouter from './routes/routings.routes';
 import atpRouter from './routes/atp.routes';
+import supplierScorecardRouter from './routes/supplierScorecard.routes';
 import { requireAuth } from './middleware/auth.middleware';
 import { destructiveGuard } from './middleware/destructiveGuard.middleware';
 
@@ -103,6 +104,7 @@ app.use(ledgerRouter);
 app.use(inventorySummaryRouter);
 app.use(inventorySnapshotRouter);
 app.use('/atp', atpRouter);
+app.use('/supplier-scorecards', supplierScorecardRouter);
 app.use(pickingRouter);
 app.use(shippingContainersRouter);
 app.use(returnsExtendedRouter);
