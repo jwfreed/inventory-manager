@@ -14,6 +14,7 @@ import { workOrderRoutes } from '../features/workOrders'
 import { profileRoutes } from '../features/profile'
 import { routingsRoutes } from '../features/routings/index'
 import { ncrRoutes } from '../features/ncrs/routes'
+import { atpRoutes } from '../features/inventory/routes'
 
 const coreRoutes: AppRouteObject[] = [
   {
@@ -35,6 +36,7 @@ export const appShellRoutes: AppRouteObject[] = [
   ...kpiRoutes,
   ...ledgerRoutes,
   ...adjustmentRoutes,
+  ...atpRoutes,
   ...workOrderRoutes,
   ...purchaseOrderRoutes,
   ...vendorRoutes,
