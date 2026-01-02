@@ -16,6 +16,7 @@ import { normalizeQuantityByUom } from '../lib/uom';
 import { query as baseQuery } from '../db';
 import { updatePoStatusFromReceipts } from './status/purchaseOrdersStatus.service';
 import { recordAuditLog } from '../lib/audit';
+import { updateMovingAverageCost } from './costing.service';
 
 type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
 
@@ -202,16 +203,17 @@ export async function createPurchaseOrderReceipt(
   }
 
   const { rows: poLineRows } = await query(
-    'SELECT id, purchase_order_id, uom, quantity_ordered, unit_price FROM purchase_order_lines WHERE id = ANY($1::uuid[]) AND tenant_id = $2',
+    'SELECT id, purchase_order_id, item_id, uom, quantity_ordered, unit_price FROM purchase_order_lines WHERE id = ANY($1::uuid[]) AND tenant_id = $2',
     [uniqueLineIds, tenantId]
   );
   if (poLineRows.length !== uniqueLineIds.length) {
     throw new Error('RECEIPT_PO_LINES_NOT_FOUND');
   }
-  const poLineMap = new Map<string, { purchase_order_id: string; uom: string; quantity_ordered: number; unit_price: number | null }>();
+  const poLineMap = new Map<string, { purchase_order_id: string; item_id: string; uom: string; quantity_ordered: number; unit_price: number | null }>();
   for (const row of poLineRows) {
     poLineMap.set(row.id, {
       purchase_order_id: row.purchase_order_id,
+      item_id: row.item_id,
       uom: row.uom,
       quantity_ordered: roundQuantity(toNumber(row.quantity_ordered ?? 0)),
       unit_price: row.unit_price != null ? Number(row.unit_price) : null
@@ -286,6 +288,17 @@ export async function createPurchaseOrderReceipt(
           line.discrepancyNotes ?? null
         ]
       );
+
+      // Update moving average cost if unit cost is available
+      if (unitCost !== null && unitCost > 0 && poLine?.item_id) {
+        await updateMovingAverageCost(
+          tenantId,
+          poLine.item_id,
+          normalized.quantity,
+          unitCost,
+          client
+        );
+      }
     }
 
     if (actor) {

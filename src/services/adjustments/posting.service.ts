@@ -4,7 +4,7 @@ import { withTransaction } from '../../db';
 import { recordAuditLog } from '../../lib/audit';
 import { roundQuantity, toNumber } from '../../lib/numbers';
 import { validateSufficientStock } from '../stockValidation.service';
-import { calculateMovementCost } from '../costing.service';
+import { calculateMovementCost, updateItemQuantityOnHand } from '../costing.service';
 import { fetchInventoryAdjustmentById } from './core.service';
 import type { InventoryAdjustmentRow, InventoryAdjustmentLineRow, PostingContext } from './types';
 
@@ -107,6 +107,9 @@ export async function postInventoryAdjustment(
           line.notes ?? `Adjustment ${id} line ${line.line_number}`
         ]
       );
+
+      // Update item quantity on hand for average cost tracking
+      await updateItemQuantityOnHand(tenantId, line.item_id, qty, client);
     }
 
     // Update adjustment status
