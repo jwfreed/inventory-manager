@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getAtp } from '@api/reports'
 import type { AtpResult } from '@api/types'
-import { Button, Card, LoadingSpinner, EmptyState, ErrorState, Section } from '@shared/ui'
+import { Button, Card, LoadingSpinner, EmptyState, ErrorState, Section, Input } from '@shared/ui'
 
 export function AtpQueryPage() {
   const [itemId, setItemId] = useState('')
@@ -30,49 +30,47 @@ export function AtpQueryPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Available to Promise</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-2xl font-bold text-slate-900">Available to Promise</h1>
+        <p className="mt-1 text-sm text-slate-500">
           Query inventory available for new orders (on-hand minus reservations)
         </p>
       </div>
 
       <Card>
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">Search Filters</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Search Filters</h2>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
                 Item ID (optional)
               </label>
-              <input
+              <Input
                 type="text"
                 value={itemId}
                 onChange={(e) => setItemId(e.target.value)}
                 placeholder="Filter by item..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
                 Location ID (optional)
               </label>
-              <input
+              <Input
                 type="text"
                 value={locationId}
                 onChange={(e) => setLocationId(e.target.value)}
                 placeholder="Filter by location..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
           </div>
 
           <div className="flex gap-2">
-            <Button onClick={handleSearch}>
-              Search ATP
+            <Button onClick={handleSearch} disabled={isLoading}>
+              {isLoading ? 'Searching...' : 'Search ATP'}
             </Button>
-            <Button onClick={handleClear} variant="secondary">
+            <Button onClick={handleClear} variant="secondary" disabled={isLoading}>
               Clear
             </Button>
           </div>
@@ -102,25 +100,25 @@ export function AtpQueryPage() {
 function AtpResultsTable({ results }: { results: AtpResult[] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+      <table className="min-w-full divide-y divide-slate-200">
+        <thead className="bg-slate-50">
           <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
               Item ID
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
               Location ID
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
               UOM
             </th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider font-mono">
               On Hand
             </th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider font-mono">
               Reserved
             </th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider font-mono">
               <span className="inline-flex items-center">
                 Available to Promise
                 <span className="ml-1 text-green-600">✓</span>
@@ -128,26 +126,33 @@ function AtpResultsTable({ results }: { results: AtpResult[] }) {
             </th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody className="bg-white divide-y divide-slate-200">
           {results.map((result, idx) => (
-            <tr key={idx} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {result.itemId}
+            <tr key={idx} className="hover:bg-slate-50">
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <a href={`/items?search=${result.itemId}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                  {result.itemId}
+                </a>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                {result.locationId}
+              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                <a href={`/locations?search=${result.locationId}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                  {result.locationId}
+                </a>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
                 {result.uom}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-slate-900 font-mono">
+                {Number(result.onHand).toLocaleString()}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-amber-600 font-mono">
                 {Number(result.onHand).toLocaleString()}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-amber-600">
                 {Number(result.reserved).toLocaleString()}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold">
-                <span className={result.availableToPromise > 0 ? 'text-green-600' : 'text-gray-400'}>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold font-mono">
+                <span className={result.availableToPromise > 0 ? 'text-green-600' : 'text-slate-400'}>
                   {Number(result.availableToPromise).toLocaleString()}
                 </span>
               </td>

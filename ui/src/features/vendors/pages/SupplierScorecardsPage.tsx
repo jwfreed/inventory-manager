@@ -7,7 +7,7 @@ import {
   getSuppliersWithQualityIssues,
 } from '@api/reports'
 import type { SupplierScorecard } from '@api/types'
-import { LoadingSpinner, ErrorState, Badge, Section } from '@shared/ui'
+import { LoadingSpinner, ErrorState, Badge, Section, Card } from '@shared/ui'
 
 export function SupplierScorecardsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'delivery' | 'quality' | 'issues'>('all')
@@ -50,13 +50,43 @@ export function SupplierScorecardsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Supplier Scorecards</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-2xl font-bold text-slate-900">Supplier Scorecards</h1>
+        <p className="mt-1 text-sm text-slate-500">
           Track vendor performance across delivery and quality metrics
         </p>
       </div>
 
-      <div className="border-b border-gray-200">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <div className="p-4">
+            <div className="text-sm font-medium text-slate-500 uppercase tracking-wider">Total Suppliers</div>
+            <div className="mt-2 text-3xl font-bold text-slate-900">
+              {allQuery.data?.data?.length || 0}
+            </div>
+          </div>
+        </Card>
+        <Card>
+          <div className="p-4">
+            <div className="text-sm font-medium text-slate-500 uppercase tracking-wider">Top Performers</div>
+            <div className="mt-2 text-3xl font-bold text-green-600">
+              {deliveryQuery.data?.data?.filter(s => s.onTimeDeliveryRate >= 95).length || 0}
+            </div>
+            <div className="text-xs text-slate-500 mt-1">≥95% on-time delivery</div>
+          </div>
+        </Card>
+        <Card>
+          <div className="p-4">
+            <div className="text-sm font-medium text-slate-500 uppercase tracking-wider">Quality Issues</div>
+            <div className="mt-2 text-3xl font-bold text-amber-600">
+              {issuesQuery.data?.data?.length || 0}
+            </div>
+            <div className="text-xs text-slate-500 mt-1">Suppliers with concerns</div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="border-b border-slate-200">
         <nav className="-mb-px flex space-x-8">
           <TabButton
             active={activeTab === 'all'}
@@ -91,7 +121,7 @@ export function SupplierScorecardsPage() {
           <ErrorState error={{ status: 500, message: 'Failed to load supplier scorecards. Please try again.' }} />
         ) : !activeQuery.data?.data?.length ? (
           <div className="text-center py-12">
-            <p className="text-gray-500">No suppliers found for this view.</p>
+            <p className="text-slate-500">No suppliers found for this view.</p>
           </div>
         ) : (
           <ScorecardTable
@@ -125,7 +155,7 @@ function TabButton({
         ${
           active
             ? 'border-blue-500 text-blue-600'
-            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
         }
       `}
     >
@@ -144,50 +174,50 @@ function ScorecardTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+      <table className="min-w-full divide-y divide-slate-200">
+        <thead className="bg-slate-50">
           <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
               Vendor
             </th>
-            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">
               Purchase Orders
             </th>
-            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">
               Receipts
             </th>
             <th
               className={`px-6 py-3 text-center text-xs font-medium uppercase tracking-wider ${
-                highlightMetric === 'delivery' ? 'bg-green-50 text-green-700' : 'text-gray-500'
+                highlightMetric === 'delivery' ? 'bg-green-50 text-green-700' : 'text-slate-500'
               }`}
             >
               On-Time Delivery
             </th>
             <th
               className={`px-6 py-3 text-center text-xs font-medium uppercase tracking-wider ${
-                highlightMetric === 'quality' ? 'bg-blue-50 text-blue-700' : 'text-gray-500'
+                highlightMetric === 'quality' ? 'bg-blue-50 text-blue-700' : 'text-slate-500'
               }`}
             >
               Quality Rate
             </th>
-            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">
               NCRs
             </th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody className="bg-white divide-y divide-slate-200">
           {scorecards.map((scorecard) => (
-            <tr key={scorecard.vendorId} className="hover:bg-gray-50">
+            <tr key={scorecard.vendorId} className="hover:bg-slate-50">
               <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm font-medium text-gray-900">{scorecard.vendorName}</div>
-                <div className="text-sm text-gray-500">{scorecard.vendorCode}</div>
+                <div className="text-sm font-medium text-slate-900">{scorecard.vendorName}</div>
+                <div className="text-sm text-slate-500">{scorecard.vendorCode}</div>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-600">
+              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-slate-600">
                 {scorecard.totalPurchaseOrders}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-center">
-                <div className="text-sm text-gray-900">{scorecard.totalReceipts}</div>
-                <div className="text-xs text-gray-500">
+                <div className="text-sm text-slate-900">{scorecard.totalReceipts}</div>
+                <div className="text-xs text-slate-500">
                   {scorecard.onTimeReceipts} on-time, {scorecard.lateReceipts} late
                 </div>
               </td>
@@ -198,7 +228,7 @@ function ScorecardTable({
               >
                 <RateBadge rate={scorecard.onTimeDeliveryRate} />
                 {scorecard.averageDaysLate && scorecard.averageDaysLate > 0 && (
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-slate-500 mt-1">
                     Avg {scorecard.averageDaysLate.toFixed(1)}d late
                   </div>
                 )}
@@ -210,7 +240,7 @@ function ScorecardTable({
               >
                 <RateBadge rate={scorecard.qualityRate} />
                 {scorecard.totalQcEvents > 0 && (
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-slate-500 mt-1">
                     {scorecard.acceptedQuantity} accepted, {scorecard.rejectedQuantity} rejected
                   </div>
                 )}
