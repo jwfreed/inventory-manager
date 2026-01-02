@@ -41,6 +41,7 @@ export type PurchaseOrderCreateInput = {
     itemId: string
     uom: string
     quantityOrdered: number
+    unitPrice?: number
     notes?: string
   }[]
 }

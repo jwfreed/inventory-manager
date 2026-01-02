@@ -63,6 +63,25 @@ export function ReceiptLinesTable({ lines, onLineChange, emptyMessage }: Props) 
           },
         },
         {
+          id: 'unitCost',
+          header: 'Unit Cost',
+          cell: (line) => (
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={line.unitCost ?? ''}
+              onChange={(e) =>
+                onLineChange(line.purchaseOrderLineId, {
+                  unitCost: e.target.value === '' ? '' : Number(e.target.value),
+                })
+              }
+              placeholder="0.00"
+            />
+          ),
+          cellClassName: 'font-mono',
+        },
+        {
           id: 'delta',
           header: 'Delta',
           cell: (line) => {

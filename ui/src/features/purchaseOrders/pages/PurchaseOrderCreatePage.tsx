@@ -30,7 +30,7 @@ export default function PurchaseOrderCreatePage() {
   const [expectedDate, setExpectedDate] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<PurchaseOrderLineDraft[]>([
-    { itemId: '', uom: '', quantityOrdered: '' },
+    { itemId: '', uom: '', quantityOrdered: '', unitPrice: '' },
   ])
   const [lastAction, setLastAction] = useState<'draft' | 'submitted' | null>(null)
 
@@ -85,7 +85,7 @@ export default function PurchaseOrderCreatePage() {
     return map
   }, [itemsQuery.data])
 
-  const addLine = () => setLines((prev) => [...prev, { itemId: '', uom: '', quantityOrdered: '' }])
+  const addLine = () => setLines((prev) => [...prev, { itemId: '', uom: '', quantityOrdered: '', unitPrice: '' }])
   const updateLine = (idx: number, patch: Partial<LineDraft>) => {
     setLines((prev) => prev.map((line, i) => (i === idx ? { ...line, ...patch } : line)))
   }
@@ -142,6 +142,7 @@ export default function PurchaseOrderCreatePage() {
         itemId: line.itemId,
         uom: line.uom,
         quantityOrdered: Number(line.quantityOrdered),
+        unitPrice: line.unitPrice && line.unitPrice !== '' ? Number(line.unitPrice) : undefined,
         lineNumber: line.lineNumber,
         notes: line.notes,
       })),

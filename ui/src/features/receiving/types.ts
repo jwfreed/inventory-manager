@@ -5,6 +5,7 @@ export type ReceiptLineInput = {
   uom: string
   expectedQty: number
   receivedQty: number | ''
+  unitCost?: number | ''
   discrepancyReason: '' | 'short' | 'over' | 'damaged' | 'substituted'
   discrepancyNotes: string
 }

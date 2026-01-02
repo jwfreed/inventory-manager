@@ -31,6 +31,9 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
   )
   const [defaultUom, setDefaultUom] = useState(initialItem?.defaultUom ?? '')
   const [defaultLocationId, setDefaultLocationId] = useState(initialItem?.defaultLocationId ?? '')
+  const [standardCost, setStandardCost] = useState<string>(
+    initialItem?.standardCost != null ? initialItem.standardCost.toString() : '',
+  )
 
   useEffect(() => {
     if (!initialItem) return
@@ -42,6 +45,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
     setLifecycleStatus(initialItem.lifecycleStatus ?? 'Active')
     setDefaultUom(initialItem.defaultUom ?? '')
     setDefaultLocationId(initialItem.defaultLocationId ?? '')
+    setStandardCost(initialItem.standardCost != null ? initialItem.standardCost.toString() : '')
   }, [initialItem])
 
   const locationsQuery = useLocationsList({ active: true, limit: 200 }, { staleTime: 60_000 })
@@ -57,6 +61,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    const standardCostValue = standardCost.trim() ? Number(standardCost) : undefined
     mutation.mutate({
       sku,
       name,
@@ -66,6 +71,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
       lifecycleStatus,
       defaultUom: defaultUom.trim() ? defaultUom.trim() : undefined,
       defaultLocationId: defaultLocationId || null,
+      standardCost: standardCostValue,
     })
   }
 
@@ -153,6 +159,19 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
               placeholder="ea, kg, box"
               disabled={mutation.isPending}
             />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Standard Cost</span>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={standardCost}
+              onChange={(e) => setStandardCost(e.target.value)}
+              placeholder="0.00"
+              disabled={mutation.isPending}
+            />
+            <span className="text-xs text-slate-600">Per unit cost for valuation (optional)</span>
           </label>
         </div>
         <label className="space-y-1 text-sm block">

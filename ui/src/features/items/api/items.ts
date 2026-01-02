@@ -7,6 +7,8 @@ type ItemApiRow = Item & {
   default_location_id?: string | null
   default_location_code?: string | null
   default_location_name?: string | null
+  standard_cost?: number | null
+  average_cost?: number | null
   created_at?: string
   updated_at?: string
 }
@@ -20,6 +22,7 @@ export type ItemPayload = {
   lifecycleStatus?: Item['lifecycleStatus']
   defaultUom?: string | null
   defaultLocationId?: string | null
+  standardCost?: number
 }
 
 export type ListItemsParams = {
@@ -42,6 +45,8 @@ function mapItem(row: ItemApiRow): Item {
     defaultLocationId: row.defaultLocationId ?? row.default_location_id ?? null,
     defaultLocationCode: row.defaultLocationCode ?? row.default_location_code ?? null,
     defaultLocationName: row.defaultLocationName ?? row.default_location_name ?? null,
+    standardCost: row.standardCost ?? row.standard_cost ?? null,
+    averageCost: row.averageCost ?? row.average_cost ?? null,
     createdAt: row.createdAt ?? row.created_at,
     updatedAt: row.updatedAt ?? row.updated_at,
   }

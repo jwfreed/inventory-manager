@@ -40,8 +40,8 @@ export function PurchaseOrderLinesSection({
       </div>
       <div className="mt-3 space-y-3">
         {lines.map((line, idx) => (
-          <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-5">
-            <div>
+          <div key={idx} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-6">
+            <div className="md:col-span-2">
               <Combobox
                 label="Item"
                 value={line.itemId}
@@ -75,7 +75,22 @@ export function PurchaseOrderLinesSection({
                 }
               />
             </label>
-            <label className="space-y-1 text-sm md:col-span-2">
+            <label className="space-y-1 text-sm">
+              <span className="text-xs uppercase tracking-wide text-slate-500">Unit Price</span>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={line.unitPrice ?? ''}
+                onChange={(e) =>
+                  onUpdateLine(idx, {
+                    unitPrice: e.target.value === '' ? '' : Number(e.target.value),
+                  })
+                }
+                placeholder="0.00"
+              />
+            </label>
+            <label className="space-y-1 text-sm">
               <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
               <Textarea
                 value={line.notes ?? ''}
@@ -84,7 +99,7 @@ export function PurchaseOrderLinesSection({
               />
             </label>
             {lines.length > 1 && (
-              <div className="md:col-span-5">
+              <div className="md:col-span-6">
                 <Button variant="secondary" size="sm" onClick={() => onRemoveLine(idx)}>
                   Remove line
                 </Button>
