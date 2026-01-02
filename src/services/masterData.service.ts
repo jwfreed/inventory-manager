@@ -22,7 +22,6 @@ const itemSelectColumns = `
   i.weight_uom,
   i.volume,
   i.volume_uom,
-  i.standard_cost,
   i.created_at,
   i.updated_at,
   l.code AS default_location_code,
@@ -46,7 +45,6 @@ export function mapItem(row: any) {
     weightUom: row.weight_uom ?? null,
     volume: row.volume ? Number(row.volume) : null,
     volumeUom: row.volume_uom ?? null,
-    standardCost: row.standard_cost != null ? Number(row.standard_cost) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

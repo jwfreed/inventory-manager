@@ -1,2 +1,0 @@
-// Receiving status updates
-export {};
