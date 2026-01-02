@@ -237,6 +237,26 @@ export default function ItemDetailPage() {
                   </div>
                 </div>
               </div>
+              <div className="mt-3 pt-3 border-t border-slate-200 grid gap-3 sm:grid-cols-3 text-sm text-slate-700">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Standard Cost</div>
+                  <div className="font-mono font-semibold text-slate-900">
+                    {itemQuery.data.standardCost != null ? `$${itemQuery.data.standardCost.toFixed(2)}` : 'Not set'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Average Cost</div>
+                  <div className="font-mono font-semibold text-slate-900">
+                    {itemQuery.data.averageCost != null ? `$${itemQuery.data.averageCost.toFixed(2)}` : 'N/A'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-600">Cost Info</div>
+                  <div className="text-xs text-slate-600">
+                    {itemQuery.data.averageCost != null ? 'Auto-calculated on receipts' : 'Set standard cost first'}
+                  </div>
+                </div>
+              </div>
             </div>
             <div className="grid gap-3 text-right text-sm text-slate-700">
               <div>

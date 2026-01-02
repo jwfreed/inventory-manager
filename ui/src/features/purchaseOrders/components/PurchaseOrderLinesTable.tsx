@@ -40,6 +40,22 @@ export function PurchaseOrderLinesTable({ lines }: Props) {
           cell: (row) => row.uom ?? '—',
         },
         {
+          id: 'unitPrice',
+          header: 'Unit Price',
+          cell: (row) => row.unitPrice ? `$${row.unitPrice.toFixed(2)}` : '—',
+          cellClassName: 'font-mono text-right',
+        },
+        {
+          id: 'extendedPrice',
+          header: 'Extended',
+          cell: (row) => {
+            if (!row.unitPrice || !row.quantityOrdered) return '—'
+            const extended = row.unitPrice * row.quantityOrdered
+            return `$${extended.toFixed(2)}`
+          },
+          cellClassName: 'font-mono text-right font-semibold',
+        },
+        {
           id: 'notes',
           header: 'Notes',
           cell: (row) => row.notes ?? '—',

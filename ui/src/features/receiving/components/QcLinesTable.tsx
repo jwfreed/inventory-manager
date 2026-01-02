@@ -43,6 +43,12 @@ export function QcLinesTable({ lines, activeLineId, onSelectLine, receiptId }: P
           cell: (line) => `${line.quantityReceived} ${line.uom}`,
         },
         {
+          id: 'unitCost',
+          header: 'Unit Cost',
+          cell: (line) => line.unitCost != null ? `$${line.unitCost.toFixed(2)}` : '—',
+          cellClassName: 'font-mono text-right text-slate-600',
+        },
+        {
           id: 'accepted',
           header: 'Accepted',
           cell: (line) => getQcBreakdown(line).accept,

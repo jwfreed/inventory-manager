@@ -7,6 +7,7 @@ export type PurchaseOrderLine = {
   itemName?: string | null
   uom?: string
   quantityOrdered?: number
+  unitPrice?: number | null
   notes?: string | null
 }
 

@@ -122,7 +122,7 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white">
-                  {version.components.map((c) => (
+                  {version.components?.map((c) => (
                     <tr key={c.id}>
                       <td className="px-3 py-2 text-sm text-slate-800">{c.lineNumber}</td>
                       <td className="px-3 py-2 text-sm text-slate-800">
@@ -136,7 +136,7 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
                                 {c.componentItemSku || c.componentItemName}
                               </div>
                               {c.componentItemSku && c.componentItemName && (
-                                <div className="text-xs text-slate-500">{c.componentItemName}</div>
+                                <div className="text-xs text-slate-600">{c.componentItemName}</div>
                               )}
                             </div>
                           ) : (
@@ -151,7 +151,7 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
                       </td>
                     </tr>
                   ))}
-                  {version.components.length === 0 && (
+                  {(!version.components || version.components.length === 0) && (
                     <tr>
                       <td colSpan={5} className="px-3 py-2 text-sm text-slate-600">
                         No components found.

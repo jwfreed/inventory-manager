@@ -10,6 +10,7 @@ export type PurchaseOrderReceiptLine = {
   uom: string
   expectedQuantity?: number
   quantityReceived: number
+  unitCost?: number | null
   discrepancyReason?: string | null
   discrepancyNotes?: string | null
   createdAt: string

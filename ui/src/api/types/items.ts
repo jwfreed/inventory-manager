@@ -12,6 +12,8 @@ export type Item = {
   defaultLocationCode?: string | null
   defaultLocationName?: string | null
   lifecycleStatus: 'Active' | 'In-Development' | 'Obsolete' | 'Phase-Out'
+  standardCost?: number | null
+  averageCost?: number | null
   createdAt?: string
   updatedAt?: string
 }
