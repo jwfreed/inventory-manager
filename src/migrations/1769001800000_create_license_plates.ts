@@ -165,7 +165,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
       i.name AS item_name,
       l.code AS location_code,
       l.name AS location_name,
-      lot.lot_number,
+      lot.lot_code,
       lp.updated_at
     FROM license_plates lp
     INNER JOIN items i ON i.id = lp.item_id
