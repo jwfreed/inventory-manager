@@ -1,6 +1,43 @@
-// This file has been refactored into modular services under src/services/workOrders/
-// Please use: import { ... } from './workOrders'
-export * from './workOrders';
+import { v4 as uuidv4 } from 'uuid';
+import type { z } from 'zod';
+import type { PoolClient } from 'pg';
+import { query, withTransaction } from '../db';
+import { workOrderCreateSchema, workOrderListQuerySchema } from '../schemas/workOrders.schema';
+import { roundQuantity } from '../lib/numbers';
+import { normalizeQuantityByUom } from '../lib/uom';
+import { fetchBomById, resolveEffectiveBom, type BomVersionLine } from './boms.service';
+import { getItem } from './masterData.service';
+import { recordAuditLog } from '../lib/audit';
+
+type WorkOrderCreateInput = z.infer<typeof workOrderCreateSchema>;
+type WorkOrderListQuery = z.infer<typeof workOrderListQuerySchema>;
+
+type WorkOrderRow = {
+  id: string;
+  work_order_number: string;
+  number: string | null;
+  status: string;
+  kind: string;
+  bom_id: string | null;
+  bom_version_id: string | null;
+  related_work_order_id: string | null;
+  output_item_id: string;
+  output_uom: string;
+  quantity_planned: string | number;
+  quantity_completed: string | number | null;
+  default_consume_location_id: string | null;
+  default_produce_location_id: string | null;
+  scheduled_start_at: string | null;
+  scheduled_due_at: string | null;
+  released_at: string | null;
+  completed_at: string | null;
+  notes: string | null;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function mapWorkOrder(row: WorkOrderRow) {
   return {
     id: row.id,
     number: row.number ?? row.work_order_number,

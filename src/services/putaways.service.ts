@@ -1,6 +1,24 @@
-// This file has been refactored into modular services under src/services/putaways/
-// Please use: import { ... } from './putaways'
-export * from './putaways';
+import { v4 as uuidv4 } from 'uuid';
+import type { PoolClient } from 'pg';
+import { query, withTransaction } from '../db';
+import { putawaySchema } from '../schemas/putaways.schema';
+import type { z } from 'zod';
+import { roundQuantity, toNumber } from '../lib/numbers';
+import { normalizeQuantityByUom } from '../lib/uom';
+import { recordAuditLog } from '../lib/audit';
+import { validateSufficientStock, validateLocationCapacity } from './stockValidation.service';
+import { calculateMovementCost } from './costing.service';
+import {
+  calculateAcceptedQuantity,
+  calculatePutawayAvailability,
+  defaultBreakdown,
+  loadQcBreakdown,
+  loadPutawayTotals,
+  loadReceiptLineContexts,
+  type ReceiptLineContext
+} from './inbound/receivingAggregations';
+
+type PutawayInput = z.infer<typeof putawaySchema>;
 
 type PutawayLineRow = {
   id: string;
