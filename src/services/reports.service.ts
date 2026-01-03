@@ -70,79 +70,96 @@ export async function getInventoryValuation(
 }> {
   const { locationId, itemType, includeZeroQty = false, limit = 500, offset = 0 } = options || {};
 
-  let whereConditions = ['ip.tenant_id = $1'];
   const params: any[] = [tenantId];
-  let paramIndex = 2;
-
+  const whereClauses: string[] = [];
+  
   if (locationId) {
-    whereConditions.push(`ip.location_id = $${paramIndex}`);
-    params.push(locationId);
-    paramIndex++;
+    whereClauses.push(`iml.location_id = $${params.push(locationId)}`);
   }
 
   if (itemType) {
-    whereConditions.push(`i.item_type = $${paramIndex}`);
-    params.push(itemType);
-    paramIndex++;
+    whereClauses.push(`i.type = $${params.push(itemType)}`);
   }
 
-  if (!includeZeroQty) {
-    whereConditions.push('ip.quantity_on_hand > 0');
-  }
+  const whereMovements = whereClauses.length ? `AND ${whereClauses.join(' AND ')}` : '';
+  const havingClause = includeZeroQty ? '' : 'HAVING SUM(iml.quantity_delta) > 0';
 
-  const whereClause = whereConditions.join(' AND ');
-
-  // Main data query
+  // Main data query - calculate on_hand from movement lines
   const dataQuery = `
+    WITH on_hand AS (
+      SELECT 
+        iml.item_id,
+        iml.location_id,
+        iml.uom,
+        SUM(iml.quantity_delta) AS quantity_on_hand
+      FROM inventory_movement_lines iml
+      JOIN inventory_movements im ON im.id = iml.movement_id
+      WHERE im.status = 'posted'
+        AND iml.tenant_id = $1
+        AND im.tenant_id = $1
+        ${whereMovements}
+      GROUP BY iml.item_id, iml.location_id, iml.uom
+      ${havingClause}
+    )
     SELECT 
-      i.item_id,
+      i.id as item_id,
       i.sku as item_sku,
       i.name as item_name,
-      l.location_id,
+      l.id as location_id,
       l.code as location_code,
       l.name as location_name,
-      i.base_uom as uom,
-      ip.quantity_on_hand,
-      ip.average_cost,
+      oh.uom,
+      oh.quantity_on_hand,
+      NULL::numeric as average_cost,
       i.standard_cost,
       CASE 
-        WHEN ip.average_cost IS NOT NULL THEN ip.quantity_on_hand * ip.average_cost
-        WHEN i.standard_cost IS NOT NULL THEN ip.quantity_on_hand * i.standard_cost
+        WHEN i.standard_cost IS NOT NULL THEN oh.quantity_on_hand * i.standard_cost
         ELSE NULL
       END as extended_value
-    FROM inventory_position ip
-    JOIN items i ON ip.item_id = i.item_id AND ip.tenant_id = i.tenant_id
-    JOIN locations l ON ip.location_id = l.location_id AND ip.tenant_id = l.tenant_id
-    WHERE ${whereClause}
+    FROM on_hand oh
+    JOIN items i ON i.id = oh.item_id AND i.tenant_id = $1
+    JOIN locations l ON l.id = oh.location_id AND l.tenant_id = $1
     ORDER BY i.sku, l.code
-    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    LIMIT $${params.push(limit)} OFFSET $${params.push(offset)}
   `;
-
-  params.push(limit, offset);
 
   const dataResult = await query<InventoryValuationRow>(dataQuery, params);
 
   // Summary query (without limit/offset)
   const summaryQuery = `
+    WITH on_hand AS (
+      SELECT 
+        iml.item_id,
+        iml.location_id,
+        iml.uom,
+        SUM(iml.quantity_delta) AS quantity_on_hand
+      FROM inventory_movement_lines iml
+      JOIN inventory_movements im ON im.id = iml.movement_id
+      WHERE im.status = 'posted'
+        AND iml.tenant_id = $1
+        AND im.tenant_id = $1
+        ${whereMovements}
+      GROUP BY iml.item_id, iml.location_id, iml.uom
+      ${havingClause}
+    )
     SELECT 
-      COUNT(DISTINCT i.item_id) as total_items,
-      COALESCE(SUM(ip.quantity_on_hand), 0) as total_quantity,
+      COUNT(DISTINCT i.id) as total_items,
+      COALESCE(SUM(oh.quantity_on_hand), 0) as total_quantity,
       COALESCE(SUM(
         CASE 
-          WHEN ip.average_cost IS NOT NULL THEN ip.quantity_on_hand * ip.average_cost
-          WHEN i.standard_cost IS NOT NULL THEN ip.quantity_on_hand * i.standard_cost
+          WHEN i.standard_cost IS NOT NULL THEN oh.quantity_on_hand * i.standard_cost
           ELSE 0
         END
       ), 0) as total_value,
-      COUNT(DISTINCT CASE WHEN ip.average_cost IS NOT NULL OR i.standard_cost IS NOT NULL THEN i.item_id END) as total_valued_items,
-      COUNT(DISTINCT CASE WHEN ip.average_cost IS NULL AND i.standard_cost IS NULL THEN i.item_id END) as total_unvalued_items
-    FROM inventory_position ip
-    JOIN items i ON ip.item_id = i.item_id AND ip.tenant_id = i.tenant_id
-    JOIN locations l ON ip.location_id = l.location_id AND ip.tenant_id = l.tenant_id
-    WHERE ${whereClause}
+      COUNT(DISTINCT CASE WHEN i.standard_cost IS NOT NULL THEN i.id END) as total_valued_items,
+      COUNT(DISTINCT CASE WHEN i.standard_cost IS NULL THEN i.id END) as total_unvalued_items
+    FROM on_hand oh
+    JOIN items i ON i.id = oh.item_id AND i.tenant_id = $1
+    JOIN locations l ON l.id = oh.location_id AND l.tenant_id = $1
   `;
 
-  const summaryResult = await query<any>(summaryQuery, params.slice(0, params.length - 2));
+  const summaryParams = params.slice(0, params.length - 2); // Remove limit and offset
+  const summaryResult = await query<any>(summaryQuery, summaryParams);
 
   return {
     data: dataResult.rows,
