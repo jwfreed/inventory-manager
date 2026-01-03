@@ -161,8 +161,23 @@ export async function getInventoryValuation(
   const summaryParams = params.slice(0, params.length - 2); // Remove limit and offset
   const summaryResult = await query<any>(summaryQuery, summaryParams);
 
+  // Map database rows to camelCase
+  const mappedData = dataResult.rows.map((row: any) => ({
+    itemId: row.item_id,
+    itemSku: row.item_sku,
+    itemName: row.item_name,
+    locationId: row.location_id,
+    locationCode: row.location_code,
+    locationName: row.location_name,
+    uom: row.uom,
+    quantityOnHand: parseFloat(row.quantity_on_hand || '0'),
+    averageCost: row.average_cost ? parseFloat(row.average_cost) : null,
+    standardCost: row.standard_cost ? parseFloat(row.standard_cost) : null,
+    extendedValue: row.extended_value ? parseFloat(row.extended_value) : null,
+  }));
+
   return {
-    data: dataResult.rows,
+    data: mappedData,
     summary: {
       totalItems: parseInt(summaryResult.rows[0]?.total_items || '0'),
       totalQuantity: parseFloat(summaryResult.rows[0]?.total_quantity || '0'),
