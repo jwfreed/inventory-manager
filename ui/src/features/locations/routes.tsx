@@ -11,7 +11,9 @@ export const locationRoutes: AppRouteObject[] = [
       nav: {
         label: 'Locations',
         to: '/locations',
-        order: 9,
+        section: 'master-data',
+        order: 72,
+        description: 'Warehouse and storage location hierarchy',
       },
     },
   },

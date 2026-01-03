@@ -9,9 +9,11 @@ export const atpRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Available to Promise',
       nav: {
-        label: 'ATP Query',
+        label: 'Available-to-Promise',
         to: '/atp',
-        order: 5,
+        section: 'inventory',
+        order: 35,
+        description: 'Check inventory availability for orders',
       },
     },
   },
@@ -23,7 +25,9 @@ export const atpRoutes: AppRouteObject[] = [
       nav: {
         label: 'License Plates',
         to: '/lpns',
-        order: 6,
+        section: 'inventory',
+        order: 34,
+        description: 'Manage license plate tracking',
       },
     },
   },

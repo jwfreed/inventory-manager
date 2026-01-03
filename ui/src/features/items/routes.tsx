@@ -11,7 +11,9 @@ export const itemRoutes: AppRouteObject[] = [
       nav: {
         label: 'Items',
         to: '/items',
-        order: 8,
+        section: 'master-data',
+        order: 70,
+        description: 'Product and material master data',
       },
     },
   },

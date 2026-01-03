@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-import { query, withTransaction, PoolClient } from '../db';
-import { recordAuditLog } from './audit.service';
+import type { PoolClient } from 'pg';
+import { query, withTransaction } from '../db';
+import { recordAuditLog } from '../lib/audit';
 
 export interface VendorPaymentInput {
   paymentNumber?: string;
@@ -117,15 +118,14 @@ export async function createVendorPayment(
     }
 
     // Audit log
-    await recordAuditLog(
+    await recordAuditLog({
       tenantId,
-      'vendor_payment',
-      paymentId,
-      'created',
-      null,
-      actor,
-      client
-    );
+      actorType: actor?.type ?? 'system',
+      actorId: actor?.id,
+      action: 'create',
+      entityType: 'vendor_payment',
+      entityId: paymentId
+    }, client);
 
     return paymentRows[0];
   });
@@ -348,15 +348,14 @@ export async function updateVendorPayment(
     );
 
     // Audit log
-    await recordAuditLog(
+    await recordAuditLog({
       tenantId,
-      'vendor_payment',
-      paymentId,
-      'updated',
-      null,
-      actor,
-      client
-    );
+      actorType: actor?.type ?? 'system',
+      actorId: actor?.id,
+      action: 'update',
+      entityType: 'vendor_payment',
+      entityId: paymentId
+    }, client);
 
     return rows[0];
   });
@@ -386,15 +385,14 @@ export async function postVendorPayment(
     }
 
     // Audit log
-    await recordAuditLog(
+    await recordAuditLog({
       tenantId,
-      'vendor_payment',
-      paymentId,
-      'posted',
-      null,
-      actor,
-      client
-    );
+      actorType: actor?.type ?? 'system',
+      actorId: actor?.id,
+      action: 'post',
+      entityType: 'vendor_payment',
+      entityId: paymentId
+    }, client);
 
     return rows[0];
   });
@@ -445,15 +443,15 @@ export async function voidVendorPayment(
     }
 
     // Audit log
-    await recordAuditLog(
+    await recordAuditLog({
       tenantId,
-      'vendor_payment',
-      paymentId,
-      'voided',
-      null,
-      actor,
-      client
-    );
+      actorType: actor?.type ?? 'system',
+      actorId: actor?.id,
+      action: 'update',
+      entityType: 'vendor_payment',
+      entityId: paymentId,
+      metadata: { status: 'void' }
+    }, client);
 
     return rows[0];
   });

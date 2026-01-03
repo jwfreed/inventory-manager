@@ -16,6 +16,7 @@ import { routingsRoutes } from '../features/routings/index'
 import { ncrRoutes } from '../features/ncrs/routes'
 import { atpRoutes } from '../features/inventory/routes'
 import { reportRoutes } from '../features/reports/routes'
+import { apRoutes } from '../features/ap'
 
 const coreRoutes: AppRouteObject[] = [
   {
@@ -24,9 +25,11 @@ const coreRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Home',
       nav: {
-        label: 'Home',
+        label: 'Dashboard',
         to: '/home',
-        order: 1,
+        section: 'dashboard',
+        order: 10,
+        description: 'Overview and key metrics',
       },
     },
   },
@@ -39,6 +42,7 @@ export const appShellRoutes: AppRouteObject[] = [
   ...adjustmentRoutes,
   ...atpRoutes,
   ...reportRoutes,
+  ...apRoutes,
   ...workOrderRoutes,
   ...purchaseOrderRoutes,
   ...vendorRoutes,

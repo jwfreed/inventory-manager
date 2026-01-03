@@ -8,9 +8,11 @@ export const ncrRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'NCRs',
       nav: {
-        label: 'NCRs',
+        label: 'Non-Conformance Reports',
         to: '/ncrs',
-        order: 90, // Adjust order as needed
+        section: 'reports',
+        order: 66,
+        description: 'Quality issues and corrective actions',
       },
     },
     children: [

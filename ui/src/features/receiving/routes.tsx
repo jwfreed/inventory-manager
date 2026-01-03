@@ -7,11 +7,13 @@ export const receivingRoutes: AppRouteObject[] = [
     path: 'receiving',
     element: <ReceivingPage />,
     handle: {
-      breadcrumb: 'Receiving & putaway',
+      breadcrumb: 'Receiving & QC',
       nav: {
-        label: 'Receiving & putaway',
+        label: 'Receiving & QC',
         to: '/receiving',
-        order: 7,
+        section: 'inbound',
+        order: 23,
+        description: 'Receive goods and perform quality checks',
       },
     },
   },

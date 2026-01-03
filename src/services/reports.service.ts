@@ -1,0 +1,345 @@
+import { query } from '../db';
+
+export type InventoryValuationRow = {
+  itemId: string;
+  itemSku: string;
+  itemName: string;
+  locationId: string;
+  locationCode: string;
+  locationName: string;
+  uom: string;
+  quantityOnHand: number;
+  averageCost: number | null;
+  standardCost: number | null;
+  extendedValue: number | null;
+};
+
+export type InventoryValuationSummary = {
+  totalItems: number;
+  totalQuantity: number;
+  totalValue: number;
+  totalValuedItems: number;
+  totalUnvaluedItems: number;
+};
+
+export type CostVarianceRow = {
+  itemId: string;
+  itemSku: string;
+  itemName: string;
+  standardCost: number | null;
+  averageCost: number | null;
+  variance: number | null;
+  variancePercent: number | null;
+  quantityOnHand: number;
+};
+
+export type ReceiptCostAnalysisRow = {
+  receiptId: string;
+  receiptDate: string;
+  poNumber: string;
+  vendorCode: string;
+  vendorName: string;
+  itemId: string;
+  itemSku: string;
+  itemName: string;
+  quantityReceived: number;
+  uom: string;
+  expectedUnitCost: number | null;
+  actualUnitCost: number | null;
+  variance: number | null;
+  variancePercent: number | null;
+  extendedVariance: number | null;
+};
+
+/**
+ * Get inventory valuation report
+ * Shows quantity on hand and extended value by item and location
+ */
+export async function getInventoryValuation(
+  tenantId: string,
+  options?: {
+    locationId?: string;
+    itemType?: string;
+    includeZeroQty?: boolean;
+    limit?: number;
+    offset?: number;
+  }
+): Promise<{
+  data: InventoryValuationRow[];
+  summary: InventoryValuationSummary;
+}> {
+  const { locationId, itemType, includeZeroQty = false, limit = 500, offset = 0 } = options || {};
+
+  let whereConditions = ['ip.tenant_id = $1'];
+  const params: any[] = [tenantId];
+  let paramIndex = 2;
+
+  if (locationId) {
+    whereConditions.push(`ip.location_id = $${paramIndex}`);
+    params.push(locationId);
+    paramIndex++;
+  }
+
+  if (itemType) {
+    whereConditions.push(`i.item_type = $${paramIndex}`);
+    params.push(itemType);
+    paramIndex++;
+  }
+
+  if (!includeZeroQty) {
+    whereConditions.push('ip.quantity_on_hand > 0');
+  }
+
+  const whereClause = whereConditions.join(' AND ');
+
+  // Main data query
+  const dataQuery = `
+    SELECT 
+      i.item_id,
+      i.sku as item_sku,
+      i.name as item_name,
+      l.location_id,
+      l.code as location_code,
+      l.name as location_name,
+      i.base_uom as uom,
+      ip.quantity_on_hand,
+      ip.average_cost,
+      i.standard_cost,
+      CASE 
+        WHEN ip.average_cost IS NOT NULL THEN ip.quantity_on_hand * ip.average_cost
+        WHEN i.standard_cost IS NOT NULL THEN ip.quantity_on_hand * i.standard_cost
+        ELSE NULL
+      END as extended_value
+    FROM inventory_position ip
+    JOIN items i ON ip.item_id = i.item_id AND ip.tenant_id = i.tenant_id
+    JOIN locations l ON ip.location_id = l.location_id AND ip.tenant_id = l.tenant_id
+    WHERE ${whereClause}
+    ORDER BY i.sku, l.code
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+
+  params.push(limit, offset);
+
+  const dataResult = await query<InventoryValuationRow>(dataQuery, params);
+
+  // Summary query (without limit/offset)
+  const summaryQuery = `
+    SELECT 
+      COUNT(DISTINCT i.item_id) as total_items,
+      COALESCE(SUM(ip.quantity_on_hand), 0) as total_quantity,
+      COALESCE(SUM(
+        CASE 
+          WHEN ip.average_cost IS NOT NULL THEN ip.quantity_on_hand * ip.average_cost
+          WHEN i.standard_cost IS NOT NULL THEN ip.quantity_on_hand * i.standard_cost
+          ELSE 0
+        END
+      ), 0) as total_value,
+      COUNT(DISTINCT CASE WHEN ip.average_cost IS NOT NULL OR i.standard_cost IS NOT NULL THEN i.item_id END) as total_valued_items,
+      COUNT(DISTINCT CASE WHEN ip.average_cost IS NULL AND i.standard_cost IS NULL THEN i.item_id END) as total_unvalued_items
+    FROM inventory_position ip
+    JOIN items i ON ip.item_id = i.item_id AND ip.tenant_id = i.tenant_id
+    JOIN locations l ON ip.location_id = l.location_id AND ip.tenant_id = l.tenant_id
+    WHERE ${whereClause}
+  `;
+
+  const summaryResult = await query<any>(summaryQuery, params.slice(0, params.length - 2));
+
+  return {
+    data: dataResult.rows,
+    summary: {
+      totalItems: parseInt(summaryResult.rows[0]?.total_items || '0'),
+      totalQuantity: parseFloat(summaryResult.rows[0]?.total_quantity || '0'),
+      totalValue: parseFloat(summaryResult.rows[0]?.total_value || '0'),
+      totalValuedItems: parseInt(summaryResult.rows[0]?.total_valued_items || '0'),
+      totalUnvaluedItems: parseInt(summaryResult.rows[0]?.total_unvalued_items || '0'),
+    },
+  };
+}
+
+/**
+ * Get cost variance report
+ * Shows differences between standard cost and average cost
+ */
+export async function getCostVariance(
+  tenantId: string,
+  options?: {
+    minVariancePercent?: number;
+    itemType?: string;
+    limit?: number;
+    offset?: number;
+  }
+): Promise<{ data: CostVarianceRow[] }> {
+  const { minVariancePercent, itemType, limit = 500, offset = 0 } = options || {};
+
+  let whereConditions = ['i.tenant_id = $1', 'i.standard_cost IS NOT NULL'];
+  const params: any[] = [tenantId];
+  let paramIndex = 2;
+
+  if (itemType) {
+    whereConditions.push(`i.item_type = $${paramIndex}`);
+    params.push(itemType);
+    paramIndex++;
+  }
+
+  // Calculate variance and filter by minimum variance percent
+  let havingClause = '';
+  if (minVariancePercent !== undefined) {
+    havingClause = `
+      HAVING ABS(
+        CASE 
+          WHEN i.standard_cost > 0 THEN 
+            ((COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) - i.standard_cost) / i.standard_cost * 100)
+          ELSE 0
+        END
+      ) >= $${paramIndex}
+    `;
+    params.push(minVariancePercent);
+    paramIndex++;
+  }
+
+  const whereClause = whereConditions.join(' AND ');
+
+  const sql = `
+    SELECT 
+      i.item_id,
+      i.sku as item_sku,
+      i.name as item_name,
+      i.standard_cost,
+      COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), NULL) as average_cost,
+      CASE 
+        WHEN COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) > 0 THEN
+          COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) - i.standard_cost
+        ELSE NULL
+      END as variance,
+      CASE 
+        WHEN i.standard_cost > 0 AND COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) > 0 THEN
+          ((COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) - i.standard_cost) / i.standard_cost * 100)
+        ELSE NULL
+      END as variance_percent,
+      COALESCE(SUM(ip.quantity_on_hand), 0) as quantity_on_hand
+    FROM items i
+    LEFT JOIN inventory_position ip ON i.item_id = ip.item_id AND i.tenant_id = ip.tenant_id
+    WHERE ${whereClause}
+    GROUP BY i.item_id, i.sku, i.name, i.standard_cost
+    ${havingClause}
+    ORDER BY ABS(
+      CASE 
+        WHEN i.standard_cost > 0 THEN 
+          ((COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) - i.standard_cost) / i.standard_cost * 100)
+        ELSE 0
+      END
+    ) DESC
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+
+  params.push(limit, offset);
+
+  const result = await query<CostVarianceRow>(sql, params);
+
+  return { data: result.rows };
+}
+
+/**
+ * Get receipt cost analysis
+ * Compares expected cost (PO line unit price) vs actual cost (receipt line unit cost)
+ */
+export async function getReceiptCostAnalysis(
+  tenantId: string,
+  options?: {
+    startDate?: string;
+    endDate?: string;
+    vendorId?: string;
+    minVariancePercent?: number;
+    limit?: number;
+    offset?: number;
+  }
+): Promise<{ data: ReceiptCostAnalysisRow[] }> {
+  const { startDate, endDate, vendorId, minVariancePercent, limit = 500, offset = 0 } = options || {};
+
+  let whereConditions = ['r.tenant_id = $1', 'pol.unit_price IS NOT NULL'];
+  const params: any[] = [tenantId];
+  let paramIndex = 2;
+
+  if (startDate) {
+    whereConditions.push(`r.receipt_date >= $${paramIndex}`);
+    params.push(startDate);
+    paramIndex++;
+  }
+
+  if (endDate) {
+    whereConditions.push(`r.receipt_date <= $${paramIndex}`);
+    params.push(endDate);
+    paramIndex++;
+  }
+
+  if (vendorId) {
+    whereConditions.push(`po.vendor_id = $${paramIndex}`);
+    params.push(vendorId);
+    paramIndex++;
+  }
+
+  const whereClause = whereConditions.join(' AND ');
+
+  // Build HAVING clause for variance filter
+  let havingClause = '';
+  if (minVariancePercent !== undefined) {
+    havingClause = `
+      HAVING ABS(
+        CASE 
+          WHEN pol.unit_price > 0 THEN 
+            ((COALESCE(rl.unit_cost, pol.unit_price) - pol.unit_price) / pol.unit_price * 100)
+          ELSE 0
+        END
+      ) >= $${paramIndex}
+    `;
+    params.push(minVariancePercent);
+    paramIndex++;
+  }
+
+  const sql = `
+    SELECT 
+      r.receipt_id,
+      r.receipt_date::text,
+      po.po_number,
+      v.code as vendor_code,
+      v.name as vendor_name,
+      i.item_id,
+      i.sku as item_sku,
+      i.name as item_name,
+      rl.quantity_received,
+      rl.uom,
+      pol.unit_price as expected_unit_cost,
+      rl.unit_cost as actual_unit_cost,
+      CASE 
+        WHEN pol.unit_price IS NOT NULL THEN 
+          COALESCE(rl.unit_cost, pol.unit_price) - pol.unit_price
+        ELSE NULL
+      END as variance,
+      CASE 
+        WHEN pol.unit_price > 0 THEN 
+          ((COALESCE(rl.unit_cost, pol.unit_price) - pol.unit_price) / pol.unit_price * 100)
+        ELSE NULL
+      END as variance_percent,
+      CASE 
+        WHEN pol.unit_price IS NOT NULL THEN 
+          (COALESCE(rl.unit_cost, pol.unit_price) - pol.unit_price) * rl.quantity_received
+        ELSE NULL
+      END as extended_variance
+    FROM receipt_lines rl
+    JOIN receipts r ON rl.receipt_id = r.receipt_id AND rl.tenant_id = r.tenant_id
+    JOIN purchase_order_lines pol ON rl.po_line_id = pol.po_line_id AND rl.tenant_id = pol.tenant_id
+    JOIN purchase_orders po ON pol.po_id = po.po_id AND pol.tenant_id = po.tenant_id
+    JOIN vendors v ON po.vendor_id = v.vendor_id AND po.tenant_id = v.tenant_id
+    JOIN items i ON rl.item_id = i.item_id AND rl.tenant_id = i.tenant_id
+    WHERE ${whereClause}
+    ${havingClause}
+    ORDER BY r.receipt_date DESC, po.po_number, i.sku
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+
+  params.push(limit, offset);
+
+  const result = await query<ReceiptCostAnalysisRow>(sql, params);
+
+  return { data: result.rows };
+}

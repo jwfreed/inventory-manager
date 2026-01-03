@@ -1,8 +1,9 @@
 import { Outlet } from 'react-router-dom'
 import { useMemo } from 'react'
-import { Badge, Breadcrumbs, Button, NavLink } from '@shared/ui'
+import { Badge, Breadcrumbs, Button } from '@shared/ui'
 import { useAuth } from '@shared/auth'
 import { navItems } from '../routeData'
+import SectionNav from './SectionNav'
 
 function AppShell() {
   const { user, tenant, logout } = useAuth()
@@ -16,18 +17,12 @@ function AppShell() {
 
   return (
     <div className="flex min-h-screen bg-slate-25 text-slate-900">
-      <aside className="w-64 border-r border-slate-200 bg-white">
+      <aside className="w-64 border-r border-slate-200 bg-white flex flex-col">
         <div className="px-5 py-6">
           <div className="text-lg font-semibold text-slate-900">Inventory UI</div>
           <p className="mt-1 text-sm text-slate-500">Inventory & manufacturing ops</p>
         </div>
-        <nav className="mt-2 space-y-1 px-3">
-          {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to} disabled={item.disabled}>
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+        <SectionNav navItems={navItems} />
       </aside>
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">

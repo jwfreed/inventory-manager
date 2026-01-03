@@ -1,11 +1,23 @@
 import type { Params, RouteObject } from 'react-router-dom'
 
+export type NavSection = 
+  | 'dashboard'
+  | 'inbound'
+  | 'inventory'
+  | 'production'
+  | 'outbound'
+  | 'reports'
+  | 'master-data'
+  | 'profile'
+
 export type AppNavItem = {
   label: string
   to: string
   order?: number
   disabled?: boolean
-  group?: string
+  section?: NavSection
+  icon?: string
+  description?: string
 }
 
 export type AppRouteHandle = {

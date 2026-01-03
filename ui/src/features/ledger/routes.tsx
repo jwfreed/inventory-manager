@@ -9,9 +9,11 @@ export const ledgerRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Inventory movements',
       nav: {
-        label: 'Inventory movements',
+        label: 'Inventory Movements',
         to: '/movements',
-        order: 3,
+        section: 'inventory',
+        order: 32,
+        description: 'View all inventory transactions',
       },
     },
   },

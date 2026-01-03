@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-import { query, withTransaction, PoolClient } from '../db';
-import { recordAuditLog } from './audit.service';
+import type { PoolClient } from 'pg';
+import { query, withTransaction } from '../db';
+import { recordAuditLog } from '../lib/audit';
 
 export interface VendorInvoiceInput {
   invoiceNumber?: string;
@@ -153,15 +154,14 @@ export async function createVendorInvoice(
     }
 
     // Audit log
-    await recordAuditLog(
+    await recordAuditLog({
       tenantId,
-      'vendor_invoice',
-      invoiceId,
-      'created',
-      null,
-      actor,
-      client
-    );
+      actorType: actor?.type ?? 'system',
+      actorId: actor?.id,
+      action: 'create',
+      entityType: 'vendor_invoice',
+      entityId: invoiceId
+    }, client);
 
     return invoiceRows[0];
   });
@@ -438,15 +438,14 @@ export async function updateVendorInvoice(
     );
 
     // Audit log
-    await recordAuditLog(
+    await recordAuditLog({
       tenantId,
-      'vendor_invoice',
-      invoiceId,
-      'updated',
-      null,
-      actor,
-      client
-    );
+      actorType: actor?.type ?? 'system',
+      actorId: actor?.id,
+      action: 'update',
+      entityType: 'vendor_invoice',
+      entityId: invoiceId
+    }, client);
 
     return rows[0];
   });
@@ -476,15 +475,15 @@ export async function approveVendorInvoice(
     }
 
     // Audit log
-    await recordAuditLog(
+    await recordAuditLog({
       tenantId,
-      'vendor_invoice',
-      invoiceId,
-      'approved',
-      null,
-      actor,
-      client
-    );
+      actorType: actor?.type ?? 'system',
+      actorId: actor?.id,
+      action: 'update',
+      entityType: 'vendor_invoice',
+      entityId: invoiceId,
+      metadata: { status: 'approved' }
+    }, client);
 
     return rows[0];
   });
@@ -524,15 +523,15 @@ export async function voidVendorInvoice(
     }
 
     // Audit log
-    await recordAuditLog(
+    await recordAuditLog({
       tenantId,
-      'vendor_invoice',
-      invoiceId,
-      'voided',
-      null,
-      actor,
-      client
-    );
+      actorType: actor?.type ?? 'system',
+      actorId: actor?.id,
+      action: 'update',
+      entityType: 'vendor_invoice',
+      entityId: invoiceId,
+      metadata: { status: 'void' }
+    }, client);
 
     return rows[0];
   });

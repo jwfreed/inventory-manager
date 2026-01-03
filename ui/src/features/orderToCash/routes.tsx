@@ -16,9 +16,11 @@ export const orderToCashRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Sales Orders',
       nav: {
-        label: 'OTC — Sales Orders',
+        label: 'Sales Orders',
         to: '/sales-orders',
-        order: 10,
+        section: 'outbound',
+        order: 50,
+        description: 'Customer orders and fulfillment',
       },
     },
   },
@@ -42,9 +44,11 @@ export const orderToCashRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Reservations',
       nav: {
-        label: 'OTC — Reservations',
+        label: 'Reservations',
         to: '/reservations',
-        order: 11,
+        section: 'outbound',
+        order: 52,
+        description: 'Inventory allocations and reservations',
       },
     },
   },
@@ -61,9 +65,11 @@ export const orderToCashRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Shipments',
       nav: {
-        label: 'OTC — Shipments',
+        label: 'Shipments',
         to: '/shipments',
-        order: 12,
+        section: 'outbound',
+        order: 54,
+        description: 'Pick, pack, and ship orders',
       },
     },
   },
@@ -80,9 +86,11 @@ export const orderToCashRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Returns',
       nav: {
-        label: 'OTC — Returns',
+        label: 'Returns',
         to: '/returns',
-        order: 13,
+        section: 'outbound',
+        order: 56,
+        description: 'Customer returns and RMAs',
       },
     },
   },

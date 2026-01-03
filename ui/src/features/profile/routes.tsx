@@ -10,7 +10,9 @@ export const profileRoutes: AppRouteObject[] = [
       nav: {
         label: 'Profile',
         to: '/profile',
-        order: 99,
+        section: 'profile',
+        order: 90,
+        description: 'User settings and preferences',
       },
     },
   },

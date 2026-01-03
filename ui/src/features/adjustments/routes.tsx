@@ -10,9 +10,11 @@ export const adjustmentRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Inventory adjustments',
       nav: {
-        label: 'Inventory adjustments',
+        label: 'Adjustments',
         to: '/inventory-adjustments',
-        order: 3.5,
+        section: 'inventory',
+        order: 33,
+        description: 'Record quantity and value adjustments',
       },
     },
   },

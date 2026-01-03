@@ -8,9 +8,11 @@ export const kpiRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Dashboard',
       nav: {
-        label: 'Dashboard',
+        label: 'KPI Dashboard',
         to: '/dashboard',
-        order: 2,
+        section: 'reports',
+        order: 60,
+        description: 'Key performance indicators and metrics',
       },
     },
   },

@@ -12,7 +12,9 @@ export const purchaseOrderRoutes: AppRouteObject[] = [
       nav: {
         label: 'Purchase Orders',
         to: '/purchase-orders',
-        order: 5,
+        section: 'inbound',
+        order: 22,
+        description: 'Create and manage purchase orders',
       },
     },
   },

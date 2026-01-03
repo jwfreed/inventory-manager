@@ -12,7 +12,9 @@ export const workOrderRoutes: AppRouteObject[] = [
       nav: {
         label: 'Work Orders',
         to: '/work-orders',
-        order: 4,
+        section: 'production',
+        order: 40,
+        description: 'Manufacturing orders and execution',
       },
     },
   },

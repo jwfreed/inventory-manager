@@ -11,7 +11,9 @@ export const vendorRoutes: AppRouteObject[] = [
       nav: {
         label: 'Vendors',
         to: '/vendors',
-        order: 6,
+        section: 'inbound',
+        order: 20,
+        description: 'Manage supplier information',
       },
     },
   },
@@ -21,9 +23,11 @@ export const vendorRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Supplier Scorecards',
       nav: {
-        label: 'Scorecards',
+        label: 'Supplier Scorecards',
         to: '/supplier-scorecards',
-        order: 7,
+        section: 'inbound',
+        order: 21,
+        description: 'Track vendor performance metrics',
       },
     },
   },
