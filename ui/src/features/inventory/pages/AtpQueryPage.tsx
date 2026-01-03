@@ -14,7 +14,7 @@ export function AtpQueryPage() {
 
   // Load items and locations for dropdowns
   const itemsQuery = useItemsList(
-    { lifecycleStatus: 'active', limit: 1000 },
+    { lifecycleStatus: 'Active', limit: 1000 },
     { staleTime: 60_000 }
   )
   const locationsQuery = useLocationsList(
