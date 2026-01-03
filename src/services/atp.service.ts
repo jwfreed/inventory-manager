@@ -3,7 +3,11 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 
 export type AtpResult = {
   itemId: string;
+  itemSku: string;
+  itemName: string;
   locationId: string;
+  locationCode: string;
+  locationName: string;
   uom: string;
   onHand: number;
   reserved: number;
@@ -88,22 +92,32 @@ export async function getAvailableToPromise(
           AND oh.location_id = rs.location_id
           AND oh.uom = rs.uom
      )
-    SELECT item_id,
-           location_id,
-           uom,
-           on_hand,
-           reserved,
-           (on_hand - reserved) AS available_to_promise
-      FROM combined
-     WHERE on_hand <> 0 OR reserved <> 0
-     ORDER BY item_id, location_id, uom
+    SELECT c.item_id,
+           i.sku AS item_sku,
+           i.name AS item_name,
+           c.location_id,
+           l.code AS location_code,
+           l.name AS location_name,
+           c.uom,
+           c.on_hand,
+           c.reserved,
+           (c.on_hand - c.reserved) AS available_to_promise
+      FROM combined c
+      JOIN items i ON i.item_id = c.item_id AND i.tenant_id = $1
+      JOIN locations l ON l.location_id = c.location_id AND l.tenant_id = $1
+     WHERE c.on_hand <> 0 OR c.reserved <> 0
+     ORDER BY i.sku, l.code, c.uom
      LIMIT $${paramsList.push(limit)} OFFSET $${paramsList.push(offset)}`,
     paramsList
   );
 
   return rows.map((row: any) => ({
     itemId: row.item_id,
+    itemSku: row.item_sku,
+    itemName: row.item_name,
     locationId: row.location_id,
+    locationCode: row.location_code,
+    locationName: row.location_name,
     uom: row.uom,
     onHand: normalizeQuantity(row.on_hand),
     reserved: normalizeQuantity(row.reserved),
@@ -149,13 +163,21 @@ export async function getAvailableToPromiseDetail(
           ${uomFilterReserved}
         GROUP BY r.uom
      )
-    SELECT COALESCE(oh.uom, rs.uom) AS uom,
+    SELECT i.sku AS item_sku,
+           i.name AS item_name,
+           l.code AS location_code,
+           l.name AS location_name,
+           COALESCE(oh.uom, rs.uom) AS uom,
            COALESCE(oh.on_hand, 0) AS on_hand,
            COALESCE(rs.reserved, 0) AS reserved,
            (COALESCE(oh.on_hand, 0) - COALESCE(rs.reserved, 0)) AS available_to_promise
       FROM on_hand oh
       FULL OUTER JOIN reserved rs ON oh.uom = rs.uom
-     WHERE COALESCE(oh.on_hand, 0) <> 0 OR COALESCE(rs.reserved, 0) <> 0`,
+      CROSS JOIN items i
+      CROSS JOIN locations l
+     WHERE (COALESCE(oh.on_hand, 0) <> 0 OR COALESCE(rs.reserved, 0) <> 0)
+       AND i.item_id = $2 AND i.tenant_id = $1
+       AND l.location_id = $3 AND l.tenant_id = $1`,
     params
   );
 
@@ -166,7 +188,11 @@ export async function getAvailableToPromiseDetail(
 
   return {
     itemId,
+    itemSku: row.item_sku,
+    itemName: row.item_name,
     locationId,
+    locationCode: row.location_code,
+    locationName: row.location_name,
     uom: row.uom,
     onHand: normalizeQuantity(row.on_hand),
     reserved: normalizeQuantity(row.reserved),

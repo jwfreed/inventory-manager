@@ -2,12 +2,25 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getAtp } from '@api/reports'
 import type { AtpResult } from '@api/types'
-import { Button, Card, LoadingSpinner, EmptyState, ErrorState, Section, Input } from '@shared/ui'
+import { Button, Card, LoadingSpinner, EmptyState, ErrorState, Section } from '@shared/ui'
+import { useItemsList } from '../../items/queries'
+import { useLocationsList } from '../../locations/queries'
+import { Link } from 'react-router-dom'
 
 export function AtpQueryPage() {
   const [itemId, setItemId] = useState('')
   const [locationId, setLocationId] = useState('')
   const [hasSearched, setHasSearched] = useState(false)
+
+  // Load items and locations for dropdowns
+  const itemsQuery = useItemsList(
+    { lifecycleStatus: 'active', limit: 1000 },
+    { staleTime: 60_000 }
+  )
+  const locationsQuery = useLocationsList(
+    { active: true, limit: 1000 },
+    { staleTime: 60_000 }
+  )
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['atp', itemId, locationId],
@@ -43,26 +56,38 @@ export function AtpQueryPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Item ID (optional)
+                Item (optional)
               </label>
-              <Input
-                type="text"
+              <select
                 value={itemId}
                 onChange={(e) => setItemId(e.target.value)}
-                placeholder="Filter by item..."
-              />
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              >
+                <option value="">All Items</option>
+                {itemsQuery.data?.data.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.sku} - {item.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Location ID (optional)
+                Location (optional)
               </label>
-              <Input
-                type="text"
+              <select
                 value={locationId}
                 onChange={(e) => setLocationId(e.target.value)}
-                placeholder="Filter by location..."
-              />
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              >
+                <option value="">All Locations</option>
+                {locationsQuery.data?.data.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.code} - {location.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -104,10 +129,10 @@ function AtpResultsTable({ results }: { results: AtpResult[] }) {
         <thead className="bg-slate-50">
           <tr>
             <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-              Item ID
+              Item
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-              Location ID
+              Location
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
               UOM
@@ -129,15 +154,17 @@ function AtpResultsTable({ results }: { results: AtpResult[] }) {
         <tbody className="bg-white divide-y divide-slate-200">
           {results.map((result, idx) => (
             <tr key={idx} className="hover:bg-slate-50">
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                <a href={`/items?search=${result.itemId}`} className="text-blue-600 hover:text-blue-800 hover:underline">
-                  {result.itemId}
-                </a>
+              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                <Link to={`/items/${result.itemId}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                  <div className="font-medium">{result.itemSku}</div>
+                  <div className="text-slate-500 text-xs">{result.itemName}</div>
+                </Link>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm">
-                <a href={`/locations?search=${result.locationId}`} className="text-blue-600 hover:text-blue-800 hover:underline">
-                  {result.locationId}
-                </a>
+                <Link to={`/locations/${result.locationId}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                  <div className="font-medium">{result.locationCode}</div>
+                  <div className="text-slate-500 text-xs">{result.locationName}</div>
+                </Link>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
                 {result.uom}
@@ -146,9 +173,6 @@ function AtpResultsTable({ results }: { results: AtpResult[] }) {
                 {Number(result.onHand).toLocaleString()}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-amber-600 font-mono">
-                {Number(result.onHand).toLocaleString()}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-amber-600">
                 {Number(result.reserved).toLocaleString()}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold font-mono">

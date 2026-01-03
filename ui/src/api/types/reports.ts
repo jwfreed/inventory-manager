@@ -1,7 +1,11 @@
 // ATP (Available to Promise) Types
 export type AtpResult = {
   itemId: string
+  itemSku: string
+  itemName: string
   locationId: string
+  locationCode: string
+  locationName: string
   uom: string
   onHand: number
   reserved: number

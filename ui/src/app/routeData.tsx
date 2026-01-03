@@ -25,11 +25,11 @@ const coreRoutes: AppRouteObject[] = [
     handle: {
       breadcrumb: 'Home',
       nav: {
-        label: 'Dashboard',
+        label: 'Home',
         to: '/home',
         section: 'dashboard',
         order: 10,
-        description: 'Overview and key metrics',
+        description: 'Welcome and quick access',
       },
     },
   },
