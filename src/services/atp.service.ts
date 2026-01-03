@@ -103,8 +103,8 @@ export async function getAvailableToPromise(
            c.reserved,
            (c.on_hand - c.reserved) AS available_to_promise
       FROM combined c
-      JOIN items i ON i.item_id = c.item_id AND i.tenant_id = $1
-      JOIN locations l ON l.location_id = c.location_id AND l.tenant_id = $1
+      JOIN items i ON i.id = c.item_id AND i.tenant_id = $1
+      JOIN locations l ON l.id = c.location_id AND l.tenant_id = $1
      WHERE c.on_hand <> 0 OR c.reserved <> 0
      ORDER BY i.sku, l.code, c.uom
      LIMIT $${paramsList.push(limit)} OFFSET $${paramsList.push(offset)}`,
@@ -176,8 +176,8 @@ export async function getAvailableToPromiseDetail(
       CROSS JOIN items i
       CROSS JOIN locations l
      WHERE (COALESCE(oh.on_hand, 0) <> 0 OR COALESCE(rs.reserved, 0) <> 0)
-       AND i.item_id = $2 AND i.tenant_id = $1
-       AND l.location_id = $3 AND l.tenant_id = $1`,
+       AND i.id = $2 AND i.tenant_id = $1
+       AND l.id = $3 AND l.tenant_id = $1`,
     params
   );
 
