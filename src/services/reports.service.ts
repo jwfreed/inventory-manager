@@ -277,13 +277,13 @@ export async function getReceiptCostAnalysis(
   let paramIndex = 2;
 
   if (startDate) {
-    whereConditions.push(`r.receipt_date >= $${paramIndex}`);
+    whereConditions.push(`r.received_at >= $${paramIndex}`);
     params.push(startDate);
     paramIndex++;
   }
 
   if (endDate) {
-    whereConditions.push(`r.receipt_date <= $${paramIndex}`);
+    whereConditions.push(`r.received_at <= $${paramIndex}`);
     params.push(endDate);
     paramIndex++;
   }
