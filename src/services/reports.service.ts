@@ -343,10 +343,10 @@ export async function getReceiptCostAnalysis(
       END as extended_variance
     FROM purchase_order_receipt_lines rl
     JOIN purchase_order_receipts r ON rl.purchase_order_receipt_id = r.id AND rl.tenant_id = r.tenant_id
-    JOIN purchase_order_lines pol ON rl.po_line_id = pol.id AND rl.tenant_id = pol.tenant_id
+    JOIN purchase_order_lines pol ON rl.purchase_order_line_id = pol.id AND rl.tenant_id = pol.tenant_id
     JOIN purchase_orders po ON pol.purchase_order_id = po.id AND pol.tenant_id = po.tenant_id
     JOIN vendors v ON po.vendor_id = v.id AND po.tenant_id = v.tenant_id
-    JOIN items i ON rl.item_id = i.id AND rl.tenant_id = i.tenant_id
+    JOIN items i ON pol.item_id = i.id AND pol.tenant_id = i.tenant_id
     WHERE ${whereClause}
     ${havingClause}
     ORDER BY r.receipt_date DESC, po.po_number, i.sku
