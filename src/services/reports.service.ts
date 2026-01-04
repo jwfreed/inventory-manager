@@ -294,23 +294,22 @@ export async function getReceiptCostAnalysis(
     paramIndex++;
   }
 
-  const whereClause = whereConditions.join(' AND ');
-
-  // Build HAVING clause for variance filter
-  let havingClause = '';
+  // Add variance filter to WHERE clause
   if (minVariancePercent !== undefined) {
-    havingClause = `
-      HAVING ABS(
+    whereConditions.push(`
+      ABS(
         CASE 
           WHEN pol.unit_price > 0 THEN 
             ((COALESCE(rl.unit_cost, pol.unit_price) - pol.unit_price) / pol.unit_price * 100)
           ELSE 0
         END
       ) >= $${paramIndex}
-    `;
+    `);
     params.push(minVariancePercent);
     paramIndex++;
   }
+
+  const whereClause = whereConditions.join(' AND ');
 
   const sql = `
     SELECT 
@@ -348,7 +347,6 @@ export async function getReceiptCostAnalysis(
     JOIN vendors v ON po.vendor_id = v.id AND po.tenant_id = v.tenant_id
     JOIN items i ON pol.item_id = i.id AND pol.tenant_id = i.tenant_id
     WHERE ${whereClause}
-    ${havingClause}
     ORDER BY r.received_at DESC, po.po_number, i.sku
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
