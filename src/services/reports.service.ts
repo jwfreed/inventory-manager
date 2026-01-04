@@ -315,7 +315,7 @@ export async function getReceiptCostAnalysis(
   const sql = `
     SELECT 
       r.id as receipt_id,
-      r.receipt_date::text,
+      r.received_at::text as receipt_date,
       po.po_number,
       v.code as vendor_code,
       v.name as vendor_name,
@@ -349,7 +349,7 @@ export async function getReceiptCostAnalysis(
     JOIN items i ON pol.item_id = i.id AND pol.tenant_id = i.tenant_id
     WHERE ${whereClause}
     ${havingClause}
-    ORDER BY r.receipt_date DESC, po.po_number, i.sku
+    ORDER BY r.received_at DESC, po.po_number, i.sku
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
 
