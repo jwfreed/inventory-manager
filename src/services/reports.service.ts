@@ -191,6 +191,9 @@ export async function getInventoryValuation(
 /**
  * Get cost variance report
  * Shows differences between standard cost and average cost
+ * 
+ * Note: Average cost calculation requires cost layer tracking which is not yet implemented.
+ * This simplified version returns items with standard costs and current on-hand quantities.
  */
 export async function getCostVariance(
   tenantId: string,
@@ -201,66 +204,47 @@ export async function getCostVariance(
     offset?: number;
   }
 ): Promise<{ data: CostVarianceRow[] }> {
-  const { minVariancePercent, itemType, limit = 500, offset = 0 } = options || {};
+  const { itemType, limit = 500, offset = 0 } = options || {};
 
   let whereConditions = ['i.tenant_id = $1', 'i.standard_cost IS NOT NULL'];
   const params: any[] = [tenantId];
   let paramIndex = 2;
 
   if (itemType) {
-    whereConditions.push(`i.item_type = $${paramIndex}`);
+    whereConditions.push(`i.type = $${paramIndex}`);
     params.push(itemType);
-    paramIndex++;
-  }
-
-  // Calculate variance and filter by minimum variance percent
-  let havingClause = '';
-  if (minVariancePercent !== undefined) {
-    havingClause = `
-      HAVING ABS(
-        CASE 
-          WHEN i.standard_cost > 0 THEN 
-            ((COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) - i.standard_cost) / i.standard_cost * 100)
-          ELSE 0
-        END
-      ) >= $${paramIndex}
-    `;
-    params.push(minVariancePercent);
     paramIndex++;
   }
 
   const whereClause = whereConditions.join(' AND ');
 
+  // Calculate on-hand from movement lines (similar to ATP calculation)
   const sql = `
+    WITH on_hand AS (
+      SELECT 
+        iml.item_id,
+        SUM(iml.quantity_delta) AS quantity_on_hand
+      FROM inventory_movement_lines iml
+      JOIN inventory_movements im ON im.id = iml.movement_id
+      WHERE im.status = 'posted'
+        AND iml.tenant_id = $1
+        AND im.tenant_id = $1
+      GROUP BY iml.item_id
+      HAVING SUM(iml.quantity_delta) > 0
+    )
     SELECT 
-      i.item_id,
+      i.id as item_id,
       i.sku as item_sku,
       i.name as item_name,
       i.standard_cost,
-      COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), NULL) as average_cost,
-      CASE 
-        WHEN COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) > 0 THEN
-          COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) - i.standard_cost
-        ELSE NULL
-      END as variance,
-      CASE 
-        WHEN i.standard_cost > 0 AND COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) > 0 THEN
-          ((COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) - i.standard_cost) / i.standard_cost * 100)
-        ELSE NULL
-      END as variance_percent,
-      COALESCE(SUM(ip.quantity_on_hand), 0) as quantity_on_hand
+      NULL::numeric as average_cost,
+      NULL::numeric as variance,
+      NULL::numeric as variance_percent,
+      COALESCE(oh.quantity_on_hand, 0) as quantity_on_hand
     FROM items i
-    LEFT JOIN inventory_position ip ON i.item_id = ip.item_id AND i.tenant_id = ip.tenant_id
+    LEFT JOIN on_hand oh ON i.id = oh.item_id
     WHERE ${whereClause}
-    GROUP BY i.item_id, i.sku, i.name, i.standard_cost
-    ${havingClause}
-    ORDER BY ABS(
-      CASE 
-        WHEN i.standard_cost > 0 THEN 
-          ((COALESCE(SUM(ip.average_cost * ip.quantity_on_hand) / NULLIF(SUM(ip.quantity_on_hand), 0), 0) - i.standard_cost) / i.standard_cost * 100)
-        ELSE 0
-      END
-    ) DESC
+    ORDER BY i.sku
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
 
@@ -330,12 +314,12 @@ export async function getReceiptCostAnalysis(
 
   const sql = `
     SELECT 
-      r.receipt_id,
+      r.id as receipt_id,
       r.receipt_date::text,
       po.po_number,
       v.code as vendor_code,
       v.name as vendor_name,
-      i.item_id,
+      i.id as item_id,
       i.sku as item_sku,
       i.name as item_name,
       rl.quantity_received,
@@ -357,12 +341,12 @@ export async function getReceiptCostAnalysis(
           (COALESCE(rl.unit_cost, pol.unit_price) - pol.unit_price) * rl.quantity_received
         ELSE NULL
       END as extended_variance
-    FROM receipt_lines rl
-    JOIN receipts r ON rl.receipt_id = r.receipt_id AND rl.tenant_id = r.tenant_id
-    JOIN purchase_order_lines pol ON rl.po_line_id = pol.po_line_id AND rl.tenant_id = pol.tenant_id
-    JOIN purchase_orders po ON pol.po_id = po.po_id AND pol.tenant_id = po.tenant_id
-    JOIN vendors v ON po.vendor_id = v.vendor_id AND po.tenant_id = v.tenant_id
-    JOIN items i ON rl.item_id = i.item_id AND rl.tenant_id = i.tenant_id
+    FROM purchase_order_receipt_lines rl
+    JOIN purchase_order_receipts r ON rl.purchase_order_receipt_id = r.id AND rl.tenant_id = r.tenant_id
+    JOIN purchase_order_lines pol ON rl.po_line_id = pol.id AND rl.tenant_id = pol.tenant_id
+    JOIN purchase_orders po ON pol.purchase_order_id = po.id AND pol.tenant_id = po.tenant_id
+    JOIN vendors v ON po.vendor_id = v.id AND po.tenant_id = v.tenant_id
+    JOIN items i ON rl.item_id = i.id AND rl.tenant_id = i.tenant_id
     WHERE ${whereClause}
     ${havingClause}
     ORDER BY r.receipt_date DESC, po.po_number, i.sku
