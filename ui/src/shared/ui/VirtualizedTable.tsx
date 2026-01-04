@@ -36,6 +36,8 @@ export function VirtualizedTable<T>({
   onRowClick,
   emptyMessage = 'No data found',
 }: VirtualizedTableProps<T>) {
+  'use no memo' // Disable React Compiler memoization due to useVirtualizer incompatibility
+  
   const parentRef = useRef<HTMLDivElement>(null)
 
   const virtualizer = useVirtualizer({
