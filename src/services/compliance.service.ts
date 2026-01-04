@@ -93,14 +93,19 @@ export async function listLots(
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(
-    `SELECT * FROM lots ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    `SELECT id, tenant_id, item_id, lot_code, status, manufactured_at, received_at, expires_at, vendor_lot_code, notes, created_at, updated_at
+     FROM lots ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
   );
   return rows.map(mapLot);
 }
 
 export async function getLot(tenantId: string, id: string) {
-  const res = await query('SELECT * FROM lots WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+  const res = await query(
+    `SELECT id, tenant_id, item_id, lot_code, status, manufactured_at, received_at, expires_at, vendor_lot_code, notes, created_at, updated_at
+     FROM lots WHERE id = $1 AND tenant_id = $2`,
+    [id, tenantId]
+  );
   if (res.rowCount === 0) return null;
   return mapLot(res.rows[0]);
 }

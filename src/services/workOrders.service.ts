@@ -188,10 +188,14 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
 }
 
 export async function getWorkOrderById(tenantId: string, id: string) {
-  const result = await query<WorkOrderRow>('SELECT * FROM work_orders WHERE id = $1 AND tenant_id = $2', [
-    id,
-    tenantId
-  ]);
+  const result = await query<WorkOrderRow>(
+    `SELECT id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, related_work_order_id,
+            output_item_id, output_uom, quantity_planned, quantity_completed, default_consume_location_id,
+            default_produce_location_id, scheduled_start_at, scheduled_due_at, released_at, completed_at,
+            notes, description, created_at, updated_at
+     FROM work_orders WHERE id = $1 AND tenant_id = $2`,
+    [id, tenantId]
+  );
   if (result.rowCount === 0) {
     return null;
   }
@@ -226,7 +230,11 @@ export async function listWorkOrders(tenantId: string, filters: WorkOrderListQue
   params.push(limit, offset);
 
   const { rows } = await query<WorkOrderRow>(
-    `SELECT * FROM work_orders ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    `SELECT id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, related_work_order_id,
+            output_item_id, output_uom, quantity_planned, quantity_completed, default_consume_location_id,
+            default_produce_location_id, scheduled_start_at, scheduled_due_at, released_at, completed_at,
+            notes, description, created_at, updated_at
+     FROM work_orders ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
 

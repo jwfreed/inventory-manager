@@ -30,6 +30,7 @@ export function useLocationsList(params: ListLocationsParams = {}, options: Loca
   return useQuery({
     queryKey: locationsQueryKeys.list(params),
     queryFn: () => listLocations(params),
+    staleTime: 5 * 60 * 1000, // 5 minutes - master data changes infrequently
     retry: 1,
     ...options,
   })
@@ -40,6 +41,7 @@ export function useLocation(id?: string, options: LocationOptions = {}) {
     queryKey: locationsQueryKeys.detail(id ?? ''),
     queryFn: () => getLocation(id as string),
     enabled: Boolean(id),
+    staleTime: 5 * 60 * 1000, // 5 minutes - master data changes infrequently
     retry: 1,
     ...options,
   })

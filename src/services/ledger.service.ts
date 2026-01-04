@@ -90,7 +90,7 @@ export async function listMovements(tenantId: string, filters: {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const { rows } = await query(
-    `SELECT *
+    `SELECT id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
      FROM inventory_movements
      ${where}
      ORDER BY occurred_at DESC, created_at DESC
@@ -102,14 +102,19 @@ export async function listMovements(tenantId: string, filters: {
 }
 
 export async function getMovement(tenantId: string, id: string) {
-  const res = await query('SELECT * FROM inventory_movements WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+  const res = await query(
+    `SELECT id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
+     FROM inventory_movements WHERE id = $1 AND tenant_id = $2`,
+    [id, tenantId]
+  );
   if (res.rowCount === 0) return null;
   return mapMovement(res.rows[0]);
 }
 
 export async function getMovementLines(tenantId: string, id: string) {
   const res = await query(
-    'SELECT * FROM inventory_movement_lines WHERE movement_id = $1 AND tenant_id = $2 ORDER BY created_at ASC',
+    `SELECT id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes, created_at
+     FROM inventory_movement_lines WHERE movement_id = $1 AND tenant_id = $2 ORDER BY created_at ASC`,
     [id, tenantId]
   );
   return res.rows.map(mapMovementLine);

@@ -1,5 +1,6 @@
 import { query } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { atpCache, cacheKey } from '../lib/cache';
 
 export type AtpResult = {
   itemId: string;
@@ -31,11 +32,18 @@ function normalizeQuantity(value: unknown): number {
  * 
  * This provides a simplified view focused on ATP calculation,
  * excluding other inventory status fields like held, rejected, etc.
+ * 
+ * Results are cached for 30 seconds to reduce database load.
  */
 export async function getAvailableToPromise(
   tenantId: string,
   params: AtpQueryParams = {}
 ): Promise<AtpResult[]> {
+  // Check cache first
+  const key = cacheKey('atp', tenantId, params as Record<string, unknown>);
+  const cached = atpCache.get(key) as AtpResult[] | undefined;
+  if (cached) return cached;
+
   const paramsList: any[] = [tenantId];
   const clauses: string[] = [];
   const reservedClauses: string[] = [];
@@ -111,7 +119,7 @@ export async function getAvailableToPromise(
     paramsList
   );
 
-  return rows.map((row: any) => ({
+  const results = rows.map((row: any) => ({
     itemId: row.item_id,
     itemSku: row.item_sku,
     itemName: row.item_name,
@@ -123,6 +131,11 @@ export async function getAvailableToPromise(
     reserved: normalizeQuantity(row.reserved),
     availableToPromise: normalizeQuantity(row.available_to_promise)
   }));
+
+  // Cache results for 30 seconds
+  atpCache.set(key, results);
+  
+  return results;
 }
 
 /**

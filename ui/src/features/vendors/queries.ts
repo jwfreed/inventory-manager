@@ -20,6 +20,7 @@ export function useVendorsList(
   return useQuery({
     queryKey: vendorsQueryKeys.list(params),
     queryFn: () => listVendors(params),
+    staleTime: 5 * 60 * 1000, // 5 minutes - master data changes infrequently
     retry: 1,
     ...options,
   })

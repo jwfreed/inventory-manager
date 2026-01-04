@@ -25,6 +25,7 @@ export function useItemsList(params: ListItemsParams = {}, options: ItemsListOpt
   return useQuery({
     queryKey: itemsQueryKeys.list(params),
     queryFn: () => listItems(params),
+    staleTime: 5 * 60 * 1000, // 5 minutes - master data changes infrequently
     retry: 1,
     ...options,
   })
@@ -35,6 +36,7 @@ export function useItem(id?: string, options: ItemOptions = {}) {
     queryKey: itemsQueryKeys.detail(id ?? ''),
     queryFn: () => getItem(id as string),
     enabled: Boolean(id),
+    staleTime: 5 * 60 * 1000, // 5 minutes - master data changes infrequently
     retry: 1,
     ...options,
   })
