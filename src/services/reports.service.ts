@@ -424,7 +424,7 @@ export async function getWorkOrderProgress(params: {
   }
 
   if (itemId) {
-    whereConditions.push(`wo.item_id = $${paramIndex}`);
+    whereConditions.push(`wo.output_item_id = $${paramIndex}`);
     queryParams.push(itemId);
     paramIndex++;
   }
@@ -438,12 +438,12 @@ export async function getWorkOrderProgress(params: {
   const sql = `
     SELECT 
       wo.id as work_order_id,
-      wo.wo_number as work_order_number,
-      wo.item_id,
+      wo.work_order_number,
+      wo.output_item_id as item_id,
       i.sku as item_sku,
       i.name as item_name,
       wo.status,
-      wo.order_type,
+      wo.kind as order_type,
       wo.quantity_planned,
       COALESCE(
         (SELECT SUM(quantity)
@@ -467,24 +467,24 @@ export async function getWorkOrderProgress(params: {
           ) / wo.quantity_planned * 100)::numeric, 2)
         ELSE 0
       END as percent_complete,
-      wo.due_date::text,
+      wo.scheduled_due_at::text as due_date,
       CASE 
-        WHEN wo.due_date IS NOT NULL THEN 
-          EXTRACT(DAY FROM (wo.due_date - CURRENT_DATE))::integer
+        WHEN wo.scheduled_due_at IS NOT NULL THEN 
+          EXTRACT(DAY FROM (wo.scheduled_due_at::date - CURRENT_DATE))::integer
         ELSE NULL
       END as days_until_due,
       CASE 
-        WHEN wo.due_date IS NOT NULL AND wo.due_date < CURRENT_DATE 
+        WHEN wo.scheduled_due_at IS NOT NULL AND wo.scheduled_due_at::date < CURRENT_DATE 
           AND wo.status NOT IN ('completed', 'closed') THEN true
         ELSE false
       END as is_late,
       wo.created_at::text
     FROM work_orders wo
-    JOIN items i ON wo.item_id = i.id AND wo.tenant_id = i.tenant_id
+    JOIN items i ON wo.output_item_id = i.id AND wo.tenant_id = i.tenant_id
     WHERE ${whereClause}
     ORDER BY 
-      CASE WHEN wo.due_date < CURRENT_DATE THEN 0 ELSE 1 END,
-      wo.due_date ASC NULLS LAST,
+      CASE WHEN wo.scheduled_due_at::date < CURRENT_DATE THEN 0 ELSE 1 END,
+      wo.scheduled_due_at ASC NULLS LAST,
       wo.created_at DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
@@ -590,13 +590,10 @@ export async function getMovementTransactionHistory(params: {
       iml.location_id,
       l.code as location_code,
       l.name as location_name,
-      iml.quantity,
+      iml.quantity_delta as quantity,
       iml.uom,
-      iml.unit_cost,
-      CASE 
-        WHEN iml.unit_cost IS NOT NULL THEN iml.quantity * iml.unit_cost
-        ELSE NULL
-      END as extended_value,
+      NULL::numeric as unit_cost,
+      NULL::numeric as extended_value,
       lot.lot_number,
       im.reference_type,
       im.reference_number,
@@ -604,10 +601,15 @@ export async function getMovementTransactionHistory(params: {
       im.created_at::text,
       im.posted_at::text
     FROM inventory_movements im
-    JOIN inventory_movement_lines iml ON im.id = iml.inventory_movement_id
+    JOIN inventory_movement_lines iml ON im.id = iml.movement_id
     JOIN items i ON iml.item_id = i.id AND iml.tenant_id = i.tenant_id
     JOIN locations l ON iml.location_id = l.id AND iml.tenant_id = l.tenant_id
-    LEFT JOIN lots lot ON iml.lot_id = lot.id
+    LEFT JOIN (
+      SELECT iml_lot.inventory_movement_line_id, MIN(l.lot_number) as lot_number
+      FROM inventory_movement_lots iml_lot
+      JOIN lots l ON iml_lot.lot_id = l.id
+      GROUP BY iml_lot.inventory_movement_line_id
+    ) lot ON iml.id = lot.inventory_movement_line_id
     WHERE ${whereClause}
     ORDER BY im.movement_date DESC, im.created_at DESC, iml.id
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -705,7 +707,7 @@ export async function getInventoryMovementVelocity(params: {
         SUM(iml.quantity) as net_change,
         EXTRACT(DAY FROM ($4::date - $3::date)) + 1 as days_in_period
       FROM inventory_movements im
-      JOIN inventory_movement_lines iml ON im.id = iml.inventory_movement_id
+      JOIN inventory_movement_lines iml ON im.id = iml.movement_id
       JOIN items i ON iml.item_id = i.id AND iml.tenant_id = i.tenant_id
       WHERE ${whereClause}
       GROUP BY iml.item_id, i.sku, i.name, i.item_type
@@ -714,9 +716,9 @@ export async function getInventoryMovementVelocity(params: {
     current_inventory AS (
       SELECT 
         iml.item_id,
-        SUM(iml.quantity) as quantity_on_hand
+        SUM(iml.quantity_delta) as quantity_on_hand
       FROM inventory_movement_lines iml
-      JOIN inventory_movements im ON iml.inventory_movement_id = im.id
+      JOIN inventory_movements im ON iml.movement_id = im.id
       WHERE im.tenant_id = $1 
         AND im.status = 'posted'
         ${locationId ? `AND iml.location_id = $${queryParams.indexOf(locationId) + 1}` : ''}
@@ -817,10 +819,19 @@ export async function getOpenPOAging(params: {
       SELECT 
         pol.purchase_order_id,
         COUNT(pol.id) as total_lines,
-        SUM(CASE WHEN pol.quantity_received >= pol.quantity THEN 1 ELSE 0 END) as received_lines,
-        SUM(pol.quantity) as total_ordered,
-        SUM(pol.quantity_received) as total_received
+        SUM(CASE WHEN COALESCE(rcpt.quantity_received, 0) >= pol.quantity_ordered THEN 1 ELSE 0 END) as received_lines,
+        SUM(pol.quantity_ordered) as total_ordered,
+        SUM(COALESCE(rcpt.quantity_received, 0)) as total_received
       FROM purchase_order_lines pol
+      LEFT JOIN (
+        SELECT 
+          porl.purchase_order_line_id,
+          SUM(porl.quantity_received) as quantity_received
+        FROM purchase_order_receipt_lines porl
+        JOIN purchase_order_receipts por ON porl.purchase_order_receipt_id = por.id
+        WHERE por.tenant_id = $1 AND por.status = 'posted'
+        GROUP BY porl.purchase_order_line_id
+      ) rcpt ON pol.id = rcpt.purchase_order_line_id
       WHERE pol.tenant_id = $1
       GROUP BY pol.purchase_order_id
     )
@@ -949,10 +960,19 @@ export async function getSalesOrderFillPerformance(params: {
       SELECT 
         sol.sales_order_id,
         COUNT(sol.id) as total_lines,
-        SUM(CASE WHEN sol.quantity_shipped >= sol.quantity THEN 1 ELSE 0 END) as shipped_lines,
-        SUM(sol.quantity) as total_ordered,
-        SUM(sol.quantity_shipped) as total_shipped
+        SUM(CASE WHEN COALESCE(ship.quantity_shipped, 0) >= sol.quantity_ordered THEN 1 ELSE 0 END) as shipped_lines,
+        SUM(sol.quantity_ordered) as total_ordered,
+        SUM(COALESCE(ship.quantity_shipped, 0)) as total_shipped
       FROM sales_order_lines sol
+      LEFT JOIN (
+        SELECT 
+          sosl.sales_order_line_id,
+          SUM(sosl.quantity_shipped) as quantity_shipped
+        FROM sales_order_shipment_lines sosl
+        JOIN sales_order_shipments sos ON sosl.sales_order_shipment_id = sos.id
+        WHERE sos.tenant_id = $1 AND sos.status = 'posted'
+        GROUP BY sosl.sales_order_line_id
+      ) ship ON sol.id = ship.sales_order_line_id
       WHERE sol.tenant_id = $1
       GROUP BY sol.sales_order_id
     ),
@@ -1056,7 +1076,7 @@ export async function getProductionRunFrequency(params: {
     offset = 0,
   } = params;
 
-  let whereConditions = ['wo.tenant_id = $1', 'wo.order_type = $2'];
+  let whereConditions = ['wo.tenant_id = $1', 'wo.kind = $2'];
   let havingConditions: string[] = [];
   const queryParams: any[] = [tenantId, 'production'];
   let paramIndex = 3;
@@ -1076,7 +1096,7 @@ export async function getProductionRunFrequency(params: {
   }
 
   if (itemId) {
-    whereConditions.push(`wo.item_id = $${paramIndex}`);
+    whereConditions.push(`wo.output_item_id = $${paramIndex}`);
     queryParams.push(itemId);
     paramIndex++;
   }
@@ -1095,7 +1115,7 @@ export async function getProductionRunFrequency(params: {
   const sql = `
     WITH production_stats AS (
       SELECT 
-        wo.item_id,
+        wo.output_item_id as item_id,
         i.sku,
         i.name,
         i.item_type,
@@ -1109,10 +1129,10 @@ export async function getProductionRunFrequency(params: {
         MAX(woe.started_at) as last_production_date
       FROM work_orders wo
       JOIN work_order_executions woe ON wo.id = woe.work_order_id
-      JOIN items i ON wo.item_id = i.id AND wo.tenant_id = i.tenant_id
+      JOIN items i ON wo.output_item_id = i.id AND wo.tenant_id = i.tenant_id
       WHERE ${whereClause}
         AND woe.status = 'posted'
-      GROUP BY wo.item_id, i.sku, i.name, i.item_type
+      GROUP BY wo.output_item_id, i.sku, i.name, i.item_type
       ${havingClause}
     )
     SELECT 

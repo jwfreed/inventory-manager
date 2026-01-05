@@ -3,7 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import { getOpenPOAging } from '../api/reports'
 import { useVendorsList } from '../../vendors/queries'
 import { Button, Card, Section, LoadingSpinner, ErrorState, Badge } from '@shared/ui'
-import { formatNumber, formatDate } from '@shared/formatters'
+import { formatDate } from '@shared/formatters'
+import type { Vendor } from '../../../api/types/vendors'
+import type { ApiError } from '../../../api/types/common'
 
 export default function OpenPOAgingPage() {
   const [vendorFilter, setVendorFilter] = useState('')
@@ -109,7 +111,7 @@ export default function OpenPOAgingPage() {
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
               >
                 <option value="">All Vendors</option>
-                {vendorsQuery.data?.map(vendor => (
+                {vendorsQuery.data?.data.map((vendor: Vendor) => (
                   <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
                 ))}
               </select>
@@ -144,10 +146,10 @@ export default function OpenPOAgingPage() {
 
       <Section
         title="Purchase Orders"
-        action={<Button onClick={exportToCsv} variant="outline" size="sm">Export CSV</Button>}
+        action={<Button onClick={exportToCsv} variant="secondary" size="sm">Export CSV</Button>}
       >
         {agingQuery.isLoading && <LoadingSpinner />}
-        {agingQuery.isError && <ErrorState message="Failed to load PO aging data" />}
+        {agingQuery.isError && <ErrorState error={agingQuery.error as unknown as ApiError} />}
         
         {agingQuery.data && (
           <div className="overflow-x-auto">

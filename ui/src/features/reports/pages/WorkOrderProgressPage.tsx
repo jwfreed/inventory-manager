@@ -4,6 +4,8 @@ import { getWorkOrderProgress } from '../api/reports'
 import { useItemsList } from '../../items/queries'
 import { Button, Card, Section, LoadingSpinner, ErrorState, Badge } from '@shared/ui'
 import { formatNumber, formatDate } from '@shared/formatters'
+import type { Item } from '../../../api/types/items'
+import type { ApiError } from '../../../api/types/common'
 
 export default function WorkOrderProgressPage() {
   const [statusFilter, setStatusFilter] = useState('')
@@ -25,7 +27,7 @@ export default function WorkOrderProgressPage() {
     staleTime: 30_000,
   })
 
-  const itemsQuery = useItemsList({ active: true, limit: 200 }, { staleTime: 60_000 })
+  const itemsQuery = useItemsList({ limit: 200 }, { staleTime: 60_000 })
 
   const exportToCsv = () => {
     if (!progressQuery.data?.data) return
@@ -102,7 +104,7 @@ export default function WorkOrderProgressPage() {
               setIncludeCompleted(false)
               setStartDate('')
               setEndDate('')
-            }} variant="outline" size="sm">Clear Filters</Button>
+            }} variant="secondary" size="sm">Clear Filters</Button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -130,7 +132,7 @@ export default function WorkOrderProgressPage() {
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
               >
                 <option value="">All Items</option>
-                {itemsQuery.data?.map(item => (
+                {itemsQuery.data?.data.map((item: Item) => (
                   <option key={item.id} value={item.id}>{item.sku} - {item.name}</option>
                 ))}
               </select>
@@ -174,13 +176,13 @@ export default function WorkOrderProgressPage() {
       <Section
         title="Work Orders"
         action={
-          <Button onClick={exportToCsv} variant="outline" size="sm">
+          <Button onClick={exportToCsv} variant="secondary" size="sm">
             Export CSV
           </Button>
         }
       >
         {progressQuery.isLoading && <LoadingSpinner />}
-        {progressQuery.isError && <ErrorState message="Failed to load work order progress" />}
+        {progressQuery.isError && <ErrorState error={progressQuery.error as unknown as ApiError} />}
         
         {progressQuery.data && (
           <div className="overflow-x-auto">

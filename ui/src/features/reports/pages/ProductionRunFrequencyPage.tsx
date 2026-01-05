@@ -4,12 +4,17 @@ import { getProductionRunFrequency } from '../api/reports'
 import { useItemsList } from '../../items/queries'
 import { Button, Card, Section, LoadingSpinner, ErrorState } from '@shared/ui'
 import { formatNumber, formatDate } from '@shared/formatters'
+import type { Item } from '../../../api/types/items'
+import type { ApiError } from '../../../api/types/common'
+
+const getDefaultStartDate = () => new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+const getDefaultEndDate = () => new Date().toISOString().slice(0, 10)
 
 export default function ProductionRunFrequencyPage() {
   const [itemTypeFilter, setItemTypeFilter] = useState('')
   const [itemFilter, setItemFilter] = useState('')
-  const [startDate, setStartDate] = useState(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10))
+  const [startDate, setStartDate] = useState(getDefaultStartDate())
+  const [endDate, setEndDate] = useState(getDefaultEndDate())
 
   const frequencyQuery = useQuery({
     queryKey: ['production-run-frequency', itemTypeFilter, itemFilter, startDate, endDate],
@@ -24,7 +29,7 @@ export default function ProductionRunFrequencyPage() {
     enabled: Boolean(startDate && endDate),
   })
 
-  const itemsQuery = useItemsList({ active: true, limit: 200 }, { staleTime: 60_000 })
+  const itemsQuery = useItemsList({ limit: 200 }, { staleTime: 60_000 })
 
   const exportToCsv = () => {
     if (!frequencyQuery.data?.data) return
@@ -134,7 +139,7 @@ export default function ProductionRunFrequencyPage() {
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
               >
                 <option value="">All Items</option>
-                {itemsQuery.data?.map(item => (
+                {itemsQuery.data?.data.map((item: Item) => (
                   <option key={item.id} value={item.id}>{item.sku}</option>
                 ))}
               </select>
@@ -145,10 +150,10 @@ export default function ProductionRunFrequencyPage() {
 
       <Section
         title="Production Frequency"
-        action={<Button onClick={exportToCsv} variant="outline" size="sm">Export CSV</Button>}
+        action={<Button onClick={exportToCsv} variant="secondary" size="sm">Export CSV</Button>}
       >
         {frequencyQuery.isLoading && <LoadingSpinner />}
-        {frequencyQuery.isError && <ErrorState message="Failed to load production data" />}
+        {frequencyQuery.isError && <ErrorState error={frequencyQuery.error as unknown as ApiError} />}
         
         {frequencyQuery.data && (
           <div className="overflow-x-auto">

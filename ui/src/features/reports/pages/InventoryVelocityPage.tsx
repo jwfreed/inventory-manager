@@ -4,12 +4,17 @@ import { getInventoryVelocity } from '../api/reports'
 import { useLocationsList } from '../../locations/queries'
 import { Button, Card, Section, LoadingSpinner, ErrorState } from '@shared/ui'
 import { formatNumber } from '@shared/formatters'
+import type { Location } from '../../../api/types/locations'
+import type { ApiError } from '../../../api/types/common'
+
+const getDefaultStartDate = () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+const getDefaultEndDate = () => new Date().toISOString().slice(0, 10)
 
 export default function InventoryVelocityPage() {
   const [locationFilter, setLocationFilter] = useState('')
   const [itemTypeFilter, setItemTypeFilter] = useState('')
-  const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10))
+  const [startDate, setStartDate] = useState(getDefaultStartDate())
+  const [endDate, setEndDate] = useState(getDefaultEndDate())
 
   const velocityQuery = useQuery({
     queryKey: ['inventory-velocity', locationFilter, itemTypeFilter, startDate, endDate],
@@ -97,7 +102,7 @@ export default function InventoryVelocityPage() {
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
               >
                 <option value="">All Locations</option>
-                {locationsQuery.data?.map(loc => (
+                {locationsQuery.data?.data.map((loc: Location) => (
                   <option key={loc.id} value={loc.id}>{loc.code}</option>
                 ))}
               </select>
@@ -123,10 +128,10 @@ export default function InventoryVelocityPage() {
 
       <Section
         title="Velocity Analysis"
-        action={<Button onClick={exportToCsv} variant="outline" size="sm">Export CSV</Button>}
+        action={<Button onClick={exportToCsv} variant="secondary" size="sm">Export CSV</Button>}
       >
         {velocityQuery.isLoading && <LoadingSpinner />}
-        {velocityQuery.isError && <ErrorState message="Failed to load velocity data" />}
+        {velocityQuery.isError && <ErrorState error={velocityQuery.error as unknown as ApiError} />}
         
         {velocityQuery.data && (
           <div className="overflow-x-auto">

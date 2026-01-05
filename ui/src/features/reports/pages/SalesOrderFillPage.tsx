@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getSalesOrderFillPerformance } from '../api/reports'
 import { Button, Card, Section, LoadingSpinner, ErrorState, Badge } from '@shared/ui'
-import { formatNumber, formatDate } from '@shared/formatters'
+import { formatDate } from '@shared/formatters'
+import type { ApiError } from '../../../api/types/common'
 
 export default function SalesOrderFillPage() {
   const [startDate, setStartDate] = useState('')
@@ -151,10 +152,10 @@ export default function SalesOrderFillPage() {
 
       <Section
         title="Sales Orders"
-        action={<Button onClick={exportToCsv} variant="outline" size="sm">Export CSV</Button>}
+        action={<Button onClick={exportToCsv} variant="secondary" size="sm">Export CSV</Button>}
       >
         {fillQuery.isLoading && <LoadingSpinner />}
-        {fillQuery.isError && <ErrorState message="Failed to load sales order data" />}
+        {fillQuery.isError && <ErrorState error={fillQuery.error as unknown as ApiError} />}
         
         {fillQuery.data && (
           <div className="overflow-x-auto">

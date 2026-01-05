@@ -5,6 +5,9 @@ import { useItemsList } from '../../items/queries'
 import { useLocationsList } from '../../locations/queries'
 import { Button, Card, Section, LoadingSpinner, ErrorState, Badge } from '@shared/ui'
 import { formatNumber, formatDate } from '@shared/formatters'
+import type { Item } from '../../../api/types/items'
+import type { Location } from '../../../api/types/locations'
+import type { ApiError } from '../../../api/types/common'
 
 export default function MovementTransactionsPage() {
   const [itemFilter, setItemFilter] = useState('')
@@ -26,8 +29,8 @@ export default function MovementTransactionsPage() {
     staleTime: 30_000,
   })
 
-  const itemsQuery = useItemsList({ active: true, limit: 200 }, { staleTime: 60_000 })
-  const locationsQuery = useLocationsList({ active: true, limit: 200 }, { staleTime: 60_000 })
+  const itemsQuery = useItemsList({ limit: 200 }, { staleTime: 60_000 })
+  const locationsQuery = useLocationsList({ limit: 200 }, { staleTime: 60_000 })
 
   const exportToCsv = () => {
     if (!transactionsQuery.data?.data) return
@@ -108,7 +111,7 @@ export default function MovementTransactionsPage() {
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
               >
                 <option value="">All Items</option>
-                {itemsQuery.data?.map(item => (
+                {itemsQuery.data?.data.map((item: Item) => (
                   <option key={item.id} value={item.id}>{item.sku}</option>
                 ))}
               </select>
@@ -122,7 +125,7 @@ export default function MovementTransactionsPage() {
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
               >
                 <option value="">All Locations</option>
-                {locationsQuery.data?.map(loc => (
+                {locationsQuery.data?.data.map((loc: Location) => (
                   <option key={loc.id} value={loc.id}>{loc.code}</option>
                 ))}
               </select>
@@ -169,10 +172,10 @@ export default function MovementTransactionsPage() {
 
       <Section
         title="Transactions"
-        action={<Button onClick={exportToCsv} variant="outline" size="sm">Export CSV</Button>}
+        action={<Button onClick={exportToCsv} variant="secondary" size="sm">Export CSV</Button>}
       >
         {transactionsQuery.isLoading && <LoadingSpinner />}
-        {transactionsQuery.isError && <ErrorState message="Failed to load transactions" />}
+        {transactionsQuery.isError && <ErrorState error={transactionsQuery.error as unknown as ApiError} />}
         
         {transactionsQuery.data && (
           <div className="overflow-x-auto">
