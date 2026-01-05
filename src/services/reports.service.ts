@@ -700,17 +700,17 @@ export async function getInventoryMovementVelocity(params: {
         iml.item_id,
         i.sku,
         i.name,
-        i.item_type,
+        i.type as item_type,
         COUNT(DISTINCT im.id) as total_movements,
-        SUM(CASE WHEN iml.quantity > 0 THEN iml.quantity ELSE 0 END) as quantity_in,
-        SUM(CASE WHEN iml.quantity < 0 THEN ABS(iml.quantity) ELSE 0 END) as quantity_out,
-        SUM(iml.quantity) as net_change,
+        SUM(CASE WHEN iml.quantity_delta > 0 THEN iml.quantity_delta ELSE 0 END) as quantity_in,
+        SUM(CASE WHEN iml.quantity_delta < 0 THEN ABS(iml.quantity_delta) ELSE 0 END) as quantity_out,
+        SUM(iml.quantity_delta) as net_change,
         EXTRACT(DAY FROM ($4::date - $3::date)) + 1 as days_in_period
       FROM inventory_movements im
       JOIN inventory_movement_lines iml ON im.id = iml.movement_id
       JOIN items i ON iml.item_id = i.id AND iml.tenant_id = i.tenant_id
       WHERE ${whereClause}
-      GROUP BY iml.item_id, i.sku, i.name, i.item_type
+      GROUP BY iml.item_id, i.sku, i.name, i.type
       ${havingClause}
     ),
     current_inventory AS (
@@ -1118,7 +1118,7 @@ export async function getProductionRunFrequency(params: {
         wo.output_item_id as item_id,
         i.sku,
         i.name,
-        i.item_type,
+        i.type as item_type,
         COUNT(DISTINCT woe.id) as total_runs,
         SUM(
           (SELECT COALESCE(SUM(woel.quantity), 0)
@@ -1132,7 +1132,7 @@ export async function getProductionRunFrequency(params: {
       JOIN items i ON wo.output_item_id = i.id AND wo.tenant_id = i.tenant_id
       WHERE ${whereClause}
         AND woe.status = 'posted'
-      GROUP BY wo.output_item_id, i.sku, i.name, i.item_type
+      GROUP BY wo.output_item_id, i.sku, i.name, i.type
       ${havingClause}
     )
     SELECT 
