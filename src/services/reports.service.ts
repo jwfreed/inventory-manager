@@ -1146,7 +1146,11 @@ export async function getProductionRunFrequency(params: {
       0 as min_batch_size,
       0 as max_batch_size,
       last_production_date::date::text,
-      EXTRACT(DAY FROM (CURRENT_DATE - last_production_date::date))::integer as days_since_last_production
+      CASE 
+        WHEN last_production_date IS NOT NULL THEN
+          EXTRACT(DAY FROM (CURRENT_DATE - last_production_date::date))::integer
+        ELSE NULL
+      END as days_since_last_production
     FROM production_stats
     ORDER BY total_runs DESC, total_quantity_produced DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
