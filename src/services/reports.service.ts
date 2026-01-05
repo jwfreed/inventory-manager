@@ -1082,11 +1082,11 @@ export async function getProductionRunFrequency(params: {
   let paramIndex = 3;
 
   queryParams.push(startDate);
-  whereConditions.push(`woe.started_at >= $${paramIndex}`);
+  whereConditions.push(`woe.occurred_at >= $${paramIndex}`);
   paramIndex++;
 
   queryParams.push(endDate);
-  whereConditions.push(`woe.started_at <= $${paramIndex}`);
+  whereConditions.push(`woe.occurred_at <= $${paramIndex}`);
   paramIndex++;
 
   if (itemType) {
@@ -1126,7 +1126,7 @@ export async function getProductionRunFrequency(params: {
            WHERE woel.work_order_execution_id = woe.id
              AND woel.line_type = 'produce')
         ) as total_quantity_produced,
-        MAX(woe.started_at) as last_production_date
+        MAX(woe.occurred_at) as last_production_date
       FROM work_orders wo
       JOIN work_order_executions woe ON wo.id = woe.work_order_id
       JOIN items i ON wo.output_item_id = i.id AND wo.tenant_id = i.tenant_id
