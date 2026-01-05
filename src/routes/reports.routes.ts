@@ -79,4 +79,178 @@ router.get('/receipt-cost-analysis', async (req: Request, res: Response, next) =
   }
 });
 
+/**
+ * GET /reports/work-order-progress
+ * Get work order progress report with completion percentages and late orders
+ */
+router.get('/work-order-progress', async (req: Request, res: Response, next) => {
+  try {
+    const tenantId = req.auth!.tenantId;
+    
+    const options = {
+      tenantId,
+      startDate: req.query.startDate as string | undefined,
+      endDate: req.query.endDate as string | undefined,
+      status: req.query.status as string | undefined,
+      itemId: req.query.itemId as string | undefined,
+      includeCompleted: req.query.includeCompleted === 'true',
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+      offset: req.query.offset ? parseInt(req.query.offset as string, 10) : undefined,
+    };
+
+    const result = await reportsService.getWorkOrderProgress(options);
+    
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /reports/movement-transactions
+ * Get movement transaction history with full audit trail
+ */
+router.get('/movement-transactions', async (req: Request, res: Response, next) => {
+  try {
+    const tenantId = req.auth!.tenantId;
+    
+    const options = {
+      tenantId,
+      startDate: req.query.startDate as string | undefined,
+      endDate: req.query.endDate as string | undefined,
+      itemId: req.query.itemId as string | undefined,
+      locationId: req.query.locationId as string | undefined,
+      movementType: req.query.movementType as string | undefined,
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+      offset: req.query.offset ? parseInt(req.query.offset as string, 10) : undefined,
+    };
+
+    const result = await reportsService.getMovementTransactionHistory(options);
+    
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /reports/inventory-velocity
+ * Get inventory movement velocity analysis with turnover proxy
+ */
+router.get('/inventory-velocity', async (req: Request, res: Response, next) => {
+  try {
+    const tenantId = req.auth!.tenantId;
+    
+    if (!req.query.startDate || !req.query.endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+
+    const options = {
+      tenantId,
+      startDate: req.query.startDate as string,
+      endDate: req.query.endDate as string,
+      itemType: req.query.itemType as string | undefined,
+      locationId: req.query.locationId as string | undefined,
+      minMovements: req.query.minMovements 
+        ? parseInt(req.query.minMovements as string, 10) 
+        : undefined,
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+      offset: req.query.offset ? parseInt(req.query.offset as string, 10) : undefined,
+    };
+
+    const result = await reportsService.getInventoryMovementVelocity(options);
+    
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /reports/open-po-aging
+ * Get open purchase order aging report
+ */
+router.get('/open-po-aging', async (req: Request, res: Response, next) => {
+  try {
+    const tenantId = req.auth!.tenantId;
+    
+    const options = {
+      tenantId,
+      vendorId: req.query.vendorId as string | undefined,
+      minDaysOpen: req.query.minDaysOpen 
+        ? parseInt(req.query.minDaysOpen as string, 10) 
+        : undefined,
+      includeFullyReceived: req.query.includeFullyReceived === 'true',
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+      offset: req.query.offset ? parseInt(req.query.offset as string, 10) : undefined,
+    };
+
+    const result = await reportsService.getOpenPOAging(options);
+    
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /reports/sales-order-fill
+ * Get sales order fill performance report
+ */
+router.get('/sales-order-fill', async (req: Request, res: Response, next) => {
+  try {
+    const tenantId = req.auth!.tenantId;
+    
+    const options = {
+      tenantId,
+      startDate: req.query.startDate as string | undefined,
+      endDate: req.query.endDate as string | undefined,
+      customerId: req.query.customerId as string | undefined,
+      includeFullyShipped: req.query.includeFullyShipped === 'true',
+      onlyLate: req.query.onlyLate === 'true',
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+      offset: req.query.offset ? parseInt(req.query.offset as string, 10) : undefined,
+    };
+
+    const result = await reportsService.getSalesOrderFillPerformance(options);
+    
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /reports/production-run-frequency
+ * Get production run frequency analysis
+ */
+router.get('/production-run-frequency', async (req: Request, res: Response, next) => {
+  try {
+    const tenantId = req.auth!.tenantId;
+    
+    if (!req.query.startDate || !req.query.endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+
+    const options = {
+      tenantId,
+      startDate: req.query.startDate as string,
+      endDate: req.query.endDate as string,
+      itemType: req.query.itemType as string | undefined,
+      itemId: req.query.itemId as string | undefined,
+      minRuns: req.query.minRuns 
+        ? parseInt(req.query.minRuns as string, 10) 
+        : undefined,
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+      offset: req.query.offset ? parseInt(req.query.offset as string, 10) : undefined,
+    };
+
+    const result = await reportsService.getProductionRunFrequency(options);
+    
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

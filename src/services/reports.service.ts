@@ -357,3 +357,783 @@ export async function getReceiptCostAnalysis(
 
   return { data: result.rows };
 }
+
+// ============================================================================
+// PHASE 1 PRODUCTION & INVENTORY REPORTS
+// ============================================================================
+
+// Work Order Progress Report Types
+export type WorkOrderProgressRow = {
+  workOrderId: string;
+  workOrderNumber: string;
+  itemId: string;
+  itemSku: string;
+  itemName: string;
+  status: string;
+  orderType: string;
+  quantityPlanned: number;
+  quantityCompleted: number;
+  percentComplete: number;
+  dueDate: string | null;
+  daysUntilDue: number | null;
+  isLate: boolean;
+  createdAt: string;
+};
+
+export async function getWorkOrderProgress(params: {
+  tenantId: string;
+  startDate?: string;
+  endDate?: string;
+  status?: string;
+  itemId?: string;
+  includeCompleted?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: WorkOrderProgressRow[] }> {
+  const {
+    tenantId,
+    startDate,
+    endDate,
+    status,
+    itemId,
+    includeCompleted = false,
+    limit = 100,
+    offset = 0,
+  } = params;
+
+  let whereConditions = ['wo.tenant_id = $1'];
+  const queryParams: any[] = [tenantId];
+  let paramIndex = 2;
+
+  if (startDate) {
+    whereConditions.push(`wo.created_at >= $${paramIndex}`);
+    queryParams.push(startDate);
+    paramIndex++;
+  }
+
+  if (endDate) {
+    whereConditions.push(`wo.created_at <= $${paramIndex}`);
+    queryParams.push(endDate);
+    paramIndex++;
+  }
+
+  if (status) {
+    whereConditions.push(`wo.status = $${paramIndex}`);
+    queryParams.push(status);
+    paramIndex++;
+  }
+
+  if (itemId) {
+    whereConditions.push(`wo.item_id = $${paramIndex}`);
+    queryParams.push(itemId);
+    paramIndex++;
+  }
+
+  if (!includeCompleted) {
+    whereConditions.push(`wo.status NOT IN ('completed', 'closed', 'canceled')`);
+  }
+
+  const whereClause = whereConditions.join(' AND ');
+
+  const sql = `
+    SELECT 
+      wo.id as work_order_id,
+      wo.wo_number as work_order_number,
+      wo.item_id,
+      i.sku as item_sku,
+      i.name as item_name,
+      wo.status,
+      wo.order_type,
+      wo.quantity_planned,
+      COALESCE(
+        (SELECT SUM(quantity)
+         FROM work_order_execution_lines woel
+         JOIN work_order_executions woe ON woel.work_order_execution_id = woe.id
+         WHERE woe.work_order_id = wo.id 
+           AND woel.line_type = 'produce'
+           AND woe.status = 'posted'),
+        0
+      ) as quantity_completed,
+      CASE 
+        WHEN wo.quantity_planned > 0 THEN 
+          ROUND((COALESCE(
+            (SELECT SUM(quantity)
+             FROM work_order_execution_lines woel
+             JOIN work_order_executions woe ON woel.work_order_execution_id = woe.id
+             WHERE woe.work_order_id = wo.id 
+               AND woel.line_type = 'produce'
+               AND woe.status = 'posted'),
+            0
+          ) / wo.quantity_planned * 100)::numeric, 2)
+        ELSE 0
+      END as percent_complete,
+      wo.due_date::text,
+      CASE 
+        WHEN wo.due_date IS NOT NULL THEN 
+          EXTRACT(DAY FROM (wo.due_date - CURRENT_DATE))::integer
+        ELSE NULL
+      END as days_until_due,
+      CASE 
+        WHEN wo.due_date IS NOT NULL AND wo.due_date < CURRENT_DATE 
+          AND wo.status NOT IN ('completed', 'closed') THEN true
+        ELSE false
+      END as is_late,
+      wo.created_at::text
+    FROM work_orders wo
+    JOIN items i ON wo.item_id = i.id AND wo.tenant_id = i.tenant_id
+    WHERE ${whereClause}
+    ORDER BY 
+      CASE WHEN wo.due_date < CURRENT_DATE THEN 0 ELSE 1 END,
+      wo.due_date ASC NULLS LAST,
+      wo.created_at DESC
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+
+  queryParams.push(limit, offset);
+
+  const result = await query<WorkOrderProgressRow>(sql, queryParams);
+  return { data: result.rows };
+}
+
+// Movement Transaction History Report Types
+export type MovementTransactionRow = {
+  movementId: string;
+  movementNumber: string;
+  movementType: string;
+  status: string;
+  lineId: string;
+  itemId: string;
+  itemSku: string;
+  itemName: string;
+  locationId: string;
+  locationCode: string;
+  locationName: string;
+  quantity: number;
+  uom: string;
+  unitCost: number | null;
+  extendedValue: number | null;
+  lotNumber: string | null;
+  referenceType: string | null;
+  referenceNumber: string | null;
+  notes: string | null;
+  createdAt: string;
+  postedAt: string | null;
+};
+
+export async function getMovementTransactionHistory(params: {
+  tenantId: string;
+  startDate?: string;
+  endDate?: string;
+  itemId?: string;
+  locationId?: string;
+  movementType?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: MovementTransactionRow[] }> {
+  const {
+    tenantId,
+    startDate,
+    endDate,
+    itemId,
+    locationId,
+    movementType,
+    limit = 100,
+    offset = 0,
+  } = params;
+
+  let whereConditions = ['im.tenant_id = $1'];
+  const queryParams: any[] = [tenantId];
+  let paramIndex = 2;
+
+  if (startDate) {
+    whereConditions.push(`im.movement_date >= $${paramIndex}`);
+    queryParams.push(startDate);
+    paramIndex++;
+  }
+
+  if (endDate) {
+    whereConditions.push(`im.movement_date <= $${paramIndex}`);
+    queryParams.push(endDate);
+    paramIndex++;
+  }
+
+  if (itemId) {
+    whereConditions.push(`iml.item_id = $${paramIndex}`);
+    queryParams.push(itemId);
+    paramIndex++;
+  }
+
+  if (locationId) {
+    whereConditions.push(`iml.location_id = $${paramIndex}`);
+    queryParams.push(locationId);
+    paramIndex++;
+  }
+
+  if (movementType) {
+    whereConditions.push(`im.movement_type = $${paramIndex}`);
+    queryParams.push(movementType);
+    paramIndex++;
+  }
+
+  const whereClause = whereConditions.join(' AND ');
+
+  const sql = `
+    SELECT 
+      im.id as movement_id,
+      im.movement_number,
+      im.movement_type,
+      im.status,
+      iml.id as line_id,
+      iml.item_id,
+      i.sku as item_sku,
+      i.name as item_name,
+      iml.location_id,
+      l.code as location_code,
+      l.name as location_name,
+      iml.quantity,
+      iml.uom,
+      iml.unit_cost,
+      CASE 
+        WHEN iml.unit_cost IS NOT NULL THEN iml.quantity * iml.unit_cost
+        ELSE NULL
+      END as extended_value,
+      lot.lot_number,
+      im.reference_type,
+      im.reference_number,
+      im.notes,
+      im.created_at::text,
+      im.posted_at::text
+    FROM inventory_movements im
+    JOIN inventory_movement_lines iml ON im.id = iml.inventory_movement_id
+    JOIN items i ON iml.item_id = i.id AND iml.tenant_id = i.tenant_id
+    JOIN locations l ON iml.location_id = l.id AND iml.tenant_id = l.tenant_id
+    LEFT JOIN lots lot ON iml.lot_id = lot.id
+    WHERE ${whereClause}
+    ORDER BY im.movement_date DESC, im.created_at DESC, iml.id
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+
+  queryParams.push(limit, offset);
+
+  const result = await query<MovementTransactionRow>(sql, queryParams);
+  return { data: result.rows };
+}
+
+// Inventory Movement Velocity Report Types
+export type InventoryVelocityRow = {
+  itemId: string;
+  itemSku: string;
+  itemName: string;
+  itemType: string;
+  totalMovements: number;
+  quantityIn: number;
+  quantityOut: number;
+  netChange: number;
+  currentOnHand: number;
+  daysInPeriod: number;
+  avgDailyMovement: number;
+  turnoverProxy: number | null;
+};
+
+export async function getInventoryMovementVelocity(params: {
+  tenantId: string;
+  startDate: string;
+  endDate: string;
+  itemType?: string;
+  locationId?: string;
+  minMovements?: number;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: InventoryVelocityRow[] }> {
+  const {
+    tenantId,
+    startDate,
+    endDate,
+    itemType,
+    locationId,
+    minMovements = 0,
+    limit = 100,
+    offset = 0,
+  } = params;
+
+  let havingConditions: string[] = [];
+  let whereConditions = ['im.tenant_id = $1', 'im.status = $2'];
+  const queryParams: any[] = [tenantId, 'posted'];
+  let paramIndex = 3;
+
+  queryParams.push(startDate);
+  whereConditions.push(`im.movement_date >= $${paramIndex}`);
+  paramIndex++;
+
+  queryParams.push(endDate);
+  whereConditions.push(`im.movement_date <= $${paramIndex}`);
+  paramIndex++;
+
+  if (itemType) {
+    whereConditions.push(`i.item_type = $${paramIndex}`);
+    queryParams.push(itemType);
+    paramIndex++;
+  }
+
+  if (locationId) {
+    whereConditions.push(`iml.location_id = $${paramIndex}`);
+    queryParams.push(locationId);
+    paramIndex++;
+  }
+
+  if (minMovements > 0) {
+    havingConditions.push(`COUNT(DISTINCT im.id) >= $${paramIndex}`);
+    queryParams.push(minMovements);
+    paramIndex++;
+  }
+
+  const whereClause = whereConditions.join(' AND ');
+  const havingClause = havingConditions.length > 0 
+    ? `HAVING ${havingConditions.join(' AND ')}`
+    : '';
+
+  const sql = `
+    WITH movement_stats AS (
+      SELECT 
+        iml.item_id,
+        i.sku,
+        i.name,
+        i.item_type,
+        COUNT(DISTINCT im.id) as total_movements,
+        SUM(CASE WHEN iml.quantity > 0 THEN iml.quantity ELSE 0 END) as quantity_in,
+        SUM(CASE WHEN iml.quantity < 0 THEN ABS(iml.quantity) ELSE 0 END) as quantity_out,
+        SUM(iml.quantity) as net_change,
+        EXTRACT(DAY FROM ($4::date - $3::date)) + 1 as days_in_period
+      FROM inventory_movements im
+      JOIN inventory_movement_lines iml ON im.id = iml.inventory_movement_id
+      JOIN items i ON iml.item_id = i.id AND iml.tenant_id = i.tenant_id
+      WHERE ${whereClause}
+      GROUP BY iml.item_id, i.sku, i.name, i.item_type
+      ${havingClause}
+    ),
+    current_inventory AS (
+      SELECT 
+        iml.item_id,
+        SUM(iml.quantity) as quantity_on_hand
+      FROM inventory_movement_lines iml
+      JOIN inventory_movements im ON iml.inventory_movement_id = im.id
+      WHERE im.tenant_id = $1 
+        AND im.status = 'posted'
+        ${locationId ? `AND iml.location_id = $${queryParams.indexOf(locationId) + 1}` : ''}
+      GROUP BY iml.item_id
+    )
+    SELECT 
+      ms.item_id,
+      ms.sku as item_sku,
+      ms.name as item_name,
+      ms.item_type,
+      ms.total_movements,
+      ms.quantity_in,
+      ms.quantity_out,
+      ms.net_change,
+      COALESCE(ci.quantity_on_hand, 0) as current_on_hand,
+      ms.days_in_period::integer,
+      ROUND((ms.quantity_out / NULLIF(ms.days_in_period, 0))::numeric, 2) as avg_daily_movement,
+      CASE 
+        WHEN COALESCE(ci.quantity_on_hand, 0) > 0 THEN 
+          ROUND((ms.quantity_out / NULLIF(COALESCE(ci.quantity_on_hand, 0), 0))::numeric, 2)
+        ELSE NULL
+      END as turnover_proxy
+    FROM movement_stats ms
+    LEFT JOIN current_inventory ci ON ms.item_id = ci.item_id
+    ORDER BY ms.quantity_out DESC, ms.total_movements DESC
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+
+  queryParams.push(limit, offset);
+
+  const result = await query<InventoryVelocityRow>(sql, queryParams);
+  return { data: result.rows };
+}
+
+// Open PO Aging Report Types
+export type OpenPOAgingRow = {
+  purchaseOrderId: string;
+  poNumber: string;
+  vendorId: string;
+  vendorCode: string;
+  vendorName: string;
+  status: string;
+  orderDate: string;
+  promisedDate: string | null;
+  daysOpen: number;
+  daysOverdue: number | null;
+  totalLines: number;
+  receivedLines: number;
+  outstandingLines: number;
+  totalOrdered: number;
+  totalReceived: number;
+  fillRate: number;
+};
+
+export async function getOpenPOAging(params: {
+  tenantId: string;
+  vendorId?: string;
+  minDaysOpen?: number;
+  includeFullyReceived?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: OpenPOAgingRow[] }> {
+  const {
+    tenantId,
+    vendorId,
+    minDaysOpen = 0,
+    includeFullyReceived = false,
+    limit = 100,
+    offset = 0,
+  } = params;
+
+  let whereConditions = ['po.tenant_id = $1'];
+  const queryParams: any[] = [tenantId];
+  let paramIndex = 2;
+
+  if (!includeFullyReceived) {
+    whereConditions.push(`po.status NOT IN ('received', 'closed', 'canceled')`);
+  } else {
+    whereConditions.push(`po.status NOT IN ('canceled')`);
+  }
+
+  if (vendorId) {
+    whereConditions.push(`po.vendor_id = $${paramIndex}`);
+    queryParams.push(vendorId);
+    paramIndex++;
+  }
+
+  if (minDaysOpen > 0) {
+    whereConditions.push(`EXTRACT(DAY FROM (CURRENT_DATE - po.order_date::date)) >= $${paramIndex}`);
+    queryParams.push(minDaysOpen);
+    paramIndex++;
+  }
+
+  const whereClause = whereConditions.join(' AND ');
+
+  const sql = `
+    WITH po_stats AS (
+      SELECT 
+        pol.purchase_order_id,
+        COUNT(pol.id) as total_lines,
+        SUM(CASE WHEN pol.quantity_received >= pol.quantity THEN 1 ELSE 0 END) as received_lines,
+        SUM(pol.quantity) as total_ordered,
+        SUM(pol.quantity_received) as total_received
+      FROM purchase_order_lines pol
+      WHERE pol.tenant_id = $1
+      GROUP BY pol.purchase_order_id
+    )
+    SELECT 
+      po.id as purchase_order_id,
+      po.po_number,
+      po.vendor_id,
+      v.code as vendor_code,
+      v.name as vendor_name,
+      po.status,
+      po.order_date::text,
+      po.promised_date::text,
+      EXTRACT(DAY FROM (CURRENT_DATE - po.order_date::date))::integer as days_open,
+      CASE 
+        WHEN po.promised_date IS NOT NULL AND po.promised_date < CURRENT_DATE 
+          AND po.status NOT IN ('received', 'closed') THEN
+          EXTRACT(DAY FROM (CURRENT_DATE - po.promised_date::date))::integer
+        ELSE NULL
+      END as days_overdue,
+      COALESCE(ps.total_lines, 0) as total_lines,
+      COALESCE(ps.received_lines, 0) as received_lines,
+      COALESCE(ps.total_lines, 0) - COALESCE(ps.received_lines, 0) as outstanding_lines,
+      COALESCE(ps.total_ordered, 0) as total_ordered,
+      COALESCE(ps.total_received, 0) as total_received,
+      CASE 
+        WHEN COALESCE(ps.total_ordered, 0) > 0 THEN 
+          ROUND((COALESCE(ps.total_received, 0) / ps.total_ordered * 100)::numeric, 2)
+        ELSE 0
+      END as fill_rate
+    FROM purchase_orders po
+    JOIN vendors v ON po.vendor_id = v.id AND po.tenant_id = v.tenant_id
+    LEFT JOIN po_stats ps ON po.id = ps.purchase_order_id
+    WHERE ${whereClause}
+    ORDER BY 
+      CASE WHEN po.promised_date < CURRENT_DATE THEN 0 ELSE 1 END,
+      days_open DESC
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+
+  queryParams.push(limit, offset);
+
+  const result = await query<OpenPOAgingRow>(sql, queryParams);
+  return { data: result.rows };
+}
+
+// Sales Order Fill Performance Report Types
+export type SalesOrderFillRow = {
+  salesOrderId: string;
+  soNumber: string;
+  customerCode: string | null;
+  customerName: string | null;
+  status: string;
+  orderDate: string;
+  requestedDate: string | null;
+  shippedDate: string | null;
+  daysToShip: number | null;
+  isLate: boolean;
+  totalLines: number;
+  shippedLines: number;
+  outstandingLines: number;
+  totalOrdered: number;
+  totalShipped: number;
+  fillRate: number;
+  onTimeShipment: boolean;
+};
+
+export async function getSalesOrderFillPerformance(params: {
+  tenantId: string;
+  startDate?: string;
+  endDate?: string;
+  customerId?: string;
+  includeFullyShipped?: boolean;
+  onlyLate?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: SalesOrderFillRow[] }> {
+  const {
+    tenantId,
+    startDate,
+    endDate,
+    customerId,
+    includeFullyShipped = false,
+    onlyLate = false,
+    limit = 100,
+    offset = 0,
+  } = params;
+
+  let whereConditions = ['so.tenant_id = $1'];
+  const queryParams: any[] = [tenantId];
+  let paramIndex = 2;
+
+  if (!includeFullyShipped) {
+    whereConditions.push(`so.status NOT IN ('shipped', 'closed', 'canceled')`);
+  } else {
+    whereConditions.push(`so.status NOT IN ('canceled')`);
+  }
+
+  if (startDate) {
+    whereConditions.push(`so.order_date >= $${paramIndex}`);
+    queryParams.push(startDate);
+    paramIndex++;
+  }
+
+  if (endDate) {
+    whereConditions.push(`so.order_date <= $${paramIndex}`);
+    queryParams.push(endDate);
+    paramIndex++;
+  }
+
+  if (customerId) {
+    whereConditions.push(`so.customer_id = $${paramIndex}`);
+    queryParams.push(customerId);
+    paramIndex++;
+  }
+
+  if (onlyLate) {
+    whereConditions.push(`so.requested_ship_date IS NOT NULL`);
+    whereConditions.push(`so.status NOT IN ('shipped', 'closed', 'canceled')`);
+    whereConditions.push(`so.requested_ship_date < CURRENT_DATE`);
+  }
+
+  const whereClause = whereConditions.join(' AND ');
+
+  const sql = `
+    WITH so_stats AS (
+      SELECT 
+        sol.sales_order_id,
+        COUNT(sol.id) as total_lines,
+        SUM(CASE WHEN sol.quantity_shipped >= sol.quantity THEN 1 ELSE 0 END) as shipped_lines,
+        SUM(sol.quantity) as total_ordered,
+        SUM(sol.quantity_shipped) as total_shipped
+      FROM sales_order_lines sol
+      WHERE sol.tenant_id = $1
+      GROUP BY sol.sales_order_id
+    ),
+    shipment_dates AS (
+      SELECT 
+        sos.sales_order_id,
+        MAX(sos.shipped_at) as last_shipped_at
+      FROM sales_order_shipments sos
+      WHERE sos.tenant_id = $1
+      GROUP BY sos.sales_order_id
+    )
+    SELECT 
+      so.id as sales_order_id,
+      so.so_number,
+      so.customer_code,
+      so.customer_name,
+      so.status,
+      so.order_date::text,
+      so.requested_ship_date::text as requested_date,
+      sd.last_shipped_at::date::text as shipped_date,
+      CASE 
+        WHEN sd.last_shipped_at IS NOT NULL THEN
+          EXTRACT(DAY FROM (sd.last_shipped_at::date - so.order_date::date))::integer
+        ELSE NULL
+      END as days_to_ship,
+      CASE 
+        WHEN so.requested_ship_date IS NOT NULL 
+          AND sd.last_shipped_at IS NULL 
+          AND so.requested_ship_date < CURRENT_DATE 
+          AND so.status NOT IN ('shipped', 'closed', 'canceled') THEN true
+        WHEN so.requested_ship_date IS NOT NULL 
+          AND sd.last_shipped_at IS NOT NULL 
+          AND sd.last_shipped_at::date > so.requested_ship_date THEN true
+        ELSE false
+      END as is_late,
+      COALESCE(ss.total_lines, 0) as total_lines,
+      COALESCE(ss.shipped_lines, 0) as shipped_lines,
+      COALESCE(ss.total_lines, 0) - COALESCE(ss.shipped_lines, 0) as outstanding_lines,
+      COALESCE(ss.total_ordered, 0) as total_ordered,
+      COALESCE(ss.total_shipped, 0) as total_shipped,
+      CASE 
+        WHEN COALESCE(ss.total_ordered, 0) > 0 THEN 
+          ROUND((COALESCE(ss.total_shipped, 0) / ss.total_ordered * 100)::numeric, 2)
+        ELSE 0
+      END as fill_rate,
+      CASE 
+        WHEN so.requested_ship_date IS NULL THEN true
+        WHEN sd.last_shipped_at IS NULL THEN false
+        WHEN sd.last_shipped_at::date <= so.requested_ship_date THEN true
+        ELSE false
+      END as on_time_shipment
+    FROM sales_orders so
+    LEFT JOIN so_stats ss ON so.id = ss.sales_order_id
+    LEFT JOIN shipment_dates sd ON so.id = sd.sales_order_id
+    WHERE ${whereClause}
+    ORDER BY 
+      CASE WHEN is_late THEN 0 ELSE 1 END,
+      so.order_date DESC
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+
+  queryParams.push(limit, offset);
+
+  const result = await query<SalesOrderFillRow>(sql, queryParams);
+  return { data: result.rows };
+}
+
+// Production Run Frequency Report Types
+export type ProductionRunFrequencyRow = {
+  itemId: string;
+  itemSku: string;
+  itemName: string;
+  itemType: string;
+  totalRuns: number;
+  totalQuantityProduced: number;
+  avgBatchSize: number;
+  minBatchSize: number;
+  maxBatchSize: number;
+  lastProductionDate: string | null;
+  daysSinceLastProduction: number | null;
+};
+
+export async function getProductionRunFrequency(params: {
+  tenantId: string;
+  startDate: string;
+  endDate: string;
+  itemType?: string;
+  itemId?: string;
+  minRuns?: number;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: ProductionRunFrequencyRow[] }> {
+  const {
+    tenantId,
+    startDate,
+    endDate,
+    itemType,
+    itemId,
+    minRuns = 0,
+    limit = 100,
+    offset = 0,
+  } = params;
+
+  let whereConditions = ['wo.tenant_id = $1', 'wo.order_type = $2'];
+  let havingConditions: string[] = [];
+  const queryParams: any[] = [tenantId, 'production'];
+  let paramIndex = 3;
+
+  queryParams.push(startDate);
+  whereConditions.push(`woe.started_at >= $${paramIndex}`);
+  paramIndex++;
+
+  queryParams.push(endDate);
+  whereConditions.push(`woe.started_at <= $${paramIndex}`);
+  paramIndex++;
+
+  if (itemType) {
+    whereConditions.push(`i.item_type = $${paramIndex}`);
+    queryParams.push(itemType);
+    paramIndex++;
+  }
+
+  if (itemId) {
+    whereConditions.push(`wo.item_id = $${paramIndex}`);
+    queryParams.push(itemId);
+    paramIndex++;
+  }
+
+  if (minRuns > 0) {
+    havingConditions.push(`COUNT(DISTINCT woe.id) >= $${paramIndex}`);
+    queryParams.push(minRuns);
+    paramIndex++;
+  }
+
+  const whereClause = whereConditions.join(' AND ');
+  const havingClause = havingConditions.length > 0 
+    ? `HAVING ${havingConditions.join(' AND ')}`
+    : '';
+
+  const sql = `
+    WITH production_stats AS (
+      SELECT 
+        wo.item_id,
+        i.sku,
+        i.name,
+        i.item_type,
+        COUNT(DISTINCT woe.id) as total_runs,
+        SUM(
+          (SELECT COALESCE(SUM(woel.quantity), 0)
+           FROM work_order_execution_lines woel
+           WHERE woel.work_order_execution_id = woe.id
+             AND woel.line_type = 'produce')
+        ) as total_quantity_produced,
+        MAX(woe.started_at) as last_production_date
+      FROM work_orders wo
+      JOIN work_order_executions woe ON wo.id = woe.work_order_id
+      JOIN items i ON wo.item_id = i.id AND wo.tenant_id = i.tenant_id
+      WHERE ${whereClause}
+        AND woe.status = 'posted'
+      GROUP BY wo.item_id, i.sku, i.name, i.item_type
+      ${havingClause}
+    )
+    SELECT 
+      item_id,
+      sku as item_sku,
+      name as item_name,
+      item_type,
+      total_runs::integer,
+      total_quantity_produced,
+      ROUND((total_quantity_produced / NULLIF(total_runs, 0))::numeric, 2) as avg_batch_size,
+      0 as min_batch_size,
+      0 as max_batch_size,
+      last_production_date::date::text,
+      EXTRACT(DAY FROM (CURRENT_DATE - last_production_date::date))::integer as days_since_last_production
+    FROM production_stats
+    ORDER BY total_runs DESC, total_quantity_produced DESC
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+
+  queryParams.push(limit, offset);
+
+  const result = await query<ProductionRunFrequencyRow>(sql, queryParams);
+  return { data: result.rows };
+}
