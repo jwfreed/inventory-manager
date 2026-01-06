@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getCostVariance } from '../api/reports'
 import { Button, Card, Section, LoadingSpinner, ErrorState, Badge } from '@shared/ui'
@@ -141,10 +142,18 @@ export default function CostVariancePage() {
                   const varianceTone = isHighVariance ? 'text-rose-600' : isMediumVariance ? 'text-amber-600' : 'text-slate-900'
                   
                   return (
-                    <tr key={row.itemId} className="hover:bg-slate-50">
+                    <tr key={row.itemId} className="hover:bg-slate-50 cursor-pointer group">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-slate-900">{row.itemSku}</div>
-                        <div className="text-xs text-slate-600">{row.itemName}</div>
+                        <Link 
+                          to={`/items/${row.itemId}`}
+                          className="block"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="text-sm font-medium text-brand-700 group-hover:underline">
+                            {row.itemSku}
+                          </div>
+                          <div className="text-xs text-slate-600">{row.itemName}</div>
+                        </Link>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono">
                         {row.standardCost != null ? (

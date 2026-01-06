@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useItemsList } from '../queries'
 import { useInventorySnapshotSummary } from '../../inventory/queries'
 import { Alert } from '../../../components/Alert'
@@ -18,6 +18,13 @@ const lifecycleStatusOptions = [
   { label: 'Inactive', value: 'Obsolete,Phase-Out' },
 ]
 
+const abcClassOptions = [
+  { label: 'All', value: '' },
+  { label: 'Class A', value: 'A' },
+  { label: 'Class B', value: 'B' },
+  { label: 'Class C', value: 'C' },
+]
+
 const typeLabels: Record<string, string> = {
   raw: 'Raw',
   wip: 'WIP',
@@ -27,11 +34,22 @@ const typeLabels: Record<string, string> = {
 
 export default function ItemsListPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  
   const [lifecycleStatus, setLifecycleStatus] = useState('Active')
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [typeFilter, setTypeFilter] = useState('')
+  const [abcClassFilter, setAbcClassFilter] = useState(searchParams.get('abcClass') || '')
   const createSectionRef = useRef<HTMLDivElement | null>(null)
+
+  // Sync ABC class from URL params on mount
+  useEffect(() => {
+    const abcParam = searchParams.get('abcClass')
+    if (abcParam) {
+      setAbcClassFilter(abcParam)
+    }
+  }, [searchParams])
 
   const { data, isLoading, isError, error, refetch } = useItemsList({
     lifecycleStatus: lifecycleStatus,
@@ -55,9 +73,16 @@ export default function ItemsListPage() {
   }, [data?.data, search])
 
   const filteredByType = useMemo(() => {
-    if (!typeFilter) return filtered
-    return filtered.filter((item) => item.type === typeFilter)
-  }, [filtered, typeFilter])
+    if (!typeFilter && !abcClassFilter) return filtered
+    let result = filtered
+    if (typeFilter) {
+      result = result.filter((item) => item.type === typeFilter)
+    }
+    if (abcClassFilter) {
+      result = result.filter((item) => item.abcClass === abcClassFilter)
+    }
+    return result
+  }, [filtered, typeFilter, abcClassFilter])
 
   const availableByItem = useMemo(() => {
     const map = new Map<string, Map<string, number>>()
@@ -131,6 +156,17 @@ export default function ItemsListPage() {
               </option>
             ))}
           </select>
+          <select
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            value={abcClassFilter}
+            onChange={(e) => setAbcClassFilter(e.target.value)}
+          >
+            {abcClassOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
           <input
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
             placeholder="Search by SKU or name"
@@ -188,6 +224,9 @@ export default function ItemsListPage() {
                       Available
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      ABC
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Status
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -233,6 +272,23 @@ export default function ItemsListPage() {
                             .map(([uom, qty]) => `${formatNumber(qty)} ${uom}`)
                             .join(' · ')
                         })()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-800">
+                        {item.abcClass ? (
+                          <Badge 
+                            variant={
+                              item.abcClass === 'A' 
+                                ? 'success' 
+                                : item.abcClass === 'B' 
+                                  ? 'warning' 
+                                  : 'neutral'
+                            }
+                          >
+                            {item.abcClass}
+                          </Badge>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-800">
                         <Badge

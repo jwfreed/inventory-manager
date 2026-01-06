@@ -2,14 +2,16 @@ import { useState } from 'react'
 import { useItemsList } from '@features/items/queries'
 import { useWorkOrdersList } from '../queries'
 import { Alert, Button, Card, EmptyState, LoadingSpinner, Section } from '@shared/ui'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { WorkOrdersFilters } from '../components/WorkOrdersFilters'
 import { WorkOrdersTable } from '../components/WorkOrdersTable'
 import { useWorkOrdersListData } from '../hooks/useWorkOrdersListData'
 
 export default function WorkOrdersListPage() {
   const navigate = useNavigate()
-  const [status, setStatus] = useState('')
+  const [searchParams] = useSearchParams()
+  
+  const [status, setStatus] = useState(() => searchParams.get('status') || '')
   const [search, setSearch] = useState('')
   const [plannedDate, setPlannedDate] = useState('')
   const [kind, setKind] = useState('')

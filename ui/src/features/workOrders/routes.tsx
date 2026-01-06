@@ -2,6 +2,7 @@ import type { AppRouteObject } from '../../shared/routes'
 import WorkOrderCreatePage from './pages/WorkOrderCreatePage'
 import WorkOrderDetailPage from './pages/WorkOrderDetailPage'
 import WorkOrdersListPage from './pages/WorkOrdersListPage'
+import ProductionOverviewPage from './pages/ProductionOverviewPage'
 
 export const workOrderRoutes: AppRouteObject[] = [
   {
@@ -15,6 +16,20 @@ export const workOrderRoutes: AppRouteObject[] = [
         section: 'production',
         order: 40,
         description: 'Manufacturing orders and execution',
+      },
+    },
+  },
+  {
+    path: 'production-overview',
+    element: <ProductionOverviewPage />,
+    handle: {
+      breadcrumb: 'Production Overview',
+      nav: {
+        label: 'Production Overview',
+        to: '/production-overview',
+        section: 'production',
+        order: 41,
+        description: 'Production metrics and analytics',
       },
     },
   },
