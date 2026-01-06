@@ -1149,7 +1149,7 @@ export async function getProductionRunFrequency(params: {
       CASE 
         WHEN last_production_date IS NOT NULL THEN
           EXTRACT(DAY FROM (CURRENT_DATE - last_production_date::date))::integer
-        ELSE NULL
+        ELSE NULL::integer
       END as days_since_last_production
     FROM production_stats
     ORDER BY total_runs DESC, total_quantity_produced DESC
