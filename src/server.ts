@@ -37,6 +37,7 @@ import reportsRouter from './routes/reports.routes';
 import metricsRouter from './routes/metrics.routes';
 import supplierPerformanceRouter from './routes/supplierPerformance.routes';
 import productionOverviewRouter from './routes/productionOverview.routes';
+import costLayersRouter from './routes/costLayers.routes';
 import { requireAuth } from './middleware/auth.middleware';
 import { destructiveGuard } from './middleware/destructiveGuard.middleware';
 
@@ -118,6 +119,7 @@ app.use('/reports', reportsRouter);
 app.use('/metrics', metricsRouter);
 app.use('/supplier-performance', supplierPerformanceRouter);
 app.use(productionOverviewRouter);
+app.use('/api/cost-layers', costLayersRouter);
 app.use(licensePlatesRouter);
 app.use(pickingRouter);
 app.use(shippingContainersRouter);
