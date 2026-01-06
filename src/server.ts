@@ -34,6 +34,7 @@ import licensePlatesRouter from './routes/licensePlates.routes';
 import vendorInvoicesRouter from './routes/vendorInvoices.routes';
 import vendorPaymentsRouter from './routes/vendorPayments.routes';
 import reportsRouter from './routes/reports.routes';
+import metricsRouter from './routes/metrics.routes';
 import { requireAuth } from './middleware/auth.middleware';
 import { destructiveGuard } from './middleware/destructiveGuard.middleware';
 
@@ -112,6 +113,7 @@ app.use(inventorySnapshotRouter);
 app.use('/atp', atpRouter);
 app.use('/supplier-scorecards', supplierScorecardRouter);
 app.use('/reports', reportsRouter);
+app.use('/metrics', metricsRouter);
 app.use(licensePlatesRouter);
 app.use(pickingRouter);
 app.use(shippingContainersRouter);
