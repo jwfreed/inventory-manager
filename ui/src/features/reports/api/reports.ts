@@ -9,7 +9,11 @@ import type {
   InventoryVelocityRow,
   OpenPOAgingRow,
   SalesOrderFillRow,
-  ProductionRunFrequencyRow
+  ProductionRunFrequencyRow,
+  LeadTimeReliabilityRow,
+  PriceVarianceTrendRow,
+  VendorFillRateRow,
+  VendorQualityRateRow
 } from '../types'
 
 // Inventory Valuation Report
@@ -213,5 +217,85 @@ export async function getProductionRunFrequency(params: {
   
   return apiGet<{ data: ProductionRunFrequencyRow[] }>(
     `/reports/production-run-frequency?${searchParams.toString()}`
+  )
+}
+
+// Supplier Performance APIs
+
+// Lead Time Reliability
+export async function getLeadTimeReliability(params: {
+  startDate: string
+  endDate: string
+  vendorId?: string
+  limit?: number
+  offset?: number
+}): Promise<{ data: LeadTimeReliabilityRow[] }> {
+  const searchParams = new URLSearchParams()
+  searchParams.append('startDate', params.startDate)
+  searchParams.append('endDate', params.endDate)
+  if (params.vendorId) searchParams.append('vendorId', params.vendorId)
+  if (params.limit) searchParams.append('limit', String(params.limit))
+  if (params.offset) searchParams.append('offset', String(params.offset))
+  
+  return apiGet<{ data: LeadTimeReliabilityRow[] }>(
+    `/supplier-performance/lead-time-reliability?${searchParams.toString()}`
+  )
+}
+
+// Price Variance Trends
+export async function getPriceVarianceTrends(params: {
+  startDate: string
+  endDate: string
+  vendorId?: string
+  limit?: number
+}): Promise<{ data: PriceVarianceTrendRow[] }> {
+  const searchParams = new URLSearchParams()
+  searchParams.append('startDate', params.startDate)
+  searchParams.append('endDate', params.endDate)
+  if (params.vendorId) searchParams.append('vendorId', params.vendorId)
+  if (params.limit) searchParams.append('limit', String(params.limit))
+  
+  return apiGet<{ data: PriceVarianceTrendRow[] }>(
+    `/supplier-performance/price-variance-trends?${searchParams.toString()}`
+  )
+}
+
+// Vendor Fill Rate
+export async function getVendorFillRate(params: {
+  startDate: string
+  endDate: string
+  vendorId?: string
+  limit?: number
+  offset?: number
+}): Promise<{ data: VendorFillRateRow[] }> {
+  const searchParams = new URLSearchParams()
+  searchParams.append('startDate', params.startDate)
+  searchParams.append('endDate', params.endDate)
+  if (params.vendorId) searchParams.append('vendorId', params.vendorId)
+  if (params.limit) searchParams.append('limit', String(params.limit))
+  if (params.offset) searchParams.append('offset', String(params.offset))
+  
+  return apiGet<{ data: VendorFillRateRow[] }>(
+    `/supplier-performance/vendor-fill-rate?${searchParams.toString()}`
+  )
+}
+
+// Vendor Quality Rate
+export async function getVendorQualityRate(params: {
+  startDate: string
+  endDate: string
+  vendorId?: string
+  limit?: number
+  offset?: number
+}): Promise<{ data: VendorQualityRateRow[] }> {
+  const searchParams = new URLSearchParams()
+  searchParams.append('startDate', params.startDate)
+  searchParams.append('endDate', params.endDate)
+  if (params.vendorId) searchParams.append('vendorId', params.vendorId)
+  if (params.limit) searchParams.append('limit', String(params.limit))
+  if (params.offset) searchParams.append('offset', String(params.offset))
+  
+  return apiGet<{ data: VendorQualityRateRow[] }>(
+    `/supplier-performance/quality-rate?${searchParams.toString()}`
   )
 }

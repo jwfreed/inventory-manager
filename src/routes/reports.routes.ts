@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import * as reportsService from '../services/reports.service';
+import { ProductionVarianceService } from '../services/productionVariance.service';
 
 const router = Router();
 
@@ -250,6 +251,105 @@ router.get('/production-run-frequency', async (req: Request, res: Response, next
     res.json(result);
   } catch (error) {
     next(error);
+  }
+});
+
+/**
+ * GET /reports/bom-consumption-variance
+ * Get BOM consumption variance report comparing actual vs expected consumption
+ */
+router.get('/bom-consumption-variance', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.auth!.tenantId;
+    const {
+      startDate,
+      endDate,
+      workOrderId,
+      itemId,
+      limit = 100,
+      offset = 0,
+    } = req.query;
+
+    const result = await ProductionVarianceService.getBomConsumptionVariance({
+      tenantId,
+      startDate: startDate as string | undefined,
+      endDate: endDate as string | undefined,
+      workOrderId: workOrderId as string | undefined,
+      itemId: itemId as string | undefined,
+      limit: parseInt(limit as string),
+      offset: parseInt(offset as string),
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting BOM consumption variance:', error);
+    res.status(500).json({ error: 'Failed to get BOM consumption variance' });
+  }
+});
+
+/**
+ * GET /reports/yield-variance
+ * Get yield variance report comparing actual production vs expected from materials
+ */
+router.get('/yield-variance', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.auth!.tenantId;
+    const {
+      startDate,
+      endDate,
+      workOrderId,
+      itemId,
+      limit = 100,
+      offset = 0,
+    } = req.query;
+
+    const result = await ProductionVarianceService.getYieldReport({
+      tenantId,
+      startDate: startDate as string | undefined,
+      endDate: endDate as string | undefined,
+      workOrderId: workOrderId as string | undefined,
+      itemId: itemId as string | undefined,
+      limit: parseInt(limit as string),
+      offset: parseInt(offset as string),
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting yield report:', error);
+    res.status(500).json({ error: 'Failed to get yield report' });
+  }
+});
+
+/**
+ * GET /reports/execution-summary
+ * Get execution summary with duration tracking and production details
+ */
+router.get('/execution-summary', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.auth!.tenantId;
+    const {
+      startDate,
+      endDate,
+      workOrderId,
+      itemId,
+      limit = 100,
+      offset = 0,
+    } = req.query;
+
+    const result = await ProductionVarianceService.getExecutionSummary({
+      tenantId,
+      startDate: startDate as string | undefined,
+      endDate: endDate as string | undefined,
+      workOrderId: workOrderId as string | undefined,
+      itemId: itemId as string | undefined,
+      limit: parseInt(limit as string),
+      offset: parseInt(offset as string),
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting execution summary:', error);
+    res.status(500).json({ error: 'Failed to get execution summary' });
   }
 });
 

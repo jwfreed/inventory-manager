@@ -56,8 +56,8 @@ export default function ProductionRunFrequencyPage() {
     URL.revokeObjectURL(url)
   }
 
-  const totalRuns = frequencyQuery.data?.data.reduce((sum, item) => sum + item.totalRuns, 0) || 0
-  const totalProduced = frequencyQuery.data?.data.reduce((sum, item) => sum + item.totalQuantityProduced, 0) || 0
+  const totalRuns = frequencyQuery.data?.data.reduce((sum, item) => sum + Number(item.totalRuns), 0) || 0
+  const totalProduced = frequencyQuery.data?.data.reduce((sum, item) => sum + Number(item.totalQuantityProduced), 0) || 0
 
   return (
     <div className="space-y-6">

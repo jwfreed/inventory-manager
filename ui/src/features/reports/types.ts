@@ -166,3 +166,49 @@ export type ProductionRunFrequencyRow = {
   lastProductionDate: string | null
   daysSinceLastProduction: number | null
 }
+
+// Supplier Performance Types
+export type LeadTimeReliabilityRow = {
+  vendorId: string
+  vendorCode: string
+  vendorName: string
+  totalReceipts: number
+  onTimeReceipts: number
+  lateReceipts: number
+  avgLeadTimeDays: number
+  avgPromisedLeadTimeDays: number
+  reliabilityPercent: number
+}
+
+export type PriceVarianceTrendRow = {
+  vendorId: string
+  vendorCode: string
+  vendorName: string
+  month: string
+  avgUnitCost: number
+  avgReceivedCost: number
+  variancePercent: number
+  totalReceiptLines: number
+}
+
+export type VendorFillRateRow = {
+  vendorId: string
+  vendorCode: string
+  vendorName: string
+  totalOrdered: number
+  totalReceived: number
+  fillRatePercent: number
+  totalPOs: number
+  fullyReceivedPOs: number
+}
+
+export type VendorQualityRateRow = {
+  vendorId: string
+  vendorCode: string
+  vendorName: string
+  totalReceipts: number
+  passedReceipts: number
+  failedReceipts: number
+  qualityRatePercent: number
+  pendingQC: number
+}

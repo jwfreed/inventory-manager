@@ -437,14 +437,14 @@ export async function getWorkOrderProgress(params: {
 
   const sql = `
     SELECT 
-      wo.id as work_order_id,
-      wo.work_order_number,
-      wo.output_item_id as item_id,
-      i.sku as item_sku,
-      i.name as item_name,
+      wo.id as "workOrderId",
+      wo.work_order_number as "workOrderNumber",
+      wo.output_item_id as "itemId",
+      i.sku as "itemSku",
+      i.name as "itemName",
       wo.status,
-      wo.kind as order_type,
-      wo.quantity_planned,
+      wo.kind as "orderType",
+      wo.quantity_planned as "quantityPlanned",
       COALESCE(
         (SELECT SUM(quantity)
          FROM work_order_execution_lines woel
@@ -453,7 +453,7 @@ export async function getWorkOrderProgress(params: {
            AND woel.line_type = 'produce'
            AND woe.status = 'posted'),
         0
-      ) as quantity_completed,
+      ) as "quantityCompleted",
       CASE 
         WHEN wo.quantity_planned > 0 THEN 
           ROUND((COALESCE(
@@ -466,19 +466,19 @@ export async function getWorkOrderProgress(params: {
             0
           ) / wo.quantity_planned * 100)::numeric, 2)
         ELSE 0
-      END as percent_complete,
-      wo.scheduled_due_at::text as due_date,
+      END as "percentComplete",
+      wo.scheduled_due_at::text as "dueDate",
       CASE 
         WHEN wo.scheduled_due_at IS NOT NULL THEN 
-          EXTRACT(DAY FROM (wo.scheduled_due_at::date - CURRENT_DATE))::integer
+          (wo.scheduled_due_at::date - CURRENT_DATE)
         ELSE NULL
-      END as days_until_due,
+      END as "daysUntilDue",
       CASE 
         WHEN wo.scheduled_due_at IS NOT NULL AND wo.scheduled_due_at::date < CURRENT_DATE 
           AND wo.status NOT IN ('completed', 'closed') THEN true
         ELSE false
-      END as is_late,
-      wo.created_at::text
+      END as "isLate",
+      wo.created_at::text as "createdAt"
     FROM work_orders wo
     JOIN items i ON wo.output_item_id = i.id AND wo.tenant_id = i.tenant_id
     WHERE ${whereClause}
@@ -501,6 +501,7 @@ export type MovementTransactionRow = {
   movementNumber: string;
   movementType: string;
   status: string;
+  movementDate: string;
   lineId: string;
   itemId: string;
   itemSku: string;
@@ -546,13 +547,13 @@ export async function getMovementTransactionHistory(params: {
   let paramIndex = 2;
 
   if (startDate) {
-    whereConditions.push(`im.movement_date >= $${paramIndex}`);
+    whereConditions.push(`im.occurred_at >= $${paramIndex}`);
     queryParams.push(startDate);
     paramIndex++;
   }
 
   if (endDate) {
-    whereConditions.push(`im.movement_date <= $${paramIndex}`);
+    whereConditions.push(`im.occurred_at <= $${paramIndex}`);
     queryParams.push(endDate);
     paramIndex++;
   }
@@ -579,39 +580,40 @@ export async function getMovementTransactionHistory(params: {
 
   const sql = `
     SELECT 
-      im.id as movement_id,
-      im.movement_number,
-      im.movement_type,
+      im.id as "movementId",
+      im.external_ref as "movementNumber",
+      im.movement_type as "movementType",
       im.status,
-      iml.id as line_id,
-      iml.item_id,
-      i.sku as item_sku,
-      i.name as item_name,
-      iml.location_id,
-      l.code as location_code,
-      l.name as location_name,
+      im.occurred_at::text as "movementDate",
+      iml.id as "lineId",
+      iml.item_id as "itemId",
+      i.sku as "itemSku",
+      i.name as "itemName",
+      iml.location_id as "locationId",
+      l.code as "locationCode",
+      l.name as "locationName",
       iml.quantity_delta as quantity,
       iml.uom,
-      NULL::numeric as unit_cost,
-      NULL::numeric as extended_value,
-      lot.lot_number,
-      im.reference_type,
-      im.reference_number,
+      NULL::numeric as "unitCost",
+      NULL::numeric as "extendedValue",
+      lot.lot_code as "lotNumber",
+      im.movement_type as "referenceType",
+      im.external_ref as "referenceNumber",
       im.notes,
-      im.created_at::text,
-      im.posted_at::text
+      im.created_at::text as "createdAt",
+      im.posted_at::text as "postedAt"
     FROM inventory_movements im
     JOIN inventory_movement_lines iml ON im.id = iml.movement_id
     JOIN items i ON iml.item_id = i.id AND iml.tenant_id = i.tenant_id
     JOIN locations l ON iml.location_id = l.id AND iml.tenant_id = l.tenant_id
     LEFT JOIN (
-      SELECT iml_lot.inventory_movement_line_id, MIN(l.lot_number) as lot_number
+      SELECT iml_lot.inventory_movement_line_id, MIN(l.lot_code) as lot_code
       FROM inventory_movement_lots iml_lot
       JOIN lots l ON iml_lot.lot_id = l.id
       GROUP BY iml_lot.inventory_movement_line_id
     ) lot ON iml.id = lot.inventory_movement_line_id
     WHERE ${whereClause}
-    ORDER BY im.movement_date DESC, im.created_at DESC, iml.id
+    ORDER BY im.occurred_at DESC, im.created_at DESC, iml.id
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
 
@@ -664,11 +666,11 @@ export async function getInventoryMovementVelocity(params: {
   let paramIndex = 3;
 
   queryParams.push(startDate);
-  whereConditions.push(`im.movement_date >= $${paramIndex}`);
+  whereConditions.push(`im.occurred_at >= $${paramIndex}`);
   paramIndex++;
 
   queryParams.push(endDate);
-  whereConditions.push(`im.movement_date <= $${paramIndex}`);
+  whereConditions.push(`im.occurred_at <= $${paramIndex}`);
   paramIndex++;
 
   if (itemType) {
@@ -705,7 +707,7 @@ export async function getInventoryMovementVelocity(params: {
         SUM(CASE WHEN iml.quantity_delta > 0 THEN iml.quantity_delta ELSE 0 END) as quantity_in,
         SUM(CASE WHEN iml.quantity_delta < 0 THEN ABS(iml.quantity_delta) ELSE 0 END) as quantity_out,
         SUM(iml.quantity_delta) as net_change,
-        EXTRACT(DAY FROM ($4::date - $3::date)) + 1 as days_in_period
+        ($4::date - $3::date) + 1 as days_in_period
       FROM inventory_movements im
       JOIN inventory_movement_lines iml ON im.id = iml.movement_id
       JOIN items i ON iml.item_id = i.id AND iml.tenant_id = i.tenant_id
@@ -725,22 +727,22 @@ export async function getInventoryMovementVelocity(params: {
       GROUP BY iml.item_id
     )
     SELECT 
-      ms.item_id,
-      ms.sku as item_sku,
-      ms.name as item_name,
-      ms.item_type,
-      ms.total_movements,
-      ms.quantity_in,
-      ms.quantity_out,
-      ms.net_change,
-      COALESCE(ci.quantity_on_hand, 0) as current_on_hand,
-      ms.days_in_period::integer,
-      ROUND((ms.quantity_out / NULLIF(ms.days_in_period, 0))::numeric, 2) as avg_daily_movement,
+      ms.item_id as "itemId",
+      ms.sku as "itemSku",
+      ms.name as "itemName",
+      ms.item_type as "itemType",
+      ms.total_movements as "totalMovements",
+      ms.quantity_in as "quantityIn",
+      ms.quantity_out as "quantityOut",
+      ms.net_change as "netChange",
+      COALESCE(ci.quantity_on_hand, 0) as "currentOnHand",
+      ms.days_in_period::integer as "daysInPeriod",
+      ROUND((ms.quantity_out / NULLIF(ms.days_in_period, 0))::numeric, 2) as "avgDailyMovement",
       CASE 
         WHEN COALESCE(ci.quantity_on_hand, 0) > 0 THEN 
           ROUND((ms.quantity_out / NULLIF(COALESCE(ci.quantity_on_hand, 0), 0))::numeric, 2)
         ELSE NULL
-      END as turnover_proxy
+      END as "turnoverProxy"
     FROM movement_stats ms
     LEFT JOIN current_inventory ci ON ms.item_id = ci.item_id
     ORDER BY ms.quantity_out DESC, ms.total_movements DESC
@@ -807,7 +809,7 @@ export async function getOpenPOAging(params: {
   }
 
   if (minDaysOpen > 0) {
-    whereConditions.push(`EXTRACT(DAY FROM (CURRENT_DATE - po.order_date::date)) >= $${paramIndex}`);
+    whereConditions.push(`(CURRENT_DATE - po.order_date) >= $${paramIndex}`);
     queryParams.push(minDaysOpen);
     paramIndex++;
   }
@@ -836,38 +838,38 @@ export async function getOpenPOAging(params: {
       GROUP BY pol.purchase_order_id
     )
     SELECT 
-      po.id as purchase_order_id,
-      po.po_number,
-      po.vendor_id,
-      v.code as vendor_code,
-      v.name as vendor_name,
+      po.id as "purchaseOrderId",
+      po.po_number as "poNumber",
+      po.vendor_id as "vendorId",
+      v.code as "vendorCode",
+      v.name as "vendorName",
       po.status,
-      po.order_date::text,
-      po.promised_date::text,
-      EXTRACT(DAY FROM (CURRENT_DATE - po.order_date::date))::integer as days_open,
+      po.order_date::text as "orderDate",
+      po.expected_date::text as "expectedDate",
+      (CURRENT_DATE - po.order_date) as "daysOpen",
       CASE 
-        WHEN po.promised_date IS NOT NULL AND po.promised_date < CURRENT_DATE 
+        WHEN po.expected_date IS NOT NULL AND po.expected_date < CURRENT_DATE 
           AND po.status NOT IN ('received', 'closed') THEN
-          EXTRACT(DAY FROM (CURRENT_DATE - po.promised_date::date))::integer
+          (CURRENT_DATE - po.expected_date)
         ELSE NULL
-      END as days_overdue,
-      COALESCE(ps.total_lines, 0) as total_lines,
-      COALESCE(ps.received_lines, 0) as received_lines,
-      COALESCE(ps.total_lines, 0) - COALESCE(ps.received_lines, 0) as outstanding_lines,
-      COALESCE(ps.total_ordered, 0) as total_ordered,
-      COALESCE(ps.total_received, 0) as total_received,
+      END as "daysOverdue",
+      COALESCE(ps.total_lines, 0) as "totalLines",
+      COALESCE(ps.received_lines, 0) as "receivedLines",
+      COALESCE(ps.total_lines, 0) - COALESCE(ps.received_lines, 0) as "outstandingLines",
+      COALESCE(ps.total_ordered, 0) as "totalOrdered",
+      COALESCE(ps.total_received, 0) as "totalReceived",
       CASE 
         WHEN COALESCE(ps.total_ordered, 0) > 0 THEN 
           ROUND((COALESCE(ps.total_received, 0) / ps.total_ordered * 100)::numeric, 2)
         ELSE 0
-      END as fill_rate
+      END as "fillRate"
     FROM purchase_orders po
     JOIN vendors v ON po.vendor_id = v.id AND po.tenant_id = v.tenant_id
     LEFT JOIN po_stats ps ON po.id = ps.purchase_order_id
     WHERE ${whereClause}
     ORDER BY 
-      CASE WHEN po.promised_date < CURRENT_DATE THEN 0 ELSE 1 END,
-      days_open DESC
+      CASE WHEN po.expected_date < CURRENT_DATE THEN 0 ELSE 1 END,
+      "daysOpen" DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
 
@@ -970,7 +972,7 @@ export async function getSalesOrderFillPerformance(params: {
           SUM(sosl.quantity_shipped) as quantity_shipped
         FROM sales_order_shipment_lines sosl
         JOIN sales_order_shipments sos ON sosl.sales_order_shipment_id = sos.id
-        WHERE sos.tenant_id = $1 AND sos.status = 'posted'
+        WHERE sos.tenant_id = $1
         GROUP BY sosl.sales_order_line_id
       ) ship ON sol.id = ship.sales_order_line_id
       WHERE sol.tenant_id = $1
@@ -985,19 +987,19 @@ export async function getSalesOrderFillPerformance(params: {
       GROUP BY sos.sales_order_id
     )
     SELECT 
-      so.id as sales_order_id,
-      so.so_number,
-      so.customer_code,
-      so.customer_name,
+      so.id as "salesOrderId",
+      so.so_number as "soNumber",
+      c.code as "customerCode",
+      c.name as "customerName",
       so.status,
-      so.order_date::text,
-      so.requested_ship_date::text as requested_date,
-      sd.last_shipped_at::date::text as shipped_date,
+      so.order_date::text as "orderDate",
+      so.requested_ship_date::text as "requestedDate",
+      sd.last_shipped_at::date::text as "shippedDate",
       CASE 
         WHEN sd.last_shipped_at IS NOT NULL THEN
-          EXTRACT(DAY FROM (sd.last_shipped_at::date - so.order_date::date))::integer
+          (sd.last_shipped_at::date - so.order_date)
         ELSE NULL
-      END as days_to_ship,
+      END as "daysToShip",
       CASE 
         WHEN so.requested_ship_date IS NOT NULL 
           AND sd.last_shipped_at IS NULL 
@@ -1007,29 +1009,39 @@ export async function getSalesOrderFillPerformance(params: {
           AND sd.last_shipped_at IS NOT NULL 
           AND sd.last_shipped_at::date > so.requested_ship_date THEN true
         ELSE false
-      END as is_late,
-      COALESCE(ss.total_lines, 0) as total_lines,
-      COALESCE(ss.shipped_lines, 0) as shipped_lines,
-      COALESCE(ss.total_lines, 0) - COALESCE(ss.shipped_lines, 0) as outstanding_lines,
-      COALESCE(ss.total_ordered, 0) as total_ordered,
-      COALESCE(ss.total_shipped, 0) as total_shipped,
+      END as "isLate",
+      COALESCE(ss.total_lines, 0) as "totalLines",
+      COALESCE(ss.shipped_lines, 0) as "shippedLines",
+      COALESCE(ss.total_lines, 0) - COALESCE(ss.shipped_lines, 0) as "outstandingLines",
+      COALESCE(ss.total_ordered, 0) as "totalOrdered",
+      COALESCE(ss.total_shipped, 0) as "totalShipped",
       CASE 
         WHEN COALESCE(ss.total_ordered, 0) > 0 THEN 
           ROUND((COALESCE(ss.total_shipped, 0) / ss.total_ordered * 100)::numeric, 2)
         ELSE 0
-      END as fill_rate,
+      END as "fillRate",
       CASE 
         WHEN so.requested_ship_date IS NULL THEN true
         WHEN sd.last_shipped_at IS NULL THEN false
         WHEN sd.last_shipped_at::date <= so.requested_ship_date THEN true
         ELSE false
-      END as on_time_shipment
+      END as "onTimeShipment"
     FROM sales_orders so
+    JOIN customers c ON so.customer_id = c.id AND so.tenant_id = c.tenant_id
     LEFT JOIN so_stats ss ON so.id = ss.sales_order_id
     LEFT JOIN shipment_dates sd ON so.id = sd.sales_order_id
     WHERE ${whereClause}
     ORDER BY 
-      CASE WHEN is_late THEN 0 ELSE 1 END,
+      CASE 
+        WHEN so.requested_ship_date IS NOT NULL 
+          AND sd.last_shipped_at IS NULL 
+          AND so.requested_ship_date < CURRENT_DATE 
+          AND so.status NOT IN ('shipped', 'closed', 'canceled') THEN 0
+        WHEN so.requested_ship_date IS NOT NULL 
+          AND sd.last_shipped_at IS NOT NULL 
+          AND sd.last_shipped_at::date > so.requested_ship_date THEN 0
+        ELSE 1
+      END,
       so.order_date DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
@@ -1113,46 +1125,53 @@ export async function getProductionRunFrequency(params: {
     : '';
 
   const sql = `
-    WITH production_stats AS (
+    WITH execution_produced AS (
+      SELECT 
+        woe.id as execution_id,
+        COALESCE(SUM(woel.quantity), 0) as quantity_produced
+      FROM work_order_executions woe
+      LEFT JOIN work_order_execution_lines woel ON woel.work_order_execution_id = woe.id
+        AND woel.line_type = 'produce'
+      WHERE woe.status = 'posted'
+        AND woe.tenant_id = $1
+      GROUP BY woe.id
+    ),
+    production_stats AS (
       SELECT 
         wo.output_item_id as item_id,
         i.sku,
         i.name,
         i.type as item_type,
-        COUNT(DISTINCT woe.id) as total_runs,
-        SUM(
-          (SELECT COALESCE(SUM(woel.quantity), 0)
-           FROM work_order_execution_lines woel
-           WHERE woel.work_order_execution_id = woe.id
-             AND woel.line_type = 'produce')
-        ) as total_quantity_produced,
+        COUNT(DISTINCT woe.id)::integer as total_runs,
+        COALESCE(SUM(ep.quantity_produced), 0)::numeric as total_quantity_produced,
         MAX(woe.occurred_at)::date as last_production_date
       FROM work_orders wo
       JOIN work_order_executions woe ON wo.id = woe.work_order_id
       JOIN items i ON wo.output_item_id = i.id AND wo.tenant_id = i.tenant_id
+      LEFT JOIN execution_produced ep ON woe.id = ep.execution_id
       WHERE ${whereClause}
         AND woe.status = 'posted'
       GROUP BY wo.output_item_id, i.sku, i.name, i.type
       ${havingClause}
     )
     SELECT 
-      item_id,
-      sku as item_sku,
-      name as item_name,
-      item_type,
-      total_runs::integer,
-      total_quantity_produced,
-      ROUND((total_quantity_produced / NULLIF(total_runs, 0))::numeric, 2) as avg_batch_size,
-      0 as min_batch_size,
-      0 as max_batch_size,
-      last_production_date::text,
+      item_id as "itemId",
+      sku as "itemSku",
+      name as "itemName",
+      item_type as "itemType",
+      total_runs as "totalRuns",
+      total_quantity_produced as "totalQuantityProduced",
+      ROUND((total_quantity_produced / NULLIF(total_runs, 0))::numeric, 2) as "avgBatchSize",
+      0 as "minBatchSize",
+      0 as "maxBatchSize",
+      last_production_date::text as "lastProductionDate",
       CASE 
         WHEN last_production_date IS NOT NULL THEN
           (CURRENT_DATE - last_production_date)
         ELSE NULL::integer
-      END as days_since_last_production
+      END as "daysSinceLastProduction"
     FROM production_stats
-    ORDER BY total_runs DESC, total_quantity_produced DESC
+    ORDER BY "totalRuns" DESC, "totalQuantityProduced" DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
 
