@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { MetricsService } from '../services/metrics.service';
 import { requireAuth } from '../middleware/auth.middleware';
-import { AuthenticatedRequest } from '../types/auth';
 
 const router = Router();
 
@@ -11,9 +10,9 @@ router.use(requireAuth);
  * POST /metrics/compute/abc-classification
  * Compute ABC classification and update items table
  */
-router.post('/compute/abc-classification', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/compute/abc-classification', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.auth!.tenantId;
     const { windowDays = 90 } = req.body;
 
     const updatedCount = await MetricsService.updateAbcClassifications(tenantId, windowDays);
@@ -33,9 +32,9 @@ router.post('/compute/abc-classification', async (req: AuthenticatedRequest, res
  * GET /metrics/abc-classification
  * Get current ABC classification results
  */
-router.get('/abc-classification', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/abc-classification', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.auth!.tenantId;
     const { windowDays = 90 } = req.query;
 
     const results = await MetricsService.computeAbcClassification(
@@ -54,9 +53,9 @@ router.get('/abc-classification', async (req: AuthenticatedRequest, res: Respons
  * GET /metrics/inventory-aging
  * Get inventory aging buckets
  */
-router.get('/inventory-aging', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/inventory-aging', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.auth!.tenantId;
 
     const results = await MetricsService.computeInventoryAging(tenantId);
 
@@ -71,9 +70,9 @@ router.get('/inventory-aging', async (req: AuthenticatedRequest, res: Response) 
  * POST /metrics/compute/slow-dead-stock
  * Compute slow/dead stock flags and update items table
  */
-router.post('/compute/slow-dead-stock', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/compute/slow-dead-stock', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.auth!.tenantId;
     const { slowThresholdDays = 90, deadThresholdDays = 180 } = req.body;
 
     const updatedCount = await MetricsService.updateSlowDeadStockFlags(
@@ -97,9 +96,9 @@ router.post('/compute/slow-dead-stock', async (req: AuthenticatedRequest, res: R
  * GET /metrics/slow-dead-stock
  * Get slow-moving and dead stock items
  */
-router.get('/slow-dead-stock', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/slow-dead-stock', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.auth!.tenantId;
     const {
       slowThresholdDays = 90,
       deadThresholdDays = 180,
@@ -122,9 +121,9 @@ router.get('/slow-dead-stock', async (req: AuthenticatedRequest, res: Response) 
  * GET /metrics/turns-doi
  * Compute inventory turns and DOI for a time window
  */
-router.get('/turns-doi', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/turns-doi', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.auth!.tenantId;
     const {
       windowStart = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
       windowEnd = new Date().toISOString(),
@@ -147,9 +146,9 @@ router.get('/turns-doi', async (req: AuthenticatedRequest, res: Response) => {
  * POST /metrics/compute/turns-doi
  * Compute and store turns/DOI snapshots in kpi_snapshots table
  */
-router.post('/compute/turns-doi', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/compute/turns-doi', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.auth!.tenantId;
     const {
       windowStart = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
       windowEnd = new Date().toISOString(),
@@ -176,9 +175,9 @@ router.post('/compute/turns-doi', async (req: AuthenticatedRequest, res: Respons
  * POST /metrics/compute/all
  * Trigger all metric calculations at once
  */
-router.post('/compute/all', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/compute/all', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.auth!.tenantId;
     const {
       abcWindowDays = 90,
       slowThresholdDays = 90,
