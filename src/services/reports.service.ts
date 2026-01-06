@@ -1090,7 +1090,7 @@ export async function getProductionRunFrequency(params: {
   paramIndex++;
 
   if (itemType) {
-    whereConditions.push(`i.item_type = $${paramIndex}`);
+    whereConditions.push(`i.type = $${paramIndex}`);
     queryParams.push(itemType);
     paramIndex++;
   }
@@ -1126,7 +1126,7 @@ export async function getProductionRunFrequency(params: {
            WHERE woel.work_order_execution_id = woe.id
              AND woel.line_type = 'produce')
         ) as total_quantity_produced,
-        MAX(woe.occurred_at) as last_production_date
+        MAX(woe.occurred_at)::date as last_production_date
       FROM work_orders wo
       JOIN work_order_executions woe ON wo.id = woe.work_order_id
       JOIN items i ON wo.output_item_id = i.id AND wo.tenant_id = i.tenant_id
@@ -1145,10 +1145,10 @@ export async function getProductionRunFrequency(params: {
       ROUND((total_quantity_produced / NULLIF(total_runs, 0))::numeric, 2) as avg_batch_size,
       0 as min_batch_size,
       0 as max_batch_size,
-      last_production_date::date::text,
+      last_production_date::text,
       CASE 
         WHEN last_production_date IS NOT NULL THEN
-          EXTRACT(DAY FROM (CURRENT_DATE - last_production_date::date))::integer
+          EXTRACT(DAY FROM (CURRENT_DATE - last_production_date))::integer
         ELSE NULL::integer
       END as days_since_last_production
     FROM production_stats
