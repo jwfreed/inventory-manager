@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { MetricsService } from '../services/metrics.service';
 import { requireAuth } from '../middleware/auth.middleware';
 import { cacheAdapter } from '../lib/redis';
+import { triggerJob } from '../jobs/scheduler';
+import { getJobStatus } from '../jobs/metricsRecalculation.job';
 
 const router = Router();
 
@@ -291,6 +293,49 @@ router.get('/cache/stats', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching cache stats:', error);
     res.status(500).json({ error: 'Failed to fetch cache stats' });
+  }
+});
+
+/**
+ * GET /metrics/job/status
+ * Get nightly metrics recalculation job status
+ */
+router.get('/job/status', async (req: Request, res: Response) => {
+  try {
+    const status = getJobStatus();
+
+    res.json({
+      success: true,
+      job: 'metrics-recalculation',
+      schedule: '02:00 UTC daily',
+      ...status,
+    });
+  } catch (error) {
+    console.error('Error fetching job status:', error);
+    res.status(500).json({ error: 'Failed to fetch job status' });
+  }
+});
+
+/**
+ * POST /metrics/job/trigger
+ * Manually trigger the nightly metrics recalculation job
+ * (Admin/testing only - normally runs automatically at 02:00 UTC)
+ */
+router.post('/job/trigger', async (req: Request, res: Response) => {
+  try {
+    // Trigger the job asynchronously (don't wait for completion)
+    triggerJob('metrics-recalculation').catch(err => {
+      console.error('Background job execution failed:', err);
+    });
+
+    res.json({
+      success: true,
+      message: 'Metrics recalculation job triggered',
+      note: 'Job is running in the background. Check /metrics/job/status for progress.',
+    });
+  } catch (error) {
+    console.error('Error triggering job:', error);
+    res.status(500).json({ error: 'Failed to trigger job' });
   }
 });
 

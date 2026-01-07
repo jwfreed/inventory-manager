@@ -40,6 +40,8 @@ import productionOverviewRouter from './routes/productionOverview.routes';
 import costLayersRouter from './routes/costLayers.routes';
 import { requireAuth } from './middleware/auth.middleware';
 import { destructiveGuard } from './middleware/destructiveGuard.middleware';
+import { registerJob, startScheduler, stopScheduler } from './jobs/scheduler';
+import { recalculateMetrics } from './jobs/metricsRecalculation.job';
 
 const PORT = Number(process.env.PORT) || 3000;
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
@@ -138,6 +140,33 @@ pool.on('error', (err) => {
   console.error('Unexpected DB pool error', err);
 });
 
+// Register scheduled jobs
+console.log('\n📅 Registering scheduled jobs...');
+registerJob(
+  'metrics-recalculation',
+  '0 2 * * *', // 02:00 UTC daily
+  recalculateMetrics,
+  true
+);
+
+// Start the scheduler
+startScheduler();
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('\n🛑 SIGTERM received, shutting down gracefully...');
+  stopScheduler();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('\n🛑 SIGINT received, shutting down gracefully...');
+  stopScheduler();
+  process.exit(0);
+});
+
 app.listen(PORT, () => {
-  console.log(`Inventory Manager API listening on port ${PORT}`);
+  console.log(`\n🚀 Inventory Manager API listening on port ${PORT}`);
+  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`   Timezone: UTC (for scheduled jobs)\n`);
 });
