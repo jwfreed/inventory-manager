@@ -238,20 +238,6 @@ router.post('/compute/all', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to compute all metrics' });
   }
 });
-      new Date(turnsWindowStart),
-      new Date(turnsWindowEnd)
-    );
-
-    res.json({
-      success: true,
-      message: 'All metrics computed successfully',
-      results,
-    });
-  } catch (error) {
-    console.error('Error computing all metrics:', error);
-    res.status(500).json({ error: 'Failed to compute all metrics' });
-  }
-});
 
 /**
  * POST /metrics/cache/invalidate
