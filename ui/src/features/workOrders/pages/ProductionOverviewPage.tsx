@@ -5,6 +5,7 @@ import { useItemsList } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
 import { Button, Card, LoadingSpinner, ErrorState, Badge } from '@shared/ui'
 import { formatNumber } from '@shared/formatters'
+import { SimpleLineChart, SimpleBarChart } from '@shared/charts'
 import type { ProductionOverviewFilters } from '../api/productionOverview'
 
 export default function ProductionOverviewPage() {
@@ -266,25 +267,49 @@ export default function ProductionOverviewPage() {
                 {overviewQuery.data.volumeTrend.length === 0 ? (
                   <div className="text-center py-8 text-slate-600">No data available</div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="text-left py-2 px-3 font-medium text-slate-700">Date</th>
-                          <th className="text-right py-2 px-3 font-medium text-slate-700">Work Orders</th>
-                          <th className="text-right py-2 px-3 font-medium text-slate-700">Total Quantity</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {overviewQuery.data.volumeTrend.map((row, idx) => (
-                          <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                            <td className="py-2 px-3">{new Date(row.period).toLocaleDateString()}</td>
-                            <td className="py-2 px-3 text-right">{row.workOrderCount}</td>
-                            <td className="py-2 px-3 text-right">{formatNumber(row.totalQuantity)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-6">
+                    {/* Chart View */}
+                    <SimpleLineChart
+                      data={overviewQuery.data.volumeTrend.map(row => ({
+                        name: new Date(row.period).toLocaleDateString(),
+                        'Work Orders': row.workOrderCount,
+                        'Total Quantity': row.totalQuantity,
+                      }))}
+                      xKey="name"
+                      lines={[
+                        { key: 'Work Orders', name: 'Work Orders', color: '#3b82f6' },
+                        { key: 'Total Quantity', name: 'Total Quantity', color: '#10b981' }
+                      ]}
+                      yAxisFormatter={(value) => formatNumber(value)}
+                    />
+                    
+                    {/* Table View (collapsible) */}
+                    <details className="group">
+                      <summary className="cursor-pointer text-sm font-medium text-slate-700 hover:text-slate-900 flex items-center gap-2">
+                        <span className="transform transition-transform group-open:rotate-90">▶</span>
+                        Show Data Table
+                      </summary>
+                      <div className="overflow-x-auto mt-4">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200">
+                              <th className="text-left py-2 px-3 font-medium text-slate-700">Date</th>
+                              <th className="text-right py-2 px-3 font-medium text-slate-700">Work Orders</th>
+                              <th className="text-right py-2 px-3 font-medium text-slate-700">Total Quantity</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {overviewQuery.data.volumeTrend.map((row, idx) => (
+                              <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
+                                <td className="py-2 px-3">{new Date(row.period).toLocaleDateString()}</td>
+                                <td className="py-2 px-3 text-right">{row.workOrderCount}</td>
+                                <td className="py-2 px-3 text-right">{formatNumber(row.totalQuantity)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
                   </div>
                 )}
               </div>
@@ -311,44 +336,73 @@ export default function ProductionOverviewPage() {
               {overviewQuery.data.topBottomSKUs.length === 0 ? (
                 <div className="text-center py-8 text-slate-600">No data available</div>
               ) : (
-                <div className="overflow-x-auto max-h-96">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-white">
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left py-2 px-3 font-medium text-slate-700">Item</th>
-                        <th className="text-right py-2 px-3 font-medium text-slate-700">Freq</th>
-                        <th className="text-right py-2 px-3 font-medium text-slate-700">Avg Batch</th>
-                        <th className="text-right py-2 px-3 font-medium text-slate-700">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {overviewQuery.data.topBottomSKUs.map((row, idx) => {
-                        const item = itemsMap.get(row.itemId)
-                        return (
-                          <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 group">
-                            <td className="py-2 px-3">
-                              <Link 
-                                to={`/items/${row.itemId}`}
-                                className="block"
-                              >
-                                <div className="font-medium text-brand-700 group-hover:underline">
-                                  {item?.sku || row.itemId}
-                                </div>
-                                <div className="text-xs text-slate-600">{item?.name || 'Unknown'}</div>
-                              </Link>
-                            </td>
-                            <td className="py-2 px-3 text-right">{row.productionFrequency}</td>
-                            <td className="py-2 px-3 text-right">
-                              {formatNumber(row.avgBatchSize)} {row.uom}
-                            </td>
-                            <td className="py-2 px-3 text-right">
-                              {formatNumber(row.totalProduced)} {row.uom}
-                            </td>
+                <div className="space-y-6">
+                  {/* Chart View */}
+                  <SimpleBarChart
+                    data={overviewQuery.data.topBottomSKUs.map((row) => {
+                      const item = itemsMap.get(row.itemId)
+                      return {
+                        name: item?.sku || row.itemId,
+                        'Total Produced': row.totalProduced,
+                        'Avg Batch': row.avgBatchSize,
+                      }
+                    })}
+                    xKey="name"
+                    bars={[
+                      { key: 'Total Produced', name: 'Total Produced', color: '#3b82f6' },
+                      { key: 'Avg Batch', name: 'Avg Batch', color: '#10b981' }
+                    ]}
+                    yAxisFormatter={(value) => formatNumber(value)}
+                    layout="vertical"
+                    height={Math.max(300, overviewQuery.data.topBottomSKUs.length * 40)}
+                  />
+                  
+                  {/* Table View (collapsible) */}
+                  <details className="group">
+                    <summary className="cursor-pointer text-sm font-medium text-slate-700 hover:text-slate-900 flex items-center gap-2">
+                      <span className="transform transition-transform group-open:rotate-90">▶</span>
+                      Show Data Table
+                    </summary>
+                    <div className="overflow-x-auto max-h-96 mt-4">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-white">
+                          <tr className="border-b border-slate-200">
+                            <th className="text-left py-2 px-3 font-medium text-slate-700">Item</th>
+                            <th className="text-right py-2 px-3 font-medium text-slate-700">Freq</th>
+                            <th className="text-right py-2 px-3 font-medium text-slate-700">Avg Batch</th>
+                            <th className="text-right py-2 px-3 font-medium text-slate-700">Total</th>
                           </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody>
+                          {overviewQuery.data.topBottomSKUs.map((row, idx) => {
+                            const item = itemsMap.get(row.itemId)
+                            return (
+                              <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 group">
+                                <td className="py-2 px-3">
+                                  <Link 
+                                    to={`/items/${row.itemId}`}
+                                    className="block"
+                                  >
+                                    <div className="font-medium text-brand-700 group-hover:underline">
+                                      {item?.sku || row.itemId}
+                                    </div>
+                                    <div className="text-xs text-slate-600">{item?.name || 'Unknown'}</div>
+                                  </Link>
+                                </td>
+                                <td className="py-2 px-3 text-right">{row.productionFrequency}</td>
+                                <td className="py-2 px-3 text-right">
+                                  {formatNumber(row.avgBatchSize)} {row.uom}
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  {formatNumber(row.totalProduced)} {row.uom}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
                 </div>
               )}
             </div>
@@ -374,41 +428,67 @@ export default function ProductionOverviewPage() {
               {overviewQuery.data.wipStatus.length === 0 ? (
                 <div className="text-center py-8 text-slate-600">No data available</div>
               ) : (
-                <div className="space-y-3">
-                  {overviewQuery.data.wipStatus.map((row, idx) => (
-                    <Link
-                      key={idx}
-                      to={`/work-orders?status=${row.status}`}
-                      className="block border border-slate-200 rounded-lg p-3 hover:border-brand-500 hover:shadow-md transition-all"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge
-                          variant={
-                            row.status === 'completed'
-                              ? 'success'
-                              : row.status === 'released'
-                                ? 'warning'
-                                : 'neutral'
-                          }
+                <div className="space-y-6">
+                  {/* Chart View */}
+                  <SimpleBarChart
+                    data={overviewQuery.data.wipStatus.map((row) => ({
+                      name: row.status,
+                      'Work Orders': row.workOrderCount,
+                      'Planned': row.totalPlanned,
+                      'Completed': row.totalCompleted,
+                    }))}
+                    xKey="name"
+                    bars={[
+                      { key: 'Planned', name: 'Planned', color: '#94a3b8' },
+                      { key: 'Completed', name: 'Completed', color: '#10b981' }
+                    ]}
+                    yAxisFormatter={(value) => formatNumber(value)}
+                    stacked={false}
+                  />
+                  
+                  {/* Card View (collapsible) */}
+                  <details className="group">
+                    <summary className="cursor-pointer text-sm font-medium text-slate-700 hover:text-slate-900 flex items-center gap-2">
+                      <span className="transform transition-transform group-open:rotate-90">▶</span>
+                      Show Status Cards
+                    </summary>
+                    <div className="space-y-3 mt-4">
+                      {overviewQuery.data.wipStatus.map((row, idx) => (
+                        <Link
+                          key={idx}
+                          to={`/work-orders?status=${row.status}`}
+                          className="block border border-slate-200 rounded-lg p-3 hover:border-brand-500 hover:shadow-md transition-all"
                         >
-                          {row.status}
-                        </Badge>
-                        <span className="text-sm font-medium text-brand-700">
-                          {row.workOrderCount} WOs →
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <div className="text-slate-600">Planned</div>
-                          <div className="font-medium">{formatNumber(row.totalPlanned)}</div>
-                        </div>
-                        <div>
-                          <div className="text-slate-600">Completed</div>
-                          <div className="font-medium">{formatNumber(row.totalCompleted)}</div>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
+                          <div className="flex items-center justify-between mb-2">
+                            <Badge
+                              variant={
+                                row.status === 'completed'
+                                  ? 'success'
+                                  : row.status === 'released'
+                                    ? 'warning'
+                                    : 'neutral'
+                              }
+                            >
+                              {row.status}
+                            </Badge>
+                            <span className="text-sm font-medium text-brand-700">
+                              {row.workOrderCount} WOs →
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <div className="text-slate-600">Planned</div>
+                              <div className="font-medium">{formatNumber(row.totalPlanned)}</div>
+                            </div>
+                            <div>
+                              <div className="text-slate-600">Completed</div>
+                              <div className="font-medium">{formatNumber(row.totalCompleted)}</div>
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </details>
                 </div>
               )}
             </div>
@@ -435,42 +515,69 @@ export default function ProductionOverviewPage() {
                 {overviewQuery.data.materialsConsumed.length === 0 ? (
                   <div className="text-center py-8 text-slate-600">No data available</div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="text-left py-2 px-3 font-medium text-slate-700">Item</th>
-                          <th className="text-right py-2 px-3 font-medium text-slate-700">Total Consumed</th>
-                          <th className="text-right py-2 px-3 font-medium text-slate-700">Work Orders</th>
-                          <th className="text-right py-2 px-3 font-medium text-slate-700">Executions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {overviewQuery.data.materialsConsumed.map((row, idx) => {
-                          const item = itemsMap.get(row.itemId)
-                          return (
-                            <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 group">
-                              <td className="py-2 px-3">
-                                <Link 
-                                  to={`/items/${row.itemId}`}
-                                  className="block"
-                                >
-                                  <div className="font-medium text-brand-700 group-hover:underline">
-                                    {item?.sku || row.itemId}
-                                  </div>
-                                  <div className="text-xs text-slate-600">{item?.name || 'Unknown'}</div>
-                                </Link>
-                              </td>
-                              <td className="py-2 px-3 text-right">
-                                {formatNumber(row.totalConsumed)} {row.uom}
-                              </td>
-                              <td className="py-2 px-3 text-right">{row.workOrderCount}</td>
-                              <td className="py-2 px-3 text-right">{row.executionCount}</td>
+                  <div className="space-y-6">
+                    {/* Chart View */}
+                    <SimpleBarChart
+                      data={overviewQuery.data.materialsConsumed.slice(0, 15).map((row) => {
+                        const item = itemsMap.get(row.itemId)
+                        return {
+                          name: item?.sku || row.itemId,
+                          'Total Consumed': row.totalConsumed,
+                        }
+                      })}
+                      xKey="name"
+                      bars={[
+                        { key: 'Total Consumed', name: 'Total Consumed', color: '#f59e0b' }
+                      ]}
+                      yAxisFormatter={(value) => formatNumber(value)}
+                      layout="vertical"
+                      height={Math.max(300, Math.min(overviewQuery.data.materialsConsumed.length, 15) * 35)}
+                    />
+                    
+                    {/* Table View (collapsible) */}
+                    <details className="group">
+                      <summary className="cursor-pointer text-sm font-medium text-slate-700 hover:text-slate-900 flex items-center gap-2">
+                        <span className="transform transition-transform group-open:rotate-90">▶</span>
+                        Show Data Table
+                      </summary>
+                      <div className="overflow-x-auto mt-4">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200">
+                              <th className="text-left py-2 px-3 font-medium text-slate-700">Item</th>
+                              <th className="text-right py-2 px-3 font-medium text-slate-700">Total Consumed</th>
+                              <th className="text-right py-2 px-3 font-medium text-slate-700">Work Orders</th>
+                              <th className="text-right py-2 px-3 font-medium text-slate-700">Executions</th>
                             </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                          </thead>
+                          <tbody>
+                            {overviewQuery.data.materialsConsumed.map((row, idx) => {
+                              const item = itemsMap.get(row.itemId)
+                              return (
+                                <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 group">
+                                  <td className="py-2 px-3">
+                                    <Link 
+                                      to={`/items/${row.itemId}`}
+                                      className="block"
+                                    >
+                                      <div className="font-medium text-brand-700 group-hover:underline">
+                                        {item?.sku || row.itemId}
+                                      </div>
+                                      <div className="text-xs text-slate-600">{item?.name || 'Unknown'}</div>
+                                    </Link>
+                                  </td>
+                                  <td className="py-2 px-3 text-right">
+                                    {formatNumber(row.totalConsumed)} {row.uom}
+                                  </td>
+                                  <td className="py-2 px-3 text-right">{row.workOrderCount}</td>
+                                  <td className="py-2 px-3 text-right">{row.executionCount}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
                   </div>
                 )}
               </div>
