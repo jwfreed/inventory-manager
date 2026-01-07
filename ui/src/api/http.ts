@@ -25,10 +25,35 @@ async function handleResponse<T>(response: Response): Promise<T> {
     return parsed as T
   }
 
+  // Extract error message from various possible response structures
+  let errorMessage = response.statusText
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>
+    // Check for nested error object with message
+    if (obj.error && typeof obj.error === 'object') {
+      const errorObj = obj.error as Record<string, unknown>
+      if (typeof errorObj.message === 'string') {
+        errorMessage = errorObj.message
+      } else if (typeof errorObj.code === 'string') {
+        errorMessage = errorObj.code
+      }
+    }
+    // Check for direct message property
+    else if (typeof obj.message === 'string') {
+      errorMessage = obj.message
+    }
+    // Check for direct error string property
+    else if (typeof obj.error === 'string') {
+      errorMessage = obj.error
+    }
+  } else if (typeof parsed === 'string') {
+    errorMessage = parsed
+  }
+
   const error: ApiError = {
     status: response.status,
-    message: (parsed && (parsed.message || parsed.error)) || response.statusText,
-    details: parsed?.details ?? parsed,
+    message: errorMessage,
+    details: parsed,
   }
   throw error
 }
