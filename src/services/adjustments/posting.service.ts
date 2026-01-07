@@ -5,6 +5,7 @@ import { recordAuditLog } from '../../lib/audit';
 import { roundQuantity, toNumber } from '../../lib/numbers';
 import { validateSufficientStock } from '../stockValidation.service';
 import { calculateMovementCost, updateItemQuantityOnHand } from '../costing.service';
+import { consumeCostLayers, createCostLayer } from '../costLayers.service';
 import { fetchInventoryAdjustmentById } from './core.service';
 import type { InventoryAdjustmentRow, InventoryAdjustmentLineRow, PostingContext } from './types';
 
@@ -88,6 +89,43 @@ export async function postInventoryAdjustment(
       
       // Calculate cost for adjustment movement
       const costData = await calculateMovementCost(tenantId, line.item_id, qty, client);
+      
+      // Handle cost layers for adjustment
+      if (qty > 0) {
+        // Positive adjustment - create new cost layer
+        try {
+          await createCostLayer({
+            tenant_id: tenantId,
+            item_id: line.item_id,
+            location_id: line.location_id,
+            uom: line.uom,
+            quantity: qty,
+            unit_cost: costData.unitCost || 0,
+            source_type: 'adjustment',
+            source_document_id: line.id,
+            movement_id: movementId,
+            notes: `Adjustment increase: ${line.reason_code || 'unspecified'}`
+          });
+        } catch (err) {
+          console.warn('Failed to create cost layer for adjustment:', err);
+        }
+      } else {
+        // Negative adjustment - consume from cost layers
+        try {
+          await consumeCostLayers({
+            tenant_id: tenantId,
+            item_id: line.item_id,
+            location_id: line.location_id,
+            quantity: Math.abs(qty),
+            consumption_type: 'adjustment',
+            consumption_document_id: line.id,
+            movement_id: movementId,
+            notes: `Adjustment decrease: ${line.reason_code || 'unspecified'}`
+          });
+        } catch (err) {
+          console.warn('Failed to consume cost layers for adjustment:', err);
+        }
+      }
       
       await client.query(
         `INSERT INTO inventory_movement_lines (

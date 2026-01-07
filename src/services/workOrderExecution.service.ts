@@ -7,6 +7,7 @@ import { fetchBomById } from './boms.service';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
 import { calculateMovementCost } from './costing.service';
+import { consumeCostLayers, createCostLayer } from './costLayers.service';
 import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
@@ -345,6 +346,22 @@ export async function postWorkOrderIssue(
       // Calculate cost for material issue (negative movement = consumption)
       const costData = await calculateMovementCost(tenantId, line.component_item_id, roundQuantity(-qty), client);
       
+      // Consume from cost layers for material issue
+      try {
+        await consumeCostLayers({
+          tenant_id: tenantId,
+          item_id: line.component_item_id,
+          location_id: line.from_location_id,
+          quantity: qty,
+          consumption_type: 'production_input',
+          consumption_document_id: issueId,
+          movement_id: movementId
+        });
+      } catch (err) {
+        // Log but don't fail if cost layer consumption fails (may not have layers yet)
+        console.warn('Failed to consume cost layers for material issue:', err);
+      }
+      
       await client.query(
         `INSERT INTO inventory_movement_lines (
             id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
@@ -595,6 +612,26 @@ export async function postWorkOrderCompletion(
       
       // Calculate cost for work order completion (positive movement = production)
       const costData = await calculateMovementCost(tenantId, line.item_id, qty, client);
+      
+      // Create cost layer for completed production output
+      try {
+        if (line.to_location_id) {
+          await createCostLayer({
+            tenant_id: tenantId,
+            item_id: line.item_id,
+            location_id: line.to_location_id,
+            uom: normalized.uom,
+            quantity: qty,
+            unit_cost: costData.unitCost || 0,
+            source_type: 'production',
+            source_document_id: completionId,
+            movement_id: movementId,
+            notes: `Production output from work order ${workOrderId}`
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to create cost layer for production output:', err);
+      }
       
       await client.query(
         `INSERT INTO inventory_movement_lines (
@@ -915,6 +952,21 @@ export async function recordWorkOrderBatch(
       // Calculate cost for backflush material consumption
       const costData = await calculateMovementCost(tenantId, line.componentItemId, roundQuantity(-line.quantity), client);
       
+      // Consume from cost layers for backflush material consumption
+      try {
+        await consumeCostLayers({
+          tenant_id: tenantId,
+          item_id: line.componentItemId,
+          location_id: line.fromLocationId,
+          quantity: roundQuantity(line.quantity),
+          consumption_type: 'production_input',
+          consumption_document_id: issueId,
+          movement_id: issueMovementId
+        });
+      } catch (err) {
+        console.warn('Failed to consume cost layers for backflush:', err);
+      }
+      
       await client.query(
         `INSERT INTO inventory_movement_lines (
             id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
@@ -968,6 +1020,24 @@ export async function recordWorkOrderBatch(
       
       // Calculate cost for backflush production
       const costData = await calculateMovementCost(tenantId, line.outputItemId, roundQuantity(line.quantity), client);
+      
+      // Create cost layer for backflush production output
+      try {
+        await createCostLayer({
+          tenant_id: tenantId,
+          item_id: line.outputItemId,
+          location_id: line.toLocationId,
+          uom: line.uom,
+          quantity: roundQuantity(line.quantity),
+          unit_cost: costData.unitCost || 0,
+          source_type: 'production',
+          source_document_id: issueId,
+          movement_id: receiveMovementId,
+          notes: `Backflush production from work order ${workOrderId}`
+        });
+      } catch (err) {
+        console.warn('Failed to create cost layer for backflush production:', err);
+      }
       
       await client.query(
         `INSERT INTO inventory_movement_lines (

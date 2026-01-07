@@ -17,6 +17,7 @@ import { query as baseQuery } from '../db';
 import { updatePoStatusFromReceipts } from './status/purchaseOrdersStatus.service';
 import { recordAuditLog } from '../lib/audit';
 import { updateMovingAverageCost } from './costing.service';
+import { createCostLayer } from './costLayers.service';
 
 type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
 
@@ -298,6 +299,27 @@ export async function createPurchaseOrderReceipt(
           unitCost,
           client
         );
+        
+        // Create cost layer for FIFO tracking
+        if (resolvedReceivedToLocationId) {
+          try {
+            await createCostLayer({
+              tenant_id: tenantId,
+              item_id: poLine.item_id,
+              location_id: resolvedReceivedToLocationId,
+              uom: normalized.uom,
+              quantity: normalized.quantity,
+              unit_cost: unitCost,
+              source_type: 'receipt',
+              source_document_id: line.purchaseOrderLineId,
+              layer_date: new Date(data.receivedAt),
+              notes: `Receipt from PO line ${line.purchaseOrderLineId}`
+            });
+          } catch (err) {
+            // Log but don't fail transaction if cost layer creation fails
+            console.warn('Failed to create cost layer for receipt:', err);
+          }
+        }
       }
     }
 

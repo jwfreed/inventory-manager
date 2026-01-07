@@ -7,6 +7,7 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
 import { calculateMovementCost } from './costing.service';
+import { consumeCostLayers, createCostLayer } from './costLayers.service';
 
 type InventoryCountInput = z.infer<typeof inventoryCountSchema>;
 
@@ -452,6 +453,43 @@ export async function postInventoryCount(
       if (delta.variance !== 0) {
         // Calculate cost for cycle count adjustment
         const costData = await calculateMovementCost(tenantId, delta.line.item_id, delta.variance, client);
+        
+        // Handle cost layers for count adjustment
+        if (delta.variance > 0) {
+          // Positive variance - create new cost layer
+          try {
+            await createCostLayer({
+              tenant_id: tenantId,
+              item_id: delta.line.item_id,
+              location_id: cycleCount.location_id,
+              uom: delta.line.uom,
+              quantity: delta.variance,
+              unit_cost: costData.unitCost || 0,
+              source_type: 'adjustment',
+              source_document_id: id,
+              movement_id: movementId,
+              notes: `Cycle count adjustment - found more than expected`
+            });
+          } catch (err) {
+            console.warn('Failed to create cost layer for count adjustment:', err);
+          }
+        } else {
+          // Negative variance - consume from cost layers
+          try {
+            await consumeCostLayers({
+              tenant_id: tenantId,
+              item_id: delta.line.item_id,
+              location_id: cycleCount.location_id,
+              quantity: Math.abs(delta.variance),
+              consumption_type: 'adjustment',
+              consumption_document_id: id,
+              movement_id: movementId,
+              notes: `Cycle count adjustment - found less than expected`
+            });
+          } catch (err) {
+            console.warn('Failed to consume cost layers for count adjustment:', err);
+          }
+        }
         
         await client.query(
           `INSERT INTO inventory_movement_lines (

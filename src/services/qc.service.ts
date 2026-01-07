@@ -7,6 +7,7 @@ import { normalizeQuantityByUom } from '../lib/uom';
 import { recordAuditLog } from '../lib/audit';
 import { createNcr, findMrbLocation } from './ncr.service';
 import { calculateMovementCost } from './costing.service';
+import { createCostLayer } from './costLayers.service';
 
 export type QcEventInput = z.infer<typeof qcEventSchema>;
 
@@ -221,6 +222,26 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
         
         // Calculate cost for QC receive movement
         const costData = await calculateMovementCost(tenantId, itemId, normalized.quantity, client);
+        
+        // Create cost layer for QC accepted inventory
+        try {
+          if (destLocationId) {
+            await createCostLayer({
+              tenant_id: tenantId,
+              item_id: itemId,
+              location_id: destLocationId,
+              uom: normalized.uom,
+              quantity: normalized.quantity,
+              unit_cost: costData.unitCost || 0,
+              source_type: 'receipt',
+              source_document_id: created.id,
+              movement_id: movementId,
+              notes: `QC ${data.eventType} - moved to ${destLocationId}`
+            });
+          }
+        } catch (err) {
+          console.warn('Failed to create cost layer for QC event:', err);
+        }
         
         await client.query(
           `INSERT INTO inventory_movement_lines (
