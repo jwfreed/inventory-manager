@@ -1,4 +1,5 @@
 import { query } from '../db';
+import { cacheAdapter } from '../lib/redis';
 
 interface AbcClassificationResult {
   itemId: string;
@@ -48,8 +49,154 @@ interface TurnsAndDoiResult {
 /**
  * Service for computing calculated inventory metrics
  * Implements Phase 2 calculated metrics layer
+ * 
+ * Cached wrapper methods use Redis with in-memory fallback
  */
 export class MetricsService {
+  // Cache TTL constants (in seconds)
+  private static readonly CACHE_TTL = {
+    ABC_CLASSIFICATION: 15 * 60,     // 15 minutes
+    INVENTORY_AGING: 30 * 60,        // 30 minutes
+    SLOW_DEAD_STOCK: 60 * 60,        // 60 minutes
+    TURNS_DOI: 60 * 60,              // 60 minutes
+  };
+
+  /**
+   * Get ABC classification with caching (public API)
+   * Cache TTL: 15 minutes
+   */
+  static async getABCClassification(
+    tenantId: string,
+    windowDays: number = 90
+  ): Promise<AbcClassificationResult[]> {
+    const cached = await cacheAdapter.get<AbcClassificationResult[]>(
+      tenantId,
+      'abc_classification',
+      { windowDays }
+    );
+
+    if (cached) {
+      return cached;
+    }
+
+    const results = await this.computeAbcClassification(tenantId, windowDays);
+    
+    await cacheAdapter.set(
+      tenantId,
+      'abc_classification',
+      results,
+      this.CACHE_TTL.ABC_CLASSIFICATION,
+      { windowDays }
+    );
+
+    return results;
+  }
+
+  /**
+   * Get inventory aging with caching (public API)
+   * Cache TTL: 30 minutes
+   */
+  static async getInventoryAging(
+    tenantId: string
+  ): Promise<InventoryAgingBucket[]> {
+    const cached = await cacheAdapter.get<InventoryAgingBucket[]>(
+      tenantId,
+      'inventory_aging'
+    );
+
+    if (cached) {
+      return cached;
+    }
+
+    const results = await this.computeInventoryAging(tenantId);
+    
+    await cacheAdapter.set(
+      tenantId,
+      'inventory_aging',
+      results,
+      this.CACHE_TTL.INVENTORY_AGING
+    );
+
+    return results;
+  }
+
+  /**
+   * Get slow/dead stock with caching (public API)
+   * Cache TTL: 60 minutes
+   */
+  static async getSlowDeadStock(
+    tenantId: string,
+    slowThresholdDays: number = 90,
+    deadThresholdDays: number = 180
+  ): Promise<SlowDeadStockItem[]> {
+    const cached = await cacheAdapter.get<SlowDeadStockItem[]>(
+      tenantId,
+      'slow_dead_stock',
+      { slowThresholdDays, deadThresholdDays }
+    );
+
+    if (cached) {
+      return cached;
+    }
+
+    const results = await this.identifySlowDeadStock(tenantId, slowThresholdDays, deadThresholdDays);
+    
+    await cacheAdapter.set(
+      tenantId,
+      'slow_dead_stock',
+      results,
+      this.CACHE_TTL.SLOW_DEAD_STOCK,
+      { slowThresholdDays, deadThresholdDays }
+    );
+
+    return results;
+  }
+
+  /**
+   * Get turns and DOI with caching (public API)
+   * Cache TTL: 60 minutes
+   */
+  static async getTurnsAndDOI(
+    tenantId: string,
+    windowStart: Date,
+    windowEnd: Date
+  ): Promise<TurnsAndDoiResult[]> {
+    const cached = await cacheAdapter.get<TurnsAndDoiResult[]>(
+      tenantId,
+      'turns_doi',
+      { 
+        windowStart: windowStart.toISOString(),
+        windowEnd: windowEnd.toISOString()
+      }
+    );
+
+    if (cached) {
+      return cached;
+    }
+
+    const results = await this.computeTurnsAndDoi(tenantId, windowStart, windowEnd);
+    
+    await cacheAdapter.set(
+      tenantId,
+      'turns_doi',
+      results,
+      this.CACHE_TTL.TURNS_DOI,
+      { 
+        windowStart: windowStart.toISOString(),
+        windowEnd: windowEnd.toISOString()
+      }
+    );
+
+    return results;
+  }
+
+  /**
+   * Invalidate all metrics cache for a tenant
+   */
+  static async invalidateCache(tenantId: string, metricType?: string): Promise<void> {
+    await cacheAdapter.invalidate(tenantId, metricType || '*');
+  }
+
   /**
    * Compute ABC classification based on movement value
    * Classification thresholds: A = top 80%, B = next 15%, C = remaining 5%
