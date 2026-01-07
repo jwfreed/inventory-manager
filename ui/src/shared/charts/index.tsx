@@ -20,6 +20,7 @@ interface BaseChartProps {
   data: ChartData[]
   height?: number
   margin?: { top?: number; right?: number; bottom?: number; left?: number }
+  chartRef?: React.RefObject<HTMLDivElement | null>
 }
 
 interface LineChartProps extends BaseChartProps {
@@ -36,6 +37,7 @@ interface LineChartProps extends BaseChartProps {
   yAxisFormatter?: (value: any) => string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tooltipFormatter?: (value: any) => string
+  onDataClick?: (data: ChartData) => void
 }
 
 interface BarChartProps extends BaseChartProps {
@@ -53,6 +55,7 @@ interface BarChartProps extends BaseChartProps {
   tooltipFormatter?: (value: any) => string
   layout?: 'horizontal' | 'vertical'
   stacked?: boolean
+  onDataClick?: (data: ChartData) => void
 }
 
 interface AreaChartProps extends BaseChartProps {
@@ -101,9 +104,12 @@ export function SimpleLineChart({
   xAxisFormatter,
   yAxisFormatter,
   tooltipFormatter,
+  onDataClick,
+  chartRef,
 }: LineChartProps) {
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <div ref={chartRef}>
+      <ResponsiveContainer width="100%" height={height}>
       <LineChart data={data} margin={margin}>
         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
         <XAxis
@@ -132,10 +138,13 @@ export function SimpleLineChart({
             strokeWidth={line.strokeWidth || 2}
             dot={{ fill: line.color || '#3b82f6', r: 4 }}
             activeDot={{ r: 6 }}
+            onClick={onDataClick ? (data) => onDataClick(data) : undefined}
+            cursor={onDataClick ? 'pointer' : undefined}
           />
         ))}
       </LineChart>
     </ResponsiveContainer>
+    </div>
   )
 }
 
@@ -150,9 +159,12 @@ export function SimpleBarChart({
   tooltipFormatter,
   layout = 'horizontal',
   stacked = false,
+  onDataClick,
+  chartRef,
 }: BarChartProps) {
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <div ref={chartRef}>
+      <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={margin} layout={layout}>
         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
         {layout === 'horizontal' ? (
@@ -199,10 +211,13 @@ export function SimpleBarChart({
             fill={bar.color || '#3b82f6'}
             stackId={stacked ? 'stack' : undefined}
             radius={[4, 4, 0, 0]}
+            onClick={onDataClick ? (data) => onDataClick(data) : undefined}
+            cursor={onDataClick ? 'pointer' : undefined}
           />
         ))}
       </BarChart>
     </ResponsiveContainer>
+    </div>
   )
 }
 
@@ -216,9 +231,11 @@ export function SimpleAreaChart({
   yAxisFormatter,
   tooltipFormatter,
   stacked = false,
+  chartRef,
 }: AreaChartProps) {
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <div ref={chartRef}>
+      <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={data} margin={margin}>
         <defs>
           {areas.map((area) => (
@@ -259,5 +276,6 @@ export function SimpleAreaChart({
         ))}
       </AreaChart>
     </ResponsiveContainer>
+    </div>
   )
 }

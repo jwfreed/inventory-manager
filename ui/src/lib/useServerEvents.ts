@@ -23,6 +23,9 @@ const EVENT_TYPES = [
   'inventory.purchase_order.created',
   'inventory.purchase_order.updated',
   'inventory.purchase_order.deleted',
+  'metrics:updated',
+  'production:changed',
+  'workorder:completed',
 ] as const
 
 function asStringArray(value: unknown): string[] {
@@ -189,6 +192,27 @@ export function useServerEvents(accessToken?: string | null) {
         const purchaseOrderId =
           typeof data.purchaseOrderId === 'string' ? data.purchaseOrderId : undefined
         invalidatePurchaseOrders(purchaseOrderId)
+      }
+
+      // Handle real-time dashboard metric updates
+      if (payload.type === 'metrics:updated') {
+        void queryClient.invalidateQueries({ queryKey: ['production-summary'] })
+        void queryClient.invalidateQueries({ queryKey: ['production-overview'] })
+        void queryClient.invalidateQueries({ queryKey: ['abc-classification'] })
+        void queryClient.invalidateQueries({ queryKey: ['inventory-aging'] })
+        void queryClient.invalidateQueries({ queryKey: ['slow-dead-stock'] })
+        void queryClient.invalidateQueries({ queryKey: ['turns-doi'] })
+      }
+
+      if (payload.type === 'production:changed' || payload.type === 'workorder:completed') {
+        void queryClient.invalidateQueries({ queryKey: ['production-summary'] })
+        void queryClient.invalidateQueries({ queryKey: ['production-overview'] })
+        const workOrderId =
+          typeof data.workOrderId === 'string' ? data.workOrderId : undefined
+        if (workOrderId) {
+          void queryClient.invalidateQueries({ queryKey: ['work-order', workOrderId] })
+          void queryClient.invalidateQueries({ queryKey: ['work-order-execution', workOrderId] })
+        }
       }
     }
 

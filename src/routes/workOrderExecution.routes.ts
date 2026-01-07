@@ -237,6 +237,12 @@ router.post('/work-orders/:id/completions/:completionId/post', async (req: Reque
       itemIds,
       locationIds
     });
+    // Additional event for dashboard real-time updates
+    emitEvent(tenantId, 'workorder:completed', {
+      workOrderId,
+      completionId,
+      status: completion.status
+    });
     return res.json(completion);
   } catch (error: any) {
     if (error?.message === 'WO_NOT_FOUND') {
@@ -321,6 +327,15 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
       receiveMovementId: result.receiveMovementId,
       itemIds,
       locationIds
+    });
+    // Additional event for dashboard real-time updates
+    emitEvent(tenantId, 'workorder:completed', {
+      workOrderId,
+      status: result.workOrderStatus
+    });
+    emitEvent(tenantId, 'production:changed', {
+      workOrderId,
+      quantityCompleted: result.quantityCompleted
     });
     return res.status(201).json(result);
   } catch (error: any) {

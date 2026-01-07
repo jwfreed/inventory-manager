@@ -1,14 +1,20 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useMemo, useState, useRef } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useProductionOverview } from '../productionOverviewQueries'
 import { useItemsList } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
 import { Button, Card, LoadingSpinner, ErrorState, Badge } from '@shared/ui'
 import { formatNumber } from '@shared/formatters'
 import { SimpleLineChart, SimpleBarChart } from '@shared/charts'
+import { ChartExportButton } from '@shared/charts/ChartExportButton'
 import type { ProductionOverviewFilters } from '../api/productionOverview'
 
 export default function ProductionOverviewPage() {
+  const navigate = useNavigate()
+  const volumeTrendChartRef = useRef<HTMLDivElement>(null)
+  const topSKUsChartRef = useRef<HTMLDivElement>(null)
+  const wipStatusChartRef = useRef<HTMLDivElement>(null)
+  const materialsChartRef = useRef<HTMLDivElement>(null)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [itemId, setItemId] = useState('')
@@ -252,14 +258,21 @@ export default function ProductionOverviewPage() {
               <div className="p-4 border-b border-slate-200">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-900">Production Volume Trend</h3>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={handleExportVolumeTrend}
-                    disabled={!overviewQuery.data.volumeTrend.length}
-                  >
-                    Export CSV
-                  </Button>
+                  <div className="flex gap-2">
+                    <ChartExportButton
+                      chartRef={volumeTrendChartRef}
+                      chartName="production-volume-trend"
+                      disabled={!overviewQuery.data.volumeTrend.length}
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleExportVolumeTrend}
+                      disabled={!overviewQuery.data.volumeTrend.length}
+                    >
+                      Export CSV
+                    </Button>
+                  </div>
                 </div>
                 <p className="text-xs text-slate-600 mt-1">Completed work orders by period</p>
               </div>
@@ -270,6 +283,7 @@ export default function ProductionOverviewPage() {
                   <div className="space-y-6">
                     {/* Chart View */}
                     <SimpleLineChart
+                      chartRef={volumeTrendChartRef}
                       data={overviewQuery.data.volumeTrend.map(row => ({
                         name: new Date(row.period).toLocaleDateString(),
                         'Work Orders': row.workOrderCount,
@@ -321,14 +335,21 @@ export default function ProductionOverviewPage() {
             <div className="p-4 border-b border-slate-200">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-slate-900">Top/Bottom SKUs</h3>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={handleExportTopBottomSKUs}
-                  disabled={!overviewQuery.data.topBottomSKUs.length}
-                >
-                  Export CSV
-                </Button>
+                <div className="flex gap-2">
+                  <ChartExportButton
+                    chartRef={topSKUsChartRef}
+                    chartName="top-bottom-skus"
+                    disabled={!overviewQuery.data.topBottomSKUs.length}
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleExportTopBottomSKUs}
+                    disabled={!overviewQuery.data.topBottomSKUs.length}
+                  >
+                    Export CSV
+                  </Button>
+                </div>
               </div>
               <p className="text-xs text-slate-600 mt-1">By production frequency and batch size</p>
             </div>
@@ -339,12 +360,14 @@ export default function ProductionOverviewPage() {
                 <div className="space-y-6">
                   {/* Chart View */}
                   <SimpleBarChart
+                    chartRef={topSKUsChartRef}
                     data={overviewQuery.data.topBottomSKUs.map((row) => {
                       const item = itemsMap.get(row.itemId)
                       return {
                         name: item?.sku || row.itemId,
                         'Total Produced': row.totalProduced,
                         'Avg Batch': row.avgBatchSize,
+                        itemId: row.itemId,
                       }
                     })}
                     xKey="name"
@@ -355,6 +378,11 @@ export default function ProductionOverviewPage() {
                     yAxisFormatter={(value) => formatNumber(value)}
                     layout="vertical"
                     height={Math.max(300, overviewQuery.data.topBottomSKUs.length * 40)}
+                    onDataClick={(data) => {
+                      if (data.itemId) {
+                        navigate(`/items/${data.itemId}`)
+                      }
+                    }}
                   />
                   
                   {/* Table View (collapsible) */}
@@ -413,14 +441,21 @@ export default function ProductionOverviewPage() {
             <div className="p-4 border-b border-slate-200">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-slate-900">WIP Status Summary</h3>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={handleExportWIPStatus}
-                  disabled={!overviewQuery.data.wipStatus.length}
-                >
-                  Export CSV
-                </Button>
+                <div className="flex gap-2">
+                  <ChartExportButton
+                    chartRef={wipStatusChartRef}
+                    chartName="wip-status-summary"
+                    disabled={!overviewQuery.data.wipStatus.length}
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleExportWIPStatus}
+                    disabled={!overviewQuery.data.wipStatus.length}
+                  >
+                    Export CSV
+                  </Button>
+                </div>
               </div>
               <p className="text-xs text-slate-600 mt-1">Work orders by status</p>
             </div>
@@ -431,11 +466,13 @@ export default function ProductionOverviewPage() {
                 <div className="space-y-6">
                   {/* Chart View */}
                   <SimpleBarChart
+                    chartRef={wipStatusChartRef}
                     data={overviewQuery.data.wipStatus.map((row) => ({
                       name: row.status,
                       'Work Orders': row.workOrderCount,
                       'Planned': row.totalPlanned,
                       'Completed': row.totalCompleted,
+                      status: row.status,
                     }))}
                     xKey="name"
                     bars={[
@@ -444,6 +481,11 @@ export default function ProductionOverviewPage() {
                     ]}
                     yAxisFormatter={(value) => formatNumber(value)}
                     stacked={false}
+                    onDataClick={(data) => {
+                      if (data.status) {
+                        navigate(`/work-orders?status=${data.status}`)
+                      }
+                    }}
                   />
                   
                   {/* Card View (collapsible) */}
@@ -500,14 +542,21 @@ export default function ProductionOverviewPage() {
               <div className="p-4 border-b border-slate-200">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-900">Materials Consumed</h3>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={handleExportMaterialsConsumed}
-                    disabled={!overviewQuery.data.materialsConsumed.length}
-                  >
-                    Export CSV
-                  </Button>
+                  <div className="flex gap-2">
+                    <ChartExportButton
+                      chartRef={materialsChartRef}
+                      chartName="materials-consumed"
+                      disabled={!overviewQuery.data.materialsConsumed.length}
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleExportMaterialsConsumed}
+                      disabled={!overviewQuery.data.materialsConsumed.length}
+                    >
+                      Export CSV
+                    </Button>
+                  </div>
                 </div>
                 <p className="text-xs text-slate-600 mt-1">From work order execution lines</p>
               </div>
@@ -518,11 +567,13 @@ export default function ProductionOverviewPage() {
                   <div className="space-y-6">
                     {/* Chart View */}
                     <SimpleBarChart
+                      chartRef={materialsChartRef}
                       data={overviewQuery.data.materialsConsumed.slice(0, 15).map((row) => {
                         const item = itemsMap.get(row.itemId)
                         return {
                           name: item?.sku || row.itemId,
                           'Total Consumed': row.totalConsumed,
+                          itemId: row.itemId,
                         }
                       })}
                       xKey="name"
@@ -532,6 +583,11 @@ export default function ProductionOverviewPage() {
                       yAxisFormatter={(value) => formatNumber(value)}
                       layout="vertical"
                       height={Math.max(300, Math.min(overviewQuery.data.materialsConsumed.length, 15) * 35)}
+                      onDataClick={(data) => {
+                        if (data.itemId) {
+                          navigate(`/items/${data.itemId}`)
+                        }
+                      }}
                     />
                     
                     {/* Table View (collapsible) */}

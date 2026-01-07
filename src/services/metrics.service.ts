@@ -1,5 +1,6 @@
 import { query } from '../db';
 import { cacheAdapter } from '../lib/redis';
+import { emitEvent } from '../lib/events';
 
 interface AbcClassificationResult {
   itemId: string;
@@ -306,7 +307,18 @@ export class MetricsService {
     `;
 
     const result = await query(sql, [...params, tenantId]);
-    return result.rowCount || 0;
+    const rowCount = result.rowCount || 0;
+    
+    // Emit SSE event for real-time dashboard updates
+    if (rowCount > 0) {
+      emitEvent(tenantId, 'metrics:updated', { 
+        metric: 'abc_classification', 
+        itemsUpdated: rowCount,
+        windowDays 
+      });
+    }
+    
+    return rowCount;
   }
 
   /**
@@ -502,7 +514,19 @@ export class MetricsService {
     `;
 
     const result = await query(sql, [...params, tenantId]);
-    return result.rowCount || 0;
+    const rowCount = result.rowCount || 0;
+    
+    // Emit SSE event for real-time dashboard updates
+    if (rowCount > 0) {
+      emitEvent(tenantId, 'metrics:updated', { 
+        metric: 'slow_dead_stock', 
+        itemsUpdated: rowCount,
+        slowThresholdDays,
+        deadThresholdDays 
+      });
+    }
+    
+    return rowCount;
   }
 
   /**
@@ -666,6 +690,15 @@ export class MetricsService {
           VALUES ($1, 'doi_days', $2, $3, 'days')
         `, [runId, JSON.stringify(dimensions), metric.doiDays]);
       }
+
+    // Emit SSE event for real-time dashboard updates
+    emitEvent(tenantId, 'metrics:updated', { 
+      metric: 'turns_doi', 
+      runId,
+      itemsProcessed: metrics.length,
+      windowStart: windowStart.toISOString(),
+      windowEnd: windowEnd.toISOString()
+    });
 
       // Store rollup inputs for auditability
       await query(`
