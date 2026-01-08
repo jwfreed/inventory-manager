@@ -81,7 +81,7 @@ export default function AdjustmentNewPage() {
   const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
 
   const itemsQuery = useItemsList(
-    { active: true, limit: 200, search: debouncedItemSearch || undefined },
+    { lifecycleStatus: 'Active', limit: 200, search: debouncedItemSearch || undefined },
     { staleTime: 60_000 },
   )
   const locationsQuery = useLocationsList(

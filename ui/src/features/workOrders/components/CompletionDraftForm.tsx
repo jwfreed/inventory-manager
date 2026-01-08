@@ -92,7 +92,7 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
     { staleTime: 60_000, retry: 1 },
   )
   const itemsQuery = useItemsList(
-    { limit: 200, search: debouncedItemSearch || undefined },
+    { limit: 200, search: debouncedItemSearch || undefined, lifecycleStatus: 'Active' },
     { staleTime: 60_000, retry: 1 },
   )
 

@@ -44,6 +44,13 @@ export function WorkOrderBomSection({
     >
       {isLoading && <LoadingSpinner label="Loading BOMs..." />}
       {error && <Alert variant="error" title="Failed to load BOMs" message={error.message} />}
+      {!isLoading && outputItemId && bomOptions.length === 0 && (
+        <Alert
+          variant="warning"
+          title="No BOM found"
+          message="This item doesn't have a BOM yet. Create one on the item detail page before creating production work orders."
+        />
+      )}
       <div className="grid gap-3 md:grid-cols-3">
         <div className="md:col-span-2">
           <Combobox

@@ -9,6 +9,7 @@ import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { Input, Textarea } from '../../../components/Inputs'
+import { FormField } from '../../../components/FormField'
 
 type Props = {
   initialItem?: Item
@@ -86,8 +87,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
           <Alert variant="error" title="Save failed" message={mutation.error.message} />
         )}
         <div className="grid gap-3 md:grid-cols-2">
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">SKU</span>
+          <FormField label="SKU" required>
             <Input
               value={sku}
               onChange={(e) => setSku(e.target.value)}
@@ -96,9 +96,8 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
               autoFocus={autoFocusSku}
               disabled={mutation.isPending}
             />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Name</span>
+          </FormField>
+          <FormField label="Name" required>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -106,11 +105,10 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
               required
               disabled={mutation.isPending}
             />
-          </label>
+          </FormField>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Type</span>
+          <FormField label="Type">
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               value={type}
@@ -122,7 +120,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
               <option value="finished">Finished Good</option>
               <option value="packaging">Packaging</option>
             </select>
-          </label>
+          </FormField>
           <div className="flex items-center h-full pt-6">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
@@ -137,8 +135,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
           </div>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Status</span>
+          <FormField label="Status">
             <select
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               value={lifecycleStatus}
@@ -150,18 +147,16 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
               <option value="Phase-Out">Phase-Out</option>
               <option value="Obsolete">Obsolete</option>
             </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Default UOM</span>
+          </FormField>
+          <FormField label="Default UOM">
             <Input
               value={defaultUom}
               onChange={(e) => setDefaultUom(e.target.value)}
               placeholder="ea, kg, box"
               disabled={mutation.isPending}
             />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Standard Cost</span>
+          </FormField>
+          <FormField label="Standard Cost" helper="Per unit cost for valuation (optional)">
             <Input
               type="number"
               step="0.01"
@@ -171,11 +166,9 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
               placeholder="0.00"
               disabled={mutation.isPending}
             />
-            <span className="text-xs text-slate-600">Per unit cost for valuation (optional)</span>
-          </label>
+          </FormField>
         </div>
-        <label className="space-y-1 text-sm block">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Default location</span>
+        <FormField label="Default location" className="block">
           <select
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={defaultLocationId}
@@ -201,16 +194,15 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
               {(locationsQuery.error?.message || 'Could not load locations. You can still save without one.')}
             </p>
           )}
-        </label>
-        <label className="space-y-1 text-sm block">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Description</span>
+        </FormField>
+        <FormField label="Description" className="block">
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Optional details"
             disabled={mutation.isPending}
           />
-        </label>
+        </FormField>
         <div className="flex gap-2">
           {onCancel && (
             <Button

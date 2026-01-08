@@ -113,7 +113,7 @@ export default function AdjustmentDetailPage() {
     { enabled: Boolean(id) },
   )
 
-  const itemsQuery = useItemsList({ active: true, limit: 200 }, { staleTime: 60_000 })
+  const itemsQuery = useItemsList({ lifecycleStatus: 'Active', limit: 200 }, { staleTime: 60_000 })
   const locationsQuery = useLocationsList({ active: true, limit: 200 }, { staleTime: 60_000 })
   const itemDetailQuery = useItem(adjustmentQuery.data?.lines?.[0]?.itemId, {
     enabled: Boolean(adjustmentQuery.data?.lines?.[0]?.itemId),

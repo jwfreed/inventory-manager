@@ -1,6 +1,7 @@
 import { Badge } from '../../../components/Badge'
 import { Card } from '../../../components/Card'
 import { formatNumber } from '@shared/formatters'
+import { Link } from 'react-router-dom'
 import type { WorkOrder } from '../../../api/types'
 
 type Props = {
@@ -37,7 +38,12 @@ export function WorkOrderHeader({ workOrder, outputItemLabel }: Props) {
             <Badge variant={statusVariant}>{workOrder.status}</Badge>
             <Badge variant="neutral">
               {isDisassembly ? 'Input' : 'Output'}:{' '}
-              {outputItemLabel || workOrder.outputItemName || workOrder.outputItemSku || workOrder.outputItemId}
+              <Link 
+                to={`/items/${workOrder.outputItemId}`}
+                className="hover:underline"
+              >
+                {outputItemLabel || workOrder.outputItemName || workOrder.outputItemSku || workOrder.outputItemId}
+              </Link>
             </Badge>
             <Badge variant={isDisassembly ? 'info' : 'neutral'}>
               {isDisassembly ? 'Disassembly' : 'Production'}

@@ -123,7 +123,7 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
   const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
 
   const itemsQuery = useItemsList(
-    { limit: 200, search: debouncedItemSearch || undefined },
+    { limit: 200, search: debouncedItemSearch || undefined, lifecycleStatus: 'Active' },
     { staleTime: 60_000, retry: 1 },
   )
 

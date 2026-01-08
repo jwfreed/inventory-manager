@@ -1,5 +1,6 @@
 import type { Item } from '@api/types'
 import { Input, Section, Textarea } from '@shared/ui'
+import { FormField } from '../../../components/FormField'
 
 export type SelectOption = {
   value: string
@@ -68,19 +69,17 @@ export function WorkOrderHeaderSection({
   return (
     <Section title="Header">
       <div className="grid gap-3">
-        <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Description</span>
+        <FormField label="Description">
           <Textarea
             value={description}
             onChange={(e) => onDescriptionChange(e.target.value)}
             placeholder="Optional note for humans"
             disabled={isPending}
           />
-        </label>
+        </FormField>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
-        <label className="space-y-1 text-sm md:col-span-2">
-          <span className="text-xs uppercase tracking-wide text-slate-500">{itemLabel}</span>
+        <FormField label={itemLabel} className="md:col-span-2">
           <select
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={outputItemId}
@@ -94,9 +93,8 @@ export function WorkOrderHeaderSection({
               </option>
             ))}
           </select>
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Unit of measure</span>
+        </FormField>
+        <FormField label="Unit of measure" helper={selectedItem?.defaultUom && outputUom === selectedItem.defaultUom ? 'Auto from item default UOM' : undefined}>
           <Input
             value={outputUom}
             onChange={(e) => onOutputUomChange(e.target.value)}
@@ -104,14 +102,10 @@ export function WorkOrderHeaderSection({
             required
             disabled={isPending}
           />
-          {selectedItem?.defaultUom && outputUom === selectedItem.defaultUom && (
-            <p className="text-xs text-slate-500">Auto from item default UOM</p>
-          )}
-        </label>
+        </FormField>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
-        <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">{quantityLabel}</span>
+        <FormField label={quantityLabel} error={quantityError || undefined}>
           <Input
             type="number"
             min={1}
@@ -123,30 +117,26 @@ export function WorkOrderHeaderSection({
             required
             disabled={isPending}
           />
-          {quantityError ? <p className="text-xs text-red-600">{quantityError}</p> : null}
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Scheduled start</span>
+        </FormField>
+        <FormField label="Scheduled start">
           <Input
             type="date"
             value={scheduledStartAt}
             onChange={(e) => onScheduledStartAtChange(e.target.value)}
             disabled={isPending}
           />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Scheduled due</span>
+        </FormField>
+        <FormField label="Scheduled due">
           <Input
             type="date"
             value={scheduledDueAt}
             onChange={(e) => onScheduledDueAtChange(e.target.value)}
             disabled={isPending}
           />
-        </label>
+        </FormField>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Default consume location</span>
+        <FormField label="Default consume location" helper={selectedItem?.defaultLocationId && defaultConsumeLocationId === selectedItem.defaultLocationId ? 'Auto from item default location' : undefined}>
           <select
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={defaultConsumeLocationId}
@@ -161,12 +151,8 @@ export function WorkOrderHeaderSection({
             ))}
             {consumeMissing && <option value={defaultConsumeLocationId}>Current selection</option>}
           </select>
-          {selectedItem?.defaultLocationId && defaultConsumeLocationId === selectedItem.defaultLocationId && (
-            <p className="text-xs text-slate-500">Auto from item default location</p>
-          )}
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Default produce location</span>
+        </FormField>
+        <FormField label="Default produce location" helper={selectedItem?.defaultLocationId && defaultProduceLocationId === selectedItem.defaultLocationId ? 'Auto from item default location' : undefined}>
           <select
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={defaultProduceLocationId}
@@ -181,10 +167,7 @@ export function WorkOrderHeaderSection({
             ))}
             {produceMissing && <option value={defaultProduceLocationId}>Current selection</option>}
           </select>
-          {selectedItem?.defaultLocationId && defaultProduceLocationId === selectedItem.defaultLocationId && (
-            <p className="text-xs text-slate-500">Auto from item default location</p>
-          )}
-        </label>
+        </FormField>
       </div>
     </Section>
   )

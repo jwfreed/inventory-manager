@@ -187,11 +187,11 @@ export async function getMaterialsConsumed(
   let whereClause = '';
   if (filters.dateFrom) {
     params.push(filters.dateFrom);
-    whereClause += ` AND woe.occurred_at >= $${++paramCount}`;
+    whereClause += ` AND wmi.occurred_at >= $${++paramCount}`;
   }
   if (filters.dateTo) {
     params.push(filters.dateTo);
-    whereClause += ` AND woe.occurred_at <= $${++paramCount}`;
+    whereClause += ` AND wmi.occurred_at <= $${++paramCount}`;
   }
   if (filters.itemId) {
     params.push(filters.itemId);
@@ -199,23 +199,25 @@ export async function getMaterialsConsumed(
   }
   if (filters.locationId) {
     params.push(filters.locationId);
-    whereClause += ` AND woel.from_location_id = $${++paramCount}`;
+    whereClause += ` AND wmil.from_location_id = $${++paramCount}`;
   }
 
+  // Query work_order_material_issue_lines for consumed materials
+  // This table stores the actual material issues (consumptions) from work orders
   const sql = `
     SELECT 
-      woel.item_id,
-      woel.uom,
-      SUM(woel.quantity) as total_consumed,
-      COUNT(DISTINCT woe.work_order_id) as work_order_count,
-      COUNT(DISTINCT woe.id) as execution_count
-    FROM work_order_execution_lines woel
-    JOIN work_order_executions woe ON woel.work_order_execution_id = woe.id
-    JOIN work_orders wo ON woe.work_order_id = wo.id
-    WHERE woel.tenant_id = $1
-      AND woel.line_type = 'consume'
+      wmil.component_item_id as item_id,
+      wmil.uom,
+      SUM(wmil.quantity_issued) as total_consumed,
+      COUNT(DISTINCT wmi.work_order_id) as work_order_count,
+      COUNT(DISTINCT wmi.id) as execution_count
+    FROM work_order_material_issue_lines wmil
+    JOIN work_order_material_issues wmi ON wmil.work_order_material_issue_id = wmi.id
+    JOIN work_orders wo ON wmi.work_order_id = wo.id
+    WHERE wmil.tenant_id = $1
+      AND wmi.status = 'posted'
       ${whereClause}
-    GROUP BY woel.item_id, woel.uom
+    GROUP BY wmil.component_item_id, wmil.uom
     ORDER BY total_consumed DESC
   `;
 

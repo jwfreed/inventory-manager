@@ -41,7 +41,7 @@ export default function WorkOrderCreatePage() {
   const [quantityError, setQuantityError] = useState<string | null>(null)
   const prefillDoneRef = useRef(false)
 
-  const itemsQuery = useItemsList({ limit: 200 }, { staleTime: 1000 * 60 })
+  const itemsQuery = useItemsList({ limit: 200, lifecycleStatus: 'Active' }, { staleTime: 1000 * 60 })
 
   const locationsQuery = useLocationsList({ limit: 200, active: true }, { staleTime: 1000 * 60 })
 
@@ -68,6 +68,17 @@ export default function WorkOrderCreatePage() {
     itemsQuery.data?.data?.forEach((item) => map.set(item.id, item))
     return map
   }, [itemsQuery.data])
+
+  // Filter items based on work order kind
+  const availableItems = useMemo(() => {
+    const allItems = itemsQuery.data?.data ?? []
+    // For disassembly, allow any active item
+    if (kind === 'disassembly') {
+      return allItems
+    }
+    // For production, show all items (BOM validation happens at submission)
+    return allItems
+  }, [itemsQuery.data, kind])
 
   const locationOptions = useMemo(
     () =>
@@ -176,7 +187,10 @@ export default function WorkOrderCreatePage() {
     if (!outputItemId || !outputUom || quantityPlanned === '') {
       return
     }
-    if (kind === 'production' && !selectedBomId) return
+    if (kind === 'production' && !selectedBomId) {
+      setQuantityError('Production work orders require a BOM. Please select an item with an active BOM or create one first.')
+      return
+    }
     if (!(Number(quantityPlanned) > 0)) {
       setQuantityError('Quantity planned must be greater than 0.')
       return
@@ -241,6 +255,11 @@ export default function WorkOrderCreatePage() {
                 Disassembly consumes the selected item in issues and produces recovered outputs in completions.
               </p>
             )}
+            {kind === 'production' && (
+              <p className="mt-2 text-xs text-slate-500">
+                Production work orders require a BOM. Select an item with an active BOM.
+              </p>
+            )}
           </div>
           <WorkOrderHeaderSection
             description={description}
@@ -254,7 +273,7 @@ export default function WorkOrderCreatePage() {
             scheduledDueAt={scheduledDueAt}
             defaultConsumeLocationId={defaultConsumeLocationId}
             defaultProduceLocationId={defaultProduceLocationId}
-            items={itemsQuery.data?.data ?? []}
+            items={availableItems}
             itemsLoading={itemsQuery.isLoading}
             locationsLoading={locationsQuery.isLoading}
             selectedItem={selectedItem}

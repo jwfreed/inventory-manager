@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { ApiError } from '@api/types'
 import { Alert, Button, Card, Input, LoadingSpinner } from '@shared/ui'
 import { useAuth } from '@shared/auth'
+import { FormField } from '../components/FormField'
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (typeof error === 'string') return error
@@ -100,8 +101,7 @@ export default function LoginPage() {
           <Card title="Sign in" description="Use your existing credentials to continue.">
             <form className="space-y-4" onSubmit={handleLogin}>
               {loginError && <Alert variant="error" title="Sign in failed" message={loginError} />}
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Email</span>
+              <FormField label="Email" required>
                 <Input
                   type="email"
                   value={loginEmail}
@@ -110,9 +110,8 @@ export default function LoginPage() {
                   required
                   disabled={loginPending}
                 />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Password</span>
+              </FormField>
+              <FormField label="Password" required>
                 <Input
                   type="password"
                   value={loginPassword}
@@ -121,19 +120,15 @@ export default function LoginPage() {
                   required
                   disabled={loginPending}
                 />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Tenant slug</span>
+              </FormField>
+              <FormField label="Tenant slug" helper="Optional if you only belong to one tenant.">
                 <Input
                   value={loginTenantSlug}
                   onChange={(event) => setLoginTenantSlug(event.target.value)}
                   placeholder="default"
                   disabled={loginPending}
                 />
-                <span className="text-xs text-slate-400">
-                  Optional if you only belong to one tenant.
-                </span>
-              </label>
+              </FormField>
               <div className="flex items-center justify-between">
                 <Button type="submit" disabled={loginPending}>
                   {loginPending ? 'Signing in...' : 'Sign in'}
@@ -150,35 +145,31 @@ export default function LoginPage() {
               {bootstrapError && (
                 <Alert variant="error" title="Bootstrap failed" message={bootstrapError} />
               )}
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Tenant name</span>
+              <FormField label="Tenant name">
                 <Input
                   value={tenantName}
                   onChange={(event) => setTenantName(event.target.value)}
                   placeholder="Default Tenant"
                   disabled={bootstrapPending}
                 />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Tenant slug</span>
+              </FormField>
+              <FormField label="Tenant slug">
                 <Input
                   value={tenantSlug}
                   onChange={(event) => setTenantSlug(event.target.value)}
                   placeholder="default"
                   disabled={bootstrapPending}
                 />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Admin name</span>
+              </FormField>
+              <FormField label="Admin name">
                 <Input
                   value={adminName}
                   onChange={(event) => setAdminName(event.target.value)}
                   placeholder="Optional"
                   disabled={bootstrapPending}
                 />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Admin email</span>
+              </FormField>
+              <FormField label="Admin email" required>
                 <Input
                   type="email"
                   value={adminEmail}
@@ -187,9 +178,8 @@ export default function LoginPage() {
                   required
                   disabled={bootstrapPending}
                 />
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Admin password</span>
+              </FormField>
+              <FormField label="Admin password" required>
                 <Input
                   type="password"
                   value={adminPassword}
@@ -198,7 +188,7 @@ export default function LoginPage() {
                   required
                   disabled={bootstrapPending}
                 />
-              </label>
+              </FormField>
               <Button type="submit" disabled={bootstrapPending}>
                 {bootstrapPending ? 'Bootstrapping...' : 'Create admin'}
               </Button>

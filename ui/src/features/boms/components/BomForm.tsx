@@ -4,6 +4,7 @@ import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { Input, Textarea } from '../../../components/Inputs'
+import { FormField } from '../../../components/FormField'
 import type { ApiError } from '../../../api/types'
 import { createBom, type BomCreatePayload } from '../api/boms'
 import { useItemsList } from '../../items/queries'
@@ -64,7 +65,7 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
     { lineNumber: 1, componentItemId: '', uom: defaultUom ?? '', quantityPer: '' },
   ])
 
-  const itemsQuery = useItemsList({ limit: 500 }, { staleTime: 60_000 })
+  const itemsQuery = useItemsList({ limit: 500, lifecycleStatus: 'Active' }, { staleTime: 60_000 })
 
   const itemOptions = useMemo(() => {
     const items = itemsQuery.data?.data ?? []
@@ -238,8 +239,7 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
           <Alert variant="error" title="Create failed" message={(mutation.error as ApiError).message} />
         )}
         <div className="grid gap-3 md:grid-cols-3">
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">BOM code</span>
+          <FormField label="BOM code" required>
             <Input
               value={bomCode}
               onChange={(e) => setBomCode(e.target.value)}
@@ -247,9 +247,8 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
               required
               disabled={mutation.isPending}
             />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Default UOM</span>
+          </FormField>
+          <FormField label="Default UOM" required>
             <Input
               value={resolvedDefaultBomUom}
               onChange={(e) => setDefaultBomUom(e.target.value)}
@@ -257,9 +256,8 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
               required
               disabled={mutation.isPending}
             />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Yield UOM</span>
+          </FormField>
+          <FormField label="Yield UOM" required>
             <Input
               value={resolvedYieldUom}
               onChange={(e) => setYieldUom(e.target.value)}
@@ -267,11 +265,10 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
               required
               disabled={mutation.isPending}
             />
-          </label>
+          </FormField>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Yield quantity</span>
+          <FormField label="Yield quantity">
             <Input
               type="number"
               min={0}
@@ -281,9 +278,8 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
               }
               disabled={mutation.isPending}
             />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Yield factor</span>
+          </FormField>
+          <FormField label="Yield factor">
             <Input
               type="number"
               min={0}
@@ -295,25 +291,23 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
               }
               disabled={mutation.isPending}
             />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Effective from</span>
+          </FormField>
+          <FormField label="Effective from">
             <Input
               type="date"
               value={effectiveFrom}
               onChange={(e) => setEffectiveFrom(e.target.value)}
               disabled={mutation.isPending}
             />
-          </label>
-          <label className="space-y-1 text-sm md:col-span-3">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
+          </FormField>
+          <FormField label="Notes" className="md:col-span-3">
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional"
               disabled={mutation.isPending}
             />
-          </label>
+          </FormField>
         </div>
 
         <div className="flex items-center justify-between">
@@ -396,17 +390,15 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
                   }}
                 />
               </div>
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">UOM</span>
+              <FormField label="UOM">
                 <Input
                   value={line.uom}
                   onChange={(e) => updateComponent(idx, { uom: e.target.value })}
                   disabled={mutation.isPending}
                 />
-              </label>
+              </FormField>
               {ratioMode ? (
-                <label className="space-y-1 text-sm">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">Ratio</span>
+                <FormField label="Ratio">
                   <Input
                     type="number"
                     min={0}
@@ -419,10 +411,9 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
                     }
                     disabled={mutation.isPending}
                   />
-                </label>
+                </FormField>
               ) : (
-                <label className="space-y-1 text-sm">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">Qty per</span>
+                <FormField label="Qty per">
                   <Input
                     type="number"
                     min={0}
@@ -435,10 +426,9 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
                     }
                     disabled={mutation.isPending}
                   />
-                </label>
+                </FormField>
               )}
-              <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Scrap factor</span>
+              <FormField label="Scrap factor">
                 <Input
                   type="number"
                   min={0}
@@ -450,15 +440,14 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
                   }
                   disabled={mutation.isPending}
                 />
-              </label>
-              <label className="space-y-1 text-sm md:col-span-3">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
+              </FormField>
+              <FormField label="Notes" className="md:col-span-3">
                 <Textarea
                   value={line.notes || ''}
                   onChange={(e) => updateComponent(idx, { notes: e.target.value })}
                   disabled={mutation.isPending}
                 />
-              </label>
+              </FormField>
               {components.length > 1 && (
                 <div className="md:col-span-6 flex justify-end">
                   <Button

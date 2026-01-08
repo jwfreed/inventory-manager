@@ -45,7 +45,7 @@ export default function PurchaseOrderCreatePage() {
   )
 
   const itemsQuery = useItemsList(
-    { limit: 200, search: debouncedItemSearch || undefined, active: true },
+    { limit: 200, search: debouncedItemSearch || undefined, lifecycleStatus: 'Active' },
     { staleTime: 60_000, retry: 1 },
   )
 
