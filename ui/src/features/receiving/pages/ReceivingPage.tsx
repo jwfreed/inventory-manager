@@ -19,6 +19,8 @@ import { QcLinesTable } from '../components/QcLinesTable'
 import { QcDetailPanel } from '../components/QcDetailPanel'
 import { PutawayLinesEditor } from '../components/PutawayLinesEditor'
 import { PutawaySummaryTable } from '../components/PutawaySummaryTable'
+import { WorkflowStep } from '../components/WorkflowStep'
+import { EmptyState } from '../components/EmptyState'
 import type { PutawayLineInput, QcDraft, ReceiptLineInput, ReceiptLineOption, ReceiptLineSummary } from '../types'
 import { buildReceiptLines, getQcBreakdown } from '../utils'
 
@@ -783,6 +785,40 @@ export default function ReceivingPage() {
     target.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [currentStep])
 
+  // Keyboard navigation support
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input/textarea
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+        return
+      }
+
+      // Cmd/Ctrl + Enter: Submit current form
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        if (currentStep === 'receipt' && canPostReceipt) {
+          receiptFormRef.current?.requestSubmit()
+        } else if (currentStep === 'qc' && canRecordQc) {
+          onCreateQcEvent()
+        } else if (currentStep === 'putaway' && canCreatePutaway) {
+          putawayFormRef.current?.requestSubmit()
+        }
+      }
+
+      // Numbers 1-3: Jump to workflow step sections
+      if (e.key >= '1' && e.key <= '3' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault()
+        const sections = [receiptFormRef, qcSectionRef, putawayFormRef]
+        const index = parseInt(e.key) - 1
+        sections[index]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [currentStep, canPostReceipt, canRecordQc, canCreatePutaway, onCreateQcEvent])
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -797,7 +833,7 @@ export default function ReceivingPage() {
         description="Confirm receipt, classify QC, and put away accepted quantities."
       >
         <Card>
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] grid-cols-1">
             <div className="space-y-6">
               <form id="receipt-form" ref={receiptFormRef} className="space-y-4" onSubmit={onCreateReceipt}>
                 <div className="rounded-lg border border-slate-200 p-3 space-y-3">
@@ -931,16 +967,18 @@ export default function ReceivingPage() {
                   </div>
                 </div>
                 {!recentReceiptsQuery.isLoading && (recentReceiptsQuery.data?.data?.length ?? 0) === 0 && (
-                  <div className="text-sm text-slate-600">No receipts yet.</div>
+                  <EmptyState variant="no-receipts" />
                 )}
                 {recentReceiptsQuery.isLoading && <LoadingSpinner label="Loading recent receipts..." />}
                 {!recentReceiptsQuery.isLoading && (recentReceiptsQuery.data?.data?.length ?? 0) > 0 && (
-                  <RecentReceiptsTable
-                    receipts={recentReceiptsQuery.data?.data ?? []}
-                    onLoad={updateReceiptIdForPutaway}
-                    onVoid={(id) => voidReceiptMutation.mutate(id)}
-                    voidDisabled={voidReceiptMutation.isPending}
-                  />
+                  <div className="overflow-x-auto -mx-3 px-3">
+                    <RecentReceiptsTable
+                      receipts={recentReceiptsQuery.data?.data ?? []}
+                      onLoad={updateReceiptIdForPutaway}
+                      onVoid={(id) => voidReceiptMutation.mutate(id)}
+                      voidDisabled={voidReceiptMutation.isPending}
+                    />
+                  </div>
                 )}
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="space-y-1 text-sm">
@@ -989,7 +1027,7 @@ export default function ReceivingPage() {
                     />
                   </div>
                 ) : (
-                  <div className="text-sm text-slate-600">Load a receipt to start QC.</div>
+                  <EmptyState variant="no-qc-lines" />
                 )}
               </div>
 
@@ -1008,6 +1046,39 @@ export default function ReceivingPage() {
                     {putawayReady ? 'Ready' : 'Draft'}
                   </Badge>
                 </div>
+                
+                {/* Surface blocking conditions prominently */}
+                {putawayBlockingLine && (
+                  <Alert
+                    variant="warning"
+                    title="⚠️ Putaway blocked"
+                    message={`Line ${putawayBlockingLine.id.slice(0, 8)}... has Hold > 0 and Accept = 0. Review QC to unblock.`}
+                    action={
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setSelectedQcLineId(putawayBlockingLine.id)}
+                      >
+                        Review line
+                      </Button>
+                    }
+                  />
+                )}
+                {putawayQcIssues.length > 0 && !putawayBlockingLine && (
+                  <Alert
+                    variant="warning"
+                    title="⚠️ Putaway blocked by QC"
+                    message={`${putawayQcIssues.length} line(s) have no available quantity. Complete QC classification first.`}
+                  />
+                )}
+                {putawayQuantityIssues.length > 0 && (
+                  <Alert
+                    variant="warning"
+                    title="⚠️ Quantities exceed available"
+                    message={`${putawayQuantityIssues.length} line(s) exceed available quantity. Reduce quantities to continue.`}
+                  />
+                )}
+
                 <PutawayLinesEditor
                   lines={putawayLines}
                   receiptLineOptions={receiptLineOptions}
@@ -1022,173 +1093,177 @@ export default function ReceivingPage() {
 
             <aside
               ref={workflowRailRef}
-              className={`space-y-4 self-start ${isWorkflowSticky ? 'sticky top-4' : ''}`}
+              className="space-y-4 self-start lg:sticky lg:top-4 lg:max-w-[340px]"
             >
               <div className="rounded-lg border border-slate-200 bg-white p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-500">Workflow</div>
-                <div className="mt-2 space-y-2">
-                  {stepper.map((step, idx) => {
-                    const isCurrent = step.key === currentStep
-                    const isComplete = step.complete
-                    const badgeVariant = isComplete ? 'success' : step.blocked ? 'warning' : isCurrent ? 'info' : 'neutral'
-                    const badgeLabel = isComplete ? 'Done' : step.blocked ? 'Blocked' : isCurrent ? 'Current' : 'Next'
-                    return (
-                      <div key={step.key} className="rounded-md border border-slate-200 px-2 py-2">
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm font-semibold text-slate-800">
-                            {idx + 1}. {step.label}
-                          </div>
-                          <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+                <div className="text-xs uppercase tracking-wide text-slate-500 mb-3">Workflow</div>
+                <div className="space-y-2">
+                  <WorkflowStep
+                    stepNumber={1}
+                    label="Confirm receipt"
+                    variant={stepper[0].complete ? 'complete' : stepper[0].blocked ? 'blocked' : currentStep === 'receipt' ? 'current' : 'pending'}
+                    blockedReason={stepper[0].blocked}
+                    summary={stepper[0].complete ? `${resolvedReceiptLineInputs.length} lines received` : undefined}
+                    defaultExpanded={currentStep === 'receipt'}
+                  >
+                    {currentStep === 'receipt' && (
+                      <div className="space-y-3">
+                        {receiptMutation.isError && (
+                          <Alert
+                            variant="error"
+                            title="Receipt not saved"
+                            message={
+                              receiptErrorMap[getErrorMessage(receiptMutation.error, '')] ??
+                              getErrorMessage(receiptMutation.error, 'Unable to save receipt.')
+                            }
+                          />
+                        )}
+                        {receiptMutation.isPending && (
+                          <Alert
+                            variant="info"
+                            title="Posting receipt"
+                            message="Recording arrival. Inventory becomes usable after QC + putaway."
+                          />
+                        )}
+                        {receiptMutation.isSuccess && receiptMutation.data && (
+                          <Alert
+                            variant="success"
+                            title="Receipt posted"
+                            message={`Receipt ${receiptMutation.data.id.slice(0, 8)}… posted.`}
+                            action={
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => updateReceiptIdForPutaway(receiptMutation.data?.id ?? '')}
+                              >
+                                Load receipt
+                              </Button>
+                            }
+                          />
+                        )}
+                        {receiptPostedForSelectedPo && !receiptMutation.isPending && (
+                          <Alert
+                            variant="info"
+                            title="Receipt already posted"
+                            message="Load it below to continue with QC and putaway."
+                          />
+                        )}
+                        {receiptLineSummary.missingReasons.length > 0 && (
+                          <Alert
+                            variant="warning"
+                            title="Discrepancy reason required"
+                            message="Add a reason for each line where received ≠ expected."
+                          />
+                        )}
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Discrepancies</div>
+                          <ReceiptSummaryPanel
+                            summary={receiptLineSummary}
+                            totalLines={resolvedReceiptLineInputs.length}
+                            discrepancyLabels={discrepancyLabels}
+                          />
                         </div>
-                        {step.blocked && (
-                          <div className="mt-1 text-xs text-amber-700">Blocked: {step.blocked}</div>
+                        <Button
+                          type="submit"
+                          form="receipt-form"
+                          size="sm"
+                          disabled={!canPostReceipt}
+                        >
+                          {receiptMutation.isPending ? 'Posting…' : 'Post receipt'}
+                        </Button>
+                      </div>
+                    )}
+                  </WorkflowStep>
+
+                  <WorkflowStep
+                    stepNumber={2}
+                    label="QC classification"
+                    variant={stepper[1].complete ? 'complete' : stepper[1].blocked ? 'blocked' : currentStep === 'qc' ? 'current' : 'pending'}
+                    blockedReason={stepper[1].blocked}
+                    summary={stepper[1].complete ? 'All lines classified' : undefined}
+                    defaultExpanded={currentStep === 'qc'}
+                  >
+                    {currentStep === 'qc' && (
+                      <div className="space-y-3">
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Selected line</div>
+                          {selectedQcLine ? (
+                            <div className="mt-2 grid gap-2">
+                              {[
+                                { label: 'Received', value: selectedLineTotals.received },
+                                { label: 'Accepted', value: selectedLineTotals.accepted },
+                                { label: 'Hold', value: selectedLineTotals.hold },
+                                { label: 'Rejected', value: selectedLineTotals.reject },
+                                { label: 'Remaining', value: selectedLineTotals.remaining },
+                              ].map((card) => (
+                                <div key={card.label} className="flex items-center justify-between text-sm text-slate-700">
+                                  <span>{card.label}</span>
+                                  <span className="font-semibold text-slate-900">{formatNumber(card.value)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-slate-600 mt-2">Select a QC line to continue.</div>
+                          )}
+                        </div>
+                        {!receiptQuery.data && (
+                          <Alert
+                            variant="info"
+                            title="Load a receipt"
+                            message="Select a receipt to start QC classification."
+                          />
+                        )}
+                        {receiptQuery.data && !selectedQcLine && (
+                          <Alert
+                            variant="info"
+                            title="Select a line to QC"
+                            message="Pick a receipt line to classify accepted, hold, or rejected quantities."
+                          />
+                        )}
+                        {selectedQcLine && (
+                          <QcDetailPanel
+                            line={selectedQcLine}
+                            qcStats={selectedQcStats ?? { accept: 0, hold: 0, reject: 0, remaining: 0 }}
+                            qcRemaining={qcRemaining}
+                            qcEventType={qcEventType}
+                            qcQuantity={qcQuantity}
+                            qcReasonCode={qcReasonCode}
+                            qcNotes={qcNotes}
+                            qcQuantityInvalid={qcQuantityInvalid}
+                            canRecordQc={canRecordQc}
+                            qcEvents={qcEventsList}
+                            qcEventsLoading={qcEventsQuery.isLoading}
+                            qcEventsError={qcEventsQuery.isError}
+                            lastEvent={activeLastQcEvent}
+                            mutationErrorMessage={
+                              qcEventMutation.isError
+                                ? qcErrorMap[getErrorMessage(qcEventMutation.error, '')] ??
+                                  getErrorMessage(qcEventMutation.error, 'Unable to record QC event.')
+                                : undefined
+                            }
+                            mutationPending={qcEventMutation.isPending}
+                            onEventTypeChange={(eventType) => updateQcDraft({ eventType })}
+                            onQuantityChange={(value) => updateQcDraft({ quantity: value })}
+                            onReasonCodeChange={(value) => updateQcDraft({ reasonCode: value })}
+                            onNotesChange={(value) => updateQcDraft({ notes: value })}
+                            onRecord={onCreateQcEvent}
+                            putawayAvailable={selectedPutawayAvailable}
+                            putawayBlockedReason={selectedQcLine.putawayBlockedReason}
+                          />
                         )}
                       </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {currentStep === 'receipt' && (
-                <div className="space-y-3">
-                  {receiptMutation.isError && (
-                    <Alert
-                      variant="error"
-                      title="Receipt not saved"
-                      message={
-                        receiptErrorMap[getErrorMessage(receiptMutation.error, '')] ??
-                        getErrorMessage(receiptMutation.error, 'Unable to save receipt.')
-                      }
-                    />
-                  )}
-                  {receiptMutation.isPending && (
-                    <Alert
-                      variant="info"
-                      title="Posting receipt"
-                      message="Recording arrival. Inventory becomes usable after QC + putaway."
-                    />
-                  )}
-                  {receiptMutation.isSuccess && receiptMutation.data && (
-                    <Alert
-                      variant="success"
-                      title="Receipt posted"
-                      message={`Receipt ${receiptMutation.data.id.slice(0, 8)}… posted.`}
-                      action={
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => updateReceiptIdForPutaway(receiptMutation.data?.id ?? '')}
-                        >
-                          Load receipt
-                        </Button>
-                      }
-                    />
-                  )}
-                  {receiptPostedForSelectedPo && !receiptMutation.isPending && (
-                    <Alert
-                      variant="info"
-                      title="Receipt already posted"
-                      message="Load it below to continue with QC and putaway."
-                    />
-                  )}
-                  {receiptLineSummary.missingReasons.length > 0 && (
-                    <Alert
-                      variant="warning"
-                      title="Discrepancy reason required"
-                      message="Add a reason for each line where received ≠ expected."
-                    />
-                  )}
-                  <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Discrepancies</div>
-                    <ReceiptSummaryPanel
-                      summary={receiptLineSummary}
-                      totalLines={resolvedReceiptLineInputs.length}
-                      discrepancyLabels={discrepancyLabels}
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    form="receipt-form"
-                    size="sm"
-                    disabled={!canPostReceipt}
-                  >
-                    {receiptMutation.isPending ? 'Posting…' : 'Post receipt'}
-                  </Button>
-                </div>
-              )}
-
-              {currentStep === 'qc' && (
-                <div className="space-y-3">
-                  <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Selected line</div>
-                    {selectedQcLine ? (
-                      <div className="mt-2 grid gap-2">
-                        {[
-                          { label: 'Received', value: selectedLineTotals.received },
-                          { label: 'Accepted', value: selectedLineTotals.accepted },
-                          { label: 'Hold', value: selectedLineTotals.hold },
-                          { label: 'Rejected', value: selectedLineTotals.reject },
-                          { label: 'Remaining', value: selectedLineTotals.remaining },
-                        ].map((card) => (
-                          <div key={card.label} className="flex items-center justify-between text-sm text-slate-700">
-                            <span>{card.label}</span>
-                            <span className="font-semibold text-slate-900">{formatNumber(card.value)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-slate-600">Select a QC line to continue.</div>
                     )}
-                  </div>
-                  {!receiptQuery.data && (
-                    <Alert
-                      variant="info"
-                      title="Load a receipt"
-                      message="Select a receipt to start QC classification."
-                    />
-                  )}
-                  {receiptQuery.data && !selectedQcLine && (
-                    <Alert
-                      variant="info"
-                      title="Select a line to QC"
-                      message="Pick a receipt line to classify accepted, hold, or rejected quantities."
-                    />
-                  )}
-                  {selectedQcLine && (
-                    <QcDetailPanel
-                      line={selectedQcLine}
-                      qcStats={selectedQcStats ?? { accept: 0, hold: 0, reject: 0, remaining: 0 }}
-                      qcRemaining={qcRemaining}
-                      qcEventType={qcEventType}
-                      qcQuantity={qcQuantity}
-                      qcReasonCode={qcReasonCode}
-                      qcNotes={qcNotes}
-                      qcQuantityInvalid={qcQuantityInvalid}
-                      canRecordQc={canRecordQc}
-                      qcEvents={qcEventsList}
-                      qcEventsLoading={qcEventsQuery.isLoading}
-                      qcEventsError={qcEventsQuery.isError}
-                      lastEvent={activeLastQcEvent}
-                      mutationErrorMessage={
-                        qcEventMutation.isError
-                          ? qcErrorMap[getErrorMessage(qcEventMutation.error, '')] ??
-                            getErrorMessage(qcEventMutation.error, 'Unable to record QC event.')
-                          : undefined
-                      }
-                      mutationPending={qcEventMutation.isPending}
-                      onEventTypeChange={(eventType) => updateQcDraft({ eventType })}
-                      onQuantityChange={(value) => updateQcDraft({ quantity: value })}
-                      onReasonCodeChange={(value) => updateQcDraft({ reasonCode: value })}
-                      onNotesChange={(value) => updateQcDraft({ notes: value })}
-                      onRecord={onCreateQcEvent}
-                      putawayAvailable={selectedPutawayAvailable}
-                      putawayBlockedReason={selectedQcLine.putawayBlockedReason}
-                    />
-                  )}
-                </div>
-              )}
+                  </WorkflowStep>
 
-              {currentStep === 'putaway' && (
+                  <WorkflowStep
+                    stepNumber={3}
+                    label="Putaway"
+                    variant={stepper[2].complete ? 'complete' : stepper[2].blocked ? 'blocked' : currentStep === 'putaway' ? 'current' : 'pending'}
+                    blockedReason={stepper[2].blocked}
+                    summary={stepper[2].complete ? 'Putaway completed' : undefined}
+                    defaultExpanded={currentStep === 'putaway'}
+                  >
+                    {currentStep === 'putaway' && (
                 <div className="space-y-3">
                   {putawayMutation.isError && (
                     <Alert
@@ -1246,36 +1321,6 @@ export default function ReceivingPage() {
                   {putawayFillNotice && (
                     <Alert variant="info" title="No putaway lines added" message={putawayFillNotice} />
                   )}
-                  {putawayQcIssues.length > 0 && (
-                    <Alert
-                      variant="warning"
-                      title="Putaway blocked by QC"
-                      message="Some lines have no available quantity for putaway."
-                    />
-                  )}
-                  {putawayQuantityIssues.length > 0 && (
-                    <Alert
-                      variant="warning"
-                      title="Reduce quantities"
-                      message="One or more lines exceed the available quantity."
-                    />
-                  )}
-                  {putawayBlockingLine && (
-                    <Alert
-                      variant="warning"
-                      title="Putaway blocked"
-                      message="Hold > 0 and Accept = 0 on a line."
-                      action={
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setSelectedQcLineId(putawayBlockingLine.id)}
-                        >
-                          Review line
-                        </Button>
-                      }
-                    />
-                  )}
                   <div className="rounded-lg border border-slate-200 bg-white p-3">
                     <div className="text-xs uppercase tracking-wide text-slate-500">Rule</div>
                     <div className="text-sm text-slate-700">
@@ -1319,8 +1364,11 @@ export default function ReceivingPage() {
                   >
                     {postPutawayMutation.isPending ? 'Posting…' : 'Post putaway'}
                   </Button>
+                      </div>
+                    )}
+                  </WorkflowStep>
                 </div>
-              )}
+              </div>
             </aside>
           </div>
         </Card>
@@ -1333,6 +1381,21 @@ export default function ReceivingPage() {
           </Card>
         </Section>
       )}
+
+      {/* Keyboard shortcuts hint */}
+      <div className="mt-8 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">Keyboard Shortcuts</div>
+        <div className="grid gap-2 md:grid-cols-3 text-xs text-slate-600">
+          <div>
+            <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono">⌘/Ctrl + Enter</kbd>
+            <span className="ml-2">Submit current step</span>
+          </div>
+          <div>
+            <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono">1-3</kbd>
+            <span className="ml-2">Jump to workflow step</span>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

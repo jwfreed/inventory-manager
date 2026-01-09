@@ -9,8 +9,8 @@ type Props = {
 
 export function ReceiptSummaryPanel({ summary, totalLines, discrepancyLabels }: Props) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="text-sm font-semibold text-slate-800">Step 3: Review summary</div>
+    <div className="space-y-2">
+      <div className="text-xs font-semibold text-slate-700">Summary</div>
       <div className="mt-2 grid gap-2 md:grid-cols-3 text-sm text-slate-700">
         <div>
           Lines received: {summary.receivedLines.length} / {totalLines}
@@ -61,10 +61,7 @@ export function ReceiptSummaryPanel({ summary, totalLines, discrepancyLabels }: 
         </div>
       )}
       <p className="mt-2 text-xs text-slate-500">
-        Posting creates an auditable receipt record. Inventory becomes available only after QC acceptance and putaway.
-      </p>
-      <p className="mt-1 text-xs text-slate-500">
-        Discrepancy reasons and notes are stored per line for auditability.
+        Post to record receipt. QC and putaway required before inventory is usable.
       </p>
     </div>
   )

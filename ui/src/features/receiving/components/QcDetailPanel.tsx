@@ -95,6 +95,46 @@ export function QcDetailPanel({
         <div>Rejected: {qcStats.reject}</div>
         <div>Remaining: {qcStats.remaining}</div>
       </div>
+
+      {/* Quick actions for common case */}
+      {qcRemaining > 0 && (
+        <div className="rounded-lg bg-green-50 border border-green-200 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium text-green-900">Quick Accept</div>
+              <div className="text-xs text-green-700">Accept all remaining quantity ({qcRemaining} {line.uom})</div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                onEventTypeChange('accept')
+                onQuantityChange(qcRemaining)
+                // Auto-submit after short delay to allow user to see the change
+                setTimeout(() => {
+                  if (qcRemaining > 0) onRecord()
+                }, 100)
+              }}
+              disabled={qcRemaining <= 0 || mutationPending}
+            >
+              Accept All
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Detailed classification for exceptions */}
+      <details className="group" open={qcEventType !== 'accept' || (qcQuantity !== '' && qcQuantity !== qcRemaining)}>
+        <summary className="cursor-pointer text-xs uppercase tracking-wide text-slate-500 hover:text-slate-700 select-none">
+          <span className="inline-flex items-center gap-1">
+            Partial or exception classification
+            <svg className="w-4 h-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </span>
+        </summary>
+        <div className="mt-3 space-y-3">
       <div className="grid gap-3 md:grid-cols-3">
         <div>
           <div className="text-xs uppercase tracking-wide text-slate-500">Classify as</div>
@@ -179,6 +219,8 @@ export function QcDetailPanel({
           {mutationPending ? 'Recording...' : 'Record QC'}
         </Button>
       </div>
+        </div>
+      </details>
       <div className="border-t border-slate-200 pt-3">
         <div className="text-xs uppercase tracking-wide text-slate-500">QC events</div>
         {qcEventsLoading && <LoadingSpinner label="Loading QC events..." />}

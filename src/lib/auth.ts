@@ -43,13 +43,16 @@ export function hashToken(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-export function refreshCookieOptions(path: string = '/') {
+export function refreshCookieOptions(path: string = '/', includeMaxAge: boolean = true) {
   const secure = process.env.NODE_ENV === 'production';
-  return {
+  const options: any = {
     httpOnly: true,
     secure,
     sameSite: 'lax' as const,
-    path,
-    maxAge: REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000
+    path
   };
+  if (includeMaxAge) {
+    options.maxAge = REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
+  }
+  return options;
 }

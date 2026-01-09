@@ -35,30 +35,49 @@ export function ReceiptLinesTable({ lines, onLineChange, emptyMessage }: Props) 
           header: 'Received',
           cell: (line) => {
             const expectedQty = line.expectedQty ?? 0
+            const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
+            const delta = receivedQty - expectedQty
+            const hasVariance = delta !== 0
+            const isMatch = delta === 0 && receivedQty > 0
+            
             return (
-              <Input
-                type="number"
-                min={0}
-                value={line.receivedQty}
-                onChange={(e) => {
-                  const nextValue = e.target.value === '' ? '' : Number(e.target.value)
-                  const nextReceived = nextValue === '' ? 0 : Number(nextValue)
-                  const nextDelta = nextReceived - expectedQty
-                  let nextReason = line.discrepancyReason
-                  let nextNotes = line.discrepancyNotes
-                  if (nextDelta === 0) {
-                    nextReason = ''
-                    nextNotes = ''
-                  } else if (!nextReason) {
-                    nextReason = nextDelta > 0 ? 'over' : 'short'
-                  }
-                  onLineChange(line.purchaseOrderLineId, {
-                    receivedQty: nextValue,
-                    discrepancyReason: nextReason,
-                    discrepancyNotes: nextNotes,
-                  })
-                }}
-              />
+              <div className="space-y-1">
+                <Input
+                  type="number"
+                  min={0}
+                  value={line.receivedQty}
+                  onChange={(e) => {
+                    const nextValue = e.target.value === '' ? '' : Number(e.target.value)
+                    const nextReceived = nextValue === '' ? 0 : Number(nextValue)
+                    const nextDelta = nextReceived - expectedQty
+                    let nextReason = line.discrepancyReason
+                    let nextNotes = line.discrepancyNotes
+                    if (nextDelta === 0) {
+                      nextReason = ''
+                      nextNotes = ''
+                    } else if (!nextReason) {
+                      nextReason = nextDelta > 0 ? 'over' : 'short'
+                    }
+                    onLineChange(line.purchaseOrderLineId, {
+                      receivedQty: nextValue,
+                      discrepancyReason: nextReason,
+                      discrepancyNotes: nextNotes,
+                    })
+                  }}
+                  className={`${
+                    isMatch
+                      ? 'border-green-300 bg-green-50 focus:border-green-500 focus:ring-green-500'
+                      : hasVariance
+                        ? 'border-amber-300 bg-amber-50 focus:border-amber-500 focus:ring-amber-500'
+                        : ''
+                  }`}
+                />
+                {hasVariance && (
+                  <div className={`text-xs font-medium ${delta > 0 ? 'text-amber-700' : 'text-amber-700'}`}>
+                    {delta > 0 ? `+${delta}` : delta} {line.uom}
+                  </div>
+                )}
+              </div>
             )
           },
         },
@@ -82,23 +101,6 @@ export function ReceiptLinesTable({ lines, onLineChange, emptyMessage }: Props) 
           cellClassName: 'font-mono',
         },
         {
-          id: 'delta',
-          header: 'Delta',
-          cell: (line) => {
-            const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
-            const expectedQty = line.expectedQty ?? 0
-            const delta = receivedQty - expectedQty
-            const hasVariance = delta !== 0
-            const deltaLabel = hasVariance
-              ? delta > 0
-                ? `Over by ${delta}`
-                : `Short by ${Math.abs(delta)}`
-              : 'On target'
-            const deltaTone = hasVariance ? 'text-amber-700' : 'text-slate-500'
-            return <span className={deltaTone}>{deltaLabel}</span>
-          },
-        },
-        {
           id: 'discrepancy',
           header: 'Discrepancy',
           cell: (line) => {
@@ -110,8 +112,10 @@ export function ReceiptLinesTable({ lines, onLineChange, emptyMessage }: Props) 
             return hasVariance ? (
               <div className="space-y-1">
                 <select
-                  className={`w-full rounded-lg border px-2 py-1 text-sm ${
-                    needsReason ? 'border-amber-300 bg-amber-50' : 'border-slate-200'
+                  className={`w-full rounded-lg border px-2 py-1.5 text-sm transition-colors ${
+                    needsReason 
+                      ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-200' 
+                      : 'border-slate-200 bg-white'
                   }`}
                   value={line.discrepancyReason}
                   onChange={(e) =>
@@ -120,12 +124,15 @@ export function ReceiptLinesTable({ lines, onLineChange, emptyMessage }: Props) 
                     })
                   }
                 >
-                  <option value="">Select reason</option>
+                  <option value="">— Select reason —</option>
                   <option value="short">Short</option>
                   <option value="over">Over</option>
                   <option value="damaged">Damaged</option>
                   <option value="substituted">Substituted</option>
                 </select>
+                {needsReason && (
+                  <div className="text-xs text-amber-700">⚠️ Reason required</div>
+                )}
                 {(line.discrepancyReason === 'damaged' || line.discrepancyReason === 'substituted') && (
                   <Input
                     value={line.discrepancyNotes}
@@ -139,7 +146,7 @@ export function ReceiptLinesTable({ lines, onLineChange, emptyMessage }: Props) 
                 )}
               </div>
             ) : (
-              <span className="text-xs text-slate-500">No variance</span>
+              <span className="text-xs text-slate-500">—</span>
             )
           },
         },

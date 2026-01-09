@@ -113,7 +113,7 @@ async function createSession(res: Response, user: any, membership: any) {
 
   // Clear any legacy refresh cookie scoped to /auth so we don't end up with duplicate refresh_token cookies
   // (e.g., one for /auth and one for /) and accidentally read the wrong one server-side.
-  res.clearCookie('refresh_token', refreshCookieOptions('/auth'));
+  res.clearCookie('refresh_token', refreshCookieOptions('/auth', false));
   res.cookie('refresh_token', refreshToken.raw, refreshCookieOptions('/'));
 
   return {
@@ -307,8 +307,8 @@ router.post('/auth/logout', async (req: Request, res: Response) => {
     );
   }
 
-  res.clearCookie('refresh_token', refreshCookieOptions('/auth'));
-  res.clearCookie('refresh_token', refreshCookieOptions('/'));
+  res.clearCookie('refresh_token', refreshCookieOptions('/auth', false));
+  res.clearCookie('refresh_token', refreshCookieOptions('/', false));
   return res.status(204).send();
 });
 
