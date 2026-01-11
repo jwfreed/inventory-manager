@@ -1,6 +1,8 @@
+import { memo } from 'react'
 import type { PurchaseOrderReceiptLine, QcEvent } from '@api/types'
 import { Alert, Badge, Button, Input, LoadingSpinner, Textarea } from '@shared/ui'
 import { formatDate } from '@shared/formatters'
+import { KeyboardHint } from './KeyboardHint'
 import { getQcStatus } from '../utils'
 
 type Props = {
@@ -118,7 +120,7 @@ export function QcDetailPanel({
               }}
               disabled={qcRemaining <= 0 || mutationPending}
             >
-              Accept All
+              Accept All <KeyboardHint shortcut="A" />
             </Button>
           </div>
         </div>
@@ -254,3 +256,6 @@ export function QcDetailPanel({
     </div>
   )
 }
+
+// Memoize to prevent unnecessary re-renders when parent updates
+export default memo(QcDetailPanel)
