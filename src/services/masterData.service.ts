@@ -23,6 +23,14 @@ const itemSelectColumns = `
   i.weight_uom,
   i.volume,
   i.volume_uom,
+  i.standard_cost,
+  i.average_cost,
+  i.rolled_cost,
+  i.rolled_cost_at,
+  i.cost_method,
+  i.selling_price,
+  i.list_price,
+  i.price_currency,
   i.created_at,
   i.updated_at,
   l.code AS default_location_code,
@@ -47,6 +55,14 @@ export function mapItem(row: any) {
     weightUom: row.weight_uom ?? null,
     volume: row.volume ? Number(row.volume) : null,
     volumeUom: row.volume_uom ?? null,
+    standardCost: row.standard_cost ? Number(row.standard_cost) : null,
+    averageCost: row.average_cost ? Number(row.average_cost) : null,
+    rolledCost: row.rolled_cost ? Number(row.rolled_cost) : null,
+    rolledCostAt: row.rolled_cost_at ?? null,
+    costMethod: row.cost_method ?? null,
+    sellingPrice: row.selling_price ? Number(row.selling_price) : null,
+    listPrice: row.list_price ? Number(row.list_price) : null,
+    priceCurrency: row.price_currency ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -61,8 +77,8 @@ export async function createItem(tenantId: string, data: ItemInput) {
   const defaultLocationId = data.defaultLocationId ?? null;
   await query(
     `INSERT INTO items (
-        id, tenant_id, sku, name, description, type, is_phantom, default_uom, default_location_id, lifecycle_status, weight, weight_uom, volume, volume_uom, standard_cost, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)`,
+        id, tenant_id, sku, name, description, type, is_phantom, default_uom, default_location_id, lifecycle_status, weight, weight_uom, volume, volume_uom, standard_cost, rolled_cost, cost_method, selling_price, list_price, price_currency, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $21)`,
     [
       id,
       tenantId,
@@ -79,6 +95,11 @@ export async function createItem(tenantId: string, data: ItemInput) {
       data.volume ?? null,
       data.volumeUom ?? null,
       data.standardCost ?? null,
+      data.rolledCost ?? null,
+      data.costMethod ?? null,
+      data.sellingPrice ?? null,
+      data.listPrice ?? null,
+      data.priceCurrency ?? null,
       now
     ]
   );
@@ -123,8 +144,13 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
            volume = $11,
            volume_uom = $12,
            standard_cost = $13,
-           updated_at = $14
-     WHERE id = $15 AND tenant_id = $16
+           rolled_cost = $14,
+           cost_method = $15,
+           selling_price = $16,
+           list_price = $17,
+           price_currency = $18,
+           updated_at = $19
+     WHERE id = $20 AND tenant_id = $21
      RETURNING id`,
     [
       data.sku,
@@ -140,6 +166,11 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
       data.volume ?? null,
       data.volumeUom ?? null,
       data.standardCost ?? null,
+      data.rolledCost ?? null,
+      data.costMethod ?? null,
+      data.sellingPrice ?? null,
+      data.listPrice ?? null,
+      data.priceCurrency ?? null,
       now,
       id,
       tenantId

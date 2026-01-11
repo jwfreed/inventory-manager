@@ -18,6 +18,20 @@ export const itemSchema = z.object({
     const num = typeof val === 'string' ? Number(val) : val;
     return num;
   }, z.number().nonnegative().nullable().optional()),
+  rolledCost: z.preprocess((val) => {
+    const num = typeof val === 'string' ? Number(val) : val;
+    return num;
+  }, z.number().nonnegative().nullable().optional()),
+  costMethod: z.enum(['standard', 'rolled', 'avg']).nullable().optional(),
+  sellingPrice: z.preprocess((val) => {
+    const num = typeof val === 'string' ? Number(val) : val;
+    return num;
+  }, z.number().nonnegative().nullable().optional()),
+  listPrice: z.preprocess((val) => {
+    const num = typeof val === 'string' ? Number(val) : val;
+    return num;
+  }, z.number().nonnegative().nullable().optional()),
+  priceCurrency: z.string().length(3).nullable().optional(),
 });
 
 export const locationSchema = z.object({

@@ -1,5 +1,7 @@
 export type ItemType = 'raw' | 'wip' | 'finished' | 'packaging'
 
+export type CostMethod = 'standard' | 'rolled' | 'avg'
+
 export type Item = {
   id: string
   sku: string
@@ -15,6 +17,12 @@ export type Item = {
   abcClass?: 'A' | 'B' | 'C' | null
   standardCost?: number | null
   averageCost?: number | null
+  rolledCost?: number | null
+  rolledCostAt?: string | null
+  costMethod?: CostMethod | null
+  sellingPrice?: number | null
+  listPrice?: number | null
+  priceCurrency?: string | null
   createdAt?: string
   updatedAt?: string
 }
