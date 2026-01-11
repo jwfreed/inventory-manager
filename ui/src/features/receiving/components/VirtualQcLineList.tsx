@@ -1,6 +1,6 @@
 import { useCallback, memo } from 'react'
 import { FixedSizeList as List } from 'react-window'
-import type { PurchaseOrderReceiptLine } from '../types'
+import type { PurchaseOrderReceiptLine } from '@api/types'
 
 type QcLineItemProps = {
   line: PurchaseOrderReceiptLine

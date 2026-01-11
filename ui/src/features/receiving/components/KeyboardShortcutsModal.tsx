@@ -6,6 +6,47 @@ type Props = {
   onClose: () => void
 }
 
+function ShortcutRow({ shortcut }: { shortcut: typeof SHORTCUTS[keyof typeof SHORTCUTS] }) {
+  const hasCtrl = 'ctrl' in shortcut && shortcut.ctrl
+  const hasShift = 'shift' in shortcut && shortcut.shift
+  const hasAlt = 'alt' in shortcut && shortcut.alt
+
+  return (
+    <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-slate-50">
+      <span className="text-sm text-slate-700">{shortcut.description}</span>
+      <div className="flex items-center gap-1">
+        {hasCtrl && (
+          <>
+            <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
+              Ctrl
+            </kbd>
+            <span className="text-slate-400">+</span>
+          </>
+        )}
+        {hasShift && (
+          <>
+            <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
+              Shift
+            </kbd>
+            <span className="text-slate-400">+</span>
+          </>
+        )}
+        {hasAlt && (
+          <>
+            <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
+              Alt
+            </kbd>
+            <span className="text-slate-400">+</span>
+          </>
+        )}
+        <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
+          {shortcut.label.toUpperCase()}
+        </kbd>
+      </div>
+    </div>
+  )
+}
+
 export const KeyboardShortcutsModal = memo(({ onClose }: Props) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -80,47 +121,6 @@ export const KeyboardShortcutsModal = memo(({ onClose }: Props) => {
           </p>
         </div>
       </Card>
-    </div>
-  )
-}
-
-function ShortcutRow({ shortcut }: { shortcut: typeof SHORTCUTS[keyof typeof SHORTCUTS] }) {
-  const hasCtrl = 'ctrl' in shortcut && shortcut.ctrl
-  const hasShift = 'shift' in shortcut && shortcut.shift
-  const hasAlt = 'alt' in shortcut && shortcut.alt
-
-  return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-slate-50">
-      <span className="text-sm text-slate-700">{shortcut.description}</span>
-      <div className="flex items-center gap-1">
-        {hasCtrl && (
-          <>
-            <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
-              Ctrl
-            </kbd>
-            <span className="text-slate-400">+</span>
-          </>
-        )}
-        {hasShift && (
-          <>
-            <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
-              Shift
-            </kbd>
-            <span className="text-slate-400">+</span>
-          </>
-        )}
-        {hasAlt && (
-          <>
-            <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
-              Alt
-            </kbd>
-            <span className="text-slate-400">+</span>
-          </>
-        )}
-        <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
-          {shortcut.label.toUpperCase()}
-        </kbd>
-      </div>
     </div>
   )
 })

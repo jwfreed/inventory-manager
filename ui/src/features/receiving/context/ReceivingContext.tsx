@@ -194,6 +194,7 @@ export type ReceivingContextValue = {
 
 const ReceivingContext = createContext<ReceivingContextValue | null>(null)
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useReceivingContext() {
   const context = useContext(ReceivingContext)
   if (!context) {

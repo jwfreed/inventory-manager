@@ -1,7 +1,6 @@
 import { useCallback, memo } from 'react'
 import { FixedSizeList as List } from 'react-window'
-import type { PurchaseOrderReceipt } from '../types'
-import { formatDistanceToNow } from 'date-fns'
+import type { PurchaseOrderReceipt } from '@api/types'
 
 type ReceiptItemProps = {
   receipt: PurchaseOrderReceipt
@@ -38,7 +37,7 @@ const ReceiptItem = memo(({ receipt, isSelected, onSelect, onClick }: ReceiptIte
         <div>
           <div className="text-xs text-slate-500">Received</div>
           <div className="text-sm text-slate-900">
-            {receipt.receivedAt ? formatDistanceToNow(new Date(receipt.receivedAt), { addSuffix: true }) : 'N/A'}
+            {receipt.receivedAt ? new Date(receipt.receivedAt).toLocaleDateString() : 'N/A'}
           </div>
         </div>
         <div>
