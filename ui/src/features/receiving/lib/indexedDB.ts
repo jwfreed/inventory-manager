@@ -9,7 +9,7 @@ const STORE_NAME = 'pending-operations'
 export type OfflineOperation = {
   id: string
   type: 'qc-event' | 'putaway-create' | 'putaway-post' | 'receipt-create'
-  payload: any
+  payload: Record<string, unknown>
   timestamp: number
   retries: number
   status: 'pending' | 'syncing' | 'error'

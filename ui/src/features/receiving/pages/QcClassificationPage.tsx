@@ -5,7 +5,8 @@ import { QcBatchQueue } from '../components/QcBatchQueue'
 import { QcMetricsChart } from '../components/QcMetricsChart'
 import { ReceiptDocument } from '../components/ReceiptDocument'
 import { SearchFiltersBar } from '../components/SearchFiltersBar'
-import { BulkOperationsBar, createQcBulkActions, BulkActionIcons } from '../components/BulkOperationsBar'
+import { BulkOperationsBar } from '../components/BulkOperationsBar'
+import { createQcBulkActions, BulkActionIcons } from '../components/bulkOperationsHelpers'
 import { KeyboardHint } from '../components/KeyboardHint'
 import { ReceivingLayout } from '../components/ReceivingLayout'
 import { useReceivingContext } from '../context'
@@ -122,7 +123,12 @@ export default function QcClassificationPage() {
 
   const bulkActions = ctx.selectedQcLineIds.size > 0 
     ? [
-        ...createQcBulkActions(ctx.selectedQcLineIds.size, false),
+        ...createQcBulkActions({
+          onBulkAccept: () => handleBulkAction('bulk-accept'),
+          onBulkHold: () => handleBulkAction('bulk-hold'),
+          onBulkReject: () => handleBulkAction('bulk-reject'),
+          isProcessing: false,
+        }),
         {
           id: 'bulk-select-all',
           label: 'Select All',

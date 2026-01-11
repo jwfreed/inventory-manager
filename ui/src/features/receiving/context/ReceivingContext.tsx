@@ -269,19 +269,19 @@ export function ReceivingProvider({ children }: Props) {
   const handleOfflineSync = useCallback(async (operation: OfflineOperation) => {
     switch (operation.type) {
       case 'qc-event':
-        await createQcEvent(operation.payload)
+        await createQcEvent(operation.payload as unknown as QcEventCreatePayload)
         break
       case 'putaway-create':
-        await createPutaway(operation.payload)
+        await createPutaway(operation.payload as unknown as PutawayCreatePayload)
         break
       case 'putaway-post':
-        await postPutaway(operation.payload.putawayId)
+        await postPutaway((operation.payload as { putawayId: string }).putawayId)
         break
       case 'receipt-create':
-        await createReceipt(operation.payload)
+        await createReceipt(operation.payload as unknown as ReceiptCreatePayload)
         break
       default:
-        throw new Error(`Unknown operation type: ${(operation as any).type}`)
+        throw new Error(`Unknown operation type: ${(operation as { type: string }).type}`)
     }
   }, [])
 

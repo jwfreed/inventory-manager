@@ -76,6 +76,7 @@ export function useOfflineQueue(syncHandler: SyncHandler): UseOfflineQueueResult
     if (isOnline && pendingCount > 0 && !isSyncing) {
       syncPendingOperations()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- syncPendingOperations is stable and intentionally excluded
   }, [isOnline, pendingCount, isSyncing])
 
   // Queue an operation
@@ -97,6 +98,7 @@ export function useOfflineQueue(syncHandler: SyncHandler): UseOfflineQueueResult
       console.error('Failed to queue operation:', error)
       throw error
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- syncPendingOperations is stable and intentionally excluded
   }, [isOnline, loadPendingCount, loadPendingOperations])
 
   // Sync all pending operations

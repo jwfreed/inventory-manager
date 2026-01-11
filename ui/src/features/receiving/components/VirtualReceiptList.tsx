@@ -1,5 +1,5 @@
-import { useCallback, memo } from 'react'
-import { FixedSizeList as List } from 'react-window'
+import { memo, useMemo, type CSSProperties, type ReactElement } from 'react'
+import { List } from 'react-window'
 import type { PurchaseOrderReceipt } from '@api/types'
 
 type ReceiptItemProps = {
@@ -32,7 +32,7 @@ const ReceiptItem = memo(({ receipt, isSelected, onSelect, onClick }: ReceiptIte
         </div>
         <div>
           <div className="text-xs text-slate-500">PO Number</div>
-          <div className="text-sm font-medium text-slate-900">{receipt.poNumber || 'N/A'}</div>
+          <div className="text-sm font-medium text-slate-900">{receipt.purchaseOrderNumber || 'N/A'}</div>
         </div>
         <div>
           <div className="text-xs text-slate-500">Received</div>
@@ -59,6 +59,33 @@ const ReceiptItem = memo(({ receipt, isSelected, onSelect, onClick }: ReceiptIte
 
 ReceiptItem.displayName = 'ReceiptItem'
 
+type RowProps = {
+  receipts: PurchaseOrderReceipt[]
+  selectedReceiptIds: Set<string>
+  onSelectReceipt: (receiptId: string) => void
+  onClickReceipt: (receiptId: string) => void
+}
+
+function ReceiptRow({ index, style, receipts, selectedReceiptIds, onSelectReceipt, onClickReceipt }: {
+  index: number
+  style: CSSProperties
+  ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' }
+} & RowProps): ReactElement {
+  const receipt = receipts[index]
+  if (!receipt) return <div style={style} />
+
+  return (
+    <div style={style}>
+      <ReceiptItem
+        receipt={receipt}
+        isSelected={selectedReceiptIds.has(receipt.id)}
+        onSelect={onSelectReceipt}
+        onClick={onClickReceipt}
+      />
+    </div>
+  )
+}
+
 type VirtualReceiptListProps = {
   receipts: PurchaseOrderReceipt[]
   selectedReceiptIds: Set<string>
@@ -76,22 +103,13 @@ export function VirtualReceiptList({
   height = 600,
   itemHeight = 72,
 }: VirtualReceiptListProps) {
-  const Row = useCallback(
-    ({ index, style }: { index: number; style: React.CSSProperties }) => {
-      const receipt = receipts[index]
-      if (!receipt) return null
-
-      return (
-        <div style={style}>
-          <ReceiptItem
-            receipt={receipt}
-            isSelected={selectedReceiptIds.has(receipt.id)}
-            onSelect={onSelectReceipt}
-            onClick={onClickReceipt}
-          />
-        </div>
-      )
-    },
+  const rowProps = useMemo(
+    () => ({
+      receipts,
+      selectedReceiptIds,
+      onSelectReceipt,
+      onClickReceipt,
+    }),
     [receipts, selectedReceiptIds, onSelectReceipt, onClickReceipt],
   )
 
@@ -105,13 +123,12 @@ export function VirtualReceiptList({
 
   return (
     <List
-      height={height}
-      itemCount={receipts.length}
-      itemSize={itemHeight}
-      width="100%"
+      style={{ height, width: '100%' }}
+      rowCount={receipts.length}
+      rowHeight={itemHeight}
+      rowComponent={ReceiptRow}
+      rowProps={rowProps}
       className="scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100"
-    >
-      {Row}
-    </List>
+    />
   )
 }

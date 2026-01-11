@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 import { Button, Card } from '@shared/ui'
 import { formatNumber } from '@shared/formatters'
 import type { ReactNode } from 'react'

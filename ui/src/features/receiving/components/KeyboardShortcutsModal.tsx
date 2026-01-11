@@ -1,44 +1,54 @@
-import { memo } from 'react'
+import { memo, type ReactNode } from 'react'
 import { Card } from '@shared/ui'
 import { SHORTCUTS } from '../hooks/useKeyboardShortcuts'
+
+type ShortcutDef = {
+  key: string
+  label: string
+  description: string
+  ctrl?: boolean
+  alt?: boolean
+  shift?: boolean
+  preventDefault?: boolean
+}
 
 type Props = {
   onClose: () => void
 }
 
-function ShortcutRow({ shortcut }: { shortcut: typeof SHORTCUTS[keyof typeof SHORTCUTS] }) {
-  const hasCtrl = 'ctrl' in shortcut && shortcut.ctrl
-  const hasShift = 'shift' in shortcut && shortcut.shift
-  const hasAlt = 'alt' in shortcut && shortcut.alt
+function ShortcutRow({ shortcut }: { shortcut: ShortcutDef }) {
+  const modifiers: ReactNode[] = []
+
+  if (shortcut.ctrl) {
+    modifiers.push(
+      <kbd key="ctrl" className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
+        Ctrl
+      </kbd>,
+      <span key="ctrl-plus" className="text-slate-400">+</span>
+    )
+  }
+  if (shortcut.shift) {
+    modifiers.push(
+      <kbd key="shift" className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
+        Shift
+      </kbd>,
+      <span key="shift-plus" className="text-slate-400">+</span>
+    )
+  }
+  if (shortcut.alt) {
+    modifiers.push(
+      <kbd key="alt" className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
+        Alt
+      </kbd>,
+      <span key="alt-plus" className="text-slate-400">+</span>
+    )
+  }
 
   return (
     <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-slate-50">
       <span className="text-sm text-slate-700">{shortcut.description}</span>
       <div className="flex items-center gap-1">
-        {hasCtrl && (
-          <>
-            <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
-              Ctrl
-            </kbd>
-            <span className="text-slate-400">+</span>
-          </>
-        )}
-        {hasShift && (
-          <>
-            <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
-              Shift
-            </kbd>
-            <span className="text-slate-400">+</span>
-          </>
-        )}
-        {hasAlt && (
-          <>
-            <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
-              Alt
-            </kbd>
-            <span className="text-slate-400">+</span>
-          </>
-        )}
+        {modifiers}
         <kbd className="px-2 py-1 rounded text-xs font-mono bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">
           {shortcut.label.toUpperCase()}
         </kbd>

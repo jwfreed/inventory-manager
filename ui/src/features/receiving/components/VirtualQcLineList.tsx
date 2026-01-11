@@ -1,5 +1,5 @@
-import { useCallback, memo } from 'react'
-import { FixedSizeList as List } from 'react-window'
+import { memo, useMemo, type CSSProperties, type ReactElement } from 'react'
+import { List } from 'react-window'
 import type { PurchaseOrderReceiptLine } from '@api/types'
 
 type QcLineItemProps = {
@@ -10,7 +10,17 @@ type QcLineItemProps = {
   onClick: (lineId: string) => void
 }
 
+function calculatePercentComplete(qcSummary: PurchaseOrderReceiptLine['qcSummary']): number {
+  if (!qcSummary) return 0
+  const total = qcSummary.totalQcQuantity
+  if (total === 0) return 0
+  const processed = total - qcSummary.remainingUninspectedQuantity
+  return Math.round((processed / total) * 100)
+}
+
 const QcLineItem = memo(({ line, isActive, isSelected, onSelect, onClick }: QcLineItemProps) => {
+  const percentComplete = calculatePercentComplete(line.qcSummary)
+
   return (
     <div
       className={`
@@ -54,7 +64,7 @@ const QcLineItem = memo(({ line, isActive, isSelected, onSelect, onClick }: QcLi
           <div className="w-full bg-slate-200 rounded-full h-2 mt-1">
             <div
               className="bg-green-600 h-2 rounded-full"
-              style={{ width: `${line.qcSummary?.percentComplete ?? 0}%` }}
+              style={{ width: `${percentComplete}%` }}
             />
           </div>
         </div>
@@ -64,6 +74,35 @@ const QcLineItem = memo(({ line, isActive, isSelected, onSelect, onClick }: QcLi
 })
 
 QcLineItem.displayName = 'QcLineItem'
+
+type RowProps = {
+  lines: PurchaseOrderReceiptLine[]
+  activeLineId: string | null
+  selectedLineIds: Set<string>
+  onSelectLine: (lineId: string) => void
+  onClickLine: (lineId: string) => void
+}
+
+function QcRow({ index, style, lines, activeLineId, selectedLineIds, onSelectLine, onClickLine }: {
+  index: number
+  style: CSSProperties
+  ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' }
+} & RowProps): ReactElement {
+  const line = lines[index]
+  if (!line) return <div style={style} />
+
+  return (
+    <div style={style}>
+      <QcLineItem
+        line={line}
+        isActive={line.id === activeLineId}
+        isSelected={selectedLineIds.has(line.id)}
+        onSelect={onSelectLine}
+        onClick={onClickLine}
+      />
+    </div>
+  )
+}
 
 type VirtualQcLineListProps = {
   lines: PurchaseOrderReceiptLine[]
@@ -84,23 +123,14 @@ export function VirtualQcLineList({
   height = 600,
   itemHeight = 80,
 }: VirtualQcLineListProps) {
-  const Row = useCallback(
-    ({ index, style }: { index: number; style: React.CSSProperties }) => {
-      const line = lines[index]
-      if (!line) return null
-
-      return (
-        <div style={style}>
-          <QcLineItem
-            line={line}
-            isActive={line.id === activeLineId}
-            isSelected={selectedLineIds.has(line.id)}
-            onSelect={onSelectLine}
-            onClick={onClickLine}
-          />
-        </div>
-      )
-    },
+  const rowProps = useMemo(
+    () => ({
+      lines,
+      activeLineId,
+      selectedLineIds,
+      onSelectLine,
+      onClickLine,
+    }),
     [lines, activeLineId, selectedLineIds, onSelectLine, onClickLine],
   )
 
@@ -114,13 +144,12 @@ export function VirtualQcLineList({
 
   return (
     <List
-      height={height}
-      itemCount={lines.length}
-      itemSize={itemHeight}
-      width="100%"
+      style={{ height, width: '100%' }}
+      rowCount={lines.length}
+      rowHeight={itemHeight}
+      rowComponent={QcRow}
+      rowProps={rowProps}
       className="scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100"
-    >
-      {Row}
-    </List>
+    />
   )
 }
