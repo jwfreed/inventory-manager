@@ -18,6 +18,27 @@ export const salesOrderLineSchema = z.object({
   itemId: uuid(),
   uom: z.string().min(1).max(32),
   quantityOrdered: z.number().positive(),
+  unitPrice: z.preprocess((val) => {
+    if (val === null || val === undefined) return null;
+    const num = typeof val === 'string' ? Number(val) : val;
+    return num;
+  }, z.number().nonnegative().nullable().optional()),
+  currencyCode: z.string().length(3).toUpperCase().nullable().optional(),
+  exchangeRateToBase: z.preprocess((val) => {
+    if (val === null || val === undefined) return null;
+    const num = typeof val === 'string' ? Number(val) : val;
+    return num;
+  }, z.number().positive().nullable().optional()),
+  lineAmount: z.preprocess((val) => {
+    if (val === null || val === undefined) return null;
+    const num = typeof val === 'string' ? Number(val) : val;
+    return num;
+  }, z.number().nonnegative().nullable().optional()),
+  baseAmount: z.preprocess((val) => {
+    if (val === null || val === undefined) return null;
+    const num = typeof val === 'string' ? Number(val) : val;
+    return num;
+  }, z.number().nonnegative().nullable().optional()),
   notes: z.string().max(1000).optional(),
 });
 

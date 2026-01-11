@@ -21,6 +21,11 @@ export type SalesOrderLine = {
   itemId?: string
   uom?: string
   quantityOrdered?: number
+  unitPrice?: number | null
+  currencyCode?: string | null
+  exchangeRateToBase?: number | null
+  lineAmount?: number | null
+  baseAmount?: number | null
   notes?: string | null
 }
 

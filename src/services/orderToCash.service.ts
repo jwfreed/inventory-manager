@@ -50,6 +50,11 @@ export function mapSalesOrder(row: any, lines: any[]) {
       itemId: line.item_id,
       uom: line.uom,
       quantityOrdered: line.quantity_ordered,
+      unitPrice: line.unit_price != null ? Number(line.unit_price) : null,
+      currencyCode: line.currency_code ?? null,
+      exchangeRateToBase: line.exchange_rate_to_base != null ? Number(line.exchange_rate_to_base) : null,
+      lineAmount: line.line_amount != null ? Number(line.line_amount) : null,
+      baseAmount: line.base_amount != null ? Number(line.base_amount) : null,
       notes: line.notes,
       createdAt: line.created_at,
     })),
@@ -94,8 +99,9 @@ export async function createSalesOrder(tenantId: string, data: SalesOrderInput) 
 
       const lineResult = await client.query(
         `INSERT INTO sales_order_lines (
-          id, tenant_id, sales_order_id, line_number, item_id, uom, quantity_ordered, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          id, tenant_id, sales_order_id, line_number, item_id, uom, quantity_ordered,
+          unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING *`,
         [
           uuidv4(),
@@ -105,6 +111,11 @@ export async function createSalesOrder(tenantId: string, data: SalesOrderInput) 
           line.itemId,
           line.uom,
           line.quantityOrdered,
+          line.unitPrice ?? null,
+          line.currencyCode ?? null,
+          line.exchangeRateToBase ?? null,
+          line.lineAmount ?? null,
+          line.baseAmount ?? null,
           line.notes ?? null,
         ],
       );

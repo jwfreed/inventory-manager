@@ -38,10 +38,12 @@ import metricsRouter from './routes/metrics.routes';
 import supplierPerformanceRouter from './routes/supplierPerformance.routes';
 import productionOverviewRouter from './routes/productionOverview.routes';
 import costLayersRouter from './routes/costLayers.routes';
+import costsRouter from './routes/costs.routes';
 import { requireAuth } from './middleware/auth.middleware';
 import { destructiveGuard } from './middleware/destructiveGuard.middleware';
 import { registerJob, startScheduler, stopScheduler } from './jobs/scheduler';
 import { recalculateMetrics } from './jobs/metricsRecalculation.job';
+import { syncExchangeRates } from './jobs/exchangeRateSync.job';
 
 const PORT = Number(process.env.PORT) || 3000;
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
@@ -122,6 +124,7 @@ app.use('/metrics', metricsRouter);
 app.use('/supplier-performance', supplierPerformanceRouter);
 app.use(productionOverviewRouter);
 app.use('/api/cost-layers', costLayersRouter);
+app.use('/api', costsRouter);
 app.use(licensePlatesRouter);
 app.use(pickingRouter);
 app.use(shippingContainersRouter);
@@ -146,6 +149,13 @@ registerJob(
   'metrics-recalculation',
   '0 2 * * *', // 02:00 UTC daily
   recalculateMetrics,
+  true
+);
+
+registerJob(
+  'exchange-rate-sync',
+  '0 6 * * *', // 06:00 UTC daily
+  syncExchangeRates,
   true
 );
 

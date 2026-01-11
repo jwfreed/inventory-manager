@@ -71,7 +71,12 @@ export function mapPurchaseOrder(row: any, lines: any[]) {
       itemName: line.item_name ?? null,
       uom: line.uom,
       quantityOrdered: line.quantity_ordered,
+      unitCost: line.unit_cost != null ? Number(line.unit_cost) : null,
       unitPrice: line.unit_price != null ? Number(line.unit_price) : null,
+      currencyCode: line.currency_code ?? null,
+      exchangeRateToBase: line.exchange_rate_to_base != null ? Number(line.exchange_rate_to_base) : null,
+      lineAmount: line.line_amount != null ? Number(line.line_amount) : null,
+      baseAmount: line.base_amount != null ? Number(line.base_amount) : null,
       notes: line.notes,
       createdAt: line.created_at
     }))
@@ -120,7 +125,10 @@ async function generatePoNumber(client: PoolClient) {
 
 async function loadLinesWithItems(client: PoolClient, tenantId: string, poId: string) {
   const { rows } = await client.query(
-    `SELECT pol.*, i.sku AS item_sku, i.name AS item_name
+    `SELECT pol.id, pol.purchase_order_id, pol.line_number, pol.item_id, pol.uom,
+            pol.quantity_ordered, pol.unit_cost, pol.unit_price, pol.currency_code,
+            pol.exchange_rate_to_base, pol.line_amount, pol.base_amount, pol.notes,
+            pol.created_at, i.sku AS item_sku, i.name AS item_name
        FROM purchase_order_lines pol
        LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = pol.tenant_id
       WHERE pol.purchase_order_id = $1 AND pol.tenant_id = $2
@@ -178,8 +186,9 @@ export async function createPurchaseOrder(
     for (const line of normalizedLines) {
       await client.query(
         `INSERT INTO purchase_order_lines (
-            id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered, unit_price, notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered,
+            unit_cost, unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING id`,
         [
           uuidv4(),
@@ -189,7 +198,12 @@ export async function createPurchaseOrder(
           line.itemId,
           line.uom,
           line.quantityOrdered,
+          line.unitCost ?? null,
           line.unitPrice ?? null,
+          line.currencyCode ?? null,
+          line.exchangeRateToBase ?? null,
+          line.lineAmount ?? null,
+          line.baseAmount ?? null,
           line.notes ?? null
         ]
       );
@@ -311,8 +325,9 @@ export async function updatePurchaseOrder(
       for (const line of normalizedLines) {
         await client.query(
           `INSERT INTO purchase_order_lines (
-              id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered, unit_price, notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered,
+              unit_cost, unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
           [
             uuidv4(),
             tenantId,
@@ -321,7 +336,12 @@ export async function updatePurchaseOrder(
             line.itemId,
             line.uom,
             line.quantityOrdered,
+            line.unitCost ?? null,
             line.unitPrice ?? null,
+            line.currencyCode ?? null,
+            line.exchangeRateToBase ?? null,
+            line.lineAmount ?? null,
+            line.baseAmount ?? null,
             line.notes ?? null
           ]
         );

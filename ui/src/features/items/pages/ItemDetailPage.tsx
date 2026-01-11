@@ -22,6 +22,7 @@ import { BomCard } from '../../boms/components/BomCard'
 import { InventorySnapshotTable } from '../../inventory/components/InventorySnapshotTable'
 import { UomConversionsCard } from '../components/UomConversionsCard'
 import { RoutingsCard } from '../../routings/components/RoutingsCard'
+import { ItemCostBreakdown } from '../components/ItemCostBreakdown'
 
 const typeLabels: Record<string, string> = {
   raw: 'Raw',
@@ -286,6 +287,19 @@ export default function ItemDetailPage() {
             />
           </Section>
         </div>
+      )}
+
+      {itemQuery.data && (itemQuery.data.type === 'wip' || itemQuery.data.type === 'finished') && (
+        <ItemCostBreakdown
+          itemId={itemQuery.data.id}
+          itemSku={itemQuery.data.sku}
+          itemName={itemQuery.data.name}
+          itemType={itemQuery.data.type}
+          rolledCost={itemQuery.data.rolledCost}
+          rolledCostAt={itemQuery.data.rolledCostAt}
+          costMethod={itemQuery.data.costMethod}
+          activeBomVersionId={bomSummary.activeVersion?.id}
+        />
       )}
 
       <Section
