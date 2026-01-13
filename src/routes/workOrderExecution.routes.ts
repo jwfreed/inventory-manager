@@ -157,6 +157,12 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
     if (error?.message === 'WO_DISASSEMBLY_INPUT_MISMATCH') {
       return res.status(400).json({ error: 'Disassembly issues must consume the selected item.' });
     }
+    if (error?.message === 'WO_WIP_COST_LAYERS_MISSING') {
+      return res.status(409).json({ error: 'FIFO cost layers required to post work order issues.' });
+    }
+    if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post work order issue.' });
   }
@@ -275,6 +281,15 @@ router.post('/work-orders/:id/completions/:completionId/post', async (req: Reque
     if (error?.message === 'WO_COMPLETION_INVALID_QUANTITY') {
       return res.status(400).json({ error: 'Completion quantities must be greater than zero.' });
     }
+    if (error?.message === 'WO_WIP_COST_NO_CONSUMPTIONS') {
+      return res.status(409).json({ error: 'No unallocated issue costs available for WIP valuation.' });
+    }
+    if (error?.message === 'WO_WIP_COST_INVALID_OUTPUT_QTY') {
+      return res.status(400).json({ error: 'Completion quantities could not be canonicalized for WIP valuation.' });
+    }
+    if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post work order completion.' });
   }
@@ -384,6 +399,18 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
     }
     if (error?.message?.startsWith('WO_BATCH_INVALID')) {
       return res.status(400).json({ error: 'Quantities must be greater than zero.' });
+    }
+    if (error?.message === 'WO_WIP_COST_LAYERS_MISSING') {
+      return res.status(409).json({ error: 'FIFO cost layers required to record work order batch.' });
+    }
+    if (error?.message === 'WO_WIP_COST_NO_CONSUMPTIONS') {
+      return res.status(409).json({ error: 'No issue costs available for WIP valuation.' });
+    }
+    if (error?.message === 'WO_WIP_COST_INVALID_OUTPUT_QTY') {
+      return res.status(400).json({ error: 'Produced quantities could not be canonicalized for WIP valuation.' });
+    }
+    if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
+      return res.status(400).json({ error: error.message });
     }
     const mapped = mapPgErrorToHttp(error, {
       foreignKey: () => ({

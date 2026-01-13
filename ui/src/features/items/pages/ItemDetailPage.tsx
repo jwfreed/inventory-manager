@@ -22,7 +22,6 @@ import { BomCard } from '../../boms/components/BomCard'
 import { InventorySnapshotTable } from '../../inventory/components/InventorySnapshotTable'
 import { UomConversionsCard } from '../components/UomConversionsCard'
 import { RoutingsCard } from '../../routings/components/RoutingsCard'
-import { ItemCostBreakdown } from '../components/ItemCostBreakdown'
 import { useAuth } from '@shared/auth'
 
 const typeLabels: Record<string, string> = {
@@ -111,17 +110,25 @@ export default function ItemDetailPage() {
     return map
   }, [locationsQuery.data])
   const totalsByUom = useMemo(() => {
-    const map = new Map<string, { onHand: number; available: number; reserved: number; held: number; rejected: number }>()
+    const map = new Map<
+      string,
+      { onHand: number; available: number; reserved: number; held: number; rejected: number; isLegacy: boolean }
+    >()
     stockRows.forEach((row) => {
-      const current = map.get(row.uom) ?? { onHand: 0, available: 0, reserved: 0, held: 0, rejected: 0 }
+      const key = `${row.uom}:${row.isLegacy ? 'legacy' : 'canonical'}`
+      const current =
+        map.get(key) ?? { onHand: 0, available: 0, reserved: 0, held: 0, rejected: 0, isLegacy: !!row.isLegacy }
       current.onHand += row.onHand
       current.available += row.available
       current.reserved += row.reserved
       current.held += row.held
       current.rejected += row.rejected
-      map.set(row.uom, current)
+      map.set(key, current)
     })
-    return Array.from(map.entries()).map(([uom, totals]) => ({ uom, ...totals }))
+    return Array.from(map.entries()).map(([key, totals]) => {
+      const [uom] = key.split(':')
+      return { uom, ...totals }
+    })
   }, [stockRows])
   const selectedLocationLabel = useMemo(() => {
     if (!selectedLocationId) return 'All locations'
@@ -399,19 +406,6 @@ export default function ItemDetailPage() {
         </div>
       )}
 
-      {itemQuery.data && (itemQuery.data.type === 'wip' || itemQuery.data.type === 'finished') && (
-        <ItemCostBreakdown
-          itemId={itemQuery.data.id}
-          itemSku={itemQuery.data.sku}
-          itemName={itemQuery.data.name}
-          itemType={itemQuery.data.type}
-          rolledCost={itemQuery.data.rolledCost}
-          rolledCostAt={itemQuery.data.rolledCostAt}
-          costMethod={itemQuery.data.costMethod}
-          activeBomVersionId={bomSummary.activeVersion?.id}
-        />
-      )}
-
       <Section
         title="Stock (authoritative)"
         description="This is the definitive view of on-hand and availability for this item. Use the location scope to narrow."
@@ -483,9 +477,13 @@ export default function ItemDetailPage() {
               <>
                 <div className="mb-4 grid gap-3 md:grid-cols-3">
                   {totalsByUom.map((totals) => (
-                    <div key={totals.uom} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div
+                      key={`${totals.uom}-${totals.isLegacy ? 'legacy' : 'canonical'}`}
+                      className="rounded-lg border border-slate-200 bg-white p-3"
+                    >
                       <div className="text-xs uppercase tracking-wide text-slate-500">
                         Total available (usable) ({totals.uom})
+                        {totals.isLegacy ? ' · legacy' : ''}
                       </div>
                       <div className="mt-1 text-2xl font-semibold text-slate-900">
                         {formatNumber(totals.available)}

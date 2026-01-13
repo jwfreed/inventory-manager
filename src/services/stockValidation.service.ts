@@ -1,7 +1,8 @@
 import { getInventoryNegativePolicy } from '../config/inventoryPolicy';
 import { getInventorySnapshot, getInventorySnapshotSummary } from './inventorySnapshot.service';
-import { roundQuantity, toNumber } from '../lib/numbers';
+import { toNumber } from '../lib/numbers';
 import { getLocation, getItem, convertQuantity } from './masterData.service';
+import { convertToCanonical } from './uomCanonical.service';
 
 export type StockValidationLine = {
   itemId: string;
@@ -57,14 +58,20 @@ export async function validateSufficientStock(
   const grouped = new Map<string, StockValidationLine>();
 
   for (const line of lines) {
-    const qty = roundQuantity(toNumber(line.quantityToConsume));
+    const qty = toNumber(line.quantityToConsume);
     if (qty <= 0) continue;
-    const key = `${line.itemId}:${line.locationId}:${line.uom}`;
+    const canonical = await convertToCanonical(tenantId, line.itemId, qty, line.uom);
+    const key = `${line.itemId}:${line.locationId}:${canonical.canonicalUom}`;
     const existing = grouped.get(key);
     if (existing) {
-      existing.quantityToConsume = roundQuantity(existing.quantityToConsume + qty);
+      existing.quantityToConsume = existing.quantityToConsume + canonical.quantity;
     } else {
-      grouped.set(key, { ...line, quantityToConsume: qty });
+      grouped.set(key, {
+        itemId: line.itemId,
+        locationId: line.locationId,
+        uom: canonical.canonicalUom,
+        quantityToConsume: canonical.quantity
+      });
     }
   }
 
@@ -82,8 +89,8 @@ export async function validateSufficientStock(
       uom: line.uom
     });
     const availableRow = snapshot.find((row) => row.uom === line.uom);
-    const available = roundQuantity(toNumber(availableRow?.available ?? 0));
-    const requested = roundQuantity(line.quantityToConsume);
+    const available = toNumber(availableRow?.available ?? 0);
+    const requested = line.quantityToConsume;
     if (requested - available > 1e-6) {
       shortages.push({
         itemId: line.itemId,
@@ -91,7 +98,7 @@ export async function validateSufficientStock(
         uom: line.uom,
         requested,
         available,
-        shortage: roundQuantity(requested - available)
+        shortage: requested - available
       });
     }
   }

@@ -28,3 +28,14 @@ export function normalizeMassQuantity(quantity: number, uom: string): Normalized
 export function normalizeQuantityByUom(quantity: number, uom: string): NormalizedQuantity {
   return normalizeMassQuantity(quantity, uom);
 }
+
+export function getMassConversionFactor(fromUom: string, toUom: string): number | null {
+  const fromKey = fromUom.toLowerCase();
+  const toKey = toUom.toLowerCase();
+  const fromFactor = MASS_FACTORS[fromKey];
+  const toFactor = MASS_FACTORS[toKey];
+  if (!fromFactor || !toFactor) {
+    return null;
+  }
+  return fromFactor / toFactor;
+}

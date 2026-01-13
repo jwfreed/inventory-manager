@@ -1,6 +1,16 @@
 import { z } from 'zod';
 import { ItemLifecycleStatus } from '../types/item';
 
+const uomDimensionSchema = z.enum(['mass', 'volume', 'count', 'length', 'area', 'time']);
+const canonicalUomByDimension: Record<z.infer<typeof uomDimensionSchema>, string> = {
+  mass: 'kg',
+  volume: 'L',
+  count: 'each',
+  length: 'm',
+  area: 'm2',
+  time: 'seconds',
+};
+
 export const itemSchema = z.object({
   sku: z.string().min(1).max(255),
   name: z.string().min(1).max(255),
@@ -9,6 +19,9 @@ export const itemSchema = z.object({
   type: z.enum(['raw', 'wip', 'finished', 'packaging']).default('raw'),
   isPhantom: z.boolean().default(false),
   defaultUom: z.string().min(1).max(50).nullable().optional(),
+  uomDimension: uomDimensionSchema.nullable().optional(),
+  canonicalUom: z.string().min(1).max(32).nullable().optional(),
+  stockingUom: z.string().min(1).max(50).nullable().optional(),
   defaultLocationId: z.string().uuid().nullable().optional(),
   weight: z.number().positive().nullable().optional(),
   weightUom: z.string().max(50).nullable().optional(),
@@ -33,6 +46,28 @@ export const itemSchema = z.object({
     return num;
   }, z.number().nonnegative().nullable().optional()),
   priceCurrency: z.string().length(3).nullable().optional(),
+}).superRefine((data, ctx) => {
+  const hasAny =
+    data.uomDimension !== undefined ||
+    data.canonicalUom !== undefined ||
+    data.stockingUom !== undefined;
+  if (!hasAny) return;
+  if (!data.uomDimension || !data.canonicalUom || !data.stockingUom) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'uomDimension, canonicalUom, and stockingUom must be provided together.',
+      path: ['uomDimension'],
+    });
+    return;
+  }
+  const expected = canonicalUomByDimension[data.uomDimension];
+  if (data.canonicalUom !== expected) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `canonicalUom must be ${expected} for ${data.uomDimension}.`,
+      path: ['canonicalUom'],
+    });
+  }
 });
 
 export const locationSchema = z.object({

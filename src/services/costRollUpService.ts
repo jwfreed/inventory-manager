@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { query, withTransaction, pool } from '../db';
 import type { PoolClient } from 'pg';
+import { convertToCanonical } from './uomCanonical.service';
 
 /**
  * Component cost snapshot for history tracking
@@ -35,6 +36,10 @@ type BomComponentRow = {
   component_item_type: string;
   component_quantity: string | number;
   component_uom: string;
+  component_quantity_canonical: string | number | null;
+  component_uom_canonical: string | null;
+  component_uom_dimension: string | null;
+  component_stocking_uom: string | null;
   scrap_factor: string | number | null;
   standard_cost: string | number | null;
   rolled_cost: string | number | null;
@@ -62,8 +67,12 @@ async function getBomComponents(
        i.sku AS component_item_sku,
        i.name AS component_item_name,
        i.type AS component_item_type,
+       i.stocking_uom AS component_stocking_uom,
        bvl.component_quantity,
        bvl.component_uom,
+       bvl.component_quantity_canonical,
+       bvl.component_uom_canonical,
+       bvl.component_uom_dimension,
        bvl.scrap_factor,
        COALESCE(i.standard_cost_base, i.standard_cost) AS standard_cost,
        i.rolled_cost,
@@ -77,6 +86,42 @@ async function getBomComponents(
   );
 
   return result.rows;
+}
+
+async function getComponentUnitCostInCanonicalUom(
+  tenantId: string,
+  component: BomComponentRow,
+  conversionCache: Map<string, number | null>
+): Promise<number> {
+  const baseUnitCost = getComponentCost(component);
+  const canonicalUom = component.component_uom_canonical;
+  if (!canonicalUom) {
+    throw new Error('BOM_LEGACY_COMPONENTS');
+  }
+  const stockingUom = component.component_stocking_uom;
+  if (!stockingUom || stockingUom === canonicalUom) {
+    return baseUnitCost;
+  }
+  const cacheKey = `${component.component_item_id}:${stockingUom}->${canonicalUom}`;
+  if (conversionCache.has(cacheKey)) {
+    const cached = conversionCache.get(cacheKey);
+    if (!cached) {
+      throw new Error('UOM_CONVERSION_MISSING');
+    }
+    return baseUnitCost / cached;
+  }
+  const canonical = await convertToCanonical(
+    tenantId,
+    component.component_item_id,
+    1,
+    stockingUom
+  );
+  const factor = canonical.quantity;
+  conversionCache.set(cacheKey, factor);
+  if (!factor || Number.isNaN(factor) || factor <= 0) {
+    throw new Error('UOM_CONVERSION_INVALID');
+  }
+  return baseUnitCost / factor;
 }
 
 /**
@@ -126,13 +171,17 @@ export async function calculateBomCost(
   client?: PoolClient
 ): Promise<BomCostBreakdown> {
   const components = await getBomComponents(tenantId, bomVersionId, client);
+  const conversionCache = new Map<string, number | null>();
   
   let totalCost = 0;
   const componentSnapshots: ComponentCostSnapshot[] = [];
 
   for (const component of components) {
-    const unitCost = getComponentCost(component);
-    const quantityPer = Number(component.component_quantity);
+    if (component.component_quantity_canonical === null || component.component_uom_canonical === null) {
+      throw new Error('BOM_LEGACY_COMPONENTS');
+    }
+    const unitCost = await getComponentUnitCostInCanonicalUom(tenantId, component, conversionCache);
+    const quantityPer = Number(component.component_quantity_canonical);
     const scrapFactor = component.scrap_factor !== null ? Number(component.scrap_factor) : 0;
     
     // Calculate extended cost with scrap
@@ -145,7 +194,7 @@ export async function calculateBomCost(
       componentSku: component.component_item_sku ?? '',
       componentName: component.component_item_name ?? '',
       quantityPer,
-      uom: component.component_uom,
+      uom: component.component_uom_canonical,
       unitCost,
       extendedCost: Math.round(extendedCost * 1000000) / 1000000, // Round to 6 decimals
       scrapFactor
@@ -331,7 +380,7 @@ export async function isRolledCostStale(
   const result = await query<{
     cost_method: string | null;
     rolled_cost: string | number | null;
-    latest_snapshot: string | null;
+    latest_snapshot: unknown;
     bom_version_id: string | null;
   }>(
     `SELECT 
@@ -371,7 +420,21 @@ export async function isRolledCostStale(
 
   // Get current component costs
   const components = await getBomComponents(tenantId, row.bom_version_id);
-  const snapshot: ComponentCostSnapshot[] = JSON.parse(row.latest_snapshot);
+  const conversionCache = new Map<string, number | null>();
+  let snapshot: ComponentCostSnapshot[] | null = null;
+  if (Array.isArray(row.latest_snapshot)) {
+    snapshot = row.latest_snapshot as ComponentCostSnapshot[];
+  } else if (typeof row.latest_snapshot === 'string') {
+    try {
+      const parsed = JSON.parse(row.latest_snapshot);
+      snapshot = Array.isArray(parsed) ? (parsed as ComponentCostSnapshot[]) : null;
+    } catch {
+      snapshot = null;
+    }
+  }
+  if (!snapshot || snapshot.length === 0) {
+    return false;
+  }
 
   // Check if any component cost has changed
   for (const snapshotComponent of snapshot) {
@@ -384,7 +447,11 @@ export async function isRolledCostStale(
       return true;
     }
 
-    const currentUnitCost = getComponentCost(currentComponent);
+    const currentUnitCost = await getComponentUnitCostInCanonicalUom(
+      tenantId,
+      currentComponent,
+      conversionCache
+    );
     if (Math.abs(currentUnitCost - snapshotComponent.unitCost) > 0.000001) {
       // Cost changed - stale
       return true;

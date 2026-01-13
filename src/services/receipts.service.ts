@@ -12,7 +12,6 @@ import {
 } from './inbound/receivingAggregations';
 import type { QcBreakdown } from './inbound/receivingAggregations';
 import { roundQuantity, toNumber } from '../lib/numbers';
-import { normalizeQuantityByUom } from '../lib/uom';
 import { query as baseQuery } from '../db';
 import { updatePoStatusFromReceipts } from './status/purchaseOrdersStatus.service';
 import { recordAuditLog } from '../lib/audit';
@@ -260,9 +259,9 @@ export async function createPurchaseOrderReceipt(
     );
 
     for (const line of data.lines) {
-      const normalized = normalizeQuantityByUom(line.quantityReceived, line.uom);
+      const receivedQty = toNumber(line.quantityReceived);
       const expectedQty = roundQuantity(toNumber(poLineMap.get(line.purchaseOrderLineId)?.quantity_ordered ?? 0));
-      const hasDiscrepancy = Math.abs(roundQuantity(normalized.quantity) - expectedQty) > 1e-6;
+      const hasDiscrepancy = Math.abs(roundQuantity(receivedQty) - expectedQty) > 1e-6;
       if (hasDiscrepancy && !line.discrepancyReason) {
         throw new Error('RECEIPT_DISCREPANCY_REASON_REQUIRED');
       }
@@ -281,8 +280,8 @@ export async function createPurchaseOrderReceipt(
           tenantId,
           receiptId,
           line.purchaseOrderLineId,
-          normalized.uom,
-          normalized.quantity,
+          line.uom,
+          receivedQty,
           expectedQty,
           unitCost,
           line.discrepancyReason ?? null,
@@ -295,7 +294,7 @@ export async function createPurchaseOrderReceipt(
         await updateMovingAverageCost(
           tenantId,
           poLine.item_id,
-          normalized.quantity,
+          receivedQty,
           unitCost,
           client
         );

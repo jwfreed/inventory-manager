@@ -1,5 +1,4 @@
-import { query } from '../db';
-import { upsertExchangeRate } from '../services/currencies.service';
+import { ensureCurrenciesExist, upsertExchangeRate } from '../services/currencies.service';
 
 /**
  * In-memory job lock to prevent overlapping runs
@@ -84,6 +83,8 @@ export async function syncExchangeRates(): Promise<void> {
     console.log(`   Base currency: ${baseCurrency}`);
     console.log(`   Effective date: ${apiData.date}`);
     console.log(`   Rates received: ${Object.keys(apiData.rates).length}`);
+
+    await ensureCurrenciesExist([baseCurrency, ...Object.keys(apiData.rates)]);
 
     // Upsert rates from base currency to each target
     for (const [targetCurrency, rate] of Object.entries(apiData.rates)) {

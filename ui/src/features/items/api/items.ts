@@ -4,6 +4,9 @@ import type { Item, ItemInventoryRow } from '../../../api/types'
 type ItemApiRow = Item & {
   type?: Item['type']
   default_uom?: string | null
+  uom_dimension?: Item['uomDimension'] | null
+  canonical_uom?: string | null
+  stocking_uom?: string | null
   default_location_id?: string | null
   default_location_code?: string | null
   default_location_name?: string | null
@@ -12,9 +15,6 @@ type ItemApiRow = Item & {
   standard_cost_exchange_rate_to_base?: number | null
   standard_cost_base?: number | null
   average_cost?: number | null
-  rolled_cost?: number | null
-  rolled_cost_at?: string | null
-  cost_method?: Item['costMethod'] | null
   selling_price?: number | null
   list_price?: number | null
   price_currency?: string | null
@@ -30,6 +30,9 @@ export type ItemPayload = {
   isPhantom?: boolean
   lifecycleStatus?: Item['lifecycleStatus']
   defaultUom?: string | null
+  uomDimension?: Item['uomDimension'] | null
+  canonicalUom?: string | null
+  stockingUom?: string | null
   defaultLocationId?: string | null
   standardCost?: number
   standardCostCurrency?: string | null
@@ -67,7 +70,10 @@ function mapItem(row: ItemApiRow): Item {
     type: row.type ?? 'raw',
     isPhantom: !!row.isPhantom,
     lifecycleStatus: row.lifecycleStatus,
-    defaultUom: row.defaultUom ?? row.default_uom ?? null,
+    defaultUom: row.defaultUom ?? row.default_uom ?? row.stocking_uom ?? null,
+    uomDimension: row.uomDimension ?? row.uom_dimension ?? null,
+    canonicalUom: row.canonicalUom ?? row.canonical_uom ?? null,
+    stockingUom: row.stockingUom ?? row.stocking_uom ?? null,
     defaultLocationId: row.defaultLocationId ?? row.default_location_id ?? null,
     defaultLocationCode: row.defaultLocationCode ?? row.default_location_code ?? null,
     defaultLocationName: row.defaultLocationName ?? row.default_location_name ?? null,
@@ -77,9 +83,6 @@ function mapItem(row: ItemApiRow): Item {
       row.standardCostExchangeRateToBase ?? row.standard_cost_exchange_rate_to_base ?? null,
     standardCostBase: row.standardCostBase ?? row.standard_cost_base ?? null,
     averageCost: row.averageCost ?? row.average_cost ?? null,
-    rolledCost: row.rolledCost ?? row.rolled_cost ?? null,
-    rolledCostAt: row.rolledCostAt ?? row.rolled_cost_at ?? null,
-    costMethod: row.costMethod ?? row.cost_method ?? null,
     sellingPrice: row.sellingPrice ?? row.selling_price ?? null,
     listPrice: row.listPrice ?? row.list_price ?? null,
     priceCurrency: row.priceCurrency ?? row.price_currency ?? null,
@@ -130,4 +133,17 @@ export async function getItemMetrics(id: string, windowDays?: number): Promise<I
   if (windowDays) params.set('windowDays', String(windowDays))
   const suffix = params.toString() ? `?${params.toString()}` : ''
   return apiGet<ItemMetrics>(`/items/${id}/metrics${suffix}`)
+}
+
+export async function getItemsMetrics(
+  itemIds: string[],
+  windowDays?: number
+): Promise<ItemMetrics[]> {
+  if (itemIds.length === 0) return []
+  const response = await apiPost<ItemMetrics[] | { data?: ItemMetrics[] }>('/items/metrics', {
+    itemIds,
+    windowDays,
+  })
+  if (Array.isArray(response)) return response
+  return response.data ?? []
 }

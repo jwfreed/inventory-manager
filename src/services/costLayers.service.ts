@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import type { PoolClient } from 'pg';
 import { query, pool } from '../db';
 
 /**
@@ -44,6 +45,8 @@ export interface CostLayerConsumption {
   consumption_type: 'issue' | 'production_input' | 'sale' | 'adjustment' | 'scrap' | 'transfer_out';
   consumption_document_id?: string;
   movement_id?: string;
+  wip_execution_id?: string;
+  wip_allocated_at?: Date;
   consumed_at: Date;
   notes?: string;
   created_at: Date;
@@ -62,6 +65,7 @@ interface CreateLayerParams {
   lot_id?: string;
   layer_date?: Date;
   notes?: string;
+  client?: PoolClient;
 }
 
 interface ConsumeLayersParams {
@@ -75,6 +79,7 @@ interface ConsumeLayersParams {
   consumed_at?: Date;
   lot_id?: string; // If specified, only consume from this lot
   notes?: string;
+  client?: PoolClient;
 }
 
 interface ConsumeLayersResult {
@@ -95,9 +100,10 @@ export async function createCostLayer(params: CreateLayerParams): Promise<CostLa
   const id = uuidv4();
   const layer_date = params.layer_date || new Date();
   const extended_cost = params.quantity * params.unit_cost;
+  const executor = params.client ? params.client.query.bind(params.client) : query;
 
   // Get next sequence number for this date
-  const seqResult = await query<{ max_seq: number }>(
+  const seqResult = await executor<{ max_seq: number }>(
     `SELECT COALESCE(MAX(layer_sequence), 0) as max_seq
      FROM inventory_cost_layers
      WHERE tenant_id = $1 
@@ -108,7 +114,7 @@ export async function createCostLayer(params: CreateLayerParams): Promise<CostLa
   );
   const layer_sequence = (seqResult.rows[0]?.max_seq || 0) + 1;
 
-  const result = await query<CostLayer>(
+  const result = await executor<CostLayer>(
     `INSERT INTO inventory_cost_layers (
       id, tenant_id, item_id, location_id, uom,
       layer_date, layer_sequence,
@@ -147,8 +153,10 @@ export async function getAvailableLayers(
   tenant_id: string,
   item_id: string,
   location_id: string,
-  lot_id?: string
+  lot_id?: string,
+  client?: PoolClient
 ): Promise<CostLayer[]> {
+  const executor = client ? client.query.bind(client) : query;
   let sql = `
     SELECT * FROM inventory_cost_layers
     WHERE tenant_id = $1 
@@ -165,7 +173,7 @@ export async function getAvailableLayers(
 
   sql += ` ORDER BY layer_date ASC, layer_sequence ASC`;
 
-  const result = await query<CostLayer>(sql, params);
+  const result = await executor<CostLayer>(sql, params);
   return result.rows;
 }
 
@@ -174,17 +182,22 @@ export async function getAvailableLayers(
  * Returns the total cost and records all consumptions
  */
 export async function consumeCostLayers(params: ConsumeLayersParams): Promise<ConsumeLayersResult> {
-  const client = await pool.connect();
+  const externalClient = params.client;
+  const client = externalClient ?? (await pool.connect());
+  const ownsClient = !externalClient;
   
   try {
-    await client.query('BEGIN');
+    if (ownsClient) {
+      await client.query('BEGIN');
+    }
 
     // Get available layers in FIFO order
     const layers = await getAvailableLayers(
       params.tenant_id,
       params.item_id,
       params.location_id,
-      params.lot_id
+      params.lot_id,
+      client
     );
 
     if (layers.length === 0) {
@@ -260,7 +273,9 @@ export async function consumeCostLayers(params: ConsumeLayersParams): Promise<Co
       remaining_to_consume -= consume_from_layer;
     }
 
-    await client.query('COMMIT');
+    if (ownsClient) {
+      await client.query('COMMIT');
+    }
 
     const weighted_average_cost = total_cost / params.quantity;
 
@@ -271,10 +286,14 @@ export async function consumeCostLayers(params: ConsumeLayersParams): Promise<Co
     };
 
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (ownsClient) {
+      await client.query('ROLLBACK');
+    }
     throw error;
   } finally {
-    client.release();
+    if (ownsClient) {
+      client.release();
+    }
   }
 }
 

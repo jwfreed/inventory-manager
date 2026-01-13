@@ -8,7 +8,7 @@ import {
   salesOrderSchema,
   shipmentSchema,
 } from '../schemas/orderToCash.schema';
-import { normalizeQuantityByUom } from '../lib/uom';
+import { convertToCanonical } from './uomCanonical.service';
 import { getItem } from './masterData.service';
 import { ItemLifecycleStatus } from '../types/item';
 
@@ -191,7 +191,13 @@ export async function createReservations(tenantId: string, data: ReservationCrea
   const results: any[] = [];
   await withTransaction(async (client) => {
     for (const reservation of data.reservations) {
-      const normalized = normalizeQuantityByUom(reservation.quantityReserved, reservation.uom);
+      const canonical = await convertToCanonical(
+        tenantId,
+        reservation.itemId,
+        reservation.quantityReserved,
+        reservation.uom,
+        client
+      );
       const res = await client.query(
         `INSERT INTO inventory_reservations (
           id, tenant_id, status, demand_type, demand_id, item_id, location_id, uom,
@@ -206,8 +212,8 @@ export async function createReservations(tenantId: string, data: ReservationCrea
           reservation.demandId,
           reservation.itemId,
           reservation.locationId,
-          normalized.uom,
-          normalized.quantity,
+          canonical.canonicalUom,
+          canonical.quantity,
           reservation.quantityFulfilled ?? null,
           reservation.status === 'open' ? now : now,
           reservation.notes ?? null,

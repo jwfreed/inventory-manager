@@ -3,11 +3,11 @@ import type { z } from 'zod';
 import { query, withTransaction } from '../db';
 import { qcEventSchema } from '../schemas/qc.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
-import { normalizeQuantityByUom } from '../lib/uom';
 import { recordAuditLog } from '../lib/audit';
 import { createNcr, findMrbLocation } from './ncr.service';
 import { calculateMovementCost } from './costing.service';
 import { createCostLayer } from './costLayers.service';
+import { getCanonicalMovementFields } from './uomCanonical.service';
 
 export type QcEventInput = z.infer<typeof qcEventSchema>;
 
@@ -65,10 +65,10 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
         'SELECT COALESCE(SUM(quantity), 0) AS total FROM qc_events WHERE purchase_order_receipt_line_id = $1 AND tenant_id = $2',
         [sourceId, tenantId]
       );
-      const normalized = normalizeQuantityByUom(data.quantity, data.uom);
-      const currentTotal = roundQuantity(toNumber(totalResult.rows[0]?.total ?? 0));
-      const lineQuantity = roundQuantity(toNumber(line.quantity_received));
-      if (roundQuantity(currentTotal + normalized.quantity) - lineQuantity > 1e-6) {
+      const enteredQty = toNumber(data.quantity);
+      const currentTotal = toNumber(totalResult.rows[0]?.total ?? 0);
+      const lineQuantity = toNumber(line.quantity_received);
+      if (currentTotal + enteredQty - lineQuantity > 1e-6) {
         throw new Error('QC_EXCEEDS_RECEIPT');
       }
     } else if (data.workOrderExecutionLineId) {
@@ -93,10 +93,10 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
         'SELECT COALESCE(SUM(quantity), 0) AS total FROM qc_events WHERE work_order_execution_line_id = $1 AND tenant_id = $2',
         [sourceId, tenantId]
       );
-      const normalized = normalizeQuantityByUom(data.quantity, data.uom);
-      const currentTotal = roundQuantity(toNumber(totalResult.rows[0]?.total ?? 0));
-      const lineQuantity = roundQuantity(toNumber(line.quantity));
-      if (roundQuantity(currentTotal + normalized.quantity) - lineQuantity > 1e-6) {
+      const enteredQty = toNumber(data.quantity);
+      const currentTotal = toNumber(totalResult.rows[0]?.total ?? 0);
+      const lineQuantity = toNumber(line.quantity);
+      if (currentTotal + enteredQty - lineQuantity > 1e-6) {
         throw new Error('QC_EXCEEDS_EXECUTION');
       }
     } else if (data.workOrderId) {
@@ -120,10 +120,10 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
           'SELECT COALESCE(SUM(quantity), 0) AS total FROM qc_events WHERE work_order_id = $1 AND tenant_id = $2',
           [sourceId, tenantId]
         );
-        const normalized = normalizeQuantityByUom(data.quantity, data.uom);
-        const currentTotal = roundQuantity(toNumber(totalResult.rows[0]?.total ?? 0));
-        const woQuantity = roundQuantity(toNumber(wo.quantity_completed));
-        if (roundQuantity(currentTotal + normalized.quantity) - woQuantity > 1e-6) {
+        const enteredQty = toNumber(data.quantity);
+        const currentTotal = toNumber(totalResult.rows[0]?.total ?? 0);
+        const woQuantity = toNumber(wo.quantity_completed);
+        if (currentTotal + enteredQty - woQuantity > 1e-6) {
           throw new Error('QC_EXCEEDS_WORK_ORDER');
         }
       }
@@ -131,7 +131,7 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
       throw new Error('QC_SOURCE_REQUIRED');
     }
 
-    const normalized = normalizeQuantityByUom(data.quantity, data.uom);
+    const enteredQty = toNumber(data.quantity);
 
     const { rows } = await client.query(
       `INSERT INTO qc_events (
@@ -146,8 +146,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
         data.workOrderId ?? null,
         data.workOrderExecutionLineId ?? null,
         data.eventType,
-        normalized.quantity,
-        normalized.uom,
+        enteredQty,
+        data.uom,
         data.reasonCode ?? null,
         data.notes ?? null,
         data.actorType,
@@ -169,8 +169,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
           sourceType,
           sourceId,
           eventType: data.eventType,
-          quantity: normalized.quantity,
-          uom: normalized.uom,
+          quantity: enteredQty,
+          uom: data.uom,
           reasonCode: data.reasonCode ?? null
         }
       },
@@ -221,7 +221,7 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
         );
         
         // Calculate cost for QC receive movement
-        const costData = await calculateMovementCost(tenantId, itemId, normalized.quantity, client);
+        const costData = await calculateMovementCost(tenantId, itemId, enteredQty, client);
         
         // Create cost layer for QC accepted inventory
         try {
@@ -230,8 +230,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
               tenant_id: tenantId,
               item_id: itemId,
               location_id: destLocationId,
-              uom: normalized.uom,
-              quantity: normalized.quantity,
+              uom: data.uom,
+              quantity: enteredQty,
               unit_cost: costData.unitCost || 0,
               source_type: 'receipt',
               source_document_id: created.id,
@@ -243,22 +243,36 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
           console.warn('Failed to create cost layer for QC event:', err);
         }
         
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          itemId,
+          enteredQty,
+          data.uom,
+          client
+        );
         await client.query(
           `INSERT INTO inventory_movement_lines (
-              id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+              id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
+              quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
+              unit_cost, extended_cost, reason_code, line_notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
           [
             uuidv4(),
             tenantId,
             movementId,
             itemId,
             loc,
-            normalized.quantity,
-            normalized.uom,
+            enteredQty,
+            data.uom,
+            canonicalFields.quantityDeltaEntered,
+            canonicalFields.uomEntered,
+            canonicalFields.quantityDeltaCanonical,
+            canonicalFields.canonicalUom,
+            canonicalFields.uomDimension,
             costData.unitCost,
             costData.extendedCost,
             reasonCode,
-            `QC ${data.eventType} ${normalized.quantity} ${normalized.uom}`
+            `QC ${data.eventType} ${enteredQty} ${data.uom}`
           ]
         );
         await client.query(
@@ -281,20 +295,34 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
           );
           
           // Calculate cost for QC transfer movements
-          const costDataOut = await calculateMovementCost(tenantId, itemId, -normalized.quantity, client);
+          const costDataOut = await calculateMovementCost(tenantId, itemId, -enteredQty, client);
+          const canonicalOut = await getCanonicalMovementFields(
+            tenantId,
+            itemId,
+            -enteredQty,
+            data.uom,
+            client
+          );
           
           await client.query(
             `INSERT INTO inventory_movement_lines (
-                id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
+                quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
+                unit_cost, extended_cost, reason_code, line_notes
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
             [
               uuidv4(),
               tenantId,
               movementId,
               itemId,
               sourceLocationId,
-              -normalized.quantity,
-              normalized.uom,
+              -enteredQty,
+              data.uom,
+              canonicalOut.quantityDeltaEntered,
+              canonicalOut.uomEntered,
+              canonicalOut.quantityDeltaCanonical,
+              canonicalOut.canonicalUom,
+              canonicalOut.uomDimension,
               costDataOut.unitCost,
               costDataOut.extendedCost,
               `${reasonCode}_out`,
@@ -302,20 +330,34 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
             ]
           );
           
-          const costDataIn = await calculateMovementCost(tenantId, itemId, normalized.quantity, client);
+          const costDataIn = await calculateMovementCost(tenantId, itemId, enteredQty, client);
+          const canonicalIn = await getCanonicalMovementFields(
+            tenantId,
+            itemId,
+            enteredQty,
+            data.uom,
+            client
+          );
           
            await client.query(
             `INSERT INTO inventory_movement_lines (
-                id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
+                quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
+                unit_cost, extended_cost, reason_code, line_notes
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
             [
               uuidv4(),
               tenantId,
               movementId,
               itemId,
               destLocationId,
-              normalized.quantity,
-              normalized.uom,
+              enteredQty,
+              data.uom,
+              canonicalIn.quantityDeltaEntered,
+              canonicalIn.uomEntered,
+              canonicalIn.quantityDeltaCanonical,
+              canonicalIn.canonicalUom,
+              canonicalIn.uomDimension,
               costDataIn.unitCost,
               costDataIn.extendedCost,
               `${reasonCode}_in`,

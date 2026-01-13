@@ -1,7 +1,5 @@
 export type ItemType = 'raw' | 'wip' | 'finished' | 'packaging'
 
-export type CostMethod = 'standard' | 'rolled' | 'avg'
-
 export type Item = {
   id: string
   sku: string
@@ -10,6 +8,9 @@ export type Item = {
   type: ItemType
   isPhantom?: boolean
   defaultUom?: string | null
+  uomDimension?: 'mass' | 'volume' | 'count' | 'length' | 'area' | 'time' | null
+  canonicalUom?: string | null
+  stockingUom?: string | null
   defaultLocationId?: string | null
   defaultLocationCode?: string | null
   defaultLocationName?: string | null
@@ -20,9 +21,6 @@ export type Item = {
   standardCostExchangeRateToBase?: number | null
   standardCostBase?: number | null
   averageCost?: number | null
-  rolledCost?: number | null
-  rolledCostAt?: string | null
-  costMethod?: CostMethod | null
   sellingPrice?: number | null
   listPrice?: number | null
   priceCurrency?: string | null
@@ -36,6 +34,7 @@ export type ItemInventoryRow = {
   locationName?: string
   uom: string
   onHand: number
+  isLegacy?: boolean
 }
 
 export type UomConversion = {

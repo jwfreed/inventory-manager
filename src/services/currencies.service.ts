@@ -3,6 +3,36 @@ import { query } from '../db';
 
 const EXCHANGE_RATE_PIVOT = process.env.EXCHANGE_RATE_PIVOT || process.env.EXCHANGE_RATE_BASE || 'USD';
 
+async function getExistingCurrencyCodes(codes: string[]): Promise<Set<string>> {
+  if (codes.length === 0) {
+    return new Set();
+  }
+  const result = await query<{ code: string }>(
+    `SELECT code FROM currencies WHERE code = ANY($1::text[])`,
+    [codes]
+  );
+  return new Set(result.rows.map((row) => row.code));
+}
+
+export async function ensureCurrenciesExist(codes: string[]): Promise<void> {
+  const normalized = Array.from(
+    new Set(codes.map((code) => code.trim().toUpperCase()).filter(Boolean))
+  );
+  if (normalized.length === 0) return;
+
+  const existing = await getExistingCurrencyCodes(normalized);
+  const missing = normalized.filter((code) => !existing.has(code));
+
+  for (const code of missing) {
+    await query(
+      `INSERT INTO currencies (code, name, symbol, decimal_places, active)
+       VALUES ($1, $2, $3, 2, true)
+       ON CONFLICT (code) DO NOTHING`,
+      [code, code, code]
+    );
+  }
+}
+
 async function getDirectExchangeRate(
   fromCurrency: string,
   toCurrency: string,

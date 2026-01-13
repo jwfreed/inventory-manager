@@ -4,7 +4,7 @@ import type { z } from 'zod';
 import { pool, query, withTransaction } from '../db';
 import { bomActivationSchema, bomCreateSchema } from '../schemas/boms.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
-import { normalizeQuantityByUom } from '../lib/uom';
+import { convertToCanonical } from './uomCanonical.service';
 
 type BomCreateInput = z.infer<typeof bomCreateSchema>;
 type BomActivationInput = z.infer<typeof bomActivationSchema>;
@@ -44,6 +44,11 @@ type BomVersionLineRow = {
   component_item_name?: string | null;
   component_quantity: string | number;
   component_uom: string;
+  component_quantity_entered?: string | number | null;
+  component_uom_entered?: string | null;
+  component_quantity_canonical?: string | number | null;
+  component_uom_canonical?: string | null;
+  component_uom_dimension?: string | null;
   scrap_factor: string | number | null;
   uses_pack_size: boolean;
   variable_uom: string | null;
@@ -60,6 +65,9 @@ export type BomVersionLine = {
   componentItemName?: string | null;
   quantityPer: number;
   uom: string;
+  quantityPerCanonical?: number | null;
+  uomCanonical?: string | null;
+  uomDimension?: string | null;
   scrapFactor: number | null;
   usesPackSize: boolean;
   variableUom: string | null;
@@ -105,8 +113,14 @@ function mapBomVersionLine(row: BomVersionLineRow): BomVersionLine {
     componentItemId: row.component_item_id,
     componentItemSku: row.component_item_sku ?? null,
     componentItemName: row.component_item_name ?? null,
-    quantityPer: roundQuantity(toNumber(row.component_quantity)),
-    uom: row.component_uom,
+    quantityPer: roundQuantity(toNumber(row.component_quantity_entered ?? row.component_quantity)),
+    uom: row.component_uom_entered ?? row.component_uom,
+    quantityPerCanonical:
+      row.component_quantity_canonical !== null && row.component_quantity_canonical !== undefined
+        ? toNumber(row.component_quantity_canonical)
+        : null,
+    uomCanonical: row.component_uom_canonical ?? null,
+    uomDimension: row.component_uom_dimension ?? null,
     scrapFactor: row.scrap_factor !== null ? roundQuantity(toNumber(row.scrap_factor)) : null,
     usesPackSize: !!row.uses_pack_size,
     variableUom: row.variable_uom,
@@ -203,7 +217,7 @@ export async function createBom(tenantId: string, data: BomCreateInput): Promise
   const versionNumber = data.version.versionNumber ?? 1;
 
   const bom = await withTransaction(async (client) => {
-    const normalizedYield = normalizeQuantityByUom(data.version.yieldQuantity, data.version.yieldUom);
+    const yieldQuantity = toNumber(data.version.yieldQuantity);
 
     await client.query(
       `INSERT INTO boms (id, tenant_id, bom_code, output_item_id, default_uom, active, notes, created_at, updated_at)
@@ -223,8 +237,8 @@ export async function createBom(tenantId: string, data: BomCreateInput): Promise
         versionNumber,
         data.version.effectiveFrom ?? null,
         data.version.effectiveTo ?? null,
-        normalizedYield.quantity,
-        normalizedYield.uom,
+        yieldQuantity,
+        data.version.yieldUom,
         data.version.yieldFactor ?? 1.0,
         data.version.notes ?? null,
         now
@@ -232,20 +246,33 @@ export async function createBom(tenantId: string, data: BomCreateInput): Promise
     );
 
     for (const component of data.version.components) {
-      const normalized = normalizeQuantityByUom(component.quantityPer, component.uom);
+      const canonical = await convertToCanonical(
+        tenantId,
+        component.componentItemId,
+        component.quantityPer,
+        component.uom,
+        client
+      );
       await client.query(
         `INSERT INTO bom_version_lines (
             id, tenant_id, bom_version_id, line_number, component_item_id, component_quantity,
-            component_uom, scrap_factor, uses_pack_size, variable_uom, notes, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            component_uom, component_quantity_entered, component_uom_entered,
+            component_quantity_canonical, component_uom_canonical, component_uom_dimension,
+            scrap_factor, uses_pack_size, variable_uom, notes, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
         [
           uuidv4(),
           tenantId,
           versionId,
           component.lineNumber,
           component.componentItemId,
-          normalized.quantity,
-          normalized.uom,
+          component.quantityPer,
+          component.uom,
+          component.quantityPer,
+          component.uom,
+          canonical.quantity,
+          canonical.canonicalUom,
+          canonical.uomDimension,
           component.scrapFactor !== undefined ? roundQuantity(component.scrapFactor) : null,
           component.usesPackSize ?? false,
           component.variableUom ?? null,

@@ -2,10 +2,11 @@ import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import { withTransaction } from '../../db';
 import { recordAuditLog } from '../../lib/audit';
-import { roundQuantity, toNumber } from '../../lib/numbers';
+import { toNumber } from '../../lib/numbers';
 import { validateSufficientStock } from '../stockValidation.service';
 import { calculateMovementCost, updateItemQuantityOnHand } from '../costing.service';
 import { consumeCostLayers, createCostLayer } from '../costLayers.service';
+import { getCanonicalMovementFields } from '../uomCanonical.service';
 import { fetchInventoryAdjustmentById } from './core.service';
 import type { InventoryAdjustmentRow, InventoryAdjustmentLineRow, PostingContext } from './types';
 
@@ -42,13 +43,13 @@ export async function postInventoryAdjustment(
     // Collect negative lines for stock validation
     const negativeLines = linesResult.rows
       .map((line) => {
-        const qty = roundQuantity(toNumber(line.quantity_delta));
+        const qty = toNumber(line.quantity_delta);
         if (qty >= 0) return null;
         return {
           itemId: line.item_id,
           locationId: line.location_id,
           uom: line.uom,
-          quantityToConsume: roundQuantity(Math.abs(qty))
+          quantityToConsume: Math.abs(qty)
         };
       })
       .filter(Boolean) as { itemId: string; locationId: string; uom: string; quantityToConsume: number }[];
@@ -82,10 +83,17 @@ export async function postInventoryAdjustment(
 
     // Create movement lines with costing
     for (const line of linesResult.rows) {
-      const qty = roundQuantity(toNumber(line.quantity_delta));
+      const qty = toNumber(line.quantity_delta);
       if (qty === 0) {
         throw new Error('ADJUSTMENT_LINE_ZERO');
       }
+      const canonicalFields = await getCanonicalMovementFields(
+        tenantId,
+        line.item_id,
+        qty,
+        line.uom,
+        client
+      );
       
       // Calculate cost for adjustment movement
       const costData = await calculateMovementCost(tenantId, line.item_id, qty, client);
@@ -129,8 +137,10 @@ export async function postInventoryAdjustment(
       
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
+            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
+            unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           uuidv4(),
           tenantId,
@@ -139,6 +149,11 @@ export async function postInventoryAdjustment(
           line.location_id,
           qty,
           line.uom,
+          canonicalFields.quantityDeltaEntered,
+          canonicalFields.uomEntered,
+          canonicalFields.quantityDeltaCanonical,
+          canonicalFields.canonicalUom,
+          canonicalFields.uomDimension,
           costData.unitCost,
           costData.extendedCost,
           line.reason_code,

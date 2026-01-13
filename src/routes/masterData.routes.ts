@@ -28,6 +28,9 @@ router.post('/items', async (req: Request, res: Response) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  if (!parsed.data.uomDimension || !parsed.data.canonicalUom || !parsed.data.stockingUom) {
+    return res.status(400).json({ error: 'Canonical UOM fields are required for new items.' });
+  }
   const reservedWorkOrderSku = /^WO-\d+$/i;
   if (reservedWorkOrderSku.test(parsed.data.sku.trim())) {
     return res
@@ -46,6 +49,9 @@ router.post('/items', async (req: Request, res: Response) => {
     });
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
+    }
+    if (error instanceof Error && error.message.startsWith('ITEM_CANONICAL_UOM')) {
+      return res.status(400).json({ error: 'Canonical UOM fields are required for new items.' });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create item.' });
@@ -66,6 +72,25 @@ router.get('/items', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to list items.' });
+  }
+});
+
+router.post('/items/metrics', async (req: Request, res: Response) => {
+  const bodySchema = z.object({
+    itemIds: z.array(uuidSchema).max(200),
+    windowDays: z.number().int().min(1).max(365).optional()
+  });
+  const parsed = bodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const windowDays = parsed.data.windowDays ?? 90;
+  try {
+    const metrics = await getItemMetrics(req.auth!.tenantId, parsed.data.itemIds, windowDays);
+    return res.json({ data: metrics });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fetch item metrics.' });
   }
 });
 
@@ -127,6 +152,9 @@ router.put('/items/:id', async (req: Request, res: Response) => {
     });
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
+    }
+    if (error instanceof Error && error.message.startsWith('ITEM_CANONICAL_UOM')) {
+      return res.status(400).json({ error: 'Canonical UOM fields are required for this update.' });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to update item.' });
@@ -267,6 +295,9 @@ router.post('/items/:itemId/uom-conversions', async (req: Request, res: Response
     });
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
+    }
+    if (error instanceof Error && error.message.startsWith('UOM_')) {
+      return res.status(400).json({ error: error.message });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create UoM conversion.' });

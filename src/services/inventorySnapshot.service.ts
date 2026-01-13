@@ -22,6 +22,7 @@ export type InventorySnapshotRow = {
   inTransit: number;
   backordered: number;
   inventoryPosition: number;
+  isLegacy?: boolean;
 };
 
 export type InventorySnapshotParams = {
@@ -45,20 +46,28 @@ async function loadOnHand(
   tenantId: string,
   itemId: string,
   locationId: string,
-  uom?: string
+  uom: string | undefined,
+  mode: 'canonical' | 'legacy'
 ): Promise<Map<string, number>> {
   const params: any[] = [tenantId, itemId, locationId];
-  const uomFilter = uom ? ` AND iml.uom = $${params.push(uom)}` : '';
+  const uomFilter = uom
+    ? mode === 'canonical'
+      ? ` AND iml.canonical_uom = $${params.push(uom)}`
+      : ` AND iml.uom = $${params.push(uom)}`
+    : '';
   const { rows } = await query(
-    `SELECT iml.uom, SUM(iml.quantity_delta) AS on_hand
+    `SELECT ${mode === 'canonical' ? 'iml.canonical_uom' : 'iml.uom'} AS uom,
+            SUM(${mode === 'canonical' ? 'iml.quantity_delta_canonical' : 'iml.quantity_delta'}) AS on_hand
        FROM inventory_movement_lines iml
        JOIN inventory_movements im ON im.id = iml.movement_id
       WHERE im.status = 'posted'
         AND iml.tenant_id = $1
         AND im.tenant_id = $1
         AND iml.item_id = $2
-        AND iml.location_id = $3${uomFilter}
-      GROUP BY iml.uom`,
+        AND iml.location_id = $3
+        ${mode === 'canonical' ? 'AND iml.quantity_delta_canonical IS NOT NULL' : 'AND iml.quantity_delta_canonical IS NULL'}
+        ${uomFilter}
+      GROUP BY ${mode === 'canonical' ? 'iml.canonical_uom' : 'iml.uom'}`,
     params
   );
 
@@ -73,18 +82,27 @@ async function loadReserved(
   tenantId: string,
   itemId: string,
   locationId: string,
-  uom?: string
+  uom: string | undefined,
+  mode: 'canonical' | 'legacy'
 ): Promise<Map<string, number>> {
   const params: any[] = [tenantId, itemId, locationId];
-  const uomFilter = uom ? ` AND r.uom = $${params.push(uom)}` : '';
+  const uomFilter = uom
+    ? mode === 'canonical'
+      ? ` AND i.canonical_uom = $${params.push(uom)}`
+      : ` AND r.uom = $${params.push(uom)}`
+    : '';
   const { rows } = await query(
-    `SELECT r.uom, SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved_qty
+    `SELECT ${mode === 'canonical' ? 'i.canonical_uom' : 'r.uom'} AS uom,
+            SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved_qty
        FROM inventory_reservations r
+       ${mode === 'canonical' ? 'JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id' : ''}
       WHERE r.tenant_id = $1
         AND r.item_id = $2
         AND r.location_id = $3
-        AND r.status IN ('open', 'released')${uomFilter}
-      GROUP BY r.uom`,
+        AND r.status IN ('open', 'released')
+        ${mode === 'canonical' ? 'AND i.canonical_uom IS NOT NULL AND r.uom = i.canonical_uom' : ''}
+        ${uomFilter}
+      GROUP BY ${mode === 'canonical' ? 'i.canonical_uom' : 'r.uom'}`,
     params
   );
 
@@ -230,13 +248,27 @@ export async function getInventorySnapshot(
 ): Promise<InventorySnapshotRow[]> {
   const { itemId, locationId, uom } = params;
 
-  const [onHandMap, reservedMap, onOrderMap, inTransitMap] = await Promise.all([
-    loadOnHand(tenantId, itemId, locationId, uom),
-    loadReserved(tenantId, itemId, locationId, uom),
-    loadOnOrder(tenantId, itemId, locationId, uom),
-    loadInTransit(tenantId, itemId, locationId, uom)
+  const [canonicalOnHand, canonicalReserved] = await Promise.all([
+    loadOnHand(tenantId, itemId, locationId, uom, 'canonical'),
+    loadReserved(tenantId, itemId, locationId, uom, 'canonical')
   ]);
-  const qcBucketsMap = await loadQcBuckets(tenantId, itemId, locationId, uom);
+  const hasCanonical = canonicalOnHand.size > 0 || canonicalReserved.size > 0;
+
+  let onHandMap = canonicalOnHand;
+  let reservedMap = canonicalReserved;
+  let onOrderMap = new Map<string, number>();
+  let inTransitMap = new Map<string, number>();
+  let qcBucketsMap = new Map<string, { held: number; rejected: number }>();
+
+  if (!hasCanonical) {
+    [onHandMap, reservedMap, onOrderMap, inTransitMap] = await Promise.all([
+      loadOnHand(tenantId, itemId, locationId, uom, 'legacy'),
+      loadReserved(tenantId, itemId, locationId, uom, 'legacy'),
+      loadOnOrder(tenantId, itemId, locationId, uom),
+      loadInTransit(tenantId, itemId, locationId, uom)
+    ]);
+    qcBucketsMap = await loadQcBuckets(tenantId, itemId, locationId, uom);
+  }
 
   const uoms = new Set<string>();
   onHandMap.forEach((_v, key) => uoms.add(key));
@@ -278,7 +310,8 @@ export async function getInventorySnapshot(
         onOrder,
         inTransit,
         backordered,
-        inventoryPosition
+        inventoryPosition,
+        isLegacy: !hasCanonical
       });
     });
 
@@ -314,6 +347,75 @@ export async function getInventorySnapshotSummary(
   const whereReserved = reservedClauses.length ? `AND ${reservedClauses.join(' AND ')}` : '';
   const whereQc = qcClauses.length ? `AND ${qcClauses.join(' AND ')}` : '';
 
+  const limitParam = paramsList.push(limit);
+  const offsetParam = paramsList.push(offset);
+
+  const { rows: canonicalRows } = await query(
+    `WITH on_hand AS (
+       SELECT iml.item_id,
+              iml.location_id,
+              iml.canonical_uom AS uom,
+              SUM(iml.quantity_delta_canonical) AS on_hand
+         FROM inventory_movement_lines iml
+         JOIN inventory_movements im ON im.id = iml.movement_id
+        WHERE im.status = 'posted'
+          AND iml.tenant_id = $1
+          AND im.tenant_id = $1
+          AND iml.quantity_delta_canonical IS NOT NULL
+          ${whereOnHand}
+        GROUP BY iml.item_id, iml.location_id, iml.canonical_uom
+     ),
+     reserved AS (
+       SELECT r.item_id,
+              r.location_id,
+              i.canonical_uom AS uom,
+              SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved
+         FROM inventory_reservations r
+         JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
+        WHERE r.status IN ('open', 'released')
+          AND r.tenant_id = $1
+          AND i.canonical_uom IS NOT NULL
+          AND r.uom = i.canonical_uom
+          ${whereReserved}
+        GROUP BY r.item_id, r.location_id, i.canonical_uom
+     ),
+     combined AS (
+       SELECT COALESCE(oh.item_id, rs.item_id) AS item_id,
+              COALESCE(oh.location_id, rs.location_id) AS location_id,
+              COALESCE(oh.uom, rs.uom) AS uom,
+              COALESCE(oh.on_hand, 0) AS on_hand,
+              COALESCE(rs.reserved, 0) AS reserved
+         FROM on_hand oh
+         FULL OUTER JOIN reserved rs
+           ON oh.item_id = rs.item_id
+          AND oh.location_id = rs.location_id
+          AND oh.uom = rs.uom
+     )
+    SELECT combined.item_id,
+           combined.location_id,
+           combined.uom,
+           combined.on_hand,
+           combined.reserved,
+           (combined.on_hand - combined.reserved) AS available,
+           0 AS held,
+           0 AS rejected,
+           0 AS non_usable,
+           0 AS on_order,
+           0 AS in_transit,
+           0 AS backordered,
+           (combined.on_hand - combined.reserved) AS inventory_position,
+           false AS is_legacy
+      FROM combined
+     WHERE combined.on_hand <> 0 OR combined.reserved <> 0
+     ORDER BY item_id, location_id, uom
+     LIMIT $${limitParam} OFFSET $${offsetParam};`,
+    paramsList
+  );
+
+  const canonicalKeys = new Set(
+    canonicalRows.map((row: any) => `${row.item_id}:${row.location_id}`)
+  );
+
   const { rows } = await query(
     `WITH on_hand AS (
        SELECT iml.item_id,
@@ -325,6 +427,7 @@ export async function getInventorySnapshotSummary(
         WHERE im.status = 'posted'
           AND iml.tenant_id = $1
           AND im.tenant_id = $1
+          AND iml.quantity_delta_canonical IS NULL
           ${whereOnHand}
         GROUP BY iml.item_id, iml.location_id, iml.uom
      ),
@@ -387,7 +490,8 @@ export async function getInventorySnapshotSummary(
            0 AS on_order,
            0 AS in_transit,
            0 AS backordered,
-           (combined.on_hand - combined.reserved) AS inventory_position
+           (combined.on_hand - combined.reserved) AS inventory_position,
+           true AS is_legacy
       FROM combined
       LEFT JOIN qc_buckets qc
         ON qc.item_id = combined.item_id
@@ -395,11 +499,30 @@ export async function getInventorySnapshotSummary(
        AND qc.uom = combined.uom
      WHERE combined.on_hand <> 0 OR combined.reserved <> 0 OR COALESCE(qc.held_qty, 0) <> 0 OR COALESCE(qc.rejected_qty, 0) <> 0
      ORDER BY item_id, location_id, uom
-     LIMIT $${paramsList.push(limit)} OFFSET $${paramsList.push(offset)};`,
+     LIMIT $${limitParam} OFFSET $${offsetParam};`,
     paramsList
   );
 
-  return rows.map((row: any) => ({
+  const legacyRows = rows
+    .map((row: any) => ({
+      itemId: row.item_id,
+      locationId: row.location_id,
+      uom: row.uom,
+      onHand: normalizeQuantity(row.on_hand),
+      reserved: normalizeQuantity(row.reserved),
+      available: normalizeQuantity(row.available),
+      held: normalizeQuantity(row.held),
+      rejected: normalizeQuantity(row.rejected),
+      nonUsable: normalizeQuantity(row.non_usable),
+      onOrder: normalizeQuantity(row.on_order),
+      inTransit: normalizeQuantity(row.in_transit),
+      backordered: normalizeQuantity(row.backordered),
+      inventoryPosition: normalizeQuantity(row.inventory_position),
+      isLegacy: row.is_legacy
+    }))
+    .filter((row) => !canonicalKeys.has(`${row.itemId}:${row.locationId}`));
+
+  const canonicalMapped = canonicalRows.map((row: any) => ({
     itemId: row.item_id,
     locationId: row.location_id,
     uom: row.uom,
@@ -412,6 +535,9 @@ export async function getInventorySnapshotSummary(
     onOrder: normalizeQuantity(row.on_order),
     inTransit: normalizeQuantity(row.in_transit),
     backordered: normalizeQuantity(row.backordered),
-    inventoryPosition: normalizeQuantity(row.inventory_position)
+    inventoryPosition: normalizeQuantity(row.inventory_position),
+    isLegacy: row.is_legacy
   }));
+
+  return [...canonicalMapped, ...legacyRows];
 }

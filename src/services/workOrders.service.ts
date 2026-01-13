@@ -3,11 +3,11 @@ import type { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
 import { workOrderCreateSchema, workOrderListQuerySchema } from '../schemas/workOrders.schema';
-import { roundQuantity } from '../lib/numbers';
-import { normalizeQuantityByUom } from '../lib/uom';
+import { roundQuantity, toNumber } from '../lib/numbers';
 import { fetchBomById, resolveEffectiveBom, type BomVersionLine } from './boms.service';
 import { getItem } from './masterData.service';
 import { recordAuditLog } from '../lib/audit';
+import { convertToCanonical } from './uomCanonical.service';
 
 type WorkOrderCreateInput = z.infer<typeof workOrderCreateSchema>;
 type WorkOrderListQuery = z.infer<typeof workOrderListQuerySchema>;
@@ -103,7 +103,7 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
     data.defaultConsumeLocationId ?? outputItemDefaults?.default_location_id ?? null;
   const defaultProduceLocationId =
     data.defaultProduceLocationId ?? outputItemDefaults?.default_location_id ?? null;
-  const normalizedQty = normalizeQuantityByUom(Number(data.quantityPlanned), outputUom);
+  const plannedQty = toNumber(data.quantityPlanned);
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -162,8 +162,8 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
             data.bomVersionId ?? null,
             data.relatedWorkOrderId ?? null,
             data.outputItemId,
-            normalizedQty.uom,
-            normalizedQty.quantity,
+            outputUom,
+            plannedQty,
             data.quantityCompleted ?? null,
             defaultConsumeLocationId,
             defaultProduceLocationId,
@@ -270,39 +270,46 @@ async function resolveRequirements(
   const lines: WorkOrderRequirementLine[] = [];
 
   for (const c of components) {
+    if (c.quantityPerCanonical == null || !c.uomCanonical) {
+      throw new Error('WO_BOM_LEGACY_UNSUPPORTED');
+    }
     const item = await getItem(tenantId, c.componentItemId);
-    
+    const componentScrap = c.scrapFactor ?? 0;
+    const baseQuantity = c.usesPackSize && packSize !== undefined
+      ? (await convertToCanonical(tenantId, c.componentItemId, packSize, c.uom)).quantity
+      : c.quantityPerCanonical;
+    const required = baseQuantity * factor * (1 + componentScrap);
+
     if (item && item.isPhantom) {
-       const phantomBom = await resolveEffectiveBom(tenantId, item.id, new Date().toISOString());
-       if (phantomBom) {
-          const phantomVersion = phantomBom.version;
-          const normalizedComp = normalizeQuantityByUom(c.quantityPer, c.uom);
-          const componentScrap = c.scrapFactor ?? 0;
-          
-          const baseQuantity = c.usesPackSize && packSize !== undefined ? packSize : normalizedComp.quantity;
-          const requiredPhantomQty = baseQuantity * factor * (1 + componentScrap);
-          
-          const phantomYield = normalizeQuantityByUom(phantomVersion.yieldQuantity, phantomVersion.yieldUom);
-          const phantomYieldFactor = phantomVersion.yieldFactor ?? 1.0;
-          
-          const childFactor = requiredPhantomQty / (phantomYield.quantity * phantomYieldFactor);
-          
-          const childLines = await resolveRequirements(tenantId, phantomVersion.components, childFactor, packSize);
-          lines.push(...childLines);
-          continue;
-       }
+      const phantomBom = await resolveEffectiveBom(tenantId, item.id, new Date().toISOString());
+      if (phantomBom) {
+        const phantomVersion = phantomBom.version;
+        const phantomYield = await convertToCanonical(
+          tenantId,
+          item.id,
+          toNumber(phantomVersion.yieldQuantity),
+          phantomVersion.yieldUom
+        );
+        const phantomYieldFactor = phantomVersion.yieldFactor ?? 1.0;
+        if (phantomYield.quantity <= 0) {
+          throw new Error('WO_REQUIREMENTS_INVALID_YIELD');
+        }
+        const childFactor = required / (phantomYield.quantity * phantomYieldFactor);
+        const childLines = await resolveRequirements(
+          tenantId,
+          phantomVersion.components,
+          childFactor,
+          packSize
+        );
+        lines.push(...childLines);
+        continue;
+      }
     }
 
-    const normalizedComp = normalizeQuantityByUom(c.quantityPer, c.uom);
-    const baseQuantity = c.usesPackSize && packSize !== undefined ? packSize : normalizedComp.quantity;
-    const uom = c.usesPackSize && c.variableUom ? c.variableUom : normalizedComp.uom;
-    const componentScrap = c.scrapFactor ?? 0;
-    const required = roundQuantity(baseQuantity * factor * (1 + componentScrap));
-    
     lines.push({
       lineNumber: c.lineNumber,
       componentItemId: c.componentItemId,
-      uom,
+      uom: c.uomCanonical,
       quantityRequired: required,
       usesPackSize: c.usesPackSize,
       variableUom: c.variableUom ?? null,
@@ -343,11 +350,21 @@ export async function getWorkOrderRequirements(
     throw new Error('WO_BOM_VERSION_NOT_FOUND');
   }
 
-  const normalizedYield = normalizeQuantityByUom(version.yieldQuantity, version.yieldUom);
   const quantity = requestedQty !== undefined ? requestedQty : Number(wo.quantity_planned);
-  const normalizedRequested = normalizeQuantityByUom(quantity, wo.output_uom);
+  const normalizedYield = await convertToCanonical(
+    tenantId,
+    wo.output_item_id,
+    toNumber(version.yieldQuantity),
+    version.yieldUom
+  );
+  const normalizedRequested = await convertToCanonical(
+    tenantId,
+    wo.output_item_id,
+    quantity,
+    wo.output_uom
+  );
 
-  if (normalizedYield.uom !== normalizedRequested.uom) {
+  if (normalizedYield.canonicalUom !== normalizedRequested.canonicalUom) {
     throw new Error('WO_REQUIREMENTS_UOM_MISMATCH');
   }
   if (normalizedYield.quantity <= 0) {
@@ -355,7 +372,7 @@ export async function getWorkOrderRequirements(
   }
 
   const yieldFactor = version.yieldFactor ?? 1.0;
-  const factor = roundQuantity(normalizedRequested.quantity / (normalizedYield.quantity * yieldFactor));
+  const factor = normalizedRequested.quantity / (normalizedYield.quantity * yieldFactor);
 
   const lines = await resolveRequirements(tenantId, version.components, factor, packSize);
 
@@ -365,7 +382,7 @@ export async function getWorkOrderRequirements(
     bomId: wo.bom_id,
     bomVersionId: version.id,
     quantityRequested: normalizedRequested.quantity,
-    requestedUom: normalizedRequested.uom,
+    requestedUom: normalizedRequested.canonicalUom,
     lines
   };
 }

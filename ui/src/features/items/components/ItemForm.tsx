@@ -22,6 +22,15 @@ type Props = {
   autoFocusSku?: boolean
 }
 
+const CANONICAL_UOM_BY_DIMENSION = {
+  mass: 'kg',
+  volume: 'L',
+  count: 'each',
+  length: 'm',
+  area: 'm2',
+  time: 'seconds',
+} as const
+
 export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku }: Props) {
   const isEdit = Boolean(initialItem?.id)
   const queryClient = useQueryClient()
@@ -35,7 +44,12 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
   const [lifecycleStatus, setLifecycleStatus] = useState<Item['lifecycleStatus']>(
     initialItem?.lifecycleStatus ?? 'Active',
   )
-  const [defaultUom, setDefaultUom] = useState(initialItem?.defaultUom ?? '')
+  const [uomDimension, setUomDimension] = useState<Item['uomDimension']>(
+    initialItem?.uomDimension ?? null,
+  )
+  const [stockingUom, setStockingUom] = useState(
+    initialItem?.stockingUom ?? initialItem?.defaultUom ?? '',
+  )
   const [defaultLocationId, setDefaultLocationId] = useState(initialItem?.defaultLocationId ?? '')
   const [standardCost, setStandardCost] = useState<string>(
     initialItem?.standardCost != null ? initialItem.standardCost.toString() : '',
@@ -52,7 +66,8 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
     setType(initialItem.type ?? 'raw')
     setIsPhantom(initialItem.isPhantom ?? false)
     setLifecycleStatus(initialItem.lifecycleStatus ?? 'Active')
-    setDefaultUom(initialItem.defaultUom ?? '')
+    setUomDimension(initialItem.uomDimension ?? null)
+    setStockingUom(initialItem.stockingUom ?? initialItem.defaultUom ?? '')
     setDefaultLocationId(initialItem.defaultLocationId ?? '')
     setStandardCost(initialItem.standardCost != null ? initialItem.standardCost.toString() : '')
     setStandardCostCurrency(initialItem.standardCostCurrency ?? baseCurrency)
@@ -77,6 +92,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const standardCostValue = standardCost.trim() ? Number(standardCost) : undefined
+    const canonicalUom = uomDimension ? CANONICAL_UOM_BY_DIMENSION[uomDimension] : undefined
     mutation.mutate({
       sku,
       name,
@@ -84,7 +100,10 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
       isPhantom,
       type,
       lifecycleStatus,
-      defaultUom: defaultUom.trim() ? defaultUom.trim() : undefined,
+      defaultUom: stockingUom.trim() ? stockingUom.trim() : undefined,
+      uomDimension: uomDimension ?? undefined,
+      canonicalUom: canonicalUom ?? undefined,
+      stockingUom: stockingUom.trim() ? stockingUom.trim() : undefined,
       defaultLocationId: defaultLocationId || null,
       standardCost: standardCostValue,
       standardCostCurrency:
@@ -164,12 +183,43 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
               <option value="Obsolete">Obsolete</option>
             </select>
           </FormField>
-          <FormField label="Default UOM">
+          <FormField label="UOM Dimension" required>
+            <select
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={uomDimension ?? ''}
+              onChange={(e) => {
+                const next = e.target.value ? (e.target.value as Item['uomDimension']) : null
+                setUomDimension(next)
+              }}
+              disabled={mutation.isPending}
+              required
+            >
+              <option value="">Select dimension</option>
+              <option value="mass">Mass (kg)</option>
+              <option value="volume">Volume (L)</option>
+              <option value="count">Count (each)</option>
+              <option value="length">Length (m)</option>
+              <option value="area">Area (m2)</option>
+              <option value="time">Time (seconds)</option>
+            </select>
+          </FormField>
+          <FormField
+            label="Canonical UOM"
+            helper="Canonical UOM is fixed per dimension."
+          >
             <Input
-              value={defaultUom}
-              onChange={(e) => setDefaultUom(e.target.value)}
+              value={uomDimension ? CANONICAL_UOM_BY_DIMENSION[uomDimension] : ''}
+              placeholder="Select a dimension first"
+              disabled
+            />
+          </FormField>
+          <FormField label="Stocking UOM" required>
+            <Input
+              value={stockingUom}
+              onChange={(e) => setStockingUom(e.target.value)}
               placeholder="ea, kg, box"
               disabled={mutation.isPending}
+              required
             />
           </FormField>
           <FormField label="Standard Cost" helper="Per unit cost for valuation (optional)">

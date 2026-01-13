@@ -6,7 +6,6 @@ import type {
   InventoryAdjustmentInput,
   NormalizedAdjustmentLine
 } from './types';
-import { normalizeQuantityByUom } from '../../lib/uom';
 
 export function mapInventoryAdjustment(row: InventoryAdjustmentRow, lines: InventoryAdjustmentLineRow[]) {
   return {
@@ -79,14 +78,13 @@ export function normalizeAdjustmentLines(data: InventoryAdjustmentInput): Normal
     if (lineNumbers.has(lineNumber)) {
       throw new Error('ADJUSTMENT_DUPLICATE_LINE');
     }
-    const normalized = normalizeQuantityByUom(line.quantityDelta, line.uom);
     lineNumbers.add(lineNumber);
     return {
       lineNumber,
       itemId: line.itemId,
       locationId: line.locationId,
-      uom: normalized.uom,
-      quantityDelta: normalized.quantity,
+      uom: line.uom,
+      quantityDelta: toNumber(line.quantityDelta),
       reasonCode: line.reasonCode,
       notes: line.notes ?? null
     };

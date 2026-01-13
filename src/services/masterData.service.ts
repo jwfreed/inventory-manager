@@ -4,6 +4,11 @@ import { query, withTransaction } from '../db';
 import { getExchangeRate } from './currencies.service';
 import type { itemSchema, locationSchema, uomConversionSchema } from '../schemas/masterData.schema';
 import { ItemLifecycleStatus } from '../types/item';
+import {
+  assertCanonicalFieldsPresent,
+  getItemUomConfigIfPresent,
+  validateConversionAgainstItemDimension
+} from './uomCanonical.service';
 
 export type ItemInput = z.infer<typeof itemSchema>;
 export type LocationInput = z.infer<typeof locationSchema>;
@@ -17,6 +22,9 @@ const itemSelectColumns = `
   i.type,
   i.is_phantom,
   i.default_uom,
+  i.uom_dimension,
+  i.canonical_uom,
+  i.stocking_uom,
   i.default_location_id,
   i.lifecycle_status,
   i.abc_class,
@@ -78,7 +86,10 @@ export function mapItem(row: any) {
     description: row.description,
     isPhantom: !!row.is_phantom,
     type: row.type ?? 'raw',
-    defaultUom: row.defaultUom ?? row.default_uom ?? null,
+    defaultUom: row.defaultUom ?? row.default_uom ?? row.stocking_uom ?? null,
+    uomDimension: row.uomDimension ?? row.uom_dimension ?? null,
+    canonicalUom: row.canonicalUom ?? row.canonical_uom ?? null,
+    stockingUom: row.stockingUom ?? row.stocking_uom ?? null,
     defaultLocationId: row.defaultLocationId ?? row.default_location_id ?? null,
     defaultLocationCode: row.defaultLocationCode ?? row.default_location_code ?? null,
     defaultLocationName: row.defaultLocationName ?? row.default_location_name ?? null,
@@ -111,7 +122,11 @@ export async function createItem(tenantId: string, data: ItemInput, baseCurrency
   const id = uuidv4();
   const lifecycleStatus = data.lifecycleStatus ?? ItemLifecycleStatus.ACTIVE;
   const isPhantom = data.isPhantom ?? false;
-  const defaultUom = data.defaultUom ?? null;
+  const defaultUom = data.defaultUom ?? data.stockingUom ?? null;
+  const uomDimension = data.uomDimension ?? null;
+  const canonicalUom = data.canonicalUom ?? null;
+  const stockingUom = data.stockingUom ?? null;
+  assertCanonicalFieldsPresent({ uomDimension, canonicalUom, stockingUom });
   const defaultLocationId = data.defaultLocationId ?? null;
   const {
     standardCostCurrency,
@@ -120,10 +135,10 @@ export async function createItem(tenantId: string, data: ItemInput, baseCurrency
   } = await resolveStandardCostFields(data, baseCurrency);
   await query(
     `INSERT INTO items (
-        id, tenant_id, sku, name, description, type, is_phantom, default_uom, default_location_id, lifecycle_status, weight, weight_uom, volume, volume_uom,
+        id, tenant_id, sku, name, description, type, is_phantom, default_uom, uom_dimension, canonical_uom, stocking_uom, default_location_id, lifecycle_status, weight, weight_uom, volume, volume_uom,
         standard_cost, standard_cost_currency, standard_cost_exchange_rate_to_base, standard_cost_base,
         rolled_cost, cost_method, selling_price, list_price, price_currency, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $25)`,
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $28)`,
     [
       id,
       tenantId,
@@ -133,6 +148,9 @@ export async function createItem(tenantId: string, data: ItemInput, baseCurrency
       data.type,
       isPhantom,
       defaultUom,
+      uomDimension,
+      canonicalUom,
+      stockingUom,
       defaultLocationId,
       lifecycleStatus,
       data.weight ?? null,
@@ -179,7 +197,13 @@ export async function updateItem(
   const now = new Date();
   const type = data.type ?? 'raw';
   const isPhantom = data.isPhantom ?? false;
-  const defaultUom = data.defaultUom ?? null;
+  const defaultUom = data.defaultUom ?? data.stockingUom ?? null;
+  const uomDimension = data.uomDimension ?? null;
+  const canonicalUom = data.canonicalUom ?? null;
+  const stockingUom = data.stockingUom ?? null;
+  if (uomDimension || canonicalUom || stockingUom) {
+    assertCanonicalFieldsPresent({ uomDimension, canonicalUom, stockingUom });
+  }
   const defaultLocationId = data.defaultLocationId ?? null;
   const lifecycleStatus = data.lifecycleStatus ?? ItemLifecycleStatus.ACTIVE;
   const {
@@ -195,23 +219,26 @@ export async function updateItem(
            type = $4,
            is_phantom = $5,
            default_uom = $6,
-           default_location_id = $7,
-           lifecycle_status = $8,
-           weight = $9,
-           weight_uom = $10,
-           volume = $11,
-           volume_uom = $12,
-           standard_cost = $13,
-           standard_cost_currency = $14,
-           standard_cost_exchange_rate_to_base = $15,
-           standard_cost_base = $16,
-           rolled_cost = $17,
-           cost_method = $18,
-           selling_price = $19,
-           list_price = $20,
-           price_currency = $21,
-           updated_at = $22
-     WHERE id = $23 AND tenant_id = $24
+           uom_dimension = $7,
+           canonical_uom = $8,
+           stocking_uom = $9,
+           default_location_id = $10,
+           lifecycle_status = $11,
+           weight = $12,
+           weight_uom = $13,
+           volume = $14,
+           volume_uom = $15,
+           standard_cost = $16,
+           standard_cost_currency = $17,
+           standard_cost_exchange_rate_to_base = $18,
+           standard_cost_base = $19,
+           rolled_cost = $20,
+           cost_method = $21,
+           selling_price = $22,
+           list_price = $23,
+           price_currency = $24,
+           updated_at = $25
+     WHERE id = $26 AND tenant_id = $27
      RETURNING id`,
     [
       data.sku,
@@ -220,6 +247,9 @@ export async function updateItem(
       type,
       isPhantom,
       defaultUom,
+      uomDimension,
+      canonicalUom,
+      stockingUom,
       defaultLocationId,
       lifecycleStatus,
       data.weight ?? null,
@@ -450,6 +480,16 @@ export async function createStandardWarehouseTemplate(
 export async function createUomConversion(tenantId: string, data: UomConversionInput) {
   const now = new Date();
   const id = uuidv4();
+  const itemConfig = await getItemUomConfigIfPresent(tenantId, data.itemId);
+  if (itemConfig) {
+    validateConversionAgainstItemDimension(itemConfig, data.fromUom, data.toUom);
+    const fromKey = data.fromUom.trim().toLowerCase();
+    const toKey = data.toUom.trim().toLowerCase();
+    const canonicalKey = itemConfig.canonicalUom.toLowerCase();
+    if (fromKey !== canonicalKey && toKey !== canonicalKey) {
+      throw new Error('UOM_CONVERSION_CANONICAL_REQUIRED');
+    }
+  }
   await query(
     `INSERT INTO uom_conversions (
         id, tenant_id, item_id, from_uom, to_uom, factor, created_at, updated_at
@@ -500,6 +540,10 @@ export async function convertQuantity(
   fromUom: string,
   toUom: string
 ): Promise<number> {
+  const itemConfig = await getItemUomConfigIfPresent(tenantId, itemId);
+  if (itemConfig) {
+    validateConversionAgainstItemDimension(itemConfig, fromUom, toUom);
+  }
   if (fromUom === toUom) return quantity;
 
   // Try direct conversion

@@ -4,6 +4,7 @@ import {
   getItem,
   getItemInventorySummary,
   getItemMetrics,
+  getItemsMetrics,
   listItems,
   type ItemMetrics,
   type ListItemsParams,
@@ -15,6 +16,8 @@ export const itemsQueryKeys = {
   detail: (id: string) => [...itemsQueryKeys.all, 'detail', id] as const,
   inventorySummary: (id: string) => [...itemsQueryKeys.all, 'inventory-summary', id] as const,
   metrics: (id: string, windowDays?: number) => [...itemsQueryKeys.all, 'metrics', id, windowDays] as const,
+  metricsList: (itemIds: string[], windowDays?: number) =>
+    [...itemsQueryKeys.all, 'metrics-list', itemIds, windowDays] as const,
 }
 
 type ItemsListOptions = Omit<
@@ -30,6 +33,7 @@ type ItemInventoryOptions = Omit<
 >
 
 type ItemMetricsOptions = Omit<UseQueryOptions<ItemMetrics, ApiError>, 'queryKey' | 'queryFn'>
+type ItemsMetricsOptions = Omit<UseQueryOptions<ItemMetrics[], ApiError>, 'queryKey' | 'queryFn'>
 
 export function useItemsList(params: ListItemsParams = {}, options: ItemsListOptions = {}) {
   return useQuery({
@@ -73,5 +77,19 @@ export function useItemMetrics(
     enabled: Boolean(id),
     retry: 1,
     ...options,
+  })
+}
+
+export function useItemsMetrics(
+  itemIds: string[],
+  windowDays: number = 90,
+  options: ItemsMetricsOptions = {}
+) {
+  return useQuery({
+    queryKey: itemsQueryKeys.metricsList(itemIds, windowDays),
+    queryFn: () => getItemsMetrics(itemIds, windowDays),
+    retry: 1,
+    ...options,
+    enabled: itemIds.length > 0 && (options.enabled ?? true),
   })
 }

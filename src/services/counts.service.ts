@@ -8,6 +8,7 @@ import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
 import { calculateMovementCost } from './costing.service';
 import { consumeCostLayers, createCostLayer } from './costLayers.service';
+import { getCanonicalMovementFields } from './uomCanonical.service';
 
 type InventoryCountInput = z.infer<typeof inventoryCountSchema>;
 
@@ -74,7 +75,7 @@ async function loadSystemOnHandForLocation(
     [locationId, countedAt, itemIds, tenantId]
   );
   for (const row of rows) {
-    map.set(makeOnHandKey(row.item_id, row.uom), roundQuantity(toNumber(row.qty)));
+    map.set(makeOnHandKey(row.item_id, row.uom), toNumber(row.qty));
   }
   return map;
 }
@@ -362,13 +363,13 @@ export async function postInventoryCount(
     );
 
     const deltas = linesResult.rows.map((line) => {
-      const countedQty = roundQuantity(toNumber(line.counted_quantity));
+      const countedQty = toNumber(line.counted_quantity);
       const systemQty = systemMap.get(makeOnHandKey(line.item_id, line.uom)) ?? 0;
       return {
         line,
         countedQty,
         systemQty,
-        variance: roundQuantity(countedQty - systemQty)
+        variance: countedQty - systemQty
       };
     });
 
@@ -385,7 +386,7 @@ export async function postInventoryCount(
         itemId: delta.line.item_id,
         locationId: cycleCount.location_id,
         uom: delta.line.uom,
-        quantityToConsume: roundQuantity(Math.abs(delta.variance))
+        quantityToConsume: Math.abs(delta.variance)
       }));
     const validation = negativeLines.length
       ? await validateSufficientStock(tenantId, new Date(cycleCount.counted_at), negativeLines, {
@@ -451,6 +452,13 @@ export async function postInventoryCount(
       );
 
       if (delta.variance !== 0) {
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          delta.line.item_id,
+          delta.variance,
+          delta.line.uom,
+          client
+        );
         // Calculate cost for cycle count adjustment
         const costData = await calculateMovementCost(tenantId, delta.line.item_id, delta.variance, client);
         
@@ -493,8 +501,10 @@ export async function postInventoryCount(
         
         await client.query(
           `INSERT INTO inventory_movement_lines (
-              id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+              id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
+              quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
+              unit_cost, extended_cost, reason_code, line_notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
           [
             uuidv4(),
             tenantId,
@@ -503,6 +513,11 @@ export async function postInventoryCount(
             cycleCount.location_id,
             delta.variance,
             delta.line.uom,
+            canonicalFields.quantityDeltaEntered,
+            canonicalFields.uomEntered,
+            canonicalFields.quantityDeltaCanonical,
+            canonicalFields.canonicalUom,
+            canonicalFields.uomDimension,
             costData.unitCost,
             costData.extendedCost,
             delta.line.reason_code,

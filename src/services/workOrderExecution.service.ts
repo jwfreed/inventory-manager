@@ -6,14 +6,13 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { fetchBomById } from './boms.service';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
-import { calculateMovementCost } from './costing.service';
 import { consumeCostLayers, createCostLayer } from './costLayers.service';
+import { getCanonicalMovementFields, type CanonicalMovementFields } from './uomCanonical.service';
 import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
   workOrderBatchSchema
 } from '../schemas/workOrderExecution.schema';
-import { normalizeQuantityByUom } from '../lib/uom';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
 // (never inventory_adjustments). External refs include work order ids for traceability.
@@ -21,6 +20,8 @@ import { normalizeQuantityByUom } from '../lib/uom';
 type WorkOrderIssueCreateInput = z.infer<typeof workOrderIssueCreateSchema>;
 type WorkOrderCompletionCreateInput = z.infer<typeof workOrderCompletionCreateSchema>;
 type WorkOrderBatchInput = z.infer<typeof workOrderBatchSchema>;
+
+const WIP_COST_METHOD = 'fifo';
 
 type NegativeOverrideContext = {
   actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
@@ -75,6 +76,11 @@ type WorkOrderExecutionRow = {
   status: string;
   consumption_movement_id: string | null;
   production_movement_id: string | null;
+  wip_total_cost: string | number | null;
+  wip_unit_cost: string | number | null;
+  wip_quantity_canonical: string | number | null;
+  wip_cost_method: string | null;
+  wip_costed_at: string | null;
   notes: string | null;
   created_at: string;
 };
@@ -126,6 +132,11 @@ function mapExecution(row: WorkOrderExecutionRow, lines: WorkOrderExecutionLineR
     occurredAt: row.occurred_at,
     consumptionMovementId: row.consumption_movement_id,
     productionMovementId: row.production_movement_id,
+    wipTotalCost: row.wip_total_cost !== null ? toNumber(row.wip_total_cost) : null,
+    wipUnitCost: row.wip_unit_cost !== null ? toNumber(row.wip_unit_cost) : null,
+    wipQuantityCanonical: row.wip_quantity_canonical !== null ? toNumber(row.wip_quantity_canonical) : null,
+    wipCostMethod: row.wip_cost_method ?? null,
+    wipCostedAt: row.wip_costed_at ?? null,
     notes: row.notes,
     createdAt: row.created_at,
     lines: lines.map((line) => ({
@@ -157,6 +168,84 @@ async function fetchWorkOrderById(
   return result.rowCount === 0 ? null : result.rows[0];
 }
 
+async function allocateWipCostFromMovement(
+  client: PoolClient,
+  tenantId: string,
+  executionId: string,
+  movementId: string,
+  allocatedAt: Date
+): Promise<number> {
+  const rows = await client.query<{ id: string; extended_cost: string | number }>(
+    `SELECT id, extended_cost
+       FROM cost_layer_consumptions
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND consumption_type = 'production_input'
+        AND wip_execution_id IS NULL
+      FOR UPDATE`,
+    [tenantId, movementId]
+  );
+
+  if (rows.rowCount === 0) {
+    throw new Error('WO_WIP_COST_NO_CONSUMPTIONS');
+  }
+
+  const ids = rows.rows.map((row) => row.id);
+  const totalCost = rows.rows.reduce((sum, row) => sum + toNumber(row.extended_cost), 0);
+
+  await client.query(
+    `UPDATE cost_layer_consumptions
+        SET wip_execution_id = $1,
+            wip_allocated_at = $2
+      WHERE tenant_id = $3
+        AND id = ANY($4::uuid[])`,
+    [executionId, allocatedAt, tenantId, ids]
+  );
+
+  return totalCost;
+}
+
+async function allocateWipCostFromWorkOrderIssues(
+  client: PoolClient,
+  tenantId: string,
+  workOrderId: string,
+  executionId: string,
+  allocatedAt: Date
+): Promise<number> {
+  const rows = await client.query<{ id: string; extended_cost: string | number }>(
+    `SELECT clc.id, clc.extended_cost
+       FROM cost_layer_consumptions clc
+       JOIN work_order_material_issues wmi
+         ON wmi.id = clc.consumption_document_id
+        AND wmi.tenant_id = clc.tenant_id
+      WHERE wmi.work_order_id = $1
+        AND wmi.status = 'posted'
+        AND clc.tenant_id = $2
+        AND clc.consumption_type = 'production_input'
+        AND clc.wip_execution_id IS NULL
+      FOR UPDATE OF clc`,
+    [workOrderId, tenantId]
+  );
+
+  if (rows.rowCount === 0) {
+    throw new Error('WO_WIP_COST_NO_CONSUMPTIONS');
+  }
+
+  const ids = rows.rows.map((row) => row.id);
+  const totalCost = rows.rows.reduce((sum, row) => sum + toNumber(row.extended_cost), 0);
+
+  await client.query(
+    `UPDATE cost_layer_consumptions
+        SET wip_execution_id = $1,
+            wip_allocated_at = $2
+      WHERE tenant_id = $3
+        AND id = ANY($4::uuid[])`,
+    [executionId, allocatedAt, tenantId, ids]
+  );
+
+  return totalCost;
+}
+
 export async function createWorkOrderIssue(tenantId: string, workOrderId: string, data: WorkOrderIssueCreateInput) {
   const lineNumbers = new Set<number>();
   const normalizedLines = data.lines.map((line, index) => {
@@ -164,14 +253,14 @@ export async function createWorkOrderIssue(tenantId: string, workOrderId: string
     if (lineNumbers.has(lineNumber)) {
       throw new Error('WO_ISSUE_DUPLICATE_LINE');
     }
-    const normalized = normalizeQuantityByUom(line.quantityIssued, line.uom);
+    const quantityIssued = toNumber(line.quantityIssued);
     lineNumbers.add(lineNumber);
     return {
       lineNumber,
       componentItemId: line.componentItemId,
       fromLocationId: line.fromLocationId,
-      uom: normalized.uom,
-      quantityIssued: normalized.quantity,
+      uom: line.uom,
+      quantityIssued,
       reasonCode: line.reasonCode ?? null,
       notes: line.notes ?? null
     };
@@ -328,54 +417,69 @@ export async function postWorkOrderIssue(
     );
 
     const issuedTotal = linesResult.rows.reduce((sum, line) => {
-      const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity_issued)), line.uom);
-      return sum + normalized.quantity;
+      const qty = toNumber(line.quantity_issued);
+      return sum + qty;
     }, 0);
 
     for (const line of linesResult.rows) {
       if (isDisassembly && line.component_item_id !== workOrder.output_item_id) {
         throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
       }
-      const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity_issued)), line.uom);
-      const qty = normalized.quantity;
+      const qty = toNumber(line.quantity_issued);
       if (qty <= 0) {
         throw new Error('WO_ISSUE_INVALID_QUANTITY');
       }
       const reasonCode = line.reason_code ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue');
       
-      // Calculate cost for material issue (negative movement = consumption)
-      const costData = await calculateMovementCost(tenantId, line.component_item_id, roundQuantity(-qty), client);
+      const canonicalFields = await getCanonicalMovementFields(
+        tenantId,
+        line.component_item_id,
+        -qty,
+        line.uom,
+        client
+      );
       
       // Consume from cost layers for material issue
+      let issueCost = null as number | null;
       try {
-        await consumeCostLayers({
+        const consumption = await consumeCostLayers({
           tenant_id: tenantId,
           item_id: line.component_item_id,
           location_id: line.from_location_id,
           quantity: qty,
           consumption_type: 'production_input',
           consumption_document_id: issueId,
-          movement_id: movementId
+          movement_id: movementId,
+          client
         });
-      } catch (err) {
-        // Log but don't fail if cost layer consumption fails (may not have layers yet)
-        console.warn('Failed to consume cost layers for material issue:', err);
+        issueCost = consumption.total_cost;
+      } catch {
+        throw new Error('WO_WIP_COST_LAYERS_MISSING');
       }
+      const unitCost = issueCost !== null && qty !== 0 ? issueCost / qty : null;
+      const extendedCost = issueCost !== null ? -issueCost : null;
       
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
+            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
+            unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           uuidv4(),
           tenantId,
           movementId,
           line.component_item_id,
           line.from_location_id,
-          roundQuantity(-qty),
-          normalized.uom,
-          costData.unitCost,
-          costData.extendedCost,
+          -qty,
+          line.uom,
+          canonicalFields.quantityDeltaEntered,
+          canonicalFields.uomEntered,
+          canonicalFields.quantityDeltaCanonical,
+          canonicalFields.canonicalUom,
+          canonicalFields.uomDimension,
+          unitCost,
+          extendedCost,
           reasonCode,
           line.notes ?? `Work order issue ${issueId} line ${line.line_number}`
         ]
@@ -399,9 +503,9 @@ export async function postWorkOrderIssue(
     }
 
     if (isDisassembly) {
-      const currentCompleted = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
-      const newCompleted = roundQuantity(currentCompleted + issuedTotal);
-      const planned = roundQuantity(toNumber(workOrder.quantity_planned));
+      const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
+      const newCompleted = currentCompleted + issuedTotal;
+      const planned = toNumber(workOrder.quantity_planned);
       const completedAt = newCompleted >= planned ? now : null;
       const nextStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
       await client.query(
@@ -456,10 +560,11 @@ export async function createWorkOrderCompletion(
 ) {
   const executionId = uuidv4();
   const now = new Date();
-  const normalizedLines = data.lines.map((line) => {
-    const normalized = normalizeQuantityByUom(line.quantityCompleted, line.uom);
-    return { ...line, uom: normalized.uom, quantityCompleted: normalized.quantity };
-  });
+  const normalizedLines = data.lines.map((line) => ({
+    ...line,
+    uom: line.uom,
+    quantityCompleted: toNumber(line.quantityCompleted)
+  }));
 
   return withTransaction(async (client) => {
     const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
@@ -488,7 +593,7 @@ export async function createWorkOrderCompletion(
           executionId,
           line.outputItemId,
           line.uom,
-          roundQuantity(line.quantityCompleted),
+          line.quantityCompleted,
           line.packSize ?? null,
           line.toLocationId,
           line.reasonCode ?? null,
@@ -565,9 +670,6 @@ export async function postWorkOrderCompletion(
       throw new Error('WO_COMPLETION_NO_LINES');
     }
 
-    const totalProduced = linesResult.rows.reduce((sum, line) => sum + roundQuantity(toNumber(line.quantity)), 0);
-    const producedRounded = roundQuantity(totalProduced);
-
     for (const line of linesResult.rows) {
       if (line.line_type !== 'produce') {
         throw new Error('WO_COMPLETION_INVALID_LINE_TYPE');
@@ -578,8 +680,7 @@ export async function postWorkOrderCompletion(
       if (!line.to_location_id) {
         throw new Error('WO_COMPLETION_LOCATION_REQUIRED');
       }
-      const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity)), line.uom);
-      const qty = normalized.quantity;
+      const qty = toNumber(line.quantity);
       if (qty <= 0) {
         throw new Error('WO_COMPLETION_INVALID_QUANTITY');
       }
@@ -605,38 +706,71 @@ export async function postWorkOrderCompletion(
       ]
     );
 
+    const preparedLines: Array<{
+      line: WorkOrderExecutionLineRow;
+      qty: number;
+      canonicalFields: CanonicalMovementFields;
+    }> = [];
+    let totalProduced = 0;
+    let totalProducedCanonical = 0;
+
     for (const line of linesResult.rows) {
-      const normalized = normalizeQuantityByUom(roundQuantity(toNumber(line.quantity)), line.uom);
-      const qty = normalized.quantity;
+      const qty = toNumber(line.quantity);
+      const canonicalFields = await getCanonicalMovementFields(
+        tenantId,
+        line.item_id,
+        qty,
+        line.uom,
+        client
+      );
+      totalProduced += qty;
+      totalProducedCanonical += canonicalFields.quantityDeltaCanonical;
+      preparedLines.push({ line, qty, canonicalFields });
+    }
+
+    if (totalProducedCanonical <= 0) {
+      throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
+    }
+
+    const totalIssueCost = await allocateWipCostFromWorkOrderIssues(
+      client,
+      tenantId,
+      workOrderId,
+      completionId,
+      now
+    );
+    const wipUnitCostCanonical = totalIssueCost / totalProducedCanonical;
+
+    for (const { line, qty, canonicalFields } of preparedLines) {
       const reasonCode = line.reason_code ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion');
-      
-      // Calculate cost for work order completion (positive movement = production)
-      const costData = await calculateMovementCost(tenantId, line.item_id, qty, client);
-      
+      const allocationRatio = canonicalFields.quantityDeltaCanonical / totalProducedCanonical;
+      const allocatedCost = totalIssueCost * allocationRatio;
+      const unitCost = qty !== 0 ? allocatedCost / qty : null;
+      const extendedCost = allocatedCost;
+
       // Create cost layer for completed production output
-      try {
-        if (line.to_location_id) {
-          await createCostLayer({
-            tenant_id: tenantId,
-            item_id: line.item_id,
-            location_id: line.to_location_id,
-            uom: normalized.uom,
-            quantity: qty,
-            unit_cost: costData.unitCost || 0,
-            source_type: 'production',
-            source_document_id: completionId,
-            movement_id: movementId,
-            notes: `Production output from work order ${workOrderId}`
-          });
-        }
-      } catch (err) {
-        console.warn('Failed to create cost layer for production output:', err);
+      if (line.to_location_id) {
+        await createCostLayer({
+          tenant_id: tenantId,
+          item_id: line.item_id,
+          location_id: line.to_location_id,
+          uom: line.uom,
+          quantity: qty,
+          unit_cost: unitCost ?? 0,
+          source_type: 'production',
+          source_document_id: completionId,
+          movement_id: movementId,
+          notes: `Production output from work order ${workOrderId}`,
+          client
+        });
       }
-      
+
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
+            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
+            unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           uuidv4(),
           tenantId,
@@ -644,9 +778,14 @@ export async function postWorkOrderCompletion(
           line.item_id,
           line.to_location_id,
           qty,
-          normalized.uom,
-          costData.unitCost,
-          costData.extendedCost,
+          line.uom,
+          canonicalFields.quantityDeltaEntered,
+          canonicalFields.uomEntered,
+          canonicalFields.quantityDeltaCanonical,
+          canonicalFields.canonicalUom,
+          canonicalFields.uomDimension,
+          unitCost,
+          extendedCost,
           reasonCode,
           line.notes ?? `Work order completion ${completionId}`
         ]
@@ -656,15 +795,29 @@ export async function postWorkOrderCompletion(
     await client.query(
       `UPDATE work_order_executions
           SET status = 'posted',
-              production_movement_id = $1
-        WHERE id = $2 AND tenant_id = $3`,
-      [movementId, completionId, tenantId]
+              production_movement_id = $1,
+              wip_total_cost = $2,
+              wip_unit_cost = $3,
+              wip_quantity_canonical = $4,
+              wip_cost_method = $5,
+              wip_costed_at = $6
+        WHERE id = $7 AND tenant_id = $8`,
+      [
+        movementId,
+        totalIssueCost,
+        wipUnitCostCanonical,
+        totalProducedCanonical,
+        WIP_COST_METHOD,
+        now,
+        completionId,
+        tenantId
+      ]
     );
 
     if (!isDisassembly) {
-      const currentCompleted = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
-      const newCompleted = roundQuantity(currentCompleted + producedRounded);
-      const planned = roundQuantity(toNumber(workOrder.quantity_planned));
+      const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
+      const newCompleted = currentCompleted + totalProduced;
+      const planned = toNumber(workOrder.quantity_planned);
       const completedAt = newCompleted >= planned ? now : null;
       const newStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
 
@@ -673,14 +826,78 @@ export async function postWorkOrderCompletion(
             SET quantity_completed = $2,
                 status = $3,
                 completed_at = COALESCE(completed_at, $4),
-                updated_at = $5
-          WHERE id = $1 AND tenant_id = $6`,
-        [workOrderId, newCompleted, newStatus, completedAt, now, tenantId]
+                wip_total_cost = COALESCE(wip_total_cost, 0) + $5,
+                wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $6,
+                wip_unit_cost = CASE
+                  WHEN (COALESCE(wip_quantity_canonical, 0) + $6) > 0
+                  THEN (COALESCE(wip_total_cost, 0) + $5) / (COALESCE(wip_quantity_canonical, 0) + $6)
+                  ELSE NULL
+                END,
+                wip_cost_method = $7,
+                wip_costed_at = $8,
+                updated_at = $9
+          WHERE id = $1 AND tenant_id = $10`,
+        [
+          workOrderId,
+          newCompleted,
+          newStatus,
+          completedAt,
+          totalIssueCost,
+          totalProducedCanonical,
+          WIP_COST_METHOD,
+          now,
+          now,
+          tenantId
+        ]
       );
     } else if (workOrder.status === 'draft') {
       await client.query(
-        `UPDATE work_orders SET status = 'in_progress', updated_at = $2 WHERE id = $1 AND tenant_id = $3`,
-        [workOrderId, now, tenantId]
+        `UPDATE work_orders
+            SET status = 'in_progress',
+                wip_total_cost = COALESCE(wip_total_cost, 0) + $2,
+                wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $3,
+                wip_unit_cost = CASE
+                  WHEN (COALESCE(wip_quantity_canonical, 0) + $3) > 0
+                  THEN (COALESCE(wip_total_cost, 0) + $2) / (COALESCE(wip_quantity_canonical, 0) + $3)
+                  ELSE NULL
+                END,
+                wip_cost_method = $4,
+                wip_costed_at = $5,
+                updated_at = $6
+          WHERE id = $1 AND tenant_id = $7`,
+        [
+          workOrderId,
+          totalIssueCost,
+          totalProducedCanonical,
+          WIP_COST_METHOD,
+          now,
+          now,
+          tenantId
+        ]
+      );
+    } else {
+      await client.query(
+        `UPDATE work_orders
+            SET wip_total_cost = COALESCE(wip_total_cost, 0) + $2,
+                wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $3,
+                wip_unit_cost = CASE
+                  WHEN (COALESCE(wip_quantity_canonical, 0) + $3) > 0
+                  THEN (COALESCE(wip_total_cost, 0) + $2) / (COALESCE(wip_quantity_canonical, 0) + $3)
+                  ELSE NULL
+                END,
+                wip_cost_method = $4,
+                wip_costed_at = $5,
+                updated_at = $6
+          WHERE id = $1 AND tenant_id = $7`,
+        [
+          workOrderId,
+          totalIssueCost,
+          totalProducedCanonical,
+          WIP_COST_METHOD,
+          now,
+          now,
+          tenantId
+        ]
       );
     }
 
@@ -781,18 +998,18 @@ export async function recordWorkOrderBatch(
   context: NegativeOverrideContext = {}
 ) {
   const normalizedConsumes = data.consumeLines.map((line) => {
-    const normalized = normalizeQuantityByUom(line.quantity, line.uom);
-    if (normalized.quantity <= 0) {
+    const quantity = toNumber(line.quantity);
+    if (quantity <= 0) {
       throw new Error('WO_BATCH_INVALID_CONSUME_QTY');
     }
-    return { ...line, quantity: normalized.quantity, uom: normalized.uom, reasonCode: line.reasonCode ?? null };
+    return { ...line, quantity, uom: line.uom, reasonCode: line.reasonCode ?? null };
   });
   const normalizedProduces = data.produceLines.map((line) => {
-    const normalized = normalizeQuantityByUom(line.quantity, line.uom);
-    if (normalized.quantity <= 0) {
+    const quantity = toNumber(line.quantity);
+    if (quantity <= 0) {
       throw new Error('WO_BATCH_INVALID_PRODUCE_QTY');
     }
-    return { ...line, quantity: normalized.quantity, uom: normalized.uom, reasonCode: line.reasonCode ?? null };
+    return { ...line, quantity, uom: line.uom, reasonCode: line.reasonCode ?? null };
   });
 
   return withTransaction(async (client) => {
@@ -938,7 +1155,7 @@ export async function recordWorkOrderBatch(
           i + 1,
           line.componentItemId,
           line.uom,
-          roundQuantity(line.quantity),
+          line.quantity,
           line.fromLocationId,
           line.reasonCode,
           line.notes ?? null,
@@ -949,38 +1166,55 @@ export async function recordWorkOrderBatch(
     for (const line of normalizedConsumes) {
       const reasonCode = line.reasonCode ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue');
       
-      // Calculate cost for backflush material consumption
-      const costData = await calculateMovementCost(tenantId, line.componentItemId, roundQuantity(-line.quantity), client);
+      const canonicalFields = await getCanonicalMovementFields(
+        tenantId,
+        line.componentItemId,
+        -line.quantity,
+        line.uom,
+        client
+      );
       
       // Consume from cost layers for backflush material consumption
+      let issueCost = null as number | null;
       try {
-        await consumeCostLayers({
+        const consumption = await consumeCostLayers({
           tenant_id: tenantId,
           item_id: line.componentItemId,
           location_id: line.fromLocationId,
-          quantity: roundQuantity(line.quantity),
+          quantity: line.quantity,
           consumption_type: 'production_input',
           consumption_document_id: issueId,
-          movement_id: issueMovementId
+          movement_id: issueMovementId,
+          client
         });
-      } catch (err) {
-        console.warn('Failed to consume cost layers for backflush:', err);
+        issueCost = consumption.total_cost;
+      } catch {
+        throw new Error('WO_WIP_COST_LAYERS_MISSING');
       }
+      const unitCost = issueCost !== null && line.quantity !== 0 ? issueCost / line.quantity : null;
+      const extendedCost = issueCost !== null ? -issueCost : null;
       
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
+            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
+            unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           uuidv4(),
           tenantId,
           issueMovementId,
           line.componentItemId,
           line.fromLocationId,
-          roundQuantity(-line.quantity),
+          -line.quantity,
           line.uom,
-          costData.unitCost,
-          costData.extendedCost,
+          canonicalFields.quantityDeltaEntered,
+          canonicalFields.uomEntered,
+          canonicalFields.quantityDeltaCanonical,
+          canonicalFields.canonicalUom,
+          canonicalFields.uomDimension,
+          unitCost,
+          extendedCost,
           reasonCode,
           line.notes ?? null
         ]
@@ -1006,7 +1240,7 @@ export async function recordWorkOrderBatch(
           executionId,
           line.outputItemId,
           line.uom,
-          roundQuantity(line.quantity),
+          line.quantity,
           line.packSize ?? null,
           line.toLocationId,
           line.reasonCode,
@@ -1015,57 +1249,113 @@ export async function recordWorkOrderBatch(
         ]
       );
     }
+    const preparedProduces: Array<{
+      line: (typeof normalizedProduces)[number];
+      canonicalFields: CanonicalMovementFields;
+    }> = [];
+    let producedTotal = 0;
+    let producedCanonicalTotal = 0;
+
     for (const line of normalizedProduces) {
+      const canonicalFields = await getCanonicalMovementFields(
+        tenantId,
+        line.outputItemId,
+        line.quantity,
+        line.uom,
+        client
+      );
+      producedTotal += line.quantity;
+      producedCanonicalTotal += canonicalFields.quantityDeltaCanonical;
+      preparedProduces.push({ line, canonicalFields });
+    }
+
+    if (producedCanonicalTotal <= 0) {
+      throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
+    }
+
+    const totalIssueCost = await allocateWipCostFromMovement(
+      client,
+      tenantId,
+      executionId,
+      issueMovementId,
+      now
+    );
+    const wipUnitCostCanonical = totalIssueCost / producedCanonicalTotal;
+
+    for (const { line, canonicalFields } of preparedProduces) {
       const reasonCode = line.reasonCode ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion');
-      
-      // Calculate cost for backflush production
-      const costData = await calculateMovementCost(tenantId, line.outputItemId, roundQuantity(line.quantity), client);
-      
+      const allocationRatio = canonicalFields.quantityDeltaCanonical / producedCanonicalTotal;
+      const allocatedCost = totalIssueCost * allocationRatio;
+      const unitCost = line.quantity !== 0 ? allocatedCost / line.quantity : null;
+      const extendedCost = allocatedCost;
+
       // Create cost layer for backflush production output
-      try {
-        await createCostLayer({
-          tenant_id: tenantId,
-          item_id: line.outputItemId,
-          location_id: line.toLocationId,
-          uom: line.uom,
-          quantity: roundQuantity(line.quantity),
-          unit_cost: costData.unitCost || 0,
-          source_type: 'production',
-          source_document_id: issueId,
-          movement_id: receiveMovementId,
-          notes: `Backflush production from work order ${workOrderId}`
-        });
-      } catch (err) {
-        console.warn('Failed to create cost layer for backflush production:', err);
-      }
-      
+      await createCostLayer({
+        tenant_id: tenantId,
+        item_id: line.outputItemId,
+        location_id: line.toLocationId,
+        uom: line.uom,
+        quantity: line.quantity,
+        unit_cost: unitCost ?? 0,
+        source_type: 'production',
+        source_document_id: issueId,
+        movement_id: receiveMovementId,
+        notes: `Backflush production from work order ${workOrderId}`,
+        client
+      });
+
       await client.query(
         `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
+            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
+            unit_cost, extended_cost, reason_code, line_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           uuidv4(),
           tenantId,
           receiveMovementId,
           line.outputItemId,
           line.toLocationId,
-          roundQuantity(line.quantity),
+          line.quantity,
           line.uom,
-          costData.unitCost,
-          costData.extendedCost,
+          canonicalFields.quantityDeltaEntered,
+          canonicalFields.uomEntered,
+          canonicalFields.quantityDeltaCanonical,
+          canonicalFields.canonicalUom,
+          canonicalFields.uomDimension,
+          unitCost,
+          extendedCost,
           reasonCode,
           line.notes ?? null
         ]
       );
     }
 
+    await client.query(
+      `UPDATE work_order_executions
+          SET wip_total_cost = $1,
+              wip_unit_cost = $2,
+              wip_quantity_canonical = $3,
+              wip_cost_method = $4,
+              wip_costed_at = $5
+        WHERE id = $6 AND tenant_id = $7`,
+      [
+        totalIssueCost,
+        wipUnitCostCanonical,
+        producedCanonicalTotal,
+        WIP_COST_METHOD,
+        now,
+        executionId,
+        tenantId
+      ]
+    );
+
     // Update work order progress
-    const producedTotal = normalizedProduces.reduce((sum, line) => sum + roundQuantity(line.quantity), 0);
-    const consumedTotal = normalizedConsumes.reduce((sum, line) => sum + roundQuantity(line.quantity), 0);
-    const currentCompleted = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
+    const consumedTotal = normalizedConsumes.reduce((sum, line) => sum + line.quantity, 0);
+    const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
     const progressQty = isDisassembly ? consumedTotal : producedTotal;
-    const newCompleted = roundQuantity(currentCompleted + progressQty);
-    const planned = roundQuantity(toNumber(workOrder.quantity_planned));
+    const newCompleted = currentCompleted + progressQty;
+    const planned = toNumber(workOrder.quantity_planned);
     const completedAt = newCompleted >= planned ? now : null;
     const newStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
 
@@ -1074,9 +1364,29 @@ export async function recordWorkOrderBatch(
           SET quantity_completed = $2,
               status = $3,
               completed_at = COALESCE(completed_at, $4),
-              updated_at = $5
-        WHERE id = $1 AND tenant_id = $6`,
-      [workOrderId, newCompleted, newStatus, completedAt, now, tenantId]
+              wip_total_cost = COALESCE(wip_total_cost, 0) + $5,
+              wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $6,
+              wip_unit_cost = CASE
+                WHEN (COALESCE(wip_quantity_canonical, 0) + $6) > 0
+                THEN (COALESCE(wip_total_cost, 0) + $5) / (COALESCE(wip_quantity_canonical, 0) + $6)
+                ELSE NULL
+              END,
+              wip_cost_method = $7,
+              wip_costed_at = $8,
+              updated_at = $9
+        WHERE id = $1 AND tenant_id = $10`,
+      [
+        workOrderId,
+        newCompleted,
+        newStatus,
+        completedAt,
+        totalIssueCost,
+        producedCanonicalTotal,
+        WIP_COST_METHOD,
+        now,
+        now,
+        tenantId
+      ]
     );
 
     if (validation.overrideMetadata && context.actor) {

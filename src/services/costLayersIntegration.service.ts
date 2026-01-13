@@ -40,7 +40,8 @@ export async function processReceiptIntoCostLayers(params: {
     movement_id: params.movement_id,
     lot_id: params.lot_id,
     layer_date: params.received_at,
-    notes: params.notes
+    notes: params.notes,
+    client: params.client
   });
 }
 
@@ -76,7 +77,8 @@ export async function processIssueFromCostLayers(params: {
     movement_id: params.movement_id,
     consumed_at: params.consumed_at,
     lot_id: params.lot_id,
-    notes: params.notes
+    notes: params.notes,
+    client: params.client
   });
 
   return {
@@ -147,6 +149,7 @@ export async function initializeCostLayersFromSnapshot(
     unit_cost: cost_per_unit,
     source_type: 'opening_balance',
     layer_date: new Date(),
-    notes: 'Initial cost layer from inventory snapshot'
+    notes: 'Initial cost layer from inventory snapshot',
+    client
   });
 }

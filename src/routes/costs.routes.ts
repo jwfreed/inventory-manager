@@ -77,6 +77,14 @@ router.post('/items/:id/roll-cost', async (req: Request, res: Response) => {
       message: 'Rolled cost calculated and updated successfully'
     });
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'BOM_LEGACY_COMPONENTS') {
+        return res.status(409).json({ error: 'Legacy BOM detected; cost roll-up not available.' });
+      }
+      if (error.message.startsWith('ITEM_CANONICAL_UOM') || error.message.startsWith('UOM_')) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
     console.error('Error rolling up item cost:', error);
     return res.status(500).json({ error: 'Failed to roll up item cost' });
   }
@@ -143,6 +151,14 @@ router.post('/boms/:id/cost-preview', async (req: Request, res: Response) => {
       }))
     });
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'BOM_LEGACY_COMPONENTS') {
+        return res.status(409).json({ error: 'Legacy BOM detected; preview unavailable.' });
+      }
+      if (error.message.startsWith('ITEM_CANONICAL_UOM') || error.message.startsWith('UOM_')) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
     console.error('Error previewing BOM cost:', error);
     return res.status(500).json({ error: 'Failed to preview BOM cost' });
   }

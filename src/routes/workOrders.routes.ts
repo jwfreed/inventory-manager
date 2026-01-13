@@ -143,11 +143,17 @@ router.get('/work-orders/:id/requirements', async (req: Request, res: Response) 
     if (error?.message === 'WO_BOM_VERSION_NOT_FOUND') {
       return res.status(400).json({ error: 'No BOM version available for this work order.' });
     }
+    if (error?.message === 'WO_BOM_LEGACY_UNSUPPORTED') {
+      return res.status(409).json({ error: 'Legacy BOM detected; requirements cannot be planned.' });
+    }
     if (error?.message === 'WO_REQUIREMENTS_UOM_MISMATCH') {
       return res.status(400).json({ error: 'Output UOM does not match BOM yield UOM.' });
     }
     if (error?.message === 'WO_REQUIREMENTS_INVALID_YIELD') {
       return res.status(400).json({ error: 'Invalid BOM yield quantity.' });
+    }
+    if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
+      return res.status(400).json({ error: error.message });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to compute work order requirements.' });
