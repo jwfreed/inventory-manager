@@ -16,6 +16,9 @@ export type Item = {
   lifecycleStatus: 'Active' | 'In-Development' | 'Obsolete' | 'Phase-Out'
   abcClass?: 'A' | 'B' | 'C' | null
   standardCost?: number | null
+  standardCostCurrency?: string | null
+  standardCostExchangeRateToBase?: number | null
+  standardCostBase?: number | null
   averageCost?: number | null
   rolledCost?: number | null
   rolledCostAt?: string | null

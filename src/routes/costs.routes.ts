@@ -51,10 +51,7 @@ router.post('/items/:id/roll-cost', async (req: Request, res: Response) => {
       });
     }
 
-    // Calculate actor string for audit
-    const calculatedBy = req.auth?.userId
-      ? `user:${req.auth.userId}`
-      : 'system';
+    const calculatedBy = req.auth?.userId ?? null;
 
     // Update rolled cost
     const result = await updateItemRolledCost(

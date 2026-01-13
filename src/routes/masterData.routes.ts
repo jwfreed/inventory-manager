@@ -16,6 +16,8 @@ import {
   updateItem,
   updateLocation
 } from '../services/masterData.service';
+import { getItemMetrics } from '../services/itemMetrics.service';
+import { getUserBaseCurrency } from '../services/users.service';
 import { ItemLifecycleStatus } from '../types/item';
 
 const router = Router();
@@ -33,7 +35,8 @@ router.post('/items', async (req: Request, res: Response) => {
       .json({ error: 'SKU is reserved for work order identifiers. Choose a different SKU.' });
   }
   try {
-    const item = await createItem(req.auth!.tenantId, parsed.data);
+    const baseCurrency = await getUserBaseCurrency(req.auth!.userId);
+    const item = await createItem(req.auth!.tenantId, parsed.data, baseCurrency);
     return res.status(201).json(item);
   } catch (error) {
     const mapped = mapPgErrorToHttp(error, {
@@ -81,6 +84,21 @@ router.get('/items/:id', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/items/:id/metrics', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid item id.' });
+  }
+  const windowDays = Math.min(365, Math.max(1, Number(req.query.windowDays) || 90));
+  try {
+    const metrics = await getItemMetrics(req.auth!.tenantId, [id], windowDays);
+    return res.json(metrics[0] ?? { itemId: id, windowDays });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fetch item metrics.' });
+  }
+});
+
 router.put('/items/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) {
@@ -97,7 +115,8 @@ router.put('/items/:id', async (req: Request, res: Response) => {
       .json({ error: 'SKU is reserved for work order identifiers. Choose a different SKU.' });
   }
   try {
-    const item = await updateItem(req.auth!.tenantId, id, parsed.data);
+    const baseCurrency = await getUserBaseCurrency(req.auth!.userId);
+    const item = await updateItem(req.auth!.tenantId, id, parsed.data, baseCurrency);
     if (!item) return res.status(404).json({ error: 'Item not found.' });
     return res.json(item);
   } catch (error) {

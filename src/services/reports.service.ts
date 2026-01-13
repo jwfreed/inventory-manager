@@ -111,9 +111,10 @@ export async function getInventoryValuation(
       oh.uom,
       oh.quantity_on_hand,
       NULL::numeric as average_cost,
-      i.standard_cost,
+      COALESCE(i.standard_cost_base, i.standard_cost) AS standard_cost,
       CASE 
-        WHEN i.standard_cost IS NOT NULL THEN oh.quantity_on_hand * i.standard_cost
+        WHEN COALESCE(i.standard_cost_base, i.standard_cost) IS NOT NULL
+          THEN oh.quantity_on_hand * COALESCE(i.standard_cost_base, i.standard_cost)
         ELSE NULL
       END as extended_value
     FROM on_hand oh
@@ -147,12 +148,13 @@ export async function getInventoryValuation(
       COALESCE(SUM(oh.quantity_on_hand), 0) as total_quantity,
       COALESCE(SUM(
         CASE 
-          WHEN i.standard_cost IS NOT NULL THEN oh.quantity_on_hand * i.standard_cost
+          WHEN COALESCE(i.standard_cost_base, i.standard_cost) IS NOT NULL
+            THEN oh.quantity_on_hand * COALESCE(i.standard_cost_base, i.standard_cost)
           ELSE 0
         END
       ), 0) as total_value,
-      COUNT(DISTINCT CASE WHEN i.standard_cost IS NOT NULL THEN i.id END) as total_valued_items,
-      COUNT(DISTINCT CASE WHEN i.standard_cost IS NULL THEN i.id END) as total_unvalued_items
+      COUNT(DISTINCT CASE WHEN COALESCE(i.standard_cost_base, i.standard_cost) IS NOT NULL THEN i.id END) as total_valued_items,
+      COUNT(DISTINCT CASE WHEN COALESCE(i.standard_cost_base, i.standard_cost) IS NULL THEN i.id END) as total_unvalued_items
     FROM on_hand oh
     JOIN items i ON i.id = oh.item_id AND i.tenant_id = $1
     JOIN locations l ON l.id = oh.location_id AND l.tenant_id = $1
@@ -206,7 +208,7 @@ export async function getCostVariance(
 ): Promise<{ data: CostVarianceRow[] }> {
   const { itemType, limit = 500, offset = 0 } = options || {};
 
-  let whereConditions = ['i.tenant_id = $1', 'i.standard_cost IS NOT NULL'];
+  let whereConditions = ['i.tenant_id = $1', 'COALESCE(i.standard_cost_base, i.standard_cost) IS NOT NULL'];
   const params: any[] = [tenantId];
   let paramIndex = 2;
 
@@ -236,7 +238,7 @@ export async function getCostVariance(
       i.id as item_id,
       i.sku as item_sku,
       i.name as item_name,
-      i.standard_cost,
+      COALESCE(i.standard_cost_base, i.standard_cost) AS standard_cost,
       NULL::numeric as average_cost,
       NULL::numeric as variance,
       NULL::numeric as variance_percent,

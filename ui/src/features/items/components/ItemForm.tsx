@@ -1,15 +1,18 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiError, Item } from '../../../api/types'
 import { createItem, updateItem, type ItemPayload } from '../api/items'
 import { itemsQueryKeys } from '../queries'
 import { useLocationsList } from '../../locations/queries'
+import { getActiveCurrencies } from '../../../api/currencies'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { Input, Textarea } from '../../../components/Inputs'
 import { FormField } from '../../../components/FormField'
+import { formatCurrency } from '@shared/formatters'
+import { useAuth } from '@shared/auth'
 
 type Props = {
   initialItem?: Item
@@ -22,6 +25,8 @@ type Props = {
 export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku }: Props) {
   const isEdit = Boolean(initialItem?.id)
   const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const baseCurrency = user?.baseCurrency ?? 'THB'
   const [sku, setSku] = useState(initialItem?.sku ?? '')
   const [name, setName] = useState(initialItem?.name ?? '')
   const [description, setDescription] = useState(initialItem?.description ?? '')
@@ -35,6 +40,9 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
   const [standardCost, setStandardCost] = useState<string>(
     initialItem?.standardCost != null ? initialItem.standardCost.toString() : '',
   )
+  const [standardCostCurrency, setStandardCostCurrency] = useState(
+    initialItem?.standardCostCurrency ?? baseCurrency,
+  )
 
   useEffect(() => {
     if (!initialItem) return
@@ -47,9 +55,15 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
     setDefaultUom(initialItem.defaultUom ?? '')
     setDefaultLocationId(initialItem.defaultLocationId ?? '')
     setStandardCost(initialItem.standardCost != null ? initialItem.standardCost.toString() : '')
-  }, [initialItem])
+    setStandardCostCurrency(initialItem.standardCostCurrency ?? baseCurrency)
+  }, [baseCurrency, initialItem])
 
   const locationsQuery = useLocationsList({ active: true, limit: 200 }, { staleTime: 60_000 })
+  const currenciesQuery = useQuery({
+    queryKey: ['currencies', 'active'],
+    queryFn: getActiveCurrencies,
+    staleTime: 5 * 60_000,
+  })
 
   const mutation = useMutation<Item, ApiError, ItemPayload>({
     mutationFn: (payload) =>
@@ -73,6 +87,8 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
       defaultUom: defaultUom.trim() ? defaultUom.trim() : undefined,
       defaultLocationId: defaultLocationId || null,
       standardCost: standardCostValue,
+      standardCostCurrency:
+        standardCostValue != null ? (standardCostCurrency ? standardCostCurrency : undefined) : undefined,
     })
   }
 
@@ -166,6 +182,33 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
               placeholder="0.00"
               disabled={mutation.isPending}
             />
+          </FormField>
+          <FormField
+            label="Standard Cost Currency"
+            helper={
+              initialItem?.standardCostBase != null
+                ? `Base (${baseCurrency}): ${formatCurrency(initialItem.standardCostBase, baseCurrency)}`
+                : 'Base currency conversion saved on update.'
+            }
+          >
+            <select
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={standardCostCurrency}
+              onChange={(e) => setStandardCostCurrency(e.target.value)}
+              disabled={mutation.isPending || currenciesQuery.isLoading || !standardCost.trim()}
+            >
+              {currenciesQuery.data?.map((currency) => (
+                <option key={currency.code} value={currency.code}>
+                  {currency.code} — {currency.name}
+                </option>
+              ))}
+              {!currenciesQuery.data?.length && <option value="THB">THB — Thai Baht</option>}
+            </select>
+            {currenciesQuery.isError && (
+              <p className="text-xs text-red-600">
+                {(currenciesQuery.error as ApiError)?.message || 'Could not load currencies.'}
+              </p>
+            )}
           </FormField>
         </div>
         <FormField label="Default location" className="block">

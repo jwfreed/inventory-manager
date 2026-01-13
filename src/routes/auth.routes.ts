@@ -29,7 +29,8 @@ const refreshSchema = z.object({
 
 const profileUpdateSchema = z.object({
   email: z.string().email().optional(),
-  fullName: z.string().optional()
+  fullName: z.string().optional(),
+  baseCurrency: z.string().length(3).toUpperCase().optional()
 });
 
 function mapUser(row: any) {
@@ -37,6 +38,7 @@ function mapUser(row: any) {
     id: row.id,
     email: row.email,
     fullName: row.full_name,
+    baseCurrency: row.base_currency ?? null,
     active: row.active,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -345,8 +347,9 @@ router.patch('/auth/me', requireAuth, async (req: Request, res: Response) => {
 
   const emailInput = parsed.data.email?.trim();
   const fullNameInput = parsed.data.fullName?.trim();
+  const baseCurrencyInput = parsed.data.baseCurrency?.trim();
 
-  if (!emailInput && !fullNameInput && fullNameInput !== '') {
+  if (!emailInput && !fullNameInput && fullNameInput !== '' && !baseCurrencyInput) {
     return res.status(400).json({ error: 'No profile changes provided.' });
   }
 
@@ -363,6 +366,7 @@ router.patch('/auth/me', requireAuth, async (req: Request, res: Response) => {
       const existing = userRes.rows[0];
       const nextEmail = emailInput ?? existing.email;
       const nextFullName = fullNameInput === undefined ? existing.full_name : (fullNameInput || null);
+      const nextBaseCurrency = baseCurrencyInput ?? existing.base_currency ?? 'THB';
 
       if (emailInput) {
         const dupRes = await client.query('SELECT id FROM users WHERE email = $1 AND id <> $2', [
@@ -378,10 +382,11 @@ router.patch('/auth/me', requireAuth, async (req: Request, res: Response) => {
         `UPDATE users
             SET email = $1,
                 full_name = $2,
+                base_currency = $3,
                 updated_at = now()
-          WHERE id = $3
+          WHERE id = $4
           RETURNING *`,
-        [nextEmail, nextFullName, auth.userId]
+        [nextEmail, nextFullName, nextBaseCurrency, auth.userId]
       );
       return result.rows[0];
     });
@@ -402,6 +407,9 @@ router.patch('/auth/me', requireAuth, async (req: Request, res: Response) => {
     }
     if (error?.message === 'USER_EMAIL_IN_USE') {
       return res.status(409).json({ error: 'Email is already in use.' });
+    }
+    if (error?.code === '23503') {
+      return res.status(400).json({ error: 'Invalid base currency.' });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to update profile.' });

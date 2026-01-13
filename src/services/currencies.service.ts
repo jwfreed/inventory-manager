@@ -1,20 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '../db';
 
-/**
- * Fetch exchange rate for a specific currency pair and date
- * Looks up the most recent rate on or before the given date
- */
-export async function getExchangeRate(
+const EXCHANGE_RATE_PIVOT = process.env.EXCHANGE_RATE_PIVOT || process.env.EXCHANGE_RATE_BASE || 'USD';
+
+async function getDirectExchangeRate(
   fromCurrency: string,
   toCurrency: string,
-  effectiveDate: Date = new Date()
+  effectiveDate: Date
 ): Promise<number | null> {
-  // If same currency, rate is 1.0
-  if (fromCurrency === toCurrency) {
-    return 1.0;
-  }
-
   const result = await query(
     `SELECT rate
      FROM exchange_rates
@@ -31,6 +24,57 @@ export async function getExchangeRate(
   }
 
   return Number(result.rows[0].rate);
+}
+
+async function getRateOrInverse(
+  fromCurrency: string,
+  toCurrency: string,
+  effectiveDate: Date
+): Promise<number | null> {
+  const direct = await getDirectExchangeRate(fromCurrency, toCurrency, effectiveDate);
+  if (direct !== null) {
+    return direct;
+  }
+
+  const inverse = await getDirectExchangeRate(toCurrency, fromCurrency, effectiveDate);
+  if (inverse !== null) {
+    return 1 / inverse;
+  }
+
+  return null;
+}
+
+/**
+ * Fetch exchange rate for a specific currency pair and date
+ * Looks up the most recent rate on or before the given date
+ */
+export async function getExchangeRate(
+  fromCurrency: string,
+  toCurrency: string,
+  effectiveDate: Date = new Date()
+): Promise<number | null> {
+  // If same currency, rate is 1.0
+  if (fromCurrency === toCurrency) {
+    return 1.0;
+  }
+
+  const direct = await getRateOrInverse(fromCurrency, toCurrency, effectiveDate);
+  if (direct !== null) {
+    return direct;
+  }
+
+  if (fromCurrency === EXCHANGE_RATE_PIVOT || toCurrency === EXCHANGE_RATE_PIVOT) {
+    return null;
+  }
+
+  const toPivot = await getRateOrInverse(fromCurrency, EXCHANGE_RATE_PIVOT, effectiveDate);
+  const fromPivot = await getRateOrInverse(EXCHANGE_RATE_PIVOT, toCurrency, effectiveDate);
+
+  if (toPivot === null || fromPivot === null) {
+    return null;
+  }
+
+  return toPivot * fromPivot;
 }
 
 /**

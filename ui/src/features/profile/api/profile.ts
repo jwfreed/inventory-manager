@@ -10,6 +10,7 @@ export type ProfileResponse = {
 export type ProfileUpdatePayload = {
   email?: string
   fullName?: string
+  baseCurrency?: string
 }
 
 export async function getProfile(): Promise<ProfileResponse> {

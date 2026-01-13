@@ -65,7 +65,7 @@ async function getBomComponents(
        bvl.component_quantity,
        bvl.component_uom,
        bvl.scrap_factor,
-       i.standard_cost,
+       COALESCE(i.standard_cost_base, i.standard_cost) AS standard_cost,
        i.rolled_cost,
        i.cost_method
      FROM bom_version_lines bvl
@@ -176,7 +176,7 @@ export async function calculateBomCost(
 export async function updateItemRolledCost(
   tenantId: string,
   itemId: string,
-  calculatedBy: string = 'system',
+  calculatedBy: string | null = null,
   client?: PoolClient
 ): Promise<{ rolledCost: number; bomVersionId: string } | null> {
   const executor = client ?? pool;
@@ -231,6 +231,14 @@ export async function updateItemRolledCost(
 
   // Create cost history record
   const historyId = uuidv4();
+  let calculatedById: string | null = null;
+  if (calculatedBy) {
+    if (calculatedBy.startsWith('user:')) {
+      calculatedById = calculatedBy.slice(5);
+    } else if (calculatedBy !== 'system') {
+      calculatedById = calculatedBy;
+    }
+  }
   await executor.query(
     `INSERT INTO item_cost_history (
        id, tenant_id, item_id, cost_type, old_value, new_value,
@@ -243,7 +251,7 @@ export async function updateItemRolledCost(
       oldCost,
       costBreakdown.totalCost,
       now,
-      calculatedBy,
+      calculatedById,
       bomVersionId,
       JSON.stringify(costBreakdown.components)
     ]
@@ -269,7 +277,7 @@ export async function updateItemRolledCost(
 export async function batchUpdateRolledCosts(
   tenantId: string,
   itemIds: string[],
-  calculatedBy: string = 'system'
+  calculatedBy: string | null = null
 ): Promise<Array<{ itemId: string; success: boolean; rolledCost?: number; error?: string }>> {
   const results: Array<{ itemId: string; success: boolean; rolledCost?: number; error?: string }> = [];
 

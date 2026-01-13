@@ -1,12 +1,20 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import type { ApiError, Item, ItemInventoryRow } from '../../api/types'
-import { getItem, getItemInventorySummary, listItems, type ListItemsParams } from './api/items'
+import {
+  getItem,
+  getItemInventorySummary,
+  getItemMetrics,
+  listItems,
+  type ItemMetrics,
+  type ListItemsParams,
+} from './api/items'
 
 export const itemsQueryKeys = {
   all: ['items'] as const,
   list: (params: ListItemsParams = {}) => [...itemsQueryKeys.all, 'list', params] as const,
   detail: (id: string) => [...itemsQueryKeys.all, 'detail', id] as const,
   inventorySummary: (id: string) => [...itemsQueryKeys.all, 'inventory-summary', id] as const,
+  metrics: (id: string, windowDays?: number) => [...itemsQueryKeys.all, 'metrics', id, windowDays] as const,
 }
 
 type ItemsListOptions = Omit<
@@ -20,6 +28,8 @@ type ItemInventoryOptions = Omit<
   UseQueryOptions<ItemInventoryRow[], ApiError>,
   'queryKey' | 'queryFn'
 >
+
+type ItemMetricsOptions = Omit<UseQueryOptions<ItemMetrics, ApiError>, 'queryKey' | 'queryFn'>
 
 export function useItemsList(params: ListItemsParams = {}, options: ItemsListOptions = {}) {
   return useQuery({
@@ -46,6 +56,20 @@ export function useItemInventorySummary(id?: string, options: ItemInventoryOptio
   return useQuery({
     queryKey: itemsQueryKeys.inventorySummary(id ?? ''),
     queryFn: () => getItemInventorySummary(id as string),
+    enabled: Boolean(id),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useItemMetrics(
+  id?: string,
+  windowDays: number = 90,
+  options: ItemMetricsOptions = {}
+) {
+  return useQuery({
+    queryKey: itemsQueryKeys.metrics(id ?? '', windowDays),
+    queryFn: () => getItemMetrics(id as string, windowDays),
     enabled: Boolean(id),
     retry: 1,
     ...options,

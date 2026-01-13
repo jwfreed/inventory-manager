@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert, Button, Card, Input, LoadingSpinner, Section } from '@shared/ui'
 import { useAuth } from '@shared/auth'
 import type { ApiError } from '@api/types'
+import { getActiveCurrencies } from '../../../api/currencies'
 import { updateProfile } from '../api/profile'
 import { useProfile } from '../queries'
 
@@ -24,6 +25,7 @@ export default function ProfilePage() {
   const profileQuery = useProfile()
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
+  const [baseCurrency, setBaseCurrency] = useState('THB')
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -32,7 +34,14 @@ export default function ProfilePage() {
     if (!payload) return
     setEmail(payload.email ?? '')
     setFullName(payload.fullName ?? '')
+    setBaseCurrency(payload.baseCurrency ?? 'THB')
   }, [profileQuery.data?.user, user])
+
+  const currenciesQuery = useQuery({
+    queryKey: ['currencies', 'active'],
+    queryFn: getActiveCurrencies,
+    staleTime: 5 * 60_000,
+  })
 
   const canEditEmail = role === 'admin'
   const effectiveRole = profileQuery.data?.role ?? role ?? 'member'
@@ -41,16 +50,26 @@ export default function ProfilePage() {
   const isDirty = useMemo(() => {
     const current = profileQuery.data?.user ?? user
     if (!current) return false
-    return (current.email ?? '') !== email || (current.fullName ?? '') !== fullName
-  }, [email, fullName, profileQuery.data?.user, user])
+    return (
+      (current.email ?? '') !== email ||
+      (current.fullName ?? '') !== fullName ||
+      (current.baseCurrency ?? 'THB') !== baseCurrency
+    )
+  }, [email, fullName, baseCurrency, profileQuery.data?.user, user])
 
   const saveMutation = useMutation({
-    mutationFn: () => updateProfile({ email: email.trim() || undefined, fullName: fullName.trim() }),
+    mutationFn: () =>
+      updateProfile({
+        email: email.trim() || undefined,
+        fullName: fullName.trim(),
+        baseCurrency: baseCurrency || undefined,
+      }),
     onSuccess: (payload) => {
       setSaveError(null)
       setSaveMessage('Profile updated.')
       setEmail(payload.user.email ?? '')
       setFullName(payload.user.fullName ?? '')
+      setBaseCurrency(payload.user.baseCurrency ?? 'THB')
       void refresh()
     },
     onError: (err: ApiError | unknown) => {
@@ -73,7 +92,7 @@ export default function ProfilePage() {
           )}
           {!profileQuery.isLoading && !profileQuery.isError && (
             <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-3">
                 <label className="space-y-1 text-sm">
                   <span className="text-xs uppercase tracking-wide text-slate-500">Email</span>
                   <Input
@@ -88,6 +107,27 @@ export default function ProfilePage() {
                 <label className="space-y-1 text-sm">
                   <span className="text-xs uppercase tracking-wide text-slate-500">Full name</span>
                   <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Base currency</span>
+                  <select
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    value={baseCurrency}
+                    onChange={(e) => setBaseCurrency(e.target.value)}
+                    disabled={currenciesQuery.isLoading || saveMutation.isPending}
+                  >
+                    {currenciesQuery.data?.map((currency) => (
+                      <option key={currency.code} value={currency.code}>
+                        {currency.code} — {currency.name}
+                      </option>
+                    ))}
+                    {!currenciesQuery.data?.length && <option value="THB">THB — Thai Baht</option>}
+                  </select>
+                  {currenciesQuery.isError && (
+                    <div className="text-xs text-red-600">
+                      {(currenciesQuery.error as ApiError)?.message ?? 'Unable to load currencies.'}
+                    </div>
+                  )}
                 </label>
               </div>
 
@@ -120,6 +160,7 @@ export default function ProfilePage() {
                     if (!current) return
                     setEmail(current.email ?? '')
                     setFullName(current.fullName ?? '')
+                    setBaseCurrency(current.baseCurrency ?? 'THB')
                     setSaveError(null)
                     setSaveMessage(null)
                   }}

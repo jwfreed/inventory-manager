@@ -200,7 +200,7 @@ export async function getCostVarianceByCostLayers(
       i.name as item_name,
       l.id as location_id,
       l.code as location_code,
-      i.standard_cost,
+      COALESCE(i.standard_cost_base, i.standard_cost) AS standard_cost,
       SUM(cl.remaining_quantity) as quantity_on_hand,
       SUM(cl.extended_cost) as total_value
     FROM inventory_cost_layers cl
@@ -208,7 +208,7 @@ export async function getCostVarianceByCostLayers(
     JOIN locations l ON cl.location_id = l.id
     WHERE cl.tenant_id = $1
       ${whereClause}
-    GROUP BY i.id, i.sku, i.name, i.standard_cost, l.id, l.code
+    GROUP BY i.id, i.sku, i.name, COALESCE(i.standard_cost_base, i.standard_cost), l.id, l.code
     HAVING SUM(cl.remaining_quantity) > 0
     ORDER BY i.sku
     LIMIT $${params.push(limit)} OFFSET $${params.push(offset)}`,

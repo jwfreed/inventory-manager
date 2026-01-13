@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query, withTransaction } from '../db';
+import { getExchangeRate } from './currencies.service';
 import type { itemSchema, locationSchema, uomConversionSchema } from '../schemas/masterData.schema';
 import { ItemLifecycleStatus } from '../types/item';
 
@@ -24,6 +25,9 @@ const itemSelectColumns = `
   i.volume,
   i.volume_uom,
   i.standard_cost,
+  i.standard_cost_currency,
+  i.standard_cost_exchange_rate_to_base,
+  i.standard_cost_base,
   i.average_cost,
   i.rolled_cost,
   i.rolled_cost_at,
@@ -36,6 +40,35 @@ const itemSelectColumns = `
   l.code AS default_location_code,
   l.name AS default_location_name
 `;
+
+const DEFAULT_BASE_CURRENCY = process.env.BASE_CURRENCY || 'THB';
+
+async function resolveStandardCostFields(data: ItemInput, baseCurrency: string = DEFAULT_BASE_CURRENCY) {
+  if (data.standardCost == null) {
+    return {
+      standardCostCurrency: null,
+      standardCostExchangeRateToBase: null,
+      standardCostBase: null
+    };
+  }
+
+  const standardCostCurrency = data.standardCostCurrency ?? baseCurrency;
+  let standardCostExchangeRateToBase = 1;
+
+  if (standardCostCurrency !== baseCurrency) {
+    const rate = await getExchangeRate(standardCostCurrency, baseCurrency);
+    if (rate === null) {
+      throw new Error(`Missing exchange rate for ${standardCostCurrency} to ${baseCurrency}`);
+    }
+    standardCostExchangeRateToBase = rate;
+  }
+
+  return {
+    standardCostCurrency,
+    standardCostExchangeRateToBase,
+    standardCostBase: Number(data.standardCost) * standardCostExchangeRateToBase
+  };
+}
 
 export function mapItem(row: any) {
   return {
@@ -56,6 +89,11 @@ export function mapItem(row: any) {
     volume: row.volume ? Number(row.volume) : null,
     volumeUom: row.volume_uom ?? null,
     standardCost: row.standard_cost ? Number(row.standard_cost) : null,
+    standardCostCurrency: row.standard_cost_currency ?? null,
+    standardCostExchangeRateToBase: row.standard_cost_exchange_rate_to_base
+      ? Number(row.standard_cost_exchange_rate_to_base)
+      : null,
+    standardCostBase: row.standard_cost_base ? Number(row.standard_cost_base) : null,
     averageCost: row.average_cost ? Number(row.average_cost) : null,
     rolledCost: row.rolled_cost ? Number(row.rolled_cost) : null,
     rolledCostAt: row.rolled_cost_at ?? null,
@@ -68,17 +106,24 @@ export function mapItem(row: any) {
   };
 }
 
-export async function createItem(tenantId: string, data: ItemInput) {
+export async function createItem(tenantId: string, data: ItemInput, baseCurrency: string = DEFAULT_BASE_CURRENCY) {
   const now = new Date();
   const id = uuidv4();
   const lifecycleStatus = data.lifecycleStatus ?? ItemLifecycleStatus.ACTIVE;
   const isPhantom = data.isPhantom ?? false;
   const defaultUom = data.defaultUom ?? null;
   const defaultLocationId = data.defaultLocationId ?? null;
+  const {
+    standardCostCurrency,
+    standardCostExchangeRateToBase,
+    standardCostBase
+  } = await resolveStandardCostFields(data, baseCurrency);
   await query(
     `INSERT INTO items (
-        id, tenant_id, sku, name, description, type, is_phantom, default_uom, default_location_id, lifecycle_status, weight, weight_uom, volume, volume_uom, standard_cost, rolled_cost, cost_method, selling_price, list_price, price_currency, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $21)`,
+        id, tenant_id, sku, name, description, type, is_phantom, default_uom, default_location_id, lifecycle_status, weight, weight_uom, volume, volume_uom,
+        standard_cost, standard_cost_currency, standard_cost_exchange_rate_to_base, standard_cost_base,
+        rolled_cost, cost_method, selling_price, list_price, price_currency, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $25)`,
     [
       id,
       tenantId,
@@ -95,6 +140,9 @@ export async function createItem(tenantId: string, data: ItemInput) {
       data.volume ?? null,
       data.volumeUom ?? null,
       data.standardCost ?? null,
+      standardCostCurrency,
+      standardCostExchangeRateToBase,
+      standardCostBase,
       data.rolledCost ?? null,
       data.costMethod ?? null,
       data.sellingPrice ?? null,
@@ -122,13 +170,23 @@ export async function getItem(tenantId: string, id: string) {
   return mapItem(res.rows[0]);
 }
 
-export async function updateItem(tenantId: string, id: string, data: ItemInput) {
+export async function updateItem(
+  tenantId: string,
+  id: string,
+  data: ItemInput,
+  baseCurrency: string = DEFAULT_BASE_CURRENCY
+) {
   const now = new Date();
   const type = data.type ?? 'raw';
   const isPhantom = data.isPhantom ?? false;
   const defaultUom = data.defaultUom ?? null;
   const defaultLocationId = data.defaultLocationId ?? null;
   const lifecycleStatus = data.lifecycleStatus ?? ItemLifecycleStatus.ACTIVE;
+  const {
+    standardCostCurrency,
+    standardCostExchangeRateToBase,
+    standardCostBase
+  } = await resolveStandardCostFields(data, baseCurrency);
   const res = await query(
     `UPDATE items
        SET sku = $1,
@@ -144,13 +202,16 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
            volume = $11,
            volume_uom = $12,
            standard_cost = $13,
-           rolled_cost = $14,
-           cost_method = $15,
-           selling_price = $16,
-           list_price = $17,
-           price_currency = $18,
-           updated_at = $19
-     WHERE id = $20 AND tenant_id = $21
+           standard_cost_currency = $14,
+           standard_cost_exchange_rate_to_base = $15,
+           standard_cost_base = $16,
+           rolled_cost = $17,
+           cost_method = $18,
+           selling_price = $19,
+           list_price = $20,
+           price_currency = $21,
+           updated_at = $22
+     WHERE id = $23 AND tenant_id = $24
      RETURNING id`,
     [
       data.sku,
@@ -166,6 +227,9 @@ export async function updateItem(tenantId: string, id: string, data: ItemInput) 
       data.volume ?? null,
       data.volumeUom ?? null,
       data.standardCost ?? null,
+      standardCostCurrency,
+      standardCostExchangeRateToBase,
+      standardCostBase,
       data.rolledCost ?? null,
       data.costMethod ?? null,
       data.sellingPrice ?? null,

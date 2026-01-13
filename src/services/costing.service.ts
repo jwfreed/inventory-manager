@@ -31,7 +31,7 @@ export async function getItemStandardCost(
 ): Promise<number | null> {
   const executor = client ? client.query.bind(client) : query;
   const result = await executor(
-    'SELECT standard_cost FROM items WHERE id = $1 AND tenant_id = $2',
+    'SELECT COALESCE(standard_cost_base, standard_cost) AS standard_cost FROM items WHERE id = $1 AND tenant_id = $2',
     [itemId, tenantId]
   );
   if (result.rowCount === 0) {
@@ -55,7 +55,12 @@ export async function getItemCostInfo(
 ): Promise<ItemCostInfo> {
   const executor = client ? client.query.bind(client) : query;
   const result = await executor(
-    'SELECT standard_cost, average_cost, quantity_on_hand FROM items WHERE id = $1 AND tenant_id = $2',
+    `SELECT
+       COALESCE(standard_cost_base, standard_cost) AS standard_cost,
+       average_cost,
+       quantity_on_hand
+     FROM items
+     WHERE id = $1 AND tenant_id = $2`,
     [itemId, tenantId]
   );
   if (result.rowCount === 0) {

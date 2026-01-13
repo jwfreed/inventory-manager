@@ -4,6 +4,7 @@ export type AuthUser = {
   id: string
   email: string
   fullName?: string | null
+  baseCurrency?: string | null
   active?: boolean
   createdAt?: string
   updatedAt?: string

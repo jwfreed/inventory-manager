@@ -78,7 +78,7 @@ export function ItemCostBreakdown({
               {isStale && (
                 <Badge variant="warning">Stale - Recalculate</Badge>
               )}
-              {costMethod === 'rolled' && rolledCost !== null && !isStale && (
+              {costMethod === 'rolled' && rolledCost != null && !isStale && (
                 <Badge variant="success">Up-to-date</Badge>
               )}
             </div>
@@ -87,7 +87,7 @@ export function ItemCostBreakdown({
               <div>
                 <div className="text-xs uppercase tracking-wide text-slate-500">Rolled Cost</div>
                 <div className="font-mono text-lg font-semibold text-slate-900">
-                  {rolledCost !== null ? `$${rolledCost.toFixed(6)}` : 'Not calculated'}
+                  {rolledCost != null ? `$${rolledCost.toFixed(6)}` : 'Not calculated'}
                 </div>
                 {rolledCostAt && (
                   <div className="text-xs text-slate-500">

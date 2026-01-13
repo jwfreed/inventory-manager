@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useItem } from '../queries'
+import { useItem, useItemMetrics } from '../queries'
 import { useLocationsList } from '../../locations/queries'
 import { useInventorySnapshotSummary } from '../../inventory/queries'
 import { useBomsByItem } from '../../boms/queries'
@@ -15,7 +15,7 @@ import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Modal } from '../../../components/Modal'
 import { Section } from '../../../components/Section'
-import { formatDate, formatNumber } from '@shared/formatters'
+import { formatCurrency, formatDate, formatNumber } from '@shared/formatters'
 import { ItemForm } from '../components/ItemForm'
 import { BomForm } from '../../boms/components/BomForm'
 import { BomCard } from '../../boms/components/BomCard'
@@ -23,6 +23,7 @@ import { InventorySnapshotTable } from '../../inventory/components/InventorySnap
 import { UomConversionsCard } from '../components/UomConversionsCard'
 import { RoutingsCard } from '../../routings/components/RoutingsCard'
 import { ItemCostBreakdown } from '../components/ItemCostBreakdown'
+import { useAuth } from '@shared/auth'
 
 const typeLabels: Record<string, string> = {
   raw: 'Raw',
@@ -34,6 +35,8 @@ const typeLabels: Record<string, string> = {
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const baseCurrency = user?.baseCurrency ?? 'THB'
   const [searchParams, setSearchParams] = useSearchParams()
   const [showEdit, setShowEdit] = useState(false)
   const [showBomForm, setShowBomForm] = useState(false)
@@ -51,6 +54,7 @@ export default function ItemDetailPage() {
   const itemQuery = useItem(id, {
     retry: (count, err: ApiError) => err?.status !== 404 && count < 1,
   })
+  const metricsQuery = useItemMetrics(id, 90, { enabled: Boolean(id) })
 
   const locationsQuery = useLocationsList({ active: true, limit: 100 }, { staleTime: 60_000 })
 
@@ -238,17 +242,41 @@ export default function ItemDetailPage() {
                   </div>
                 </div>
               </div>
-              <div className="mt-3 pt-3 border-t border-slate-200 grid gap-3 sm:grid-cols-3 text-sm text-slate-700">
+              <div className="mt-3 pt-3 border-t border-slate-200 grid gap-3 sm:grid-cols-4 text-sm text-slate-700">
                 <div>
                   <div className="text-xs uppercase tracking-wide text-slate-500">Standard Cost</div>
                   <div className="font-mono font-semibold text-slate-900">
-                    {itemQuery.data.standardCost != null ? `$${itemQuery.data.standardCost.toFixed(2)}` : 'Not set'}
+                    {itemQuery.data.standardCost != null
+                      ? formatCurrency(
+                          itemQuery.data.standardCost,
+                          itemQuery.data.standardCostCurrency ?? baseCurrency,
+                        )
+                      : 'Not set'}
+                  </div>
+                  {itemQuery.data.standardCostCurrency &&
+                  itemQuery.data.standardCostExchangeRateToBase &&
+                  itemQuery.data.standardCostCurrency !== baseCurrency ? (
+                    <div className="text-xs text-slate-500">
+                      Rate: {formatNumber(itemQuery.data.standardCostExchangeRateToBase)}
+                    </div>
+                  ) : null}
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">
+                    Base Cost ({baseCurrency})
+                  </div>
+                  <div className="font-mono font-semibold text-slate-900">
+                    {itemQuery.data.standardCostBase != null
+                      ? formatCurrency(itemQuery.data.standardCostBase, baseCurrency)
+                      : '—'}
                   </div>
                 </div>
                 <div>
                   <div className="text-xs uppercase tracking-wide text-slate-500">Average Cost</div>
                   <div className="font-mono font-semibold text-slate-900">
-                    {itemQuery.data.averageCost != null ? `$${itemQuery.data.averageCost.toFixed(2)}` : 'N/A'}
+                    {itemQuery.data.averageCost != null
+                      ? formatCurrency(itemQuery.data.averageCost, baseCurrency)
+                      : 'N/A'}
                   </div>
                 </div>
                 <div>
@@ -273,6 +301,88 @@ export default function ItemDetailPage() {
               <div>Updated: {itemQuery.data.updatedAt ? formatDate(itemQuery.data.updatedAt) : '—'}</div>
             </div>
           </div>
+        </Card>
+      )}
+
+      {itemQuery.data && (
+        <Card>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-wide text-slate-500">Operational Metrics</div>
+              <div className="text-sm text-slate-600">
+                Based on the last 90 days of activity and the most recent cycle count.
+              </div>
+            </div>
+            <div className="text-xs text-slate-500">
+              Window: {metricsQuery.data?.windowDays ?? 90} days
+            </div>
+          </div>
+          {metricsQuery.isLoading && <LoadingSpinner label="Loading metrics..." />}
+          {metricsQuery.isError && (
+            <Alert
+              variant="error"
+              title="Metrics unavailable"
+              message={(metricsQuery.error as ApiError)?.message ?? 'Failed to load metrics.'}
+            />
+          )}
+          {metricsQuery.data && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm text-slate-700">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Fill Rate</div>
+                <div className="font-semibold text-slate-900">
+                  {metricsQuery.data.fillRate != null
+                    ? `${(metricsQuery.data.fillRate * 100).toFixed(1)}%`
+                    : '—'}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {metricsQuery.data.orderedQty > 0
+                    ? `${formatNumber(metricsQuery.data.shippedQty)} shipped / ${formatNumber(
+                        metricsQuery.data.orderedQty,
+                      )} ordered`
+                    : 'No shipped order lines'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Stockout Rate</div>
+                <div className="font-semibold text-slate-900">
+                  {metricsQuery.data.stockoutRate != null
+                    ? `${(metricsQuery.data.stockoutRate * 100).toFixed(1)}%`
+                    : '—'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Turns</div>
+                <div className="font-semibold text-slate-900">
+                  {metricsQuery.data.turns != null ? metricsQuery.data.turns.toFixed(2) : '—'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">DOI</div>
+                <div className="font-semibold text-slate-900">
+                  {metricsQuery.data.doiDays != null ? `${metricsQuery.data.doiDays.toFixed(1)} days` : '—'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Last Count</div>
+                <div className="font-semibold text-slate-900">
+                  {metricsQuery.data.lastCountAt ? formatDate(metricsQuery.data.lastCountAt) : '—'}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {metricsQuery.data.lastCountVarianceQty != null
+                    ? `Variance ${formatNumber(metricsQuery.data.lastCountVarianceQty)}`
+                    : 'No variance recorded'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Count Variance %</div>
+                <div className="font-semibold text-slate-900">
+                  {metricsQuery.data.lastCountVariancePct != null
+                    ? `${(metricsQuery.data.lastCountVariancePct * 100).toFixed(1)}%`
+                    : '—'}
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
       )}
       {itemQuery.data && showEdit && (

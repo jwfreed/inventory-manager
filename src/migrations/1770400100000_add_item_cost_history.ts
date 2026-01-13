@@ -52,8 +52,8 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
   // Add foreign key constraints
   pgm.addConstraint('item_cost_history', 'fk_item_cost_history_item', {
     foreignKeys: {
-      columns: ['item_id', 'tenant_id'],
-      references: 'items(id, tenant_id)',
+      columns: 'item_id',
+      references: 'items',
       onDelete: 'CASCADE'
     }
   });

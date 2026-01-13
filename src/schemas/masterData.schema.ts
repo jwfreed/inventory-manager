@@ -18,6 +18,7 @@ export const itemSchema = z.object({
     const num = typeof val === 'string' ? Number(val) : val;
     return num;
   }, z.number().nonnegative().nullable().optional()),
+  standardCostCurrency: z.string().length(3).toUpperCase().nullable().optional(),
   rolledCost: z.preprocess((val) => {
     const num = typeof val === 'string' ? Number(val) : val;
     return num;
