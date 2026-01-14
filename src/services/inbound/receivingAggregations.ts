@@ -127,21 +127,39 @@ export function calculatePutawayAvailability(
   context: ReceiptLineContext,
   qcBreakdown: QcBreakdown,
   totals: PutawayTotals,
-  excludePendingQuantity = 0
+  excludePendingQuantity = 0,
+  options: { requireAcceptance?: boolean } = {}
 ) {
   const receiptQty = roundQuantity(context.quantityReceived);
   const rejected = roundQuantity(qcBreakdown.reject ?? 0);
   const hold = roundQuantity(qcBreakdown.hold ?? 0);
   const accept = roundQuantity(qcBreakdown.accept ?? 0);
-  const baseAvailable = Math.max(0, receiptQty - rejected);
+  const inspectedTotal = roundQuantity(accept + hold + rejected);
+  const remainingUninspected = Math.max(0, receiptQty - inspectedTotal);
+  const requireAcceptance = options.requireAcceptance ?? true;
 
-  let qcAllowed = baseAvailable;
+  let qcAllowed = 0;
   let blockedReason: string | undefined;
-  if (accept > 0) {
-    qcAllowed = Math.min(qcAllowed, accept);
-  } else if (hold > 0) {
-    qcAllowed = 0;
-    blockedReason = 'Receipt line is on QC hold with no accepted quantity.';
+
+  if (requireAcceptance) {
+    if (remainingUninspected > 1e-6) {
+      blockedReason = 'QC must be completed before putaway.';
+    } else if (hold > 1e-6) {
+      blockedReason = 'Receipt line is on QC hold.';
+    } else if (accept <= 1e-6) {
+      blockedReason = 'Receipt line has no accepted quantity.';
+    } else {
+      qcAllowed = Math.min(Math.max(0, receiptQty - rejected), accept);
+    }
+  } else {
+    const baseAvailable = Math.max(0, receiptQty - rejected);
+    qcAllowed = baseAvailable;
+    if (accept > 0) {
+      qcAllowed = Math.min(qcAllowed, accept);
+    } else if (hold > 0) {
+      qcAllowed = 0;
+      blockedReason = 'Receipt line is on QC hold with no accepted quantity.';
+    }
   }
 
   const posted = roundQuantity(totals.posted ?? 0);

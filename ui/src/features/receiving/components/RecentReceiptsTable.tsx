@@ -99,13 +99,8 @@ export function RecentReceiptsTable({ receipts, onLoad, onVoid, voidDisabled }: 
           id: 'qc',
           header: 'QC',
           cell: (rec) => {
-            const firstLineId = rec.lines?.[0]?.id ?? ''
-            const params = new URLSearchParams({
-              receiptId: rec.id,
-              ...(firstLineId ? { qcLineId: firstLineId } : {}),
-            })
             return (
-              <a className="text-xs text-slate-500 underline" href={`/receiving?${params.toString()}`}>
+              <a className="text-xs text-slate-500 underline" href={`/qc/receipts/${rec.id}`}>
                 Review QC
               </a>
             )

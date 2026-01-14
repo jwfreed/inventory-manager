@@ -35,6 +35,9 @@ router.post('/qc-events', async (req: Request, res: Response) => {
     if (error?.message === 'QC_RECEIPT_VOIDED') {
       return res.status(409).json({ error: 'Receipt is voided; QC events are not allowed.' });
     }
+    if (error?.message === 'QC_RECEIPT_NOT_ELIGIBLE') {
+      return res.status(409).json({ error: 'Receipt is not eligible for QC events.' });
+    }
     if (error?.message === 'QC_UOM_MISMATCH') {
       return res.status(400).json({ error: 'QC event UOM must match the source UOM.' });
     }

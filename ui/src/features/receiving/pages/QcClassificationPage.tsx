@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useRef } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, LoadingSpinner, Section } from '@shared/ui'
 import { QcDetailPanel } from '../components/QcDetailPanel'
 import { QcBatchQueue } from '../components/QcBatchQueue'
@@ -12,6 +12,7 @@ import { ReceivingLayout } from '../components/ReceivingLayout'
 import { useReceivingContext } from '../context'
 import { useResponsive } from '../hooks/useResponsive'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useParams } from 'react-router-dom'
 
 const KeyboardShortcutsModal = lazy(() => import('../components/KeyboardShortcutsModal'))
 
@@ -21,6 +22,13 @@ export default function QcClassificationPage() {
   const [showSidebar, setShowSidebar] = useState(false)
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const { receiptId } = useParams<{ receiptId?: string }>()
+
+  useEffect(() => {
+    if (receiptId && receiptId !== ctx.receiptIdForQc) {
+      ctx.loadReceiptForQc(receiptId)
+    }
+  }, [receiptId, ctx.receiptIdForQc, ctx.loadReceiptForQc])
 
   const handleBulkAction = async (actionId: string) => {
     if (actionId === 'bulk-accept') {

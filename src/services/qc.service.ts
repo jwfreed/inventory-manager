@@ -56,6 +56,7 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
       if (lineResult.rowCount === 0) throw new Error('QC_LINE_NOT_FOUND');
       const line = lineResult.rows[0];
       if (line.receipt_status === 'voided') throw new Error('QC_RECEIPT_VOIDED');
+      if (line.receipt_status !== 'posted') throw new Error('QC_RECEIPT_NOT_ELIGIBLE');
       if (line.uom !== data.uom) throw new Error('QC_UOM_MISMATCH');
       
       itemId = line.item_id;

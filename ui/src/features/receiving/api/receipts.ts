@@ -24,7 +24,18 @@ export async function getReceipt(id: string): Promise<PurchaseOrderReceipt> {
   return apiGet<PurchaseOrderReceipt>(`/purchase-order-receipts/${id}`)
 }
 
-export async function listReceipts(params: { limit?: number; offset?: number } = {}): Promise<{ data: PurchaseOrderReceipt[] }> {
+export async function listReceipts(
+  params: {
+    limit?: number
+    offset?: number
+    status?: string
+    vendorId?: string
+    from?: string
+    to?: string
+    search?: string
+    includeLines?: boolean
+  } = {},
+): Promise<{ data: PurchaseOrderReceipt[] }> {
   return apiGet<{ data: PurchaseOrderReceipt[] }>('/purchase-order-receipts', { params })
 }
 

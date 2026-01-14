@@ -49,15 +49,41 @@ export type PurchaseOrderReceipt = {
   id: string
   purchaseOrderId: string
   purchaseOrderNumber?: string
+  vendorId?: string | null
+  vendorName?: string | null
+  vendorCode?: string | null
   status?: 'posted' | 'voided'
+  workflowStatus?:
+    | 'draft'
+    | 'posted'
+    | 'pending_qc'
+    | 'qc_passed'
+    | 'qc_failed'
+    | 'putaway_pending'
+    | 'complete'
+    | 'voided'
+  qcStatus?: 'pending' | 'passed' | 'failed'
+  putawayStatus?: 'not_available' | 'not_started' | 'pending' | 'complete'
+  qcEligible?: boolean
+  putawayEligible?: boolean
   receivedAt: string
   receivedToLocationId?: string | null
+  receivedToLocationName?: string | null
+  receivedToLocationCode?: string | null
   inventoryMovementId?: string | null
   externalRef?: string | null
   notes?: string | null
   createdAt?: string
   hasPutaway?: boolean | null
   draftPutawayId?: string | null
+  lineCount?: number
+  totalReceived?: number
+  totalAccepted?: number
+  totalHold?: number
+  totalReject?: number
+  qcRemaining?: number
+  putawayPosted?: number
+  putawayPending?: number
   lines?: PurchaseOrderReceiptLine[]
 }
 

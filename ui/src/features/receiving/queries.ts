@@ -7,7 +7,18 @@ import { getQcEvent, listQcEventsForLine } from './api/qc'
 export const receivingQueryKeys = {
   receipts: {
     all: ['receipts'] as const,
-    list: (params: { limit?: number; offset?: number } = {}) =>
+    list: (
+      params: {
+        limit?: number
+        offset?: number
+        status?: string
+        vendorId?: string
+        from?: string
+        to?: string
+        search?: string
+        includeLines?: boolean
+      } = {},
+    ) =>
       [...receivingQueryKeys.receipts.all, 'list', params] as const,
     detail: (id: string) => [...receivingQueryKeys.receipts.all, 'detail', id] as const,
   },
@@ -38,7 +49,16 @@ type QcEventOptions = Omit<UseQueryOptions<QcEvent, ApiError>, 'queryKey' | 'que
 type PutawayOptions = Omit<UseQueryOptions<Putaway, ApiError>, 'queryKey' | 'queryFn'>
 
 export function useReceiptsList(
-  params: { limit?: number; offset?: number } = {},
+  params: {
+    limit?: number
+    offset?: number
+    status?: string
+    vendorId?: string
+    from?: string
+    to?: string
+    search?: string
+    includeLines?: boolean
+  } = {},
   options: ReceiptsListOptions = {},
 ) {
   return useQuery({

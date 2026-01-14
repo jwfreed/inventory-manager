@@ -12,9 +12,26 @@ export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
     draft: 'bg-slate-100 text-slate-700',
     posted: 'bg-green-100 text-green-800',
     voided: 'bg-red-100 text-red-800',
+    pending_qc: 'bg-amber-100 text-amber-800',
+    qc_passed: 'bg-blue-100 text-blue-800',
+    qc_failed: 'bg-red-100 text-red-800',
+    putaway_pending: 'bg-amber-100 text-amber-800',
+    complete: 'bg-emerald-100 text-emerald-800',
+  }
+
+  const statusLabels: Record<string, string> = {
+    draft: 'Draft',
+    posted: 'Posted',
+    voided: 'Voided',
+    pending_qc: 'Pending QC',
+    qc_passed: 'QC Passed',
+    qc_failed: 'QC Failed',
+    putaway_pending: 'Putaway Pending',
+    complete: 'Complete',
   }
 
   const lines = receipt.lines || []
+  const statusKey = receipt.workflowStatus || receipt.status || 'posted'
   const totalReceived = lines.reduce((sum, line) => sum + line.quantityReceived, 0)
   const totalExpected = lines.reduce((sum, line) => sum + (line.expectedQuantity || 0), 0)
   const hasDiscrepancies = lines.some(
@@ -32,8 +49,8 @@ export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
                 <h3 className="text-lg font-semibold text-slate-900">
                   Receipt {receipt.id}
                 </h3>
-                <Badge className={statusColors[receipt.status || 'draft']}>
-                  {receipt.status}
+                <Badge className={statusColors[statusKey] || statusColors.posted}>
+                  {statusLabels[statusKey] || statusKey}
                 </Badge>
                 {hasDiscrepancies && (
                   <Badge className="bg-amber-100 text-amber-800">Has discrepancies</Badge>
@@ -41,7 +58,9 @@ export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
               </div>
               <div className="text-sm text-slate-500">
                 {receipt.purchaseOrderId && (
-                  <span className="font-mono">PO: {receipt.purchaseOrderId}</span>
+                  <span className="font-mono" title={receipt.purchaseOrderId}>
+                    PO: {receipt.purchaseOrderNumber || receipt.purchaseOrderId}
+                  </span>
                 )}
               </div>
             </div>
@@ -60,7 +79,12 @@ export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
             <div className="text-slate-500 text-xs uppercase tracking-wide mb-1">
               Receiving location
             </div>
-            <div className="text-slate-900 font-medium">{receipt.receivedToLocationId || 'N/A'}</div>
+            <div className="text-slate-900 font-medium">
+              {receipt.receivedToLocationName ||
+                receipt.receivedToLocationCode ||
+                receipt.receivedToLocationId ||
+                'N/A'}
+            </div>
           </div>
           {receipt.notes && (
             <div className="col-span-2">

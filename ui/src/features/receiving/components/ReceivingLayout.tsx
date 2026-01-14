@@ -61,20 +61,7 @@ export function ReceivingLayout({ children }: Props) {
   }
 
   const canNavigateToStep = (step: Step): boolean => {
-    // Can always go to receipt
-    if (step.id === 'receipt') return true
-
-    // Can go to QC if there's a receipt loaded
-    if (step.id === 'qc') {
-      return !!ctx.receiptIdForQc
-    }
-
-    // Can go to putaway if there's a putaway ID
-    if (step.id === 'putaway') {
-      return !!ctx.putawayId
-    }
-
-    return false
+    return Boolean(step)
   }
 
   return (

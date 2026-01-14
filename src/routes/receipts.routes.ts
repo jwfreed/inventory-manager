@@ -101,8 +101,26 @@ router.get('/purchase-order-receipts/:id', async (req: Request, res: Response) =
 router.get('/purchase-order-receipts', async (req: Request, res: Response) => {
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
   const offset = Math.max(0, Number(req.query.offset) || 0);
+  const status = typeof req.query.status === 'string' && req.query.status.trim() ? req.query.status.trim() : undefined;
+  const vendorId = typeof req.query.vendorId === 'string' && req.query.vendorId.trim() ? req.query.vendorId.trim() : undefined;
+  const from = typeof req.query.from === 'string' && req.query.from.trim() ? req.query.from.trim() : undefined;
+  const to = typeof req.query.to === 'string' && req.query.to.trim() ? req.query.to.trim() : undefined;
+  const search = typeof req.query.search === 'string' && req.query.search.trim() ? req.query.search.trim() : undefined;
+  const includeLines =
+    typeof req.query.includeLines === 'string'
+      ? req.query.includeLines === 'true'
+      : Boolean(req.query.includeLines);
   try {
-    const rows = await listReceipts(req.auth!.tenantId, limit, offset);
+    const rows = await listReceipts(req.auth!.tenantId, {
+      limit,
+      offset,
+      status,
+      vendorId,
+      from,
+      to,
+      search,
+      includeLines
+    });
     return res.json({ data: rows, paging: { limit, offset } });
   } catch (error) {
     console.error(error);

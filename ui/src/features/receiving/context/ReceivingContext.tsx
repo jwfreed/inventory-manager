@@ -352,7 +352,7 @@ export function ReceivingProvider({ children }: Props) {
   const poListQuery = usePurchaseOrdersList({ limit: 200 }, { staleTime: 60_000 })
   const poQuery = usePurchaseOrder(selectedPoId)
   const receiptQuery = useReceipt(receiptIdForQc)
-  const recentReceiptsQuery = useReceiptsList({ limit: 20 }, { staleTime: 30_000 })
+  const recentReceiptsQuery = useReceiptsList({ limit: 20, includeLines: true }, { staleTime: 30_000 })
   const putawayQuery = usePutaway(putawayId)
   const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
   const locationsQuery = useLocationsList(

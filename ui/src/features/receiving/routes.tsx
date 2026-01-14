@@ -8,6 +8,9 @@ const ReceiptCapturePage = lazy(() => import('./pages/ReceiptCapturePage'))
 const QcClassificationPage = lazy(() => import('./pages/QcClassificationPage'))
 const PutawayPlanningPage = lazy(() => import('./pages/PutawayPlanningPage'))
 const QcEventDetailPage = lazy(() => import('./pages/QcEventDetailPage'))
+const ReceiptsIndexPage = lazy(() => import('./pages/ReceiptsIndexPage'))
+const ReceiptDetailPage = lazy(() => import('./pages/ReceiptDetailPage'))
+const QcReceiptsQueuePage = lazy(() => import('./pages/QcReceiptsQueuePage'))
 
 // Loading fallback component
 function PageLoader() {
@@ -32,6 +35,14 @@ function withProviderAndSuspense(Component: React.LazyExoticComponent<() => JSX.
   )
 }
 
+function withSuspense(Component: React.LazyExoticComponent<() => JSX.Element>) {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <Component />
+    </Suspense>
+  )
+}
+
 export const receivingRoutes: AppRouteObject[] = [
   {
     path: 'receiving',
@@ -45,6 +56,41 @@ export const receivingRoutes: AppRouteObject[] = [
         order: 23,
         description: 'Receive goods and perform quality checks',
       },
+    },
+  },
+  {
+    path: 'receipts',
+    element: withSuspense(ReceiptsIndexPage),
+    handle: {
+      breadcrumb: 'Receipts',
+      nav: {
+        label: 'Receipts',
+        to: '/receipts',
+        section: 'inbound',
+        order: 21,
+        description: 'Review posted receipts and QC status',
+      },
+    },
+  },
+  {
+    path: 'receipts/:receiptId',
+    element: withSuspense(ReceiptDetailPage),
+    handle: {
+      breadcrumb: 'Receipt detail',
+    },
+  },
+  {
+    path: 'qc/receipts',
+    element: withSuspense(QcReceiptsQueuePage),
+    handle: {
+      breadcrumb: 'QC queue',
+    },
+  },
+  {
+    path: 'qc/receipts/:receiptId',
+    element: withProviderAndSuspense(QcClassificationPage),
+    handle: {
+      breadcrumb: 'QC Classification',
     },
   },
   {
