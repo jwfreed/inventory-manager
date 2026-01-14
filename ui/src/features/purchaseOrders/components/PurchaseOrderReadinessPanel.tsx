@@ -1,32 +1,41 @@
-import type { PurchaseOrderLineStats } from '../types'
-
 type Props = {
-  vendorId: string
-  lineStats: PurchaseOrderLineStats
-  orderDate: string
-  expectedDate: string
+  vendorReady: boolean
+  shipToReady: boolean
+  receivingReady: boolean
+  expectedDateReady: boolean
+  linesReady: boolean
 }
 
-export function PurchaseOrderReadinessPanel({ vendorId, lineStats, orderDate, expectedDate }: Props) {
+export function PurchaseOrderReadinessPanel({
+  vendorReady,
+  shipToReady,
+  receivingReady,
+  expectedDateReady,
+  linesReady,
+}: Props) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="text-xs uppercase tracking-wide text-slate-500">Submission readiness</div>
       <ul className="mt-2 space-y-2 text-sm text-slate-700">
         <li className="flex items-center justify-between">
           <span>Vendor selected</span>
-          <span>{vendorId ? '✓' : '—'}</span>
+          <span>{vendorReady ? '✓' : '—'}</span>
         </li>
         <li className="flex items-center justify-between">
-          <span>At least one line</span>
-          <span>{lineStats.valid.length > 0 ? '✓' : '—'}</span>
+          <span>Ship-to location set</span>
+          <span>{shipToReady ? '✓' : '—'}</span>
         </li>
         <li className="flex items-center justify-between">
-          <span>Quantities valid</span>
-          <span>{lineStats.missingCount === 0 ? '✓' : '—'}</span>
+          <span>Receiving location set</span>
+          <span>{receivingReady ? '✓' : '—'}</span>
         </li>
         <li className="flex items-center justify-between">
-          <span>Dates set</span>
-          <span>{orderDate && expectedDate ? '✓' : '—'}</span>
+          <span>Expected date valid</span>
+          <span>{expectedDateReady ? '✓' : '—'}</span>
+        </li>
+        <li className="flex items-center justify-between">
+          <span>At least one valid line</span>
+          <span>{linesReady ? '✓' : '—'}</span>
         </li>
       </ul>
       <p className="mt-3 text-xs text-slate-500">

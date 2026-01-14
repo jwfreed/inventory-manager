@@ -13,6 +13,10 @@ export type PurchaseOrderLine = {
   exchangeRateToBase?: number | null
   lineAmount?: number | null
   baseAmount?: number | null
+  overReceiptTolerancePct?: number | null
+  requiresLot?: boolean | null
+  requiresSerial?: boolean | null
+  requiresQc?: boolean | null
   notes?: string | null
 }
 
@@ -27,8 +31,10 @@ export type PurchaseOrder = {
   expectedDate?: string
   shipToLocationId?: string
   shipToLocationCode?: string | null
+  shipToLocationName?: string | null
   receivingLocationId?: string | null
   receivingLocationCode?: string | null
+  receivingLocationName?: string | null
   vendorReference?: string
   notes?: string
   createdAt?: string

@@ -8,16 +8,19 @@ import { useItemsList } from '@features/items/queries'
 import type { ApiError, Item } from '@api/types'
 import { Alert, Button, Card, LoadingSpinner, Section } from '@shared/ui'
 import { useDebouncedValue } from '@shared'
+import { useAuth } from '@shared/auth'
 import { PurchaseOrderVendorSection } from '../components/PurchaseOrderVendorSection'
 import { PurchaseOrderLinesSection } from '../components/PurchaseOrderLinesSection'
 import { PurchaseOrderLogisticsSection } from '../components/PurchaseOrderLogisticsSection'
 import { PurchaseOrderReadinessPanel } from '../components/PurchaseOrderReadinessPanel'
-import type { PurchaseOrderLineDraft } from '../types'
+import type { PurchaseOrderLineDraft, PurchaseOrderLineValidation } from '../types'
 
 const defaultOrderDate = new Date().toISOString().slice(0, 10)
 
 export default function PurchaseOrderCreatePage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const baseCurrency = user?.baseCurrency ?? 'THB'
   const [locationSearch, setLocationSearch] = useState('')
   const [itemSearch, setItemSearch] = useState('')
 
@@ -86,7 +89,7 @@ export default function PurchaseOrderCreatePage() {
   }, [itemsQuery.data])
 
   const addLine = () => setLines((prev) => [...prev, { itemId: '', uom: '', quantityOrdered: '', unitPrice: '' }])
-  const updateLine = (idx: number, patch: Partial<LineDraft>) => {
+  const updateLine = (idx: number, patch: Partial<PurchaseOrderLineDraft>) => {
     setLines((prev) => prev.map((line, i) => (i === idx ? { ...line, ...patch } : line)))
   }
   const removeLine = (idx: number) => setLines((prev) => prev.filter((_, i) => i !== idx))
@@ -98,26 +101,107 @@ export default function PurchaseOrderCreatePage() {
     },
   })
 
+  const lineValidation = useMemo<PurchaseOrderLineValidation[]>(() => {
+    return lines.map((line) => {
+      const item = line.itemId ? itemLookup.get(line.itemId) : undefined
+      const defaultUom = item?.defaultUom ?? ''
+      const trimmedUom = line.uom.trim()
+      const hasUom = trimmedUom.length > 0
+      const uomHasSpaces = /\s/.test(trimmedUom)
+      const isUomValid = hasUom && !uomHasSpaces
+      const quantity = line.quantityOrdered === '' ? null : Number(line.quantityOrdered)
+      const hasQty = quantity != null && quantity > 0
+      const unitPrice = line.unitPrice === '' || line.unitPrice === undefined ? null : Number(line.unitPrice)
+      const hasIntent =
+        !!line.itemId ||
+        hasUom ||
+        (quantity != null && quantity !== 0) ||
+        (unitPrice != null && unitPrice !== 0) ||
+        (line.notes ?? '').trim().length > 0
+      const lineTotal = hasQty && unitPrice != null ? quantity * unitPrice : null
+      const showErrors = hasIntent
+      const uomError = showErrors
+        ? !hasUom
+          ? 'UOM is required.'
+          : uomHasSpaces
+            ? 'Use a compact UOM code (no spaces).'
+            : undefined
+        : undefined
+      return {
+        hasIntent,
+        isValid: Boolean(line.itemId && isUomValid && hasQty),
+        uom: trimmedUom,
+        quantity,
+        unitPrice,
+        lineTotal,
+        defaultUom: defaultUom || null,
+        uomMismatch: Boolean(line.itemId && defaultUom && isUomValid && trimmedUom !== defaultUom),
+        errors: {
+          itemId: showErrors && !line.itemId ? 'Select an item.' : undefined,
+          uom: uomError,
+          quantityOrdered: showErrors && !hasQty ? 'Enter a quantity greater than 0.' : undefined,
+        },
+      }
+    })
+  }, [itemLookup, lines])
+
   const lineStats = useMemo(() => {
-    const normalized = lines.map((line, idx) => ({
-      ...line,
-      quantityOrdered: line.quantityOrdered === '' ? 0 : Number(line.quantityOrdered),
-      lineNumber: idx + 1,
-    }))
-    const withIntent = normalized.filter(
-      (line) => line.itemId || line.uom || line.quantityOrdered > 0 || (line.notes ?? '').trim().length > 0,
+    const valid = lines.flatMap((line, idx) => {
+      const meta = lineValidation[idx]
+      if (!meta?.isValid) return []
+      return [
+        {
+          ...line,
+          lineNumber: idx + 1,
+          uom: meta.uom,
+          quantityOrdered: meta.quantity ?? 0,
+          unitPrice: meta.unitPrice ?? line.unitPrice ?? '',
+        },
+      ]
+    })
+    const withIntentCount = lineValidation.filter((line) => line.hasIntent).length
+    const missingCount = withIntentCount - valid.length
+    const totalQty = lineValidation.reduce(
+      (sum, line) => sum + (line.isValid ? line.quantity ?? 0 : 0),
+      0,
     )
-    const valid = normalized.filter((line) => line.itemId && line.uom && line.quantityOrdered > 0)
-    const missingCount = withIntent.length - valid.length
-    const totalQty = valid.reduce((sum, line) => sum + line.quantityOrdered, 0)
-    return { normalized, valid, missingCount, totalQty }
-  }, [lines])
+    return { valid, missingCount, totalQty, withIntentCount }
+  }, [lineValidation, lines])
+
+  const expectedDateInvalid = Boolean(expectedDate && orderDate && expectedDate < orderDate)
+  const showValidation =
+    !!vendorId ||
+    !!shipToLocationId ||
+    !!receivingLocationId ||
+    !!expectedDate ||
+    !!poNumber ||
+    !!vendorReference ||
+    lineStats.withIntentCount > 0
+  const vendorError = showValidation && !vendorId ? 'Vendor is required.' : undefined
+  const shipToError = showValidation && !shipToLocationId ? 'Ship-to location is required.' : undefined
+  const receivingError = showValidation && !receivingLocationId ? 'Receiving location is required.' : undefined
+  const expectedDateError = expectedDateInvalid
+    ? 'Expected date must be on or after the order date.'
+    : showValidation && !expectedDate
+      ? 'Expected date is required.'
+      : undefined
+
+  const lineSubtotal = useMemo(
+    () =>
+      lineValidation.reduce((sum, line) => {
+        if (!line.isValid || line.lineTotal == null) return sum
+        return sum + line.lineTotal
+      }, 0),
+    [lineValidation],
+  )
 
   const isReadyForSubmit =
     !!vendorId &&
-    lineStats.valid.length > 0 &&
-    !!orderDate &&
-    !!expectedDate
+    !!shipToLocationId &&
+    !!receivingLocationId &&
+    !!expectedDate &&
+    !expectedDateInvalid &&
+    lineStats.valid.length > 0
 
   const submitPo = (status: 'draft' | 'submitted') => {
     mutation.reset()
@@ -125,7 +209,7 @@ export default function PurchaseOrderCreatePage() {
     if (!vendorId || lineStats.valid.length === 0) {
       return
     }
-    if (status === 'submitted' && (!orderDate || !expectedDate)) {
+    if (status === 'submitted' && !isReadyForSubmit) {
       return
     }
     const payload: PurchaseOrderCreateInput = {
@@ -140,7 +224,7 @@ export default function PurchaseOrderCreatePage() {
       notes: notes || undefined,
       lines: lineStats.valid.map((line) => ({
         itemId: line.itemId,
-        uom: line.uom,
+        uom: line.uom.trim(),
         quantityOrdered: Number(line.quantityOrdered),
         unitPrice: line.unitPrice && line.unitPrice !== '' ? Number(line.unitPrice) : undefined,
         lineNumber: line.lineNumber,
@@ -193,6 +277,7 @@ export default function PurchaseOrderCreatePage() {
                   vendorLoading={vendorsQuery.isLoading}
                   vendorReference={vendorReference}
                   poNumber={poNumber}
+                  vendorError={vendorError}
                   onVendorChange={setVendorId}
                   onVendorReferenceChange={setVendorReference}
                   onPoNumberChange={setPoNumber}
@@ -204,6 +289,9 @@ export default function PurchaseOrderCreatePage() {
                   itemLookup={itemLookup}
                   itemsLoading={itemsQuery.isLoading}
                   lineStats={lineStats}
+                  lineValidation={lineValidation}
+                  currencyCode={baseCurrency}
+                  subtotal={lineSubtotal}
                   onAddLine={addLine}
                   onRemoveLine={removeLine}
                   onUpdateLine={updateLine}
@@ -218,6 +306,9 @@ export default function PurchaseOrderCreatePage() {
                   locationOptions={locationOptions}
                   locationsLoading={locationsQuery.isLoading}
                   notes={notes}
+                  shipToError={shipToError}
+                  receivingError={receivingError}
+                  expectedDateError={expectedDateError}
                   onOrderDateChange={setOrderDate}
                   onExpectedDateChange={setExpectedDate}
                   onShipToLocationChange={setShipToLocationId}
@@ -253,10 +344,11 @@ export default function PurchaseOrderCreatePage() {
               </div>
 
               <PurchaseOrderReadinessPanel
-                vendorId={vendorId}
-                lineStats={lineStats}
-                orderDate={orderDate}
-                expectedDate={expectedDate}
+                vendorReady={!!vendorId}
+                shipToReady={!!shipToLocationId}
+                receivingReady={!!receivingLocationId}
+                expectedDateReady={!!expectedDate && !expectedDateInvalid}
+                linesReady={lineStats.valid.length > 0}
               />
             </div>
           </form>

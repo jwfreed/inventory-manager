@@ -14,6 +14,9 @@ export type Item = {
   defaultLocationId?: string | null
   defaultLocationCode?: string | null
   defaultLocationName?: string | null
+  requiresLot?: boolean
+  requiresSerial?: boolean
+  requiresQc?: boolean
   lifecycleStatus: 'Active' | 'In-Development' | 'Obsolete' | 'Phase-Out'
   abcClass?: 'A' | 'B' | 'C' | null
   standardCost?: number | null

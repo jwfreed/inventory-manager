@@ -9,6 +9,7 @@ type Props = {
   vendorLoading: boolean
   vendorReference: string
   poNumber: string
+  vendorError?: string
   onVendorChange: (nextValue: string) => void
   onVendorReferenceChange: (nextValue: string) => void
   onPoNumberChange: (nextValue: string) => void
@@ -20,6 +21,7 @@ export function PurchaseOrderVendorSection({
   vendorLoading,
   vendorReference,
   poNumber,
+  vendorError,
   onVendorChange,
   onVendorReferenceChange,
   onPoNumberChange,
@@ -36,6 +38,9 @@ export function PurchaseOrderVendorSection({
             options={vendorOptions}
             loading={vendorLoading}
             placeholder="Search vendors (code/name)"
+            required
+            error={vendorError}
+            showSelectedValue={false}
             onChange={onVendorChange}
           />
         </div>

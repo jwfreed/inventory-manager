@@ -56,8 +56,10 @@ export function mapPurchaseOrder(row: any, lines: any[]) {
     expectedDate: row.expected_date,
     shipToLocationId: row.ship_to_location_id,
     shipToLocationCode: row.ship_to_location_code ?? null,
+    shipToLocationName: row.ship_to_location_name ?? null,
     receivingLocationId: row.receiving_location_id ?? null,
     receivingLocationCode: row.receiving_location_code ?? null,
+    receivingLocationName: row.receiving_location_name ?? null,
     vendorReference: row.vendor_reference,
     notes: row.notes,
     createdAt: row.created_at,
@@ -77,6 +79,10 @@ export function mapPurchaseOrder(row: any, lines: any[]) {
       exchangeRateToBase: line.exchange_rate_to_base != null ? Number(line.exchange_rate_to_base) : null,
       lineAmount: line.line_amount != null ? Number(line.line_amount) : null,
       baseAmount: line.base_amount != null ? Number(line.base_amount) : null,
+      overReceiptTolerancePct: line.over_receipt_tolerance_pct != null ? Number(line.over_receipt_tolerance_pct) : 0,
+      requiresLot: !!line.requires_lot,
+      requiresSerial: !!line.requires_serial,
+      requiresQc: !!line.requires_qc,
       notes: line.notes,
       createdAt: line.created_at
     }))
@@ -128,7 +134,8 @@ async function loadLinesWithItems(client: PoolClient, tenantId: string, poId: st
     `SELECT pol.id, pol.purchase_order_id, pol.line_number, pol.item_id, pol.uom,
             pol.quantity_ordered, pol.unit_cost, pol.unit_price, pol.currency_code,
             pol.exchange_rate_to_base, pol.line_amount, pol.base_amount, pol.notes,
-            pol.created_at, i.sku AS item_sku, i.name AS item_name
+            pol.created_at, pol.over_receipt_tolerance_pct,
+            i.sku AS item_sku, i.name AS item_name, i.requires_lot, i.requires_serial, i.requires_qc
        FROM purchase_order_lines pol
        LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = pol.tenant_id
       WHERE pol.purchase_order_id = $1 AND pol.tenant_id = $2
@@ -187,8 +194,8 @@ export async function createPurchaseOrder(
       await client.query(
         `INSERT INTO purchase_order_lines (
             id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered,
-            unit_cost, unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            unit_cost, unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, over_receipt_tolerance_pct, notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING id`,
         [
           uuidv4(),
@@ -204,6 +211,7 @@ export async function createPurchaseOrder(
           line.exchangeRateToBase ?? null,
           line.lineAmount ?? null,
           line.baseAmount ?? null,
+          line.overReceiptTolerancePct ?? null,
           line.notes ?? null
         ]
       );
@@ -326,8 +334,8 @@ export async function updatePurchaseOrder(
         await client.query(
           `INSERT INTO purchase_order_lines (
               id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered,
-              unit_cost, unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+              unit_cost, unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, over_receipt_tolerance_pct, notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
           [
             uuidv4(),
             tenantId,
@@ -342,6 +350,7 @@ export async function updatePurchaseOrder(
             line.exchangeRateToBase ?? null,
             line.lineAmount ?? null,
             line.baseAmount ?? null,
+            line.overReceiptTolerancePct ?? null,
             line.notes ?? null
           ]
         );
@@ -498,9 +507,14 @@ export async function approvePurchaseOrder(
 export async function getPurchaseOrderById(tenantId: string, id: string) {
   const poResult = await query(
     `SELECT po.*,
+            v.code AS vendor_code,
+            v.name AS vendor_name,
             loc.code AS receiving_location_code,
-            ship.code AS ship_to_location_code
+            loc.name AS receiving_location_name,
+            ship.code AS ship_to_location_code,
+            ship.name AS ship_to_location_name
        FROM purchase_orders po
+       LEFT JOIN vendors v ON v.id = po.vendor_id AND v.tenant_id = po.tenant_id
        LEFT JOIN locations loc ON loc.id = po.receiving_location_id AND loc.tenant_id = po.tenant_id
        LEFT JOIN locations ship ON ship.id = po.ship_to_location_id AND ship.tenant_id = po.tenant_id
       WHERE po.id = $1 AND po.tenant_id = $2`,

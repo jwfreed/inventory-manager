@@ -10,6 +10,9 @@ type Props = {
   locationOptions: LocationOption[]
   locationsLoading: boolean
   notes: string
+  shipToError?: string
+  receivingError?: string
+  expectedDateError?: string
   onOrderDateChange: (next: string) => void
   onExpectedDateChange: (next: string) => void
   onShipToLocationChange: (next: string) => void
@@ -26,6 +29,9 @@ export function PurchaseOrderLogisticsSection({
   locationOptions,
   locationsLoading,
   notes,
+  shipToError,
+  receivingError,
+  expectedDateError,
   onOrderDateChange,
   onExpectedDateChange,
   onShipToLocationChange,
@@ -43,8 +49,23 @@ export function PurchaseOrderLogisticsSection({
           <Input type="date" value={orderDate} onChange={(e) => onOrderDateChange(e.target.value)} />
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Expected date</span>
-          <Input type="date" value={expectedDate} onChange={(e) => onExpectedDateChange(e.target.value)} />
+          <span className="text-xs uppercase tracking-wide text-slate-500">
+            Expected date<span className="ml-0.5 text-red-500">*</span>
+          </span>
+          <Input
+            type="date"
+            value={expectedDate}
+            onChange={(e) => onExpectedDateChange(e.target.value)}
+            min={orderDate || undefined}
+            aria-invalid={expectedDateError ? true : undefined}
+            aria-describedby={expectedDateError ? 'expected-date-error' : undefined}
+            className={expectedDateError ? 'border-red-400 focus:border-red-500 focus:ring-red-100' : undefined}
+          />
+          {expectedDateError && (
+            <span id="expected-date-error" className="text-xs text-red-600">
+              {expectedDateError}
+            </span>
+          )}
         </label>
         <div>
           <Combobox
@@ -54,6 +75,9 @@ export function PurchaseOrderLogisticsSection({
             loading={locationsLoading}
             onQueryChange={onLocationSearch}
             placeholder="Search locations (code/name)"
+            required
+            error={shipToError}
+            showSelectedValue={false}
             onChange={onShipToLocationChange}
           />
         </div>
@@ -65,6 +89,9 @@ export function PurchaseOrderLogisticsSection({
             loading={locationsLoading}
             onQueryChange={onLocationSearch}
             placeholder="Search locations (code/name)"
+            required
+            error={receivingError}
+            showSelectedValue={false}
             onChange={onReceivingLocationChange}
           />
         </div>

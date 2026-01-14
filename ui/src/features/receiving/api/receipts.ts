@@ -7,12 +7,17 @@ export type ReceiptCreatePayload = {
   receivedToLocationId?: string
   externalRef?: string
   notes?: string
+  idempotencyKey?: string
   lines: {
     purchaseOrderLineId: string
     uom: string
     quantityReceived: number
+    unitCost?: number
     discrepancyReason?: 'short' | 'over' | 'damaged' | 'substituted'
     discrepancyNotes?: string
+    lotCode?: string
+    serialNumbers?: string[]
+    overReceiptApproved?: boolean
   }[]
 }
 

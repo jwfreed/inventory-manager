@@ -227,6 +227,7 @@ export function ReceivingProvider({ children }: Props) {
   const [receiptLineInputs, setReceiptLineInputs] = useState<ReceiptLineInput[] | null>(null)
   const [receiptNotes, setReceiptNotes] = useState('')
   const [receivedToLocationId, setReceivedToLocationId] = useState<string | null>(null)
+  const [receiptIdempotencyKey, setReceiptIdempotencyKey] = useState<string | null>(null)
 
   // ── QC Step State ──
   const [receiptIdForQc, setReceiptIdForQc] = useState(() => receiptIdFromQuery)
@@ -457,10 +458,40 @@ export function ReceivingProvider({ children }: Props) {
     const receivedLines = lines.filter((line) => line.receivedQty > 0)
     const discrepancyLines = lines.filter((line) => line.delta !== 0)
     const missingReasons = discrepancyLines.filter((line) => !line.discrepancyReason)
+    const invalidLines = lines.filter((line) => line.receivedQty < 0)
+    const missingLotSerial = lines.filter((line) => {
+      if (line.receivedQty <= 0) return false
+      if (line.requiresLot && !(line.lotCode ?? '').trim()) return true
+      if (line.requiresSerial) {
+        if (!line.serialNumbers || line.serialNumbers.length === 0) return true
+        if (!Number.isInteger(line.receivedQty)) return true
+        if (line.serialNumbers.length !== line.receivedQty) return true
+        const uniqueSerials = new Set(line.serialNumbers)
+        if (uniqueSerials.size !== line.serialNumbers.length) return true
+      }
+      return false
+    })
+    const overApprovalMissing = lines.filter((line) => {
+      if (line.receivedQty <= 0 || line.delta <= 0) return false
+      const tolerance = line.overReceiptTolerancePct ?? 0
+      const allowed = line.expectedQty * (1 + tolerance)
+      return line.receivedQty - allowed > 1e-6 && !line.overReceiptApproved
+    })
     const remainingLines = lines.filter((line) => line.remaining > 0)
     const totalExpected = lines.reduce((sum, line) => sum + line.expectedQty, 0)
     const totalReceived = lines.reduce((sum, line) => sum + line.receivedQty, 0)
-    return { lines, receivedLines, discrepancyLines, missingReasons, remainingLines, totalExpected, totalReceived }
+    return {
+      lines,
+      receivedLines,
+      discrepancyLines,
+      missingReasons,
+      invalidLines,
+      missingLotSerial,
+      overApprovalMissing,
+      remainingLines,
+      totalExpected,
+      totalReceived,
+    }
   }, [resolvedReceiptLineInputs])
 
   const receiptLines = useMemo(
@@ -526,6 +557,7 @@ export function ReceivingProvider({ children }: Props) {
 
   const poStatus = poQuery.data?.status?.toLowerCase() ?? ''
   const poClosed = ['received', 'closed', 'canceled'].includes(poStatus)
+  const poEligibleForReceipt = poStatus === 'approved'
   const receiptLoaded = !!receiptQuery.data
   const qcNeedsAttention = receiptLoaded
     ? receiptLines.some((line) => (line.qcSummary?.remainingUninspectedQuantity ?? 0) > 0)
@@ -553,6 +585,7 @@ export function ReceivingProvider({ children }: Props) {
     mutationFn: (payload: ReceiptCreatePayload) => createReceipt(payload),
     onSuccess: (receipt) => {
       setReceiptIdForQc(receipt.id)
+      setReceiptIdempotencyKey(null)
       setPutawayLines([{ purchaseOrderReceiptLineId: '', toLocationId: '', fromLocationId: '', uom: '', quantity: '' }])
       void recentReceiptsQuery.refetch()
       void queryClient.invalidateQueries({ queryKey: purchaseOrdersQueryKeys.all })
@@ -615,6 +648,7 @@ export function ReceivingProvider({ children }: Props) {
     setReceiptLineInputs(null)
     setReceiptNotes('')
     setReceivedToLocationId(null)
+    setReceiptIdempotencyKey(null)
     receiptMutation.reset()
   }, [receiptMutation])
 
@@ -724,13 +758,23 @@ export function ReceivingProvider({ children }: Props) {
       e.preventDefault()
       receiptMutation.reset()
       if (!selectedPoId) return
+      if (!poEligibleForReceipt) return
+      if (!resolvedReceivedToLocationId) return
+      if (receiptLineSummary.receivedLines.length === 0) return
       if (receiptLineSummary.missingReasons.length > 0) return
+      if (receiptLineSummary.invalidLines.length > 0) return
+      if (receiptLineSummary.missingLotSerial.length > 0) return
+      if (receiptLineSummary.overApprovalMissing.length > 0) return
       const lines = receiptLineSummary.receivedLines.map((l) => ({
         purchaseOrderLineId: l.purchaseOrderLineId,
         uom: l.uom,
         quantityReceived: Number(l.receivedQty),
+        unitCost: l.unitCost === '' ? undefined : l.unitCost,
         discrepancyReason: l.discrepancyReason || undefined,
         discrepancyNotes: l.discrepancyNotes || undefined,
+        lotCode: l.lotCode?.trim() || undefined,
+        serialNumbers: l.serialNumbers && l.serialNumbers.length > 0 ? l.serialNumbers : undefined,
+        overReceiptApproved: l.overReceiptApproved ?? false,
       }))
       if (lines.length === 0) return
       const discrepancyNote = receiptLineSummary.discrepancyLines.length
@@ -745,11 +789,18 @@ export function ReceivingProvider({ children }: Props) {
         : ''
       const composedNotes = [receiptNotes.trim(), discrepancyNote].filter((val) => val).join('\n')
 
+      const idempotencyKey =
+        receiptIdempotencyKey ??
+        (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `receipt-${Date.now()}`)
+      if (!receiptIdempotencyKey) {
+        setReceiptIdempotencyKey(idempotencyKey)
+      }
       const payload = {
         purchaseOrderId: selectedPoId,
         receivedAt: new Date().toISOString(),
         receivedToLocationId: resolvedReceivedToLocationId || undefined,
         notes: composedNotes || undefined,
+        idempotencyKey,
         lines,
       }
 
@@ -763,7 +814,16 @@ export function ReceivingProvider({ children }: Props) {
 
       receiptMutation.mutate(payload)
     },
-    [selectedPoId, receiptLineSummary, receiptNotes, resolvedReceivedToLocationId, receiptMutation, isOnline, queueOperation],
+    [
+      selectedPoId,
+      receiptLineSummary,
+      receiptNotes,
+      resolvedReceivedToLocationId,
+      receiptMutation,
+      isOnline,
+      queueOperation,
+      receiptIdempotencyKey,
+    ],
   )
 
   const onCreateQcEvent = useCallback(async () => {
@@ -976,8 +1036,13 @@ export function ReceivingProvider({ children }: Props) {
 
   const canPostReceipt =
     !!selectedPoId &&
+    poEligibleForReceipt &&
     receiptLineSummary.receivedLines.length > 0 &&
     receiptLineSummary.missingReasons.length === 0 &&
+    receiptLineSummary.invalidLines.length === 0 &&
+    receiptLineSummary.missingLotSerial.length === 0 &&
+    receiptLineSummary.overApprovalMissing.length === 0 &&
+    !!resolvedReceivedToLocationId &&
     !receiptMutation.isPending &&
     !receiptPostedForSelectedPo &&
     !poClosed

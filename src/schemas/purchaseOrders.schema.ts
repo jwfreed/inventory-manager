@@ -70,6 +70,11 @@ export const purchaseOrderLineSchema = z.object({
     const num = typeof val === 'string' ? Number(val) : val;
     return num;
   }, z.number().nonnegative().nullable().optional()),
+  overReceiptTolerancePct: z.preprocess((val) => {
+    if (val === null || val === undefined) return null;
+    const num = typeof val === 'string' ? Number(val) : val;
+    return num;
+  }, z.number().min(0).max(1).nullable().optional()),
   notes: z.string().max(1000).optional()
 });
 

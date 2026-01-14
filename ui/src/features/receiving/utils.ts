@@ -15,6 +15,13 @@ export const buildReceiptLines = (po: PurchaseOrder): ReceiptLineInput[] => {
       receivedQty: line.quantityOrdered ?? 0,
       discrepancyReason: '',
       discrepancyNotes: '',
+      lotCode: '',
+      serialNumbers: [],
+      requiresLot: line.requiresLot ?? false,
+      requiresSerial: line.requiresSerial ?? false,
+      requiresQc: line.requiresQc ?? false,
+      overReceiptTolerancePct: line.overReceiptTolerancePct ?? 0,
+      overReceiptApproved: false,
     }
   })
 }

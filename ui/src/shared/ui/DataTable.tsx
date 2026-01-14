@@ -17,6 +17,8 @@ type Props<T> = {
   onRowClick?: (row: T) => void
   emptyMessage?: string
   className?: string
+  containerClassName?: string
+  stickyHeader?: boolean
   rowClassName?: (row: T) => string | undefined
 }
 
@@ -27,12 +29,14 @@ export function DataTable<T>({
   onRowClick,
   emptyMessage = 'No data yet.',
   className,
+  containerClassName,
+  stickyHeader = false,
   rowClassName,
 }: Props<T>) {
   return (
-    <div className={cn('overflow-hidden rounded-xl border border-slate-200', className)}>
+    <div className={cn('overflow-hidden rounded-xl border border-slate-200', className, containerClassName)}>
       <table className="min-w-full divide-y divide-slate-200">
-        <thead className="bg-slate-50">
+        <thead className={cn('bg-slate-50', stickyHeader ? 'sticky top-0 z-10' : undefined)}>
           <tr>
             {columns.map((column) => {
               const alignClass = column.align === 'right' ? 'text-right' : 'text-left'

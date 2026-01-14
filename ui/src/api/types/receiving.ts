@@ -13,6 +13,12 @@ export type PurchaseOrderReceiptLine = {
   unitCost?: number | null
   discrepancyReason?: string | null
   discrepancyNotes?: string | null
+  lotCode?: string | null
+  serialNumbers?: string[] | null
+  overReceiptApproved?: boolean | null
+  requiresLot?: boolean | null
+  requiresSerial?: boolean | null
+  requiresQc?: boolean | null
   createdAt: string
   qcSummary?: {
     totalQcQuantity: number

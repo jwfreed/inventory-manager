@@ -8,6 +8,13 @@ export type ReceiptLineInput = {
   unitCost?: number | ''
   discrepancyReason: '' | 'short' | 'over' | 'damaged' | 'substituted'
   discrepancyNotes: string
+  lotCode?: string
+  serialNumbers?: string[]
+  requiresLot?: boolean
+  requiresSerial?: boolean
+  requiresQc?: boolean
+  overReceiptTolerancePct?: number
+  overReceiptApproved?: boolean
 }
 
 export type ReceiptLineSummaryLine = ReceiptLineInput & {
@@ -22,6 +29,9 @@ export type ReceiptLineSummary = {
   receivedLines: ReceiptLineSummaryLine[]
   discrepancyLines: ReceiptLineSummaryLine[]
   missingReasons: ReceiptLineSummaryLine[]
+  invalidLines: ReceiptLineSummaryLine[]
+  missingLotSerial: ReceiptLineSummaryLine[]
+  overApprovalMissing: ReceiptLineSummaryLine[]
   remainingLines: ReceiptLineSummaryLine[]
   totalExpected: number
   totalReceived: number

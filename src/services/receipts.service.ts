@@ -78,6 +78,12 @@ function mapReceiptLine(
     unitCost: line.unit_cost != null ? Number(line.unit_cost) : null,
     discrepancyReason: line.discrepancy_reason ?? null,
     discrepancyNotes: line.discrepancy_notes ?? null,
+    lotCode: line.lot_code ?? null,
+    serialNumbers: line.serial_numbers ?? null,
+    overReceiptApproved: line.over_receipt_approved ?? false,
+    requiresLot: line.requires_lot ?? false,
+    requiresSerial: line.requires_serial ?? false,
+    requiresQc: line.requires_qc ?? false,
     createdAt: line.created_at,
     qcSummary: buildQcSummary(line.id, qcBreakdown, quantityReceived),
     putawayAcceptedQuantity: roundQuantity(acceptedQuantity),
@@ -250,6 +256,9 @@ export async function fetchReceiptById(tenantId: string, id: string, client?: Po
             i.sku AS item_sku,
             i.name AS item_name,
             i.default_location_id AS item_default_location_id,
+            i.requires_lot,
+            i.requires_serial,
+            i.requires_qc,
             por.received_to_location_id
        FROM purchase_order_receipt_lines porl
        JOIN purchase_order_receipts por ON por.id = porl.purchase_order_receipt_id AND por.tenant_id = porl.tenant_id
@@ -299,6 +308,17 @@ export async function createPurchaseOrderReceipt(
   const uniqueSet = new Set(data.lines.map((line) => line.purchaseOrderLineId));
   const uniqueLineIds = Array.from(uniqueSet);
 
+  if (data.idempotencyKey) {
+    const existing = await query(
+      `SELECT id FROM purchase_order_receipts WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [tenantId, data.idempotencyKey]
+    );
+    if (existing.rowCount && existing.rows[0]?.id) {
+      const receipt = await fetchReceiptById(tenantId, existing.rows[0].id);
+      if (receipt) return receipt;
+    }
+  }
+
   const poResult = await query(
     'SELECT status, ship_to_location_id, receiving_location_id FROM purchase_orders WHERE id = $1 AND tenant_id = $2',
     [data.purchaseOrderId, tenantId]
@@ -328,20 +348,42 @@ export async function createPurchaseOrderReceipt(
   }
 
   const { rows: poLineRows } = await query(
-    'SELECT id, purchase_order_id, item_id, uom, quantity_ordered, unit_price FROM purchase_order_lines WHERE id = ANY($1::uuid[]) AND tenant_id = $2',
+    `SELECT pol.id, pol.purchase_order_id, pol.item_id, pol.uom, pol.quantity_ordered, pol.unit_price,
+            pol.over_receipt_tolerance_pct,
+            i.requires_lot, i.requires_serial, i.requires_qc
+       FROM purchase_order_lines pol
+       LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = pol.tenant_id
+      WHERE pol.id = ANY($1::uuid[]) AND pol.tenant_id = $2`,
     [uniqueLineIds, tenantId]
   );
   if (poLineRows.length !== uniqueLineIds.length) {
     throw new Error('RECEIPT_PO_LINES_NOT_FOUND');
   }
-  const poLineMap = new Map<string, { purchase_order_id: string; item_id: string; uom: string; quantity_ordered: number; unit_price: number | null }>();
+  const poLineMap = new Map<
+    string,
+    {
+      purchase_order_id: string;
+      item_id: string;
+      uom: string;
+      quantity_ordered: number;
+      unit_price: number | null;
+      over_receipt_tolerance_pct: number;
+      requires_lot: boolean;
+      requires_serial: boolean;
+      requires_qc: boolean;
+    }
+  >();
   for (const row of poLineRows) {
     poLineMap.set(row.id, {
       purchase_order_id: row.purchase_order_id,
       item_id: row.item_id,
       uom: row.uom,
       quantity_ordered: roundQuantity(toNumber(row.quantity_ordered ?? 0)),
-      unit_price: row.unit_price != null ? Number(row.unit_price) : null
+      unit_price: row.unit_price != null ? Number(row.unit_price) : null,
+      over_receipt_tolerance_pct: row.over_receipt_tolerance_pct != null ? Number(row.over_receipt_tolerance_pct) : 0,
+      requires_lot: !!row.requires_lot,
+      requires_serial: !!row.requires_serial,
+      requires_qc: !!row.requires_qc
     });
   }
   for (const line of data.lines) {
@@ -354,6 +396,33 @@ export async function createPurchaseOrderReceipt(
     }
     if (poLine.uom !== line.uom) {
       throw new Error('RECEIPT_LINE_UOM_MISMATCH');
+    }
+    const receivedQty = toNumber(line.quantityReceived);
+    const expectedQty = roundQuantity(toNumber(poLine.quantity_ordered ?? 0));
+    if (poLine.requires_lot && !line.lotCode) {
+      throw new Error('RECEIPT_LOT_REQUIRED');
+    }
+    if (poLine.requires_serial) {
+      if (!line.serialNumbers || line.serialNumbers.length === 0) {
+        throw new Error('RECEIPT_SERIAL_REQUIRED');
+      }
+      if (!Number.isInteger(receivedQty)) {
+        throw new Error('RECEIPT_SERIAL_QTY_MUST_BE_INTEGER');
+      }
+      const uniqueSerials = new Set(line.serialNumbers);
+      if (uniqueSerials.size !== line.serialNumbers.length) {
+        throw new Error('RECEIPT_SERIAL_DUPLICATE');
+      }
+      if (line.serialNumbers.length !== receivedQty) {
+        throw new Error('RECEIPT_SERIAL_COUNT_MISMATCH');
+      }
+    }
+    if (receivedQty - expectedQty > STATUS_EPSILON) {
+      const tolerance = poLine.over_receipt_tolerance_pct ?? 0;
+      const allowed = roundQuantity(expectedQty * (1 + tolerance));
+      if (receivedQty - allowed > STATUS_EPSILON && !line.overReceiptApproved) {
+        throw new Error('RECEIPT_OVER_RECEIPT_NOT_APPROVED');
+      }
     }
   }
 
@@ -369,8 +438,8 @@ export async function createPurchaseOrderReceipt(
     await client.query(
       `INSERT INTO purchase_order_receipts (
           id, tenant_id, purchase_order_id, status, received_at, received_to_location_id,
-          inventory_movement_id, external_ref, notes
-       ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8)`,
+          inventory_movement_id, external_ref, notes, idempotency_key
+       ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9)`,
       [
         receiptId,
         tenantId,
@@ -379,7 +448,8 @@ export async function createPurchaseOrderReceipt(
         new Date(data.receivedAt),
         resolvedReceivedToLocationId,
         data.externalRef ?? null,
-        data.notes ?? null
+        data.notes ?? null,
+        data.idempotencyKey ?? null
       ]
     );
 
@@ -398,8 +468,9 @@ export async function createPurchaseOrderReceipt(
       await client.query(
         `INSERT INTO purchase_order_receipt_lines (
             id, tenant_id, purchase_order_receipt_id, purchase_order_line_id, uom,
-            quantity_received, expected_quantity, unit_cost, discrepancy_reason, discrepancy_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            quantity_received, expected_quantity, unit_cost, discrepancy_reason, discrepancy_notes,
+            lot_code, serial_numbers, over_receipt_approved
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           uuidv4(),
           tenantId,
@@ -410,7 +481,10 @@ export async function createPurchaseOrderReceipt(
           expectedQty,
           unitCost,
           line.discrepancyReason ?? null,
-          line.discrepancyNotes ?? null
+          line.discrepancyNotes ?? null,
+          line.lotCode ?? null,
+          line.serialNumbers ?? null,
+          line.overReceiptApproved ?? false
         ]
       );
 
@@ -474,6 +548,15 @@ export async function createPurchaseOrderReceipt(
   }
   await updatePoStatusFromReceipts(tenantId, receipt.purchaseOrderId);
   return receipt;
+}
+
+export async function fetchReceiptByIdempotencyKey(tenantId: string, key: string) {
+  const existing = await query(
+    'SELECT id FROM purchase_order_receipts WHERE tenant_id = $1 AND idempotency_key = $2',
+    [tenantId, key]
+  );
+  if (!existing.rowCount || !existing.rows[0]?.id) return null;
+  return fetchReceiptById(tenantId, existing.rows[0].id);
 }
 
 export async function listReceipts(

@@ -17,6 +17,11 @@ type Props = {
   disabled?: boolean
   loading?: boolean
   emptyMessage?: string
+  required?: boolean
+  error?: string
+  helper?: string
+  showSelectedValue?: boolean
+  inputClassName?: string
   onChange: (nextValue: string) => void
   onQueryChange?: (query: string) => void
 }
@@ -29,11 +34,18 @@ export function Combobox({
   disabled,
   loading,
   emptyMessage,
+  required,
+  error,
+  helper,
+  showSelectedValue = true,
+  inputClassName,
   onChange,
   onQueryChange,
 }: Props) {
   const id = useId()
   const listId = `${id}-listbox`
+  const errorId = `${id}-error`
+  const helperId = `${id}-helper`
   const containerRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [open, setOpen] = useState(false)
@@ -127,21 +139,31 @@ export function Combobox({
     }
   }
 
+  const describedBy = [helper ? helperId : null, error ? errorId : null].filter(Boolean).join(' ')
+
   return (
     <label ref={containerRef} className="space-y-1 text-sm">
-      <span className="text-xs uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="text-xs uppercase tracking-wide text-slate-500">
+        {label}
+        {required && <span className="ml-0.5 text-red-500">*</span>}
+      </span>
       <div className="relative">
         <input
           ref={inputRef}
           className={cn(
             'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-50',
+            error ? 'border-red-400 focus:border-red-500 focus:ring-red-100' : undefined,
             open ? 'border-brand-300' : undefined,
+            inputClassName,
           )}
           role="combobox"
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={activeIndex >= 0 ? `${listId}-opt-${activeIndex}` : undefined}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy || undefined}
+          aria-required={required ? true : undefined}
           placeholder={placeholder ?? 'Search...'}
           value={displayValue}
           onChange={(e) => handleInputChange(e.target.value)}
@@ -207,7 +229,9 @@ export function Combobox({
           </div>
         )}
       </div>
-      {value && (
+      {helper && <div id={helperId} className="text-xs text-slate-600">{helper}</div>}
+      {error && <div id={errorId} className="text-xs text-red-600">{error}</div>}
+      {showSelectedValue && value && (
         <div className="text-xs text-slate-500">
           Selected: <span className="font-mono">{value}</span>
         </div>

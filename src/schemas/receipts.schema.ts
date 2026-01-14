@@ -9,7 +9,10 @@ const receiptLineSchema = z.object({
     z.number().nonnegative().nullable().optional()
   ),
   discrepancyReason: z.enum(['short', 'over', 'damaged', 'substituted']).optional(),
-  discrepancyNotes: z.string().max(2000).optional()
+  discrepancyNotes: z.string().max(2000).optional(),
+  lotCode: z.string().max(255).optional(),
+  serialNumbers: z.array(z.string().min(1).max(255)).optional(),
+  overReceiptApproved: z.boolean().optional()
 });
 
 export const purchaseOrderReceiptSchema = z.object({
@@ -18,5 +21,6 @@ export const purchaseOrderReceiptSchema = z.object({
   receivedToLocationId: z.string().uuid().optional(),
   externalRef: z.string().max(255).optional(),
   notes: z.string().max(2000).optional(),
+  idempotencyKey: z.string().max(255).optional(),
   lines: z.array(receiptLineSchema).min(1)
 });

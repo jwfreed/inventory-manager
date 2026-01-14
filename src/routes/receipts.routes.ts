@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
-import { createPurchaseOrderReceipt, fetchReceiptById, listReceipts, voidReceipt } from '../services/receipts.service';
+import { createPurchaseOrderReceipt, fetchReceiptById, fetchReceiptByIdempotencyKey, listReceipts, voidReceipt } from '../services/receipts.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 
@@ -61,10 +61,39 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
     if (error?.message === 'RECEIPT_DISCREPANCY_REASON_REQUIRED') {
       return res.status(400).json({ error: 'Discrepancy reason is required when received quantity differs from expected.' });
     }
+    if (error?.message === 'RECEIPT_LOT_REQUIRED') {
+      return res.status(400).json({ error: 'Lot code is required for one or more items.' });
+    }
+    if (error?.message === 'RECEIPT_SERIAL_REQUIRED') {
+      return res.status(400).json({ error: 'Serial numbers are required for one or more items.' });
+    }
+    if (error?.message === 'RECEIPT_SERIAL_QTY_MUST_BE_INTEGER') {
+      return res.status(400).json({ error: 'Serial-tracked items must be received in whole units.' });
+    }
+    if (error?.message === 'RECEIPT_SERIAL_COUNT_MISMATCH') {
+      return res.status(400).json({ error: 'Serial count must match received quantity.' });
+    }
+    if (error?.message === 'RECEIPT_SERIAL_DUPLICATE') {
+      return res.status(400).json({ error: 'Duplicate serial numbers are not allowed.' });
+    }
+    if (error?.message === 'RECEIPT_OVER_RECEIPT_NOT_APPROVED') {
+      return res.status(409).json({ error: 'Over-receipt exceeds tolerance and requires approval.' });
+    }
     if (error?.message === 'RECEIPT_NOT_FOUND_AFTER_CREATE') {
       return res
         .status(500)
         .json({ error: 'Receipt was created but could not be reloaded. Please retry fetch.' });
+    }
+    if (error?.code === '23505' && error?.constraint === 'uq_po_receipts_idempotency') {
+      const tenantId = req.auth!.tenantId;
+      const key = parsed.data.idempotencyKey;
+      if (key) {
+        const existing = await fetchReceiptByIdempotencyKey(tenantId, key);
+        if (existing) {
+          return res.status(200).json(existing);
+        }
+      }
+      return res.status(409).json({ error: 'Receipt already posted for this request.' });
     }
     const mapped = mapPgErrorToHttp(error, {
       foreignKey: () => ({
