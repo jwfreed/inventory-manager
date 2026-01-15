@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQueries } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -22,6 +22,8 @@ import { LotAllocationsCard } from './LotAllocationsCard'
 import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
 import { useDebouncedValue } from '@shared'
+import { getAtp } from '@api/reports'
+import type { AtpResult } from '@api/types'
 
 type Line = {
   componentItemId: string
@@ -138,11 +140,6 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
     localDefaults.consumeLocationId ??
     ''
   const baseOutputUom = outputItem?.defaultUom || workOrder.outputUom
-  const usingItemConsumeDefault =
-    !workOrder.defaultConsumeLocationId &&
-    !localDefaults.consumeLocationId &&
-    outputItem?.defaultLocationId &&
-    normalizedDefaultFrom === outputItem.defaultLocationId
 
   useEffect(() => {
     if (!defaultFromLocationId && baseConsumeLocationId) {
@@ -196,6 +193,33 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
 
   const availabilityError = availabilityQueries.some((query) => query.isError)
 
+  const atpQuery = useQuery({
+    queryKey: ['atp', workOrder.outputItemId],
+    queryFn: () => getAtp({ itemId: workOrder.outputItemId }),
+    enabled: Boolean(workOrder.outputItemId),
+    staleTime: 30_000,
+  })
+  const atpRows: AtpResult[] = (atpQuery.data?.data ?? []) as AtpResult[]
+  const atpByLocation = useMemo(() => {
+    const map = new Map<string, AtpResult[]>()
+    atpRows.forEach((row) => {
+      const list = map.get(row.locationId) ?? []
+      list.push(row)
+      map.set(row.locationId, list)
+    })
+    return map
+  }, [atpRows])
+  const availableLocationIds = useMemo(() => {
+    if (!isDisassembly) return new Set<string>()
+    const set = new Set<string>()
+    atpRows.forEach((row) => {
+      if (row.availableToPromise > 0 && row.uom === baseOutputUom) {
+        set.add(row.locationId)
+      }
+    })
+    return set
+  }, [atpRows, baseOutputUom, isDisassembly])
+
   const locationOptions = useMemo(
     () =>
       (locationsQuery.data?.data ?? []).map((loc) => ({
@@ -205,10 +229,24 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
       })),
     [locationsQuery.data],
   )
+  const locationLabelById = useMemo(() => {
+    const map = new Map<string, string>()
+    locationOptions.forEach((loc) => map.set(loc.value, loc.label))
+    return map
+  }, [locationOptions])
+  const filteredLocationOptions = useMemo(() => {
+    if (!isDisassembly) return locationOptions
+    return locationOptions.filter((loc) => availableLocationIds.has(loc.value))
+  }, [availableLocationIds, isDisassembly, locationOptions])
 
   const validLocationIds = useMemo(() => new Set(locationOptions.map((o) => o.value)), [locationOptions])
   const effectiveDefaultFrom = defaultFromLocationId || baseConsumeLocationId
   const normalizedDefaultFrom = validLocationIds.has(effectiveDefaultFrom) ? effectiveDefaultFrom : ''
+  const usingItemConsumeDefault =
+    !workOrder.defaultConsumeLocationId &&
+    !localDefaults.consumeLocationId &&
+    outputItem?.defaultLocationId &&
+    normalizedDefaultFrom === outputItem.defaultLocationId
 
   useEffect(() => {
     setLines((prev) =>
@@ -285,6 +323,21 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
     )
   }
 
+  const availableForLine = (line: Line) => {
+    if (!line.componentItemId || !line.fromLocationId || !line.uom) return null
+    if (isDisassembly && line.componentItemId === workOrder.outputItemId) {
+      const candidates = atpByLocation.get(line.fromLocationId) ?? []
+      const match = candidates.find((row) => row.uom === line.uom)
+      return match?.availableToPromise ?? 0
+    }
+    const availability = availabilityByItem.get(line.componentItemId)
+    if (!availability || availability.isLoading || availability.isError) return null
+    const match = availability.rows.find(
+      (row) => row.locationId === line.fromLocationId && row.uom === line.uom,
+    )
+    return match?.onHand ?? 0
+  }
+
   const validate = (): string | null => {
     if (lines.length === 0) return 'Add at least one line.'
     for (const line of lines) {
@@ -296,6 +349,10 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
       }
       if (!validLocationIds.has(line.fromLocationId)) return 'Select a valid consume location.'
       if (Number(line.quantityIssued) <= 0) return 'Quantities must be greater than zero.'
+      const availableQty = availableForLine(line)
+      if (availableQty !== null && Number(line.quantityIssued) > availableQty) {
+        return 'Quantity exceeds available inventory at the selected location.'
+      }
     }
     return null
   }
@@ -337,8 +394,12 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
 
   return (
     <Card
-      title={isDisassembly ? 'Use materials (disassembly)' : 'Use materials'}
-      description="Save a draft, then post to create the inventory movement."
+      title={isDisassembly ? 'Consume parent item' : 'Use materials'}
+      description={
+        isDisassembly
+          ? 'Consume the item being disassembled. Save a draft, then post to move inventory.'
+          : 'Save a draft, then post to create the inventory movement.'
+      }
     >
       {issueMutation.isPending && <LoadingSpinner label="Creating issue..." />}
       {postMutation.isPending && <LoadingSpinner label="Posting issue..." />}
@@ -353,6 +414,13 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
       {postMutation.isError && (
         <Alert variant="error" title="Post failed" message={postMutation.error.message} />
       )}
+      {defaultsMutation.isError && (
+        <Alert
+          variant="error"
+          title="Default consume location not updated"
+          message={(defaultsMutation.error as ApiError)?.message ?? 'Failed to update default consume location.'}
+        />
+      )}
       {availabilityError && (
         <Alert
           variant="warning"
@@ -364,7 +432,7 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
         <Alert
           variant={isPosted ? 'success' : 'info'}
           title={isPosted ? 'Issue posted' : 'Issue draft created'}
-          message={`Issue ID: ${createdIssue.id}`}
+          message={isPosted ? 'Inventory consumption recorded.' : 'Draft saved and ready to post.'}
         />
       )}
 
@@ -410,10 +478,10 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               value={normalizedDefaultFrom}
               onChange={(e) => onSelectDefaultFromLocation(e.target.value)}
-              disabled={locationsQuery.isLoading}
+              disabled={locationsQuery.isLoading || (isDisassembly && filteredLocationOptions.length === 0)}
             >
               <option value="">Select location</option>
-              {locationOptions.map((loc) => (
+              {(isDisassembly ? filteredLocationOptions : locationOptions).map((loc) => (
                 <option key={loc.value} value={loc.value}>
                   {loc.label}
                 </option>
@@ -422,12 +490,24 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
             {usingItemConsumeDefault && (
               <p className="text-xs text-slate-500">Auto from item default location</p>
             )}
+            {isDisassembly && filteredLocationOptions.length === 0 && (
+              <p className="text-xs text-amber-700">No available inventory to consume.</p>
+            )}
           </label>
         </div>
-        {lines.map((line, idx) => (
+        {lines.map((line, idx) => {
+          const hasLineError =
+            !line.componentItemId ||
+            !line.fromLocationId ||
+            !line.uom ||
+            line.quantityIssued === '' ||
+            (line.quantityIssued !== '' && Number(line.quantityIssued) <= 0)
+          return (
           <div
             key={idx}
-            className={`grid gap-3 rounded-lg border border-slate-200 p-3 ${isDisassembly ? 'md:grid-cols-6' : 'md:grid-cols-5'}`}
+            className={`grid gap-3 rounded-lg border p-3 ${
+              hasLineError ? 'border-amber-300 bg-amber-50' : 'border-slate-200'
+            } ${isDisassembly ? 'md:grid-cols-6' : 'md:grid-cols-5'}`}
           >
             <div>
               <Combobox
@@ -444,7 +524,11 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
               <Combobox
                 label="From location"
                 value={line.fromLocationId}
-                options={locationOptions}
+                options={
+                  isDisassembly && line.componentItemId === workOrder.outputItemId
+                    ? filteredLocationOptions
+                    : locationOptions
+                }
                 loading={locationsQuery.isLoading}
                 onQueryChange={setLocationSearch}
                 placeholder="Search locations (code/name)"
@@ -461,6 +545,12 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
                 type="number"
                 min={0}
                 value={line.quantityIssued}
+                disabled={
+                  (() => {
+                    const availableQty = availableForLine(line)
+                    return availableQty !== null && availableQty <= 0
+                  })()
+                }
                 onChange={(e) =>
                   updateLine(idx, {
                     quantityIssued: e.target.value === '' ? '' : Number(e.target.value),
@@ -488,14 +578,8 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
                 {line.componentItemId && line.fromLocationId && line.uom && (
                   <div className="text-xs text-slate-500">
                     {(() => {
-                      const availability = availabilityByItem.get(line.componentItemId)
-                      if (!availability) return 'Available: —'
-                      if (availability.isLoading) return 'Available: …'
-                      if (availability.isError) return 'Availability unavailable'
-                      const match = availability.rows.find(
-                        (row) => row.locationId === line.fromLocationId && row.uom === line.uom,
-                      )
-                      const availableQty = match?.onHand ?? 0
+                      const availableQty = availableForLine(line)
+                      if (availableQty === null) return 'Available: —'
                       const qty = Number(line.quantityIssued)
                       const hasQty = line.quantityIssued !== '' && Number.isFinite(qty)
                       const after = hasQty ? availableQty - qty : null
@@ -508,6 +592,20 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
                     })()}
                   </div>
                 )}
+                {line.componentItemId &&
+                  line.fromLocationId &&
+                  line.uom &&
+                  (() => {
+                    const availableQty = availableForLine(line)
+                    if (availableQty !== null && availableQty <= 0) {
+                      return (
+                        <div className="text-xs text-amber-700">
+                          No available inventory at this location.
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
               </label>
               {lines.length > 1 && (
                 <Button variant="secondary" size="sm" onClick={() => removeLine(idx)}>
@@ -516,13 +614,15 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
               )}
             </div>
           </div>
-        ))}
+        )})}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-slate-700">
           Total to issue:{' '}
-          <span className="font-semibold text-red-600">-{formatNumber(totalIssued)}</span>{' '}
+          <span className={totalIssued > 0 ? 'font-semibold text-red-600' : 'font-semibold text-slate-700'}>
+            {totalIssued > 0 ? `-${formatNumber(totalIssued)}` : formatNumber(0)}
+          </span>{' '}
           {lines[0]?.uom || ''}
         </div>
         <div className="flex gap-2">
@@ -550,7 +650,8 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
             {createdIssue?.lines.map((line) => (
               <div key={line.id} className="flex justify-between">
                 <span>
-                  {line.componentItemId} @ {line.fromLocationId}
+                  {itemOptions.find((item) => item.value === line.componentItemId)?.label || 'Item'} @{' '}
+                  {locationLabelById.get(line.fromLocationId) || 'Location'}
                 </span>
                 <span className="text-red-600">
                   -{formatNumber(line.quantityIssued)} {line.uom}

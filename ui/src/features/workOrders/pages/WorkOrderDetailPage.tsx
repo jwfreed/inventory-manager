@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useItem, useItemsList } from '@features/items/queries'
 import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createWorkOrder, updateWorkOrderDescription, useActiveBomVersion } from '../api/workOrders'
 import type { ApiError } from '@api/types'
 import { useWorkOrder, useWorkOrderExecution, useWorkOrderRequirements, workOrdersQueryKeys } from '../queries'
@@ -14,6 +14,10 @@ import { CompletionDraftForm } from '../components/CompletionDraftForm'
 import { RecordBatchForm } from '../components/RecordBatchForm'
 import { WorkOrderRequirementsTable } from '../components/WorkOrderRequirementsTable'
 import { WorkOrderNextStepPanel } from '../components/WorkOrderNextStepPanel'
+import { useLocationsList } from '@features/locations/queries'
+import { getAtp } from '@api/reports'
+import type { AtpResult } from '@api/types'
+import { formatNumber } from '@shared/formatters'
 
 type TabKey = 'summary' | 'issues' | 'completions' | 'batch'
 
@@ -51,6 +55,7 @@ export default function WorkOrderDetailPage() {
   })
 
   const itemsLookupQuery = useItemsList({ limit: 500 }, { staleTime: 60_000 })
+  const locationsQuery = useLocationsList({ limit: 500, active: true }, { staleTime: 60_000 })
 
   const itemLabel = useCallback((id?: string) => {
     if (!id) return ''
@@ -60,14 +65,14 @@ export default function WorkOrderDetailPage() {
     if (name && sku) return `${name} — ${sku}`
     if (name) return name
     if (sku) return sku
-    return id
+    return 'Unknown item'
   }, [itemsLookupQuery.data])
 
   const componentLabel = useCallback((id: string, name?: string | null, sku?: string | null) => {
     if (name && sku) return `${name} — ${sku}`
     if (name) return name
     if (sku) return sku
-    return itemLabel(id)
+    return itemLabel(id) || 'Unknown item'
   }, [itemLabel])
 
   const nextBomOptions = useMemo(
@@ -199,11 +204,54 @@ export default function WorkOrderDetailPage() {
   const hasIssued = issuedTotal > 0
   const currentStep = !hasIssued ? 1 : remaining > 0 ? 2 : 3
   const nextStepAvailable = !isDisassembly && (nextStepBomsQuery.data?.data?.length ?? 0) > 0
+  const locationsById = useMemo(() => {
+    const map = new Map<string, { code?: string; name?: string }>()
+    locationsQuery.data?.data?.forEach((loc) => {
+      map.set(loc.id, { code: loc.code, name: loc.name })
+    })
+    return map
+  }, [locationsQuery.data])
+
+  const atpQuery = useQuery({
+    queryKey: ['atp', workOrderQuery.data?.outputItemId],
+    queryFn: () => getAtp({ itemId: workOrderQuery.data?.outputItemId ?? undefined }),
+    enabled: Boolean(workOrderQuery.data?.outputItemId),
+    staleTime: 30_000,
+  })
+
+  const atpRows: AtpResult[] = (atpQuery.data?.data ?? []) as AtpResult[]
+  const totalOnHand = atpRows.reduce((sum, row) => sum + (row.onHand ?? 0), 0)
+  const totalReserved = atpRows.reduce((sum, row) => sum + (row.reserved ?? 0), 0)
+  const totalAvailable = atpRows.reduce((sum, row) => sum + (row.availableToPromise ?? 0), 0)
+
+  const defaultConsumeLocationLabel = useMemo(() => {
+    const id = workOrderQuery.data?.defaultConsumeLocationId || outputItemQuery.data?.defaultLocationId
+    if (!id) return 'Unassigned'
+    const loc = locationsById.get(id)
+    if (loc?.code && loc?.name) return `${loc.code} — ${loc.name}`
+    return loc?.name || loc?.code || 'Unassigned'
+  }, [locationsById, outputItemQuery.data?.defaultLocationId, workOrderQuery.data?.defaultConsumeLocationId])
+
   const consumeLocationHint = workOrderQuery.data
-    ? `Consume location defaults to ${
-        workOrderQuery.data.defaultProduceLocationId || outputItemQuery.data?.defaultLocationId || '—'
-      }.`
+    ? `Consume location defaults to ${defaultConsumeLocationLabel}.`
     : ''
+
+  const preferredConsumeLocation = useMemo(() => {
+    const defaultId = workOrderQuery.data?.defaultConsumeLocationId || outputItemQuery.data?.defaultLocationId
+    const matchesDefault = atpRows.find((row) => row.locationId === defaultId && row.availableToPromise > 0)
+    if (matchesDefault) return matchesDefault
+    return atpRows.find((row) => row.availableToPromise > 0) ?? null
+  }, [atpRows, outputItemQuery.data?.defaultLocationId, workOrderQuery.data?.defaultConsumeLocationId])
+
+  const nextStepMessage = useMemo(() => {
+    if (!workOrderQuery.data) return ''
+    if (!preferredConsumeLocation) {
+      return 'No available inventory to consume for disassembly.'
+    }
+    const locationLabel = `${preferredConsumeLocation.locationCode} — ${preferredConsumeLocation.locationName}`
+    const itemLabelText = itemLabel(workOrderQuery.data.outputItemId)
+    return `Consume ${formatNumber(Math.max(0, remaining))} ${workOrderQuery.data.outputUom} of ${itemLabelText} from ${locationLabel} to begin disassembly.`
+  }, [itemLabel, preferredConsumeLocation, remaining, workOrderQuery.data])
 
   useEffect(() => {
     if (!summaryFlash) return
@@ -247,6 +295,42 @@ export default function WorkOrderDetailPage() {
           workOrder={workOrderQuery.data}
           outputItemLabel={itemLabel(workOrderQuery.data.outputItemId)}
         />
+      )}
+
+      {workOrderQuery.data && (
+        <Section title="Inventory status">
+          <Card>
+            <div className="grid gap-3 text-sm md:grid-cols-5">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">On hand</div>
+                <div className="mt-1 font-semibold text-slate-900">
+                  {formatNumber(totalOnHand)} {workOrderQuery.data.outputUom}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Reserved</div>
+                <div className="mt-1 font-semibold text-slate-900">
+                  {formatNumber(totalReserved)} {workOrderQuery.data.outputUom}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Available</div>
+                <div className="mt-1 font-semibold text-slate-900">
+                  {formatNumber(totalAvailable)} {workOrderQuery.data.outputUom}
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Default consume location</div>
+                <div className="mt-1 font-semibold text-slate-900">{defaultConsumeLocationLabel}</div>
+              </div>
+            </div>
+            {isDisassembly && totalAvailable <= 0 && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                No available inventory to consume for disassembly.
+              </div>
+            )}
+          </Card>
+        </Section>
       )}
 
       {workOrderQuery.data && (
@@ -303,20 +387,36 @@ export default function WorkOrderDetailPage() {
 
       {workOrderQuery.data && (
         <Section title="Primary execution path">
+          {isDisassembly && (
+            <Card>
+              <div className="flex items-start gap-3">
+                <div className="mt-1 text-lg">🔧</div>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-slate-900">Next step</div>
+                  <div className="mt-1 text-sm text-slate-700">{nextStepMessage}</div>
+                  <div className="mt-3">
+                    <Button size="sm" onClick={() => setTab('issues')} disabled={!preferredConsumeLocation}>
+                      Consume parent item
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
           <div className="grid gap-3 md:grid-cols-3">
             {[
               {
                 step: 1,
-                title: 'Use materials',
-                detail: 'Issue components to start work.',
-                cta: 'Issue materials',
+                title: isDisassembly ? 'Consume parent item' : 'Use materials',
+                detail: isDisassembly ? 'Consume the item being disassembled.' : 'Issue components to start work.',
+                cta: isDisassembly ? 'Consume' : 'Issue materials',
                 onClick: () => setTab('issues'),
               },
               {
                 step: 2,
-                title: 'Make product',
-                detail: 'Post completions as output is produced.',
-                cta: 'Post completion',
+                title: isDisassembly ? 'Produce components' : 'Make product',
+                detail: isDisassembly ? 'Record recovered components as outputs.' : 'Post completions as output is produced.',
+                cta: isDisassembly ? 'Record outputs' : 'Post completion',
                 onClick: () => setTab('completions'),
               },
               {
@@ -432,10 +532,16 @@ export default function WorkOrderDetailPage() {
               {key === 'summary'
                 ? 'Overview'
                 : key === 'issues'
-                  ? 'Use materials'
+                  ? isDisassembly
+                    ? 'Consume parent item'
+                    : 'Use materials'
                   : key === 'completions'
-                    ? 'Make product'
-                    : 'Issue & complete'}
+                    ? isDisassembly
+                      ? 'Produce components'
+                      : 'Make product'
+                    : isDisassembly
+                      ? 'Disassemble & record outputs'
+                      : 'Issue & complete'}
             </button>
           ))}
         </div>
@@ -443,8 +549,9 @@ export default function WorkOrderDetailPage() {
         {tab === 'summary' && (
           <Card>
             <div className="text-sm text-slate-700">
-              Use materials to issue components, then make product to post completions. Posting
-              creates inventory movements and cannot be edited.{' '}
+              {isDisassembly
+                ? 'Consume the parent item, then record recovered components as outputs. Posting creates inventory movements and cannot be edited.'
+                : 'Use materials to issue components, then make product to post completions. Posting creates inventory movements and cannot be edited.'}{' '}
               <span className="font-semibold">
                 {isDisassembly ? 'Remaining to disassemble' : 'Remaining to complete'}:{' '}
                 {remaining} {workOrderQuery.data?.outputUom}

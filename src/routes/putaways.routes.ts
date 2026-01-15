@@ -152,6 +152,10 @@ router.post('/putaways/:id/post', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Putaway not found.' });
     }
     if (error?.message === 'PUTAWAY_ALREADY_POSTED') {
+      const existing = await fetchPutawayById(req.auth!.tenantId, id);
+      if (existing) {
+        return res.status(200).json(existing);
+      }
       return res.status(409).json({ error: 'Putaway already posted.' });
     }
     if (error?.message === 'PUTAWAY_CANCELED') {

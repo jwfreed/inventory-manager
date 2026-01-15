@@ -26,11 +26,17 @@ type PutawayLineRow = {
   purchase_order_receipt_line_id: string;
   line_number: number;
   item_id: string;
+  item_sku?: string | null;
+  item_name?: string | null;
   uom: string;
   quantity_planned: string | number | null;
   quantity_moved: string | number | null;
   from_location_id: string;
+  from_location_code?: string | null;
+  from_location_name?: string | null;
   to_location_id: string;
+  to_location_code?: string | null;
+  to_location_name?: string | null;
   inventory_movement_id: string | null;
   status: string;
   notes: string | null;
@@ -40,6 +46,7 @@ type PutawayLineRow = {
 
 type PutawayRow = {
   id: string;
+  putaway_number?: string | null;
   status: string;
   source_type: string;
   purchase_order_receipt_id: string | null;
@@ -47,6 +54,12 @@ type PutawayRow = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  completed_at?: string | null;
+  completed_by_user_id?: string | null;
+  completed_by_name?: string | null;
+  completed_by_email?: string | null;
+  receipt_number?: string | null;
+  purchase_order_number?: string | null;
 };
 
 async function assertReceiptLinesNotVoided(tenantId: string, lineIds: string[]) {
@@ -67,6 +80,13 @@ async function assertReceiptLinesNotVoided(tenantId: string, lineIds: string[]) 
   }
 }
 
+async function generatePutawayNumber() {
+  const { rows } = await query(`SELECT nextval('putaway_number_seq') AS seq`);
+  const seq = Number(rows[0]?.seq ?? 0);
+  const padded = String(seq).padStart(6, '0');
+  return `P-${padded}`;
+}
+
 function mapPutawayLine(
   line: PutawayLineRow,
   context: ReceiptLineContext,
@@ -81,11 +101,17 @@ function mapPutawayLine(
     lineNumber: line.line_number,
     purchaseOrderReceiptLineId: line.purchase_order_receipt_line_id,
     itemId: line.item_id,
+    itemSku: (line as any).item_sku ?? null,
+    itemName: (line as any).item_name ?? null,
     uom: line.uom,
     quantityPlanned: plannedQty,
     quantityMoved: movedQty,
     fromLocationId: line.from_location_id,
+    fromLocationCode: (line as any).from_location_code ?? null,
+    fromLocationName: (line as any).from_location_name ?? null,
     toLocationId: line.to_location_id,
+    toLocationCode: (line as any).to_location_code ?? null,
+    toLocationName: (line as any).to_location_name ?? null,
     inventoryMovementId: line.inventory_movement_id,
     status: line.status,
     notes: line.notes,
@@ -93,20 +119,28 @@ function mapPutawayLine(
     updatedAt: line.updated_at,
     qcBreakdown: qc,
     remainingQuantityToPutaway: availability.remainingAfterPosted,
-    availableForNewPutaway: availability.availableForPlanning
+    availableForNewPutaway: availability.availableForPlanning,
+    putawayBlockedReason: availability.blockedReason ?? null
   };
 }
 
 function mapPutaway(row: PutawayRow, lines: PutawayLineRow[], contexts: Map<string, ReceiptLineContext>, qcMap: Map<string, ReturnType<typeof defaultBreakdown>>, totalsMap: Map<string, { posted: number; pending: number }>) {
   return {
     id: row.id,
+    putawayNumber: row.putaway_number ?? null,
     status: row.status,
     sourceType: row.source_type,
     purchaseOrderReceiptId: row.purchase_order_receipt_id,
+    receiptNumber: row.receipt_number ?? null,
+    purchaseOrderNumber: row.purchase_order_number ?? null,
     inventoryMovementId: row.inventory_movement_id,
     notes: row.notes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    completedAt: row.completed_at ?? null,
+    completedByUserId: row.completed_by_user_id ?? null,
+    completedByName: row.completed_by_name ?? null,
+    completedByEmail: row.completed_by_email ?? null,
     lines: lines.map((line) => {
       const context = contexts.get(line.purchase_order_receipt_line_id);
       const qc = qcMap.get(line.purchase_order_receipt_line_id) ?? defaultBreakdown();
@@ -121,15 +155,36 @@ function mapPutaway(row: PutawayRow, lines: PutawayLineRow[], contexts: Map<stri
 
 export async function fetchPutawayById(tenantId: string, id: string, client?: PoolClient) {
   const executor = client ? client.query.bind(client) : query;
-  const putawayResult = await executor<PutawayRow>('SELECT * FROM putaways WHERE id = $1 AND tenant_id = $2', [
-    id,
-    tenantId
-  ]);
+  const putawayResult = await executor<PutawayRow>(
+    `SELECT p.*,
+            por.receipt_number,
+            po.po_number AS purchase_order_number,
+            u.full_name AS completed_by_name,
+            u.email AS completed_by_email
+       FROM putaways p
+       LEFT JOIN purchase_order_receipts por ON por.id = p.purchase_order_receipt_id AND por.tenant_id = p.tenant_id
+       LEFT JOIN purchase_orders po ON po.id = por.purchase_order_id AND po.tenant_id = por.tenant_id
+       LEFT JOIN users u ON u.id = p.completed_by_user_id
+      WHERE p.id = $1 AND p.tenant_id = $2`,
+    [id, tenantId]
+  );
   if (putawayResult.rowCount === 0) {
     return null;
   }
   const linesResult = await executor<PutawayLineRow>(
-    'SELECT * FROM putaway_lines WHERE putaway_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
+    `SELECT pl.*,
+            i.sku AS item_sku,
+            i.name AS item_name,
+            lf.code AS from_location_code,
+            lf.name AS from_location_name,
+            lt.code AS to_location_code,
+            lt.name AS to_location_name
+       FROM putaway_lines pl
+       LEFT JOIN items i ON i.id = pl.item_id AND i.tenant_id = pl.tenant_id
+       LEFT JOIN locations lf ON lf.id = pl.from_location_id AND lf.tenant_id = pl.tenant_id
+       LEFT JOIN locations lt ON lt.id = pl.to_location_id AND lt.tenant_id = pl.tenant_id
+      WHERE pl.putaway_id = $1 AND pl.tenant_id = $2
+      ORDER BY pl.line_number ASC`,
     [id, tenantId]
   );
   const receiptLineIds = linesResult.rows.map((line) => line.purchase_order_receipt_line_id);
@@ -232,13 +287,23 @@ export async function createPutaway(
 
   const now = new Date();
   const putawayId = uuidv4();
+  const putawayNumber = await generatePutawayNumber();
 
   await withTransaction(async (client) => {
     await client.query(
       `INSERT INTO putaways (
-          id, tenant_id, status, source_type, purchase_order_receipt_id, notes, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
-      [putawayId, tenantId, 'draft', data.sourceType, receiptIdForPutaway ?? null, data.notes ?? null, now]
+          id, tenant_id, status, source_type, purchase_order_receipt_id, notes, created_at, updated_at, putaway_number
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8)`,
+      [
+        putawayId,
+        tenantId,
+        'draft',
+        data.sourceType,
+        receiptIdForPutaway ?? null,
+        data.notes ?? null,
+        now,
+        putawayNumber
+      ]
     );
 
     for (const line of normalizedLines) {
@@ -474,8 +539,14 @@ export async function postPutaway(
     }
 
     await client.query(
-      'UPDATE putaways SET status = $1, inventory_movement_id = $2, updated_at = $3 WHERE id = $4 AND tenant_id = $5',
-      ['completed', movementId, now, id, tenantId]
+      `UPDATE putaways
+          SET status = $1,
+              inventory_movement_id = $2,
+              updated_at = $3,
+              completed_at = $3,
+              completed_by_user_id = $6
+        WHERE id = $4 AND tenant_id = $5`,
+      ['completed', movementId, now, id, tenantId, context?.actor?.id ?? null]
     );
 
     if (context?.actor) {

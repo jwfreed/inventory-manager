@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '../../../api/http'
+import { apiGet, apiPatch, apiPost } from '../../../api/http'
 import type {
   WorkOrder,
   WorkOrderListResponse,
@@ -133,7 +133,7 @@ export async function updateWorkOrderDefaultsApi(
   workOrderId: string,
   payload: WorkOrderDefaultsPayload,
 ): Promise<WorkOrder> {
-  return apiPost<WorkOrder>(`/work-orders/${workOrderId}/default-locations`, payload, { method: 'PATCH' })
+  return apiPatch<WorkOrder>(`/work-orders/${workOrderId}/default-locations`, payload)
 }
 
 export async function useActiveBomVersion(workOrderId: string): Promise<WorkOrder> {
@@ -144,7 +144,7 @@ export async function updateWorkOrderDescription(
   workOrderId: string,
   payload: { description?: string | null },
 ): Promise<WorkOrder> {
-  return apiPost<WorkOrder>(`/work-orders/${workOrderId}`, payload, { method: 'PATCH' })
+  return apiPatch<WorkOrder>(`/work-orders/${workOrderId}`, payload)
 }
 
 export type RecordBatchPayload = {

@@ -13,6 +13,8 @@ export function WorkOrderHeader({ workOrder, outputItemLabel }: Props) {
   const remaining =
     (workOrder.quantityPlanned || 0) - (workOrder.quantityCompleted ?? 0)
   const isDisassembly = workOrder.kind === 'disassembly'
+  const outputLabel =
+    outputItemLabel || workOrder.outputItemName || workOrder.outputItemSku || 'Unknown item'
 
   const statusVariant =
     workOrder.status === 'completed'
@@ -42,7 +44,7 @@ export function WorkOrderHeader({ workOrder, outputItemLabel }: Props) {
                 to={`/items/${workOrder.outputItemId}`}
                 className="hover:underline"
               >
-                {outputItemLabel || workOrder.outputItemName || workOrder.outputItemSku || workOrder.outputItemId}
+                {outputLabel}
               </Link>
             </Badge>
             <Badge variant={isDisassembly ? 'info' : 'neutral'}>

@@ -392,6 +392,25 @@ export async function updateWorkOrderDefaults(
   workOrderId: string,
   defaults: { defaultConsumeLocationId?: string | null; defaultProduceLocationId?: string | null }
 ) {
+  if ('defaultConsumeLocationId' in defaults && defaults.defaultConsumeLocationId) {
+    const { rowCount } = await query(
+      'SELECT 1 FROM locations WHERE id = $1 AND tenant_id = $2',
+      [defaults.defaultConsumeLocationId, tenantId]
+    );
+    if (rowCount === 0) {
+      throw new Error('WO_DEFAULT_CONSUME_LOCATION_NOT_FOUND');
+    }
+  }
+  if ('defaultProduceLocationId' in defaults && defaults.defaultProduceLocationId) {
+    const { rowCount } = await query(
+      'SELECT 1 FROM locations WHERE id = $1 AND tenant_id = $2',
+      [defaults.defaultProduceLocationId, tenantId]
+    );
+    if (rowCount === 0) {
+      throw new Error('WO_DEFAULT_PRODUCE_LOCATION_NOT_FOUND');
+    }
+  }
+
   const now = new Date();
   const sets: string[] = [];
   const params: any[] = [];

@@ -31,8 +31,19 @@ export function UomConversionsCard({ item, conversions }: Props) {
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold">UoM Conversions</h3>
+      <div className="text-sm text-slate-600">
+        Conversions affect inventory, BOMs, and costing. Canonical UOM:{' '}
+        <span className="font-semibold text-slate-900">{item.canonicalUom ?? '—'}</span>.
+      </div>
       {createMutation.isError && (
         <Alert variant="error" title="Failed to create conversion" message={createMutation.error.message} />
+      )}
+      {deleteMutation.isError && (
+        <Alert
+          variant="error"
+          title="Failed to delete conversion"
+          message={deleteMutation.error.message}
+        />
       )}
       <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <Input
@@ -60,6 +71,11 @@ export function UomConversionsCard({ item, conversions }: Props) {
           Add
         </Button>
       </form>
+      {conversions.length > 0 && (
+        <div className="text-xs text-slate-500">
+          Example: 1 {conversions[0].fromUom} = {conversions[0].factor} {conversions[0].toUom}
+        </div>
+      )}
       <div className="flow-root">
         <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
           <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
@@ -75,6 +91,9 @@ export function UomConversionsCard({ item, conversions }: Props) {
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                     Factor
                   </th>
+                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                    Canonical
+                  </th>
                   <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-0">
                     <span className="sr-only">Delete</span>
                   </th>
@@ -88,6 +107,11 @@ export function UomConversionsCard({ item, conversions }: Props) {
                     </td>
                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{conversion.toUom}</td>
                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{conversion.factor}</td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      {conversion.fromUom === item.canonicalUom || conversion.toUom === item.canonicalUom
+                        ? 'Canonical'
+                        : '—'}
+                    </td>
                     <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
                       <Button
                         variant="danger"

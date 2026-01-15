@@ -12,12 +12,13 @@ import { ReceivingLayout } from '../components/ReceivingLayout'
 import { useReceivingContext } from '../context'
 import { useResponsive } from '../hooks/useResponsive'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 
 const KeyboardShortcutsModal = lazy(() => import('../components/KeyboardShortcutsModal'))
 
 export default function QcClassificationPage() {
   const ctx = useReceivingContext()
+  const navigate = useNavigate()
   const { isMobile } = useResponsive()
   const [showSidebar, setShowSidebar] = useState(false)
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
@@ -350,7 +351,10 @@ export default function QcClassificationPage() {
                         <Button
                           size="sm"
                           onClick={() => {
-                            ctx.updateReceivingParams({ receiptId: ctx.receiptIdForQc })
+                            if (ctx.receiptIdForQc) {
+                              ctx.updateReceivingParams({ receiptId: ctx.receiptIdForQc })
+                              navigate(`/receiving/putaway?receiptId=${ctx.receiptIdForQc}`)
+                            }
                           }}
                         >
                           Plan putaway →

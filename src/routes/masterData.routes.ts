@@ -310,6 +310,9 @@ router.delete('/uom-conversions/:id', async (req: Request, res: Response) => {
     await deleteUomConversion(req.auth!.tenantId, id);
     return res.status(204).send();
   } catch (error) {
+    if ((error as Error)?.message === 'UOM_CONVERSION_IN_USE') {
+      return res.status(409).json({ error: 'Conversion is in use and cannot be deleted.' });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to delete UoM conversion.' });
   }

@@ -18,8 +18,7 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
     const parts = []
     if (opts.name) parts.push(opts.name)
     if (opts.sku) parts.push(opts.sku)
-    if (parts.length === 0) parts.push(opts.id)
-    else parts.push(`(${opts.id})`)
+    if (parts.length === 0) return 'Unknown item'
     return parts.join(' — ')
   }
 
@@ -54,9 +53,14 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <Card title="Issued totals" description="Posted component issues">
+      <Card
+        title={isDisassembly ? 'Consumed totals' : 'Issued totals'}
+        description={isDisassembly ? 'Posted parent item consumption' : 'Posted component issues'}
+      >
         {summary.issuedTotals.length === 0 ? (
-          <div className="text-sm text-slate-600">No posted issues yet.</div>
+          <div className="text-sm text-amber-700">
+            No posted {isDisassembly ? 'consumption' : 'issues'} yet.
+          </div>
         ) : (
           <ul className="space-y-2 text-sm text-slate-800">
             {summary.issuedTotals.map((row) => (
@@ -72,9 +76,14 @@ export function ExecutionSummaryPanel({ summary, isLoading, isError, onRetry, er
           </ul>
         )}
       </Card>
-      <Card title="Completed totals" description="Posted completions">
+      <Card
+        title={isDisassembly ? 'Produced totals' : 'Completed totals'}
+        description={isDisassembly ? 'Posted disassembly outputs' : 'Posted completions'}
+      >
         {summary.completedTotals.length === 0 ? (
-          <div className="text-sm text-slate-600">No posted completions yet.</div>
+          <div className="text-sm text-amber-700">
+            No posted {isDisassembly ? 'outputs' : 'completions'} yet.
+          </div>
         ) : (
           <ul className="space-y-2 text-sm text-slate-800">
             {summary.completedTotals.map((row) => (

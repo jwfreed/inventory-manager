@@ -53,6 +53,7 @@ export type QcEvent = {
 
 export type PurchaseOrderReceipt = {
   id: string
+  receiptNumber?: string | null
   purchaseOrderId: string
   purchaseOrderNumber?: string
   vendorId?: string | null
@@ -98,27 +99,46 @@ export type PutawayLine = {
   lineNumber: number
   purchaseOrderReceiptLineId: string
   itemId: string
+  itemSku?: string | null
+  itemName?: string | null
   uom: string
   quantityPlanned: number
   quantityMoved?: number | null
   fromLocationId: string
+  fromLocationCode?: string | null
+  fromLocationName?: string | null
   toLocationId: string
+  toLocationCode?: string | null
+  toLocationName?: string | null
   inventoryMovementId?: string | null
   status: string
   notes?: string | null
   createdAt?: string
   updatedAt?: string
+  qcBreakdown?: {
+    hold: number
+    accept: number
+    reject: number
+  }
   remainingQuantityToPutaway?: number
+  putawayBlockedReason?: string | null
 }
 
 export type Putaway = {
   id: string
+  putawayNumber?: string | null
   status: string
   sourceType: string
   purchaseOrderReceiptId?: string | null
+  receiptNumber?: string | null
+  purchaseOrderNumber?: string | null
   inventoryMovementId?: string | null
   notes?: string | null
   createdAt?: string
   updatedAt?: string
+  completedAt?: string | null
+  completedByUserId?: string | null
+  completedByName?: string | null
+  completedByEmail?: string | null
   lines: PutawayLine[]
 }

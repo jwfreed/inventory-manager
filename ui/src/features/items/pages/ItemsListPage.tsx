@@ -223,16 +223,10 @@ export default function ItemsListPage() {
 
   const availableByItem = useMemo(() => {
     const map = new Map<string, Map<string, number>>()
-    const canonicalItems = new Set<string>()
     ;(snapshotSummaryQuery.data ?? []).forEach((row) => {
-      if (!row.isLegacy) {
-        canonicalItems.add(row.itemId)
-      }
-    })
-    ;(snapshotSummaryQuery.data ?? []).forEach((row) => {
-      if (row.isLegacy && canonicalItems.has(row.itemId)) return
+      if (row.isLegacy) return
       const itemMap = map.get(row.itemId) ?? new Map<string, number>()
-      const key = `${row.uom}:${row.isLegacy ? 'legacy' : 'canonical'}`
+      const key = row.uom
       itemMap.set(key, (itemMap.get(key) ?? 0) + row.available)
       map.set(row.itemId, itemMap)
     })
@@ -330,9 +324,7 @@ export default function ItemsListPage() {
           if (!totals || totals.size === 0) return '—'
           return Array.from(totals.entries())
             .map(([key, qty]) => {
-              const [uom, mode] = key.split(':')
-              const suffix = mode === 'legacy' ? ' (legacy)' : ''
-              return `${formatNumber(qty)} ${uom}${suffix}`
+              return `${formatNumber(qty)} ${key}`
             })
             .join(' · ')
         },

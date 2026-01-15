@@ -152,11 +152,11 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
     if (item?.name && item?.sku) return `${item.name} — ${item.sku}`
     if (item?.name) return item.name
     if (item?.sku) return item.sku
-    return itemId
+    return 'Unknown item'
   }
   const formatLocationLabel = (locationId?: string | null) => {
     if (!locationId) return 'n/a'
-    return locationLookup.get(locationId) ?? locationId
+    return locationLookup.get(locationId) ?? 'Unknown location'
   }
 
   useEffect(() => {
@@ -259,8 +259,12 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
 
   return (
     <Card
-      title={isDisassembly ? 'Make product (disassembly outputs)' : 'Make product'}
-      description="Save a draft, then post to create the production movement."
+      title={isDisassembly ? 'Produce components' : 'Make product'}
+      description={
+        isDisassembly
+          ? 'Record recovered components as outputs. Save a draft, then post to move inventory.'
+          : 'Save a draft, then post to create the production movement.'
+      }
     >
       {completionMutation.isPending && <LoadingSpinner label="Creating completion..." />}
       {postMutation.isPending && <LoadingSpinner label="Posting completion..." />}
@@ -279,7 +283,7 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
         <Alert
           variant={isPosted ? 'success' : 'info'}
           title={isPosted ? 'Completion posted' : 'Completion draft created'}
-          message={`Completion ID: ${createdCompletion.id}`}
+          message={isPosted ? 'Inventory outputs recorded.' : 'Draft saved and ready to post.'}
         />
       )}
 
@@ -366,8 +370,8 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
               </div>
             ) : (
               <label className="space-y-1 text-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Output Item ID</span>
-                <Input value={workOrder.outputItemId} readOnly />
+                <span className="text-xs uppercase tracking-wide text-slate-500">Output item</span>
+                <Input value={formatOutputLabel(workOrder.outputItemId)} readOnly />
               </label>
             )}
             <div>
@@ -442,7 +446,9 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-slate-700">
           Total to complete:{' '}
-          <span className="font-semibold text-green-700">+{formatNumber(totalCompleted)}</span>{' '}
+          <span className={totalCompleted > 0 ? 'font-semibold text-green-700' : 'font-semibold text-slate-700'}>
+            {totalCompleted > 0 ? `+${formatNumber(totalCompleted)}` : formatNumber(0)}
+          </span>{' '}
           {lines[0]?.uom || ''}
         </div>
         <div className="flex gap-2">

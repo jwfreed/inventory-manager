@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useItem, useItemMetrics } from '../queries'
 import { useLocationsList } from '../../locations/queries'
@@ -38,6 +38,7 @@ export default function ItemDetailPage() {
   const baseCurrency = user?.baseCurrency ?? 'THB'
   const [searchParams, setSearchParams] = useSearchParams()
   const [showEdit, setShowEdit] = useState(false)
+  const [showRawUnits, setShowRawUnits] = useState(false)
   const [showBomForm, setShowBomForm] = useState(false)
   const [showBomModal, setShowBomModal] = useState(false)
   const [bomDraftSource, setBomDraftSource] = useState<{
@@ -102,41 +103,229 @@ export default function ItemDetailPage() {
   }
 
   const stockRows = useMemo(() => snapshotQuery.data ?? [], [snapshotQuery.data])
+  const defaultUom =
+    itemQuery.data?.defaultUom?.trim() ||
+    itemQuery.data?.canonicalUom?.trim() ||
+    null
   const locationLookup = useMemo(() => {
-    const map = new Map<string, { code?: string; name?: string }>()
+    const map = new Map<string, { code?: string; name?: string; type?: string }>()
     locationsQuery.data?.data?.forEach((loc) => {
-      map.set(loc.id, { code: loc.code, name: loc.name })
+      map.set(loc.id, { code: loc.code, name: loc.name, type: loc.type })
     })
     return map
   }, [locationsQuery.data])
-  const totalsByUom = useMemo(() => {
-    const map = new Map<
-      string,
-      { onHand: number; available: number; reserved: number; held: number; rejected: number; isLegacy: boolean }
-    >()
+  const conversionPairs = useMemo(() => {
+    const map = new Map<string, number>()
+    ;(uomConversionsQuery.data ?? []).forEach((conversion) => {
+      const fromKey = conversion.fromUom.trim().toLowerCase()
+      const toKey = conversion.toUom.trim().toLowerCase()
+      map.set(`${fromKey}:${toKey}`, conversion.factor)
+    })
+    return map
+  }, [uomConversionsQuery.data])
+
+  const getConversionFactor = (fromUom?: string | null, toUom?: string | null) => {
+    if (!fromUom || !toUom) return null
+    const fromKey = fromUom.trim().toLowerCase()
+    const toKey = toUom.trim().toLowerCase()
+    if (!fromKey || !toKey) return null
+    if (fromKey === toKey) return 1
+    const direct = conversionPairs.get(`${fromKey}:${toKey}`)
+    if (direct) return direct
+    const reverse = conversionPairs.get(`${toKey}:${fromKey}`)
+    if (reverse) return 1 / reverse
+    return null
+  }
+
+  const conversionMissingUoms = useMemo(() => {
+    if (!defaultUom) return new Set<string>()
+    const missing = new Set<string>()
     stockRows.forEach((row) => {
-      const key = `${row.uom}:${row.isLegacy ? 'legacy' : 'canonical'}`
-      const current =
-        map.get(key) ?? { onHand: 0, available: 0, reserved: 0, held: 0, rejected: 0, isLegacy: !!row.isLegacy }
-      current.onHand += row.onHand
-      current.available += row.available
-      current.reserved += row.reserved
-      current.held += row.held
-      current.rejected += row.rejected
+      if (row.isLegacy) return
+      if (getConversionFactor(row.uom, defaultUom) == null) {
+        missing.add(row.uom)
+      }
+    })
+    return missing
+  }, [defaultUom, stockRows, conversionPairs])
+
+  const convertedRows = useMemo(() => {
+    if (!defaultUom) return []
+    const map = new Map<string, typeof stockRows[number]>()
+    stockRows.forEach((row) => {
+      if (row.isLegacy) return
+      const factor = getConversionFactor(row.uom, defaultUom)
+      if (factor == null) return
+      const key = row.locationId
+      const current = map.get(key) ?? {
+        ...row,
+        uom: defaultUom,
+        onHand: 0,
+        reserved: 0,
+        available: 0,
+        held: 0,
+        rejected: 0,
+        nonUsable: 0,
+        onOrder: 0,
+        inTransit: 0,
+        backordered: 0,
+        inventoryPosition: 0,
+        isLegacy: false,
+      }
+      current.onHand += row.onHand * factor
+      current.reserved += row.reserved * factor
+      current.available += row.available * factor
+      current.held += row.held * factor
+      current.rejected += row.rejected * factor
+      current.nonUsable += row.nonUsable * factor
+      current.onOrder += row.onOrder * factor
+      current.inTransit += row.inTransit * factor
+      current.backordered += row.backordered * factor
+      current.inventoryPosition += row.inventoryPosition * factor
       map.set(key, current)
     })
-    return Array.from(map.entries()).map(([key, totals]) => {
-      const [uom] = key.split(':')
-      return { uom, ...totals }
+    return Array.from(map.values())
+  }, [defaultUom, stockRows, conversionPairs])
+
+  const totalsByDefaultUom = useMemo(() => {
+    if (!defaultUom) return null
+    return convertedRows.reduce(
+      (acc, row) => ({
+        onHand: acc.onHand + row.onHand,
+        available: acc.available + row.available,
+        reserved: acc.reserved + row.reserved,
+        held: acc.held + row.held,
+        rejected: acc.rejected + row.rejected,
+        nonUsable: acc.nonUsable + row.nonUsable,
+        onOrder: acc.onOrder + row.onOrder,
+        inTransit: acc.inTransit + row.inTransit,
+        backordered: acc.backordered + row.backordered,
+        inventoryPosition: acc.inventoryPosition + row.inventoryPosition,
+      }),
+      {
+        onHand: 0,
+        available: 0,
+        reserved: 0,
+        held: 0,
+        rejected: 0,
+        nonUsable: 0,
+        onOrder: 0,
+        inTransit: 0,
+        backordered: 0,
+        inventoryPosition: 0,
+      },
+    )
+  }, [convertedRows, defaultUom])
+
+  const hasNegativeBalance = useMemo(
+    () =>
+      convertedRows.some((row) => row.onHand < 0 || row.available < 0),
+    [convertedRows],
+  )
+  const hasNegativeRaw = useMemo(
+    () => stockRows.some((row) => row.onHand < 0 || row.available < 0),
+    [stockRows],
+  )
+
+  const locationStageLabel = useCallback(
+    (locationId: string) => {
+      const loc = locationLookup.get(locationId)
+      const code = loc?.code?.toLowerCase() ?? ''
+      const name = loc?.name?.toLowerCase() ?? ''
+      const type = loc?.type ?? ''
+      const haystack = `${code} ${name}`
+      if (['scrap'].includes(type) || /scrap|reject|rejected/.test(haystack)) {
+        return 'Quarantine / Rejected'
+      }
+      if (/qc|hold|quarantine/.test(haystack)) {
+        return 'Quarantine / Rejected'
+      }
+      if (/receiv|staging/.test(haystack)) {
+        return 'Receiving & Staging'
+      }
+      if (/wip|work|production/.test(haystack)) {
+        return 'Production / WIP'
+      }
+      if (['warehouse', 'bin', 'store'].includes(type)) {
+        return 'Storage / Available'
+      }
+      return 'External / Virtual'
+    },
+    [locationLookup],
+  )
+
+  const groupedRows = useMemo(() => {
+    const groups = new Map<string, typeof convertedRows>()
+    convertedRows.forEach((row) => {
+      const stage = locationStageLabel(row.locationId)
+      const list = groups.get(stage) ?? []
+      list.push(row)
+      groups.set(stage, list)
     })
-  }, [stockRows])
+    return groups
+  }, [convertedRows, locationStageLabel])
+
+  const stageTotals = useMemo(() => {
+    const totals = new Map<string, { available: number; held: number; rejected: number; reserved: number }>()
+    groupedRows.forEach((rows, stage) => {
+      const accum = rows.reduce(
+        (acc, row) => ({
+          available: acc.available + row.available,
+          held: acc.held + row.held,
+          rejected: acc.rejected + row.rejected,
+          reserved: acc.reserved + row.reserved,
+        }),
+        { available: 0, held: 0, rejected: 0, reserved: 0 },
+      )
+      totals.set(stage, accum)
+    })
+    return totals
+  }, [groupedRows])
   const selectedLocationLabel = useMemo(() => {
     if (!selectedLocationId) return 'All locations'
     const loc = locationsQuery.data?.data.find((row) => row.id === selectedLocationId)
-    if (!loc) return selectedLocationId
-    const code = loc.code ?? loc.id
+    if (!loc) return 'Unknown location'
+    const code = loc.code ?? 'Location'
     return loc.name ? `${code} — ${loc.name}` : code
   }, [locationsQuery.data, selectedLocationId])
+
+  const hasConversionIssues = conversionMissingUoms.size > 0
+  const storageTotals = stageTotals.get('Storage / Available') ?? {
+    available: 0,
+    held: 0,
+    rejected: 0,
+    reserved: 0,
+  }
+  const receivingTotals = stageTotals.get('Receiving & Staging') ?? {
+    available: 0,
+    held: 0,
+    rejected: 0,
+    reserved: 0,
+  }
+  const wipTotals = stageTotals.get('Production / WIP') ?? {
+    available: 0,
+    held: 0,
+    rejected: 0,
+    reserved: 0,
+  }
+  const externalTotals = stageTotals.get('External / Virtual') ?? {
+    available: 0,
+    held: 0,
+    rejected: 0,
+    reserved: 0,
+  }
+  const totalHolds = (stageTotals.get('Quarantine / Rejected')?.held ?? 0) + (stageTotals.get('Quarantine / Rejected')?.rejected ?? 0)
+  const totalReserved = totalsByDefaultUom?.reserved ?? 0
+  const hasNegativeAny = hasNegativeBalance || (!defaultUom && hasNegativeRaw)
+  const isUsable = storageTotals.available > 0 && !hasNegativeAny
+  const operationalStatusTitle = isUsable ? '✔ Available for use' : '⚠ Not available for use'
+  const stageOrder = [
+    'Storage / Available',
+    'Receiving & Staging',
+    'Production / WIP',
+    'Quarantine / Rejected',
+    'External / Virtual',
+  ]
 
   const bomSummary = useMemo(() => {
     const boms = bomsQuery.data?.boms ?? []
@@ -198,16 +387,13 @@ export default function ItemDetailPage() {
             Back to list
           </Button>
           <Button
-            variant="secondary"
+            variant={hasNegativeAny ? 'primary' : 'secondary'}
             size="sm"
             onClick={() => {
               if (id) navigate(`/inventory-adjustments/new?itemId=${id}`)
             }}
           >
             Adjust stock
-          </Button>
-          <Button variant="secondary" size="sm" onClick={copyId}>
-            Copy ID
           </Button>
         </div>
       </div>
@@ -224,6 +410,13 @@ export default function ItemDetailPage() {
               <div className="text-xs uppercase tracking-wide text-slate-500">SKU</div>
               <div className="text-xl font-semibold text-slate-900">{itemQuery.data.sku}</div>
               <div className="text-sm text-slate-700">{itemQuery.data.name}</div>
+              <button
+                type="button"
+                className="mt-1 text-xs font-semibold text-slate-500 underline"
+                onClick={copyId}
+              >
+                Copy item ID
+              </button>
               {itemQuery.data.description && (
                 <div className="mt-2 text-sm text-slate-600">{itemQuery.data.description}</div>
               )}
@@ -252,6 +445,7 @@ export default function ItemDetailPage() {
               <div className="mt-3 pt-3 border-t border-slate-200 grid gap-3 sm:grid-cols-4 text-sm text-slate-700">
                 <div>
                   <div className="text-xs uppercase tracking-wide text-slate-500">Standard Cost</div>
+                  <div className="text-[11px] text-slate-500">Variance reporting</div>
                   <div className="font-mono font-semibold text-slate-900">
                     {itemQuery.data.standardCost != null
                       ? formatCurrency(
@@ -272,6 +466,7 @@ export default function ItemDetailPage() {
                   <div className="text-xs uppercase tracking-wide text-slate-500">
                     Base Cost ({baseCurrency})
                   </div>
+                  <div className="text-[11px] text-slate-500">Reference currency</div>
                   <div className="font-mono font-semibold text-slate-900">
                     {itemQuery.data.standardCostBase != null
                       ? formatCurrency(itemQuery.data.standardCostBase, baseCurrency)
@@ -280,6 +475,7 @@ export default function ItemDetailPage() {
                 </div>
                 <div>
                   <div className="text-xs uppercase tracking-wide text-slate-500">Average Cost</div>
+                  <div className="text-[11px] text-slate-500">Inventory valuation</div>
                   <div className="font-mono font-semibold text-slate-900">
                     {itemQuery.data.averageCost != null
                       ? formatCurrency(itemQuery.data.averageCost, baseCurrency)
@@ -309,6 +505,69 @@ export default function ItemDetailPage() {
             </div>
           </div>
         </Card>
+      )}
+
+      {itemQuery.data && (
+        <Section title="Operational status">
+          <Card>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">{operationalStatusTitle}</div>
+                <div className="mt-2 space-y-1 text-sm text-slate-700">
+                  {isUsable ? (
+                    <div>
+                      • {formatNumber(storageTotals.available)} {defaultUom ?? '—'} usable in Storage / Available
+                    </div>
+                  ) : (
+                    <>
+                      {receivingTotals.available > 0 && (
+                        <div>• Inventory exists only in Receiving &amp; Staging</div>
+                      )}
+                      {wipTotals.available > 0 && <div>• Inventory exists only in Production / WIP</div>}
+                      {externalTotals.available > 0 && <div>• Inventory exists only in External / Virtual locations</div>}
+                      {storageTotals.available <= 0 && receivingTotals.available <= 0 && wipTotals.available <= 0 && externalTotals.available <= 0 && (
+                        <div>• No usable inventory on hand</div>
+                      )}
+                    </>
+                  )}
+                  {totalHolds > 0 && (
+                    <div>• QC holds present ({formatNumber(totalHolds)} {defaultUom ?? '—'})</div>
+                  )}
+                  {totalReserved > 0 && (
+                    <div>• Reserved ({formatNumber(totalReserved)} {defaultUom ?? '—'})</div>
+                  )}
+                  {hasNegativeAny && (
+                    <div>
+                      • Negative balance detected{' '}
+                      <span
+                        className="text-xs text-slate-500 underline"
+                        title="Negative inventory means inventory was consumed or shipped before it was received or adjusted."
+                      >
+                        Why?
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="text-xs text-slate-500">
+                Default UOM: {defaultUom ?? 'Not set'}
+              </div>
+            </div>
+          </Card>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+            <span className={`rounded-full px-2 py-1 ${totalHolds > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
+              {totalHolds > 0 ? '⚠ QC holds' : '✅ No holds'}
+            </span>
+            <span className={`rounded-full px-2 py-1 ${hasNegativeAny ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
+              {hasNegativeAny ? '⚠ Negative balance' : '✅ No negative balance'}
+            </span>
+            {metricsQuery.data?.lastCountAt && (
+              <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">
+                ℹ Last count {formatDate(metricsQuery.data.lastCountAt)}
+              </span>
+            )}
+          </div>
+        </Section>
       )}
 
       {itemQuery.data && (
@@ -424,10 +683,17 @@ export default function ItemDetailPage() {
               <option value="">All locations</option>
               {locationsQuery.data?.data.map((loc) => (
                 <option key={loc.id} value={loc.id}>
-                  {loc.code || loc.name || loc.id}
+                  {loc.code || loc.name || 'Location'}
                 </option>
               ))}
             </select>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowRawUnits((prev) => !prev)}
+            >
+              {showRawUnits ? 'Hide raw units' : 'Show raw units'}
+            </Button>
             {id && (
               <Button
                 variant="secondary"
@@ -467,6 +733,43 @@ export default function ItemDetailPage() {
             <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">
               Scope: {selectedLocationLabel}
             </div>
+            {!defaultUom && (
+              <Alert
+                variant="warning"
+                title="Default UOM missing"
+                message="Set a default UOM to view canonical inventory totals."
+              />
+            )}
+            {hasConversionIssues && (
+              <Alert
+                variant="warning"
+                title="Missing UOM conversions"
+                message={`Add conversions to show canonical totals: ${Array.from(conversionMissingUoms).join(', ')} → ${defaultUom}.`}
+              />
+            )}
+            {(hasNegativeBalance || hasNegativeRaw) && (
+              <Alert
+                variant="warning"
+                title="Negative inventory detected"
+                message="Negative balances indicate an out-of-order or missing transaction. Review movements to resolve."
+                action={
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      if (id) navigate(`/movements?itemId=${id}`)
+                    }}
+                  >
+                    View movements
+                  </Button>
+                }
+              />
+            )}
+            {(!defaultUom || hasConversionIssues) && (
+              <div className="mb-3 text-xs text-slate-500">
+                Enable “Raw units” to inspect legacy or unconverted quantities.
+              </div>
+            )}
             {stockRows.length === 0 && (
               <EmptyState
                 title="No stock activity yet"
@@ -475,23 +778,19 @@ export default function ItemDetailPage() {
             )}
             {stockRows.length > 0 && (
               <>
-                <div className="mb-4 grid gap-3 md:grid-cols-3">
-                  {totalsByUom.map((totals) => (
-                    <div
-                      key={`${totals.uom}-${totals.isLegacy ? 'legacy' : 'canonical'}`}
-                      className="rounded-lg border border-slate-200 bg-white p-3"
-                    >
+                {totalsByDefaultUom && (
+                  <div className="mb-4 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
                       <div className="text-xs uppercase tracking-wide text-slate-500">
-                        Total available (usable) ({totals.uom})
-                        {totals.isLegacy ? ' · legacy' : ''}
+                        Total available (usable) ({defaultUom})
                       </div>
                       <div className="mt-1 text-2xl font-semibold text-slate-900">
-                        {formatNumber(totals.available)}
+                        {formatNumber(totalsByDefaultUom.available)}
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        On hand {formatNumber(totals.onHand)} ·{' '}
+                        On hand {formatNumber(totalsByDefaultUom.onHand)} ·{' '}
                         <span className="inline-flex items-center gap-1">
-                          Reserved {formatNumber(totals.reserved)}
+                          Reserved {formatNumber(totalsByDefaultUom.reserved)}
                           <button
                             type="button"
                             className="text-brand-700 underline"
@@ -502,7 +801,7 @@ export default function ItemDetailPage() {
                         </span>{' '}
                         ·{' '}
                         <span className="inline-flex items-center gap-1">
-                          Held {formatNumber(totals.held)}
+                          Held {formatNumber(totalsByDefaultUom.held)}
                           <button
                             type="button"
                             className="text-brand-700 underline"
@@ -513,7 +812,7 @@ export default function ItemDetailPage() {
                         </span>{' '}
                         ·{' '}
                         <span className="inline-flex items-center gap-1">
-                          Rejected {formatNumber(totals.rejected)}
+                          Rejected {formatNumber(totalsByDefaultUom.rejected)}
                           <button
                             type="button"
                             className="text-brand-700 underline"
@@ -524,17 +823,52 @@ export default function ItemDetailPage() {
                         </span>
                       </div>
                     </div>
-                  ))}
+                  </div>
+                )}
+                <div className="text-xs uppercase tracking-wide text-slate-500">
+                  Location breakdown by lifecycle
                 </div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Location breakdown</div>
-                <div className="mt-2">
-                  <InventorySnapshotTable
-                    rows={stockRows}
-                    showItem={false}
-                    showLocation={!selectedLocationId}
-                    locationLookup={locationLookup}
-                  />
+                <div className="mt-2 space-y-4">
+                  {stageOrder.map((stage) => {
+                    const rows = groupedRows.get(stage) ?? []
+                    if (rows.length === 0) return null
+                    const helper =
+                      stage === 'Receiving & Staging'
+                        ? 'Inventory here may not be consumable.'
+                        : stage === 'Production / WIP'
+                          ? 'Inventory here is in-process and not usable.'
+                          : stage === 'Quarantine / Rejected'
+                            ? 'Inventory here is on hold or rejected.'
+                            : stage === 'External / Virtual'
+                              ? 'Inventory here is not available for use.'
+                              : 'Inventory here is available for use.'
+                    return (
+                      <div key={stage} className="space-y-2">
+                        <div className="text-sm font-semibold text-slate-700">{stage}</div>
+                        <div className="text-xs text-slate-500">{helper}</div>
+                        <InventorySnapshotTable
+                          rows={rows}
+                          showItem={false}
+                          showLocation={!selectedLocationId}
+                          locationLookup={locationLookup}
+                        />
+                      </div>
+                    )
+                  })}
                 </div>
+                {showRawUnits && (
+                  <div className="mt-6 space-y-2">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">
+                      Raw units (legacy + entered UOMs)
+                    </div>
+                    <InventorySnapshotTable
+                      rows={stockRows}
+                      showItem={false}
+                      showLocation={!selectedLocationId}
+                      locationLookup={locationLookup}
+                    />
+                  </div>
+                )}
               </>
             )}
           </>
@@ -604,8 +938,23 @@ export default function ItemDetailPage() {
         )}
         {!bomsQuery.isLoading && !bomsQuery.isError && bomsQuery.data?.boms.length === 0 && (
           <EmptyState
-            title="No BOMs yet"
-            description="Create a BOM to define components for this item."
+            title={
+              itemQuery.data?.type === 'wip' || itemQuery.data?.type === 'finished'
+                ? 'BOM required for production'
+                : 'No BOM required'
+            }
+            description={
+              itemQuery.data?.type === 'wip' || itemQuery.data?.type === 'finished'
+                ? 'This item cannot be produced or disassembled without a BOM.'
+                : 'Raw and packaging items can be received without a BOM.'
+            }
+            action={
+              itemQuery.data?.type === 'wip' || itemQuery.data?.type === 'finished' ? (
+                <Button size="sm" onClick={() => setShowBomForm(true)}>
+                  Create BOM
+                </Button>
+              ) : undefined
+            }
           />
         )}
         <div className="grid gap-4">

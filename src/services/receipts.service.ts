@@ -103,6 +103,7 @@ function mapReceipt(
 ) {
   return {
     id: row.id,
+    receiptNumber: row.receipt_number ?? null,
     purchaseOrderId: row.purchase_order_id,
     purchaseOrderNumber: row.po_number ?? null,
     vendorId: row.vendor_id ?? null,
@@ -121,6 +122,13 @@ function mapReceipt(
     draftPutawayId: row.draft_putaway_id ?? null,
     lines: lineRows.map((line) => mapReceiptLine(line, qcBreakdown, totalsMap))
   };
+}
+
+async function generateReceiptNumber() {
+  const { rows } = await query(`SELECT nextval('receipt_number_seq') AS seq`);
+  const seq = Number(rows[0]?.seq ?? 0);
+  const padded = String(seq).padStart(6, '0');
+  return `R-${padded}`;
 }
 
 const STATUS_EPSILON = 1e-6;
@@ -435,11 +443,12 @@ export async function createPurchaseOrderReceipt(
 
   const now = new Date();
   await withTransaction(async (client) => {
+    const receiptNumber = await generateReceiptNumber();
     await client.query(
       `INSERT INTO purchase_order_receipts (
           id, tenant_id, purchase_order_id, status, received_at, received_to_location_id,
-          inventory_movement_id, external_ref, notes, idempotency_key
-       ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9)`,
+          inventory_movement_id, external_ref, notes, idempotency_key, receipt_number
+       ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $10)`,
       [
         receiptId,
         tenantId,
@@ -449,7 +458,8 @@ export async function createPurchaseOrderReceipt(
         resolvedReceivedToLocationId,
         data.externalRef ?? null,
         data.notes ?? null,
-        data.idempotencyKey ?? null
+        data.idempotencyKey ?? null,
+        receiptNumber
       ]
     );
 
@@ -656,6 +666,7 @@ export async function listReceipts(
     receipt_status AS (
       SELECT
         por.id,
+        por.receipt_number AS "receiptNumber",
         por.purchase_order_id AS "purchaseOrderId",
         po.po_number AS "purchaseOrderNumber",
         po.vendor_id AS "vendorId",

@@ -1,5 +1,7 @@
-import { lazy, Suspense, useState } from 'react'
-import { Alert, Badge, Button, Card, Section } from '@shared/ui'
+import { lazy, Suspense, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Alert, Badge, Button, Card, DataTable, Section } from '@shared/ui'
+import { formatNumber } from '@shared/formatters'
 import { DraggablePutawayLinesEditor } from '../components/DraggablePutawayLinesEditor'
 import { PutawaySummaryTable } from '../components/PutawaySummaryTable'
 import { ReceiptDocument } from '../components/ReceiptDocument'
@@ -8,15 +10,62 @@ import { ReceivingLayout } from '../components/ReceivingLayout'
 import { useReceivingContext } from '../context'
 import { useResponsive } from '../hooks/useResponsive'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useAuth } from '@shared/auth'
 
 const KeyboardShortcutsModal = lazy(() => import('../components/KeyboardShortcutsModal'))
 
 export default function PutawayPlanningPage() {
   const ctx = useReceivingContext()
+  const navigate = useNavigate()
+  const { user } = useAuth()
   const { isMobile } = useResponsive()
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
 
-  const showDraftForm = !ctx.putawayId || (ctx.putawayQuery.data && ['draft', 'in_progress'].includes(ctx.putawayQuery.data.status))
+  const putaway = ctx.putawayQuery.data ?? ctx.postPutawayMutation.data
+  const receipt = ctx.receiptQuery.data
+  const isCompleted = putaway?.status === 'completed'
+  const showDraftForm = !isCompleted && (!ctx.putawayId || (ctx.putawayQuery.data && ['draft', 'in_progress'].includes(ctx.putawayQuery.data.status)))
+
+  const summary = useMemo(() => {
+    const lines = putaway?.lines ?? []
+    const totalPlaced = lines.reduce((sum, line) => sum + (line.quantityMoved ?? line.quantityPlanned ?? 0), 0)
+    const itemIds = new Set(lines.map((line) => line.itemId))
+    const itemCount = itemIds.size
+    const firstLine = lines[0]
+    const label = firstLine ? (firstLine.itemSku || firstLine.itemName || 'Item') : 'Item'
+    const uom = firstLine?.uom ?? 'units'
+    if (itemCount <= 1 && firstLine) {
+      return `${formatNumber(totalPlaced)} ${uom} of ${label} has been placed into storage.`
+    }
+    return `${itemCount} items · ${formatNumber(totalPlaced)} units placed into storage.`
+  }, [putaway?.lines])
+
+  const exceptionNotes = useMemo(() => {
+    if (!receipt?.lines?.length) return []
+    const notes: string[] = []
+    receipt.lines.forEach((line) => {
+      if (line.discrepancyReason && line.expectedQuantity !== undefined) {
+        const delta = (line.quantityReceived ?? 0) - (line.expectedQuantity ?? 0)
+        if (delta !== 0) {
+          const direction = delta > 0 ? 'Over-received' : 'Short received'
+          notes.push(`${direction}: ${formatNumber(Math.abs(delta))} ${line.uom} ${line.itemSku || line.itemName || ''}`.trim())
+        }
+      }
+      const qc = line.qcSummary?.breakdown
+      if (qc?.hold && qc.hold > 0) {
+        notes.push(`QC hold: ${formatNumber(qc.hold)} ${line.uom} ${line.itemSku || line.itemName || ''}`.trim())
+      }
+      if (qc?.reject && qc.reject > 0) {
+        notes.push(`QC rejected: ${formatNumber(qc.reject)} ${line.uom} ${line.itemSku || line.itemName || ''}`.trim())
+      }
+    })
+    return notes
+  }, [receipt?.lines])
+
+  const isPartialReceipt = useMemo(() => {
+    if (!receipt?.lines?.length) return false
+    return receipt.lines.some((line) => (line.quantityReceived ?? 0) < (line.expectedQuantity ?? 0))
+  }, [receipt?.lines])
 
   // Keyboard shortcuts
   useKeyboardShortcuts([
@@ -49,7 +98,23 @@ export default function PutawayPlanningPage() {
       shift: true,
       handler: () => setShowShortcutsHelp(true),
     },
-  ])
+  ], { enabled: !isCompleted })
+
+  useKeyboardShortcuts(
+    [
+      {
+        key: 'enter',
+        handler: () => navigate('/receiving'),
+        preventDefault: true,
+      },
+      {
+        key: 'escape',
+        handler: () => navigate('/receiving'),
+        preventDefault: true,
+      },
+    ],
+    { enabled: isCompleted }
+  )
 
   return (
     <ReceivingLayout>
@@ -58,7 +123,161 @@ export default function PutawayPlanningPage() {
         description="Define putaway destinations for accepted inventory."
       >
         <Card>
-          {!ctx.putawayReady ? (
+          {isCompleted && putaway ? (
+            <div className="space-y-6">
+              <div
+                className="flex flex-col items-center justify-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-6 py-8 text-center"
+                role="status"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                  ✓
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-emerald-900">Putaway complete</h3>
+                  <p className="text-sm text-emerald-700">
+                    Inventory has been successfully stored and is now available.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 text-sm sm:grid-cols-2">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">PO</div>
+                  <div className="font-medium text-slate-900">
+                    {receipt?.purchaseOrderNumber || putaway.purchaseOrderNumber || 'Unassigned'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Receipt</div>
+                  <div className="font-medium text-slate-900">
+                    {receipt?.receiptNumber || putaway.receiptNumber || 'Unassigned'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Putaway</div>
+                  <div className="font-medium text-slate-900">
+                    {putaway.putawayNumber || 'Unassigned'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Completed by</div>
+                  <div className="font-medium text-slate-900">
+                    {putaway.completedByName || putaway.completedByEmail || user?.fullName || user?.email || 'Unknown'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Completed at</div>
+                  <div className="font-medium text-slate-900">
+                    {putaway.completedAt ? new Date(putaway.completedAt).toLocaleString() : '—'}
+                  </div>
+                </div>
+                {isPartialReceipt && (
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
+                    <div className="font-medium text-slate-900">
+                      Partially received (backorder created)
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                {summary}
+              </div>
+
+              <div>
+                <div className="mb-2 text-sm font-semibold text-slate-700">Putaway details</div>
+                <DataTable
+                  rows={putaway.lines}
+                  rowKey={(line) => line.id}
+                  stickyHeader
+                  containerClassName="max-h-[360px] overflow-auto"
+                  columns={[
+                    {
+                      id: 'item',
+                      header: 'Item',
+                      cell: (line) => (
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">
+                            {line.itemSku || line.itemName || 'Item'}
+                          </div>
+                          {line.itemName && line.itemSku && (
+                            <div className="text-xs text-slate-500">{line.itemName}</div>
+                          )}
+                        </div>
+                      ),
+                    },
+                    {
+                      id: 'qty',
+                      header: 'Quantity',
+                      cell: (line) =>
+                        `${formatNumber(line.quantityMoved ?? line.quantityPlanned ?? 0)} ${line.uom}`,
+                      cellClassName: 'text-right',
+                    },
+                    {
+                      id: 'location',
+                      header: 'Storage location',
+                      cell: (line) => (
+                        <div className="font-mono text-xs text-slate-700">
+                          {line.toLocationCode || line.toLocationName || 'Unassigned'}
+                        </div>
+                      ),
+                    },
+                    {
+                      id: 'status',
+                      header: 'Status',
+                      cell: (line) => {
+                        if (line.putawayBlockedReason) return 'Blocked'
+                        if (line.qcBreakdown?.hold && line.qcBreakdown.hold > 0) return 'QC Hold'
+                        return 'Available'
+                      },
+                    },
+                  ]}
+                />
+              </div>
+
+              {exceptionNotes.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <div className="font-semibold">Exceptions & notes</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {exceptionNotes.map((note, idx) => (
+                      <li key={`${note}-${idx}`}>{note}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                🔒 Putaway is complete and can no longer be edited.
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <Button onClick={() => navigate('/receiving')}>Back to receiving queue</Button>
+                <div className="flex flex-wrap gap-2">
+                  {receipt?.id && (
+                    <Button variant="secondary" onClick={() => navigate(`/receipts/${receipt.id}`)}>
+                      View receipt
+                    </Button>
+                  )}
+                  {receipt?.purchaseOrderId && (
+                    <Button variant="secondary" onClick={() => navigate(`/purchase-orders/${receipt.purchaseOrderId}`)}>
+                      View purchase order
+                    </Button>
+                  )}
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      putaway.inventoryMovementId
+                        ? navigate(`/movements/${putaway.inventoryMovementId}`)
+                        : navigate('/movements')
+                    }
+                  >
+                    View movement log
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : !ctx.putawayReady ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="text-slate-400 mb-4">
                 <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">

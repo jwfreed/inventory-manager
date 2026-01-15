@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -13,7 +13,8 @@ import {
   updateWorkOrderDefaultsApi,
   type RecordBatchPayload,
 } from '../api/workOrders'
-import type { ApiError, Item, WorkOrder } from '@api/types'
+import type { ApiError, AtpResult, Item, WorkOrder } from '@api/types'
+import { getAtp } from '@api/reports'
 import { Combobox } from '../../../components/Combobox'
 import { getWorkOrderDefaults, setWorkOrderDefaults } from '../hooks/useWorkOrderDefaults'
 import { useDebouncedValue } from '@shared'
@@ -190,6 +191,28 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
     return map
   }, [locationsQuery.data])
   const validLocationIds = useMemo(() => new Set(locationOptions.map((o) => o.value)), [locationOptions])
+
+  const atpQuery = useQuery({
+    queryKey: ['atp', workOrder.outputItemId],
+    queryFn: () => getAtp({ itemId: workOrder.outputItemId }),
+    enabled: Boolean(workOrder.outputItemId),
+    staleTime: 30_000,
+  })
+  const atpRows: AtpResult[] = (atpQuery.data?.data ?? []) as AtpResult[]
+  const availableLocationIds = useMemo(() => {
+    if (!isDisassembly) return new Set<string>()
+    const set = new Set<string>()
+    atpRows.forEach((row) => {
+      if (row.availableToPromise > 0 && row.uom === baseOutputUom) {
+        set.add(row.locationId)
+      }
+    })
+    return set
+  }, [atpRows, baseOutputUom, isDisassembly])
+  const filteredLocationOptions = useMemo(() => {
+    if (!isDisassembly) return locationOptions
+    return locationOptions.filter((loc) => availableLocationIds.has(loc.value))
+  }, [availableLocationIds, isDisassembly, locationOptions])
   const effectiveDefaultFrom = defaultFromLocationId || baseConsumeLocationId
   const effectiveDefaultTo = defaultToLocationId || baseProduceLocationId
   const normalizedDefaultFrom = validLocationIds.has(effectiveDefaultFrom) ? effectiveDefaultFrom : ''
@@ -205,6 +228,14 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
     !localDefaults.produceLocationId &&
     outputItem?.defaultLocationId &&
     normalizedDefaultTo === outputItem.defaultLocationId
+
+  const availableForConsumeLine = (line: ConsumeLine) => {
+    if (!isDisassembly || line.componentItemId !== workOrder.outputItemId) return null
+    if (!line.fromLocationId || !line.uom) return null
+    const matches = atpRows.filter((row) => row.locationId === line.fromLocationId && row.uom === line.uom)
+    const match = matches[0]
+    return match?.availableToPromise ?? 0
+  }
 
   useEffect(() => {
     setConsumeLines((prev) =>
@@ -444,6 +475,10 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
       if (line.quantity !== '' && Number(line.quantity) <= 0) {
         entry.quantity = 'Quantity must be greater than zero.'
       }
+      const availableQty = availableForConsumeLine(line)
+      if (availableQty !== null && line.quantity !== '' && Number(line.quantity) > availableQty) {
+        entry.quantity = 'Quantity exceeds available inventory at this location.'
+      }
       if (Object.keys(entry).length > 0) {
         nextErrors.consume[index] = entry
       }
@@ -629,7 +664,14 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
   const submitDisabled = itemsQuery.isLoading || locationsQuery.isLoading || recordBatchMutation.isPending
 
   return (
-    <Card title="Issue & complete (batch)" description="Posts consumption and production in one action.">
+    <Card
+      title={isDisassembly ? 'Disassemble & record outputs' : 'Issue & complete (batch)'}
+      description={
+        isDisassembly
+          ? 'Posts parent item consumption and recovered components in one action.'
+          : 'Posts consumption and production in one action.'
+      }
+    >
       {(itemsQuery.isLoading || locationsQuery.isLoading || recordBatchMutation.isPending) && (
         <LoadingSpinner label="Processing..." />
       )}
@@ -643,6 +685,17 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
           message={formatError(recordBatchMutation.error as ApiError)}
         />
       )}
+      {(defaultsConsumeMutation.isError || defaultsProduceMutation.isError) && (
+        <Alert
+          variant="error"
+          title="Default location not updated"
+          message={
+            formatError(
+              (defaultsConsumeMutation.error ?? defaultsProduceMutation.error) as ApiError,
+            ) || 'Failed to update default locations.'
+          }
+        />
+      )}
       {shortageDetails && shortageDetails.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="font-semibold">Insufficient usable stock</div>
@@ -652,8 +705,8 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
           <div className="mt-3 grid gap-2">
             {shortageDetails.map((line, index) => {
               const itemLabel = itemsLookup.get(line.itemId)
-              const itemText = itemLabel ? `${itemLabel.sku} — ${itemLabel.name}` : line.itemId
-              const locationText = locationLookup.get(line.locationId) ?? line.locationId
+              const itemText = itemLabel ? `${itemLabel.sku} — ${itemLabel.name}` : 'Unknown item'
+              const locationText = locationLookup.get(line.locationId) ?? 'Unknown location'
               return (
                 <div key={`${line.itemId}-${line.locationId}-${line.uom}-${index}`} className="rounded-md border border-amber-200 bg-white px-3 py-2 text-xs text-amber-900">
                   <div className="font-semibold">{itemText}</div>
@@ -702,7 +755,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
         <Alert
           variant="success"
           title="Batch recorded"
-          message={`Movements created at ${successOccurredAt ?? occurredAt}. Issue: ${successIssueId ?? 'n/a'} · Receive: ${successId}`}
+          message={`Movements created at ${successOccurredAt ?? occurredAt}. Issue and receipt have been recorded.`}
           action={
             <div className="flex gap-2">
               {successIssueId && (
@@ -835,10 +888,10 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               value={normalizedDefaultFrom}
               onChange={(e) => onSelectDefaultConsume(e.target.value)}
-              disabled={locationsQuery.isLoading}
+              disabled={locationsQuery.isLoading || (isDisassembly && filteredLocationOptions.length === 0)}
             >
               <option value="">Select location</option>
-              {locationOptions.map((loc) => (
+              {(isDisassembly ? filteredLocationOptions : locationOptions).map((loc) => (
                 <option key={loc.value} value={loc.value}>
                   {loc.label}
                 </option>
@@ -846,6 +899,9 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
             </select>
             {usingItemConsumeDefault && (
               <p className="text-xs text-slate-500">Auto from item default location</p>
+            )}
+            {isDisassembly && filteredLocationOptions.length === 0 && (
+              <p className="text-xs text-amber-700">No available inventory to consume.</p>
             )}
             <div className="mt-2">
               <Button
@@ -866,8 +922,15 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
             </div>
           </label>
         </div>
-        {consumeLines.map((line, idx) => (
-          <div key={idx} className="rounded-lg border border-slate-200 p-3 space-y-3">
+        {consumeLines.map((line, idx) => {
+          const lineHasError = Boolean(lineErrors.consume[idx])
+          return (
+          <div
+            key={idx}
+            className={`rounded-lg border p-3 space-y-3 ${
+              lineHasError ? 'border-amber-300 bg-amber-50' : 'border-slate-200'
+            }`}
+          >
             <div className="flex items-start justify-between gap-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Line {idx + 1}</div>
               {consumeLines.length > 1 && (
@@ -901,15 +964,19 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
                 )}
               </div>
               <div>
-                <Combobox
-                  label="From location"
-                  value={line.fromLocationId}
-                  options={locationOptions}
-                  loading={locationsQuery.isLoading}
-                  onQueryChange={(value) => handleLocationSearch('consume', idx, value)}
-                  placeholder="Search locations (code/name)"
-                  onChange={(nextValue) => updateConsumeLine(idx, { fromLocationId: nextValue })}
-                />
+              <Combobox
+                label="From location"
+                value={line.fromLocationId}
+                options={
+                  isDisassembly && line.componentItemId === workOrder.outputItemId
+                    ? filteredLocationOptions
+                    : locationOptions
+                }
+                loading={locationsQuery.isLoading}
+                onQueryChange={(value) => handleLocationSearch('consume', idx, value)}
+                placeholder="Search locations (code/name)"
+                onChange={(nextValue) => updateConsumeLine(idx, { fromLocationId: nextValue })}
+              />
                 {lineErrors.consume[idx]?.fromLocationId && (
                   <div className="text-xs text-red-600">{lineErrors.consume[idx]?.fromLocationId}</div>
                 )}
@@ -932,6 +999,12 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
                   type="number"
                   min={0}
                   value={line.quantity}
+                  disabled={
+                    (() => {
+                      const availableQty = availableForConsumeLine(line)
+                      return availableQty !== null && availableQty <= 0
+                    })()
+                  }
                   onChange={(e) =>
                     updateConsumeLine(idx, {
                       quantity: e.target.value === '' ? '' : Number(e.target.value),
@@ -941,6 +1014,18 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
                 {lineErrors.consume[idx]?.quantity && (
                   <div className="text-xs text-red-600">{lineErrors.consume[idx]?.quantity}</div>
                 )}
+                {isDisassembly &&
+                  (() => {
+                    const availableQty = availableForConsumeLine(line)
+                    if (availableQty !== null && availableQty <= 0) {
+                      return (
+                        <div className="text-xs text-amber-700">
+                          No available inventory at this location.
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
               </label>
               {isDisassembly && (
                 <label className="space-y-1 text-sm">
@@ -976,7 +1061,7 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
               )}
             </div>
           </div>
-        ))}
+        )})}
       </div>
 
       <div className="mt-8 space-y-3">

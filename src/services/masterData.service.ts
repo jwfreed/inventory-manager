@@ -542,6 +542,26 @@ export async function listUomConversionsByItem(tenantId: string, itemId: string)
 }
 
 export async function deleteUomConversion(tenantId: string, id: string) {
+  const conversion = await getUomConversion(tenantId, id);
+  if (!conversion) return;
+
+  const inUse = await query(
+    `SELECT 1
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND item_id = $2
+        AND (
+          uom = $3 OR uom = $4
+          OR uom_entered = $3 OR uom_entered = $4
+        )
+      LIMIT 1`,
+    [tenantId, conversion.item_id, conversion.from_uom, conversion.to_uom]
+  );
+
+  if (inUse.rowCount && inUse.rowCount > 0) {
+    throw new Error('UOM_CONVERSION_IN_USE');
+  }
+
   await query(
     `DELETE FROM uom_conversions WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId]

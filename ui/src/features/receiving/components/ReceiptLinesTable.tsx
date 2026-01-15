@@ -380,6 +380,17 @@ export function ReceiptLinesTable({
             const serialDuplicate =
               serialRequired &&
               new Set(line.serialNumbers ?? []).size !== (line.serialNumbers ?? []).length
+            const lotErrorId = `receipt-lot-error-${line.purchaseOrderLineId}`
+            const serialQtyErrorId = `receipt-serial-qty-error-${line.purchaseOrderLineId}`
+            const serialCountErrorId = `receipt-serial-count-error-${line.purchaseOrderLineId}`
+            const serialDupErrorId = `receipt-serial-dup-error-${line.purchaseOrderLineId}`
+            const serialErrorIds = [
+              serialQtyInvalid ? serialQtyErrorId : '',
+              serialCountMismatch ? serialCountErrorId : '',
+              serialDuplicate ? serialDupErrorId : '',
+            ]
+              .filter(Boolean)
+              .join(' ')
             return (
               <div className="space-y-2">
                 {lotRequired && (
@@ -390,6 +401,8 @@ export function ReceiptLinesTable({
                       }}
                       value={line.lotCode ?? ''}
                       disabled={disabled}
+                      aria-invalid={!(line.lotCode ?? '').trim()}
+                      aria-describedby={!(line.lotCode ?? '').trim() ? lotErrorId : undefined}
                       onChange={(e) =>
                         onLineChange(line.purchaseOrderLineId, { lotCode: e.target.value })
                       }
@@ -405,7 +418,14 @@ export function ReceiptLinesTable({
                       placeholder="Lot code"
                     />
                     {!(line.lotCode ?? '').trim() && (
-                      <div className="text-xs text-amber-700">Lot code required.</div>
+                      <div
+                        id={lotErrorId}
+                        className="text-xs text-amber-700"
+                        aria-live="polite"
+                        role="status"
+                      >
+                        Lot code required.
+                      </div>
                     )}
                   </div>
                 )}
@@ -417,6 +437,8 @@ export function ReceiptLinesTable({
                       }}
                       value={serialList}
                       disabled={disabled}
+                      aria-invalid={serialQtyInvalid || serialCountMismatch || serialDuplicate}
+                      aria-describedby={serialErrorIds || undefined}
                       onChange={(e) => {
                         const raw = e.target.value
                         const values = raw
@@ -434,15 +456,34 @@ export function ReceiptLinesTable({
                       className="min-h-[64px]"
                     />
                     {serialQtyInvalid && (
-                      <div className="text-xs text-amber-700">Serial-tracked qty must be a whole number.</div>
+                      <div
+                        id={serialQtyErrorId}
+                        className="text-xs text-amber-700"
+                        aria-live="polite"
+                        role="status"
+                      >
+                        Serial-tracked qty must be a whole number.
+                      </div>
                     )}
                     {serialCountMismatch && (
-                      <div className="text-xs text-amber-700">
+                      <div
+                        id={serialCountErrorId}
+                        className="text-xs text-amber-700"
+                        aria-live="polite"
+                        role="status"
+                      >
                         Serial count must match received qty ({receivedQty}).
                       </div>
                     )}
                     {serialDuplicate && (
-                      <div className="text-xs text-amber-700">Duplicate serials are not allowed.</div>
+                      <div
+                        id={serialDupErrorId}
+                        className="text-xs text-amber-700"
+                        aria-live="polite"
+                        role="status"
+                      >
+                        Duplicate serials are not allowed.
+                      </div>
                     )}
                   </div>
                 )}

@@ -176,6 +176,12 @@ router.patch('/work-orders/:id/default-locations', async (req: Request, res: Res
     }
     return res.json(updated);
   } catch (error) {
+    if ((error as Error)?.message === 'WO_DEFAULT_CONSUME_LOCATION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Default consume location not found.' });
+    }
+    if ((error as Error)?.message === 'WO_DEFAULT_PRODUCE_LOCATION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Default produce location not found.' });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to update default locations.' });
   }
