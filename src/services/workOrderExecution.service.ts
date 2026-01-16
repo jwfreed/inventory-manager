@@ -389,7 +389,8 @@ export async function postWorkOrderIssue(
         actorId: context.actor?.id ?? null,
         actorRole: context.actor?.role ?? null,
         overrideRequested: context.overrideRequested,
-        overrideReason: context.overrideReason ?? null
+        overrideReason: context.overrideReason ?? null,
+        overrideReference: `work_order_issue:${issueId}`
       }
     );
     const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
@@ -533,6 +534,7 @@ export async function postWorkOrderIssue(
             reason: validation.overrideMetadata.override_reason ?? null,
             workOrderId,
             issueId,
+            reference: validation.overrideMetadata.override_reference ?? null,
             lines: linesResult.rows.map((line) => ({
               itemId: line.component_item_id,
               locationId: line.from_location_id,
@@ -1093,7 +1095,8 @@ export async function recordWorkOrderBatch(
         actorId: context.actor?.id ?? null,
         actorRole: context.actor?.role ?? null,
         overrideRequested: context.overrideRequested,
-        overrideReason: context.overrideReason ?? null
+        overrideReason: context.overrideReason ?? null,
+        overrideReference: `work_order_batch_issue:${issueId}`
       }
     );
 
@@ -1403,6 +1406,7 @@ export async function recordWorkOrderBatch(
             reason: validation.overrideMetadata.override_reason ?? null,
             workOrderId,
             executionId,
+            reference: validation.overrideMetadata.override_reference ?? null,
             lines: normalizedConsumes.map((line) => ({
               itemId: line.componentItemId,
               locationId: line.fromLocationId,

@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com'
@@ -64,7 +65,10 @@ test('posting work order issue and batch blocks on insufficient usable stock', a
       sku: `NEG-ITEM-${unique}`,
       name: 'Negative Test Item',
       type: 'finished',
-      defaultUom: 'g',
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
       defaultLocationId: locationId,
       active: true,
     },
@@ -77,7 +81,7 @@ test('posting work order issue and batch blocks on insufficient usable stock', a
     body: {
       kind: 'disassembly',
       outputItemId: itemId,
-      outputUom: 'g',
+      outputUom: 'each',
       quantityPlanned: 10,
       description: 'Negative stock disassembly test',
     },
@@ -91,7 +95,7 @@ test('posting work order issue and batch blocks on insufficient usable stock', a
       occurredAt: new Date().toISOString(),
       notes: 'Issue test',
       lines: [
-        { componentItemId: itemId, fromLocationId: locationId, uom: 'g', quantityIssued: 5 },
+        { componentItemId: itemId, fromLocationId: locationId, uom: 'each', quantityIssued: 5 },
       ],
     },
   })
@@ -111,10 +115,10 @@ test('posting work order issue and batch blocks on insufficient usable stock', a
       occurredAt: new Date().toISOString(),
       notes: 'Batch test',
       consumeLines: [
-        { componentItemId: itemId, fromLocationId: locationId, uom: 'g', quantity: 5 },
+        { componentItemId: itemId, fromLocationId: locationId, uom: 'each', quantity: 5 },
       ],
       produceLines: [
-        { outputItemId: itemId, toLocationId: locationId, uom: 'g', quantity: 5 },
+        { outputItemId: itemId, toLocationId: locationId, uom: 'each', quantity: 5 },
       ],
     },
   })
@@ -131,10 +135,10 @@ test('posting work order issue and batch blocks on insufficient usable stock', a
         overrideNegative: true,
         overrideReason: 'Testing negative override',
         consumeLines: [
-          { componentItemId: itemId, fromLocationId: locationId, uom: 'g', quantity: 5 },
+          { componentItemId: itemId, fromLocationId: locationId, uom: 'each', quantity: 5 },
         ],
         produceLines: [
-          { outputItemId: itemId, toLocationId: locationId, uom: 'g', quantity: 5 },
+          { outputItemId: itemId, toLocationId: locationId, uom: 'each', quantity: 5 },
         ],
       },
     })
@@ -161,7 +165,10 @@ test('posting negative inventory adjustment blocks on insufficient stock', async
       sku: `NEG-ITEM-ADJ-${unique}`,
       name: 'Negative Adjustment Item',
       type: 'raw',
-      defaultUom: 'g',
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
       defaultLocationId: locationId,
       active: true,
     },
@@ -179,7 +186,7 @@ test('posting negative inventory adjustment blocks on insufficient stock', async
           lineNumber: 1,
           itemId,
           locationId,
-          uom: 'g',
+          uom: 'each',
           quantityDelta: -5,
           reasonCode: 'shrinkage',
         },
@@ -195,4 +202,132 @@ test('posting negative inventory adjustment blocks on insufficient stock', async
   })
   assert.equal(postRes.res.status, 409)
   assert.equal(postRes.payload?.error?.code, 'INSUFFICIENT_STOCK')
+})
+
+test('reservation creates backorder when insufficient on-hand', async () => {
+  const token = await ensureSession()
+  assert.ok(token)
+  const unique = Date.now()
+
+  const locationRes = await apiRequest('POST', '/locations', {
+    token,
+    body: { code: `NEG-LOC-BO-${unique}`, name: 'Negative Backorder Location', type: 'warehouse', active: true },
+  })
+  assert.equal(locationRes.res.status, 201)
+  const locationId = locationRes.payload.id
+
+  const itemRes = await apiRequest('POST', '/items', {
+    token,
+    body: {
+      sku: `NEG-ITEM-BO-${unique}`,
+      name: 'Negative Backorder Item',
+      type: 'finished',
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
+      defaultLocationId: locationId,
+      active: true,
+    },
+  })
+  assert.equal(itemRes.res.status, 201)
+  const itemId = itemRes.payload.id
+
+  const reservationsRes = await apiRequest('POST', '/reservations', {
+    token,
+    body: {
+      reservations: [
+        {
+          demandType: 'sales_order_line',
+          demandId: randomUUID(),
+          itemId,
+          locationId,
+          uom: 'each',
+          quantityReserved: 7,
+        },
+      ],
+    },
+  })
+  assert.equal(reservationsRes.res.status, 201)
+
+  const snapshotRes = await apiRequest('GET', '/inventory-snapshot', {
+    token,
+    params: { itemId, locationId },
+  })
+  assert.equal(snapshotRes.res.status, 200)
+  const row = snapshotRes.payload?.data?.find((entry) => entry.uom === 'each')
+  assert.ok(row)
+  assert.equal(Number(row.onHand ?? 0), 0)
+  assert.equal(Number(row.backordered ?? 0), 7)
+})
+
+test('inventory snapshot aggregates canonical quantities with UOM conversion', async () => {
+  const token = await ensureSession()
+  assert.ok(token)
+  const unique = Date.now()
+
+  const locationRes = await apiRequest('POST', '/locations', {
+    token,
+    body: { code: `NEG-LOC-UOM-${unique}`, name: 'Negative UOM Location', type: 'warehouse', active: true },
+  })
+  assert.equal(locationRes.res.status, 201)
+  const locationId = locationRes.payload.id
+
+  const itemRes = await apiRequest('POST', '/items', {
+    token,
+    body: {
+      sku: `NEG-ITEM-UOM-${unique}`,
+      name: 'Negative UOM Item',
+      type: 'raw',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'kg',
+      stockingUom: 'g',
+      defaultLocationId: locationId,
+      active: true,
+    },
+  })
+  assert.equal(itemRes.res.status, 201)
+  const itemId = itemRes.payload.id
+
+  const conversionRes = await apiRequest('POST', `/items/${itemId}/uom-conversions`, {
+    token,
+    body: { fromUom: 'g', toUom: 'kg', factor: 0.001 },
+  })
+  assert.equal(conversionRes.res.status, 201)
+
+  const adjustmentRes = await apiRequest('POST', '/inventory-adjustments', {
+    token,
+    body: {
+      occurredAt: new Date().toISOString(),
+      notes: 'UOM conversion test',
+      lines: [
+        {
+          lineNumber: 1,
+          itemId,
+          locationId,
+          uom: 'g',
+          quantityDelta: 1000,
+          reasonCode: 'correction',
+        },
+      ],
+    },
+  })
+  assert.equal(adjustmentRes.res.status, 201)
+  const adjustmentId = adjustmentRes.payload.id
+
+  const postRes = await apiRequest('POST', `/inventory-adjustments/${adjustmentId}/post`, {
+    token,
+    body: {},
+  })
+  assert.equal(postRes.res.status, 200)
+
+  const snapshotRes = await apiRequest('GET', '/inventory-snapshot', {
+    token,
+    params: { itemId, locationId, uom: 'kg' },
+  })
+  assert.equal(snapshotRes.res.status, 200)
+  const row = snapshotRes.payload?.data?.find((entry) => entry.uom === 'kg')
+  assert.ok(row)
+  assert.equal(Number(row.onHand ?? 0), 1)
 })

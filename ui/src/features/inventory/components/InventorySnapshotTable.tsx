@@ -71,7 +71,10 @@ export function InventorySnapshotTable({
               Reserved
             </th>
             <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Available
+              Available (on-hand − reserved)
+            </th>
+            <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Backordered
             </th>
             <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
               Held
@@ -90,7 +93,7 @@ export function InventorySnapshotTable({
             </th>
             {showInventoryPosition ? (
               <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Inventory position
+                Inventory position (planning)
               </th>
             ) : null}
           </tr>
@@ -118,6 +121,9 @@ export function InventorySnapshotTable({
               </td>
               <td className="px-3 py-2 text-right text-sm text-slate-800">
                 {formatNumber(row.available)}
+              </td>
+              <td className="px-3 py-2 text-right text-sm text-slate-800">
+                {formatNumber(row.backordered)}
               </td>
               <td className="px-3 py-2 text-right text-sm text-slate-800">
                 {formatNumber(row.held)}

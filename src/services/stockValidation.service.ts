@@ -16,6 +16,7 @@ export type StockValidationContext = {
   actorRole?: string | null;
   overrideRequested?: boolean;
   overrideReason?: string | null;
+  overrideReference?: string | null;
 };
 
 export type StockValidationResult = {
@@ -23,6 +24,7 @@ export type StockValidationResult = {
     negative_override: true;
     override_reason?: string | null;
     override_actor_id?: string | null;
+    override_reference?: string | null;
   };
 };
 
@@ -148,7 +150,8 @@ export async function validateSufficientStock(
       overrideMetadata: {
         negative_override: true,
         override_reason: context.overrideReason ?? null,
-        override_actor_id: context.actorId ?? null
+        override_actor_id: context.actorId ?? null,
+        override_reference: context.overrideReference ?? null
       }
     };
   }
@@ -166,7 +169,8 @@ export async function validateSufficientStock(
       overrideMetadata: {
         negative_override: true,
         override_reason: context.overrideReason ?? null,
-        override_actor_id: context.actorId ?? null
+        override_actor_id: context.actorId ?? null,
+        override_reference: context.overrideReference ?? null
       }
     };
   }

@@ -5,6 +5,7 @@ import { useLocationsList } from '../../locations/queries'
 import { useInventorySnapshotSummary } from '../../inventory/queries'
 import { useBomsByItem } from '../../boms/queries'
 import { useUomConversionsList } from '../api/uomConversions'
+import { useMovementWindow } from '../../ledger/queries'
 import type { ApiError, Bom, BomVersion } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
@@ -29,6 +30,13 @@ const typeLabels: Record<string, string> = {
   wip: 'WIP',
   finished: 'Finished',
   packaging: 'Packaging',
+}
+
+const toDateInputValue = (value?: string | null) => {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.valueOf())) return null
+  return date.toISOString().slice(0, 10)
 }
 
 export default function ItemDetailPage() {
@@ -65,6 +73,10 @@ export default function ItemDetailPage() {
       limit: 500,
     },
     { enabled: Boolean(id), staleTime: 30_000 },
+  )
+  const movementWindowQuery = useMovementWindow(
+    { itemId: id ?? undefined, locationId: selectedLocationId || undefined },
+    { staleTime: 30_000 },
   )
 
   const bomsQuery = useBomsByItem(id)
@@ -123,6 +135,29 @@ export default function ItemDetailPage() {
     })
     return map
   }, [uomConversionsQuery.data])
+
+  const movementLink = useMemo(() => {
+    if (!id) return '/movements'
+    const params = new URLSearchParams()
+    params.set('itemId', id)
+    if (selectedLocationId) {
+      params.set('locationId', selectedLocationId)
+    }
+    const occurredFrom = toDateInputValue(movementWindowQuery.data?.occurredFrom)
+    const occurredTo = toDateInputValue(movementWindowQuery.data?.occurredTo)
+    if (occurredFrom) {
+      params.set('occurredFrom', occurredFrom)
+    }
+    if (occurredTo) {
+      params.set('occurredTo', occurredTo)
+    }
+    return `/movements?${params.toString()}`
+  }, [
+    id,
+    movementWindowQuery.data?.occurredFrom,
+    movementWindowQuery.data?.occurredTo,
+    selectedLocationId,
+  ])
 
   const getConversionFactor = (fromUom?: string | null, toUom?: string | null) => {
     if (!fromUom || !toUom) return null
@@ -218,12 +253,11 @@ export default function ItemDetailPage() {
   }, [convertedRows, defaultUom])
 
   const hasNegativeBalance = useMemo(
-    () =>
-      convertedRows.some((row) => row.onHand < 0 || row.available < 0),
+    () => convertedRows.some((row) => row.onHand < 0),
     [convertedRows],
   )
   const hasNegativeRaw = useMemo(
-    () => stockRows.some((row) => row.onHand < 0 || row.available < 0),
+    () => stockRows.some((row) => row.onHand < 0),
     [stockRows],
   )
 
@@ -538,10 +572,10 @@ export default function ItemDetailPage() {
                   )}
                   {hasNegativeAny && (
                     <div>
-                      • Negative balance detected{' '}
+                      • Negative on-hand detected{' '}
                       <span
                         className="text-xs text-slate-500 underline"
-                        title="Negative inventory means inventory was consumed or shipped before it was received or adjusted."
+                        title="Negative inventory signals a record inconsistency (out-of-order or missing movement)."
                       >
                         Why?
                       </span>
@@ -559,7 +593,7 @@ export default function ItemDetailPage() {
               {totalHolds > 0 ? '⚠ QC holds' : '✅ No holds'}
             </span>
             <span className={`rounded-full px-2 py-1 ${hasNegativeAny ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
-              {hasNegativeAny ? '⚠ Negative balance' : '✅ No negative balance'}
+              {hasNegativeAny ? '⚠ Negative on-hand' : '✅ No negative on-hand'}
             </span>
             {metricsQuery.data?.lastCountAt && (
               <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">
@@ -698,13 +732,7 @@ export default function ItemDetailPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() =>
-                  navigate(
-                    `/movements?itemId=${id}${
-                      selectedLocationId ? `&locationId=${selectedLocationId}` : ''
-                    }`,
-                  )
-                }
+                onClick={() => navigate(movementLink)}
               >
                 View movements
               </Button>
@@ -751,13 +779,13 @@ export default function ItemDetailPage() {
               <Alert
                 variant="warning"
                 title="Negative inventory detected"
-                message="Negative balances indicate an out-of-order or missing transaction. Review movements to resolve."
+                message="Negative on-hand balances indicate a record inconsistency (out-of-order or missing movement). Review movements to resolve."
                 action={
                   <Button
                     size="sm"
                     variant="secondary"
                     onClick={() => {
-                      if (id) navigate(`/movements?itemId=${id}`)
+                      if (id) navigate(movementLink)
                     }}
                   >
                     View movements
@@ -782,7 +810,7 @@ export default function ItemDetailPage() {
                   <div className="mb-4 grid gap-3 md:grid-cols-3">
                     <div className="rounded-lg border border-slate-200 bg-white p-3">
                       <div className="text-xs uppercase tracking-wide text-slate-500">
-                        Total available (usable) ({defaultUom})
+                        Available (on-hand − reservations) ({defaultUom})
                       </div>
                       <div className="mt-1 text-2xl font-semibold text-slate-900">
                         {formatNumber(totalsByDefaultUom.available)}
@@ -799,6 +827,7 @@ export default function ItemDetailPage() {
                             Explain
                           </button>
                         </span>{' '}
+                        · Backordered {formatNumber(totalsByDefaultUom.backordered)}{' '}
                         ·{' '}
                         <span className="inline-flex items-center gap-1">
                           Held {formatNumber(totalsByDefaultUom.held)}

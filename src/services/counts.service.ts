@@ -393,7 +393,8 @@ export async function postInventoryCount(
           actorId: context?.actor?.id ?? null,
           actorRole: context?.actor?.role ?? null,
           overrideRequested: context?.overrideRequested,
-          overrideReason: context?.overrideReason ?? null
+          overrideReason: context?.overrideReason ?? null,
+          overrideReference: `cycle_count:${id}`
         })
       : {};
 
@@ -560,7 +561,8 @@ export async function postInventoryCount(
           metadata: {
             reason: validation.overrideMetadata.override_reason ?? null,
             cycleCountId: id,
-            lines: negativeLines
+            lines: negativeLines,
+            reference: validation.overrideMetadata.override_reference ?? null
           }
         },
         client

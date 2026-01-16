@@ -1,12 +1,20 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
-import type { ApiError, Movement, MovementLine } from '../../api/types'
-import { getMovement, getMovementLines, listMovements, type MovementListParams } from './api/ledger'
+import type { ApiError, Movement, MovementLine, MovementWindow } from '../../api/types'
+import {
+  getMovement,
+  getMovementLines,
+  getMovementWindow,
+  listMovements,
+  type MovementListParams,
+} from './api/ledger'
 
 export const ledgerQueryKeys = {
   all: ['movements'] as const,
   list: (params: MovementListParams = {}) => [...ledgerQueryKeys.all, 'list', params] as const,
   detail: (id: string) => [...ledgerQueryKeys.all, 'detail', id] as const,
   lines: (movementId: string) => [...ledgerQueryKeys.all, 'lines', movementId] as const,
+  window: (params: { itemId?: string; locationId?: string }) =>
+    [...ledgerQueryKeys.all, 'window', params] as const,
 }
 
 type MovementsListOptions = Omit<
@@ -18,6 +26,11 @@ type MovementOptions = Omit<UseQueryOptions<Movement, ApiError>, 'queryKey' | 'q
 
 type MovementLinesOptions = Omit<
   UseQueryOptions<MovementLine[], ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type MovementWindowOptions = Omit<
+  UseQueryOptions<MovementWindow | null, ApiError>,
   'queryKey' | 'queryFn'
 >
 
@@ -45,6 +58,19 @@ export function useMovementLines(movementId?: string, options: MovementLinesOpti
     queryKey: ledgerQueryKeys.lines(movementId ?? ''),
     queryFn: () => getMovementLines(movementId as string),
     enabled: Boolean(movementId),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useMovementWindow(
+  params: { itemId?: string; locationId?: string },
+  options: MovementWindowOptions = {},
+) {
+  return useQuery({
+    queryKey: ledgerQueryKeys.window(params),
+    queryFn: () => getMovementWindow(params),
+    enabled: Boolean(params.itemId || params.locationId),
     retry: 1,
     ...options,
   })

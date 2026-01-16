@@ -29,6 +29,44 @@ export function mapMovementLine(row: any) {
   };
 }
 
+export async function getMovementWindow(
+  tenantId: string,
+  filters: { itemId?: string; locationId?: string }
+): Promise<{ occurredFrom: string; occurredTo: string } | null> {
+  const conditions: string[] = ["im.tenant_id = $1", "im.status = 'posted'"];
+  const params: any[] = [tenantId];
+
+  if (filters.itemId) {
+    params.push(filters.itemId);
+    conditions.push(`iml.item_id = $${params.length}`);
+  }
+  if (filters.locationId) {
+    params.push(filters.locationId);
+    conditions.push(`iml.location_id = $${params.length}`);
+  }
+
+  const { rows } = await query(
+    `SELECT MIN(im.occurred_at) AS occurred_from,
+            MAX(im.occurred_at) AS occurred_to
+       FROM inventory_movement_lines iml
+       JOIN inventory_movements im
+         ON im.id = iml.movement_id
+        AND im.tenant_id = iml.tenant_id
+      WHERE ${conditions.join(' AND ')}`,
+    params
+  );
+
+  const row = rows[0];
+  if (!row?.occurred_from || !row?.occurred_to) {
+    return null;
+  }
+
+  return {
+    occurredFrom: row.occurred_from,
+    occurredTo: row.occurred_to
+  };
+}
+
 export async function listMovements(tenantId: string, filters: {
   movementType?: string;
   status?: string;

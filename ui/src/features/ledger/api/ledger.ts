@@ -1,5 +1,5 @@
 import { apiGet } from '../../../api/http'
-import type { Movement, MovementLine, MovementListResponse } from '../../../api/types'
+import type { Movement, MovementLine, MovementListResponse, MovementWindow } from '../../../api/types'
 
 export type MovementListParams = {
   movementType?: string
@@ -114,4 +114,26 @@ export async function getMovementLines(movementId: string): Promise<MovementLine
     return lines.data.map(toCamelLine)
   }
   return []
+}
+
+export async function getMovementWindow(params: {
+  itemId?: string
+  locationId?: string
+}): Promise<MovementWindow | null> {
+  const response = await apiGet<unknown>('/inventory-movements/window', {
+    params: {
+      item_id: params.itemId,
+      location_id: params.locationId,
+    },
+  })
+
+  const payload = typeof response === 'object' && response ? (response as { data?: unknown }).data : response
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+  const data = payload as { occurredFrom?: string; occurred_from?: string; occurredTo?: string; occurred_to?: string }
+  const occurredFrom = data.occurredFrom ?? data.occurred_from
+  const occurredTo = data.occurredTo ?? data.occurred_to
+  if (!occurredFrom || !occurredTo) return null
+  return { occurredFrom, occurredTo }
 }

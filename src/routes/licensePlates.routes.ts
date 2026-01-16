@@ -95,13 +95,15 @@ router.patch('/lpns/:id', async (req: Request, res: Response) => {
  */
 router.post('/lpns/:id/move', async (req: Request, res: Response) => {
   try {
-    const { toLocationId, fromLocationId, notes } = req.body
+    const { toLocationId, fromLocationId, notes, overrideNegative, overrideReason } = req.body
 
     if (!toLocationId || !fromLocationId) {
       return res.status(400).json({ error: 'toLocationId and fromLocationId are required' })
     }
 
-    const actor = req.auth?.userId ? { type: 'user' as const, id: req.auth.userId } : undefined
+    const actor = req.auth?.userId
+      ? { type: 'user' as const, id: req.auth.userId, role: req.auth.role }
+      : undefined
     const lpn = await licensePlatesService.moveLicensePlate(
       req.auth!.tenantId,
       {
@@ -109,6 +111,8 @@ router.post('/lpns/:id/move', async (req: Request, res: Response) => {
         fromLocationId,
         toLocationId,
         notes,
+        overrideNegative,
+        overrideReason
       },
       actor
     )
@@ -119,6 +123,29 @@ router.post('/lpns/:id/move', async (req: Request, res: Response) => {
 
     res.status(200).json({ data: lpn })
   } catch (error) {
+    if ((error as any)?.code === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({
+        error: { code: 'INSUFFICIENT_STOCK', message: (error as any).details?.message, details: (error as any).details }
+      })
+    }
+    if ((error as any)?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
+      return res.status(403).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_NOT_ALLOWED',
+          message: (error as any).details?.message,
+          details: (error as any).details
+        }
+      })
+    }
+    if ((error as any)?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
+      return res.status(409).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON',
+          message: (error as any).details?.message,
+          details: (error as any).details
+        }
+      })
+    }
     console.error('Error moving license plate:', error)
     res.status(500).json({ error: 'Failed to move license plate' })
   }

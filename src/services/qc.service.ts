@@ -8,6 +8,7 @@ import { createNcr, findMrbLocation } from './ncr.service';
 import { calculateMovementCost } from './costing.service';
 import { createCostLayer } from './costLayers.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
+import { validateSufficientStock } from './stockValidation.service';
 
 export type QcEventInput = z.infer<typeof qcEventSchema>;
 
@@ -287,12 +288,30 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
          if (!itemId) throw new Error('QC_ITEM_ID_REQUIRED');
          
          const now = new Date();
+         const validation = await validateSufficientStock(
+           tenantId,
+           now,
+           [
+             {
+               itemId,
+               locationId: sourceLocationId,
+               uom: data.uom,
+               quantityToConsume: enteredQty
+             }
+           ],
+           {
+             actorId: data.actorId ?? null,
+             overrideRequested: data.overrideNegative,
+             overrideReason: data.overrideReason ?? null,
+             overrideReference: `qc_${data.eventType}:${sourceId}`
+           }
+         );
          const movementId = uuidv4();
          await client.query(
             `INSERT INTO inventory_movements (
-                id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-             ) VALUES ($1, $2, 'transfer', 'posted', $3, $4, $4, $5, $4, $4)`,
-            [movementId, tenantId, `qc_${data.eventType}:${created.id}`, now, notes]
+                id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
+             ) VALUES ($1, $2, 'transfer', 'posted', $3, $4, $4, $5, $6, $4, $4)`,
+            [movementId, tenantId, `qc_${data.eventType}:${created.id}`, now, notes, validation.overrideMetadata ?? null]
           );
           
           // Calculate cost for QC transfer movements
@@ -371,6 +390,29 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
              ) VALUES ($1, $2, $3, $4, $5)`,
             [uuidv4(), tenantId, created.id, movementId, now]
           );
+          if (validation.overrideMetadata && data.actorType) {
+            await recordAuditLog(
+              {
+                tenantId,
+                actorType: data.actorType,
+                actorId: data.actorId ?? null,
+                action: 'negative_override',
+                entityType: 'inventory_movement',
+                entityId: movementId,
+                occurredAt: now,
+                metadata: {
+                  reason: validation.overrideMetadata.override_reason ?? null,
+                  reference: validation.overrideMetadata.override_reference ?? null,
+                  qcEventId: created.id,
+                  itemId,
+                  locationId: sourceLocationId,
+                  uom: data.uom,
+                  quantity: enteredQty
+                }
+              },
+              client
+            );
+          }
       }
     }
 

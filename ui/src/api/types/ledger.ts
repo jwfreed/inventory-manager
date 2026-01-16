@@ -30,3 +30,8 @@ export type MovementListResponse = {
   data: Movement[]
   paging?: { limit: number; offset: number }
 }
+
+export type MovementWindow = {
+  occurredFrom: string
+  occurredTo: string
+}

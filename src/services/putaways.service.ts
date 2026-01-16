@@ -443,7 +443,8 @@ export async function postPutaway(
         actorId: context?.actor?.id ?? null,
         actorRole: context?.actor?.role ?? null,
         overrideRequested: context?.overrideRequested,
-        overrideReason: context?.overrideReason ?? null
+        overrideReason: context?.overrideReason ?? null,
+        overrideReference: `putaway:${id}`
       }
     );
 
@@ -578,6 +579,7 @@ export async function postPutaway(
           metadata: {
             reason: validation.overrideMetadata.override_reason ?? null,
             putawayId: id,
+            reference: validation.overrideMetadata.override_reference ?? null,
             lines: pendingLines.map((line) => ({
               itemId: line.item_id,
               locationId: line.from_location_id,

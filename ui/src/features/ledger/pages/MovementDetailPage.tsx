@@ -107,12 +107,18 @@ export default function MovementDetailPage() {
 
   const negativeOverride = useMemo(() => {
     const metadata = movementQuery.data?.metadata as
-      | { negative_override?: boolean; override_reason?: string; override_actor_id?: string }
+      | {
+          negative_override?: boolean
+          override_reason?: string
+          override_actor_id?: string
+          override_reference?: string
+        }
       | null
     if (!metadata?.negative_override) return null
     return {
       reason: metadata.override_reason,
       actorId: metadata.override_actor_id,
+      reference: metadata.override_reference,
     }
   }, [movementQuery.data?.metadata])
 
@@ -169,6 +175,12 @@ export default function MovementDetailPage() {
                   <div className="text-sm text-slate-700">
                     <span className="font-semibold">Override reason:</span>{' '}
                     {negativeOverride.reason || '—'}
+                  </div>
+                )}
+                {negativeOverride && (
+                  <div className="text-sm text-slate-700">
+                    <span className="font-semibold">Override reference:</span>{' '}
+                    {negativeOverride.reference || '—'}
                   </div>
                 )}
               </div>

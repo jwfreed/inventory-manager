@@ -11,3 +11,8 @@ export const movementListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
   offset: z.coerce.number().int().nonnegative().optional()
 });
+
+export const movementWindowQuerySchema = z.object({
+  item_id: z.string().uuid().optional(),
+  location_id: z.string().uuid().optional()
+});

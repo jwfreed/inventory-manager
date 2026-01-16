@@ -318,7 +318,7 @@ export default function ItemsListPage() {
       },
       {
         id: 'available',
-        label: 'Available',
+        label: 'Available (on-hand − reservations)',
         render: (item) => {
           const totals = availableByItem.get(item.id)
           if (!totals || totals.size === 0) return '—'

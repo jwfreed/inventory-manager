@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { movementListQuerySchema } from '../schemas/ledger.schema';
-import { getMovement, getMovementLines, listMovements } from '../services/ledger.service';
+import { movementListQuerySchema, movementWindowQuerySchema } from '../schemas/ledger.schema';
+import { getMovement, getMovementLines, getMovementWindow, listMovements } from '../services/ledger.service';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -30,6 +30,26 @@ router.get('/inventory-movements', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to list inventory movements.' });
+  }
+});
+
+router.get('/inventory-movements/window', async (req: Request, res: Response) => {
+  const parsed = movementWindowQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  if (!parsed.data.item_id && !parsed.data.location_id) {
+    return res.status(400).json({ error: 'item_id or location_id is required.' });
+  }
+  try {
+    const window = await getMovementWindow(req.auth!.tenantId, {
+      itemId: parsed.data.item_id,
+      locationId: parsed.data.location_id
+    });
+    return res.json({ data: window });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to load inventory movement window.' });
   }
 });
 

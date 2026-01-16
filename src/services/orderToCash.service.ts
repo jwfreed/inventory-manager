@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query, withTransaction } from '../db';
+import { getBackorderPolicy } from '../config/backorderPolicy';
 import {
   reservationsCreateSchema,
   reservationSchema,
@@ -10,6 +11,9 @@ import {
 } from '../schemas/orderToCash.schema';
 import { convertToCanonical } from './uomCanonical.service';
 import { getItem } from './masterData.service';
+import { getInventorySnapshot } from './inventorySnapshot.service';
+import { upsertBackorder } from './backorders.service';
+import { roundQuantity, toNumber } from '../lib/numbers';
 import { ItemLifecycleStatus } from '../types/item';
 
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
@@ -189,6 +193,7 @@ export function mapReservation(row: any) {
 export async function createReservations(tenantId: string, data: ReservationCreateInput) {
   const now = new Date();
   const results: any[] = [];
+  const backorderPolicy = getBackorderPolicy();
   await withTransaction(async (client) => {
     for (const reservation of data.reservations) {
       const canonical = await convertToCanonical(
@@ -198,6 +203,35 @@ export async function createReservations(tenantId: string, data: ReservationCrea
         reservation.uom,
         client
       );
+      const snapshot = await getInventorySnapshot(tenantId, {
+        itemId: reservation.itemId,
+        locationId: reservation.locationId,
+        uom: canonical.canonicalUom
+      });
+      const available = toNumber(snapshot.find((row) => row.uom === canonical.canonicalUom)?.available ?? 0);
+      const reserveQty = roundQuantity(Math.max(0, Math.min(canonical.quantity, available)));
+      const backorderQty = roundQuantity(Math.max(0, canonical.quantity - reserveQty));
+
+      if (backorderPolicy.enableBackorders && backorderQty > 0) {
+        await upsertBackorder(
+          tenantId,
+          {
+            demandType: reservation.demandType,
+            demandId: reservation.demandId,
+            itemId: reservation.itemId,
+            locationId: reservation.locationId,
+            uom: canonical.canonicalUom,
+            quantity: backorderQty,
+            notes: reservation.notes ?? null
+          },
+          client
+        );
+      }
+      if (reserveQty <= 0) {
+        continue;
+      }
+      const fulfilledQty =
+        reservation.quantityFulfilled != null ? Math.min(reservation.quantityFulfilled, reserveQty) : null;
       const res = await client.query(
         `INSERT INTO inventory_reservations (
           id, tenant_id, status, demand_type, demand_id, item_id, location_id, uom,
@@ -213,8 +247,8 @@ export async function createReservations(tenantId: string, data: ReservationCrea
           reservation.itemId,
           reservation.locationId,
           canonical.canonicalUom,
-          canonical.quantity,
-          reservation.quantityFulfilled ?? null,
+          reserveQty,
+          fulfilledQty,
           reservation.status === 'open' ? now : now,
           reservation.notes ?? null,
           now,

@@ -60,7 +60,8 @@ export async function postInventoryAdjustment(
           actorId: context?.actor?.id ?? null,
           actorRole: context?.actor?.role ?? null,
           overrideRequested: context?.overrideRequested,
-          overrideReason: context?.overrideReason ?? null
+          overrideReason: context?.overrideReason ?? null,
+          overrideReference: `inventory_adjustment:${id}`
         })
       : {};
 
@@ -206,7 +207,8 @@ export async function postInventoryAdjustment(
           metadata: {
             reason: validation.overrideMetadata.override_reason ?? null,
             adjustmentId: id,
-            lines: negativeLines
+            lines: negativeLines,
+            reference: validation.overrideMetadata.override_reference ?? null
           }
         },
         client

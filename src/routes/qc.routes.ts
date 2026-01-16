@@ -56,6 +56,29 @@ router.post('/qc-events', async (req: Request, res: Response) => {
     if (error?.message === 'QC_SOURCE_REQUIRED') {
       return res.status(400).json({ error: 'A valid source (receipt line, work order, or execution line) is required.' });
     }
+    if (error?.code === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({
+        error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
+      return res.status(403).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_NOT_ALLOWED',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
+      return res.status(409).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
     const mapped = mapPgErrorToHttp(error, {
       foreignKey: () => ({ status: 400, body: { error: 'Referenced source does not exist.' } }),
       check: () => ({ status: 400, body: { error: 'QC quantity must be greater than zero.' } })

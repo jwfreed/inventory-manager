@@ -18,7 +18,9 @@ export default function MovementsListPage() {
   const initialFilters = useMemo<MovementListParams>(() => {
     const itemId = searchParams.get('itemId') ?? undefined
     const locationId = searchParams.get('locationId') ?? undefined
-    return { limit: DEFAULT_LIMIT, offset: 0, itemId, locationId }
+    const occurredFrom = searchParams.get('occurredFrom') ?? undefined
+    const occurredTo = searchParams.get('occurredTo') ?? undefined
+    return { limit: DEFAULT_LIMIT, offset: 0, itemId, locationId, occurredFrom, occurredTo }
   }, [searchParams])
   const [filters, setFilters] = useState<MovementListParams>(initialFilters)
 

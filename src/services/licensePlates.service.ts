@@ -3,6 +3,8 @@ import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
 import { recordAuditLog } from '../lib/audit';
 import { getCanonicalMovementFields } from './uomCanonical.service';
+import { validateSufficientStock } from './stockValidation.service';
+import { roundQuantity, toNumber } from '../lib/numbers';
 
 export type LpnStatus = 'active' | 'consumed' | 'shipped' | 'damaged' | 'quarantine' | 'expired';
 
@@ -36,6 +38,8 @@ export interface LpnMovementInput {
   fromLocationId: string;
   toLocationId: string;
   notes?: string | null;
+  overrideNegative?: boolean;
+  overrideReason?: string | null;
 }
 
 /**
@@ -371,7 +375,7 @@ export async function updateLicensePlate(
 export async function moveLicensePlate(
   tenantId: string,
   data: LpnMovementInput,
-  actor?: { type: 'user' | 'system'; id?: string | null }
+  actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null }
 ) {
   return withTransaction(async (client) => {
     const now = new Date();
@@ -390,18 +394,40 @@ export async function moveLicensePlate(
       throw new Error('LPN_NOT_ACTIVE');
     }
 
+    const qty = roundQuantity(toNumber(lpn.quantity));
+    const validation = await validateSufficientStock(
+      tenantId,
+      now,
+      [
+        {
+          itemId: lpn.itemId,
+          locationId: data.fromLocationId,
+          uom: lpn.uom,
+          quantityToConsume: qty
+        }
+      ],
+      {
+        actorId: actor?.id ?? null,
+        actorRole: actor?.role ?? null,
+        overrideRequested: data.overrideNegative,
+        overrideReason: data.overrideReason ?? null,
+        overrideReference: `lpn_move:${lpn.lpn}`
+      }
+    );
+
     // Create inventory movement for the LPN transfer
     const movementId = uuidv4();
     await client.query(
       `INSERT INTO inventory_movements (
-        id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, created_at, updated_at
-      ) VALUES ($1, $2, 'transfer', 'posted', $3, $4, $4, $5, $4, $4)`,
+        id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
+      ) VALUES ($1, $2, 'transfer', 'posted', $3, $4, $4, $5, $6, $4, $4)`,
       [
         movementId,
         tenantId,
         `lpn_move:${lpn.lpn}`,
         now,
-        data.notes ?? `LPN ${lpn.lpn} moved from ${lpn.locationCode} to new location`
+        data.notes ?? `LPN ${lpn.lpn} moved from ${lpn.locationCode} to new location`,
+        validation.overrideMetadata ?? null
       ]
     );
 
@@ -412,7 +438,7 @@ export async function moveLicensePlate(
     const canonicalOut = await getCanonicalMovementFields(
       tenantId,
       lpn.itemId,
-      -Number(lpn.quantity),
+      -qty,
       lpn.uom,
       client
     );
@@ -428,7 +454,7 @@ export async function moveLicensePlate(
         movementId,
         lpn.itemId,
         data.fromLocationId,
-        -Number(lpn.quantity),
+        -qty,
         lpn.uom,
         canonicalOut.quantityDeltaEntered,
         canonicalOut.uomEntered,
@@ -442,7 +468,7 @@ export async function moveLicensePlate(
     const canonicalIn = await getCanonicalMovementFields(
       tenantId,
       lpn.itemId,
-      Number(lpn.quantity),
+      qty,
       lpn.uom,
       client
     );
@@ -458,7 +484,7 @@ export async function moveLicensePlate(
         movementId,
         lpn.itemId,
         data.toLocationId,
-        Number(lpn.quantity),
+        qty,
         lpn.uom,
         canonicalIn.quantityDeltaEntered,
         canonicalIn.uomEntered,
@@ -475,10 +501,34 @@ export async function moveLicensePlate(
         id, tenant_id, inventory_movement_line_id, license_plate_id, quantity_delta, uom
       ) VALUES ($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)`,
       [
-        uuidv4(), tenantId, lineIdOut, data.licensePlateId, -lpn.quantity, lpn.uom,
-        uuidv4(), tenantId, lineIdIn, data.licensePlateId, lpn.quantity, lpn.uom
+        uuidv4(), tenantId, lineIdOut, data.licensePlateId, -qty, lpn.uom,
+        uuidv4(), tenantId, lineIdIn, data.licensePlateId, qty, lpn.uom
       ]
     );
+
+    if (validation.overrideMetadata && actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'negative_override',
+          entityType: 'inventory_movement',
+          entityId: movementId,
+          occurredAt: now,
+          metadata: {
+            reason: validation.overrideMetadata.override_reason ?? null,
+            reference: validation.overrideMetadata.override_reference ?? null,
+            lpnId: data.licensePlateId,
+            itemId: lpn.itemId,
+            locationId: data.fromLocationId,
+            uom: lpn.uom,
+            quantity: qty
+          }
+        },
+        client
+      );
+    }
 
     // Update LPN location
     await client.query(
