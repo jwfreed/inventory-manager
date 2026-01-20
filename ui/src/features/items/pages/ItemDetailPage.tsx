@@ -128,6 +128,7 @@ export default function ItemDetailPage() {
   const conversionPairs = useMemo(() => {
     const map = new Map<string, number>()
     ;(uomConversionsQuery.data ?? []).forEach((conversion) => {
+      if (!conversion.fromUom || !conversion.toUom) return
       const fromKey = conversion.fromUom.trim().toLowerCase()
       const toKey = conversion.toUom.trim().toLowerCase()
       map.set(`${fromKey}:${toKey}`, conversion.factor)
@@ -760,7 +761,7 @@ export default function ItemDetailPage() {
                 message={`Add conversions to show canonical totals: ${Array.from(conversionMissingUoms).join(', ')} → ${defaultUom}.`}
               />
             )}
-            {(hasNegativeBalance || hasNegativeRaw) && (
+            {hasNegativeBalance && (
               <Alert
                 variant="warning"
                 title="Negative inventory detected"

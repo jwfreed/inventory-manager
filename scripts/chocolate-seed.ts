@@ -342,6 +342,36 @@ async function ensureLocation(
   return created
 }
 
+async function ensureUomConversion(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  itemId: string,
+  fromUom: string,
+  toUom: string,
+  factor: number,
+) {
+  const existing = await apiRequest<{ conversions?: { fromUom: string; toUom: string }[] }>(
+    config,
+    'GET',
+    `/items/${itemId}/uom-conversions`,
+    { token },
+  )
+  const conversions = existing.conversions ?? []
+  const found = conversions.some(
+    (c) => c.fromUom?.toLowerCase() === fromUom.toLowerCase() && c.toUom?.toLowerCase() === toUom.toLowerCase(),
+  )
+  if (found) {
+    log.info(`UOM conversion exists: ${fromUom} -> ${toUom}`)
+    return
+  }
+  await apiRequest(config, 'POST', `/items/${itemId}/uom-conversions`, {
+    token,
+    body: { fromUom, toUom, factor },
+  })
+  log.info(`UOM conversion created: ${fromUom} -> ${toUom}`)
+}
+
 async function listBomsForItem(config: SeedConfig, token: string, itemId: string): Promise<Bom[]> {
   const res = await apiRequest<{ boms?: Bom[] }>(config, 'GET', `/items/${itemId}/boms`, { token })
   return res.boms ?? []
@@ -558,15 +588,25 @@ async function main() {
       sku: sku('FOIL-WRAP'),
       name: 'Foil wrapper',
       type: 'packaging',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: mainLocation.id,
+    }),
+    innerBox: await ensureItem(config, token, log, {
+      sku: sku('INNER-BOX'),
+      name: 'Inner box (big)',
+      type: 'packaging',
       defaultUom: 'each',
       uomDimension: 'count',
       canonicalUom: 'each',
       stockingUom: 'each',
       defaultLocationId: mainLocation.id,
     }),
-    innerBox: await ensureItem(config, token, log, {
-      sku: sku('INNER-BOX'),
-      name: 'Inner box',
+    innerBoxSmall: await ensureItem(config, token, log, {
+      sku: sku('INNER-BOX-SMALL'),
+      name: 'Inner box (small)',
       type: 'packaging',
       defaultUom: 'each',
       uomDimension: 'count',
@@ -657,7 +697,7 @@ async function main() {
       yieldUom: 'each',
       components: [
         { lineNumber: 1, componentItemId: items.durianBaseMix.id, uom: 'g', quantityPer: 75 },
-        { lineNumber: 2, componentItemId: items.foilWrap.id, uom: 'each', quantityPer: 1 },
+        { lineNumber: 2, componentItemId: items.foilWrap.id, uom: 'g', quantityPer: 3 },
         { lineNumber: 3, componentItemId: items.innerBox.id, uom: 'each', quantityPer: 1 },
         { lineNumber: 4, componentItemId: items.whiteBox.id, uom: 'each', quantityPer: whiteBoxPerBar },
         { lineNumber: 5, componentItemId: items.shippingBox.id, uom: 'each', quantityPer: shippingBoxPerBar },
@@ -674,8 +714,8 @@ async function main() {
       yieldUom: 'each',
       components: [
         { lineNumber: 1, componentItemId: items.durianBaseMix.id, uom: 'g', quantityPer: 20 },
-        { lineNumber: 2, componentItemId: items.foilWrap.id, uom: 'each', quantityPer: 1 },
-        { lineNumber: 3, componentItemId: items.innerBox.id, uom: 'each', quantityPer: 1 },
+        { lineNumber: 2, componentItemId: items.foilWrap.id, uom: 'g', quantityPer: 1 },
+        { lineNumber: 3, componentItemId: items.innerBoxSmall.id, uom: 'each', quantityPer: 1 },
         { lineNumber: 4, componentItemId: items.whiteBox.id, uom: 'each', quantityPer: whiteBoxPerBar },
         { lineNumber: 5, componentItemId: items.shippingBox.id, uom: 'each', quantityPer: shippingBoxPerBar },
       ],
@@ -683,26 +723,38 @@ async function main() {
   })
 
   if (config.seedOpeningBalances) {
+    const massItemsKg = [
+      items.rawCacao,
+      items.sugar,
+      items.cacaoButter,
+      items.cacaoNibs,
+      items.baseMilk,
+      items.durianBaseMix,
+    ]
+    for (const item of massItemsKg) {
+      await ensureUomConversion(config, token, log, item.id, 'kg', 'g', 1000)
+    }
+
     const itemsForBalances: Array<{ item: Item; uom: string; quantity: number }> = [
-      { item: items.rawCacao, uom: 'g', quantity: config.openingBalanceMassG },
-      { item: items.sugar, uom: 'g', quantity: config.openingBalanceMassG },
-      { item: items.cacaoButter, uom: 'g', quantity: config.openingBalanceMassG },
-      { item: items.milkPowder, uom: 'g', quantity: config.openingBalanceMassG },
-      { item: items.lecithin, uom: 'g', quantity: config.openingBalanceMassG },
-      { item: items.durianPowder, uom: 'g', quantity: config.openingBalanceMassG },
-      { item: items.cacaoNibs, uom: 'g', quantity: config.openingBalanceMassG },
-      { item: items.baseMilk, uom: 'g', quantity: config.openingBalanceMassG },
-      { item: items.durianBaseMix, uom: 'g', quantity: config.openingBalanceMassG },
-      { item: items.barBig, uom: 'each', quantity: config.openingBalanceCount },
-      { item: items.barSmall, uom: 'each', quantity: config.openingBalanceCount },
-      { item: items.foilWrap, uom: 'each', quantity: config.openingBalanceCount },
-      { item: items.innerBox, uom: 'each', quantity: config.openingBalanceCount },
-      { item: items.whiteBox, uom: 'each', quantity: config.openingBalanceCount },
-      { item: items.shippingBox, uom: 'each', quantity: config.openingBalanceCount },
+      { item: items.rawCacao, uom: 'kg', quantity: 50 },
+      { item: items.sugar, uom: 'kg', quantity: 40 },
+      { item: items.cacaoButter, uom: 'kg', quantity: 25 },
+      { item: items.cacaoNibs, uom: 'kg', quantity: 30 },
+      { item: items.baseMilk, uom: 'kg', quantity: 20 },
+      { item: items.durianBaseMix, uom: 'kg', quantity: 10 },
+      { item: items.milkPowder, uom: 'g', quantity: 15000 },
+      { item: items.lecithin, uom: 'g', quantity: 2000 },
+      { item: items.durianPowder, uom: 'g', quantity: 5000 },
+      { item: items.barBig, uom: 'each', quantity: 200 },
+      { item: items.barSmall, uom: 'each', quantity: 400 },
+      { item: items.foilWrap, uom: 'g', quantity: 3000 },
+      { item: items.innerBox, uom: 'each', quantity: 1000 },
+      { item: items.innerBoxSmall, uom: 'each', quantity: 1000 },
+      { item: items.whiteBox, uom: 'each', quantity: 120 },
+      { item: items.shippingBox, uom: 'each', quantity: 20 },
     ]
 
     for (const entry of itemsForBalances) {
-      if (!entry.quantity || entry.quantity <= 0) continue
       await createOpeningBalance(config, token, entry.item, mainLocation.id, entry.uom, entry.quantity)
       log.info(`Opening balance posted for ${entry.item.sku}`)
     }
