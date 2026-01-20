@@ -281,7 +281,7 @@ test('inventory snapshot aggregates canonical quantities with UOM conversion', a
       type: 'raw',
       defaultUom: 'g',
       uomDimension: 'mass',
-      canonicalUom: 'kg',
+      canonicalUom: 'g',
       stockingUom: 'g',
       defaultLocationId: locationId,
       active: true,
@@ -292,7 +292,7 @@ test('inventory snapshot aggregates canonical quantities with UOM conversion', a
 
   const conversionRes = await apiRequest('POST', `/items/${itemId}/uom-conversions`, {
     token,
-    body: { fromUom: 'g', toUom: 'kg', factor: 0.001 },
+    body: { fromUom: 'kg', toUom: 'g', factor: 1000 },
   })
   assert.equal(conversionRes.res.status, 201)
 
@@ -306,8 +306,8 @@ test('inventory snapshot aggregates canonical quantities with UOM conversion', a
           lineNumber: 1,
           itemId,
           locationId,
-          uom: 'g',
-          quantityDelta: 1000,
+          uom: 'kg',
+          quantityDelta: 1,
           reasonCode: 'correction',
         },
       ],
@@ -324,10 +324,10 @@ test('inventory snapshot aggregates canonical quantities with UOM conversion', a
 
   const snapshotRes = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId, uom: 'kg' },
+    params: { itemId, locationId, uom: 'g' },
   })
   assert.equal(snapshotRes.res.status, 200)
-  const row = snapshotRes.payload?.data?.find((entry) => entry.uom === 'kg')
+  const row = snapshotRes.payload?.data?.find((entry) => entry.uom === 'g')
   assert.ok(row)
-  assert.equal(Number(row.onHand ?? 0), 1)
+  assert.equal(Number(row.onHand ?? 0), 1000)
 })

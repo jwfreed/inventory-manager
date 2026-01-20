@@ -12,5 +12,4 @@ export type InventorySnapshotRow = {
   inTransit: number
   backordered: number
   inventoryPosition: number
-  isLegacy?: boolean
 }

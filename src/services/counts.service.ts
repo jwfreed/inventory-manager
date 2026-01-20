@@ -460,8 +460,9 @@ export async function postInventoryCount(
           delta.line.uom,
           client
         );
+        const canonicalQty = canonicalFields.quantityDeltaCanonical;
         // Calculate cost for cycle count adjustment
-        const costData = await calculateMovementCost(tenantId, delta.line.item_id, delta.variance, client);
+        const costData = await calculateMovementCost(tenantId, delta.line.item_id, canonicalQty, client);
         
         // Handle cost layers for count adjustment
         if (delta.variance > 0) {
@@ -471,8 +472,8 @@ export async function postInventoryCount(
               tenant_id: tenantId,
               item_id: delta.line.item_id,
               location_id: cycleCount.location_id,
-              uom: delta.line.uom,
-              quantity: delta.variance,
+              uom: canonicalFields.canonicalUom,
+              quantity: canonicalQty,
               unit_cost: costData.unitCost || 0,
               source_type: 'adjustment',
               source_document_id: id,
@@ -489,7 +490,7 @@ export async function postInventoryCount(
               tenant_id: tenantId,
               item_id: delta.line.item_id,
               location_id: cycleCount.location_id,
-              quantity: Math.abs(delta.variance),
+              quantity: Math.abs(canonicalQty),
               consumption_type: 'adjustment',
               consumption_document_id: id,
               movement_id: movementId,
@@ -512,8 +513,8 @@ export async function postInventoryCount(
             movementId,
             delta.line.item_id,
             cycleCount.location_id,
-            delta.variance,
-            delta.line.uom,
+            canonicalQty,
+            canonicalFields.canonicalUom,
             canonicalFields.quantityDeltaEntered,
             canonicalFields.uomEntered,
             canonicalFields.quantityDeltaCanonical,

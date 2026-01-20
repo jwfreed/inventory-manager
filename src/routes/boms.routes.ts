@@ -55,6 +55,10 @@ router.post('/boms', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to load BOM after creation.' });
     }
     console.error(error);
+    if (process.env.NODE_ENV !== 'production') {
+      const detail = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ error: 'Failed to create BOM.', detail });
+    }
     return res.status(500).json({ error: 'Failed to create BOM.' });
   }
 });

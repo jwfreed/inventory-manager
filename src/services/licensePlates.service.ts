@@ -454,8 +454,8 @@ export async function moveLicensePlate(
         movementId,
         lpn.itemId,
         data.fromLocationId,
-        -qty,
-        lpn.uom,
+        canonicalOut.quantityDeltaCanonical,
+        canonicalOut.canonicalUom,
         canonicalOut.quantityDeltaEntered,
         canonicalOut.uomEntered,
         canonicalOut.quantityDeltaCanonical,
@@ -484,8 +484,8 @@ export async function moveLicensePlate(
         movementId,
         lpn.itemId,
         data.toLocationId,
-        qty,
-        lpn.uom,
+        canonicalIn.quantityDeltaCanonical,
+        canonicalIn.canonicalUom,
         canonicalIn.quantityDeltaEntered,
         canonicalIn.uomEntered,
         canonicalIn.quantityDeltaCanonical,
@@ -501,8 +501,8 @@ export async function moveLicensePlate(
         id, tenant_id, inventory_movement_line_id, license_plate_id, quantity_delta, uom
       ) VALUES ($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)`,
       [
-        uuidv4(), tenantId, lineIdOut, data.licensePlateId, -qty, lpn.uom,
-        uuidv4(), tenantId, lineIdIn, data.licensePlateId, qty, lpn.uom
+        uuidv4(), tenantId, lineIdOut, data.licensePlateId, canonicalOut.quantityDeltaCanonical, canonicalOut.canonicalUom,
+        uuidv4(), tenantId, lineIdIn, data.licensePlateId, canonicalIn.quantityDeltaCanonical, canonicalIn.canonicalUom
       ]
     );
 

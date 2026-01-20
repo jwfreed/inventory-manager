@@ -95,9 +95,10 @@ export async function postInventoryAdjustment(
         line.uom,
         client
       );
+      const canonicalQty = canonicalFields.quantityDeltaCanonical;
       
       // Calculate cost for adjustment movement
-      const costData = await calculateMovementCost(tenantId, line.item_id, qty, client);
+      const costData = await calculateMovementCost(tenantId, line.item_id, canonicalQty, client);
       
       // Handle cost layers for adjustment
       if (qty > 0) {
@@ -107,8 +108,8 @@ export async function postInventoryAdjustment(
             tenant_id: tenantId,
             item_id: line.item_id,
             location_id: line.location_id,
-            uom: line.uom,
-            quantity: qty,
+            uom: canonicalFields.canonicalUom,
+            quantity: canonicalQty,
             unit_cost: costData.unitCost || 0,
             source_type: 'adjustment',
             source_document_id: line.id,
@@ -125,7 +126,7 @@ export async function postInventoryAdjustment(
             tenant_id: tenantId,
             item_id: line.item_id,
             location_id: line.location_id,
-            quantity: Math.abs(qty),
+            quantity: Math.abs(canonicalQty),
             consumption_type: 'adjustment',
             consumption_document_id: line.id,
             movement_id: movementId,
@@ -148,8 +149,8 @@ export async function postInventoryAdjustment(
           movementId,
           line.item_id,
           line.location_id,
-          qty,
-          line.uom,
+          canonicalQty,
+          canonicalFields.canonicalUom,
           canonicalFields.quantityDeltaEntered,
           canonicalFields.uomEntered,
           canonicalFields.quantityDeltaCanonical,
@@ -163,7 +164,7 @@ export async function postInventoryAdjustment(
       );
 
       // Update item quantity on hand for average cost tracking
-      await updateItemQuantityOnHand(tenantId, line.item_id, qty, client);
+      await updateItemQuantityOnHand(tenantId, line.item_id, canonicalQty, client);
     }
 
     // Update adjustment status

@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query, withTransaction } from '../db';
-import { getBackorderPolicy } from '../config/backorderPolicy';
 import {
   reservationsCreateSchema,
   reservationSchema,
@@ -193,7 +192,6 @@ export function mapReservation(row: any) {
 export async function createReservations(tenantId: string, data: ReservationCreateInput) {
   const now = new Date();
   const results: any[] = [];
-  const backorderPolicy = getBackorderPolicy();
   await withTransaction(async (client) => {
     for (const reservation of data.reservations) {
       const canonical = await convertToCanonical(
@@ -212,7 +210,7 @@ export async function createReservations(tenantId: string, data: ReservationCrea
       const reserveQty = roundQuantity(Math.max(0, Math.min(canonical.quantity, available)));
       const backorderQty = roundQuantity(Math.max(0, canonical.quantity - reserveQty));
 
-      if (backorderPolicy.enableBackorders && backorderQty > 0) {
+      if (backorderQty > 0) {
         await upsertBackorder(
           tenantId,
           {

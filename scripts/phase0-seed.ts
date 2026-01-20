@@ -117,7 +117,15 @@ async function ensureItem(config: SeedConfig, token: string, sku: string, name: 
   if (existing) return existing
   return apiRequest<Item>(config, 'POST', '/items', {
     token,
-    body: { sku, name, description: `Seeded by ${config.prefix}`, defaultUom: 'ea' },
+    body: {
+      sku,
+      name,
+      description: `Seeded by ${config.prefix}`,
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
+    },
   })
 }
 
@@ -220,7 +228,7 @@ async function run() {
 
   await ensurePurchaseOrder(config, token, poNumber, vendor.id, storage.id, receiving.id, {
     itemId: item.id,
-    uom: 'ea',
+    uom: 'each',
     quantityOrdered: 10,
   })
 

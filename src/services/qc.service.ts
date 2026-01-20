@@ -222,8 +222,16 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
           [movementId, tenantId, `qc_${data.eventType}:${created.id}`, now, notes]
         );
         
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          itemId,
+          enteredQty,
+          data.uom,
+          client
+        );
+        const canonicalQty = canonicalFields.quantityDeltaCanonical;
         // Calculate cost for QC receive movement
-        const costData = await calculateMovementCost(tenantId, itemId, enteredQty, client);
+        const costData = await calculateMovementCost(tenantId, itemId, canonicalQty, client);
         
         // Create cost layer for QC accepted inventory
         try {
@@ -232,8 +240,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
               tenant_id: tenantId,
               item_id: itemId,
               location_id: destLocationId,
-              uom: data.uom,
-              quantity: enteredQty,
+              uom: canonicalFields.canonicalUom,
+              quantity: canonicalQty,
               unit_cost: costData.unitCost || 0,
               source_type: 'receipt',
               source_document_id: created.id,
@@ -245,13 +253,6 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
           console.warn('Failed to create cost layer for QC event:', err);
         }
         
-        const canonicalFields = await getCanonicalMovementFields(
-          tenantId,
-          itemId,
-          enteredQty,
-          data.uom,
-          client
-        );
         await client.query(
           `INSERT INTO inventory_movement_lines (
               id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
@@ -264,8 +265,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
             movementId,
             itemId,
             loc,
-            enteredQty,
-            data.uom,
+            canonicalQty,
+            canonicalFields.canonicalUom,
             canonicalFields.quantityDeltaEntered,
             canonicalFields.uomEntered,
             canonicalFields.quantityDeltaCanonical,
@@ -315,12 +316,17 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
           );
           
           // Calculate cost for QC transfer movements
-          const costDataOut = await calculateMovementCost(tenantId, itemId, -enteredQty, client);
           const canonicalOut = await getCanonicalMovementFields(
             tenantId,
             itemId,
             -enteredQty,
             data.uom,
+            client
+          );
+          const costDataOut = await calculateMovementCost(
+            tenantId,
+            itemId,
+            canonicalOut.quantityDeltaCanonical,
             client
           );
           
@@ -336,8 +342,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
               movementId,
               itemId,
               sourceLocationId,
-              -enteredQty,
-              data.uom,
+              canonicalOut.quantityDeltaCanonical,
+              canonicalOut.canonicalUom,
               canonicalOut.quantityDeltaEntered,
               canonicalOut.uomEntered,
               canonicalOut.quantityDeltaCanonical,
@@ -350,12 +356,17 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
             ]
           );
           
-          const costDataIn = await calculateMovementCost(tenantId, itemId, enteredQty, client);
           const canonicalIn = await getCanonicalMovementFields(
             tenantId,
             itemId,
             enteredQty,
             data.uom,
+            client
+          );
+          const costDataIn = await calculateMovementCost(
+            tenantId,
+            itemId,
+            canonicalIn.quantityDeltaCanonical,
             client
           );
           
@@ -371,8 +382,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
               movementId,
               itemId,
               destLocationId,
-              enteredQty,
-              data.uom,
+              canonicalIn.quantityDeltaCanonical,
+              canonicalIn.canonicalUom,
               canonicalIn.quantityDeltaEntered,
               canonicalIn.uomEntered,
               canonicalIn.quantityDeltaCanonical,

@@ -4,7 +4,7 @@ import { query } from '../db';
 export type UomDimension = 'mass' | 'volume' | 'count' | 'length' | 'area' | 'time';
 
 const CANONICAL_UOM_BY_DIMENSION: Record<UomDimension, string> = {
-  mass: 'kg',
+  mass: 'g',
   volume: 'L',
   count: 'each',
   length: 'm',

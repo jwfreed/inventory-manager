@@ -54,6 +54,10 @@ router.post('/items', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Canonical UOM fields are required for new items.' });
     }
     console.error(error);
+    if (process.env.NODE_ENV !== 'production') {
+      const detail = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ error: 'Failed to create item.', detail });
+    }
     return res.status(500).json({ error: 'Failed to create item.' });
   }
 });

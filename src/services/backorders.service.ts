@@ -12,25 +12,11 @@ export type BackorderInput = {
   notes?: string | null;
 };
 
-let backordersTableAvailable: boolean | null = null;
-
-async function hasBackordersTable(): Promise<boolean> {
-  if (backordersTableAvailable !== null) return backordersTableAvailable;
-  const { rows } = await query<{ exists: string | null }>(
-    `SELECT to_regclass('inventory_backorders') AS exists`
-  );
-  backordersTableAvailable = Boolean(rows[0]?.exists);
-  return backordersTableAvailable;
-}
-
 export async function upsertBackorder(
   tenantId: string,
   data: BackorderInput,
   client?: PoolClient
 ) {
-  if (!(await hasBackordersTable())) {
-    return null;
-  }
   const executor = client ? client.query.bind(client) : query;
   const now = new Date();
   const res = await executor(

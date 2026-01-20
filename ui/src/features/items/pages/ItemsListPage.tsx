@@ -224,7 +224,6 @@ export default function ItemsListPage() {
   const availableByItem = useMemo(() => {
     const map = new Map<string, Map<string, number>>()
     ;(snapshotSummaryQuery.data ?? []).forEach((row) => {
-      if (row.isLegacy) return
       const itemMap = map.get(row.itemId) ?? new Map<string, number>()
       const key = row.uom
       itemMap.set(key, (itemMap.get(key) ?? 0) + row.available)

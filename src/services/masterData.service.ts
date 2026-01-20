@@ -144,7 +144,7 @@ export async function createItem(tenantId: string, data: ItemInput, baseCurrency
         id, tenant_id, sku, name, description, type, is_phantom, default_uom, uom_dimension, canonical_uom, stocking_uom, default_location_id, requires_lot, requires_serial, requires_qc, lifecycle_status, weight, weight_uom, volume, volume_uom,
         standard_cost, standard_cost_currency, standard_cost_exchange_rate_to_base, standard_cost_base,
         rolled_cost, cost_method, selling_price, list_price, price_currency, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $31)`,
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $30)`,
     [
       id,
       tenantId,

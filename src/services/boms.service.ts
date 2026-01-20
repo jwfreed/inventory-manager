@@ -259,7 +259,7 @@ export async function createBom(tenantId: string, data: BomCreateInput): Promise
             component_uom, component_quantity_entered, component_uom_entered,
             component_quantity_canonical, component_uom_canonical, component_uom_dimension,
             scrap_factor, uses_pack_size, variable_uom, notes, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
         [
           uuidv4(),
           tenantId,

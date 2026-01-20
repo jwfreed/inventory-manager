@@ -100,7 +100,7 @@ export function InventorySnapshotTable({
         </thead>
         <tbody className="divide-y divide-slate-200 bg-white">
           {rows.map((row) => (
-            <tr key={`${row.itemId}-${row.locationId}-${row.uom}-${row.isLegacy ? 'legacy' : 'canonical'}`}>
+            <tr key={`${row.itemId}-${row.locationId}-${row.uom}`}>
               {showItem ? (
                 <td className="px-3 py-2 text-sm text-slate-800">{formatItem(row, itemLookup)}</td>
               ) : null}
@@ -109,10 +109,7 @@ export function InventorySnapshotTable({
                   {formatLocation(row, locationLookup)}
                 </td>
               ) : null}
-              <td className="px-3 py-2 text-sm text-slate-800">
-                {row.uom}
-                {row.isLegacy ? ' (legacy)' : ''}
-              </td>
+              <td className="px-3 py-2 text-sm text-slate-800">{row.uom}</td>
               <td className="px-3 py-2 text-right text-sm text-slate-800">
                 {formatNumber(row.onHand)}
               </td>

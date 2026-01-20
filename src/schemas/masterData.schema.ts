@@ -3,7 +3,7 @@ import { ItemLifecycleStatus } from '../types/item';
 
 const uomDimensionSchema = z.enum(['mass', 'volume', 'count', 'length', 'area', 'time']);
 const canonicalUomByDimension: Record<z.infer<typeof uomDimensionSchema>, string> = {
-  mass: 'kg',
+  mass: 'g',
   volume: 'L',
   count: 'each',
   length: 'm',

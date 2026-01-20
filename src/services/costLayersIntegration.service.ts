@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { getItemUomConfig } from './uomCanonical.service';
 import * as costLayersService from './costLayers.service';
 
 /**
@@ -140,11 +141,12 @@ export async function initializeCostLayersFromSnapshot(
     return; // Nothing to initialize
   }
 
+  const itemConfig = await getItemUomConfig(tenant_id, item_id, client);
   await costLayersService.createCostLayer({
     tenant_id,
     item_id,
     location_id,
-    uom: 'EA', // You may need to query the item's base UOM
+    uom: itemConfig.canonicalUom,
     quantity,
     unit_cost: cost_per_unit,
     source_type: 'opening_balance',

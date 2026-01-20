@@ -24,7 +24,7 @@ export default function InvoiceCreatePage() {
       lineNumber: 1,
       description: '',
       quantity: 1,
-      uom: 'EA',
+      uom: 'each',
       unitPrice: 0,
     },
   ])
@@ -49,7 +49,7 @@ export default function InvoiceCreatePage() {
         lineNumber: lines.length + 1,
         description: '',
         quantity: 1,
-        uom: 'EA',
+        uom: 'each',
         unitPrice: 0,
       },
     ])

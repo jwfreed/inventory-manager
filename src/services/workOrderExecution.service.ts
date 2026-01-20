@@ -439,6 +439,7 @@ export async function postWorkOrderIssue(
         line.uom,
         client
       );
+      const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
       
       // Consume from cost layers for material issue
       let issueCost = null as number | null;
@@ -447,7 +448,7 @@ export async function postWorkOrderIssue(
           tenant_id: tenantId,
           item_id: line.component_item_id,
           location_id: line.from_location_id,
-          quantity: qty,
+          quantity: canonicalQty,
           consumption_type: 'production_input',
           consumption_document_id: issueId,
           movement_id: movementId,
@@ -457,7 +458,7 @@ export async function postWorkOrderIssue(
       } catch {
         throw new Error('WO_WIP_COST_LAYERS_MISSING');
       }
-      const unitCost = issueCost !== null && qty !== 0 ? issueCost / qty : null;
+      const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
       const extendedCost = issueCost !== null ? -issueCost : null;
       
       await client.query(
@@ -472,8 +473,8 @@ export async function postWorkOrderIssue(
           movementId,
           line.component_item_id,
           line.from_location_id,
-          -qty,
-          line.uom,
+          canonicalFields.quantityDeltaCanonical,
+          canonicalFields.canonicalUom,
           canonicalFields.quantityDeltaEntered,
           canonicalFields.uomEntered,
           canonicalFields.quantityDeltaCanonical,
@@ -747,7 +748,10 @@ export async function postWorkOrderCompletion(
       const reasonCode = line.reason_code ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion');
       const allocationRatio = canonicalFields.quantityDeltaCanonical / totalProducedCanonical;
       const allocatedCost = totalIssueCost * allocationRatio;
-      const unitCost = qty !== 0 ? allocatedCost / qty : null;
+      const unitCost =
+        canonicalFields.quantityDeltaCanonical !== 0
+          ? allocatedCost / canonicalFields.quantityDeltaCanonical
+          : null;
       const extendedCost = allocatedCost;
 
       // Create cost layer for completed production output
@@ -756,8 +760,8 @@ export async function postWorkOrderCompletion(
           tenant_id: tenantId,
           item_id: line.item_id,
           location_id: line.to_location_id,
-          uom: line.uom,
-          quantity: qty,
+          uom: canonicalFields.canonicalUom,
+          quantity: canonicalFields.quantityDeltaCanonical,
           unit_cost: unitCost ?? 0,
           source_type: 'production',
           source_document_id: completionId,
@@ -779,8 +783,8 @@ export async function postWorkOrderCompletion(
           movementId,
           line.item_id,
           line.to_location_id,
-          qty,
-          line.uom,
+          canonicalFields.quantityDeltaCanonical,
+          canonicalFields.canonicalUom,
           canonicalFields.quantityDeltaEntered,
           canonicalFields.uomEntered,
           canonicalFields.quantityDeltaCanonical,
@@ -1176,6 +1180,7 @@ export async function recordWorkOrderBatch(
         line.uom,
         client
       );
+      const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
       
       // Consume from cost layers for backflush material consumption
       let issueCost = null as number | null;
@@ -1184,7 +1189,7 @@ export async function recordWorkOrderBatch(
           tenant_id: tenantId,
           item_id: line.componentItemId,
           location_id: line.fromLocationId,
-          quantity: line.quantity,
+          quantity: canonicalQty,
           consumption_type: 'production_input',
           consumption_document_id: issueId,
           movement_id: issueMovementId,
@@ -1194,7 +1199,7 @@ export async function recordWorkOrderBatch(
       } catch {
         throw new Error('WO_WIP_COST_LAYERS_MISSING');
       }
-      const unitCost = issueCost !== null && line.quantity !== 0 ? issueCost / line.quantity : null;
+      const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
       const extendedCost = issueCost !== null ? -issueCost : null;
       
       await client.query(
@@ -1209,8 +1214,8 @@ export async function recordWorkOrderBatch(
           issueMovementId,
           line.componentItemId,
           line.fromLocationId,
-          -line.quantity,
-          line.uom,
+          canonicalFields.quantityDeltaCanonical,
+          canonicalFields.canonicalUom,
           canonicalFields.quantityDeltaEntered,
           canonicalFields.uomEntered,
           canonicalFields.quantityDeltaCanonical,
@@ -1289,7 +1294,10 @@ export async function recordWorkOrderBatch(
       const reasonCode = line.reasonCode ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion');
       const allocationRatio = canonicalFields.quantityDeltaCanonical / producedCanonicalTotal;
       const allocatedCost = totalIssueCost * allocationRatio;
-      const unitCost = line.quantity !== 0 ? allocatedCost / line.quantity : null;
+      const unitCost =
+        canonicalFields.quantityDeltaCanonical !== 0
+          ? allocatedCost / canonicalFields.quantityDeltaCanonical
+          : null;
       const extendedCost = allocatedCost;
 
       // Create cost layer for backflush production output
@@ -1297,8 +1305,8 @@ export async function recordWorkOrderBatch(
         tenant_id: tenantId,
         item_id: line.outputItemId,
         location_id: line.toLocationId,
-        uom: line.uom,
-        quantity: line.quantity,
+        uom: canonicalFields.canonicalUom,
+        quantity: canonicalFields.quantityDeltaCanonical,
         unit_cost: unitCost ?? 0,
         source_type: 'production',
         source_document_id: issueId,
@@ -1319,8 +1327,8 @@ export async function recordWorkOrderBatch(
           receiveMovementId,
           line.outputItemId,
           line.toLocationId,
-          line.quantity,
-          line.uom,
+          canonicalFields.quantityDeltaCanonical,
+          canonicalFields.canonicalUom,
           canonicalFields.quantityDeltaEntered,
           canonicalFields.uomEntered,
           canonicalFields.quantityDeltaCanonical,

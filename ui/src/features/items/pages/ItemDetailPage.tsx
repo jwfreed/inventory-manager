@@ -46,7 +46,6 @@ export default function ItemDetailPage() {
   const baseCurrency = user?.baseCurrency ?? 'THB'
   const [searchParams, setSearchParams] = useSearchParams()
   const [showEdit, setShowEdit] = useState(false)
-  const [showRawUnits, setShowRawUnits] = useState(false)
   const [showBomForm, setShowBomForm] = useState(false)
   const [showBomModal, setShowBomModal] = useState(false)
   const [bomDraftSource, setBomDraftSource] = useState<{
@@ -176,7 +175,6 @@ export default function ItemDetailPage() {
     if (!defaultUom) return new Set<string>()
     const missing = new Set<string>()
     stockRows.forEach((row) => {
-      if (row.isLegacy) return
       if (getConversionFactor(row.uom, defaultUom) == null) {
         missing.add(row.uom)
       }
@@ -188,7 +186,6 @@ export default function ItemDetailPage() {
     if (!defaultUom) return []
     const map = new Map<string, typeof stockRows[number]>()
     stockRows.forEach((row) => {
-      if (row.isLegacy) return
       const factor = getConversionFactor(row.uom, defaultUom)
       if (factor == null) return
       const key = row.locationId
@@ -205,7 +202,6 @@ export default function ItemDetailPage() {
         inTransit: 0,
         backordered: 0,
         inventoryPosition: 0,
-        isLegacy: false,
       }
       current.onHand += row.onHand * factor
       current.reserved += row.reserved * factor
@@ -253,10 +249,6 @@ export default function ItemDetailPage() {
   }, [convertedRows, defaultUom])
 
   const hasNegativeBalance = useMemo(
-    () => convertedRows.some((row) => row.onHand < 0),
-    [convertedRows],
-  )
-  const hasNegativeRaw = useMemo(
     () => stockRows.some((row) => row.onHand < 0),
     [stockRows],
   )
@@ -350,7 +342,7 @@ export default function ItemDetailPage() {
   }
   const totalHolds = (stageTotals.get('Quarantine / Rejected')?.held ?? 0) + (stageTotals.get('Quarantine / Rejected')?.rejected ?? 0)
   const totalReserved = totalsByDefaultUom?.reserved ?? 0
-  const hasNegativeAny = hasNegativeBalance || (!defaultUom && hasNegativeRaw)
+  const hasNegativeAny = hasNegativeBalance
   const isUsable = storageTotals.available > 0 && !hasNegativeAny
   const operationalStatusTitle = isUsable ? '✔ Available for use' : '⚠ Not available for use'
   const stageOrder = [
@@ -721,13 +713,6 @@ export default function ItemDetailPage() {
                 </option>
               ))}
             </select>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowRawUnits((prev) => !prev)}
-            >
-              {showRawUnits ? 'Hide raw units' : 'Show raw units'}
-            </Button>
             {id && (
               <Button
                 variant="secondary"
@@ -792,11 +777,6 @@ export default function ItemDetailPage() {
                   </Button>
                 }
               />
-            )}
-            {(!defaultUom || hasConversionIssues) && (
-              <div className="mb-3 text-xs text-slate-500">
-                Enable “Raw units” to inspect legacy or unconverted quantities.
-              </div>
             )}
             {stockRows.length === 0 && (
               <EmptyState
@@ -885,19 +865,6 @@ export default function ItemDetailPage() {
                     )
                   })}
                 </div>
-                {showRawUnits && (
-                  <div className="mt-6 space-y-2">
-                    <div className="text-xs uppercase tracking-wide text-slate-500">
-                      Raw units (legacy + entered UOMs)
-                    </div>
-                    <InventorySnapshotTable
-                      rows={stockRows}
-                      showItem={false}
-                      showLocation={!selectedLocationId}
-                      locationLookup={locationLookup}
-                    />
-                  </div>
-                )}
               </>
             )}
           </>

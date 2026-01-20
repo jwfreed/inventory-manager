@@ -1,11 +1,13 @@
 /* eslint-disable no-console */
+import { Client } from 'pg'
+
 /**
- * Chocolate factory seed (Durian bars) — idempotent by SKU/code.
+ * Canonical chocolate seed with optional destructive reset.
  *
- * Requirements:
- * - API running (default http://localhost:3000)
- * - DB migrated
- * - Mass base unit: grams (all mass quantities expressed in g)
+ * Required:
+ * - API running (API_BASE_URL)
+ * - DB migrated (npm run migrate)
+ * - CONFIRM_CANONICAL_RESET=1 to run destructive reset
  */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
@@ -13,14 +15,26 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 type SeedConfig = {
   baseUrl: string
   prefix: string
+  adminEmail: string
+  adminPassword: string
+  tenantSlug: string
+  tenantName: string
   logLevel: LogLevel
   timeoutMs: number
+  reset: boolean
+  seedOpeningBalances: boolean
+  openingBalanceMassG: number
+  openingBalanceCount: number
 }
 
 type ApiError = Error & { status?: number; details?: unknown }
 
+type Session = { accessToken: string }
+
 type Item = { id: string; sku: string; name: string }
+
 type Location = { id: string; code: string; name: string; type: string }
+
 type Bom = { id: string; bomCode: string; versions: { id: string; status: string }[] }
 
 type CreateBomResponse = {
@@ -29,12 +43,44 @@ type CreateBomResponse = {
   versions: { id: string; status: string }[]
 }
 
+function requiredEnv(name: string): string {
+  const value = process.env[name]
+  if (!value) throw new Error(`${name} must be set`)
+  return value
+}
+
+function parseBool(value: string | undefined): boolean {
+  if (!value) return false
+  return ['1', 'true', 'yes', 'y', 'on'].includes(value.toLowerCase())
+}
+
 function loadConfig(): SeedConfig {
   const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
   const prefix = process.env.SEED_PREFIX || 'CHOC'
+  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@example.com'
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!'
+  const tenantSlug = process.env.SEED_TENANT_SLUG || 'default'
+  const tenantName = process.env.SEED_TENANT_NAME || 'Chocolate Tenant'
   const logLevel = (process.env.LOG_LEVEL as LogLevel) || 'info'
   const timeoutMs = Number(process.env.TIMEOUT_MS || '15000')
-  return { baseUrl, prefix, logLevel, timeoutMs }
+  const reset = parseBool(process.env.CONFIRM_CANONICAL_RESET)
+  const seedOpeningBalances = parseBool(process.env.SEED_OPENING_BALANCE)
+  const openingBalanceMassG = Number(process.env.OPENING_BALANCE_MASS_G || '0')
+  const openingBalanceCount = Number(process.env.OPENING_BALANCE_COUNT || '0')
+  return {
+    baseUrl,
+    prefix,
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName,
+    logLevel,
+    timeoutMs,
+    reset,
+    seedOpeningBalances,
+    openingBalanceMassG,
+    openingBalanceCount,
+  }
 }
 
 function makeLogger(level: LogLevel) {
@@ -62,15 +108,14 @@ function makeLogger(level: LogLevel) {
 
 function toApiError(err: unknown): ApiError {
   if (err instanceof Error) return err as ApiError
-  const e = new Error(String(err)) as ApiError
-  return e
+  return new Error(String(err)) as ApiError
 }
 
 async function apiRequest<T>(
   config: SeedConfig,
   method: 'GET' | 'POST',
   path: string,
-  opts: { params?: Record<string, string | number | boolean | undefined>; body?: unknown } = {},
+  opts: { token?: string; params?: Record<string, string | number | boolean | undefined>; body?: unknown } = {},
 ): Promise<T> {
   const url = new URL(config.baseUrl + path)
   if (opts.params) {
@@ -84,9 +129,11 @@ async function apiRequest<T>(
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs)
 
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (opts.token) headers.Authorization = `Bearer ${opts.token}`
     const res = await fetch(url.toString(), {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: method === 'POST' ? JSON.stringify(opts.body ?? {}) : undefined,
       signal: controller.signal,
     })
@@ -96,15 +143,23 @@ async function apiRequest<T>(
     const payload = isJson ? await res.json().catch(() => null) : await res.text().catch(() => '')
 
     if (!res.ok) {
+      const payloadError =
+        payload && typeof payload === 'object' && 'error' in (payload as any)
+          ? (payload as any).error
+          : undefined
       const message =
-        (payload && typeof payload === 'object' && 'error' in (payload as any) && String((payload as any).error)) ||
+        (payloadError !== undefined
+          ? typeof payloadError === 'string'
+            ? payloadError
+            : JSON.stringify(payloadError)
+          : undefined) ||
         (typeof payload === 'string' && payload) ||
         res.statusText ||
         `HTTP ${res.status}`
-      const err = new Error(message) as ApiError
-      err.status = res.status
-      err.details = payload
-      throw err
+      const e = new Error(message) as ApiError
+      e.status = res.status
+      e.details = payload
+      throw e
     }
 
     return payload as T
@@ -113,8 +168,95 @@ async function apiRequest<T>(
   }
 }
 
-async function findItemBySku(config: SeedConfig, sku: string): Promise<Item | null> {
+async function ensureSession(config: SeedConfig): Promise<string> {
+  try {
+    const session = await apiRequest<Session>(config, 'POST', '/auth/bootstrap', {
+      body: {
+        adminEmail: config.adminEmail,
+        adminPassword: config.adminPassword,
+        tenantSlug: config.tenantSlug,
+        tenantName: config.tenantName,
+      },
+    })
+    return session.accessToken
+  } catch (err) {
+    const e = toApiError(err)
+    if (e.status !== 409) throw err
+  }
+
+  const session = await apiRequest<Session>(config, 'POST', '/auth/login', {
+    body: {
+      email: config.adminEmail,
+      password: config.adminPassword,
+      tenantSlug: config.tenantSlug,
+    },
+  })
+  return session.accessToken
+}
+
+async function resetOperationalData(config: SeedConfig, log: ReturnType<typeof makeLogger>) {
+  if (!config.reset) {
+    log.error('Refusing to reset without CONFIRM_CANONICAL_RESET=1')
+    throw new Error('RESET_CONFIRMATION_REQUIRED')
+  }
+  const databaseUrl = requiredEnv('DATABASE_URL')
+  const client = new Client({ connectionString: databaseUrl })
+  const tables = [
+    'inventory_movement_lpns',
+    'inventory_movement_lots',
+    'inventory_movement_lines',
+    'inventory_movements',
+    'inventory_cost_layers',
+    'cost_layer_consumptions',
+    'inventory_reservations',
+    'inventory_backorders',
+    'inventory_adjustment_lines',
+    'inventory_adjustments',
+    'cycle_count_lines',
+    'cycle_counts',
+    'work_order_execution_lines',
+    'work_order_executions',
+    'work_order_material_issue_lines',
+    'work_order_material_issues',
+    'work_orders',
+    'putaway_lines',
+    'putaways',
+    'qc_events',
+    'purchase_order_receipt_lines',
+    'purchase_order_receipts',
+    'purchase_order_lines',
+    'purchase_orders',
+    'sales_order_shipment_lines',
+    'sales_order_shipments',
+    'sales_order_lines',
+    'sales_orders',
+    'license_plates',
+    'uom_conversions',
+    'bom_version_lines',
+    'bom_versions',
+    'boms',
+    'items',
+  ]
+
+  await client.connect()
+  try {
+    log.info('Truncating operational tables...')
+    await client.query(`TRUNCATE TABLE ${tables.join(', ')} CASCADE;`)
+    const { rows } = await client.query<{ proc: string | null }>(
+      `SELECT to_regprocedure('refresh_inventory_levels_by_lpn()') AS proc`,
+    )
+    if (rows[0]?.proc) {
+      log.info('Skipping inventory_levels_by_lpn refresh (non-essential for seed).')
+    }
+    log.info('Operational reset complete.')
+  } finally {
+    await client.end()
+  }
+}
+
+async function findItemBySku(config: SeedConfig, token: string, sku: string): Promise<Item | null> {
   const res = await apiRequest<{ data?: any[] } | any[]>(config, 'GET', '/items', {
+    token,
     params: { search: sku, limit: 50, offset: 0 },
   })
   const rows = Array.isArray(res) ? res : res.data ?? []
@@ -122,57 +264,106 @@ async function findItemBySku(config: SeedConfig, sku: string): Promise<Item | nu
   return found ? ({ id: found.id, sku: found.sku, name: found.name } as Item) : null
 }
 
-async function ensureItem(config: SeedConfig, log: ReturnType<typeof makeLogger>, sku: string, name: string) {
-  const existing = await findItemBySku(config, sku)
+async function ensureItem(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  payload: {
+    sku: string
+    name: string
+    description?: string
+    type: 'raw' | 'wip' | 'finished' | 'packaging'
+    defaultUom: string
+    uomDimension: 'mass' | 'count'
+    canonicalUom: string
+    stockingUom: string
+    defaultLocationId?: string | null
+    weight?: number | null
+    weightUom?: string | null
+  },
+): Promise<Item> {
+  const existing = await findItemBySku(config, token, payload.sku)
   if (existing) {
-    log.info(`Item exists: ${sku} (${existing.id})`)
+    log.info(`Item exists: ${payload.sku} (${existing.id})`)
     return existing
   }
 
   const created = await apiRequest<Item>(config, 'POST', '/items', {
-    body: { sku, name, description: `Seeded by ${config.prefix}` },
+    token,
+    body: {
+      sku: payload.sku,
+      name: payload.name,
+      description: payload.description ?? undefined,
+      type: payload.type,
+      defaultUom: payload.defaultUom,
+      uomDimension: payload.uomDimension,
+      canonicalUom: payload.canonicalUom,
+      stockingUom: payload.stockingUom,
+      defaultLocationId: payload.defaultLocationId ?? null,
+      weight: payload.weight ?? null,
+      weightUom: payload.weightUom ?? null,
+    },
   })
-  log.info(`Item created: ${sku} (${created.id})`)
+  log.info(`Item created: ${payload.sku} (${created.id})`)
   return created
 }
 
-async function findLocationByCode(config: SeedConfig, code: string): Promise<Location | null> {
+async function findLocationByCode(config: SeedConfig, token: string, code: string): Promise<Location | null> {
   const res = await apiRequest<{ data?: any[] } | any[]>(config, 'GET', '/locations', {
+    token,
     params: { search: code, limit: 100, offset: 0 },
   })
   const rows = Array.isArray(res) ? res : res.data ?? []
   const found = rows.find((r) => (r?.code ?? '').toLowerCase() === code.toLowerCase())
   return found
-    ? ({
-        id: found.id,
-        code: found.code,
-        name: found.name,
-        type: found.type,
-      } as Location)
+    ? ({ id: found.id, code: found.code, name: found.name, type: found.type } as Location)
     : null
 }
 
-async function ensureLocation(config: SeedConfig, log: ReturnType<typeof makeLogger>, code: string, name: string, type: Location['type']) {
-  const existing = await findLocationByCode(config, code)
+async function ensureLocation(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  code: string,
+  name: string,
+  type: Location['type'],
+): Promise<Location> {
+  const existing = await findLocationByCode(config, token, code)
   if (existing) {
     log.info(`Location exists: ${code} (${existing.id})`)
     return existing
   }
 
   const created = await apiRequest<Location>(config, 'POST', '/locations', {
+    token,
     body: { code, name, type, active: true, parentLocationId: null },
   })
   log.info(`Location created: ${code} (${created.id})`)
   return created
 }
 
-async function listBomsForItem(config: SeedConfig, itemId: string): Promise<Bom[]> {
-  const res = await apiRequest<{ boms?: Bom[] }>(config, 'GET', `/items/${itemId}/boms`)
+async function listBomsForItem(config: SeedConfig, token: string, itemId: string): Promise<Bom[]> {
+  const res = await apiRequest<{ boms?: Bom[] }>(config, 'GET', `/items/${itemId}/boms`, { token })
   return res.boms ?? []
+}
+
+async function activateBomVersion(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  versionId: string,
+) {
+  const effectiveFrom = new Date().toISOString()
+  await apiRequest<Bom>(config, 'POST', `/boms/${versionId}/activate`, {
+    token,
+    body: { effectiveFrom },
+  })
+  log.info(`BOM version activated: ${versionId}`)
 }
 
 async function ensureBom(
   config: SeedConfig,
+  token: string,
   log: ReturnType<typeof makeLogger>,
   payload: {
     bomCode: string
@@ -181,184 +372,346 @@ async function ensureBom(
     version: {
       yieldQuantity: number
       yieldUom: string
-      components: { lineNumber: number; componentItemId: string; uom: string; quantityPer: number; scrapFactor?: number }[]
+      components: { lineNumber: number; componentItemId: string; uom: string; quantityPer: number }[]
     }
   },
 ): Promise<Bom> {
-  const existing = await listBomsForItem(config, payload.outputItemId)
+  const existing = await listBomsForItem(config, token, payload.outputItemId)
   const found = existing.find((b) => b.bomCode === payload.bomCode)
   if (found) {
     log.info(`BOM exists: ${payload.bomCode} (${found.id})`)
-    // Activate the first non-active version if needed
     const inactive = found.versions.find((v) => v.status !== 'active')
     if (inactive) {
-      await activateBomVersion(config, log, inactive.id)
+      await activateBomVersion(config, token, log, inactive.id)
     }
     return found
   }
 
   const created = await apiRequest<CreateBomResponse>(config, 'POST', '/boms', {
-    body: {
-      ...payload,
-      notes: `Seeded by ${config.prefix}`,
-      version: {
-        versionNumber: 1,
-        effectiveFrom: new Date().toISOString(),
-        yieldQuantity: payload.version.yieldQuantity,
-        yieldUom: payload.version.yieldUom,
-        components: payload.version.components,
-      },
-    },
+    token,
+    body: payload,
   })
   log.info(`BOM created: ${payload.bomCode} (${created.id})`)
-  const versionId = created.versions[0]?.id
-  if (versionId) {
-    await activateBomVersion(config, log, versionId)
+  const firstVersion = created.versions[0]
+  if (firstVersion) {
+    await activateBomVersion(config, token, log, firstVersion.id)
   }
-  return { id: created.id, bomCode: created.bomCode, versions: created.versions }
+  return created as Bom
 }
 
-async function activateBomVersion(config: SeedConfig, log: ReturnType<typeof makeLogger>, versionId: string) {
-  try {
-    await apiRequest(config, 'POST', `/boms/${versionId}/activate`, {
-      body: { effectiveFrom: new Date().toISOString() },
-    })
-    log.info(`Activated BOM version ${versionId}`)
-  } catch (err) {
-    const e = toApiError(err)
-    if (e.status === 409) {
-      log.info(`BOM version already active ${versionId}`)
-      return
-    }
-    throw err
-  }
+async function createOpeningBalance(
+  config: SeedConfig,
+  token: string,
+  item: Item,
+  locationId: string,
+  uom: string,
+  quantity: number,
+) {
+  const now = new Date().toISOString()
+  const adjustment = await apiRequest<{ id: string }>(config, 'POST', '/inventory-adjustments', {
+    token,
+    body: {
+      occurredAt: now,
+      notes: `opening_balance:${now}`,
+      lines: [
+        {
+          itemId: item.id,
+          locationId,
+          uom,
+          quantityDelta: quantity,
+          reasonCode: 'opening_balance',
+          notes: `opening_balance:${now}`,
+        },
+      ],
+    },
+  })
+  await apiRequest(config, 'POST', `/inventory-adjustments/${adjustment.id}/post`, { token, body: {} })
 }
 
 async function main() {
   const config = loadConfig()
   const log = makeLogger(config.logLevel)
-  log.info(`Base URL ${config.baseUrl}, prefix ${config.prefix}`)
 
-  // Locations (minimal footprint)
-  const locRM = await ensureLocation(config, log, `${config.prefix}-RM-STOCK`, 'Raw material stock', 'warehouse')
-  const locWip = await ensureLocation(config, log, `${config.prefix}-WIP-KITCHEN`, 'Kitchen / WIP', 'bin')
-  const locPack = await ensureLocation(config, log, `${config.prefix}-PACK-STAGE`, 'Packaging stage', 'bin')
-  const locFg = await ensureLocation(config, log, `${config.prefix}-FG-STOCK`, 'Finished goods', 'bin')
+  await resetOperationalData(config, log)
 
-  // Items
-  const items: Record<string, Item> = {}
-  const itemDefs: [string, string][] = [
-    ['CHOC-BEANS', 'Cacao beans'],
-    ['CHOC-NIBS', 'Cacao nibs / โกโก้นิบส์'],
-    ['CHOC-BASE', 'Base นม 50% (Milk)'],
-    ['CHOC-SUGAR', 'Sugar / น้ำตาล'],
-    ['CHOC-BUTTER', 'Cacao butter / โกโก้บัตเตอร์'],
-    ['CHOC-MILKPOW', 'Milk Powder / นมผง'],
-    ['CHOC-LECITHIN', 'Lecithin / เลซิติน'],
-    ['CHOC-DURIAN', 'Durian powder / ผงทุเรียน'],
-    ['CHOC-BAR-BIG-RAW', 'Durian big bar (unwrapped)'],
-    ['CHOC-FOIL', 'Foil wrap'],
-    ['CHOC-BAR-BIG-WRAP', 'Durian big bar (wrapped)'],
-    ['CHOC-BOX', 'Retail box (single bar)'],
-    ['CHOC-SHIP', 'Shipping box'],
-    ['CHOC-BAR-BIG-PACK', 'Durian big bar retail pack'],
-  ]
-  for (const [sku, name] of itemDefs) {
-    items[sku] = await ensureItem(config, log, `${config.prefix}-${sku}`, name)
+  const token = await ensureSession(config)
+  const mainLocation = await ensureLocation(config, token, log, 'MAIN', 'Main Warehouse', 'warehouse')
+
+  const sku = (base: string) => (config.prefix ? `${config.prefix}-${base}` : base)
+
+  const items = {
+    rawCacao: await ensureItem(config, token, log, {
+      sku: sku('RAW-CACAO-BEANS'),
+      name: 'Raw cacao beans',
+      type: 'raw',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: mainLocation.id,
+    }),
+    sugar: await ensureItem(config, token, log, {
+      sku: sku('SUGAR'),
+      name: 'Sugar',
+      type: 'raw',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: mainLocation.id,
+    }),
+    cacaoButter: await ensureItem(config, token, log, {
+      sku: sku('CACAO-BUTTER'),
+      name: 'Cacao butter',
+      type: 'raw',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: mainLocation.id,
+    }),
+    milkPowder: await ensureItem(config, token, log, {
+      sku: sku('MILK-POWDER'),
+      name: 'Milk powder',
+      type: 'raw',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: mainLocation.id,
+    }),
+    lecithin: await ensureItem(config, token, log, {
+      sku: sku('LECITHIN'),
+      name: 'Lecithin',
+      type: 'raw',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: mainLocation.id,
+    }),
+    durianPowder: await ensureItem(config, token, log, {
+      sku: sku('DURIAN-POWDER'),
+      name: 'Durian powder',
+      type: 'raw',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: mainLocation.id,
+    }),
+    cacaoNibs: await ensureItem(config, token, log, {
+      sku: sku('CACAO-NIBS'),
+      name: 'Cacao nibs',
+      type: 'wip',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: mainLocation.id,
+    }),
+    baseMilk: await ensureItem(config, token, log, {
+      sku: sku('BASE-MILK-50'),
+      name: 'Base นม 50% (Milk)',
+      type: 'wip',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: mainLocation.id,
+    }),
+    durianBaseMix: await ensureItem(config, token, log, {
+      sku: sku('DURIAN-BASE-MIX'),
+      name: 'Durian chocolate base mix',
+      type: 'wip',
+      defaultUom: 'g',
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: mainLocation.id,
+    }),
+    barBig: await ensureItem(config, token, log, {
+      sku: sku('DURIAN-BAR-BIG'),
+      name: 'Durian chocolate bar - Big (75 g)',
+      type: 'finished',
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
+      defaultLocationId: mainLocation.id,
+      weight: 75,
+      weightUom: 'g',
+    }),
+    barSmall: await ensureItem(config, token, log, {
+      sku: sku('DURIAN-BAR-SMALL'),
+      name: 'Durian chocolate bar - Small (20 g)',
+      type: 'finished',
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
+      defaultLocationId: mainLocation.id,
+      weight: 20,
+      weightUom: 'g',
+    }),
+    foilWrap: await ensureItem(config, token, log, {
+      sku: sku('FOIL-WRAP'),
+      name: 'Foil wrapper',
+      type: 'packaging',
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
+      defaultLocationId: mainLocation.id,
+    }),
+    innerBox: await ensureItem(config, token, log, {
+      sku: sku('INNER-BOX'),
+      name: 'Inner box',
+      type: 'packaging',
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
+      defaultLocationId: mainLocation.id,
+    }),
+    whiteBox: await ensureItem(config, token, log, {
+      sku: sku('WHITE-BOX-12'),
+      name: 'White box (holds 12 bars)',
+      type: 'packaging',
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
+      defaultLocationId: mainLocation.id,
+    }),
+    shippingBox: await ensureItem(config, token, log, {
+      sku: sku('SHIPPING-BOX-10'),
+      name: 'Shipping box (holds 10 white boxes)',
+      type: 'packaging',
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
+      defaultLocationId: mainLocation.id,
+    }),
   }
 
-  // BOMs
-  // 1) Nibs: 100kg beans -> 75kg nibs (all in grams)
-  await ensureBom(config, log, {
-    bomCode: `${config.prefix}-BOM-NIBS`,
-    outputItemId: items['CHOC-NIBS'].id,
+  await ensureBom(config, token, log, {
+    bomCode: sku('BOM-CACAO-NIBS-YIELD'),
+    outputItemId: items.cacaoNibs.id,
     defaultUom: 'g',
     version: {
       yieldQuantity: 75000,
       yieldUom: 'g',
       components: [
-        { lineNumber: 1, componentItemId: items['CHOC-BEANS'].id, uom: 'g', quantityPer: 100000 },
+        {
+          lineNumber: 1,
+          componentItemId: items.rawCacao.id,
+          uom: 'g',
+          quantityPer: 100000,
+        },
       ],
     },
   })
 
-  // 2) Base นม 50% (Milk) per 1000 g
-  await ensureBom(config, log, {
-    bomCode: `${config.prefix}-BOM-BASE`,
-    outputItemId: items['CHOC-BASE'].id,
+  await ensureBom(config, token, log, {
+    bomCode: sku('BOM-BASE-MILK-50'),
+    outputItemId: items.baseMilk.id,
     defaultUom: 'g',
     version: {
       yieldQuantity: 1000,
       yieldUom: 'g',
       components: [
-        { lineNumber: 1, componentItemId: items['CHOC-NIBS'].id, uom: 'g', quantityPer: 400 },
-        { lineNumber: 2, componentItemId: items['CHOC-SUGAR'].id, uom: 'g', quantityPer: 350 },
-        { lineNumber: 3, componentItemId: items['CHOC-BUTTER'].id, uom: 'g', quantityPer: 100 },
-        { lineNumber: 4, componentItemId: items['CHOC-MILKPOW'].id, uom: 'g', quantityPer: 150 },
-        { lineNumber: 5, componentItemId: items['CHOC-LECITHIN'].id, uom: 'g', quantityPer: 3 },
+        { lineNumber: 1, componentItemId: items.cacaoNibs.id, uom: 'g', quantityPer: 400 },
+        { lineNumber: 2, componentItemId: items.sugar.id, uom: 'g', quantityPer: 350 },
+        { lineNumber: 3, componentItemId: items.cacaoButter.id, uom: 'g', quantityPer: 100 },
+        { lineNumber: 4, componentItemId: items.milkPowder.id, uom: 'g', quantityPer: 150 },
+        { lineNumber: 5, componentItemId: items.lecithin.id, uom: 'g', quantityPer: 3 },
       ],
     },
   })
 
-  // Per-bar mass and durian (derived from 400-bar batch: 29268.292683g base, 731.707317g durian)
-  const basePerBar = 29268.292683 / 400 // g
-  const durianPerBar = 731.707317 / 400 // g
+  await ensureBom(config, token, log, {
+    bomCode: sku('BOM-DURIAN-BASE-MIX'),
+    outputItemId: items.durianBaseMix.id,
+    defaultUom: 'g',
+    version: {
+      yieldQuantity: 1025,
+      yieldUom: 'g',
+      components: [
+        { lineNumber: 1, componentItemId: items.baseMilk.id, uom: 'g', quantityPer: 1000 },
+        { lineNumber: 2, componentItemId: items.durianPowder.id, uom: 'g', quantityPer: 25 },
+      ],
+    },
+  })
 
-  // 3) Unwrapped bar (1 ea)
-  await ensureBom(config, log, {
-    bomCode: `${config.prefix}-BOM-BAR-RAW`,
-    outputItemId: items['CHOC-BAR-BIG-RAW'].id,
-    defaultUom: 'ea',
+  const whiteBoxPerBar = 1 / 12
+  const shippingBoxPerBar = 1 / 120
+
+  await ensureBom(config, token, log, {
+    bomCode: sku('BOM-DURIAN-BAR-BIG'),
+    outputItemId: items.barBig.id,
+    defaultUom: 'each',
     version: {
       yieldQuantity: 1,
-      yieldUom: 'ea',
+      yieldUom: 'each',
       components: [
-        { lineNumber: 1, componentItemId: items['CHOC-BASE'].id, uom: 'g', quantityPer: basePerBar },
-        { lineNumber: 2, componentItemId: items['CHOC-DURIAN'].id, uom: 'g', quantityPer: durianPerBar },
+        { lineNumber: 1, componentItemId: items.durianBaseMix.id, uom: 'g', quantityPer: 75 },
+        { lineNumber: 2, componentItemId: items.foilWrap.id, uom: 'each', quantityPer: 1 },
+        { lineNumber: 3, componentItemId: items.innerBox.id, uom: 'each', quantityPer: 1 },
+        { lineNumber: 4, componentItemId: items.whiteBox.id, uom: 'each', quantityPer: whiteBoxPerBar },
+        { lineNumber: 5, componentItemId: items.shippingBox.id, uom: 'each', quantityPer: shippingBoxPerBar },
       ],
     },
   })
 
-  // 4) Wrapped bar (consumes foil)
-  await ensureBom(config, log, {
-    bomCode: `${config.prefix}-BOM-BAR-WRAP`,
-    outputItemId: items['CHOC-BAR-BIG-WRAP'].id,
-    defaultUom: 'ea',
+  await ensureBom(config, token, log, {
+    bomCode: sku('BOM-DURIAN-BAR-SMALL'),
+    outputItemId: items.barSmall.id,
+    defaultUom: 'each',
     version: {
       yieldQuantity: 1,
-      yieldUom: 'ea',
+      yieldUom: 'each',
       components: [
-        { lineNumber: 1, componentItemId: items['CHOC-BAR-BIG-RAW'].id, uom: 'ea', quantityPer: 1 },
-        { lineNumber: 2, componentItemId: items['CHOC-FOIL'].id, uom: 'ea', quantityPer: 1 },
+        { lineNumber: 1, componentItemId: items.durianBaseMix.id, uom: 'g', quantityPer: 20 },
+        { lineNumber: 2, componentItemId: items.foilWrap.id, uom: 'each', quantityPer: 1 },
+        { lineNumber: 3, componentItemId: items.innerBox.id, uom: 'each', quantityPer: 1 },
+        { lineNumber: 4, componentItemId: items.whiteBox.id, uom: 'each', quantityPer: whiteBoxPerBar },
+        { lineNumber: 5, componentItemId: items.shippingBox.id, uom: 'each', quantityPer: shippingBoxPerBar },
       ],
     },
   })
 
-  // 5) Retail pack (default 12 bars → 1 shipping box; can change pack size by editing BOM or scaling WO qty)
-  const packBars = 12
-  await ensureBom(config, log, {
-    bomCode: `${config.prefix}-BOM-BAR-PACK`,
-    outputItemId: items['CHOC-BAR-BIG-PACK'].id,
-    defaultUom: 'ea',
-    version: {
-      yieldQuantity: 1, // 1 shipping box
-      yieldUom: 'ea',
-      components: [
-        { lineNumber: 1, componentItemId: items['CHOC-BAR-BIG-WRAP'].id, uom: 'ea', quantityPer: packBars },
-        { lineNumber: 2, componentItemId: items['CHOC-BOX'].id, uom: 'ea', quantityPer: packBars },
-        { lineNumber: 3, componentItemId: items['CHOC-SHIP'].id, uom: 'ea', quantityPer: 1 },
-      ],
-    },
-  })
+  if (config.seedOpeningBalances) {
+    const itemsForBalances: Array<{ item: Item; uom: string; quantity: number }> = [
+      { item: items.rawCacao, uom: 'g', quantity: config.openingBalanceMassG },
+      { item: items.sugar, uom: 'g', quantity: config.openingBalanceMassG },
+      { item: items.cacaoButter, uom: 'g', quantity: config.openingBalanceMassG },
+      { item: items.milkPowder, uom: 'g', quantity: config.openingBalanceMassG },
+      { item: items.lecithin, uom: 'g', quantity: config.openingBalanceMassG },
+      { item: items.durianPowder, uom: 'g', quantity: config.openingBalanceMassG },
+      { item: items.cacaoNibs, uom: 'g', quantity: config.openingBalanceMassG },
+      { item: items.baseMilk, uom: 'g', quantity: config.openingBalanceMassG },
+      { item: items.durianBaseMix, uom: 'g', quantity: config.openingBalanceMassG },
+      { item: items.barBig, uom: 'each', quantity: config.openingBalanceCount },
+      { item: items.barSmall, uom: 'each', quantity: config.openingBalanceCount },
+      { item: items.foilWrap, uom: 'each', quantity: config.openingBalanceCount },
+      { item: items.innerBox, uom: 'each', quantity: config.openingBalanceCount },
+      { item: items.whiteBox, uom: 'each', quantity: config.openingBalanceCount },
+      { item: items.shippingBox, uom: 'each', quantity: config.openingBalanceCount },
+    ]
 
-  log.info('Seed complete')
-  log.info(`Locations: RM=${locRM.id} WIP=${locWip.id} PACK=${locPack.id} FG=${locFg.id}`)
-  log.info(`Key items: NIBS=${items['CHOC-NIBS'].id} BASE=${items['CHOC-BASE'].id} RAW_BAR=${items['CHOC-BAR-BIG-RAW'].id} WRAP_BAR=${items['CHOC-BAR-BIG-WRAP'].id} PACK=${items['CHOC-BAR-BIG-PACK'].id}`)
+    for (const entry of itemsForBalances) {
+      if (!entry.quantity || entry.quantity <= 0) continue
+      await createOpeningBalance(config, token, entry.item, mainLocation.id, entry.uom, entry.quantity)
+      log.info(`Opening balance posted for ${entry.item.sku}`)
+    }
+  }
+
+  log.info('Chocolate canonical seed complete.')
 }
 
 main().catch((err) => {
-  const e = toApiError(err)
-  console.error('[choc-seed] ERROR', e.message)
-  if (e.details) console.error(e.details)
+  console.error('[choc-seed] Failed:', err)
   process.exit(1)
 })

@@ -3,11 +3,17 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 type SeedConfig = {
   baseUrl: string
   prefix: string
+  adminEmail: string
+  adminPassword: string
+  tenantSlug: string
+  tenantName: string
   logLevel: LogLevel
   timeoutMs: number
 }
 
 type ApiError = Error & { status?: number; details?: unknown }
+
+type Session = { accessToken: string }
 
 type Paging = { limit: number; offset: number }
 
@@ -32,12 +38,18 @@ type SeedState = {
   byKey: Record<string, { receiptId?: string; putawayId?: string; putawayMovementId?: string }>
 }
 
+let sessionToken: string | null = null
+
 function loadConfig(): SeedConfig {
   const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
   const prefix = process.env.SEED_PREFIX || 'DEVSEED'
+  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@example.com'
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!'
+  const tenantSlug = process.env.SEED_TENANT_SLUG || 'default'
+  const tenantName = process.env.SEED_TENANT_NAME || `${prefix} Tenant`
   const logLevel = (process.env.LOG_LEVEL as LogLevel) || 'info'
   const timeoutMs = Number(process.env.TIMEOUT_MS || '15000')
-  return { baseUrl, prefix, logLevel, timeoutMs }
+  return { baseUrl, prefix, adminEmail, adminPassword, tenantSlug, tenantName, logLevel, timeoutMs }
 }
 
 function makeLogger(level: LogLevel) {
@@ -89,9 +101,11 @@ async function apiRequest<T>(
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs)
 
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`
     const res = await fetch(url.toString(), {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: method === 'POST' ? JSON.stringify(opts.body ?? {}) : undefined,
       signal: controller.signal,
     })
@@ -116,6 +130,28 @@ async function apiRequest<T>(
   } finally {
     clearTimeout(timeout)
   }
+}
+
+async function ensureSession(config: SeedConfig): Promise<string> {
+  try {
+    const bootstrap = await apiRequest<Session>(config, 'POST', '/auth/bootstrap', {
+      body: {
+        adminEmail: config.adminEmail,
+        adminPassword: config.adminPassword,
+        tenantSlug: config.tenantSlug,
+        tenantName: config.tenantName,
+      },
+    })
+    return bootstrap.accessToken
+  } catch (err) {
+    const e = toApiError(err)
+    if (e.status !== 409) throw err
+  }
+
+  const login = await apiRequest<Session>(config, 'POST', '/auth/login', {
+    body: { email: config.adminEmail, password: config.adminPassword, tenantSlug: config.tenantSlug },
+  })
+  return login.accessToken
 }
 
 function stateKey(config: SeedConfig) {
@@ -163,7 +199,15 @@ async function ensureItem(config: SeedConfig, log: ReturnType<typeof makeLogger>
 
   try {
     const created = await apiRequest<Item>(config, 'POST', '/items', {
-      body: { sku, name, description: `Seeded by ${config.prefix}` },
+      body: {
+        sku,
+        name,
+        description: `Seeded by ${config.prefix}`,
+        defaultUom: 'each',
+        uomDimension: 'count',
+        canonicalUom: 'each',
+        stockingUom: 'each',
+      },
     })
     log.info(`Item created: ${sku} (${created.id})`)
     return created
@@ -523,14 +567,14 @@ async function runManufacturingOptional(
         body: {
           bomCode,
           outputItemId: seeded.fg.id,
-          defaultUom: 'ea',
+          defaultUom: 'each',
           notes: `Seeded by ${config.prefix}`,
           version: {
             yieldQuantity: 1,
-            yieldUom: 'ea',
+            yieldUom: 'each',
             components: [
-              { lineNumber: 1, componentItemId: seeded.c1.id, uom: 'ea', quantityPer: 1 },
-              { lineNumber: 2, componentItemId: seeded.c2.id, uom: 'ea', quantityPer: 1 },
+              { lineNumber: 1, componentItemId: seeded.c1.id, uom: 'each', quantityPer: 1 },
+              { lineNumber: 2, componentItemId: seeded.c2.id, uom: 'each', quantityPer: 1 },
             ],
           },
         },
@@ -572,7 +616,7 @@ async function runManufacturingOptional(
       body: {
         bomId,
         outputItemId: seeded.fg.id,
-        outputUom: 'ea',
+        outputUom: 'each',
         quantityPlanned: 5,
         description: woDescription,
       },
@@ -598,8 +642,8 @@ async function runManufacturingOptional(
       occurredAt: new Date().toISOString(),
       notes: `Seeded by ${config.prefix}`,
       lines: [
-        { componentItemId: seeded.c1.id, fromLocationId: seeded.binA.id, uom: 'ea', quantityIssued: 1 },
-        { componentItemId: seeded.c2.id, fromLocationId: seeded.binB.id, uom: 'ea', quantityIssued: 1 },
+        { componentItemId: seeded.c1.id, fromLocationId: seeded.binA.id, uom: 'each', quantityIssued: 1 },
+        { componentItemId: seeded.c2.id, fromLocationId: seeded.binB.id, uom: 'each', quantityIssued: 1 },
       ],
     },
   })
@@ -611,7 +655,7 @@ async function runManufacturingOptional(
     body: {
       occurredAt: new Date().toISOString(),
       notes: `Seeded by ${config.prefix}`,
-      lines: [{ outputItemId: seeded.fg.id, toLocationId: seeded.binA.id, uom: 'ea', quantityCompleted: 1 }],
+      lines: [{ outputItemId: seeded.fg.id, toLocationId: seeded.binA.id, uom: 'each', quantityCompleted: 1 }],
     },
   })
   await apiRequest<any>(config, 'POST', `/work-orders/${workOrder.id}/completions/${completion.id}/post`)
@@ -626,6 +670,7 @@ async function main() {
   state.byKey[key] ||= {}
 
   log.info(`Starting dev seed against ${config.baseUrl} (prefix=${config.prefix})`)
+  sessionToken = await ensureSession(config)
 
   // 1) Ensure locations
   const wh = await ensureLocation(config, log, {
@@ -657,8 +702,8 @@ async function main() {
 
   // 4) Ensure PO with 2 lines (C1, C2)
   const po = await ensurePurchaseOrder(config, log, `${config.prefix}-PO-01`, vendor.id, [
-    { lineNumber: 1, itemId: c1.id, uom: 'ea', quantityOrdered: 5 },
-    { lineNumber: 2, itemId: c2.id, uom: 'ea', quantityOrdered: 7 },
+    { lineNumber: 1, itemId: c1.id, uom: 'each', quantityOrdered: 5 },
+    { lineNumber: 2, itemId: c2.id, uom: 'each', quantityOrdered: 7 },
   ])
   if (!Array.isArray(po.lines) || po.lines.length < 2) {
     throw new Error('Purchase order does not include lines; cannot create receipt.')

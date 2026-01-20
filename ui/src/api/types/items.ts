@@ -37,7 +37,6 @@ export type ItemInventoryRow = {
   locationName?: string
   uom: string
   onHand: number
-  isLegacy?: boolean
 }
 
 export type UomConversion = {

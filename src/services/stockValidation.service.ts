@@ -212,12 +212,12 @@ export async function validateLocationCapacity(
     if (!item) continue;
 
     if (location.maxWeight && item.weight) {
-      const qtyInDefaultUom = await convertQuantity(tenantId, row.itemId, row.onHand, row.uom, item.defaultUom || 'ea');
+      const qtyInDefaultUom = await convertQuantity(tenantId, row.itemId, row.onHand, row.uom, item.defaultUom || 'each');
       currentWeight += qtyInDefaultUom * item.weight;
     }
     
     if (location.maxVolume && item.volume) {
-       const qtyInDefaultUom = await convertQuantity(tenantId, row.itemId, row.onHand, row.uom, item.defaultUom || 'ea');
+       const qtyInDefaultUom = await convertQuantity(tenantId, row.itemId, row.onHand, row.uom, item.defaultUom || 'each');
        currentVolume += qtyInDefaultUom * item.volume;
     }
   }
@@ -228,12 +228,12 @@ export async function validateLocationCapacity(
     if (!item) continue;
 
     if (location.maxWeight && item.weight) {
-      const qtyInDefaultUom = await convertQuantity(tenantId, incoming.itemId, incoming.quantity, incoming.uom, item.defaultUom || 'ea');
+      const qtyInDefaultUom = await convertQuantity(tenantId, incoming.itemId, incoming.quantity, incoming.uom, item.defaultUom || 'each');
       currentWeight += qtyInDefaultUom * item.weight;
     }
 
     if (location.maxVolume && item.volume) {
-      const qtyInDefaultUom = await convertQuantity(tenantId, incoming.itemId, incoming.quantity, incoming.uom, item.defaultUom || 'ea');
+      const qtyInDefaultUom = await convertQuantity(tenantId, incoming.itemId, incoming.quantity, incoming.uom, item.defaultUom || 'each');
       currentVolume += qtyInDefaultUom * item.volume;
     }
   }

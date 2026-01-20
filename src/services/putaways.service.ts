@@ -460,12 +460,17 @@ export async function postPutaway(
       const lineNote = `Putaway ${id} line ${line.line_number}`;
       
       // Calculate cost for this movement
-      const costData = await calculateMovementCost(tenantId, line.item_id, -qty, client);
       const canonicalOut = await getCanonicalMovementFields(
         tenantId,
         line.item_id,
         -qty,
         line.uom,
+        client
+      );
+      const costData = await calculateMovementCost(
+        tenantId,
+        line.item_id,
+        canonicalOut.quantityDeltaCanonical,
         client
       );
       
@@ -481,8 +486,8 @@ export async function postPutaway(
           movementId,
           line.item_id,
           line.from_location_id,
-          -qty,
-          line.uom,
+          canonicalOut.quantityDeltaCanonical,
+          canonicalOut.canonicalUom,
           canonicalOut.quantityDeltaEntered,
           canonicalOut.uomEntered,
           canonicalOut.quantityDeltaCanonical,
@@ -495,12 +500,17 @@ export async function postPutaway(
       );
       
       // Positive movement uses same unit cost, but positive extended cost
-      const costDataPositive = await calculateMovementCost(tenantId, line.item_id, qty, client);
       const canonicalIn = await getCanonicalMovementFields(
         tenantId,
         line.item_id,
         qty,
         line.uom,
+        client
+      );
+      const costDataPositive = await calculateMovementCost(
+        tenantId,
+        line.item_id,
+        canonicalIn.quantityDeltaCanonical,
         client
       );
       
@@ -516,8 +526,8 @@ export async function postPutaway(
           movementId,
           line.item_id,
           line.to_location_id,
-          qty,
-          line.uom,
+          canonicalIn.quantityDeltaCanonical,
+          canonicalIn.canonicalUom,
           canonicalIn.quantityDeltaEntered,
           canonicalIn.uomEntered,
           canonicalIn.quantityDeltaCanonical,
