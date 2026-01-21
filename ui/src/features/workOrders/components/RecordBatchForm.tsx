@@ -372,6 +372,10 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
         setFormErrors([errorBody.message ?? 'Negative inventory override is not allowed.'])
         return
       }
+      if (errorBody?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
+        setFormErrors([errorBody.message ?? 'Whole units only for count items.'])
+        return
+      }
       const detail =
         typeof apiErr?.details === 'object'
           ? JSON.stringify(apiErr.details)
@@ -995,22 +999,36 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
               </label>
               <label className="space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">Quantity</span>
-                <Input
-                  type="number"
-                  min={0}
-                  value={line.quantity}
-                  disabled={
-                    (() => {
-                      const availableQty = availableForConsumeLine(line)
-                      return availableQty !== null && availableQty <= 0
-                    })()
-                  }
-                  onChange={(e) =>
-                    updateConsumeLine(idx, {
-                      quantity: e.target.value === '' ? '' : Number(e.target.value),
-                    })
-                  }
-                />
+                {(() => {
+                  const item = itemsLookup.get(line.componentItemId)
+                  const isCountItem = item?.uomDimension === 'count'
+                  const qty = line.quantity === '' ? '' : Number(line.quantity)
+                  const hasFraction = qty !== '' && Number.isFinite(qty) && Math.abs(qty - Math.round(qty)) > 1e-6
+                  return (
+                    <>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={isCountItem ? 1 : 'any'}
+                        value={line.quantity}
+                        disabled={
+                          (() => {
+                            const availableQty = availableForConsumeLine(line)
+                            return availableQty !== null && availableQty <= 0
+                          })()
+                        }
+                        onChange={(e) =>
+                          updateConsumeLine(idx, {
+                            quantity: e.target.value === '' ? '' : Number(e.target.value),
+                          })
+                        }
+                      />
+                      {isCountItem && hasFraction && (
+                        <div className="text-xs text-amber-600">Whole units only</div>
+                      )}
+                    </>
+                  )
+                })()}
                 {lineErrors.consume[idx]?.quantity && (
                   <div className="text-xs text-red-600">{lineErrors.consume[idx]?.quantity}</div>
                 )}
@@ -1199,17 +1217,31 @@ export function RecordBatchForm({ workOrder, outputItem, onRefetch }: Props) {
               </label>
               <label className="space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-slate-500">Quantity</span>
-                <Input
-                  type="number"
-                  min={0}
-                  value={line.quantity}
-                  ref={idx === 0 ? outputQtyRef : undefined}
-                  onChange={(e) =>
-                    updateProduceLine(idx, {
-                      quantity: e.target.value === '' ? '' : Number(e.target.value),
-                    })
-                  }
-                />
+                {(() => {
+                  const item = itemsLookup.get(line.outputItemId)
+                  const isCountItem = item?.uomDimension === 'count'
+                  const qty = line.quantity === '' ? '' : Number(line.quantity)
+                  const hasFraction = qty !== '' && Number.isFinite(qty) && Math.abs(qty - Math.round(qty)) > 1e-6
+                  return (
+                    <>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={isCountItem ? 1 : 'any'}
+                        value={line.quantity}
+                        ref={idx === 0 ? outputQtyRef : undefined}
+                        onChange={(e) =>
+                          updateProduceLine(idx, {
+                            quantity: e.target.value === '' ? '' : Number(e.target.value),
+                          })
+                        }
+                      />
+                      {isCountItem && hasFraction && (
+                        <div className="text-xs text-amber-600">Whole units only</div>
+                      )}
+                    </>
+                  )
+                })()}
                 {lineErrors.produce[idx]?.quantity && (
                   <div className="text-xs text-red-600">{lineErrors.produce[idx]?.quantity}</div>
                 )}

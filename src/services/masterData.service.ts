@@ -498,6 +498,12 @@ export async function createUomConversion(tenantId: string, data: UomConversionI
   const itemConfig = await getItemUomConfigIfPresent(tenantId, data.itemId);
   if (itemConfig) {
     validateConversionAgainstItemDimension(itemConfig, data.fromUom, data.toUom);
+    if (itemConfig.uomDimension === 'count' && !Number.isInteger(data.factor)) {
+      const err = new Error('COUNT_CONVERSION_FACTOR_MUST_BE_INTEGER') as Error & { code?: string; status?: number };
+      err.code = 'COUNT_CONVERSION_FACTOR_MUST_BE_INTEGER';
+      err.status = 400;
+      throw err;
+    }
     const fromKey = data.fromUom.trim().toLowerCase();
     const toKey = data.toUom.trim().toLowerCase();
     const canonicalKey = itemConfig.canonicalUom.toLowerCase();

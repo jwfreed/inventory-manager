@@ -18,6 +18,7 @@ type Option = {
 type Props = {
   lines: AdjustmentLineDraft[]
   itemOptions: Option[]
+  itemLookup?: Map<string, { uomDimension?: string | null }>
   locationOptions: Option[]
   lockItemId?: string | null
   lockLocationId?: string | null
@@ -36,6 +37,7 @@ type Props = {
 export function AdjustmentLinesEditor({
   lines,
   itemOptions,
+  itemLookup,
   locationOptions,
   lockItemId,
   lockLocationId,
@@ -57,6 +59,10 @@ export function AdjustmentLinesEditor({
       </div>
       {lines.map((line, idx) => {
         const errors = lineErrors?.[line.key]
+        const item = itemLookup?.get(line.itemId)
+        const isCountItem = item?.uomDimension === 'count'
+        const qty = line.quantityDelta === '' ? '' : Number(line.quantityDelta)
+        const hasFraction = qty !== '' && Number.isFinite(qty) && Math.abs(qty - Math.round(qty)) > 1e-6
         return (
           <div key={line.key} className="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-6">
             <div className="md:col-span-2">
@@ -104,7 +110,7 @@ export function AdjustmentLinesEditor({
               <span className="text-xs uppercase tracking-wide text-slate-500">Quantity Δ</span>
               <Input
                 type="number"
-                step="any"
+                step={isCountItem ? 1 : 'any'}
                 value={line.quantityDelta}
                 onChange={(e) =>
                   onLineChange(idx, {
@@ -113,6 +119,9 @@ export function AdjustmentLinesEditor({
                 }
                 className={cn(showErrors && errors?.quantityDelta ? 'border-red-400' : undefined)}
               />
+              {isCountItem && hasFraction && (
+                <div className="text-xs text-amber-600">Whole units only</div>
+              )}
               {showErrors && errors?.quantityDelta && (
                 <div className="text-xs text-red-600">{errors.quantityDelta}</div>
               )}

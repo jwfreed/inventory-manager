@@ -183,6 +183,16 @@ router.post(
         }
       }
     }),
+    'DISCRETE_UOM_REQUIRES_INTEGER': (error: any) => ({
+      status: 400,
+      body: {
+        error: {
+          code: 'DISCRETE_UOM_REQUIRES_INTEGER',
+          message: error.details?.message,
+          details: error.details
+        }
+      }
+    }),
     'NEGATIVE_OVERRIDE_NOT_ALLOWED': (error: any) => ({
       status: 403,
       body: {

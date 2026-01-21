@@ -61,6 +61,15 @@ router.post('/qc-events', async (req: Request, res: Response) => {
         error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
       });
     }
+    if (error?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
+      return res.status(400).json({
+        error: {
+          code: 'DISCRETE_UOM_REQUIRES_INTEGER',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
     if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
       return res.status(403).json({
         error: {

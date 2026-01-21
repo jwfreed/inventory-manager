@@ -119,6 +119,11 @@ export default function AdjustmentNewPage() {
       })),
     [items],
   )
+  const itemLookup = useMemo(() => {
+    const map = new Map<string, Item>()
+    items.forEach((item) => map.set(item.id, item))
+    return map
+  }, [items])
 
   const locationOptions = useMemo(
     () =>
@@ -258,7 +263,14 @@ export default function AdjustmentNewPage() {
       setSubmitMessage('Draft saved. You can continue editing from the detail page.')
       navigate(`/inventory-adjustments/${adjustment.id}`)
     } catch (err) {
-      setSubmitError(formatApiError(err, 'Failed to save adjustment.'))
+      const apiErr = err as ApiError
+      const detailPayload = apiErr?.details as { error?: any } | undefined
+      const errorBody = detailPayload?.error ?? detailPayload
+      if (errorBody?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
+        setSubmitError(errorBody.message ?? 'Whole units only for count items.')
+      } else {
+        setSubmitError(formatApiError(err, 'Failed to save adjustment.'))
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -359,6 +371,7 @@ export default function AdjustmentNewPage() {
           <AdjustmentLinesEditor
             lines={lines}
             itemOptions={itemOptions}
+            itemLookup={itemLookup}
             locationOptions={locationOptions}
             lockItemId={lockItemId}
             lockLocationId={lockLocationId}

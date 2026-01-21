@@ -315,6 +315,10 @@ export default function AdjustmentDetailPage() {
         setPostError(errorBody.message ?? 'Insufficient usable stock to post this adjustment.')
         return
       }
+      if (errorBody?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
+        setPostError(errorBody.message ?? 'Whole units only for count items.')
+        return
+      }
       if (errorBody?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
         setPostError(errorBody.message ?? 'Override reason is required.')
         setOverrideAllowed(true)
@@ -648,6 +652,7 @@ export default function AdjustmentDetailPage() {
               <AdjustmentLinesEditor
                 lines={lines}
                 itemOptions={itemOptions}
+                itemLookup={itemMap}
                 locationOptions={locationOptions}
                 lineErrors={lineErrors}
                 showErrors={showErrors}

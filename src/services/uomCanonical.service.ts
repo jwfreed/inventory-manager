@@ -59,6 +59,32 @@ export type CanonicalQuantity = {
   uomDimension: UomDimension;
 };
 
+type DiscreteUomErrorDetails = {
+  itemId: string;
+  inputQty: number;
+  inputUom: string;
+  canonicalQty: number;
+  canonicalUom: string;
+};
+
+function assertIntegerIfCount(canonical: CanonicalQuantity, details: DiscreteUomErrorDetails) {
+  if (canonical.uomDimension !== 'count') return;
+  const rounded = Math.round(canonical.quantity);
+  if (Math.abs(canonical.quantity - rounded) <= 1e-6) return;
+  const err = new Error('DISCRETE_UOM_REQUIRES_INTEGER') as Error & {
+    code?: string;
+    status?: number;
+    details?: Record<string, unknown>;
+  };
+  err.code = 'DISCRETE_UOM_REQUIRES_INTEGER';
+  err.status = 400;
+  err.details = {
+    message: 'Count-based items require whole number quantities.',
+    ...details
+  };
+  throw err;
+}
+
 function normalizeUom(value: string): string {
   return value.trim();
 }
@@ -246,6 +272,13 @@ export async function getCanonicalMovementFields(
   client?: PoolClient
 ): Promise<CanonicalMovementFields> {
   const canonical = await convertToCanonical(tenantId, itemId, quantityDelta, uom, client);
+  assertIntegerIfCount(canonical, {
+    itemId,
+    inputQty: quantityDelta,
+    inputUom: uom,
+    canonicalQty: canonical.quantity,
+    canonicalUom: canonical.canonicalUom
+  });
   return {
     quantityDeltaEntered: quantityDelta,
     uomEntered: normalizeUom(uom),

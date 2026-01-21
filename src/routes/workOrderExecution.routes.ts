@@ -36,6 +36,15 @@ router.post('/work-orders/:id/issues', async (req: Request, res: Response) => {
     const issue = await createWorkOrderIssue(req.auth!.tenantId, workOrderId, parsed.data);
     return res.status(201).json(issue);
   } catch (error: any) {
+    if (error?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
+      return res.status(400).json({
+        error: {
+          code: 'DISCRETE_UOM_REQUIRES_INTEGER',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
     if (error?.message === 'WO_NOT_FOUND') {
       return res.status(404).json({ error: 'Work order not found.' });
     }
@@ -113,6 +122,15 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({
         error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
+      return res.status(400).json({
+        error: {
+          code: 'DISCRETE_UOM_REQUIRES_INTEGER',
+          message: error.details?.message,
+          details: error.details
+        }
       });
     }
     if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
@@ -357,6 +375,15 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({
         error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
+      return res.status(400).json({
+        error: {
+          code: 'DISCRETE_UOM_REQUIRES_INTEGER',
+          message: error.details?.message,
+          details: error.details
+        }
       });
     }
     if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {

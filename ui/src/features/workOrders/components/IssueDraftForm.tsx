@@ -78,6 +78,16 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
     },
   })
 
+  const postErrorMessage = useMemo(() => {
+    const apiErr = postMutation.error as ApiError | undefined
+    const detailPayload = apiErr?.details as { error?: any } | undefined
+    const errorBody = detailPayload?.error ?? detailPayload
+    if (errorBody?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
+      return 'Whole units only for count items.'
+    }
+    return apiErr?.message
+  }, [postMutation.error])
+
   const defaultsMutation = useMutation({
     mutationFn: (locId: string) =>
       updateWorkOrderDefaultsApi(workOrder.id, { defaultConsumeLocationId: locId || null }),
@@ -412,7 +422,7 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
         />
       )}
       {postMutation.isError && (
-        <Alert variant="error" title="Post failed" message={postMutation.error.message} />
+        <Alert variant="error" title="Post failed" message={postErrorMessage ?? 'Failed to post issue.'} />
       )}
       {defaultsMutation.isError && (
         <Alert
@@ -541,22 +551,36 @@ export function IssueDraftForm({ workOrder, outputItem, onRefetch }: Props) {
             </label>
             <label className="space-y-1 text-sm">
               <span className="text-xs uppercase tracking-wide text-slate-500">Quantity</span>
-              <Input
-                type="number"
-                min={0}
-                value={line.quantityIssued}
-                disabled={
-                  (() => {
-                    const availableQty = availableForLine(line)
-                    return availableQty !== null && availableQty <= 0
-                  })()
-                }
-                onChange={(e) =>
-                  updateLine(idx, {
-                    quantityIssued: e.target.value === '' ? '' : Number(e.target.value),
-                  })
-                }
-              />
+              {(() => {
+                const item = itemsLookup.get(line.componentItemId)
+                const isCountItem = item?.uomDimension === 'count'
+                const qty = line.quantityIssued === '' ? '' : Number(line.quantityIssued)
+                const hasFraction = qty !== '' && Number.isFinite(qty) && Math.abs(qty - Math.round(qty)) > 1e-6
+                return (
+                  <>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={isCountItem ? 1 : 'any'}
+                      value={line.quantityIssued}
+                      disabled={
+                        (() => {
+                          const availableQty = availableForLine(line)
+                          return availableQty !== null && availableQty <= 0
+                        })()
+                      }
+                      onChange={(e) =>
+                        updateLine(idx, {
+                          quantityIssued: e.target.value === '' ? '' : Number(e.target.value),
+                        })
+                      }
+                    />
+                    {isCountItem && hasFraction && (
+                      <div className="text-xs text-amber-600">Whole units only</div>
+                    )}
+                  </>
+                )
+              })()}
             </label>
             {isDisassembly && (
               <label className="space-y-1 text-sm">

@@ -303,6 +303,11 @@ router.post('/items/:itemId/uom-conversions', async (req: Request, res: Response
     if (error instanceof Error && error.message.startsWith('UOM_')) {
       return res.status(400).json({ error: error.message });
     }
+    if ((error as any)?.code === 'COUNT_CONVERSION_FACTOR_MUST_BE_INTEGER') {
+      return res.status(400).json({
+        error: { code: 'COUNT_CONVERSION_FACTOR_MUST_BE_INTEGER', message: 'Count conversions require integer factors.' }
+      });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create UoM conversion.' });
   }

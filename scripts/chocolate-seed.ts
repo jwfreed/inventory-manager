@@ -698,9 +698,6 @@ async function main() {
       components: [
         { lineNumber: 1, componentItemId: items.durianBaseMix.id, uom: 'g', quantityPer: 75 },
         { lineNumber: 2, componentItemId: items.foilWrap.id, uom: 'g', quantityPer: 3 },
-        { lineNumber: 3, componentItemId: items.innerBox.id, uom: 'each', quantityPer: 1 },
-        { lineNumber: 4, componentItemId: items.whiteBox.id, uom: 'each', quantityPer: whiteBoxPerBar },
-        { lineNumber: 5, componentItemId: items.shippingBox.id, uom: 'each', quantityPer: shippingBoxPerBar },
       ],
     },
   })
@@ -715,9 +712,58 @@ async function main() {
       components: [
         { lineNumber: 1, componentItemId: items.durianBaseMix.id, uom: 'g', quantityPer: 20 },
         { lineNumber: 2, componentItemId: items.foilWrap.id, uom: 'g', quantityPer: 1 },
-        { lineNumber: 3, componentItemId: items.innerBoxSmall.id, uom: 'each', quantityPer: 1 },
-        { lineNumber: 4, componentItemId: items.whiteBox.id, uom: 'each', quantityPer: whiteBoxPerBar },
-        { lineNumber: 5, componentItemId: items.shippingBox.id, uom: 'each', quantityPer: shippingBoxPerBar },
+      ],
+    },
+  })
+
+  await ensureBom(config, token, log, {
+    bomCode: sku('BOM-INNER-BOX-BIG'),
+    outputItemId: items.innerBox.id,
+    defaultUom: 'each',
+    version: {
+      yieldQuantity: 1,
+      yieldUom: 'each',
+      components: [
+        { lineNumber: 1, componentItemId: items.barBig.id, uom: 'each', quantityPer: 1 },
+      ],
+    },
+  })
+
+  await ensureBom(config, token, log, {
+    bomCode: sku('BOM-INNER-BOX-SMALL'),
+    outputItemId: items.innerBoxSmall.id,
+    defaultUom: 'each',
+    version: {
+      yieldQuantity: 1,
+      yieldUom: 'each',
+      components: [
+        { lineNumber: 1, componentItemId: items.barSmall.id, uom: 'each', quantityPer: 1 },
+      ],
+    },
+  })
+
+  await ensureBom(config, token, log, {
+    bomCode: sku('BOM-WHITE-BOX-12'),
+    outputItemId: items.whiteBox.id,
+    defaultUom: 'each',
+    version: {
+      yieldQuantity: 1,
+      yieldUom: 'each',
+      components: [
+        { lineNumber: 1, componentItemId: items.innerBox.id, uom: 'each', quantityPer: 12 },
+      ],
+    },
+  })
+
+  await ensureBom(config, token, log, {
+    bomCode: sku('BOM-SHIPPING-BOX-10'),
+    outputItemId: items.shippingBox.id,
+    defaultUom: 'each',
+    version: {
+      yieldQuantity: 1,
+      yieldUom: 'each',
+      components: [
+        { lineNumber: 1, componentItemId: items.whiteBox.id, uom: 'each', quantityPer: 10 },
       ],
     },
   })

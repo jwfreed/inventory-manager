@@ -84,6 +84,16 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
     },
   })
 
+  const postErrorMessage = useMemo(() => {
+    const apiErr = postMutation.error as ApiError | undefined
+    const detailPayload = apiErr?.details as { error?: any } | undefined
+    const errorBody = detailPayload?.error ?? detailPayload
+    if (errorBody?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
+      return 'Whole units only for count items.'
+    }
+    return apiErr?.message
+  }, [postMutation.error])
+
   const debouncedLocationSearch = useDebouncedValue(locationSearch, 200)
   const debouncedItemSearch = useDebouncedValue(itemSearch, 200)
 
@@ -277,7 +287,7 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
         />
       )}
       {postMutation.isError && (
-        <Alert variant="error" title="Post failed" message={postMutation.error.message} />
+        <Alert variant="error" title="Post failed" message={postErrorMessage ?? 'Failed to post completion.'} />
       )}
       {createdCompletion && (
         <Alert
@@ -391,16 +401,33 @@ export function CompletionDraftForm({ workOrder, outputItem, onRefetch }: Props)
             </label>
             <label className="space-y-1 text-sm">
               <span className="text-xs uppercase tracking-wide text-slate-500">Quantity</span>
-              <Input
-                type="number"
-                min={0}
-                value={line.quantityCompleted}
-                onChange={(e) =>
-                  updateLine(idx, {
-                    quantityCompleted: e.target.value === '' ? '' : Number(e.target.value),
-                  })
-                }
-              />
+              {(() => {
+                const item =
+                  line.outputItemId
+                    ? itemsLookup.get(line.outputItemId)
+                    : outputItem
+                const isCountItem = item?.uomDimension === 'count'
+                const qty = line.quantityCompleted === '' ? '' : Number(line.quantityCompleted)
+                const hasFraction = qty !== '' && Number.isFinite(qty) && Math.abs(qty - Math.round(qty)) > 1e-6
+                return (
+                  <>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={isCountItem ? 1 : 'any'}
+                      value={line.quantityCompleted}
+                      onChange={(e) =>
+                        updateLine(idx, {
+                          quantityCompleted: e.target.value === '' ? '' : Number(e.target.value),
+                        })
+                      }
+                    />
+                    {isCountItem && hasFraction && (
+                      <div className="text-xs text-amber-600">Whole units only</div>
+                    )}
+                  </>
+                )
+              })()}
             </label>
             <label className="space-y-1 text-sm">
               <span className="text-xs uppercase tracking-wide text-slate-500">Pack size (bars per box)</span>
