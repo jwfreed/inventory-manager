@@ -14,6 +14,10 @@ import { useAuth } from '../../../lib/useAuth'
 import type { Item } from '../../../api/types'
 import type { ItemMetrics } from '../api/items'
 import { ItemForm } from '../components/ItemForm'
+import { useOnboarding } from '@features/onboarding/hooks'
+import OnboardingTip from '@features/onboarding/components/OnboardingTip'
+import { isTipDismissed, markTipDismissed } from '@features/onboarding/state'
+import { trackOnboardingEvent } from '@features/onboarding/analytics'
 
 type ColumnId =
   | 'sku'
@@ -104,6 +108,7 @@ export default function ItemsListPage() {
   const [searchParams] = useSearchParams()
 
   const { user } = useAuth()
+  const { progress, markTipShown } = useOnboarding()
   const baseCurrency = user?.baseCurrency ?? 'THB'
 
   const [lifecycleStatus, setLifecycleStatus] = useState('Active')
@@ -191,6 +196,25 @@ export default function ItemsListPage() {
   const { data, isLoading, isError, error, refetch } = useItemsList({
     lifecycleStatus: lifecycleStatus,
   })
+
+  const shouldShowBulkEditTip =
+    (data?.data?.length ?? 0) >= 3 &&
+    !progress.tipsShown['bulk_edit'] &&
+    !isTipDismissed('bulk_edit')
+
+  useEffect(() => {
+    if (!shouldShowBulkEditTip) return
+    markTipShown('bulk_edit')
+    trackOnboardingEvent('onboarding_tip_shown', {
+      step_name: 'tips',
+      step_index: 0,
+      timestamp: new Date().toISOString(),
+      event: 'bulk_edit',
+      user_role: progress.userRole ?? null,
+      business_type: progress.businessType ?? null,
+      path_chosen: progress.pathChosen ?? null,
+    })
+  }, [markTipShown, progress, shouldShowBulkEditTip])
 
   const snapshotSummaryQuery = useInventorySnapshotSummary(
     {
@@ -603,6 +627,25 @@ export default function ItemsListPage() {
       </Section>
 
       <Section title="Items">
+        {shouldShowBulkEditTip && (
+          <OnboardingTip
+            title="Tip: bulk edit"
+            message="Select multiple items to update fields in one pass."
+            onDismiss={() => {
+              markTipDismissed('bulk_edit')
+              markTipShown('bulk_edit')
+              trackOnboardingEvent('onboarding_tip_dismissed', {
+                step_name: 'tips',
+                step_index: 0,
+                timestamp: new Date().toISOString(),
+                event: 'bulk_edit',
+                user_role: progress.userRole ?? null,
+                business_type: progress.businessType ?? null,
+                path_chosen: progress.pathChosen ?? null,
+              })
+            }}
+          />
+        )}
         <Card className={showCreate ? 'opacity-80' : undefined}>
           {isLoading && <LoadingSpinner label="Loading items..." />}
           {isError && error && (
@@ -620,7 +663,12 @@ export default function ItemsListPage() {
           {!isLoading && !isError && filteredByType.length === 0 && (
             <EmptyState
               title="No items yet"
-              description="Create items with the form above or via API/migrations."
+              description="Add your first item to start tracking inventory."
+              action={
+                <Button size="sm" onClick={() => navigate('/onboarding/first-win')}>
+                  Add your first item
+                </Button>
+              }
             />
           )}
           {!isLoading && !isError && filteredByType.length > 0 && (

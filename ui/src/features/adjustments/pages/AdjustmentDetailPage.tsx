@@ -18,6 +18,10 @@ import { useLocationsList, useLocation } from '@features/locations/queries'
 import { useMovement } from '@features/ledger/queries'
 import { useAuditLog } from '@features/audit/queries'
 import { AuditTrailTable } from '@features/audit/components/AuditTrailTable'
+import { useOnboarding } from '@features/onboarding/hooks'
+import OnboardingTip from '@features/onboarding/components/OnboardingTip'
+import { isTipDismissed, markTipDismissed } from '@features/onboarding/state'
+import { trackOnboardingEvent } from '@features/onboarding/analytics'
 import {
   cancelInventoryAdjustment,
   createInventoryAdjustment,
@@ -75,6 +79,7 @@ export default function AdjustmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { progress, markTipShown } = useOnboarding()
   const [initialized, setInitialized] = useState(false)
   const [occurredAt, setOccurredAt] = useState('')
   const [reasonCode, setReasonCode] = useState('')
@@ -459,9 +464,46 @@ export default function AdjustmentDetailPage() {
   const adjustment = adjustmentQuery.data
   if (!adjustment) return null
   const isDraft = adjustment.status === 'draft'
+  const shouldShowAuditTip =
+    Boolean(adjustment.inventoryMovementId) &&
+    !progress.tipsShown['audit_history'] &&
+    !isTipDismissed('audit_history')
+
+  useEffect(() => {
+    if (!shouldShowAuditTip) return
+    markTipShown('audit_history')
+    trackOnboardingEvent('onboarding_tip_shown', {
+      step_name: 'tips',
+      step_index: 0,
+      timestamp: new Date().toISOString(),
+      event: 'audit_history',
+      user_role: progress.userRole ?? null,
+      business_type: progress.businessType ?? null,
+      path_chosen: progress.pathChosen ?? null,
+    })
+  }, [markTipShown, progress, shouldShowAuditTip])
 
   return (
     <div className="space-y-6">
+      {shouldShowAuditTip && (
+        <OnboardingTip
+          title="Tip: audit history"
+          message="Every adjustment is recorded in the movement ledger for traceability."
+          onDismiss={() => {
+            markTipDismissed('audit_history')
+            markTipShown('audit_history')
+            trackOnboardingEvent('onboarding_tip_dismissed', {
+              step_name: 'tips',
+              step_index: 0,
+              timestamp: new Date().toISOString(),
+              event: 'audit_history',
+              user_role: progress.userRole ?? null,
+              business_type: progress.businessType ?? null,
+              path_chosen: progress.pathChosen ?? null,
+            })
+          }}
+        />
+      )}
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Inventory control</p>

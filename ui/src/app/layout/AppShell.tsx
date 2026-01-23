@@ -4,6 +4,7 @@ import { Badge, Breadcrumbs, Button } from '@shared/ui'
 import { useAuth } from '@shared/auth'
 import { navItems } from '../routeData'
 import SectionNav from './SectionNav'
+import OnboardingNudge from '@features/onboarding/components/OnboardingNudge'
 
 function AppShell() {
   const { user, tenant, logout } = useAuth()
@@ -48,6 +49,7 @@ function AppShell() {
         <main className="flex-1 bg-slate-25">
           <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
             <Breadcrumbs />
+            <OnboardingNudge />
             <Outlet />
           </div>
         </main>

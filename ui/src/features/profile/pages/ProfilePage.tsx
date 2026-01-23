@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert, Button, Card, Input, LoadingSpinner, Section } from '@shared/ui'
+import { useOnboarding } from '@features/onboarding/hooks'
 import { useAuth } from '@shared/auth'
 import type { ApiError } from '@api/types'
 import { getActiveCurrencies } from '../../../api/currencies'
@@ -22,6 +23,7 @@ const formatError = (err: unknown, fallback: string) => {
 
 export default function ProfilePage() {
   const { user, tenant, role, refresh } = useAuth()
+  const { reset, progress } = useOnboarding()
   const profileQuery = useProfile()
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
@@ -178,6 +180,24 @@ export default function ProfilePage() {
               </div>
             </div>
           )}
+        </Card>
+      </Section>
+
+      <Section title="Onboarding" description="Revisit setup steps at any time.">
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm text-slate-600">
+              Status: <span className="font-semibold text-slate-900">{progress.status}</span>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" onClick={() => reset()}>
+                Restart onboarding
+              </Button>
+              <Button size="sm" onClick={() => window.location.assign('/onboarding/checklist')}>
+                Continue
+              </Button>
+            </div>
+          </div>
         </Card>
       </Section>
     </div>
