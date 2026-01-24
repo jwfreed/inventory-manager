@@ -19,7 +19,11 @@ router.post('/compute/abc-classification', async (req: Request, res: Response) =
     const tenantId = req.auth!.tenantId;
     const { windowDays = 90 } = req.body;
 
-    const updatedCount = await MetricsService.updateAbcClassifications(tenantId, windowDays);
+    const { runId, updatedCount } = await MetricsService.storeAbcClassificationKpis(
+      tenantId,
+      windowDays,
+      { notes: 'Manual KPI run: ABC classification', asOf: new Date() }
+    );
     
     // Invalidate cache after update
     await MetricsService.invalidateCache(tenantId, 'abc_classification');
@@ -28,6 +32,7 @@ router.post('/compute/abc-classification', async (req: Request, res: Response) =
       success: true,
       message: `ABC classification computed for ${updatedCount} items`,
       updatedCount,
+      runId,
     });
   } catch (error) {
     console.error('Error computing ABC classification:', error);
@@ -83,10 +88,11 @@ router.post('/compute/slow-dead-stock', async (req: Request, res: Response) => {
     const tenantId = req.auth!.tenantId;
     const { slowThresholdDays = 90, deadThresholdDays = 180 } = req.body;
 
-    const updatedCount = await MetricsService.updateSlowDeadStockFlags(
+    const { runId, updatedCount } = await MetricsService.storeSlowDeadStockKpis(
       tenantId,
       slowThresholdDays,
-      deadThresholdDays
+      deadThresholdDays,
+      { notes: 'Manual KPI run: slow/dead stock', asOf: new Date() }
     );
 
     // Invalidate cache after update
@@ -96,6 +102,7 @@ router.post('/compute/slow-dead-stock', async (req: Request, res: Response) => {
       success: true,
       message: `Slow/dead stock flags updated for ${updatedCount} items`,
       updatedCount,
+      runId,
     });
   } catch (error) {
     console.error('Error computing slow/dead stock:', error);
@@ -169,7 +176,8 @@ router.post('/compute/turns-doi', async (req: Request, res: Response) => {
     const runId = await MetricsService.storeTurnsAndDoi(
       tenantId,
       new Date(windowStart),
-      new Date(windowEnd)
+      new Date(windowEnd),
+      { notes: 'Manual KPI run: turns/DOI', asOf: new Date() }
     );
 
     // Invalidate cache after update
@@ -208,22 +216,37 @@ router.post('/compute/all', async (req: Request, res: Response) => {
       turnsDoiRunId: '',
     };
 
+    const runId = await MetricsService.startKpiRun(tenantId, {
+      windowStart: new Date(turnsWindowStart),
+      windowEnd: new Date(turnsWindowEnd),
+      notes: 'Manual KPI run: compute all',
+      asOf: new Date(),
+    });
+
     // Compute ABC classification
-    results.abcUpdated = await MetricsService.updateAbcClassifications(tenantId, abcWindowDays);
+    results.abcUpdated = (await MetricsService.storeAbcClassificationKpis(
+      tenantId,
+      abcWindowDays,
+      { runId, finalizeRun: false }
+    )).updatedCount;
 
     // Compute slow/dead stock
-    results.slowDeadUpdated = await MetricsService.updateSlowDeadStockFlags(
+    results.slowDeadUpdated = (await MetricsService.storeSlowDeadStockKpis(
       tenantId,
       slowThresholdDays,
-      deadThresholdDays
-    );
+      deadThresholdDays,
+      { runId, finalizeRun: false }
+    )).updatedCount;
 
     // Compute and store turns/DOI
     results.turnsDoiRunId = await MetricsService.storeTurnsAndDoi(
       tenantId,
       new Date(turnsWindowStart),
-      new Date(turnsWindowEnd)
+      new Date(turnsWindowEnd),
+      { runId, finalizeRun: false }
     );
+
+    await MetricsService.finalizeKpiRun(runId);
 
     // Invalidate all metrics cache
     await MetricsService.invalidateCache(tenantId);
@@ -231,7 +254,7 @@ router.post('/compute/all', async (req: Request, res: Response) => {
     res.json({
       success: true,
       message: 'All metrics computed successfully',
-      results,
+      results: { ...results, runId },
     });
   } catch (error) {
     console.error('Error computing all metrics:', error);

@@ -10,6 +10,16 @@ import { Card } from '../components/Card'
 import { LoadingSpinner } from '../components/Loading'
 import { Section } from '../components/Section'
 import { useAuth } from '../shared/auth'
+import { formatDateTime } from '../features/kpis/utils'
+
+type KpiStatusState = 'not_computed' | 'up_to_date' | 'stale' | 'not_available'
+
+type KpiStatus = {
+  state: KpiStatusState
+  label: string
+  detail: string
+  lastComputed?: string | null
+}
 
 type ConnectivityResult =
   | { status: 'ok'; message: string }
@@ -51,6 +61,65 @@ async function fetchConnectivity(): Promise<ConnectivityResult> {
   }
 }
 
+async function fetchKpiStatus(): Promise<KpiStatus> {
+  try {
+    const [runsResponse, snapshotsResponse] = await Promise.all([
+      apiGet<{ data?: { started_at?: string | null; finished_at?: string | null; as_of?: string | null }[] }>(
+        '/kpis/runs',
+        { params: { limit: 1 } },
+      ),
+      apiGet<{ data?: { computed_at?: string | null }[] }>('/kpis/snapshots', { params: { limit: 1 } }),
+    ])
+
+    const runs = runsResponse?.data ?? []
+    const snapshots = snapshotsResponse?.data ?? []
+    const latestRun = runs[0]
+    const latestSnapshot = snapshots[0]
+    const lastComputed =
+      latestRun?.finished_at ?? latestRun?.started_at ?? latestRun?.as_of ?? latestSnapshot?.computed_at ?? null
+
+    if (!latestRun && !latestSnapshot) {
+      return {
+        state: 'not_computed',
+        label: 'KPI status: Not computed',
+        detail: 'Not computed yet.',
+        lastComputed: null,
+      }
+    }
+
+    if (lastComputed) {
+      const computedAt = new Date(lastComputed)
+      const ageMs = Date.now() - computedAt.getTime()
+      const stale = Number.isFinite(ageMs) && ageMs > 24 * 60 * 60 * 1000
+      return {
+        state: stale ? 'stale' : 'up_to_date',
+        label: stale ? 'KPI status: Stale' : 'KPI status: Up to date',
+        detail: `Last computed: ${formatDateTime(lastComputed) || 'unknown'}`,
+        lastComputed,
+      }
+    }
+
+    return {
+      state: 'not_computed',
+      label: 'KPI status: Not computed',
+      detail: 'Not computed yet.',
+      lastComputed: null,
+    }
+  } catch (error) {
+    const apiError = error as ApiError
+    const detail =
+      apiError?.status === 401 || apiError?.status === 403
+        ? 'You don’t have access to KPI status.'
+        : 'KPI status isn’t configured for this workspace.'
+    return {
+      state: 'not_available',
+      label: 'KPI status: Not available',
+      detail,
+      lastComputed: null,
+    }
+  }
+}
+
 export default function HomePage() {
   const { user, tenant, role } = useAuth()
   const {
@@ -62,6 +131,11 @@ export default function HomePage() {
   } = useQuery<ConnectivityResult, ApiError>({
     queryKey: ['healthcheck'],
     queryFn: fetchConnectivity,
+    retry: false,
+  })
+  const kpiStatusQuery = useQuery<KpiStatus, ApiError>({
+    queryKey: ['home-kpi-status'],
+    queryFn: fetchKpiStatus,
     retry: false,
   })
 
@@ -91,8 +165,25 @@ export default function HomePage() {
         {/* TODO: Add lightweight counts for QC / PO drafts when cheap endpoints exist. */}
         <Card>
           <div className="text-sm text-slate-700">Nothing urgent right now.</div>
+          <div className="mt-1 text-xs text-slate-500">Start with one of the actions below to keep work moving.</div>
         </Card>
       </Section>
+
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-slate-700">
+            <span className="font-semibold">{kpiStatusQuery.data?.label ?? 'KPI status: Not available'}</span>
+            <span className="text-xs text-slate-500">
+              {kpiStatusQuery.isLoading
+                ? 'Checking KPI status…'
+                : kpiStatusQuery.data?.detail ?? 'KPI status isn’t configured for this workspace.'}
+            </span>
+          </div>
+          <Link to="/dashboard" className="text-xs font-semibold text-brand-700">
+            View details
+          </Link>
+        </div>
+      </div>
 
       <Section title="Start work" description="Pick the next action and keep the flow moving.">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

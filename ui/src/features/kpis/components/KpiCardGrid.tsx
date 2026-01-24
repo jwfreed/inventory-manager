@@ -1,9 +1,11 @@
-import type { KpiSnapshot } from '@api/types'
+import type { KpiRun, KpiSnapshot } from '@api/types'
 import { formatNumber } from '@shared/formatters'
-import { formatDateTime } from '../utils'
+import { formatDateTime, isStale } from '../utils'
+import { Badge } from '@shared/ui'
 
 type Props = {
   snapshots: KpiSnapshot[]
+  runs?: KpiRun[]
 }
 
 function pickLatestPerKpi(snapshots: KpiSnapshot[]) {
@@ -23,8 +25,12 @@ function pickLatestPerKpi(snapshots: KpiSnapshot[]) {
     .slice(0, 6)
 }
 
-export function KpiCardGrid({ snapshots }: Props) {
+export function KpiCardGrid({ snapshots, runs = [] }: Props) {
   const cards = pickLatestPerKpi(snapshots)
+  const runLookup = new Map<string, KpiRun>()
+  runs.forEach((run) => {
+    if (run.id) runLookup.set(run.id, run)
+  })
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -33,6 +39,12 @@ export function KpiCardGrid({ snapshots }: Props) {
           typeof snapshot.value === 'number'
             ? formatNumber(snapshot.value)
             : snapshot.value ?? '—'
+        const stale = isStale(snapshot.computed_at, 7)
+        const run = snapshot.kpi_run_id ? runLookup.get(snapshot.kpi_run_id) : null
+        const runIsAutomatic = (run?.notes ?? '').toLowerCase().includes('automatic')
+        const computedLabel = snapshot.computed_at
+          ? `Last computed${runIsAutomatic ? ' automatically' : ''}: ${formatDateTime(snapshot.computed_at)}`
+          : 'Not computed yet'
         return (
           <div
             key={`${snapshot.kpi_name}-${snapshot.computed_at}`}
@@ -47,9 +59,10 @@ export function KpiCardGrid({ snapshots }: Props) {
                 <span className="text-sm font-medium text-slate-500">{snapshot.unit}</span>
               )}
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              As of {formatDateTime(snapshot.computed_at) || 'unknown'}
-            </p>
+            <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+              <span>{computedLabel}</span>
+              {stale && <Badge variant="warning">Stale</Badge>}
+            </div>
           </div>
         )
       })}

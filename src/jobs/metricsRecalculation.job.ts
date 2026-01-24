@@ -77,9 +77,20 @@ export async function recalculateMetrics(): Promise<void> {
       try {
         const tenantStartTime = Date.now();
 
+        const runId = await MetricsService.startKpiRun(tenant.id, {
+          windowStart: turnsWindowStart,
+          windowEnd: turnsWindowEnd,
+          notes: 'Automatic KPI run: nightly metrics',
+          asOf: now,
+        });
+
         // 1. Compute ABC classification (also pre-warms cache via get method)
         console.log('      • Computing ABC classification...');
-        const abcUpdated = await MetricsService.updateAbcClassifications(tenant.id, 90);
+        const abcUpdated = (await MetricsService.storeAbcClassificationKpis(
+          tenant.id,
+          90,
+          { runId, finalizeRun: false, notes: 'Automatic KPI run: ABC classification', asOf: now }
+        )).updatedCount;
         
         // Pre-warm cache by calling get method
         await MetricsService.getABCClassification(tenant.id, 90);
@@ -87,7 +98,12 @@ export async function recalculateMetrics(): Promise<void> {
 
         // 2. Compute slow/dead stock flags
         console.log('      • Computing slow/dead stock...');
-        const slowDeadUpdated = await MetricsService.updateSlowDeadStockFlags(tenant.id, 90, 180);
+        const slowDeadUpdated = (await MetricsService.storeSlowDeadStockKpis(
+          tenant.id,
+          90,
+          180,
+          { runId, finalizeRun: false, notes: 'Automatic KPI run: slow/dead stock', asOf: now }
+        )).updatedCount;
         
         // Pre-warm cache
         await MetricsService.getSlowDeadStock(tenant.id, 90, 180);
@@ -98,12 +114,15 @@ export async function recalculateMetrics(): Promise<void> {
         const turnsDoiRunId = await MetricsService.storeTurnsAndDoi(
           tenant.id,
           turnsWindowStart,
-          turnsWindowEnd
+          turnsWindowEnd,
+          { runId, finalizeRun: false, notes: 'Automatic KPI run: turns/DOI', asOf: now }
         );
         
         // Pre-warm cache
         await MetricsService.getTurnsAndDOI(tenant.id, turnsWindowStart, turnsWindowEnd);
         console.log(`      ✓ Turns/DOI: Run ${turnsDoiRunId}`);
+
+        await MetricsService.finalizeKpiRun(runId);
 
         // 4. Pre-warm inventory aging cache
         console.log('      • Pre-warming inventory aging cache...');

@@ -45,9 +45,39 @@ export const KPI_REGISTRY: KpiDefinition[] = [
     dimension: 'COST',
   },
   {
+    name: 'abc_a_share',
+    displayName: 'ABC A share',
+    description: 'Share of items classified as A.',
+    dimension: 'COST',
+  },
+  {
+    name: 'abc_b_share',
+    displayName: 'ABC B share',
+    description: 'Share of items classified as B.',
+    dimension: 'COST',
+  },
+  {
+    name: 'abc_c_share',
+    displayName: 'ABC C share',
+    description: 'Share of items classified as C.',
+    dimension: 'COST',
+  },
+  {
     name: 'stockout_rate',
     displayName: 'Stockout rate',
     description: 'Frequency of stockouts within the window.',
+    dimension: 'RISK',
+  },
+  {
+    name: 'slow_stock_share',
+    displayName: 'Slow stock share',
+    description: 'Share of on-hand items flagged slow moving.',
+    dimension: 'RISK',
+  },
+  {
+    name: 'dead_stock_share',
+    displayName: 'Dead stock share',
+    description: 'Share of on-hand items flagged as dead stock.',
     dimension: 'RISK',
   },
   {

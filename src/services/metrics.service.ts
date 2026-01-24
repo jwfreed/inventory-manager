@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { query } from '../db';
 import { cacheAdapter } from '../lib/redis';
 import { emitEvent } from '../lib/events';
@@ -215,9 +216,9 @@ export class MetricsService {
           i.id as item_id,
           i.sku,
           i.name,
-          SUM(ABS(iml.quantity_delta)) as total_movement_qty,
+          SUM(ABS(iml.quantity_delta_canonical)) as total_movement_qty,
           -- Proxy value using quantity (without cost data)
-          SUM(ABS(iml.quantity_delta)) as total_value
+          SUM(ABS(iml.quantity_delta_canonical)) as total_value
         FROM items i
         LEFT JOIN inventory_movement_lines iml 
           ON i.id = iml.item_id 
@@ -226,10 +227,11 @@ export class MetricsService {
           ON iml.movement_id = im.id 
           AND iml.tenant_id = im.tenant_id
         WHERE i.tenant_id = $1
-          AND im.occurred_at >= NOW() - ($2 || ' days')::interval
+          AND im.occurred_at >= NOW() - ($2::numeric || ' days')::interval
           AND im.status = 'posted'
+          AND iml.quantity_delta_canonical IS NOT NULL
         GROUP BY i.id, i.sku, i.name
-        HAVING SUM(ABS(iml.quantity_delta)) > 0
+        HAVING SUM(ABS(iml.quantity_delta_canonical)) > 0
       ),
       ranked AS (
         SELECT 
@@ -283,42 +285,7 @@ export class MetricsService {
     windowDays: number = 90
   ): Promise<number> {
     const classifications = await this.computeAbcClassification(tenantId, windowDays);
-    
-    if (classifications.length === 0) {
-      return 0;
-    }
-
-    // Build bulk update
-    const values = classifications.map((c, idx) => 
-      `($${idx * 3 + 1}, $${idx * 3 + 2}, $${idx * 3 + 3})`
-    ).join(',');
-
-    const params = classifications.flatMap(c => [c.itemId, c.abcClass, tenantId]);
-
-    const sql = `
-      UPDATE items i
-      SET 
-        abc_class = v.abc_class,
-        abc_computed_at = NOW()
-      FROM (VALUES ${values}) AS v(item_id, abc_class, tenant_id)
-      WHERE i.id = v.item_id::uuid 
-        AND i.tenant_id = v.tenant_id::uuid
-        AND i.tenant_id = $${params.length + 1}
-    `;
-
-    const result = await query(sql, [...params, tenantId]);
-    const rowCount = result.rowCount || 0;
-    
-    // Emit SSE event for real-time dashboard updates
-    if (rowCount > 0) {
-      emitEvent(tenantId, 'metrics:updated', { 
-        metric: 'abc_classification', 
-        itemsUpdated: rowCount,
-        windowDays 
-      });
-    }
-    
-    return rowCount;
+    return this.applyAbcClassifications(tenantId, classifications, windowDays);
   }
 
   /**
@@ -331,18 +298,22 @@ export class MetricsService {
     const sql = `
       WITH lot_aging AS (
         SELECT 
-          il.item_id,
-          il.location_id,
-          il.lot_id,
+          iml.item_id,
+          iml.location_id,
+          iml_lot.lot_id,
           l.lot_number,
-          il.quantity as on_hand_qty,
+          SUM(iml_lot.quantity_delta) as on_hand_qty,
           l.received_at,
           EXTRACT(DAY FROM (CURRENT_DATE - l.received_at::date))::integer as age_days
-        FROM inventory_ledger il
-        JOIN lots l ON il.lot_id = l.id AND il.tenant_id = l.tenant_id
-        WHERE il.tenant_id = $1
-          AND il.quantity > 0
+        FROM inventory_movement_lots iml_lot
+        JOIN inventory_movement_lines iml ON iml_lot.inventory_movement_line_id = iml.id
+        JOIN inventory_movements im ON iml.movement_id = im.id AND iml.tenant_id = im.tenant_id
+        JOIN lots l ON iml_lot.lot_id = l.id AND iml.tenant_id = l.tenant_id
+        WHERE iml.tenant_id = $1
+          AND im.status = 'posted'
           AND l.received_at IS NOT NULL
+        GROUP BY iml.item_id, iml.location_id, iml_lot.lot_id, l.lot_number, l.received_at
+        HAVING SUM(iml_lot.quantity_delta) > 0
       )
       SELECT 
         la.item_id,
@@ -416,7 +387,7 @@ export class MetricsService {
           i.name,
           MAX(im.occurred_at) as last_movement_date,
           COUNT(DISTINCT im.id) as movement_count_90d,
-          COALESCE(SUM(il.quantity), 0) as on_hand_quantity
+          COALESCE(SUM(iml.quantity_delta_canonical), 0) as on_hand_quantity
         FROM items i
         LEFT JOIN inventory_movement_lines iml 
           ON i.id = iml.item_id AND i.tenant_id = iml.tenant_id
@@ -425,8 +396,6 @@ export class MetricsService {
           AND iml.tenant_id = im.tenant_id
           AND im.occurred_at >= NOW() - ($2 || ' days')::interval
           AND im.status = 'posted'
-        LEFT JOIN inventory_ledger il 
-          ON i.id = il.item_id AND i.tenant_id = il.tenant_id
         WHERE i.tenant_id = $1
         GROUP BY i.id, i.sku, i.name
       )
@@ -441,13 +410,13 @@ export class MetricsService {
         END as days_since_last_movement,
         on_hand_quantity,
         CASE 
-          WHEN movement_count_90d = 0 AND (CURRENT_DATE - last_movement_date::date) >= $3 THEN false
-          WHEN movement_count_90d > 0 AND movement_count_90d < ($2 / 30.0) THEN true
+          WHEN movement_count_90d = 0 AND (CURRENT_DATE - last_movement_date::date) >= $3::numeric THEN false
+          WHEN movement_count_90d > 0 AND movement_count_90d < ($2::numeric / 30.0) THEN true
           ELSE false
         END as is_slow_moving,
         CASE 
           WHEN last_movement_date IS NULL THEN true
-          WHEN (CURRENT_DATE - last_movement_date::date) >= $3 THEN true
+          WHEN (CURRENT_DATE - last_movement_date::date) >= $3::numeric THEN true
           ELSE false
         END as is_dead_stock
       FROM last_movements
@@ -485,48 +454,7 @@ export class MetricsService {
     deadThresholdDays: number = 180
   ): Promise<number> {
     const items = await this.identifySlowDeadStock(tenantId, slowThresholdDays, deadThresholdDays);
-    
-    if (items.length === 0) {
-      return 0;
-    }
-
-    const values = items.map((item, idx) => 
-      `($${idx * 4 + 1}, $${idx * 4 + 2}, $${idx * 4 + 3}, $${idx * 4 + 4})`
-    ).join(',');
-
-    const params = items.flatMap(item => [
-      item.itemId,
-      item.isSlowMoving,
-      item.isDeadStock,
-      tenantId
-    ]);
-
-    const sql = `
-      UPDATE items i
-      SET 
-        is_slow_moving = v.is_slow_moving,
-        is_dead_stock = v.is_dead_stock,
-        slow_dead_computed_at = NOW()
-      FROM (VALUES ${values}) AS v(item_id, is_slow_moving, is_dead_stock, tenant_id)
-      WHERE i.id = v.item_id::uuid 
-        AND i.tenant_id = v.tenant_id::uuid
-        AND i.tenant_id = $${params.length + 1}
-    `;
-
-    const result = await query(sql, [...params, tenantId]);
-    const rowCount = result.rowCount || 0;
-    
-    // Emit SSE event for real-time dashboard updates
-    if (rowCount > 0) {
-      emitEvent(tenantId, 'metrics:updated', { 
-        metric: 'slow_dead_stock', 
-        itemsUpdated: rowCount,
-        slowThresholdDays,
-        deadThresholdDays 
-      });
-    }
-    
-    return rowCount;
+    return this.applySlowDeadStockFlags(tenantId, items, slowThresholdDays, deadThresholdDays);
   }
 
   /**
@@ -553,17 +481,17 @@ export class MetricsService {
       WITH outflow_qty AS (
         -- Use shipments as proxy for outflow quantity
         SELECT 
-          sosl.item_id,
-          SUM(sosl.quantity) as total_outflow_qty
+          sol.item_id,
+          SUM(sosl.quantity_shipped) as total_outflow_qty
         FROM sales_order_shipment_lines sosl
         JOIN sales_order_shipments sos 
-          ON sosl.shipment_id = sos.id 
-          AND sosl.tenant_id = sos.tenant_id
+          ON sosl.sales_order_shipment_id = sos.id
+        JOIN sales_order_lines sol
+          ON sosl.sales_order_line_id = sol.id
         WHERE sosl.tenant_id = $1
           AND sos.shipped_at >= $2
           AND sos.shipped_at < $3
-          AND sos.status = 'shipped'
-        GROUP BY sosl.item_id
+        GROUP BY sol.item_id
       ),
       avg_on_hand AS (
         -- Sample on-hand at start, middle, and end of window
@@ -571,24 +499,33 @@ export class MetricsService {
           item_id,
           AVG(quantity) as avg_on_hand_qty
         FROM (
-          SELECT il.item_id, SUM(il.quantity) as quantity
-          FROM inventory_ledger il
-          WHERE il.tenant_id = $1
-          GROUP BY il.item_id
+          SELECT iml.item_id, SUM(iml.quantity_delta_canonical) as quantity
+          FROM inventory_movement_lines iml
+          JOIN inventory_movements im ON iml.movement_id = im.id AND iml.tenant_id = im.tenant_id
+          WHERE iml.tenant_id = $1
+            AND im.status = 'posted'
+            AND iml.quantity_delta_canonical IS NOT NULL
+          GROUP BY iml.item_id
           
           UNION ALL
           
-          SELECT il.item_id, SUM(il.quantity) as quantity
-          FROM inventory_ledger il
-          WHERE il.tenant_id = $1
-          GROUP BY il.item_id
+          SELECT iml.item_id, SUM(iml.quantity_delta_canonical) as quantity
+          FROM inventory_movement_lines iml
+          JOIN inventory_movements im ON iml.movement_id = im.id AND iml.tenant_id = im.tenant_id
+          WHERE iml.tenant_id = $1
+            AND im.status = 'posted'
+            AND iml.quantity_delta_canonical IS NOT NULL
+          GROUP BY iml.item_id
           
           UNION ALL
           
-          SELECT il.item_id, SUM(il.quantity) as quantity
-          FROM inventory_ledger il
-          WHERE il.tenant_id = $1
-          GROUP BY il.item_id
+          SELECT iml.item_id, SUM(iml.quantity_delta_canonical) as quantity
+          FROM inventory_movement_lines iml
+          JOIN inventory_movements im ON iml.movement_id = im.id AND iml.tenant_id = im.tenant_id
+          WHERE iml.tenant_id = $1
+            AND im.status = 'posted'
+            AND iml.quantity_delta_canonical IS NOT NULL
+          GROUP BY iml.item_id
         ) samples
         GROUP BY item_id
       )
@@ -653,16 +590,20 @@ export class MetricsService {
   static async storeTurnsAndDoi(
     tenantId: string,
     windowStart: Date,
-    windowEnd: Date
+    windowEnd: Date,
+    options: {
+      runId?: string;
+      finalizeRun?: boolean;
+      notes?: string;
+      asOf?: Date;
+    } = {}
   ): Promise<string> {
-    // Create KPI run
-    const runResult = await query<{ id: string }>(`
-      INSERT INTO kpi_runs (tenant_id, status, window_start, window_end)
-      VALUES ($1, 'computed', $2, $3)
-      RETURNING id
-    `, [tenantId, windowStart.toISOString(), windowEnd.toISOString()]);
-
-    const runId = runResult.rows[0].id;
+    const runId = options.runId ?? await this.startKpiRun(tenantId, {
+      windowStart,
+      windowEnd,
+      notes: options.notes ?? 'Turns/DOI computed',
+      asOf: options.asOf ?? new Date(),
+    });
 
     // Compute metrics
     const metrics = await this.computeTurnsAndDoi(tenantId, windowStart, windowEnd);
@@ -678,20 +619,26 @@ export class MetricsService {
       // Store turns
       if (metric.turns !== null) {
         await query(`
-          INSERT INTO kpi_snapshots (kpi_run_id, kpi_name, dimensions, value, units)
-          VALUES ($1, 'turns', $2, $3, 'ratio')
-        `, [runId, JSON.stringify(dimensions), metric.turns]);
+          INSERT INTO kpi_snapshots (id, tenant_id, kpi_run_id, kpi_name, dimensions, value, units)
+          VALUES ($1, $2, $3, 'turns', $4, $5, 'ratio')
+        `, [uuidv4(), tenantId, runId, JSON.stringify(dimensions), metric.turns]);
       }
 
       // Store DOI
       if (metric.doiDays !== null) {
         await query(`
-          INSERT INTO kpi_snapshots (kpi_run_id, kpi_name, dimensions, value, units)
-          VALUES ($1, 'doi_days', $2, $3, 'days')
-        `, [runId, JSON.stringify(dimensions), metric.doiDays]);
+          INSERT INTO kpi_snapshots (id, tenant_id, kpi_run_id, kpi_name, dimensions, value, units)
+          VALUES ($1, $2, $3, 'doi_days', $4, $5, 'days')
+        `, [uuidv4(), tenantId, runId, JSON.stringify(dimensions), metric.doiDays]);
       }
 
-    // Emit SSE event for real-time dashboard updates
+      // Store rollup inputs for auditability
+      await query(`
+        INSERT INTO kpi_rollup_inputs (id, tenant_id, kpi_run_id, metric_name, dimensions, numerator_qty, denominator_qty)
+        VALUES ($1, $2, $3, 'turns_inputs', $4, $5, $6)
+      `, [uuidv4(), tenantId, runId, JSON.stringify(dimensions), metric.totalOutflowQty, metric.avgOnHandQty]);
+    }
+
     emitEvent(tenantId, 'metrics:updated', { 
       metric: 'turns_doi', 
       runId,
@@ -700,18 +647,227 @@ export class MetricsService {
       windowEnd: windowEnd.toISOString()
     });
 
-      // Store rollup inputs for auditability
-      await query(`
-        INSERT INTO kpi_rollup_inputs (kpi_run_id, metric_name, dimensions, numerator_qty, denominator_qty)
-        VALUES ($1, 'turns_inputs', $2, $3, $4)
-      `, [runId, JSON.stringify(dimensions), metric.totalOutflowQty, metric.avgOnHandQty]);
+    if (options.finalizeRun !== false) {
+      await this.finalizeKpiRun(runId);
     }
 
-    // Mark run as published
-    await query(`
-      UPDATE kpi_runs SET status = 'published' WHERE id = $1
-    `, [runId]);
-
     return runId;
+  }
+
+  static async storeAbcClassificationKpis(
+    tenantId: string,
+    windowDays: number = 90,
+    options: {
+      runId?: string;
+      finalizeRun?: boolean;
+      notes?: string;
+      asOf?: Date;
+    } = {}
+  ): Promise<{ runId: string; updatedCount: number }> {
+    const classifications = await this.computeAbcClassification(tenantId, windowDays);
+    const updatedCount = await this.applyAbcClassifications(tenantId, classifications, windowDays);
+    const runId = options.runId ?? await this.startKpiRun(tenantId, {
+      notes: options.notes ?? 'ABC classification computed',
+      asOf: options.asOf ?? new Date(),
+    });
+
+    const total = classifications.length;
+    const counts = classifications.reduce(
+      (acc, item) => {
+        acc[item.abcClass] += 1;
+        return acc;
+      },
+      { A: 0, B: 0, C: 0 } as Record<'A' | 'B' | 'C', number>,
+    );
+    const dimensions = JSON.stringify({ window_days: windowDays, total_items: total });
+
+    await query(
+      `INSERT INTO kpi_snapshots (id, tenant_id, kpi_run_id, kpi_name, dimensions, value, units)
+       VALUES ($1, $2, $3, 'abc_a_share', $4, $5, 'ratio')`,
+      [uuidv4(), tenantId, runId, dimensions, total > 0 ? counts.A / total : 0],
+    );
+    await query(
+      `INSERT INTO kpi_snapshots (id, tenant_id, kpi_run_id, kpi_name, dimensions, value, units)
+       VALUES ($1, $2, $3, 'abc_b_share', $4, $5, 'ratio')`,
+      [uuidv4(), tenantId, runId, dimensions, total > 0 ? counts.B / total : 0],
+    );
+    await query(
+      `INSERT INTO kpi_snapshots (id, tenant_id, kpi_run_id, kpi_name, dimensions, value, units)
+       VALUES ($1, $2, $3, 'abc_c_share', $4, $5, 'ratio')`,
+      [uuidv4(), tenantId, runId, dimensions, total > 0 ? counts.C / total : 0],
+    );
+
+    if (options.finalizeRun !== false) {
+      await this.finalizeKpiRun(runId);
+    }
+
+    return { runId, updatedCount };
+  }
+
+  static async storeSlowDeadStockKpis(
+    tenantId: string,
+    slowThresholdDays: number = 90,
+    deadThresholdDays: number = 180,
+    options: {
+      runId?: string;
+      finalizeRun?: boolean;
+      notes?: string;
+      asOf?: Date;
+    } = {}
+  ): Promise<{ runId: string; updatedCount: number }> {
+    const items = await this.identifySlowDeadStock(tenantId, slowThresholdDays, deadThresholdDays);
+    const updatedCount = await this.applySlowDeadStockFlags(
+      tenantId,
+      items,
+      slowThresholdDays,
+      deadThresholdDays,
+    );
+    const runId = options.runId ?? await this.startKpiRun(tenantId, {
+      notes: options.notes ?? 'Slow/dead stock computed',
+      asOf: options.asOf ?? new Date(),
+    });
+
+    const total = items.length;
+    const slowCount = items.filter((item) => item.isSlowMoving).length;
+    const deadCount = items.filter((item) => item.isDeadStock).length;
+    const dimensions = JSON.stringify({
+      slow_threshold_days: slowThresholdDays,
+      dead_threshold_days: deadThresholdDays,
+      total_items: total,
+    });
+
+    await query(
+      `INSERT INTO kpi_snapshots (id, tenant_id, kpi_run_id, kpi_name, dimensions, value, units)
+       VALUES ($1, $2, $3, 'slow_stock_share', $4, $5, 'ratio')`,
+      [uuidv4(), tenantId, runId, dimensions, total > 0 ? slowCount / total : 0],
+    );
+    await query(
+      `INSERT INTO kpi_snapshots (id, tenant_id, kpi_run_id, kpi_name, dimensions, value, units)
+       VALUES ($1, $2, $3, 'dead_stock_share', $4, $5, 'ratio')`,
+      [uuidv4(), tenantId, runId, dimensions, total > 0 ? deadCount / total : 0],
+    );
+
+    if (options.finalizeRun !== false) {
+      await this.finalizeKpiRun(runId);
+    }
+
+    return { runId, updatedCount };
+  }
+
+  private static async applyAbcClassifications(
+    tenantId: string,
+    classifications: AbcClassificationResult[],
+    windowDays: number,
+  ): Promise<number> {
+    if (classifications.length === 0) {
+      return 0;
+    }
+
+    const values = classifications.map((c, idx) =>
+      `($${idx * 3 + 1}, $${idx * 3 + 2}, $${idx * 3 + 3})`
+    ).join(',');
+
+    const params = classifications.flatMap(c => [c.itemId, c.abcClass, tenantId]);
+
+    const sql = `
+      UPDATE items i
+      SET
+        abc_class = v.abc_class,
+        abc_computed_at = NOW()
+      FROM (VALUES ${values}) AS v(item_id, abc_class, tenant_id)
+      WHERE i.id = v.item_id::uuid
+        AND i.tenant_id = v.tenant_id::uuid
+        AND i.tenant_id = $${params.length + 1}
+    `;
+
+    const result = await query(sql, [...params, tenantId]);
+    const rowCount = result.rowCount || 0;
+
+    if (rowCount > 0) {
+      emitEvent(tenantId, 'metrics:updated', {
+        metric: 'abc_classification',
+        itemsUpdated: rowCount,
+        windowDays,
+      });
+    }
+
+    return rowCount;
+  }
+
+  private static async applySlowDeadStockFlags(
+    tenantId: string,
+    items: SlowDeadStockItem[],
+    slowThresholdDays: number,
+    deadThresholdDays: number,
+  ): Promise<number> {
+    if (items.length === 0) {
+      return 0;
+    }
+
+    const values = items.map((item, idx) =>
+      `($${idx * 4 + 1}::uuid, $${idx * 4 + 2}::boolean, $${idx * 4 + 3}::boolean, $${idx * 4 + 4}::uuid)`
+    ).join(',');
+
+    const params = items.flatMap(item => [
+      item.itemId,
+      item.isSlowMoving,
+      item.isDeadStock,
+      tenantId
+    ]);
+
+    const sql = `
+      UPDATE items i
+      SET
+        is_slow_moving = v.is_slow_moving,
+        is_dead_stock = v.is_dead_stock,
+        slow_dead_computed_at = NOW()
+      FROM (VALUES ${values}) AS v(item_id, is_slow_moving, is_dead_stock, tenant_id)
+      WHERE i.id = v.item_id::uuid
+        AND i.tenant_id = v.tenant_id::uuid
+        AND i.tenant_id = $${params.length + 1}
+    `;
+
+    const result = await query(sql, [...params, tenantId]);
+    const rowCount = result.rowCount || 0;
+
+    if (rowCount > 0) {
+      emitEvent(tenantId, 'metrics:updated', {
+        metric: 'slow_dead_stock',
+        itemsUpdated: rowCount,
+        slowThresholdDays,
+        deadThresholdDays,
+      });
+    }
+
+    return rowCount;
+  }
+
+  static async startKpiRun(
+    tenantId: string,
+    options: {
+      windowStart?: Date;
+      windowEnd?: Date;
+      notes?: string;
+      asOf?: Date;
+    },
+  ): Promise<string> {
+    const runId = uuidv4();
+    await query(
+      `INSERT INTO kpi_runs (id, tenant_id, status, window_start, window_end, as_of, notes, created_at)
+       VALUES ($1, $2, 'computed', $3, $4, $5, $6, now())`,
+      [
+        runId,
+        tenantId,
+        options.windowStart ? options.windowStart.toISOString() : null,
+        options.windowEnd ? options.windowEnd.toISOString() : null,
+        options.asOf ? options.asOf.toISOString() : null,
+        options.notes ?? null,
+      ],
+    );
+    return runId;
+  }
+
+  static async finalizeKpiRun(runId: string): Promise<void> {
+    await query(`UPDATE kpi_runs SET status = 'published' WHERE id = $1`, [runId]);
   }
 }

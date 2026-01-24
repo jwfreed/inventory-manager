@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import type { ApiError } from '@api/types'
 import { useInventorySnapshotSummary } from '@features/inventory/queries'
@@ -10,13 +11,14 @@ import { useFulfillmentFillRate, useKpiRuns, useKpiSnapshots, useReplenishmentRe
 import { Alert, Badge, Button, Card, EmptyState, ErrorState, LoadingSpinner, Modal, Section } from '@shared/ui'
 import { KpiCardGrid } from '../components/KpiCardGrid'
 import { SnapshotsTable } from '../components/SnapshotsTable'
-import { formatDateTime } from '../utils'
+import { formatDateTime, getAgeInDays, isStale } from '../utils'
 import { formatNumber } from '@shared/formatters'
 import { FlowHealthSection } from '../components/FlowHealthSection'
 import { useAuth } from '@shared/auth'
 import { trackDashboardEvent } from '../analytics'
 import { buildKpiCatalog, buildLatestSnapshotMap, resolveDefaultKpi, resolveKpiDefinition, resolveMissingDimensions } from '../tradeoff'
 import { clearTradeoffPreferences, loadTradeoffPreferences, saveTradeoffPreferences, TRADEOFF_DIMENSIONS, type TradeoffSlot } from '../tradeoffPreferences'
+import { computeAllMetrics } from '../api/metrics'
 
 type SnapshotQueryResult = ReturnType<typeof useKpiSnapshots>['data']
 type RunQueryResult = ReturnType<typeof useKpiRuns>['data']
@@ -63,6 +65,14 @@ export default function DashboardPage() {
     runAttempts.length > 0
       ? `Endpoint not available: ${runAttempts.join(', ')}`
       : 'KPI run endpoints are not implemented in this repository (DB-first only).'
+
+  const kpiRunMutation = useMutation({
+    mutationFn: () => computeAllMetrics(),
+    onSuccess: () => {
+      void refetchSnapshots()
+      void refetchRuns()
+    },
+  })
 
   useEffect(() => {
     trackDashboardEvent('dashboard_viewed')
@@ -152,6 +162,91 @@ export default function DashboardPage() {
   const latestSnapshots = useMemo(() => buildLatestSnapshotMap(snapshotList), [snapshotList])
   const availableKpis = useMemo(() => new Set(latestSnapshots.keys()), [latestSnapshots])
   const kpiCatalog = useMemo(() => buildKpiCatalog(snapshotList), [snapshotList])
+  const runsAvailable = runsResult && runsResult.type === 'success'
+  const runList = runsAvailable ? runsResult.data : []
+  const runLookup = useMemo(() => {
+    const map = new Map<string, RunQueryResult['data'][number]>()
+    runList.forEach((run) => {
+      if (run.id) map.set(run.id, run)
+    })
+    return map
+  }, [runList])
+
+  const latestRun = useMemo(() => {
+    const toTimestamp = (value?: string | null) => {
+      if (!value) return -Infinity
+      const date = new Date(value)
+      const time = date.getTime()
+      return Number.isNaN(time) ? -Infinity : time
+    }
+    return [...runList].sort((a, b) => {
+      const aTime = Math.max(
+        toTimestamp(a.finished_at),
+        toTimestamp(a.started_at),
+        toTimestamp(a.as_of),
+      )
+      const bTime = Math.max(
+        toTimestamp(b.finished_at),
+        toTimestamp(b.started_at),
+        toTimestamp(b.as_of),
+      )
+      return bTime - aTime
+    })[0]
+  }, [runList])
+
+  const latestRunAt = latestRun?.finished_at ?? latestRun?.started_at ?? latestRun?.as_of ?? null
+  const latestRunAge = getAgeInDays(latestRunAt)
+  const latestRunLabel = latestRunAt
+    ? `Last computed${(latestRun?.notes ?? '').toLowerCase().includes('automatic') ? ' automatically' : ''}: ${formatDateTime(latestRunAt) || 'unknown'}`
+    : 'No KPI run recorded yet'
+  const computedKpisForLatestRun = useMemo(() => {
+    if (latestRun?.id) {
+      return new Set(
+        snapshotList
+          .filter((snapshot) => snapshot.kpi_run_id === latestRun.id)
+          .map((snapshot) => snapshot.kpi_name),
+      )
+    }
+    return new Set(snapshotList.map((snapshot) => snapshot.kpi_name))
+  }, [latestRun, snapshotList])
+  const expectedKpis = useMemo(
+    () => [
+      'turns',
+      'doi_days',
+      'abc_a_share',
+      'abc_b_share',
+      'abc_c_share',
+      'slow_stock_share',
+      'dead_stock_share',
+    ],
+    [],
+  )
+  const missingExpectedKpis = expectedKpis.filter((kpi) => !computedKpisForLatestRun.has(kpi))
+  const snapshotsExist = snapshotList.length > 0
+  const kpisAreStale = Boolean(latestRunAt && isStale(latestRunAt, 7))
+  const kpisMissingFromRun = snapshotsExist && Boolean(latestRun) && missingExpectedKpis.length > 0
+  const showKpiGuidance = !snapshotsExist || kpisAreStale || kpisMissingFromRun
+  const kpiGuidance = (() => {
+    if (!snapshotsExist) {
+      return {
+        title: 'KPIs haven’t been computed yet',
+        description: 'KPIs are calculated on demand and haven’t been run for this workspace.',
+      }
+    }
+    if (kpisMissingFromRun) {
+      return {
+        title: 'Some KPIs are missing from the last run',
+        description: 'Run KPI calculations to refresh the full set of tracked metrics.',
+      }
+    }
+    if (kpisAreStale) {
+      return {
+        title: 'KPIs are out of date',
+        description: `KPIs were last computed ${Math.round(latestRunAge ?? 0)} day(s) ago.`,
+      }
+    }
+    return null
+  })()
   const defaultSelections = useMemo(() => {
     const selections: Partial<Record<TradeoffSlot, string>> = {}
     TRADEOFF_DIMENSIONS.forEach((dimension) => {
@@ -830,24 +925,35 @@ export default function DashboardPage() {
         )}
         {!snapshotsAvailable || snapshotList.length === 0 ? (
           <div className="space-y-3">
-            <EmptyState
-              title="No KPI snapshots yet."
-              description="Run a KPI computation job to populate these cards."
-              action={
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    setAnalyticsExpanded(true)
-                    setTimeout(() => {
-                      document.getElementById('kpi-runs')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                    }, 0)
-                  }}
-                >
-                  Go to KPI runs
-                </Button>
-              }
-            />
+            {kpiGuidance ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-sm font-semibold text-slate-900">{kpiGuidance.title}</p>
+                <p className="mt-1 text-sm text-slate-600">{kpiGuidance.description}</p>
+                <p className="mt-2 text-xs text-slate-500">{latestRunLabel}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => kpiRunMutation.mutate()}
+                    disabled={kpiRunMutation.isPending}
+                  >
+                    {kpiRunMutation.isPending ? 'Running KPI calculations…' : 'Run KPI calculations'}
+                  </Button>
+                  <span className="text-xs text-slate-500">
+                    This won’t affect inventory or transactions.
+                  </span>
+                </div>
+                {kpiRunMutation.isError && (
+                  <div className="mt-3 text-xs text-slate-600">
+                    KPI run failed. Retry when you’re ready.
+                  </div>
+                )}
+                {kpiRunMutation.isSuccess && (
+                  <div className="mt-3 text-xs text-slate-600">
+                    KPIs updated just now.
+                  </div>
+                )}
+              </div>
+            ) : null}
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
               Selections saved:
               <div className="mt-2 grid gap-1 sm:grid-cols-2">
@@ -868,57 +974,97 @@ export default function DashboardPage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {TRADEOFF_DIMENSIONS.map((dimension) => {
-              const selectedName = resolvedSelections[dimension] ?? null
-              const snapshot = selectedName ? latestSnapshots.get(selectedName) : null
-              const definition =
-                resolveKpiDefinition(selectedName) ??
-                kpiCatalog.find((kpi) => kpi.name === selectedName) ??
-                null
-              const displayName = definition?.displayName ?? selectedName ?? 'Not available'
-              const description = definition?.description ?? 'Metric unsupported.'
-              const value =
-                snapshot?.value != null
-                  ? typeof snapshot.value === 'number'
-                    ? formatNumber(snapshot.value)
-                    : snapshot.value
-                  : 'Not available'
-              const unit = snapshot?.unit ?? null
-
-              return (
-                <div
-                  key={`tradeoff-${dimension}`}
-                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {dimension}
-                    </span>
-                    <Badge variant="neutral">{definition?.dimension ?? 'OTHER'}</Badge>
-                  </div>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">{displayName}</p>
-                  <div className="mt-2 flex items-baseline gap-2">
-                    <span className="text-2xl font-semibold text-slate-900">{value}</span>
-                    {unit ? <span className="text-xs font-medium text-slate-500">{unit}</span> : null}
-                  </div>
-                  {snapshot?.computed_at ? (
-                    <p className="mt-2 text-xs text-slate-500">
-                      As of {formatDateTime(snapshot.computed_at) || 'unknown'}
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-500">{description}</p>
-                  )}
-                  {!snapshot && (
-                    <div className="mt-3">
-                      <Button size="sm" variant="secondary" onClick={() => setTradeoffOpen(true)}>
-                        Choose another KPI
-                      </Button>
-                    </div>
-                  )}
+          <div className="space-y-3">
+            {showKpiGuidance && kpiGuidance && (
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-sm font-semibold text-slate-900">{kpiGuidance.title}</p>
+                <p className="mt-1 text-sm text-slate-600">{kpiGuidance.description}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => kpiRunMutation.mutate()}
+                    disabled={kpiRunMutation.isPending}
+                  >
+                    {kpiRunMutation.isPending ? 'Running KPI calculations…' : 'Run KPI calculations'}
+                  </Button>
+                  <span className="text-xs text-slate-500">
+                    This won’t affect inventory or transactions.
+                  </span>
                 </div>
-              )
-            })}
+                {kpiRunMutation.isError && (
+                  <div className="mt-3 text-xs text-slate-600">
+                    KPI run failed. Retry when you’re ready.
+                  </div>
+                )}
+                {kpiRunMutation.isSuccess && (
+                  <div className="mt-3 text-xs text-slate-600">
+                    KPIs updated just now.
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {TRADEOFF_DIMENSIONS.map((dimension) => {
+                const selectedName = resolvedSelections[dimension] ?? null
+                const snapshot = selectedName ? latestSnapshots.get(selectedName) : null
+                const definition =
+                  resolveKpiDefinition(selectedName) ??
+                  kpiCatalog.find((kpi) => kpi.name === selectedName) ??
+                  null
+                const displayName = definition?.displayName ?? selectedName ?? 'Not available'
+                const description = definition?.description ?? 'Metric unsupported.'
+                const value =
+                  snapshot?.value != null
+                    ? typeof snapshot.value === 'number'
+                      ? formatNumber(snapshot.value)
+                      : snapshot.value
+                    : 'Not available'
+                const unit = snapshot?.unit ?? null
+                const run = snapshot?.kpi_run_id ? runLookup.get(snapshot.kpi_run_id) : null
+                const runIsAutomatic = (run?.notes ?? '').toLowerCase().includes('automatic')
+                const stale = snapshot?.computed_at ? isStale(snapshot.computed_at, 7) : false
+
+                return (
+                  <div
+                    key={`tradeoff-${dimension}`}
+                    className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        {dimension}
+                      </span>
+                      <Badge variant="neutral">{definition?.dimension ?? 'OTHER'}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{displayName}</p>
+                    <div className="mt-2 flex items-baseline gap-2">
+                      <span className="text-2xl font-semibold text-slate-900">{value}</span>
+                      {unit ? <span className="text-xs font-medium text-slate-500">{unit}</span> : null}
+                    </div>
+                    {snapshot?.computed_at ? (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                        <span>
+                          Last computed{runIsAutomatic ? ' automatically' : ''}:{' '}
+                          {formatDateTime(snapshot.computed_at) || 'unknown'}
+                        </span>
+                        {stale && <Badge variant="warning">Stale</Badge>}
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-xs text-slate-500">
+                        <p>{description}</p>
+                        <p className="mt-1">Not computed yet.</p>
+                      </div>
+                    )}
+                    {!snapshot && (
+                      <div className="mt-3">
+                        <Button size="sm" variant="secondary" onClick={() => setTradeoffOpen(true)}>
+                          Choose another KPI
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
       </Section>
@@ -1070,6 +1216,35 @@ export default function DashboardPage() {
       >
         {analyticsExpanded && (
           <div className="space-y-4">
+            {showKpiGuidance && kpiGuidance && (
+              <Card title="KPI status">
+                <p className="text-sm font-semibold text-slate-900">{kpiGuidance.title}</p>
+                <p className="mt-1 text-sm text-slate-600">{kpiGuidance.description}</p>
+                <p className="mt-2 text-xs text-slate-500">{latestRunLabel}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => kpiRunMutation.mutate()}
+                    disabled={kpiRunMutation.isPending}
+                  >
+                    {kpiRunMutation.isPending ? 'Running KPI calculations…' : 'Run KPI calculations'}
+                  </Button>
+                  <span className="text-xs text-slate-500">
+                    This won’t affect inventory or transactions.
+                  </span>
+                </div>
+                {kpiRunMutation.isError && (
+                  <div className="mt-3 text-xs text-slate-600">
+                    KPI run failed. Retry when you’re ready.
+                  </div>
+                )}
+                {kpiRunMutation.isSuccess && (
+                  <div className="mt-3 text-xs text-slate-600">
+                    KPIs updated just now.
+                  </div>
+                )}
+              </Card>
+            )}
             <Card title="KPI cards">
             {snapshotsLoading || snapshotsFetching ? (
               <LoadingSpinner label="Loading KPI snapshots..." />
@@ -1087,7 +1262,7 @@ export default function DashboardPage() {
               />
             ) : null}
             {!snapshotsLoading && snapshotsAvailable && snapshotList.length > 0 ? (
-              <KpiCardGrid snapshots={snapshotList} />
+              <KpiCardGrid snapshots={snapshotList} runs={runList} />
             ) : null}
           </Card>
 
