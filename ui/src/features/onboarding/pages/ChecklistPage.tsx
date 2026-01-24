@@ -4,17 +4,20 @@ import { useNavigate } from 'react-router-dom'
 import OnboardingCard from '../components/OnboardingCard'
 import { useOnboarding } from '../hooks'
 import { trackOnboardingEvent } from '../analytics'
+import { useItemsList } from '@features/items/queries'
+import { useLocationsList } from '@features/locations/queries'
 
 const checklistItems = [
   { id: 'add_item', label: 'Add item', optional: false },
   { id: 'set_location', label: 'Set a location', optional: true, to: '/locations' },
-  { id: 'set_low_stock', label: 'Set low-stock alert', optional: true, to: '/items' },
   { id: 'invite_team', label: 'Invite team', optional: true, to: '/profile' },
 ] as const
 
 export default function ChecklistPage() {
   const navigate = useNavigate()
-  const { progress, markPartial, markCompleted, setStep } = useOnboarding()
+  const { progress, markChecklist, markPartial, markCompleted, setStep } = useOnboarding()
+  const itemsQuery = useItemsList({ limit: 1 }, { staleTime: 30_000 })
+  const locationsQuery = useLocationsList({ active: true, limit: 1 }, { staleTime: 30_000 })
 
   useEffect(() => {
     trackOnboardingEvent('onboarding_checklist_viewed', {
@@ -26,6 +29,23 @@ export default function ChecklistPage() {
       path_chosen: progress.pathChosen ?? null,
     })
   }, [progress.userRole, progress.businessType, progress.pathChosen])
+
+  useEffect(() => {
+    const hasItems = (itemsQuery.data?.data?.length ?? 0) > 0
+    const hasLocations = (locationsQuery.data?.data?.length ?? 0) > 0
+    if (hasItems && !progress.checklist.add_item) {
+      markChecklist('add_item', true)
+    }
+    if (hasLocations && !progress.checklist.set_location) {
+      markChecklist('set_location', true)
+    }
+  }, [
+    itemsQuery.data,
+    locationsQuery.data,
+    progress.checklist.add_item,
+    progress.checklist.set_location,
+    markChecklist,
+  ])
 
   const handleFinishLater = () => {
     markPartial()

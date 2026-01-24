@@ -1,5 +1,5 @@
-import { Outlet } from 'react-router-dom'
-import { useMemo } from 'react'
+import { Outlet, useLocation } from 'react-router-dom'
+import { useEffect, useMemo } from 'react'
 import { Badge, Breadcrumbs, Button } from '@shared/ui'
 import { useAuth } from '@shared/auth'
 import { navItems } from '../routeData'
@@ -8,6 +8,7 @@ import OnboardingNudge from '@features/onboarding/components/OnboardingNudge'
 
 function AppShell() {
   const { user, tenant, logout } = useAuth()
+  const location = useLocation()
   const envLabel = useMemo(() => {
     const mode = import.meta.env.MODE ?? 'development'
     return mode.toUpperCase()
@@ -15,6 +16,10 @@ function AppShell() {
 
   const userLabel = user?.fullName || user?.email
   const tenantLabel = tenant?.name || tenant?.slug
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
+  }, [location.pathname])
 
   return (
     <div className="flex min-h-screen bg-slate-25 text-slate-900">

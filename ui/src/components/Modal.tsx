@@ -42,7 +42,7 @@ export function Modal({ isOpen, onClose, title, children, footer, className }: P
         ref={dialogRef}
         tabIndex={-1}
         className={cn(
-          'w-full rounded-xl bg-white shadow-card outline-none',
+          'flex max-h-[85vh] w-full flex-col rounded-xl bg-white shadow-card outline-none',
           maxWidthClass,
           className,
         )}
@@ -53,7 +53,7 @@ export function Modal({ isOpen, onClose, title, children, footer, className }: P
             Close
           </Button>
         </div>
-        <div className="px-5 py-4 text-sm text-slate-800">{children}</div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 text-sm text-slate-800">{children}</div>
         {footer && <div className="border-t border-slate-200 px-5 py-4">{footer}</div>}
       </div>
     </div>,

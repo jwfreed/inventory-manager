@@ -7,13 +7,16 @@ import { useLocationsList } from '@features/locations/queries'
 import { usePurchaseOrdersList } from '@features/purchaseOrders/queries'
 import { useWorkOrdersList } from '@features/workOrders/queries'
 import { useFulfillmentFillRate, useKpiRuns, useKpiSnapshots, useReplenishmentRecommendations } from '../queries'
-import { Alert, Badge, Button, Card, EmptyState, ErrorState, LoadingSpinner, Section } from '@shared/ui'
+import { Alert, Badge, Button, Card, EmptyState, ErrorState, LoadingSpinner, Modal, Section } from '@shared/ui'
 import { KpiCardGrid } from '../components/KpiCardGrid'
 import { SnapshotsTable } from '../components/SnapshotsTable'
 import { formatDateTime } from '../utils'
 import { formatNumber } from '@shared/formatters'
 import { FlowHealthSection } from '../components/FlowHealthSection'
 import { useAuth } from '@shared/auth'
+import { trackDashboardEvent } from '../analytics'
+import { buildKpiCatalog, buildLatestSnapshotMap, resolveDefaultKpi, resolveKpiDefinition, resolveMissingDimensions } from '../tradeoff'
+import { clearTradeoffPreferences, loadTradeoffPreferences, saveTradeoffPreferences, TRADEOFF_DIMENSIONS, type TradeoffSlot } from '../tradeoffPreferences'
 
 type SnapshotQueryResult = ReturnType<typeof useKpiSnapshots>['data']
 type RunQueryResult = ReturnType<typeof useKpiRuns>['data']
@@ -27,6 +30,9 @@ function attemptedEndpoints(result?: SnapshotQueryResult | RunQueryResult) {
 
 export default function DashboardPage() {
   const { role } = useAuth()
+  const [tradeoffOpen, setTradeoffOpen] = useState(false)
+  const [tradeoffPrefs, setTradeoffPrefs] = useState(loadTradeoffPreferences)
+  const [tradeoffDraft, setTradeoffDraft] = useState<Partial<Record<TradeoffSlot, string>>>({})
   const {
     data: snapshotsResult,
     isLoading: snapshotsLoading,
@@ -57,6 +63,10 @@ export default function DashboardPage() {
     runAttempts.length > 0
       ? `Endpoint not available: ${runAttempts.join(', ')}`
       : 'KPI run endpoints are not implemented in this repository (DB-first only).'
+
+  useEffect(() => {
+    trackDashboardEvent('dashboard_viewed')
+  }, [])
 
   const productionQuery = useWorkOrdersList({ limit: 200 }, { staleTime: 30_000 })
 
@@ -137,6 +147,85 @@ export default function DashboardPage() {
     if (!loc) return id
     const code = loc.code ?? id
     return loc.name ? `${code} — ${loc.name}` : code
+  }
+
+  const latestSnapshots = useMemo(() => buildLatestSnapshotMap(snapshotList), [snapshotList])
+  const availableKpis = useMemo(() => new Set(latestSnapshots.keys()), [latestSnapshots])
+  const kpiCatalog = useMemo(() => buildKpiCatalog(snapshotList), [snapshotList])
+  const defaultSelections = useMemo(() => {
+    const selections: Partial<Record<TradeoffSlot, string>> = {}
+    TRADEOFF_DIMENSIONS.forEach((dimension) => {
+      selections[dimension] = resolveDefaultKpi(dimension, availableKpis) ?? undefined
+    })
+    return selections
+  }, [availableKpis])
+  const resolvedSelections = useMemo(() => ({
+    ...defaultSelections,
+    ...tradeoffPrefs.selections,
+  }), [defaultSelections, tradeoffPrefs.selections])
+
+  const catalogOptions = useMemo(
+    () =>
+      [...kpiCatalog].sort((a, b) => {
+        if (a.dimension === b.dimension) return a.displayName.localeCompare(b.displayName)
+        return a.dimension.localeCompare(b.dimension)
+      }),
+    [kpiCatalog],
+  )
+
+  const selectedDefinitions = TRADEOFF_DIMENSIONS.map((dimension) => {
+    const selectedName = resolvedSelections[dimension] ?? null
+    return resolveKpiDefinition(selectedName) ??
+      kpiCatalog.find((kpi) => kpi.name === selectedName) ??
+      null
+  }).filter(Boolean)
+
+  const missingDimensions = resolveMissingDimensions(selectedDefinitions as NonNullable<ReturnType<typeof resolveKpiDefinition>>[])
+  const showTradeoffWarning = missingDimensions.length > 0 && snapshotList.length > 0
+
+  useEffect(() => {
+    saveTradeoffPreferences(tradeoffPrefs)
+  }, [tradeoffPrefs])
+
+  useEffect(() => {
+    if (!tradeoffOpen) return
+    setTradeoffDraft(resolvedSelections)
+  }, [tradeoffOpen, resolvedSelections])
+
+  useEffect(() => {
+    trackDashboardEvent('dashboard_tradeoff_snapshot_viewed')
+  }, [])
+
+  useEffect(() => {
+    if (!showTradeoffWarning) return
+    trackDashboardEvent('dashboard_tradeoff_warning_shown', {
+      missing_dimensions: missingDimensions,
+    })
+  }, [showTradeoffWarning, missingDimensions])
+
+  const handleTradeoffSave = () => {
+    setTradeoffPrefs({ version: 1, selections: tradeoffDraft })
+    setTradeoffOpen(false)
+  }
+
+  const handleTradeoffReset = () => {
+    clearTradeoffPreferences()
+    setTradeoffPrefs({ version: 1, selections: {} })
+    setTradeoffDraft(defaultSelections)
+    trackDashboardEvent('dashboard_tradeoff_reset_default')
+  }
+
+  const handleRecommendedAdd = (dimension: TradeoffSlot) => {
+    const recommended = defaultSelections[dimension]
+    if (!recommended) return
+    setTradeoffPrefs((prev) => ({
+      ...prev,
+      selections: { ...prev.selections, [dimension]: recommended },
+    }))
+    trackDashboardEvent('dashboard_tradeoff_recommendation_clicked', {
+      dimension,
+      kpi: recommended,
+    })
   }
 
   const reorderNeeded = useMemo(
@@ -705,6 +794,246 @@ export default function DashboardPage() {
         </div>
       </Section>
 
+      <Section
+        title="Tradeoff snapshot"
+        description="Service, cost, and risk tradeoffs at a glance."
+        action={
+          <Button size="sm" variant="secondary" onClick={() => {
+            setTradeoffOpen(true)
+            trackDashboardEvent('dashboard_tradeoff_customize_opened')
+          }}>
+            Customize KPIs
+          </Button>
+        }
+      >
+        {showTradeoffWarning && (
+          <Alert
+            variant="warning"
+            title="Heads up"
+            message={`Excluding ${missingDimensions.join(', ')} can hide important tradeoffs.`}
+            action={
+              <div className="flex flex-wrap gap-2">
+                {missingDimensions.map((dimension) => (
+                  <Button
+                    key={dimension}
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleRecommendedAdd(dimension)}
+                    disabled={!defaultSelections[dimension]}
+                  >
+                    Add recommended {dimension}
+                  </Button>
+                ))}
+              </div>
+            }
+          />
+        )}
+        {!snapshotsAvailable || snapshotList.length === 0 ? (
+          <div className="space-y-3">
+            <EmptyState
+              title="No KPI snapshots yet."
+              description="Run a KPI computation job to populate these cards."
+              action={
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setAnalyticsExpanded(true)
+                    setTimeout(() => {
+                      document.getElementById('kpi-runs')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }, 0)
+                  }}
+                >
+                  Go to KPI runs
+                </Button>
+              }
+            />
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+              Selections saved:
+              <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                {TRADEOFF_DIMENSIONS.map((dimension) => {
+                  const selectedName = resolvedSelections[dimension] ?? null
+                  const definition =
+                    resolveKpiDefinition(selectedName) ??
+                    kpiCatalog.find((kpi) => kpi.name === selectedName) ??
+                    null
+                  return (
+                    <div key={`selection-${dimension}`}>
+                      <span className="font-semibold">{dimension}:</span>{' '}
+                      {definition?.displayName ?? selectedName ?? 'Not set'}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {TRADEOFF_DIMENSIONS.map((dimension) => {
+              const selectedName = resolvedSelections[dimension] ?? null
+              const snapshot = selectedName ? latestSnapshots.get(selectedName) : null
+              const definition =
+                resolveKpiDefinition(selectedName) ??
+                kpiCatalog.find((kpi) => kpi.name === selectedName) ??
+                null
+              const displayName = definition?.displayName ?? selectedName ?? 'Not available'
+              const description = definition?.description ?? 'Metric unsupported.'
+              const value =
+                snapshot?.value != null
+                  ? typeof snapshot.value === 'number'
+                    ? formatNumber(snapshot.value)
+                    : snapshot.value
+                  : 'Not available'
+              const unit = snapshot?.unit ?? null
+
+              return (
+                <div
+                  key={`tradeoff-${dimension}`}
+                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {dimension}
+                    </span>
+                    <Badge variant="neutral">{definition?.dimension ?? 'OTHER'}</Badge>
+                  </div>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{displayName}</p>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-2xl font-semibold text-slate-900">{value}</span>
+                    {unit ? <span className="text-xs font-medium text-slate-500">{unit}</span> : null}
+                  </div>
+                  {snapshot?.computed_at ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      As of {formatDateTime(snapshot.computed_at) || 'unknown'}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">{description}</p>
+                  )}
+                  {!snapshot && (
+                    <div className="mt-3">
+                      <Button size="sm" variant="secondary" onClick={() => setTradeoffOpen(true)}>
+                        Choose another KPI
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Section>
+
+      <Section>
+        <Card title="Resolution queue" description="Resolve exceptions and commitments before moving on.">
+          {exceptionLoading && <LoadingSpinner label="Scanning for exceptions..." />}
+          {exceptionError && (
+            <Alert
+              variant="error"
+              title="Could not load exceptions"
+              message="Retry to refresh recommendations and inventory coverage."
+              action={
+                <Button size="sm" variant="secondary" onClick={() => {
+                  void recommendationsQuery.refetch()
+                  void inventorySummaryQuery.refetch()
+                }}>
+                  Retry
+                </Button>
+              }
+            />
+          )}
+          {!exceptionLoading && !exceptionError && reorderNeeded.length === 0 && availabilityIssues.length === 0 && (
+            <Alert
+              variant="success"
+              title="No immediate exceptions"
+              message="No reorder flags and no zero/negative availability detected."
+            />
+          )}
+          {!exceptionLoading &&
+            !exceptionError &&
+            (reorderNeeded.length > 0 || availabilityIssues.length > 0) && (
+              <div className="divide-y divide-slate-200">
+                <div className="py-2 text-xs text-slate-500">
+                  Exceptions only. Open Item → Stock for authoritative totals.
+                </div>
+                {reorderNeeded.slice(0, 5).map((rec) => {
+                  const threshold =
+                    rec.policyType === 'q_rop'
+                      ? rec.inputs.reorderPointQty ?? 0
+                      : rec.inputs.orderUpToLevelQty ?? 0
+                  const gap = rec.inventory.inventoryPosition - threshold
+                  const poLink = `/purchase-orders/new?itemId=${encodeURIComponent(rec.itemId)}&locationId=${encodeURIComponent(
+                    rec.locationId,
+                  )}&qty=${encodeURIComponent(String(rec.recommendation.recommendedOrderQty))}&uom=${encodeURIComponent(rec.uom)}`
+                  return (
+                    <div key={`reorder-${rec.policyId}`} className="py-3">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="danger">Action required</Badge>
+                            <span className="text-xs font-semibold uppercase text-slate-500">Reorder</span>
+                          </div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            Reorder: {formatItem(rec.itemId)} @ {formatLocation(rec.locationId)}
+                          </p>
+                          <p className="text-xs text-slate-600">
+                            Inventory position {formatNumber(rec.inventory.inventoryPosition)} vs threshold{' '}
+                            {formatNumber(threshold)} · gap {formatNumber(Math.abs(gap))}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Policy {rec.policyType} · Recommend order{' '}
+                            {formatNumber(rec.recommendation.recommendedOrderQty)} {rec.uom}{' '}
+                            {rec.recommendation.recommendedOrderDate
+                              ? `by ${rec.recommendation.recommendedOrderDate}`
+                              : ''}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Link to={poLink}>
+                            <Button size="sm" variant="secondary">
+                              Create PO
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                {availabilityIssues.slice(0, 5).map((row) => {
+                  const availabilitySeverity = row.available < 0 || row.inventoryPosition < 0
+                  const availabilityLabel = availabilitySeverity ? 'Action required' : 'Watch'
+                  const availabilityVariant = availabilitySeverity ? 'danger' : 'warning'
+                  const itemLink = `/items/${row.itemId}?locationId=${encodeURIComponent(row.locationId)}`
+                  return (
+                    <div key={`avail-${row.itemId}-${row.locationId}-${row.uom}`} className="py-3">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={availabilityVariant}>{availabilityLabel}</Badge>
+                            <span className="text-xs font-semibold uppercase text-slate-500">Availability</span>
+                          </div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            Low/negative availability: {formatItem(row.itemId)} @ {formatLocation(row.locationId)}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Open Item → Stock for definitive on-hand, availability, and incoming.
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Link to={itemLink}>
+                            <Button size="sm" variant="secondary">
+                              Investigate
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+        </Card>
+      </Section>
+
       <FlowHealthSection
         productionRows={productionAtRisk}
         productionLoading={productionQuery.isLoading}
@@ -782,6 +1111,7 @@ export default function DashboardPage() {
           </Card>
 
           <Card title="KPI runs" description="Latest run metadata reported by the API.">
+            <div id="kpi-runs" />
             {runsLoading && <LoadingSpinner label="Loading KPI runs..." />}
             {runsError && runsErrorObj && <ErrorState error={runsErrorObj} onRetry={() => void refetchRuns()} />}
             {runsResult && runsResult.type === 'ApiNotAvailable' && (
@@ -792,7 +1122,7 @@ export default function DashboardPage() {
                 title="No KPI runs yet"
                 description="Run a KPI computation job to populate runs."
               />
-            )}
+              )}
             {runsResult && runsResult.type === 'success' && runsResult.data.length > 0 && (
               <div className="divide-y divide-slate-200">
                 {runsResult.data.slice(0, 5).map((run) => (
@@ -826,6 +1156,65 @@ export default function DashboardPage() {
           </div>
         )}
       </Section>
+
+      <Modal
+        isOpen={tradeoffOpen}
+        onClose={() => setTradeoffOpen(false)}
+        title="Customize KPI tradeoffs"
+        footer={
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" onClick={handleTradeoffReset}>
+              Reset to default
+            </Button>
+            <Button onClick={handleTradeoffSave}>Save</Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {TRADEOFF_DIMENSIONS.map((dimension) => (
+            <div key={`tradeoff-picker-${dimension}`} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{dimension}</span>
+              </div>
+              <div className="space-y-2">
+                {catalogOptions
+                  .filter((kpi) => kpi.dimension === dimension || kpi.dimension === 'OTHER')
+                  .map((kpi) => {
+                  const checked = (tradeoffDraft[dimension] ?? resolvedSelections[dimension]) === kpi.name
+                  return (
+                    <label
+                      key={`${dimension}-${kpi.name}`}
+                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2"
+                    >
+                      <input
+                        type="radio"
+                        name={`tradeoff-${dimension}`}
+                        checked={checked}
+                        onChange={() => {
+                          const previous = tradeoffDraft[dimension] ?? resolvedSelections[dimension] ?? null
+                          setTradeoffDraft((prev) => ({ ...prev, [dimension]: kpi.name }))
+                          trackDashboardEvent('dashboard_tradeoff_kpi_changed', {
+                            slot_dimension: dimension,
+                            from_kpi: previous,
+                            to_kpi: kpi.name,
+                          })
+                        }}
+                      />
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900">{kpi.displayName}</span>
+                          <Badge variant="neutral">{kpi.dimension}</Badge>
+                        </div>
+                        <p className="text-xs text-slate-500">{kpi.description}</p>
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Modal>
     </div>
   )
 }
