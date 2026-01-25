@@ -1,8 +1,10 @@
 import { Link, useMatches } from 'react-router-dom'
 import type { AppRouteHandle } from '../shared/routes'
+import { usePageChrome } from '../app/layout/usePageChrome'
 
 export default function Breadcrumbs() {
   const matches = useMatches()
+  const { showBreadcrumbs } = usePageChrome()
   const crumbs = matches
     .map((match) => {
       const handle = match.handle as AppRouteHandle | undefined
@@ -14,7 +16,7 @@ export default function Breadcrumbs() {
     })
     .filter((crumb): crumb is { label: string; path: string } => Boolean(crumb))
 
-  if (crumbs.length === 0) return null
+  if (!showBreadcrumbs || crumbs.length === 0) return null
 
   return (
     <nav aria-label="Breadcrumb" className="text-sm text-slate-500">

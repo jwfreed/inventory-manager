@@ -10,10 +10,12 @@ import { Section } from '../../../components/Section'
 import { Alert } from '../../../components/Alert'
 import { MovementFilters } from '../components/MovementFilters'
 import { MovementsTable } from '../components/MovementsTable'
+import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 const DEFAULT_LIMIT = 20
 
 export default function MovementsListPage() {
+  const { hideTitle } = usePageChrome()
   const [searchParams] = useSearchParams()
   const initialFilters = useMemo<MovementListParams>(() => {
     const itemId = searchParams.get('itemId') ?? undefined
@@ -31,8 +33,7 @@ export default function MovementsListPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Ledger</p>
-        <h2 className="text-2xl font-semibold text-slate-900">Inventory movements</h2>
+        {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Inventory movements</h2>}
         <p className="max-w-3xl text-sm text-slate-600">
           Movements are the append-only ledger of all stock changes. Use filters to explain
           discrepancies, trace documents, and audit adjustments.

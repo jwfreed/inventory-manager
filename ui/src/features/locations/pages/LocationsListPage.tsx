@@ -12,6 +12,7 @@ import { EmptyState } from '../../../components/EmptyState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { LocationForm } from '../components/LocationForm'
+import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 const activeOptions = [
   { label: 'All', value: '' },
@@ -23,6 +24,7 @@ const locationTypes = ['warehouse', 'bin', 'store', 'customer', 'vendor', 'scrap
 
 export default function LocationsListPage() {
   const navigate = useNavigate()
+  const { hideTitle } = usePageChrome()
   const [active, setActive] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [search, setSearch] = useState('')
@@ -54,8 +56,7 @@ export default function LocationsListPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Master data</p>
-        <h2 className="text-2xl font-semibold text-slate-900">Locations</h2>
+        {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Locations</h2>}
         <p className="max-w-3xl text-sm text-slate-600">
           Browse locations or add new storage/demand points. Use the form below or click a row to view details and edit.
         </p>

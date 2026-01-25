@@ -4,6 +4,7 @@ import { useInventoryAdjustmentsList } from '../queries'
 import type { InventoryAdjustmentSummary } from '@api/types'
 import { Alert, Badge, Button, Card, DataTable, LoadingSpinner, Section } from '@shared/ui'
 import { formatDate, formatNumber } from '@shared/formatters'
+import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 const statusOptions = [
   { label: 'All', value: '' },
@@ -35,6 +36,7 @@ function statusBadge(row: InventoryAdjustmentSummary) {
 
 export default function AdjustmentsListPage() {
   const navigate = useNavigate()
+  const { hideTitle } = usePageChrome()
   const [status, setStatus] = useState('')
 
   const { data, isLoading, isError, error, refetch } = useInventoryAdjustmentsList(
@@ -47,8 +49,7 @@ export default function AdjustmentsListPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Inventory control</p>
-        <h2 className="text-2xl font-semibold text-slate-900">Inventory adjustments</h2>
+        {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Inventory adjustments</h2>}
         <p className="max-w-3xl text-sm text-slate-600">
           Adjustments are append-only corrections to the movement ledger. Drafts can be edited, posted
           adjustments are immutable, and corrections are done by reversal entries.

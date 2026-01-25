@@ -126,7 +126,6 @@ export default function MovementDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Ledger</p>
           <h2 className="text-2xl font-semibold text-slate-900">Movement detail</h2>
           <p className="text-sm text-slate-600">Review header info and line deltas.</p>
         </div>

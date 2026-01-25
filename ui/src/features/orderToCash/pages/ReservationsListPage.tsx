@@ -8,9 +8,11 @@ import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
+import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 export default function ReservationsListPage() {
   const navigate = useNavigate()
+  const { hideTitle } = usePageChrome()
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
 
@@ -31,8 +33,7 @@ export default function ReservationsListPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Order to Cash</p>
-        <h2 className="text-2xl font-semibold text-slate-900">Reservations</h2>
+        {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Reservations</h2>}
         <p className="max-w-3xl text-sm text-slate-600">
           Reservations do not change on-hand; they represent demand allocation. Read-only browsing.
         </p>

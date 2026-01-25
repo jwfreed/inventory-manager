@@ -19,6 +19,7 @@ import { trackDashboardEvent } from '../analytics'
 import { buildKpiCatalog, buildLatestSnapshotMap, resolveDefaultKpi, resolveKpiDefinition, resolveMissingDimensions } from '../tradeoff'
 import { clearTradeoffPreferences, loadTradeoffPreferences, saveTradeoffPreferences, TRADEOFF_DIMENSIONS, type TradeoffSlot } from '../tradeoffPreferences'
 import { computeAllMetrics } from '../api/metrics'
+import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 type SnapshotQueryResult = ReturnType<typeof useKpiSnapshots>['data']
 type RunQueryResult = ReturnType<typeof useKpiRuns>['data']
@@ -32,6 +33,7 @@ function attemptedEndpoints(result?: SnapshotQueryResult | RunQueryResult) {
 
 export default function DashboardPage() {
   const { role } = useAuth()
+  const { hideTitle } = usePageChrome()
   const [tradeoffOpen, setTradeoffOpen] = useState(false)
   const [tradeoffPrefs, setTradeoffPrefs] = useState(loadTradeoffPreferences)
   const [tradeoffDraft, setTradeoffDraft] = useState<Partial<Record<TradeoffSlot, string>>>({})
@@ -646,8 +648,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Dashboard</p>
-        <h2 className="text-2xl font-semibold text-slate-900">Dashboard</h2>
+        {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Dashboard</h2>}
         <p className="max-w-3xl text-sm text-slate-600">
           Operational health &amp; exceptions.
         </p>

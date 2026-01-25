@@ -23,7 +23,7 @@ function AppShell() {
 
   return (
     <div className="flex min-h-screen bg-slate-25 text-slate-900">
-      <aside className="w-64 border-r border-slate-200 bg-white flex flex-col">
+      <aside className="hidden w-64 border-r border-slate-200 bg-white lg:flex lg:flex-col">
         <div className="px-5 py-6">
           <div className="text-lg font-semibold text-slate-900">Inventory UI</div>
           <p className="mt-1 text-sm text-slate-500">Inventory & manufacturing ops</p>

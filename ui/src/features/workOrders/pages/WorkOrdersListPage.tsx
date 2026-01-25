@@ -6,10 +6,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { WorkOrdersFilters } from '../components/WorkOrdersFilters'
 import { WorkOrdersTable } from '../components/WorkOrdersTable'
 import { useWorkOrdersListData } from '../hooks/useWorkOrdersListData'
+import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 export default function WorkOrdersListPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { hideTitle } = usePageChrome()
   
   const [status, setStatus] = useState(() => searchParams.get('status') || '')
   const [search, setSearch] = useState('')
@@ -38,8 +40,7 @@ export default function WorkOrdersListPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Execution</p>
-        <h2 className="text-2xl font-semibold text-slate-900">Work Orders</h2>
+        {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Work Orders</h2>}
         <div className="max-w-3xl space-y-1 text-sm text-slate-600">
           <p>Drafts do not affect inventory.</p>
           <p>Posting issues creates issue movements; posting completions creates receive movements.</p>

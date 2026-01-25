@@ -387,7 +387,6 @@ export default function ItemDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Master data</p>
           <h2 className="text-2xl font-semibold text-slate-900">Item detail</h2>
           {itemQuery.data && (
             <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700">

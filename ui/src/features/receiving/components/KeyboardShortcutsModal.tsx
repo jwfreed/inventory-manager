@@ -1,6 +1,6 @@
 import { memo, type ReactNode } from 'react'
 import { Card } from '@shared/ui'
-import { SHORTCUTS } from '../hooks/useKeyboardShortcuts'
+import { SHORTCUTS, useEscapeKey } from '../hooks/useKeyboardShortcuts'
 
 type ShortcutDef = {
   key: string
@@ -58,9 +58,18 @@ function ShortcutRow({ shortcut }: { shortcut: ShortcutDef }) {
 }
 
 export const KeyboardShortcutsModal = memo(({ onClose }: Props) => {
+  useEscapeKey(onClose, true)
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <Card className="max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <Card
+        className="max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-semibold text-slate-900">Keyboard Shortcuts</h2>
           <button

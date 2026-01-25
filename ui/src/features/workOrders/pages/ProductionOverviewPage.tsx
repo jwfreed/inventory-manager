@@ -8,9 +8,11 @@ import { formatNumber } from '@shared/formatters'
 import { SimpleLineChart, SimpleBarChart } from '@shared/charts'
 import { ChartExportButton } from '@shared/charts/ChartExportButton'
 import type { ProductionOverviewFilters } from '../api/productionOverview'
+import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 export default function ProductionOverviewPage() {
   const navigate = useNavigate()
+  const { hideTitle } = usePageChrome()
   const volumeTrendChartRef = useRef<HTMLDivElement>(null)
   const topSKUsChartRef = useRef<HTMLDivElement>(null)
   const wipStatusChartRef = useRef<HTMLDivElement>(null)
@@ -155,8 +157,7 @@ export default function ProductionOverviewPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Production</p>
-        <h1 className="text-2xl font-semibold text-slate-900">Production Overview</h1>
+        {!hideTitle && <h1 className="text-2xl font-semibold text-slate-900">Production Overview</h1>}
         <p className="text-sm text-slate-600">
           Comprehensive production dashboard with volume trends, SKU performance, WIP status, and materials
           consumed

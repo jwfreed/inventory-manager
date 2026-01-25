@@ -125,7 +125,6 @@ export default function ReceiptCapturePage() {
         <div className={`space-y-6 ${isMobile && showSidebar ? 'hidden' : 'block'}`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Inbound</p>
               <h2 className="text-2xl font-semibold text-slate-900">Receive Goods</h2>
             </div>
 

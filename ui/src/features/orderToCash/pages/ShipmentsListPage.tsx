@@ -8,9 +8,11 @@ import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
+import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 export default function ShipmentsListPage() {
   const navigate = useNavigate()
+  const { hideTitle } = usePageChrome()
   const [search, setSearch] = useState('')
 
   const { data, isLoading, isError, error, refetch } = useShipmentsList()
@@ -29,8 +31,7 @@ export default function ShipmentsListPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Order to Cash</p>
-        <h2 className="text-2xl font-semibold text-slate-900">Shipments</h2>
+        {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Shipments</h2>}
         <p className="max-w-3xl text-sm text-slate-600">
           Shipment documents may link to inventory movements when posted. Read-only browsing.
         </p>

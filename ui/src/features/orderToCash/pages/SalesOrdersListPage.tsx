@@ -11,9 +11,11 @@ import { EmptyState } from '../../../components/EmptyState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { formatDate } from '@shared/formatters'
+import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 export default function SalesOrdersListPage() {
   const navigate = useNavigate()
+  const { hideTitle } = usePageChrome()
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -59,10 +61,7 @@ export default function SalesOrdersListPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Order to Cash</p>
-            <h2 className="text-2xl font-semibold text-slate-900">Sales Orders</h2>
-          </div>
+          <div>{!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Sales Orders</h2>}</div>
           <div className="flex gap-2">
             {selectedIds.size > 0 && (
               <Button

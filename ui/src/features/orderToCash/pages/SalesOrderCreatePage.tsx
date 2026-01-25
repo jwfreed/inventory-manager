@@ -99,7 +99,6 @@ export default function SalesOrderCreatePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Order to Cash</p>
           <h2 className="text-2xl font-semibold text-slate-900">Create sales order</h2>
         </div>
         <Button variant="secondary" size="sm" onClick={() => navigate('/sales-orders')}>

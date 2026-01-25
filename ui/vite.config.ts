@@ -28,6 +28,10 @@ export default defineConfig(({ mode }) => {
         '@api': fileURLToPath(new URL('./src/api', import.meta.url)),
       },
     },
+    test: {
+      environment: 'jsdom',
+      setupFiles: './src/test/setup.ts',
+    },
     server: {
       proxy: {
         '/api': {

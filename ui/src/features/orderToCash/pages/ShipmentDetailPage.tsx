@@ -39,7 +39,6 @@ export default function ShipmentDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Order to Cash</p>
           <h2 className="text-2xl font-semibold text-slate-900">Shipment detail</h2>
         </div>
         <div className="flex gap-2">

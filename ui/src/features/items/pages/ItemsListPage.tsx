@@ -18,6 +18,7 @@ import { useOnboarding } from '@features/onboarding/hooks'
 import OnboardingTip from '@features/onboarding/components/OnboardingTip'
 import { isTipDismissed, markTipDismissed } from '@features/onboarding/state'
 import { trackOnboardingEvent } from '@features/onboarding/analytics'
+import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 type ColumnId =
   | 'sku'
@@ -106,6 +107,7 @@ const typeLabels: Record<string, string> = {
 export default function ItemsListPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { hideTitle } = usePageChrome()
 
   const { user } = useAuth()
   const { progress, markTipShown } = useOnboarding()
@@ -504,8 +506,7 @@ export default function ItemsListPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Master data</p>
-          <h2 className="text-2xl font-semibold text-slate-900">Items</h2>
+          {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Items</h2>}
           <p className="max-w-3xl text-sm text-slate-600">
             Browse items or add new ones. Use filters to narrow the list.
           </p>

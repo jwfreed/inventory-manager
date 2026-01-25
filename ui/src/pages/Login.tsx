@@ -89,7 +89,6 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-25">
       <div className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center gap-8 px-6 py-10">
         <div className="space-y-2">
-          <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Access</p>
           <h1 className="text-3xl font-semibold text-slate-900">Inventory Manager</h1>
           <p className="max-w-2xl text-sm text-slate-600">
             Sign in to your tenant workspace. First-time setup requires bootstrapping an admin

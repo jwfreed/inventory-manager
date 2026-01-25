@@ -11,6 +11,7 @@ import { LoadingSpinner } from '../components/Loading'
 import { Section } from '../components/Section'
 import { useAuth } from '../shared/auth'
 import { formatDateTime } from '../features/kpis/utils'
+import { usePageChrome } from '../app/layout/usePageChrome'
 
 type KpiStatusState = 'not_computed' | 'up_to_date' | 'stale' | 'not_available'
 
@@ -120,8 +121,35 @@ async function fetchKpiStatus(): Promise<KpiStatus> {
   }
 }
 
+type HomeIntroProps = {
+  showTitle: boolean
+  role?: string | null
+  userLabel?: string | null
+  tenantLabel?: string | null
+}
+
+export function HomeIntro({ showTitle, role, userLabel, tenantLabel }: HomeIntroProps) {
+  return (
+    <div className="flex flex-col gap-2">
+      {showTitle && (
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-2xl font-semibold text-slate-900">Home</h2>
+          {role && <Badge variant="info">{role}</Badge>}
+        </div>
+      )}
+      <p className="max-w-3xl text-sm text-slate-600">Your work today.</p>
+      {(userLabel || tenantLabel) && (
+        <div className="text-xs text-slate-500">
+          Signed in as {userLabel || 'user'} · Tenant {tenantLabel || '—'}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function HomePage() {
   const { user, tenant, role } = useAuth()
+  const { hideTitle } = usePageChrome()
   const {
     data: connectivity,
     isLoading,
@@ -145,21 +173,12 @@ export default function HomePage() {
     return connectivity?.status || 'ok'
   }, [isError, isLoading, connectivity])
 
+  const userLabel = user?.fullName || user?.email
+  const tenantLabel = tenant?.name || tenant?.slug
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Home</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-2xl font-semibold text-slate-900">Home</h2>
-          {role && <Badge variant="info">{role}</Badge>}
-        </div>
-        <p className="max-w-3xl text-sm text-slate-600">Your work today.</p>
-        {(user?.email || tenant?.name || tenant?.slug) && (
-          <div className="text-xs text-slate-500">
-            Signed in as {user?.fullName || user?.email || 'user'} · Tenant {tenant?.name || tenant?.slug || '—'}
-          </div>
-        )}
-      </div>
+      <HomeIntro showTitle={!hideTitle} role={role} userLabel={userLabel} tenantLabel={tenantLabel} />
 
       <Section title="Needs attention" description="Short list of next steps that are likely time-sensitive.">
         {/* TODO: Add lightweight counts for QC / PO drafts when cheap endpoints exist. */}
