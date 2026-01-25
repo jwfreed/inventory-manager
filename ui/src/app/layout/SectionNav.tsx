@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { useState, useEffect, useMemo } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import type { AppNavItem, NavSection } from '@shared/routes'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 
@@ -22,39 +22,58 @@ const sectionConfig: Record<NavSection, { label: string; order: number }> = {
   profile: { label: 'Profile', order: 8 },
 }
 
-const EXPANDED_SECTIONS_KEY = 'nav-expanded-sections'
+const EXPANDED_SECTION_KEY = 'nav-expanded-section'
 
 export default function SectionNav({ navItems }: SectionNavProps) {
-  // Load expanded sections from localStorage or default to all expanded
-  const [expandedSections, setExpandedSections] = useState<Set<NavSection>>(() => {
-    const saved = localStorage.getItem(EXPANDED_SECTIONS_KEY)
-    if (saved) {
-      try {
-        return new Set(JSON.parse(saved))
-      } catch {
-        // If parsing fails, default to all expanded
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  const sectionByPath = useMemo(() => {
+    const bySection: Record<NavSection, AppNavItem[]> = {} as Record<NavSection, AppNavItem[]>
+    navItems.forEach((item) => {
+      const section = item.section || 'dashboard'
+      if (!bySection[section]) {
+        bySection[section] = []
       }
+      bySection[section].push(item)
+    })
+
+    Object.keys(bySection).forEach((section) => {
+      bySection[section as NavSection].sort((a, b) => (b.to.length ?? 0) - (a.to.length ?? 0))
+    })
+
+    const findSection = (pathname: string) => {
+      for (const [section, items] of Object.entries(bySection) as [NavSection, AppNavItem[]][]) {
+        if (items.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`) || pathname.startsWith(item.to))) {
+          return section
+        }
+      }
+      return undefined
     }
-    // Default: expand all except profile
-    return new Set(['dashboard', 'inbound', 'inventory', 'production', 'outbound', 'reports', 'master-data'])
+
+    return { bySection, findSection }
+  }, [navItems])
+
+  const activeSection = useMemo(
+    () => sectionByPath.findSection(location.pathname),
+    [location.pathname, sectionByPath],
+  )
+
+  const [expandedSection, setExpandedSection] = useState<NavSection | null>(() => {
+    const saved = localStorage.getItem(EXPANDED_SECTION_KEY) as NavSection | null
+    if (saved && activeSection && saved === activeSection) return saved
+    return activeSection ?? null
   })
 
-  // Save expanded sections to localStorage whenever they change
   useEffect(() => {
-    localStorage.setItem(EXPANDED_SECTIONS_KEY, JSON.stringify(Array.from(expandedSections)))
-  }, [expandedSections])
+    if (!activeSection) return
+    setExpandedSection(activeSection)
+  }, [activeSection])
 
-  const toggleSection = (section: NavSection) => {
-    setExpandedSections((prev) => {
-      const next = new Set(prev)
-      if (next.has(section)) {
-        next.delete(section)
-      } else {
-        next.add(section)
-      }
-      return next
-    })
-  }
+  useEffect(() => {
+    if (!expandedSection) return
+    localStorage.setItem(EXPANDED_SECTION_KEY, expandedSection)
+  }, [expandedSection])
 
   // Group nav items by section
   const groupedNav = navItems.reduce<GroupedNav>((acc, item) => {
@@ -65,6 +84,18 @@ export default function SectionNav({ navItems }: SectionNavProps) {
     acc[section].push(item)
     return acc
   }, {})
+
+  const toggleSection = (section: NavSection) => {
+    if (activeSection === section) return
+
+    const items = groupedNav[section] || []
+    if (items.length > 0) {
+      navigate(items[0].to)
+      return
+    }
+
+    setExpandedSection((prev) => (prev === section ? null : section))
+  }
 
   // Sort items within each section by order
   Object.keys(groupedNav).forEach((section) => {
@@ -83,7 +114,7 @@ export default function SectionNav({ navItems }: SectionNavProps) {
       {sortedSections.map((section) => {
         const items = groupedNav[section]
         const config = sectionConfig[section]
-        const isExpanded = expandedSections.has(section)
+        const isExpanded = activeSection ? activeSection === section : expandedSection === section
         
         // Dashboard section is special - no collapse, just the link
         if (section === 'dashboard' && items.length === 1) {
