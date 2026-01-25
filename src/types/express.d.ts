@@ -8,6 +8,7 @@ declare global {
         tenantId: string;
         role: AccessTokenPayload['role'];
       };
+      requestId?: string;
     }
   }
 }

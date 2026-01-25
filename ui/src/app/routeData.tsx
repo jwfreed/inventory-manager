@@ -17,6 +17,7 @@ import { ncrRoutes } from '../features/ncrs/routes'
 import { atpRoutes } from '../features/inventory/routes'
 import { reportRoutes } from '../features/reports/routes'
 import { apRoutes } from '../features/ap'
+import { adminRoutes } from '../features/admin'
 
 const coreRoutes: AppRouteObject[] = [
   {
@@ -53,6 +54,7 @@ export const appShellRoutes: AppRouteObject[] = [
   ...profileRoutes,
   ...routingsRoutes,
   ...ncrRoutes,
+  ...adminRoutes,
   {
     path: 'not-found',
     element: <NotFoundPage />,

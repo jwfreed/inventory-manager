@@ -7,7 +7,18 @@
     "strict": true,
     "skipLibCheck": true,
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@catalog/*": ["src/domains/catalog/*"],
+      "@inventory/*": ["src/domains/inventory/*"],
+      "@orders/*": ["src/domains/orders/*"],
+      "@warehouse/*": ["src/domains/warehouse/*"],
+      "@costing/*": ["src/domains/costing/*"],
+      "@integrations/*": ["src/domains/integrations/*"],
+      "@auth/*": ["src/domains/auth/*"],
+      "@audit/*": ["src/domains/audit/*"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts"],
   "exclude": ["node_modules"]

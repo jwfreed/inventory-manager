@@ -16,6 +16,7 @@ const EVENT_TYPES = [
   'inventory.putaway.posted',
   'inventory.receipt.created',
   'inventory.receipt.deleted',
+  'inventory.changed',
   'inventory.work_order.issue.posted',
   'inventory.work_order.completion.posted',
   'inventory.work_order.batch.posted',
@@ -160,6 +161,7 @@ export function useServerEvents(accessToken?: string | null) {
         case 'inventory.purchase_order.created':
         case 'inventory.purchase_order.updated':
         case 'inventory.purchase_order.deleted':
+        case 'inventory.changed':
           invalidateInventory(itemIds, locationIds)
           break
         default:

@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import { query } from '../db';
+import { getRequestContext } from './requestContext';
 
 type AuditInput = {
   tenantId: string;
@@ -30,6 +31,8 @@ export async function recordAuditLog(input: AuditInput, client?: PoolClient) {
     before,
     after
   } = input;
+  const context = getRequestContext();
+  const resolvedRequestId = requestId ?? context?.requestId ?? null;
 
   const executor = client ? client.query.bind(client) : query;
   await executor(
@@ -45,7 +48,7 @@ export async function recordAuditLog(input: AuditInput, client?: PoolClient) {
       entityType,
       entityId,
       occurredAt ?? new Date(),
-      requestId ?? null,
+      resolvedRequestId,
       metadata ?? null,
       before ?? null,
       after ?? null

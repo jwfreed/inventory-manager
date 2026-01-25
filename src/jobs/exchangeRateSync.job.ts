@@ -1,4 +1,5 @@
 import { ensureCurrenciesExist, upsertExchangeRate } from '../services/currencies.service';
+import { Bulkhead, CircuitBreaker, resilientFetch } from '../lib/integrationClient';
 
 /**
  * In-memory job lock to prevent overlapping runs
@@ -12,6 +13,9 @@ interface ExchangeRateApiResponse {
   rates: Record<string, number>;
   date: string;
 }
+
+const exchangeRateBreaker = new CircuitBreaker({ failureThreshold: 3, resetTimeoutMs: 60_000 });
+const exchangeRateBulkhead = new Bulkhead({ maxConcurrent: 2 });
 
 /**
  * Fetch latest exchange rates from a free API
@@ -27,7 +31,21 @@ interface ExchangeRateApiResponse {
 async function fetchExchangeRatesFromApi(): Promise<ExchangeRateApiResponse | null> {
   try {
     // Using frankfurter.app (free, no API key, ECB data)
-    const response = await fetch('https://api.frankfurter.app/latest?base=USD');
+    const response = await resilientFetch(
+      'https://api.frankfurter.app/latest?base=USD',
+      { method: 'GET', headers: { 'Accept': 'application/json' } },
+      {
+        timeoutMs: Number(process.env.INTEGRATION_TIMEOUT_MS || 5000),
+        retry: {
+          retries: Number(process.env.INTEGRATION_RETRIES || 2),
+          baseDelayMs: Number(process.env.INTEGRATION_RETRY_BASE_MS || 200),
+          maxDelayMs: Number(process.env.INTEGRATION_RETRY_MAX_MS || 2000),
+          jitterMs: Number(process.env.INTEGRATION_RETRY_JITTER_MS || 100)
+        },
+        circuitBreaker: exchangeRateBreaker,
+        bulkhead: exchangeRateBulkhead
+      }
+    );
     
     if (!response.ok) {
       throw new Error(`API responded with status: ${response.status}`);

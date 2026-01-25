@@ -11,6 +11,8 @@ if (!process.env.DATABASE_URL) {
 // Enable query logging with EXPLAIN ANALYZE in development
 const EXPLAIN_SLOW_QUERIES = process.env.NODE_ENV === 'development' && process.env.EXPLAIN_SLOW_QUERIES === 'true';
 const SLOW_QUERY_THRESHOLD_MS = parseInt(process.env.SLOW_QUERY_THRESHOLD_MS || '100', 10);
+const STATEMENT_TIMEOUT_MS = parseInt(process.env.DB_STATEMENT_TIMEOUT_MS || '5000', 10);
+const LOCK_TIMEOUT_MS = parseInt(process.env.DB_LOCK_TIMEOUT_MS || '2000', 10);
 
 // Connection pool configuration for production workloads
 export const pool = new Pool({
@@ -18,6 +20,15 @@ export const pool = new Pool({
   max: parseInt(process.env.DB_POOL_MAX || '20', 10), // Maximum connections
   idleTimeoutMillis: 30000, // Close idle connections after 30s
   connectionTimeoutMillis: 5000, // Fail fast if can't connect in 5s
+});
+
+pool.on('connect', (client) => {
+  if (STATEMENT_TIMEOUT_MS > 0) {
+    client.query(`SET statement_timeout TO ${STATEMENT_TIMEOUT_MS}`).catch(() => undefined);
+  }
+  if (LOCK_TIMEOUT_MS > 0) {
+    client.query(`SET lock_timeout TO ${LOCK_TIMEOUT_MS}`).catch(() => undefined);
+  }
 });
 
 export async function query<T extends QueryResultRow = QueryResultRow>(
@@ -61,6 +72,12 @@ export async function withTransaction<T>(handler: (client: PoolClient) => Promis
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    if (STATEMENT_TIMEOUT_MS > 0) {
+      await client.query(`SET LOCAL statement_timeout TO ${STATEMENT_TIMEOUT_MS}`);
+    }
+    if (LOCK_TIMEOUT_MS > 0) {
+      await client.query(`SET LOCAL lock_timeout TO ${LOCK_TIMEOUT_MS}`);
+    }
     const result = await handler(client);
     await client.query('COMMIT');
     return result;

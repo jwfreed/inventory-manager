@@ -20,6 +20,7 @@ const sectionConfig: Record<NavSection, { label: string; order: number }> = {
   reports: { label: 'Reports', order: 6 },
   'master-data': { label: 'Master Data', order: 7 },
   profile: { label: 'Profile', order: 8 },
+  admin: { label: 'Admin', order: 9 },
 }
 
 const EXPANDED_SECTION_KEY = 'nav-expanded-section'

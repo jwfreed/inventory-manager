@@ -5,6 +5,7 @@ import { recordAuditLog } from '../lib/audit';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { validateSufficientStock } from './stockValidation.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { createInventoryMovement, createInventoryMovementLine } from '../domains/inventory';
 
 export type LpnStatus = 'active' | 'consumed' | 'shipped' | 'damaged' | 'quarantine' | 'expired';
 
@@ -417,19 +418,19 @@ export async function moveLicensePlate(
 
     // Create inventory movement for the LPN transfer
     const movementId = uuidv4();
-    await client.query(
-      `INSERT INTO inventory_movements (
-        id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
-      ) VALUES ($1, $2, 'transfer', 'posted', $3, $4, $4, $5, $6, $4, $4)`,
-      [
-        movementId,
-        tenantId,
-        `lpn_move:${lpn.lpn}`,
-        now,
-        data.notes ?? `LPN ${lpn.lpn} moved from ${lpn.locationCode} to new location`,
-        validation.overrideMetadata ?? null
-      ]
-    );
+    await createInventoryMovement(client, {
+      id: movementId,
+      tenantId,
+      movementType: 'transfer',
+      status: 'posted',
+      externalRef: `lpn_move:${lpn.lpn}`,
+      occurredAt: now,
+      postedAt: now,
+      notes: data.notes ?? `LPN ${lpn.lpn} moved from ${lpn.locationCode} to new location`,
+      metadata: validation.overrideMetadata ?? null,
+      createdAt: now,
+      updatedAt: now
+    });
 
     // Create movement lines (negative from source, positive to destination)
     const lineIdOut = uuidv4();
@@ -442,28 +443,22 @@ export async function moveLicensePlate(
       lpn.uom,
       client
     );
-    await client.query(
-      `INSERT INTO inventory_movement_lines (
-        id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-        quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-        reason_code, line_notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'lpn_transfer', $13)`,
-      [
-        lineIdOut,
-        tenantId,
-        movementId,
-        lpn.itemId,
-        data.fromLocationId,
-        canonicalOut.quantityDeltaCanonical,
-        canonicalOut.canonicalUom,
-        canonicalOut.quantityDeltaEntered,
-        canonicalOut.uomEntered,
-        canonicalOut.quantityDeltaCanonical,
-        canonicalOut.canonicalUom,
-        canonicalOut.uomDimension,
-        `LPN ${lpn.lpn} out`
-      ]
-    );
+    await createInventoryMovementLine(client, {
+      id: lineIdOut,
+      tenantId,
+      movementId,
+      itemId: lpn.itemId,
+      locationId: data.fromLocationId,
+      quantityDelta: canonicalOut.quantityDeltaCanonical,
+      uom: canonicalOut.canonicalUom,
+      quantityDeltaEntered: canonicalOut.quantityDeltaEntered,
+      uomEntered: canonicalOut.uomEntered,
+      quantityDeltaCanonical: canonicalOut.quantityDeltaCanonical,
+      canonicalUom: canonicalOut.canonicalUom,
+      uomDimension: canonicalOut.uomDimension,
+      reasonCode: 'lpn_transfer',
+      lineNotes: `LPN ${lpn.lpn} out`
+    });
 
     const canonicalIn = await getCanonicalMovementFields(
       tenantId,
@@ -472,28 +467,22 @@ export async function moveLicensePlate(
       lpn.uom,
       client
     );
-    await client.query(
-      `INSERT INTO inventory_movement_lines (
-        id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-        quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-        reason_code, line_notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'lpn_transfer', $13)`,
-      [
-        lineIdIn,
-        tenantId,
-        movementId,
-        lpn.itemId,
-        data.toLocationId,
-        canonicalIn.quantityDeltaCanonical,
-        canonicalIn.canonicalUom,
-        canonicalIn.quantityDeltaEntered,
-        canonicalIn.uomEntered,
-        canonicalIn.quantityDeltaCanonical,
-        canonicalIn.canonicalUom,
-        canonicalIn.uomDimension,
-        `LPN ${lpn.lpn} in`
-      ]
-    );
+    await createInventoryMovementLine(client, {
+      id: lineIdIn,
+      tenantId,
+      movementId,
+      itemId: lpn.itemId,
+      locationId: data.toLocationId,
+      quantityDelta: canonicalIn.quantityDeltaCanonical,
+      uom: canonicalIn.canonicalUom,
+      quantityDeltaEntered: canonicalIn.quantityDeltaEntered,
+      uomEntered: canonicalIn.uomEntered,
+      quantityDeltaCanonical: canonicalIn.quantityDeltaCanonical,
+      canonicalUom: canonicalIn.canonicalUom,
+      uomDimension: canonicalIn.uomDimension,
+      reasonCode: 'lpn_transfer',
+      lineNotes: `LPN ${lpn.lpn} in`
+    });
 
     // Link the LPN to the movement
     await client.query(

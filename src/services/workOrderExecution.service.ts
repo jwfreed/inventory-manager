@@ -8,6 +8,7 @@ import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
 import { consumeCostLayers, createCostLayer } from './costLayers.service';
 import { getCanonicalMovementFields, type CanonicalMovementFields } from './uomCanonical.service';
+import { createInventoryMovement, createInventoryMovementLine } from '../domains/inventory';
 import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
@@ -400,22 +401,21 @@ export async function postWorkOrderIssue(
       ...(validation.overrideMetadata ?? {})
     };
     const movementId = uuidv4();
-    await client.query(
-      `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
-       ) VALUES ($1, $2, 'issue', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
-      [
-        movementId,
-        tenantId,
-        isDisassembly
-          ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
-          : `work_order_issue:${issueId}:${workOrderId}`,
-        occurredAt,
-        now,
-        issue.notes ?? null,
-        movementMetadata
-      ]
-    );
+    await createInventoryMovement(client, {
+      id: movementId,
+      tenantId,
+      movementType: 'issue',
+      status: 'posted',
+      externalRef: isDisassembly
+        ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
+        : `work_order_issue:${issueId}:${workOrderId}`,
+      occurredAt,
+      postedAt: now,
+      notes: issue.notes ?? null,
+      metadata: movementMetadata,
+      createdAt: now,
+      updatedAt: now
+    });
 
     const issuedTotal = linesResult.rows.reduce((sum, line) => {
       const qty = toNumber(line.quantity_issued);
@@ -461,31 +461,23 @@ export async function postWorkOrderIssue(
       const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
       const extendedCost = issueCost !== null ? -issueCost : null;
       
-      await client.query(
-        `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-            unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-        [
-          uuidv4(),
-          tenantId,
-          movementId,
-          line.component_item_id,
-          line.from_location_id,
-          canonicalFields.quantityDeltaCanonical,
-          canonicalFields.canonicalUom,
-          canonicalFields.quantityDeltaEntered,
-          canonicalFields.uomEntered,
-          canonicalFields.quantityDeltaCanonical,
-          canonicalFields.canonicalUom,
-          canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
-          reasonCode,
-          line.notes ?? `Work order issue ${issueId} line ${line.line_number}`
-        ]
-      );
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId,
+        itemId: line.component_item_id,
+        locationId: line.from_location_id,
+        quantityDelta: canonicalFields.quantityDeltaCanonical,
+        uom: canonicalFields.canonicalUom,
+        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+        uomEntered: canonicalFields.uomEntered,
+        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+        canonicalUom: canonicalFields.canonicalUom,
+        uomDimension: canonicalFields.uomDimension,
+        unitCost,
+        extendedCost,
+        reasonCode,
+        lineNotes: line.notes ?? `Work order issue ${issueId} line ${line.line_number}`
+      });
     }
 
     await client.query(
@@ -692,22 +684,21 @@ export async function postWorkOrderCompletion(
     const now = new Date();
     const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
     const movementId = uuidv4();
-    await client.query(
-      `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
-       ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
-      [
-        movementId,
-        tenantId,
-        isDisassembly
-          ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
-          : `work_order_completion:${completionId}:${workOrderId}`,
-        execution.occurred_at,
-        now,
-        execution.notes ?? null,
-        { workOrderId, workOrderNumber }
-      ]
-    );
+    await createInventoryMovement(client, {
+      id: movementId,
+      tenantId,
+      movementType: 'receive',
+      status: 'posted',
+      externalRef: isDisassembly
+        ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
+        : `work_order_completion:${completionId}:${workOrderId}`,
+      occurredAt: execution.occurred_at,
+      postedAt: now,
+      notes: execution.notes ?? null,
+      metadata: { workOrderId, workOrderNumber },
+      createdAt: now,
+      updatedAt: now
+    });
 
     const preparedLines: Array<{
       line: WorkOrderExecutionLineRow;
@@ -771,31 +762,23 @@ export async function postWorkOrderCompletion(
         });
       }
 
-      await client.query(
-        `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-            unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-        [
-          uuidv4(),
-          tenantId,
-          movementId,
-          line.item_id,
-          line.to_location_id,
-          canonicalFields.quantityDeltaCanonical,
-          canonicalFields.canonicalUom,
-          canonicalFields.quantityDeltaEntered,
-          canonicalFields.uomEntered,
-          canonicalFields.quantityDeltaCanonical,
-          canonicalFields.canonicalUom,
-          canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
-          reasonCode,
-          line.notes ?? `Work order completion ${completionId}`
-        ]
-      );
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId,
+        itemId: line.item_id,
+        locationId: line.to_location_id,
+        quantityDelta: canonicalFields.quantityDeltaCanonical,
+        uom: canonicalFields.canonicalUom,
+        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+        uomEntered: canonicalFields.uomEntered,
+        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+        canonicalUom: canonicalFields.canonicalUom,
+        uomDimension: canonicalFields.uomDimension,
+        unitCost,
+        extendedCost,
+        reasonCode,
+        lineNotes: line.notes ?? `Work order completion ${completionId}`
+      });
     }
 
     await client.query(
@@ -1105,42 +1088,40 @@ export async function recordWorkOrderBatch(
     );
 
     // Create movements first to satisfy FKs
-    await client.query(
-      `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
-       ) VALUES ($1, $2, 'issue', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
-      [
-        issueMovementId,
-        tenantId,
-        isDisassembly
-          ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
-          : `work_order_batch_issue:${issueId}:${workOrderId}`,
-        occurredAt,
-        now,
-        data.notes ?? null,
-        {
-          workOrderId,
-          workOrderNumber,
-          ...(validation.overrideMetadata ?? {})
-        }
-      ]
-    );
-    await client.query(
-      `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
-       ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
-      [
-        receiveMovementId,
-        tenantId,
-        isDisassembly
-          ? `work_order_disassembly_completion:${executionId}:${workOrderId}`
-          : `work_order_batch_completion:${executionId}:${workOrderId}`,
-        occurredAt,
-        now,
-        data.notes ?? null,
-        { workOrderId, workOrderNumber }
-      ]
-    );
+    await createInventoryMovement(client, {
+      id: issueMovementId,
+      tenantId,
+      movementType: 'issue',
+      status: 'posted',
+      externalRef: isDisassembly
+        ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
+        : `work_order_batch_issue:${issueId}:${workOrderId}`,
+      occurredAt,
+      postedAt: now,
+      notes: data.notes ?? null,
+      metadata: {
+        workOrderId,
+        workOrderNumber,
+        ...(validation.overrideMetadata ?? {})
+      },
+      createdAt: now,
+      updatedAt: now
+    });
+    await createInventoryMovement(client, {
+      id: receiveMovementId,
+      tenantId,
+      movementType: 'receive',
+      status: 'posted',
+      externalRef: isDisassembly
+        ? `work_order_disassembly_completion:${executionId}:${workOrderId}`
+        : `work_order_batch_completion:${executionId}:${workOrderId}`,
+      occurredAt,
+      postedAt: now,
+      notes: data.notes ?? null,
+      metadata: { workOrderId, workOrderNumber },
+      createdAt: now,
+      updatedAt: now
+    });
 
     // Material issue header + lines
     await client.query(
@@ -1202,31 +1183,23 @@ export async function recordWorkOrderBatch(
       const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
       const extendedCost = issueCost !== null ? -issueCost : null;
       
-      await client.query(
-        `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-            unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-        [
-          uuidv4(),
-          tenantId,
-          issueMovementId,
-          line.componentItemId,
-          line.fromLocationId,
-          canonicalFields.quantityDeltaCanonical,
-          canonicalFields.canonicalUom,
-          canonicalFields.quantityDeltaEntered,
-          canonicalFields.uomEntered,
-          canonicalFields.quantityDeltaCanonical,
-          canonicalFields.canonicalUom,
-          canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
-          reasonCode,
-          line.notes ?? null
-        ]
-      );
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId: issueMovementId,
+        itemId: line.componentItemId,
+        locationId: line.fromLocationId,
+        quantityDelta: canonicalFields.quantityDeltaCanonical,
+        uom: canonicalFields.canonicalUom,
+        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+        uomEntered: canonicalFields.uomEntered,
+        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+        canonicalUom: canonicalFields.canonicalUom,
+        uomDimension: canonicalFields.uomDimension,
+        unitCost,
+        extendedCost,
+        reasonCode,
+        lineNotes: line.notes ?? null
+      });
     }
 
     // Execution header + produce lines
@@ -1315,31 +1288,23 @@ export async function recordWorkOrderBatch(
         client
       });
 
-      await client.query(
-        `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-            unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-        [
-          uuidv4(),
-          tenantId,
-          receiveMovementId,
-          line.outputItemId,
-          line.toLocationId,
-          canonicalFields.quantityDeltaCanonical,
-          canonicalFields.canonicalUom,
-          canonicalFields.quantityDeltaEntered,
-          canonicalFields.uomEntered,
-          canonicalFields.quantityDeltaCanonical,
-          canonicalFields.canonicalUom,
-          canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
-          reasonCode,
-          line.notes ?? null
-        ]
-      );
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId: receiveMovementId,
+        itemId: line.outputItemId,
+        locationId: line.toLocationId,
+        quantityDelta: canonicalFields.quantityDeltaCanonical,
+        uom: canonicalFields.canonicalUom,
+        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+        uomEntered: canonicalFields.uomEntered,
+        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+        canonicalUom: canonicalFields.canonicalUom,
+        uomDimension: canonicalFields.uomDimension,
+        unitCost,
+        extendedCost,
+        reasonCode,
+        lineNotes: line.notes ?? null
+      });
     }
 
     await client.query(

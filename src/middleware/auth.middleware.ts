@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../lib/auth';
+import { updateRequestContext } from '../lib/requestContext';
 
 function extractBearerToken(header?: string) {
   if (!header) return null;
@@ -24,6 +25,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
       tenantId: payload.tenantId,
       role: payload.role
     };
+    updateRequestContext({ userId: payload.sub, tenantId: payload.tenantId });
     return next();
   } catch {
     return res.status(401).json({ error: 'Invalid or expired access token.' });

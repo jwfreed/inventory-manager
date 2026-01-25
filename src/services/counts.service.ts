@@ -9,6 +9,7 @@ import { validateSufficientStock } from './stockValidation.service';
 import { calculateMovementCost } from './costing.service';
 import { consumeCostLayers, createCostLayer } from './costLayers.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
+import { createInventoryMovement, createInventoryMovementLine } from '../domains/inventory';
 
 type InventoryCountInput = z.infer<typeof inventoryCountSchema>;
 
@@ -428,20 +429,19 @@ export async function postInventoryCount(
     }
 
     const movementId = uuidv4();
-    await client.query(
-      `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
-       ) VALUES ($1, $2, 'adjustment', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
-      [
-        movementId,
-        tenantId,
-        `inventory_adjustment:${adjustmentId}`,
-        cycleCount.counted_at,
-        now,
-        cycleCount.notes ?? null,
-        validation.overrideMetadata ?? null
-      ]
-    );
+    await createInventoryMovement(client, {
+      id: movementId,
+      tenantId,
+      movementType: 'adjustment',
+      status: 'posted',
+      externalRef: `inventory_adjustment:${adjustmentId}`,
+      occurredAt: cycleCount.counted_at,
+      postedAt: now,
+      notes: cycleCount.notes ?? null,
+      metadata: validation.overrideMetadata ?? null,
+      createdAt: now,
+      updatedAt: now
+    });
 
     for (const delta of deltas) {
       await client.query(
@@ -501,31 +501,23 @@ export async function postInventoryCount(
           }
         }
         
-        await client.query(
-          `INSERT INTO inventory_movement_lines (
-              id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-              quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-              unit_cost, extended_cost, reason_code, line_notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-          [
-            uuidv4(),
-            tenantId,
-            movementId,
-            delta.line.item_id,
-            cycleCount.location_id,
-            canonicalQty,
-            canonicalFields.canonicalUom,
-            canonicalFields.quantityDeltaEntered,
-            canonicalFields.uomEntered,
-            canonicalFields.quantityDeltaCanonical,
-            canonicalFields.canonicalUom,
-            canonicalFields.uomDimension,
-            costData.unitCost,
-            costData.extendedCost,
-            delta.line.reason_code,
-            delta.line.notes ?? `Cycle count ${id} line ${delta.line.line_number}`
-          ]
-        );
+        await createInventoryMovementLine(client, {
+          tenantId,
+          movementId,
+          itemId: delta.line.item_id,
+          locationId: cycleCount.location_id,
+          quantityDelta: canonicalQty,
+          uom: canonicalFields.canonicalUom,
+          quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+          uomEntered: canonicalFields.uomEntered,
+          quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+          canonicalUom: canonicalFields.canonicalUom,
+          uomDimension: canonicalFields.uomDimension,
+          unitCost: costData.unitCost,
+          extendedCost: costData.extendedCost,
+          reasonCode: delta.line.reason_code,
+          lineNotes: delta.line.notes ?? `Cycle count ${id} line ${delta.line.line_number}`
+        });
       }
     }
 

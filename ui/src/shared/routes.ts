@@ -9,6 +9,7 @@ export type NavSection =
   | 'reports'
   | 'master-data'
   | 'profile'
+  | 'admin'
 
 export type AppNavItem = {
   label: string

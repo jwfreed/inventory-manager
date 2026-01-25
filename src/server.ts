@@ -1,6 +1,8 @@
+import './telemetry';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import { pool } from './db';
+import healthRouter from './routes/health.routes';
 import authRouter from './routes/auth.routes';
 import vendorsRouter from './routes/vendors.routes';
 import purchaseOrdersRouter from './routes/purchaseOrders.routes';
@@ -41,9 +43,13 @@ import costLayersRouter from './routes/costLayers.routes';
 import costsRouter from './routes/costs.routes';
 import { requireAuth } from './middleware/auth.middleware';
 import { destructiveGuard } from './middleware/destructiveGuard.middleware';
+import { requestContextMiddleware } from './middleware/requestContext.middleware';
+import { requestLoggerMiddleware } from './middleware/requestLogger.middleware';
 import { registerJob, startScheduler, stopScheduler } from './jobs/scheduler';
 import { recalculateMetrics } from './jobs/metricsRecalculation.job';
 import { syncExchangeRates } from './jobs/exchangeRateSync.job';
+import { runInventoryHealthCheck } from './jobs/inventoryHealth.job';
+import inventoryHealthRouter from './routes/inventoryHealth.routes';
 
 const PORT = Number(process.env.PORT) || 3000;
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
@@ -53,6 +59,8 @@ const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
 
 const app = express();
 
+app.use(requestContextMiddleware);
+app.use(requestLoggerMiddleware);
 app.use((req, res, next) => {
   const origin = req.headers.origin as string | undefined;
   if (!origin) {
@@ -82,9 +90,10 @@ app.use((req, res, next) => {
   return next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT ?? '1mb' }));
 app.use(cookieParser());
 
+app.use(healthRouter);
 app.use(authRouter);
 app.use(requireAuth);
 app.use(destructiveGuard);
@@ -125,6 +134,7 @@ app.use('/supplier-performance', supplierPerformanceRouter);
 app.use(productionOverviewRouter);
 app.use('/api/cost-layers', costLayersRouter);
 app.use('/api', costsRouter);
+app.use(inventoryHealthRouter);
 app.use(licensePlatesRouter);
 app.use(pickingRouter);
 app.use(shippingContainersRouter);
@@ -156,6 +166,13 @@ registerJob(
   'exchange-rate-sync',
   '0 6 * * *', // 06:00 UTC daily
   syncExchangeRates,
+  true
+);
+
+registerJob(
+  'inventory-health-check',
+  process.env.INVENTORY_HEALTH_CRON ?? '0 * * * *', // Hourly by default
+  runInventoryHealthCheck,
   true
 );
 

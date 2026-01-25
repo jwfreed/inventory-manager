@@ -9,6 +9,7 @@ import { consumeCostLayers, createCostLayer } from '../costLayers.service';
 import { getCanonicalMovementFields } from '../uomCanonical.service';
 import { fetchInventoryAdjustmentById } from './core.service';
 import type { InventoryAdjustmentRow, InventoryAdjustmentLineRow, PostingContext } from './types';
+import { createInventoryMovement, createInventoryMovementLine } from '../../domains/inventory';
 
 export async function postInventoryAdjustment(
   tenantId: string,
@@ -67,20 +68,19 @@ export async function postInventoryAdjustment(
 
     // Create inventory movement
     const movementId = uuidv4();
-    await client.query(
-      `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
-       ) VALUES ($1, $2, 'adjustment', 'posted', $3, $4, $5, $6, $7, $5, $5)`,
-      [
-        movementId,
-        tenantId,
-        `inventory_adjustment:${id}`,
-        adjustmentRow.occurred_at,
-        now,
-        adjustmentRow.notes ?? null,
-        validation.overrideMetadata ?? null
-      ]
-    );
+    await createInventoryMovement(client, {
+      id: movementId,
+      tenantId,
+      movementType: 'adjustment',
+      status: 'posted',
+      externalRef: `inventory_adjustment:${id}`,
+      occurredAt: adjustmentRow.occurred_at,
+      postedAt: now,
+      notes: adjustmentRow.notes ?? null,
+      metadata: validation.overrideMetadata ?? null,
+      createdAt: now,
+      updatedAt: now
+    });
 
     // Create movement lines with costing
     for (const line of linesResult.rows) {
@@ -137,31 +137,23 @@ export async function postInventoryAdjustment(
         }
       }
       
-      await client.query(
-        `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-            unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-        [
-          uuidv4(),
-          tenantId,
-          movementId,
-          line.item_id,
-          line.location_id,
-          canonicalQty,
-          canonicalFields.canonicalUom,
-          canonicalFields.quantityDeltaEntered,
-          canonicalFields.uomEntered,
-          canonicalFields.quantityDeltaCanonical,
-          canonicalFields.canonicalUom,
-          canonicalFields.uomDimension,
-          costData.unitCost,
-          costData.extendedCost,
-          line.reason_code,
-          line.notes ?? `Adjustment ${id} line ${line.line_number}`
-        ]
-      );
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId,
+        itemId: line.item_id,
+        locationId: line.location_id,
+        quantityDelta: canonicalQty,
+        uom: canonicalFields.canonicalUom,
+        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+        uomEntered: canonicalFields.uomEntered,
+        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+        canonicalUom: canonicalFields.canonicalUom,
+        uomDimension: canonicalFields.uomDimension,
+        unitCost: costData.unitCost,
+        extendedCost: costData.extendedCost,
+        reasonCode: line.reason_code,
+        lineNotes: line.notes ?? `Adjustment ${id} line ${line.line_number}`
+      });
 
       // Update item quantity on hand for average cost tracking
       await updateItemQuantityOnHand(tenantId, line.item_id, canonicalQty, client);

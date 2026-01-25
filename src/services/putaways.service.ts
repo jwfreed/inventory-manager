@@ -8,6 +8,7 @@ import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock, validateLocationCapacity } from './stockValidation.service';
 import { calculateMovementCost } from './costing.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
+import { createInventoryMovement, createInventoryMovementLine } from '../domains/inventory';
 import {
   calculateAcceptedQuantity,
   calculatePutawayAvailability,
@@ -448,12 +449,19 @@ export async function postPutaway(
       }
     );
 
-    await client.query(
-      `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
-       ) VALUES ($1, $2, 'transfer', 'posted', $3, $4, $4, $5, $6, $4, $4)`,
-      [movementId, tenantId, `putaway:${id}`, now, `Putaway ${id}`, validation.overrideMetadata ?? null]
-    );
+    await createInventoryMovement(client, {
+      id: movementId,
+      tenantId,
+      movementType: 'transfer',
+      status: 'posted',
+      externalRef: `putaway:${id}`,
+      occurredAt: now,
+      postedAt: now,
+      notes: `Putaway ${id}`,
+      metadata: validation.overrideMetadata ?? null,
+      createdAt: now,
+      updatedAt: now
+    });
 
     for (const line of pendingLines) {
       const qty = toNumber(line.quantity_planned);
@@ -474,30 +482,23 @@ export async function postPutaway(
         client
       );
       
-      await client.query(
-        `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-            unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'putaway', $15)`,
-        [
-          uuidv4(),
-          tenantId,
-          movementId,
-          line.item_id,
-          line.from_location_id,
-          canonicalOut.quantityDeltaCanonical,
-          canonicalOut.canonicalUom,
-          canonicalOut.quantityDeltaEntered,
-          canonicalOut.uomEntered,
-          canonicalOut.quantityDeltaCanonical,
-          canonicalOut.canonicalUom,
-          canonicalOut.uomDimension,
-          costData.unitCost,
-          costData.extendedCost,
-          lineNote
-        ]
-      );
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId,
+        itemId: line.item_id,
+        locationId: line.from_location_id,
+        quantityDelta: canonicalOut.quantityDeltaCanonical,
+        uom: canonicalOut.canonicalUom,
+        quantityDeltaEntered: canonicalOut.quantityDeltaEntered,
+        uomEntered: canonicalOut.uomEntered,
+        quantityDeltaCanonical: canonicalOut.quantityDeltaCanonical,
+        canonicalUom: canonicalOut.canonicalUom,
+        uomDimension: canonicalOut.uomDimension,
+        unitCost: costData.unitCost,
+        extendedCost: costData.extendedCost,
+        reasonCode: 'putaway',
+        lineNotes: lineNote
+      });
       
       // Positive movement uses same unit cost, but positive extended cost
       const canonicalIn = await getCanonicalMovementFields(
@@ -514,30 +515,23 @@ export async function postPutaway(
         client
       );
       
-      await client.query(
-        `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-            quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-            unit_cost, extended_cost, reason_code, line_notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'putaway', $15)`,
-        [
-          uuidv4(),
-          tenantId,
-          movementId,
-          line.item_id,
-          line.to_location_id,
-          canonicalIn.quantityDeltaCanonical,
-          canonicalIn.canonicalUom,
-          canonicalIn.quantityDeltaEntered,
-          canonicalIn.uomEntered,
-          canonicalIn.quantityDeltaCanonical,
-          canonicalIn.canonicalUom,
-          canonicalIn.uomDimension,
-          costDataPositive.unitCost,
-          costDataPositive.extendedCost,
-          lineNote
-        ]
-      );
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId,
+        itemId: line.item_id,
+        locationId: line.to_location_id,
+        quantityDelta: canonicalIn.quantityDeltaCanonical,
+        uom: canonicalIn.canonicalUom,
+        quantityDeltaEntered: canonicalIn.quantityDeltaEntered,
+        uomEntered: canonicalIn.uomEntered,
+        quantityDeltaCanonical: canonicalIn.quantityDeltaCanonical,
+        canonicalUom: canonicalIn.canonicalUom,
+        uomDimension: canonicalIn.uomDimension,
+        unitCost: costDataPositive.unitCost,
+        extendedCost: costDataPositive.extendedCost,
+        reasonCode: 'putaway',
+        lineNotes: lineNote
+      });
       await client.query(
         `UPDATE putaway_lines
             SET status = 'completed',
