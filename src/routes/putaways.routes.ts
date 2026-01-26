@@ -4,6 +4,7 @@ import { putawaySchema } from '../schemas/putaways.schema';
 import { createPutaway, fetchPutawayById, postPutaway } from '../services/putaways.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
+import { getIdempotencyKey } from '../lib/idempotency';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -15,10 +16,12 @@ router.post('/putaways', async (req: Request, res: Response) => {
   }
 
   try {
-    const putaway = await createPutaway(req.auth!.tenantId, parsed.data, {
-      type: 'user',
-      id: req.auth!.userId
-    });
+    const putaway = await createPutaway(
+      req.auth!.tenantId,
+      parsed.data,
+      { type: 'user', id: req.auth!.userId },
+      { idempotencyKey: getIdempotencyKey(req) }
+    );
     return res.status(201).json(putaway);
   } catch (error: any) {
     if (error?.message === 'PUTAWAY_LINES_NOT_FOUND') {

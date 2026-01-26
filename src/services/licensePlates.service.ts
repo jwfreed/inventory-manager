@@ -5,7 +5,12 @@ import { recordAuditLog } from '../lib/audit';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { validateSufficientStock } from './stockValidation.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
-import { createInventoryMovement, createInventoryMovementLine } from '../domains/inventory';
+import {
+  createInventoryMovement,
+  createInventoryMovementLine,
+  applyInventoryBalanceDelta,
+  enqueueInventoryMovementPosted
+} from '../domains/inventory';
 
 export type LpnStatus = 'active' | 'consumed' | 'shipped' | 'damaged' | 'quarantine' | 'expired';
 
@@ -41,6 +46,7 @@ export interface LpnMovementInput {
   notes?: string | null;
   overrideNegative?: boolean;
   overrideReason?: string | null;
+  idempotencyKey?: string | null;
 }
 
 /**
@@ -413,17 +419,19 @@ export async function moveLicensePlate(
         overrideRequested: data.overrideNegative,
         overrideReason: data.overrideReason ?? null,
         overrideReference: `lpn_move:${lpn.lpn}`
-      }
+      },
+      { client }
     );
 
     // Create inventory movement for the LPN transfer
     const movementId = uuidv4();
-    await createInventoryMovement(client, {
+    const movement = await createInventoryMovement(client, {
       id: movementId,
       tenantId,
       movementType: 'transfer',
       status: 'posted',
-      externalRef: `lpn_move:${lpn.lpn}`,
+      externalRef: `lpn_move:${lpn.lpn}:${data.idempotencyKey}`,
+      idempotencyKey: data.idempotencyKey ?? null,
       occurredAt: now,
       postedAt: now,
       notes: data.notes ?? `LPN ${lpn.lpn} moved from ${lpn.locationCode} to new location`,
@@ -431,6 +439,11 @@ export async function moveLicensePlate(
       createdAt: now,
       updatedAt: now
     });
+
+    if (!movement.created) {
+      await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+      return getLicensePlateById(tenantId, data.licensePlateId, client);
+    }
 
     // Create movement lines (negative from source, positive to destination)
     const lineIdOut = uuidv4();
@@ -446,7 +459,7 @@ export async function moveLicensePlate(
     await createInventoryMovementLine(client, {
       id: lineIdOut,
       tenantId,
-      movementId,
+      movementId: movement.id,
       itemId: lpn.itemId,
       locationId: data.fromLocationId,
       quantityDelta: canonicalOut.quantityDeltaCanonical,
@@ -460,6 +473,14 @@ export async function moveLicensePlate(
       lineNotes: `LPN ${lpn.lpn} out`
     });
 
+    await applyInventoryBalanceDelta(client, {
+      tenantId,
+      itemId: lpn.itemId,
+      locationId: data.fromLocationId,
+      uom: canonicalOut.canonicalUom,
+      deltaOnHand: canonicalOut.quantityDeltaCanonical
+    });
+
     const canonicalIn = await getCanonicalMovementFields(
       tenantId,
       lpn.itemId,
@@ -470,7 +491,7 @@ export async function moveLicensePlate(
     await createInventoryMovementLine(client, {
       id: lineIdIn,
       tenantId,
-      movementId,
+      movementId: movement.id,
       itemId: lpn.itemId,
       locationId: data.toLocationId,
       quantityDelta: canonicalIn.quantityDeltaCanonical,
@@ -482,6 +503,14 @@ export async function moveLicensePlate(
       uomDimension: canonicalIn.uomDimension,
       reasonCode: 'lpn_transfer',
       lineNotes: `LPN ${lpn.lpn} in`
+    });
+
+    await applyInventoryBalanceDelta(client, {
+      tenantId,
+      itemId: lpn.itemId,
+      locationId: data.toLocationId,
+      uom: canonicalIn.canonicalUom,
+      deltaOnHand: canonicalIn.quantityDeltaCanonical
     });
 
     // Link the LPN to the movement
@@ -503,7 +532,7 @@ export async function moveLicensePlate(
           actorId: actor.id ?? null,
           action: 'negative_override',
           entityType: 'inventory_movement',
-          entityId: movementId,
+          entityId: movement.id,
           occurredAt: now,
           metadata: {
             reason: validation.overrideMetadata.override_reason ?? null,
@@ -518,6 +547,8 @@ export async function moveLicensePlate(
         client
       );
     }
+
+    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
 
     // Update LPN location
     await client.query(
@@ -539,7 +570,7 @@ export async function moveLicensePlate(
             lpn: lpn.lpn,
             fromLocationId: data.fromLocationId,
             toLocationId: data.toLocationId,
-            movementId
+            movementId: movement.id
           }
         },
         client

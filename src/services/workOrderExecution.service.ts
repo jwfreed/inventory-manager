@@ -8,7 +8,12 @@ import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
 import { consumeCostLayers, createCostLayer } from './costLayers.service';
 import { getCanonicalMovementFields, type CanonicalMovementFields } from './uomCanonical.service';
-import { createInventoryMovement, createInventoryMovementLine } from '../domains/inventory';
+import {
+  createInventoryMovement,
+  createInventoryMovementLine,
+  applyInventoryBalanceDelta,
+  enqueueInventoryMovementPosted
+} from '../domains/inventory';
 import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
@@ -247,7 +252,12 @@ async function allocateWipCostFromWorkOrderIssues(
   return totalCost;
 }
 
-export async function createWorkOrderIssue(tenantId: string, workOrderId: string, data: WorkOrderIssueCreateInput) {
+export async function createWorkOrderIssue(
+  tenantId: string,
+  workOrderId: string,
+  data: WorkOrderIssueCreateInput,
+  options?: { idempotencyKey?: string | null }
+) {
   const lineNumbers = new Set<number>();
   const normalizedLines = data.lines.map((line, index) => {
     const lineNumber = line.lineNumber ?? index + 1;
@@ -269,8 +279,18 @@ export async function createWorkOrderIssue(tenantId: string, workOrderId: string
 
   const issueId = uuidv4();
   const now = new Date();
+  const idempotencyKey = options?.idempotencyKey ?? null;
 
   return withTransaction(async (client) => {
+    if (idempotencyKey) {
+      const existing = await client.query(
+        `SELECT id FROM work_order_material_issues WHERE tenant_id = $1 AND idempotency_key = $2`,
+        [tenantId, idempotencyKey]
+      );
+      if (existing.rowCount > 0) {
+        return fetchWorkOrderIssue(tenantId, workOrderId, existing.rows[0].id, client);
+      }
+    }
     const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
@@ -281,9 +301,9 @@ export async function createWorkOrderIssue(tenantId: string, workOrderId: string
 
     await client.query(
       `INSERT INTO work_order_material_issues (
-          id, tenant_id, work_order_id, status, occurred_at, inventory_movement_id, notes, created_at, updated_at
-       ) VALUES ($1, $2, $3, 'draft', $4, NULL, $5, $6, $6)`,
-      [issueId, tenantId, workOrderId, new Date(data.occurredAt), data.notes ?? null, now]
+          id, tenant_id, work_order_id, status, occurred_at, inventory_movement_id, notes, idempotency_key, created_at, updated_at
+       ) VALUES ($1, $2, $3, 'draft', $4, NULL, $5, $6, $7, $7)`,
+      [issueId, tenantId, workOrderId, new Date(data.occurredAt), data.notes ?? null, idempotencyKey, now]
     );
 
     for (const line of normalizedLines) {
@@ -361,7 +381,7 @@ export async function postWorkOrderIssue(
     }
     const issue = issueResult.rows[0];
     if (issue.status === 'posted') {
-      throw new Error('WO_ISSUE_ALREADY_POSTED');
+      return fetchWorkOrderIssue(tenantId, workOrderId, issueId, client);
     }
     if (issue.status === 'canceled') {
       throw new Error('WO_ISSUE_CANCELED');
@@ -392,7 +412,8 @@ export async function postWorkOrderIssue(
         overrideRequested: context.overrideRequested,
         overrideReason: context.overrideReason ?? null,
         overrideReference: `work_order_issue:${issueId}`
-      }
+      },
+      { client }
     );
     const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
     const movementMetadata = {
@@ -401,7 +422,7 @@ export async function postWorkOrderIssue(
       ...(validation.overrideMetadata ?? {})
     };
     const movementId = uuidv4();
-    await createInventoryMovement(client, {
+    const movement = await createInventoryMovement(client, {
       id: movementId,
       tenantId,
       movementType: 'issue',
@@ -416,6 +437,25 @@ export async function postWorkOrderIssue(
       createdAt: now,
       updatedAt: now
     });
+
+    if (!movement.created) {
+      const lineCheck = await client.query(
+        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
+        [movement.id]
+      );
+      if (lineCheck.rowCount > 0) {
+        await client.query(
+          `UPDATE work_order_material_issues
+              SET status = 'posted',
+                  inventory_movement_id = $1,
+                  updated_at = $2
+            WHERE id = $3 AND tenant_id = $4`,
+          [movement.id, now, issueId, tenantId]
+        );
+        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+        return fetchWorkOrderIssue(tenantId, workOrderId, issueId, client);
+      }
+    }
 
     const issuedTotal = linesResult.rows.reduce((sum, line) => {
       const qty = toNumber(line.quantity_issued);
@@ -451,7 +491,7 @@ export async function postWorkOrderIssue(
           quantity: canonicalQty,
           consumption_type: 'production_input',
           consumption_document_id: issueId,
-          movement_id: movementId,
+          movement_id: movement.id,
           client
         });
         issueCost = consumption.total_cost;
@@ -463,7 +503,7 @@ export async function postWorkOrderIssue(
       
       await createInventoryMovementLine(client, {
         tenantId,
-        movementId,
+        movementId: movement.id,
         itemId: line.component_item_id,
         locationId: line.from_location_id,
         quantityDelta: canonicalFields.quantityDeltaCanonical,
@@ -478,6 +518,14 @@ export async function postWorkOrderIssue(
         reasonCode,
         lineNotes: line.notes ?? `Work order issue ${issueId} line ${line.line_number}`
       });
+
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: line.component_item_id,
+        locationId: line.from_location_id,
+        uom: canonicalFields.canonicalUom,
+        deltaOnHand: canonicalFields.quantityDeltaCanonical
+      });
     }
 
     await client.query(
@@ -486,8 +534,10 @@ export async function postWorkOrderIssue(
               inventory_movement_id = $1,
               updated_at = $2
         WHERE id = $3 AND tenant_id = $4`,
-      [movementId, now, issueId, tenantId]
+      [movement.id, now, issueId, tenantId]
     );
+
+    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
 
     if (workOrder.status === 'draft') {
       await client.query(
@@ -521,7 +571,7 @@ export async function postWorkOrderIssue(
           actorId: context.actor.id ?? null,
           action: 'negative_override',
           entityType: 'inventory_movement',
-          entityId: movementId,
+          entityId: movement.id,
           occurredAt: now,
           metadata: {
             reason: validation.overrideMetadata.override_reason ?? null,
@@ -551,10 +601,12 @@ export async function postWorkOrderIssue(
 export async function createWorkOrderCompletion(
   tenantId: string,
   workOrderId: string,
-  data: WorkOrderCompletionCreateInput
+  data: WorkOrderCompletionCreateInput,
+  options?: { idempotencyKey?: string | null }
 ) {
   const executionId = uuidv4();
   const now = new Date();
+  const idempotencyKey = options?.idempotencyKey ?? null;
   const normalizedLines = data.lines.map((line) => ({
     ...line,
     uom: line.uom,
@@ -562,6 +614,15 @@ export async function createWorkOrderCompletion(
   }));
 
   return withTransaction(async (client) => {
+    if (idempotencyKey) {
+      const existing = await client.query(
+        `SELECT id FROM work_order_executions WHERE tenant_id = $1 AND idempotency_key = $2`,
+        [tenantId, idempotencyKey]
+      );
+      if (existing.rowCount > 0) {
+        return fetchWorkOrderCompletion(tenantId, workOrderId, existing.rows[0].id, client);
+      }
+    }
     const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
@@ -572,9 +633,9 @@ export async function createWorkOrderCompletion(
 
     await client.query(
       `INSERT INTO work_order_executions (
-          id, tenant_id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id, notes, created_at
-       ) VALUES ($1, $2, $3, $4, 'draft', NULL, NULL, $5, $6)`,
-      [executionId, tenantId, workOrderId, new Date(data.occurredAt), data.notes ?? null, now]
+          id, tenant_id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id, notes, idempotency_key, created_at
+       ) VALUES ($1, $2, $3, $4, 'draft', NULL, NULL, $5, $6, $7)`,
+      [executionId, tenantId, workOrderId, new Date(data.occurredAt), data.notes ?? null, idempotencyKey, now]
     );
 
     for (const line of normalizedLines) {
@@ -651,7 +712,7 @@ export async function postWorkOrderCompletion(
     }
     const execution = execResult.rows[0];
     if (execution.status === 'posted') {
-      throw new Error('WO_COMPLETION_ALREADY_POSTED');
+      return fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client);
     }
     if (execution.status === 'canceled') {
       throw new Error('WO_COMPLETION_CANCELED');
@@ -684,7 +745,7 @@ export async function postWorkOrderCompletion(
     const now = new Date();
     const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
     const movementId = uuidv4();
-    await createInventoryMovement(client, {
+    const movement = await createInventoryMovement(client, {
       id: movementId,
       tenantId,
       movementType: 'receive',
@@ -699,6 +760,24 @@ export async function postWorkOrderCompletion(
       createdAt: now,
       updatedAt: now
     });
+
+    if (!movement.created) {
+      const lineCheck = await client.query(
+        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
+        [movement.id]
+      );
+      if (lineCheck.rowCount > 0) {
+        await client.query(
+          `UPDATE work_order_executions
+              SET status = 'posted',
+                  production_movement_id = $1
+            WHERE id = $2 AND tenant_id = $3`,
+          [movement.id, completionId, tenantId]
+        );
+        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+        return fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client);
+      }
+    }
 
     const preparedLines: Array<{
       line: WorkOrderExecutionLineRow;
@@ -756,7 +835,7 @@ export async function postWorkOrderCompletion(
           unit_cost: unitCost ?? 0,
           source_type: 'production',
           source_document_id: completionId,
-          movement_id: movementId,
+          movement_id: movement.id,
           notes: `Production output from work order ${workOrderId}`,
           client
         });
@@ -764,7 +843,7 @@ export async function postWorkOrderCompletion(
 
       await createInventoryMovementLine(client, {
         tenantId,
-        movementId,
+        movementId: movement.id,
         itemId: line.item_id,
         locationId: line.to_location_id,
         quantityDelta: canonicalFields.quantityDeltaCanonical,
@@ -779,6 +858,14 @@ export async function postWorkOrderCompletion(
         reasonCode,
         lineNotes: line.notes ?? `Work order completion ${completionId}`
       });
+
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: line.item_id,
+        locationId: line.to_location_id,
+        uom: canonicalFields.canonicalUom,
+        deltaOnHand: canonicalFields.quantityDeltaCanonical
+      });
     }
 
     await client.query(
@@ -792,7 +879,7 @@ export async function postWorkOrderCompletion(
               wip_costed_at = $6
         WHERE id = $7 AND tenant_id = $8`,
       [
-        movementId,
+        movement.id,
         totalIssueCost,
         wipUnitCostCanonical,
         totalProducedCanonical,
@@ -802,6 +889,8 @@ export async function postWorkOrderCompletion(
         tenantId
       ]
     );
+
+    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
 
     if (!isDisassembly) {
       const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
@@ -1084,7 +1173,8 @@ export async function recordWorkOrderBatch(
         overrideRequested: context.overrideRequested,
         overrideReason: context.overrideReason ?? null,
         overrideReference: `work_order_batch_issue:${issueId}`
-      }
+      },
+      { client }
     );
 
     // Create movements first to satisfy FKs
@@ -1200,6 +1290,14 @@ export async function recordWorkOrderBatch(
         reasonCode,
         lineNotes: line.notes ?? null
       });
+
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: line.componentItemId,
+        locationId: line.fromLocationId,
+        uom: canonicalFields.canonicalUom,
+        deltaOnHand: canonicalFields.quantityDeltaCanonical
+      });
     }
 
     // Execution header + produce lines
@@ -1305,6 +1403,14 @@ export async function recordWorkOrderBatch(
         reasonCode,
         lineNotes: line.notes ?? null
       });
+
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: line.outputItemId,
+        locationId: line.toLocationId,
+        uom: canonicalFields.canonicalUom,
+        deltaOnHand: canonicalFields.quantityDeltaCanonical
+      });
     }
 
     await client.query(
@@ -1364,6 +1470,9 @@ export async function recordWorkOrderBatch(
         tenantId
       ]
     );
+
+    await enqueueInventoryMovementPosted(client, tenantId, issueMovementId);
+    await enqueueInventoryMovementPosted(client, tenantId, receiveMovementId);
 
     if (validation.overrideMetadata && context.actor) {
       await recordAuditLog(

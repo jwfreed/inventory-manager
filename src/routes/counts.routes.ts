@@ -4,6 +4,7 @@ import { createInventoryCount, getInventoryCount, postInventoryCount } from '../
 import { inventoryCountSchema } from '../schemas/counts.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
+import { getIdempotencyKey } from '../lib/idempotency';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -15,7 +16,9 @@ router.post('/inventory-counts', async (req: Request, res: Response) => {
   }
 
   try {
-    const count = await createInventoryCount(req.auth!.tenantId, parsed.data);
+    const count = await createInventoryCount(req.auth!.tenantId, parsed.data, {
+      idempotencyKey: getIdempotencyKey(req)
+    });
     return res.status(201).json(count);
   } catch (error: any) {
     if (error?.message === 'COUNT_DUPLICATE_LINE') {

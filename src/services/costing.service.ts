@@ -144,7 +144,7 @@ export async function updateItemQuantityOnHand(
 ): Promise<void> {
   await client.query(
     `UPDATE items 
-     SET quantity_on_hand = GREATEST(0, quantity_on_hand + $1),
+     SET quantity_on_hand = quantity_on_hand + $1,
          updated_at = now()
      WHERE id = $2 AND tenant_id = $3`,
     [quantityDelta, itemId, tenantId]

@@ -5,6 +5,7 @@ import {
   createReturnAuthorization,
   createSalesOrder,
   createShipment,
+  postShipment,
   getReservation,
   getReturnAuthorization,
   getSalesOrder,
@@ -22,6 +23,7 @@ import {
 } from '../schemas/orderToCash.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
+import { getIdempotencyKey } from '../lib/idempotency';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -90,7 +92,8 @@ router.post('/reservations', async (req: Request, res: Response) => {
   }
   try {
     const tenantId = req.auth!.tenantId;
-    const results = await createReservations(tenantId, parsed.data);
+    const idempotencyKey = getIdempotencyKey(req);
+    const results = await createReservations(tenantId, parsed.data, { idempotencyKey });
     const reservationIds = results.map((r) => r.id);
     const itemIds = Array.from(new Set(results.map((r) => r.itemId).filter(Boolean)));
     const locationIds = Array.from(new Set(results.map((r) => r.locationId).filter(Boolean)));
@@ -111,6 +114,62 @@ router.post('/reservations', async (req: Request, res: Response) => {
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create reservation.' });
+  }
+});
+
+router.post('/shipments/:id/post', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid shipment id.' });
+  }
+  const idempotencyKey = getIdempotencyKey(req);
+  if (!idempotencyKey) {
+    return res.status(400).json({ error: 'Idempotency-Key header is required.' });
+  }
+
+  try {
+    const tenantId = req.auth!.tenantId;
+    const overrideRequested = !!req.body?.overrideNegative;
+    const overrideReason = req.body?.overrideReason ?? null;
+    const shipment = await postShipment(tenantId, id, {
+      idempotencyKey,
+      actor: { type: 'user', id: req.auth!.userId, role: req.auth!.role },
+      overrideRequested,
+      overrideReason
+    });
+    emitEvent(tenantId, 'inventory.shipment.posted', {
+      shipmentId: shipment.id,
+      movementId: shipment.inventoryMovementId,
+      locationId: shipment.shipFromLocationId
+    });
+    return res.json(shipment);
+  } catch (error: any) {
+    if (error?.code === 'INSUFFICIENT_STOCK' || error?.message === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({ error: 'Insufficient stock to post shipment.', details: error?.details });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
+      return res.status(403).json({ error: error.details?.message ?? 'Negative override not allowed.', details: error?.details });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
+      return res.status(409).json({ error: error.details?.message ?? 'Negative override requires a reason.', details: error?.details });
+    }
+    if (error?.message === 'SHIPMENT_NOT_FOUND') {
+      return res.status(404).json({ error: 'Shipment not found.' });
+    }
+    if (error?.message === 'SHIPMENT_CANCELED') {
+      return res.status(409).json({ error: 'Canceled shipments cannot be posted.' });
+    }
+    if (error?.message === 'SHIPMENT_NO_LINES') {
+      return res.status(400).json({ error: 'Shipment has no lines to post.' });
+    }
+    if (error?.message === 'SHIPMENT_INVALID_QUANTITY') {
+      return res.status(400).json({ error: 'Shipment quantities must be greater than zero.' });
+    }
+    if (error?.message === 'SHIPMENT_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Shipment requires ship_from_location_id.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to post shipment.' });
   }
 });
 

@@ -4,7 +4,8 @@ import path from 'path';
 const ROOT = path.resolve(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
 const ALLOWED = new Set([
-  path.join(SRC, 'domains', 'inventory', 'internal', 'ledgerWriter.ts')
+  path.join(SRC, 'domains', 'inventory', 'internal', 'ledgerWriter.ts'),
+  path.join(SRC, 'domains', 'inventory', 'internal', 'inventoryBalance.ts')
 ]);
 
 const WRITE_PATTERNS: Array<{ name: string; regex: RegExp }> = [

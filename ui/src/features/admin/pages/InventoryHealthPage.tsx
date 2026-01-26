@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { ApiError } from '../../../api/types'
 import { getInventoryHealth } from '../api/inventoryHealth'
-import PageHeader from '../../../components/PageHeader'
 import { Badge } from '../../../components/Badge'
 
 export default function InventoryHealthPage() {
@@ -21,7 +20,10 @@ export default function InventoryHealthPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Inventory Health" subtitle="Perpetual inventory accuracy and variance checks." />
+      <div>
+        <h1 className="text-2xl font-semibold text-slate-900">Inventory Health</h1>
+        <p className="mt-1 text-sm text-slate-500">Perpetual inventory accuracy and variance checks.</p>
+      </div>
 
       {healthQuery.isLoading && <div>Loading inventory health...</div>}
       {healthQuery.isError && (

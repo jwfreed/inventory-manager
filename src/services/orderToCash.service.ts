@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
-import { query, withTransaction } from '../db';
+import type { PoolClient } from 'pg';
+import { query, withTransaction, withTransactionRetry } from '../db';
 import {
   reservationsCreateSchema,
   reservationSchema,
@@ -8,12 +9,16 @@ import {
   salesOrderSchema,
   shipmentSchema,
 } from '../schemas/orderToCash.schema';
-import { convertToCanonical } from './uomCanonical.service';
+import { convertToCanonical, getCanonicalMovementFields } from './uomCanonical.service';
 import { getItem } from './masterData.service';
-import { getInventorySnapshot } from './inventorySnapshot.service';
+import { applyInventoryBalanceDelta, getInventoryBalanceForUpdate } from '../domains/inventory';
 import { upsertBackorder } from './backorders.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { ItemLifecycleStatus } from '../types/item';
+import { validateSufficientStock } from './stockValidation.service';
+import { createInventoryMovement, createInventoryMovementLine, enqueueInventoryMovementPosted } from '../domains/inventory';
+import { consumeCostLayers } from './costLayers.service';
+import { recordAuditLog } from '../lib/audit';
 
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
 export type ReservationInput = z.infer<typeof reservationSchema>;
@@ -189,10 +194,15 @@ export function mapReservation(row: any) {
   };
 }
 
-export async function createReservations(tenantId: string, data: ReservationCreateInput) {
+export async function createReservations(
+  tenantId: string,
+  data: ReservationCreateInput,
+  options?: { idempotencyKey?: string | null }
+) {
   const now = new Date();
   const results: any[] = [];
-  await withTransaction(async (client) => {
+  const baseIdempotency = options?.idempotencyKey ?? null;
+  await withTransactionRetry(async (client) => {
     for (const reservation of data.reservations) {
       const canonical = await convertToCanonical(
         tenantId,
@@ -201,12 +211,29 @@ export async function createReservations(tenantId: string, data: ReservationCrea
         reservation.uom,
         client
       );
-      const snapshot = await getInventorySnapshot(tenantId, {
-        itemId: reservation.itemId,
-        locationId: reservation.locationId,
-        uom: canonical.canonicalUom
-      });
-      const available = toNumber(snapshot.find((row) => row.uom === canonical.canonicalUom)?.available ?? 0);
+      const idempotencyKey = baseIdempotency
+        ? `${baseIdempotency}:${reservation.demandId}:${reservation.itemId}:${reservation.locationId}:${canonical.canonicalUom}`
+        : null;
+      if (idempotencyKey) {
+        const existing = await client.query(
+          `SELECT * FROM inventory_reservations
+            WHERE tenant_id = $1 AND idempotency_key = $2`,
+          [tenantId, idempotencyKey]
+        );
+        if (existing.rowCount > 0) {
+          results.push(existing.rows[0]);
+          continue;
+        }
+      }
+
+      const balance = await getInventoryBalanceForUpdate(
+        client,
+        tenantId,
+        reservation.itemId,
+        reservation.locationId,
+        canonical.canonicalUom
+      );
+      const available = roundQuantity(balance.onHand - balance.reserved);
       const reserveQty = roundQuantity(Math.max(0, Math.min(canonical.quantity, available)));
       const backorderQty = roundQuantity(Math.max(0, canonical.quantity - reserveQty));
 
@@ -233,8 +260,8 @@ export async function createReservations(tenantId: string, data: ReservationCrea
       const res = await client.query(
         `INSERT INTO inventory_reservations (
           id, tenant_id, status, demand_type, demand_id, item_id, location_id, uom,
-          quantity_reserved, quantity_fulfilled, reserved_at, notes, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
+          quantity_reserved, quantity_fulfilled, reserved_at, notes, idempotency_key, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14)
         RETURNING *`,
         [
           uuidv4(),
@@ -249,12 +276,21 @@ export async function createReservations(tenantId: string, data: ReservationCrea
           fulfilledQty,
           reservation.status === 'open' ? now : now,
           reservation.notes ?? null,
+          idempotencyKey,
           now,
         ],
       );
       results.push(res.rows[0]);
+
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: reservation.itemId,
+        locationId: reservation.locationId,
+        uom: canonical.canonicalUom,
+        deltaReserved: reserveQty
+      });
     }
-  });
+  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
   return results.map(mapReservation);
 }
 
@@ -282,6 +318,8 @@ export function mapShipment(row: any, lines: any[]) {
     shippedAt: row.shipped_at,
     shipFromLocationId: row.ship_from_location_id,
     inventoryMovementId: row.inventory_movement_id,
+    status: row.status ?? null,
+    postedAt: row.posted_at ?? null,
     externalRef: row.external_ref,
     notes: row.notes,
     createdAt: row.created_at,
@@ -345,17 +383,286 @@ export async function listShipments(tenantId: string, limit: number, offset: num
   return rows;
 }
 
-export async function getShipment(tenantId: string, id: string) {
-  const shipment = await query('SELECT * FROM sales_order_shipments WHERE id = $1 AND tenant_id = $2', [
+export async function getShipment(tenantId: string, id: string, client?: PoolClient) {
+  const executor = client ? client.query.bind(client) : query;
+  const shipment = await executor('SELECT * FROM sales_order_shipments WHERE id = $1 AND tenant_id = $2', [
     id,
     tenantId,
   ]);
   if (shipment.rowCount === 0) return null;
-  const lines = await query(
+  const lines = await executor(
     'SELECT * FROM sales_order_shipment_lines WHERE sales_order_shipment_id = $1 AND tenant_id = $2 ORDER BY created_at ASC',
     [id, tenantId],
   );
   return mapShipment(shipment.rows[0], lines.rows);
+}
+
+export async function postShipment(
+  tenantId: string,
+  shipmentId: string,
+  params: {
+    idempotencyKey: string;
+    actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
+    overrideRequested?: boolean;
+    overrideReason?: string | null;
+  }
+) {
+  if (!params.idempotencyKey) {
+    throw new Error('IDEMPOTENCY_KEY_REQUIRED');
+  }
+
+  const result = await withTransactionRetry(async (client) => {
+    const now = new Date();
+    const shipmentRes = await client.query(
+      `SELECT * FROM sales_order_shipments WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [shipmentId, tenantId]
+    );
+    if (shipmentRes.rowCount === 0) {
+      throw new Error('SHIPMENT_NOT_FOUND');
+    }
+    const shipment = shipmentRes.rows[0];
+    if (shipment.status === 'canceled') {
+      throw new Error('SHIPMENT_CANCELED');
+    }
+    if (shipment.inventory_movement_id || shipment.status === 'posted') {
+      return getShipment(tenantId, shipmentId, client);
+    }
+    if (!shipment.ship_from_location_id) {
+      throw new Error('SHIPMENT_LOCATION_REQUIRED');
+    }
+
+    const linesRes = await client.query(
+      `SELECT sosl.*, sol.item_id
+         FROM sales_order_shipment_lines sosl
+         JOIN sales_order_lines sol
+           ON sol.id = sosl.sales_order_line_id
+          AND sol.tenant_id = sosl.tenant_id
+        WHERE sosl.sales_order_shipment_id = $1
+          AND sosl.tenant_id = $2
+        ORDER BY sosl.created_at ASC
+        FOR UPDATE`,
+      [shipmentId, tenantId]
+    );
+    if (linesRes.rowCount === 0) {
+      throw new Error('SHIPMENT_NO_LINES');
+    }
+
+    const negativeLines = linesRes.rows.map((line) => ({
+      itemId: line.item_id,
+      locationId: shipment.ship_from_location_id,
+      uom: line.uom,
+      quantityToConsume: Math.abs(toNumber(line.quantity_shipped))
+    }));
+
+    const validation = await validateSufficientStock(
+      tenantId,
+      now,
+      negativeLines,
+      {
+        actorId: params.actor?.id ?? null,
+        actorRole: params.actor?.role ?? null,
+        overrideRequested: params.overrideRequested,
+        overrideReason: params.overrideReason ?? null,
+        overrideReference: `shipment:${shipmentId}`
+      },
+      { client }
+    );
+
+    const movement = await createInventoryMovement(client, {
+      tenantId,
+      movementType: 'issue',
+      status: 'posted',
+      externalRef: `shipment:${shipmentId}`,
+      idempotencyKey: params.idempotencyKey,
+      occurredAt: shipment.shipped_at ?? now,
+      postedAt: now,
+      notes: shipment.notes ?? null,
+      metadata: validation.overrideMetadata ?? null,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    if (!movement.created) {
+      const lineCheck = await client.query(
+        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
+        [movement.id]
+      );
+      if (lineCheck.rowCount > 0) {
+        await client.query(
+          `UPDATE sales_order_shipments
+              SET inventory_movement_id = $1,
+                  status = 'posted',
+                  posted_at = COALESCE(posted_at, $2),
+                  posted_idempotency_key = COALESCE(posted_idempotency_key, $3)
+            WHERE id = $4 AND tenant_id = $5`,
+          [movement.id, now, params.idempotencyKey, shipmentId, tenantId]
+        );
+        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+        return getShipment(tenantId, shipmentId, client);
+      }
+    }
+
+    for (const line of linesRes.rows) {
+      const qtyShipped = toNumber(line.quantity_shipped);
+      if (qtyShipped <= 0) {
+        throw new Error('SHIPMENT_INVALID_QUANTITY');
+      }
+
+      const canonicalOut = await getCanonicalMovementFields(
+        tenantId,
+        line.item_id,
+        -qtyShipped,
+        line.uom,
+        client
+      );
+      const issueQty = Math.abs(canonicalOut.quantityDeltaCanonical);
+
+      const balance = await getInventoryBalanceForUpdate(
+        client,
+        tenantId,
+        line.item_id,
+        shipment.ship_from_location_id,
+        canonicalOut.canonicalUom
+      );
+      const available = roundQuantity(balance.onHand - balance.reserved);
+      if (available + 1e-6 < issueQty && !validation.overrideMetadata) {
+        throw new Error('INSUFFICIENT_STOCK');
+      }
+
+      const reservationRes = await client.query(
+        `SELECT * FROM inventory_reservations
+          WHERE tenant_id = $1
+            AND demand_type = 'sales_order_line'
+            AND demand_id = $2
+            AND item_id = $3
+            AND location_id = $4
+            AND uom = $5
+            AND status IN ('open','released')
+          FOR UPDATE`,
+        [tenantId, line.sales_order_line_id, line.item_id, shipment.ship_from_location_id, canonicalOut.canonicalUom]
+      );
+      const reservation = reservationRes.rows[0] ?? null;
+      const reservedRemaining = reservation
+        ? roundQuantity(toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0))
+        : 0;
+      const reserveConsume = Math.min(issueQty, Math.max(0, reservedRemaining));
+
+      const consumption = await consumeCostLayers({
+        tenant_id: tenantId,
+        item_id: line.item_id,
+        location_id: shipment.ship_from_location_id,
+        quantity: issueQty,
+        consumption_type: 'sale',
+        consumption_document_id: shipmentId,
+        movement_id: movement.id,
+        client
+      });
+      const unitCost = issueQty !== 0 ? consumption.total_cost / issueQty : null;
+      const extendedCost = consumption.total_cost !== null ? -consumption.total_cost : null;
+
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId: movement.id,
+        itemId: line.item_id,
+        locationId: shipment.ship_from_location_id,
+        quantityDelta: canonicalOut.quantityDeltaCanonical,
+        uom: canonicalOut.canonicalUom,
+        quantityDeltaEntered: canonicalOut.quantityDeltaEntered,
+        uomEntered: canonicalOut.uomEntered,
+        quantityDeltaCanonical: canonicalOut.quantityDeltaCanonical,
+        canonicalUom: canonicalOut.canonicalUom,
+        uomDimension: canonicalOut.uomDimension,
+        unitCost,
+        extendedCost,
+        reasonCode: 'shipment',
+        lineNotes: `Shipment ${shipmentId} line ${line.id}`
+      });
+
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: line.item_id,
+        locationId: shipment.ship_from_location_id,
+        uom: canonicalOut.canonicalUom,
+        deltaOnHand: -issueQty,
+        deltaReserved: -reserveConsume
+      });
+
+      if (reservation) {
+        const fulfilled = roundQuantity(
+          Math.min(
+            toNumber(reservation.quantity_reserved),
+            toNumber(reservation.quantity_fulfilled ?? 0) + reserveConsume
+          )
+        );
+        const newStatus =
+          fulfilled + 1e-6 >= toNumber(reservation.quantity_reserved) ? 'fulfilled' : reservation.status;
+        await client.query(
+          `UPDATE inventory_reservations
+              SET quantity_fulfilled = $1,
+                  status = $2,
+                  updated_at = now(),
+                  released_at = CASE WHEN $2 = 'fulfilled' THEN COALESCE(released_at, now()) ELSE released_at END
+            WHERE id = $3 AND tenant_id = $4`,
+          [fulfilled, newStatus, reservation.id, tenantId]
+        );
+      }
+    }
+
+    await client.query(
+      `UPDATE sales_order_shipments
+          SET inventory_movement_id = $1,
+              status = 'posted',
+              posted_at = $2,
+              posted_idempotency_key = $3
+        WHERE id = $4 AND tenant_id = $5`,
+      [movement.id, now, params.idempotencyKey, shipmentId, tenantId]
+    );
+
+    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+
+    if (params.actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: params.actor.type,
+          actorId: params.actor.id ?? null,
+          action: 'post',
+          entityType: 'sales_order_shipment',
+          entityId: shipmentId,
+          occurredAt: now,
+          metadata: { movementId: movement.id }
+        },
+        client
+      );
+    }
+
+    if (validation.overrideMetadata && params.actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: params.actor.type,
+          actorId: params.actor.id ?? null,
+          action: 'negative_override',
+          entityType: 'inventory_movement',
+          entityId: movement.id,
+          occurredAt: now,
+          metadata: {
+            reason: validation.overrideMetadata.override_reason ?? null,
+            reference: validation.overrideMetadata.override_reference ?? null,
+            shipmentId
+          }
+        },
+        client
+      );
+    }
+
+    return getShipment(tenantId, shipmentId, client);
+  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+
+  if (!result) {
+    throw new Error('SHIPMENT_POST_FAILED');
+  }
+  return result;
 }
 
 export function mapReturnAuth(row: any, lines: any[]) {

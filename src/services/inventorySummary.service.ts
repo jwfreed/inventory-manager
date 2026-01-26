@@ -12,16 +12,17 @@ export async function assertLocationExists(tenantId: string, id: string) {
 
 export async function getItemInventorySummary(tenantId: string, itemId: string) {
   const { rows: canonicalRows } = await query(
-    `SELECT iml.location_id, iml.canonical_uom AS uom, SUM(iml.quantity_delta_canonical) AS on_hand
+    `SELECT iml.location_id,
+            COALESCE(iml.canonical_uom, iml.uom) AS uom,
+            SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS on_hand
      FROM inventory_movement_lines iml
      JOIN inventory_movements im ON im.id = iml.movement_id
      WHERE im.status = 'posted' AND iml.item_id = $1
        AND iml.tenant_id = $2
        AND im.tenant_id = $2
-       AND iml.quantity_delta_canonical IS NOT NULL
-     GROUP BY iml.location_id, iml.canonical_uom
-     HAVING SUM(iml.quantity_delta_canonical) <> 0
-     ORDER BY iml.location_id ASC, iml.canonical_uom ASC`,
+     GROUP BY iml.location_id, COALESCE(iml.canonical_uom, iml.uom)
+     HAVING SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) <> 0
+     ORDER BY iml.location_id ASC, COALESCE(iml.canonical_uom, iml.uom) ASC`,
     [itemId, tenantId]
   );
   return canonicalRows.map((row) => ({
@@ -33,16 +34,17 @@ export async function getItemInventorySummary(tenantId: string, itemId: string) 
 
 export async function getLocationInventorySummary(tenantId: string, locationId: string) {
   const { rows: canonicalRows } = await query(
-    `SELECT iml.item_id, iml.canonical_uom AS uom, SUM(iml.quantity_delta_canonical) AS on_hand
+    `SELECT iml.item_id,
+            COALESCE(iml.canonical_uom, iml.uom) AS uom,
+            SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS on_hand
      FROM inventory_movement_lines iml
      JOIN inventory_movements im ON im.id = iml.movement_id
      WHERE im.status = 'posted' AND iml.location_id = $1
        AND iml.tenant_id = $2
        AND im.tenant_id = $2
-       AND iml.quantity_delta_canonical IS NOT NULL
-     GROUP BY iml.item_id, iml.canonical_uom
-     HAVING SUM(iml.quantity_delta_canonical) <> 0
-     ORDER BY iml.item_id ASC, iml.canonical_uom ASC`,
+     GROUP BY iml.item_id, COALESCE(iml.canonical_uom, iml.uom)
+     HAVING SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) <> 0
+     ORDER BY iml.item_id ASC, COALESCE(iml.canonical_uom, iml.uom) ASC`,
     [locationId, tenantId]
   );
   return canonicalRows.map((row) => ({

@@ -9,7 +9,12 @@ import { validateSufficientStock } from './stockValidation.service';
 import { calculateMovementCost } from './costing.service';
 import { consumeCostLayers, createCostLayer } from './costLayers.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
-import { createInventoryMovement, createInventoryMovementLine } from '../domains/inventory';
+import {
+  createInventoryMovement,
+  createInventoryMovementLine,
+  applyInventoryBalanceDelta,
+  enqueueInventoryMovementPosted
+} from '../domains/inventory';
 
 type InventoryCountInput = z.infer<typeof inventoryCountSchema>;
 
@@ -263,16 +268,30 @@ function normalizeCountLines(data: InventoryCountInput) {
   });
 }
 
-export async function createInventoryCount(tenantId: string, data: InventoryCountInput) {
+export async function createInventoryCount(
+  tenantId: string,
+  data: InventoryCountInput,
+  options?: { idempotencyKey?: string | null }
+) {
   const normalizedLines = normalizeCountLines(data);
   const countId = uuidv4();
   const now = new Date();
+  const idempotencyKey = options?.idempotencyKey ?? null;
 
   await withTransaction(async (client: PoolClient) => {
+    if (idempotencyKey) {
+      const existing = await client.query(
+        `SELECT id FROM cycle_counts WHERE tenant_id = $1 AND idempotency_key = $2`,
+        [tenantId, idempotencyKey]
+      );
+      if (existing.rowCount > 0) {
+        return;
+      }
+    }
     await client.query(
       `INSERT INTO cycle_counts (
-          id, tenant_id, status, counted_at, location_id, notes, counter_id, approved_by, approved_at, created_at, updated_at
-       ) VALUES ($1, $2, 'draft', $3, $4, $5, $6, $7, $8, $9, $9)`,
+          id, tenant_id, status, counted_at, location_id, notes, counter_id, approved_by, approved_at, idempotency_key, created_at, updated_at
+       ) VALUES ($1, $2, 'draft', $3, $4, $5, $6, $7, $8, $9, $10, $10)`,
       [
         countId,
         tenantId,
@@ -282,6 +301,7 @@ export async function createInventoryCount(tenantId: string, data: InventoryCoun
         data.counterId ?? null,
         data.approvedBy ?? null,
         data.approvedAt ? new Date(data.approvedAt) : null,
+        idempotencyKey,
         now
       ]
     );
@@ -306,7 +326,13 @@ export async function createInventoryCount(tenantId: string, data: InventoryCoun
     }
   });
 
-  const count = await fetchCycleCountById(tenantId, countId);
+  const countIdResolved = idempotencyKey
+    ? (await pool.query<{ id: string }>(
+        'SELECT id FROM cycle_counts WHERE tenant_id = $1 AND idempotency_key = $2',
+        [tenantId, idempotencyKey]
+      )).rows[0]?.id ?? countId
+    : countId;
+  const count = await fetchCycleCountById(tenantId, countIdResolved);
   if (!count) {
     throw new Error('COUNT_NOT_FOUND');
   }
@@ -337,13 +363,13 @@ export async function postInventoryCount(
     }
     const cycleCount = countResult.rows[0];
     if (cycleCount.status === 'posted') {
-      throw new Error('COUNT_ALREADY_POSTED');
+      return fetchCycleCountById(tenantId, id, client);
     }
     if (cycleCount.status === 'canceled') {
       throw new Error('COUNT_CANCELED');
     }
     if (cycleCount.posted_at) {
-      throw new Error('COUNT_ALREADY_POSTED');
+      return fetchCycleCountById(tenantId, id, client);
     }
 
     const linesResult = await client.query<CycleCountLineRow>(
@@ -390,13 +416,19 @@ export async function postInventoryCount(
         quantityToConsume: Math.abs(delta.variance)
       }));
     const validation = negativeLines.length
-      ? await validateSufficientStock(tenantId, new Date(cycleCount.counted_at), negativeLines, {
-          actorId: context?.actor?.id ?? null,
-          actorRole: context?.actor?.role ?? null,
-          overrideRequested: context?.overrideRequested,
-          overrideReason: context?.overrideReason ?? null,
-          overrideReference: `cycle_count:${id}`
-        })
+      ? await validateSufficientStock(
+          tenantId,
+          new Date(cycleCount.counted_at),
+          negativeLines,
+          {
+            actorId: context?.actor?.id ?? null,
+            actorRole: context?.actor?.role ?? null,
+            overrideRequested: context?.overrideRequested,
+            overrideReason: context?.overrideReason ?? null,
+            overrideReference: `cycle_count:${id}`
+          },
+          { client }
+        )
       : {};
 
     const adjustmentId = uuidv4();
@@ -429,7 +461,7 @@ export async function postInventoryCount(
     }
 
     const movementId = uuidv4();
-    await createInventoryMovement(client, {
+    const movement = await createInventoryMovement(client, {
       id: movementId,
       tenantId,
       movementType: 'adjustment',
@@ -442,6 +474,26 @@ export async function postInventoryCount(
       createdAt: now,
       updatedAt: now
     });
+
+    if (!movement.created) {
+      const lineCheck = await client.query(
+        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
+        [movement.id]
+      );
+      if (lineCheck.rowCount > 0) {
+        await client.query(
+          `UPDATE cycle_counts
+              SET status = 'posted',
+                  inventory_movement_id = $1,
+                  posted_at = $2,
+                  updated_at = $2
+            WHERE id = $3 AND tenant_id = $4`,
+          [movement.id, now, id, tenantId]
+        );
+        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+        return fetchCycleCountById(tenantId, id, client);
+      }
+    }
 
     for (const delta of deltas) {
       await client.query(
@@ -466,44 +518,36 @@ export async function postInventoryCount(
         
         // Handle cost layers for count adjustment
         if (delta.variance > 0) {
-          // Positive variance - create new cost layer
-          try {
-            await createCostLayer({
-              tenant_id: tenantId,
-              item_id: delta.line.item_id,
-              location_id: cycleCount.location_id,
-              uom: canonicalFields.canonicalUom,
-              quantity: canonicalQty,
-              unit_cost: costData.unitCost || 0,
-              source_type: 'adjustment',
-              source_document_id: id,
-              movement_id: movementId,
-              notes: `Cycle count adjustment - found more than expected`
-            });
-          } catch (err) {
-            console.warn('Failed to create cost layer for count adjustment:', err);
-          }
+          await createCostLayer({
+            tenant_id: tenantId,
+            item_id: delta.line.item_id,
+            location_id: cycleCount.location_id,
+            uom: canonicalFields.canonicalUom,
+            quantity: canonicalQty,
+            unit_cost: costData.unitCost || 0,
+            source_type: 'adjustment',
+            source_document_id: id,
+              movement_id: movement.id,
+            notes: `Cycle count adjustment - found more than expected`,
+            client
+          });
         } else {
-          // Negative variance - consume from cost layers
-          try {
-            await consumeCostLayers({
-              tenant_id: tenantId,
-              item_id: delta.line.item_id,
-              location_id: cycleCount.location_id,
-              quantity: Math.abs(canonicalQty),
-              consumption_type: 'adjustment',
-              consumption_document_id: id,
-              movement_id: movementId,
-              notes: `Cycle count adjustment - found less than expected`
-            });
-          } catch (err) {
-            console.warn('Failed to consume cost layers for count adjustment:', err);
-          }
+          await consumeCostLayers({
+            tenant_id: tenantId,
+            item_id: delta.line.item_id,
+            location_id: cycleCount.location_id,
+            quantity: Math.abs(canonicalQty),
+            consumption_type: 'adjustment',
+            consumption_document_id: id,
+              movement_id: movement.id,
+            notes: `Cycle count adjustment - found less than expected`,
+            client
+          });
         }
         
         await createInventoryMovementLine(client, {
           tenantId,
-          movementId,
+          movementId: movement.id,
           itemId: delta.line.item_id,
           locationId: cycleCount.location_id,
           quantityDelta: canonicalQty,
@@ -518,6 +562,14 @@ export async function postInventoryCount(
           reasonCode: delta.line.reason_code,
           lineNotes: delta.line.notes ?? `Cycle count ${id} line ${delta.line.line_number}`
         });
+
+        await applyInventoryBalanceDelta(client, {
+          tenantId,
+          itemId: delta.line.item_id,
+          locationId: cycleCount.location_id,
+          uom: canonicalFields.canonicalUom,
+          deltaOnHand: canonicalQty
+        });
       }
     }
 
@@ -527,7 +579,7 @@ export async function postInventoryCount(
               inventory_movement_id = $1,
               updated_at = $2
        WHERE id = $3 AND tenant_id = $4`,
-      [movementId, now, adjustmentId, tenantId]
+      [movement.id, now, adjustmentId, tenantId]
     );
 
     await client.query(
@@ -538,8 +590,10 @@ export async function postInventoryCount(
               posted_at = $3,
               updated_at = $3
        WHERE id = $4 AND tenant_id = $5`,
-      [adjustmentId, movementId, now, id, tenantId]
+      [adjustmentId, movement.id, now, id, tenantId]
     );
+
+    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
 
     if (validation.overrideMetadata && context?.actor) {
       await recordAuditLog(
@@ -549,7 +603,7 @@ export async function postInventoryCount(
           actorId: context.actor.id ?? null,
           action: 'negative_override',
           entityType: 'inventory_movement',
-          entityId: movementId,
+          entityId: movement.id,
           occurredAt: now,
           metadata: {
             reason: validation.overrideMetadata.override_reason ?? null,

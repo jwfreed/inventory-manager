@@ -18,6 +18,7 @@ import {
 } from '../schemas/workOrderExecution.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
+import { getIdempotencyKey } from '../lib/idempotency';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -33,7 +34,9 @@ router.post('/work-orders/:id/issues', async (req: Request, res: Response) => {
   }
 
   try {
-    const issue = await createWorkOrderIssue(req.auth!.tenantId, workOrderId, parsed.data);
+    const issue = await createWorkOrderIssue(req.auth!.tenantId, workOrderId, parsed.data, {
+      idempotencyKey: getIdempotencyKey(req)
+    });
     return res.status(201).json(issue);
   } catch (error: any) {
     if (error?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
@@ -197,7 +200,9 @@ router.post('/work-orders/:id/completions', async (req: Request, res: Response) 
   }
 
   try {
-    const completion = await createWorkOrderCompletion(req.auth!.tenantId, workOrderId, parsed.data);
+    const completion = await createWorkOrderCompletion(req.auth!.tenantId, workOrderId, parsed.data, {
+      idempotencyKey: getIdempotencyKey(req)
+    });
     return res.status(201).json(completion);
   } catch (error: any) {
     if (error?.message === 'WO_NOT_FOUND') {

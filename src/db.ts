@@ -88,3 +88,40 @@ export async function withTransaction<T>(handler: (client: PoolClient) => Promis
     client.release();
   }
 }
+
+export async function withTransactionRetry<T>(
+  handler: (client: PoolClient) => Promise<T>,
+  options?: { retries?: number; isolationLevel?: 'SERIALIZABLE' | 'REPEATABLE READ' | 'READ COMMITTED' }
+): Promise<T> {
+  const retries = options?.retries ?? 2;
+  const isolationLevel = options?.isolationLevel;
+  let attempt = 0;
+  while (true) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (isolationLevel) {
+        await client.query(`SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
+      }
+      if (STATEMENT_TIMEOUT_MS > 0) {
+        await client.query(`SET LOCAL statement_timeout TO ${STATEMENT_TIMEOUT_MS}`);
+      }
+      if (LOCK_TIMEOUT_MS > 0) {
+        await client.query(`SET LOCAL lock_timeout TO ${LOCK_TIMEOUT_MS}`);
+      }
+      const result = await handler(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err: any) {
+      await client.query('ROLLBACK');
+      const code = err?.code;
+      if ((code === '40001' || code === '40P01') && attempt < retries) {
+        attempt += 1;
+        continue;
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+}

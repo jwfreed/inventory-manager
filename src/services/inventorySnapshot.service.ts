@@ -55,10 +55,10 @@ async function loadOnHand(
   uom?: string
 ): Promise<Map<string, number>> {
   const params: any[] = [tenantId, itemId, locationId];
-  const uomFilter = uom ? ` AND iml.canonical_uom = $${params.push(uom)}` : '';
+  const uomFilter = uom ? ` AND COALESCE(iml.canonical_uom, iml.uom) = $${params.push(uom)}` : '';
   const { rows } = await query(
-    `SELECT iml.canonical_uom AS uom,
-            SUM(iml.quantity_delta_canonical) AS on_hand
+    `SELECT COALESCE(iml.canonical_uom, iml.uom) AS uom,
+            SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS on_hand
        FROM inventory_movement_lines iml
        JOIN inventory_movements im ON im.id = iml.movement_id
       WHERE im.status = 'posted'
@@ -66,9 +66,8 @@ async function loadOnHand(
         AND im.tenant_id = $1
         AND iml.item_id = $2
         AND iml.location_id = $3
-        AND iml.quantity_delta_canonical IS NOT NULL
         ${uomFilter}
-      GROUP BY iml.canonical_uom`,
+      GROUP BY COALESCE(iml.canonical_uom, iml.uom)`,
     params
   );
 
@@ -86,9 +85,9 @@ async function loadReserved(
   uom?: string
 ): Promise<Map<string, number>> {
   const params: any[] = [tenantId, itemId, locationId];
-  const uomFilter = uom ? ` AND i.canonical_uom = $${params.push(uom)}` : '';
+  const uomFilter = uom ? ` AND COALESCE(i.canonical_uom, r.uom) = $${params.push(uom)}` : '';
   const { rows } = await query(
-    `SELECT i.canonical_uom AS uom,
+    `SELECT COALESCE(i.canonical_uom, r.uom) AS uom,
             SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved_qty
        FROM inventory_reservations r
        JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
@@ -96,10 +95,9 @@ async function loadReserved(
         AND r.item_id = $2
         AND r.location_id = $3
         AND r.status IN ('open', 'released')
-        AND i.canonical_uom IS NOT NULL
-        AND r.uom = i.canonical_uom
+        AND (i.canonical_uom IS NULL OR r.uom = i.canonical_uom)
         ${uomFilter}
-      GROUP BY i.canonical_uom`,
+      GROUP BY COALESCE(i.canonical_uom, r.uom)`,
     params
   );
 
@@ -118,9 +116,9 @@ async function loadBackordered(
   uom?: string
 ): Promise<Map<string, number>> {
   const params: any[] = [tenantId, itemId, locationId];
-  const uomFilter = uom ? ` AND i.canonical_uom = $${params.push(uom)}` : '';
+  const uomFilter = uom ? ` AND COALESCE(i.canonical_uom, b.uom) = $${params.push(uom)}` : '';
   const { rows } = await query(
-    `SELECT i.canonical_uom AS uom,
+    `SELECT COALESCE(i.canonical_uom, b.uom) AS uom,
             SUM(b.quantity_backordered) AS backordered_qty
        FROM inventory_backorders b
        JOIN items i ON i.id = b.item_id AND i.tenant_id = b.tenant_id
@@ -128,10 +126,9 @@ async function loadBackordered(
         AND b.item_id = $2
         AND b.location_id = $3
         AND b.status = 'open'
-        AND i.canonical_uom IS NOT NULL
-        AND b.uom = i.canonical_uom
+        AND (i.canonical_uom IS NULL OR b.uom = i.canonical_uom)
         ${uomFilter}
-      GROUP BY i.canonical_uom`,
+      GROUP BY COALESCE(i.canonical_uom, b.uom)`,
     params
   );
 
@@ -488,44 +485,41 @@ export async function getInventorySnapshotSummary(
      on_hand AS (
        SELECT iml.item_id,
               iml.location_id,
-              iml.canonical_uom AS uom,
-              SUM(iml.quantity_delta_canonical) AS on_hand
+              COALESCE(iml.canonical_uom, iml.uom) AS uom,
+              SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS on_hand
          FROM inventory_movement_lines iml
          JOIN inventory_movements im ON im.id = iml.movement_id
         WHERE im.status = 'posted'
           AND iml.tenant_id = $1
           AND im.tenant_id = $1
-          AND iml.quantity_delta_canonical IS NOT NULL
           ${whereOnHand}
-        GROUP BY iml.item_id, iml.location_id, iml.canonical_uom
+        GROUP BY iml.item_id, iml.location_id, COALESCE(iml.canonical_uom, iml.uom)
      ),
      reserved AS (
        SELECT r.item_id,
               r.location_id,
-              i.canonical_uom AS uom,
+              COALESCE(i.canonical_uom, r.uom) AS uom,
               SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved
          FROM inventory_reservations r
          JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
         WHERE r.status IN ('open', 'released')
           AND r.tenant_id = $1
-          AND i.canonical_uom IS NOT NULL
-          AND r.uom = i.canonical_uom
+          AND (i.canonical_uom IS NULL OR r.uom = i.canonical_uom)
           ${whereReserved}
-        GROUP BY r.item_id, r.location_id, i.canonical_uom
+        GROUP BY r.item_id, r.location_id, COALESCE(i.canonical_uom, r.uom)
      ),
      backordered AS (
        SELECT b.item_id,
               b.location_id,
-              i.canonical_uom AS uom,
+              COALESCE(i.canonical_uom, b.uom) AS uom,
               SUM(b.quantity_backordered) AS backordered
          FROM inventory_backorders b
          JOIN items i ON i.id = b.item_id AND i.tenant_id = b.tenant_id
         WHERE b.status = 'open'
           AND b.tenant_id = $1
-          AND i.canonical_uom IS NOT NULL
-          AND b.uom = i.canonical_uom
+          AND (i.canonical_uom IS NULL OR b.uom = i.canonical_uom)
           ${whereBackordered}
-        GROUP BY b.item_id, b.location_id, i.canonical_uom
+        GROUP BY b.item_id, b.location_id, COALESCE(i.canonical_uom, b.uom)
      ),
      on_order AS (
        SELECT pol.item_id,

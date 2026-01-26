@@ -17,6 +17,10 @@ type RequestLogEntry = {
 };
 
 export function requestLoggerMiddleware(req: Request, res: Response, next: NextFunction) {
+  const logEnabled = process.env.LOG_HTTP_REQUESTS === 'true';
+  if (!logEnabled) {
+    return next();
+  }
   const start = Date.now();
   const bytesIn = Number(req.headers['content-length'] ?? 0);
 

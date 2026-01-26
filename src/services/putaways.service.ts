@@ -8,7 +8,12 @@ import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock, validateLocationCapacity } from './stockValidation.service';
 import { calculateMovementCost } from './costing.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
-import { createInventoryMovement, createInventoryMovementLine } from '../domains/inventory';
+import {
+  createInventoryMovement,
+  createInventoryMovementLine,
+  applyInventoryBalanceDelta,
+  enqueueInventoryMovementPosted
+} from '../domains/inventory';
 import {
   calculateAcceptedQuantity,
   calculatePutawayAvailability,
@@ -198,7 +203,8 @@ export async function fetchPutawayById(tenantId: string, id: string, client?: Po
 export async function createPutaway(
   tenantId: string,
   data: PutawayInput,
-  actor?: { type: 'user' | 'system'; id?: string | null }
+  actor?: { type: 'user' | 'system'; id?: string | null },
+  options?: { idempotencyKey?: string | null }
 ) {
   const lineIds = data.lines.map((line) => line.purchaseOrderReceiptLineId);
   const uniqueLineIds = Array.from(new Set(lineIds));
@@ -288,13 +294,23 @@ export async function createPutaway(
 
   const now = new Date();
   const putawayId = uuidv4();
+  const idempotencyKey = options?.idempotencyKey ?? null;
   const putawayNumber = await generatePutawayNumber();
 
   await withTransaction(async (client) => {
+    if (idempotencyKey) {
+      const existing = await client.query(
+        `SELECT id FROM putaways WHERE tenant_id = $1 AND idempotency_key = $2`,
+        [tenantId, idempotencyKey]
+      );
+      if (existing.rowCount > 0) {
+        return;
+      }
+    }
     await client.query(
       `INSERT INTO putaways (
-          id, tenant_id, status, source_type, purchase_order_receipt_id, notes, created_at, updated_at, putaway_number
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8)`,
+          id, tenant_id, status, source_type, purchase_order_receipt_id, notes, idempotency_key, created_at, updated_at, putaway_number
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)`,
       [
         putawayId,
         tenantId,
@@ -302,6 +318,7 @@ export async function createPutaway(
         data.sourceType,
         receiptIdForPutaway ?? null,
         data.notes ?? null,
+        idempotencyKey,
         now,
         putawayNumber
       ]
@@ -352,7 +369,13 @@ export async function createPutaway(
     }
   });
 
-  const putaway = await fetchPutawayById(tenantId, putawayId);
+  const putawayIdResolved = idempotencyKey
+    ? (await query<{ id: string }>(
+        'SELECT id FROM putaways WHERE tenant_id = $1 AND idempotency_key = $2',
+        [tenantId, idempotencyKey]
+      )).rows[0]?.id ?? putawayId
+    : putawayId;
+  const putaway = await fetchPutawayById(tenantId, putawayIdResolved);
   if (!putaway) {
     throw new Error('PUTAWAY_NOT_FOUND_AFTER_CREATE');
   }
@@ -379,7 +402,7 @@ export async function postPutaway(
     }
     const putaway = putawayResult.rows[0];
     if (putaway.status === 'completed') {
-      throw new Error('PUTAWAY_ALREADY_POSTED');
+      return fetchPutawayById(tenantId, id, client);
     }
     if (putaway.status === 'canceled') {
       throw new Error('PUTAWAY_CANCELED');
@@ -446,10 +469,11 @@ export async function postPutaway(
         overrideRequested: context?.overrideRequested,
         overrideReason: context?.overrideReason ?? null,
         overrideReference: `putaway:${id}`
-      }
+      },
+      { client }
     );
 
-    await createInventoryMovement(client, {
+    const movement = await createInventoryMovement(client, {
       id: movementId,
       tenantId,
       movementType: 'transfer',
@@ -462,6 +486,26 @@ export async function postPutaway(
       createdAt: now,
       updatedAt: now
     });
+
+    if (!movement.created) {
+      const lineCheck = await client.query(
+        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
+        [movement.id]
+      );
+      if (lineCheck.rowCount > 0) {
+        await client.query(
+          `UPDATE putaways
+              SET status = 'completed',
+                  inventory_movement_id = $1,
+                  completed_at = $2,
+                  updated_at = $2
+            WHERE id = $3 AND tenant_id = $4`,
+          [movement.id, now, id, tenantId]
+        );
+        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+        return fetchPutawayById(tenantId, id, client);
+      }
+    }
 
     for (const line of pendingLines) {
       const qty = toNumber(line.quantity_planned);
@@ -484,7 +528,7 @@ export async function postPutaway(
       
       await createInventoryMovementLine(client, {
         tenantId,
-        movementId,
+        movementId: movement.id,
         itemId: line.item_id,
         locationId: line.from_location_id,
         quantityDelta: canonicalOut.quantityDeltaCanonical,
@@ -498,6 +542,14 @@ export async function postPutaway(
         extendedCost: costData.extendedCost,
         reasonCode: 'putaway',
         lineNotes: lineNote
+      });
+
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: line.item_id,
+        locationId: line.from_location_id,
+        uom: canonicalOut.canonicalUom,
+        deltaOnHand: canonicalOut.quantityDeltaCanonical
       });
       
       // Positive movement uses same unit cost, but positive extended cost
@@ -517,7 +569,7 @@ export async function postPutaway(
       
       await createInventoryMovementLine(client, {
         tenantId,
-        movementId,
+        movementId: movement.id,
         itemId: line.item_id,
         locationId: line.to_location_id,
         quantityDelta: canonicalIn.quantityDeltaCanonical,
@@ -532,6 +584,14 @@ export async function postPutaway(
         reasonCode: 'putaway',
         lineNotes: lineNote
       });
+
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: line.item_id,
+        locationId: line.to_location_id,
+        uom: canonicalIn.canonicalUom,
+        deltaOnHand: canonicalIn.quantityDeltaCanonical
+      });
       await client.query(
         `UPDATE putaway_lines
             SET status = 'completed',
@@ -539,7 +599,7 @@ export async function postPutaway(
                 inventory_movement_id = $2,
                 updated_at = $3
          WHERE id = $4 AND tenant_id = $5`,
-        [qty, movementId, now, line.id, tenantId]
+        [qty, movement.id, now, line.id, tenantId]
       );
     }
 
@@ -551,8 +611,10 @@ export async function postPutaway(
               completed_at = $3,
               completed_by_user_id = $6
         WHERE id = $4 AND tenant_id = $5`,
-      ['completed', movementId, now, id, tenantId, context?.actor?.id ?? null]
+      ['completed', movement.id, now, id, tenantId, context?.actor?.id ?? null]
     );
+
+    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
 
     if (context?.actor) {
       await recordAuditLog(
@@ -564,7 +626,7 @@ export async function postPutaway(
           entityType: 'putaway',
           entityId: id,
           occurredAt: now,
-          metadata: { movementId }
+          metadata: { movementId: movement.id }
         },
         client
       );
@@ -578,7 +640,7 @@ export async function postPutaway(
           actorId: context.actor.id ?? null,
           action: 'negative_override',
           entityType: 'inventory_movement',
-          entityId: movementId,
+          entityId: movement.id,
           occurredAt: now,
           metadata: {
             reason: validation.overrideMetadata.override_reason ?? null,

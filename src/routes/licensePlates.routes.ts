@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import * as licensePlatesService from '../services/licensePlates.service'
+import { getIdempotencyKey } from '../lib/idempotency'
 
 const router = Router()
 
@@ -96,9 +97,13 @@ router.patch('/lpns/:id', async (req: Request, res: Response) => {
 router.post('/lpns/:id/move', async (req: Request, res: Response) => {
   try {
     const { toLocationId, fromLocationId, notes, overrideNegative, overrideReason } = req.body
+    const idempotencyKey = getIdempotencyKey(req)
 
     if (!toLocationId || !fromLocationId) {
       return res.status(400).json({ error: 'toLocationId and fromLocationId are required' })
+    }
+    if (!idempotencyKey) {
+      return res.status(400).json({ error: 'Idempotency-Key header is required' })
     }
 
     const actor = req.auth?.userId
@@ -112,7 +117,8 @@ router.post('/lpns/:id/move', async (req: Request, res: Response) => {
         toLocationId,
         notes,
         overrideNegative,
-        overrideReason
+        overrideReason,
+        idempotencyKey
       },
       actor
     )

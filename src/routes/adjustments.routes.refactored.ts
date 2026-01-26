@@ -11,6 +11,7 @@ import {
 import { adjustmentListQuerySchema, inventoryAdjustmentSchema } from '../schemas/adjustments.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
+import { getIdempotencyKey } from '../lib/idempotency';
 import { 
   validateBody, 
   validateQuery, 
@@ -46,10 +47,12 @@ router.post(
   '/inventory-adjustments',
   validateBody(inventoryAdjustmentSchema),
   asyncErrorHandler(async (req: Request, res: Response) => {
-    const adjustment = await createInventoryAdjustment(req.auth!.tenantId, req.validatedBody, {
-      type: 'user',
-      id: req.auth!.userId
-    });
+    const adjustment = await createInventoryAdjustment(
+      req.auth!.tenantId,
+      req.validatedBody,
+      { type: 'user', id: req.auth!.userId },
+      { idempotencyKey: getIdempotencyKey(req) }
+    );
     return res.status(201).json(adjustment);
   }, {
     ...adjustmentErrorMap,

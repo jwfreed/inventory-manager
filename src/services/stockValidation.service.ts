@@ -1,5 +1,7 @@
 import { getInventoryNegativePolicy } from '../config/inventoryPolicy';
-import { getInventorySnapshot, getInventorySnapshotSummary } from './inventorySnapshot.service';
+import { getInventorySnapshot } from './inventorySnapshot.service';
+import { getInventoryBalance, getInventoryBalanceForUpdate } from '../domains/inventory';
+import type { PoolClient } from 'pg';
 import { toNumber } from '../lib/numbers';
 import { getLocation, getItem, convertQuantity } from './masterData.service';
 import { convertToCanonical } from './uomCanonical.service';
@@ -54,7 +56,8 @@ export async function validateSufficientStock(
   tenantId: string,
   occurredAt: Date,
   lines: StockValidationLine[],
-  context: StockValidationContext = {}
+  context: StockValidationContext = {},
+  options?: { client?: PoolClient }
 ): Promise<StockValidationResult> {
   const policy = getInventoryNegativePolicy();
   const grouped = new Map<string, StockValidationLine>();
@@ -84,14 +87,21 @@ export async function validateSufficientStock(
   const shortages: StockShortageDetail[] = [];
 
   for (const line of grouped.values()) {
-    // TODO: inventory snapshot is current-state only; extend to historical as needed for occurredAt fidelity.
-    const snapshot = await getInventorySnapshot(tenantId, {
-      itemId: line.itemId,
-      locationId: line.locationId,
-      uom: line.uom
-    });
-    const availableRow = snapshot.find((row) => row.uom === line.uom);
-    const available = toNumber(availableRow?.available ?? 0);
+    const balance = options?.client
+      ? await getInventoryBalanceForUpdate(options.client, tenantId, line.itemId, line.locationId, line.uom)
+      : await getInventoryBalance(tenantId, line.itemId, line.locationId, line.uom);
+    let available =
+      balance && 'available' in balance ? balance.available : balance ? balance.onHand - balance.reserved : null;
+    if (available === null) {
+      // TODO: inventory snapshot is current-state only; extend to historical as needed for occurredAt fidelity.
+      const snapshot = await getInventorySnapshot(tenantId, {
+        itemId: line.itemId,
+        locationId: line.locationId,
+        uom: line.uom
+      });
+      const availableRow = snapshot.find((row) => row.uom === line.uom);
+      available = toNumber(availableRow?.available ?? 0);
+    }
     const requested = line.quantityToConsume;
     if (requested - available > 1e-6) {
       shortages.push({

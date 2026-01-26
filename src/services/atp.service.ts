@@ -70,30 +70,28 @@ export async function getAvailableToPromise(
     `WITH on_hand AS (
        SELECT iml.item_id,
               iml.location_id,
-              iml.canonical_uom AS uom,
-              SUM(iml.quantity_delta_canonical) AS on_hand
+              COALESCE(iml.canonical_uom, iml.uom) AS uom,
+              SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS on_hand
          FROM inventory_movement_lines iml
          JOIN inventory_movements im ON im.id = iml.movement_id
         WHERE im.status = 'posted'
           AND iml.tenant_id = $1
           AND im.tenant_id = $1
-          AND iml.quantity_delta_canonical IS NOT NULL
           ${whereOnHand}
-        GROUP BY iml.item_id, iml.location_id, iml.canonical_uom
+        GROUP BY iml.item_id, iml.location_id, COALESCE(iml.canonical_uom, iml.uom)
      ),
      reserved AS (
        SELECT r.item_id,
               r.location_id,
-              i.canonical_uom AS uom,
+              COALESCE(i.canonical_uom, r.uom) AS uom,
               SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved
          FROM inventory_reservations r
          JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
         WHERE r.status IN ('open', 'released')
           AND r.tenant_id = $1
-          AND i.canonical_uom IS NOT NULL
-          AND r.uom = i.canonical_uom
+          AND (i.canonical_uom IS NULL OR r.uom = i.canonical_uom)
           ${whereReserved}
-        GROUP BY r.item_id, r.location_id, i.canonical_uom
+        GROUP BY r.item_id, r.location_id, COALESCE(i.canonical_uom, r.uom)
      ),
      combined AS (
        SELECT COALESCE(oh.item_id, rs.item_id) AS item_id,
@@ -154,13 +152,13 @@ export async function getAvailableToPromiseDetail(
   uom?: string
 ): Promise<AtpResult | null> {
   const params: any[] = [tenantId, itemId, locationId];
-  const uomFilter = uom ? `AND iml.canonical_uom = $${params.push(uom)}` : '';
-  const uomFilterReserved = uom ? `AND i.canonical_uom = $${params.length}` : '';
+  const uomFilter = uom ? `AND COALESCE(iml.canonical_uom, iml.uom) = $${params.push(uom)}` : '';
+  const uomFilterReserved = uom ? `AND COALESCE(i.canonical_uom, r.uom) = $${params.length}` : '';
 
   const { rows } = await query(
     `WITH on_hand AS (
-       SELECT iml.canonical_uom AS uom,
-              SUM(iml.quantity_delta_canonical) AS on_hand
+       SELECT COALESCE(iml.canonical_uom, iml.uom) AS uom,
+              SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS on_hand
          FROM inventory_movement_lines iml
          JOIN inventory_movements im ON im.id = iml.movement_id
         WHERE im.status = 'posted'
@@ -168,12 +166,11 @@ export async function getAvailableToPromiseDetail(
           AND im.tenant_id = $1
           AND iml.item_id = $2
           AND iml.location_id = $3
-          AND iml.quantity_delta_canonical IS NOT NULL
           ${uomFilter}
-        GROUP BY iml.canonical_uom
+        GROUP BY COALESCE(iml.canonical_uom, iml.uom)
      ),
      reserved AS (
-       SELECT i.canonical_uom AS uom,
+       SELECT COALESCE(i.canonical_uom, r.uom) AS uom,
               SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved
          FROM inventory_reservations r
          JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
@@ -181,10 +178,9 @@ export async function getAvailableToPromiseDetail(
           AND r.tenant_id = $1
           AND r.item_id = $2
           AND r.location_id = $3
-          AND i.canonical_uom IS NOT NULL
-          AND r.uom = i.canonical_uom
+          AND (i.canonical_uom IS NULL OR r.uom = i.canonical_uom)
           ${uomFilterReserved}
-        GROUP BY i.canonical_uom
+        GROUP BY COALESCE(i.canonical_uom, r.uom)
      )
     SELECT i.sku AS item_sku,
            i.name AS item_name,

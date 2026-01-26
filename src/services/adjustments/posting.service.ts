@@ -9,7 +9,8 @@ import { consumeCostLayers, createCostLayer } from '../costLayers.service';
 import { getCanonicalMovementFields } from '../uomCanonical.service';
 import { fetchInventoryAdjustmentById } from './core.service';
 import type { InventoryAdjustmentRow, InventoryAdjustmentLineRow, PostingContext } from './types';
-import { createInventoryMovement, createInventoryMovementLine } from '../../domains/inventory';
+import { createInventoryMovement, createInventoryMovementLine, enqueueInventoryMovementPosted } from '../../domains/inventory';
+import { applyInventoryBalanceDelta } from '../../domains/inventory';
 
 export async function postInventoryAdjustment(
   tenantId: string,
@@ -27,7 +28,7 @@ export async function postInventoryAdjustment(
     }
     const adjustmentRow = adjustmentResult.rows[0];
     if (adjustmentRow.status === 'posted') {
-      throw new Error('ADJUSTMENT_ALREADY_POSTED');
+      return fetchInventoryAdjustmentById(tenantId, id, client);
     }
     if (adjustmentRow.status === 'canceled') {
       throw new Error('ADJUSTMENT_CANCELED');
@@ -57,18 +58,24 @@ export async function postInventoryAdjustment(
 
     // Validate sufficient stock for negative adjustments
     const validation = negativeLines.length
-      ? await validateSufficientStock(tenantId, new Date(adjustmentRow.occurred_at), negativeLines, {
-          actorId: context?.actor?.id ?? null,
-          actorRole: context?.actor?.role ?? null,
-          overrideRequested: context?.overrideRequested,
-          overrideReason: context?.overrideReason ?? null,
-          overrideReference: `inventory_adjustment:${id}`
-        })
+      ? await validateSufficientStock(
+          tenantId,
+          new Date(adjustmentRow.occurred_at),
+          negativeLines,
+          {
+            actorId: context?.actor?.id ?? null,
+            actorRole: context?.actor?.role ?? null,
+            overrideRequested: context?.overrideRequested,
+            overrideReason: context?.overrideReason ?? null,
+            overrideReference: `inventory_adjustment:${id}`
+          },
+          { client }
+        )
       : {};
 
     // Create inventory movement
     const movementId = uuidv4();
-    await createInventoryMovement(client, {
+    const movement = await createInventoryMovement(client, {
       id: movementId,
       tenantId,
       movementType: 'adjustment',
@@ -81,6 +88,25 @@ export async function postInventoryAdjustment(
       createdAt: now,
       updatedAt: now
     });
+
+    if (!movement.created) {
+      const lineCheck = await client.query(
+        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
+        [movement.id]
+      );
+      if (lineCheck.rowCount > 0) {
+        await client.query(
+          `UPDATE inventory_adjustments
+              SET status = 'posted',
+                  inventory_movement_id = $1,
+                  updated_at = $2
+            WHERE id = $3 AND tenant_id = $4`,
+          [movement.id, now, id, tenantId]
+        );
+        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+        return fetchInventoryAdjustmentById(tenantId, id, client);
+      }
+    }
 
     // Create movement lines with costing
     for (const line of linesResult.rows) {
@@ -102,44 +128,36 @@ export async function postInventoryAdjustment(
       
       // Handle cost layers for adjustment
       if (qty > 0) {
-        // Positive adjustment - create new cost layer
-        try {
-          await createCostLayer({
-            tenant_id: tenantId,
-            item_id: line.item_id,
-            location_id: line.location_id,
-            uom: canonicalFields.canonicalUom,
-            quantity: canonicalQty,
-            unit_cost: costData.unitCost || 0,
-            source_type: 'adjustment',
-            source_document_id: line.id,
-            movement_id: movementId,
-            notes: `Adjustment increase: ${line.reason_code || 'unspecified'}`
-          });
-        } catch (err) {
-          console.warn('Failed to create cost layer for adjustment:', err);
-        }
+        await createCostLayer({
+          tenant_id: tenantId,
+          item_id: line.item_id,
+          location_id: line.location_id,
+          uom: canonicalFields.canonicalUom,
+          quantity: canonicalQty,
+          unit_cost: costData.unitCost || 0,
+          source_type: 'adjustment',
+          source_document_id: line.id,
+          movement_id: movement.id,
+          notes: `Adjustment increase: ${line.reason_code || 'unspecified'}`,
+          client
+        });
       } else {
-        // Negative adjustment - consume from cost layers
-        try {
-          await consumeCostLayers({
-            tenant_id: tenantId,
-            item_id: line.item_id,
-            location_id: line.location_id,
-            quantity: Math.abs(canonicalQty),
-            consumption_type: 'adjustment',
-            consumption_document_id: line.id,
-            movement_id: movementId,
-            notes: `Adjustment decrease: ${line.reason_code || 'unspecified'}`
-          });
-        } catch (err) {
-          console.warn('Failed to consume cost layers for adjustment:', err);
-        }
+        await consumeCostLayers({
+          tenant_id: tenantId,
+          item_id: line.item_id,
+          location_id: line.location_id,
+          quantity: Math.abs(canonicalQty),
+          consumption_type: 'adjustment',
+          consumption_document_id: line.id,
+          movement_id: movement.id,
+          notes: `Adjustment decrease: ${line.reason_code || 'unspecified'}`,
+          client
+        });
       }
       
       await createInventoryMovementLine(client, {
         tenantId,
-        movementId,
+        movementId: movement.id,
         itemId: line.item_id,
         locationId: line.location_id,
         quantityDelta: canonicalQty,
@@ -157,6 +175,14 @@ export async function postInventoryAdjustment(
 
       // Update item quantity on hand for average cost tracking
       await updateItemQuantityOnHand(tenantId, line.item_id, canonicalQty, client);
+
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: line.item_id,
+        locationId: line.location_id,
+        uom: canonicalFields.canonicalUom,
+        deltaOnHand: canonicalQty
+      });
     }
 
     // Update adjustment status
@@ -166,8 +192,10 @@ export async function postInventoryAdjustment(
               inventory_movement_id = $1,
               updated_at = $2
        WHERE id = $3 AND tenant_id = $4`,
-      [movementId, now, id, tenantId]
+      [movement.id, now, id, tenantId]
     );
+
+    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
 
     // Audit logging
     if (context?.actor) {
@@ -180,7 +208,7 @@ export async function postInventoryAdjustment(
           entityType: 'inventory_adjustment',
           entityId: id,
           occurredAt: now,
-          metadata: { movementId }
+          metadata: { movementId: movement.id }
         },
         client
       );
@@ -195,7 +223,7 @@ export async function postInventoryAdjustment(
           actorId: context.actor.id ?? null,
           action: 'negative_override',
           entityType: 'inventory_movement',
-          entityId: movementId,
+          entityId: movement.id,
           occurredAt: now,
           metadata: {
             reason: validation.overrideMetadata.override_reason ?? null,

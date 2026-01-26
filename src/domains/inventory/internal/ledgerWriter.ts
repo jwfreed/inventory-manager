@@ -7,6 +7,7 @@ export type InventoryMovementInput = {
   movementType: string;
   status: string;
   externalRef: string;
+  idempotencyKey?: string | null;
   occurredAt: Date | string;
   postedAt?: Date | string | null;
   notes?: string | null;
@@ -50,6 +51,13 @@ export async function createInventoryMovement(
     throw new Error('INVENTORY_MOVEMENT_EXTERNAL_REF_REQUIRED');
   }
 
+  if (input.idempotencyKey) {
+    const existing = await findMovementByIdempotencyKey(client, input.tenantId, input.idempotencyKey);
+    if (existing) {
+      return { id: existing, created: false };
+    }
+  }
+
   const existing = await findMovementByExternalRef(client, input.tenantId, input.externalRef);
   if (existing) {
     return { id: existing, created: false };
@@ -62,14 +70,15 @@ export async function createInventoryMovement(
   try {
     await client.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, occurred_at, posted_at, notes, metadata, created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          id, tenant_id, movement_type, status, external_ref, idempotency_key, occurred_at, posted_at, notes, metadata, created_at, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
         id,
         input.tenantId,
         input.movementType,
         input.status,
         input.externalRef,
+        input.idempotencyKey ?? null,
         input.occurredAt,
         input.postedAt ?? null,
         input.notes ?? null,
@@ -97,6 +106,23 @@ export async function createInventoryMovementLine(
 ): Promise<string> {
   const id = input.id ?? uuidv4();
   const createdAt = input.createdAt ?? new Date();
+  const enforceCanonical =
+    process.env.ENFORCE_CANONICAL_MOVEMENT_FIELDS === 'true' ||
+    (process.env.CANONICAL_MOVEMENT_REQUIRED_AFTER
+      ? new Date(createdAt).getTime() >= new Date(process.env.CANONICAL_MOVEMENT_REQUIRED_AFTER).getTime()
+      : false);
+  if (
+    enforceCanonical &&
+    (input.quantityDeltaCanonical === null ||
+      input.quantityDeltaCanonical === undefined ||
+      !input.canonicalUom ||
+      !input.uomDimension ||
+      input.quantityDeltaEntered === null ||
+      input.quantityDeltaEntered === undefined ||
+      !input.uomEntered)
+  ) {
+    throw new Error('MOVEMENT_CANONICAL_FIELDS_REQUIRED');
+  }
 
   await client.query(
     `INSERT INTO inventory_movement_lines (
@@ -149,6 +175,20 @@ async function findMovementByExternalRef(
   const res = await client.query<{ id: string }>(
     'SELECT id FROM inventory_movements WHERE tenant_id = $1 AND external_ref = $2 LIMIT 1',
     [tenantId, externalRef]
+  );
+  if (res.rowCount === 0) return null;
+  return res.rows[0].id;
+}
+
+async function findMovementByIdempotencyKey(
+  client: PoolClient,
+  tenantId: string,
+  idempotencyKey: string
+): Promise<string | null> {
+  if (!idempotencyKey) return null;
+  const res = await client.query<{ id: string }>(
+    'SELECT id FROM inventory_movements WHERE tenant_id = $1 AND idempotency_key = $2 LIMIT 1',
+    [tenantId, idempotencyKey]
   );
   if (res.rowCount === 0) return null;
   return res.rows[0].id;

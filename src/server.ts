@@ -50,8 +50,10 @@ import { recalculateMetrics } from './jobs/metricsRecalculation.job';
 import { syncExchangeRates } from './jobs/exchangeRateSync.job';
 import { runInventoryHealthCheck } from './jobs/inventoryHealth.job';
 import inventoryHealthRouter from './routes/inventoryHealth.routes';
+import { startEventBridge } from './lib/events';
 
 const PORT = Number(process.env.PORT) || 3000;
+const RUN_INPROCESS_JOBS = process.env.RUN_INPROCESS_JOBS === 'true';
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
   .split(',')
   .map((value) => value.trim())
@@ -92,6 +94,7 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT ?? '1mb' }));
 app.use(cookieParser());
+startEventBridge();
 
 app.use(healthRouter);
 app.use(authRouter);
@@ -153,42 +156,48 @@ pool.on('error', (err) => {
   console.error('Unexpected DB pool error', err);
 });
 
-// Register scheduled jobs
-console.log('\n📅 Registering scheduled jobs...');
-registerJob(
-  'metrics-recalculation',
-  '0 2 * * *', // 02:00 UTC daily
-  recalculateMetrics,
-  true
-);
+if (RUN_INPROCESS_JOBS) {
+  // Register scheduled jobs
+  console.log('\n📅 Registering scheduled jobs (in-process)...');
+  registerJob(
+    'metrics-recalculation',
+    '0 2 * * *', // 02:00 UTC daily
+    recalculateMetrics,
+    true
+  );
 
-registerJob(
-  'exchange-rate-sync',
-  '0 6 * * *', // 06:00 UTC daily
-  syncExchangeRates,
-  true
-);
+  registerJob(
+    'exchange-rate-sync',
+    '0 6 * * *', // 06:00 UTC daily
+    syncExchangeRates,
+    true
+  );
 
-registerJob(
-  'inventory-health-check',
-  process.env.INVENTORY_HEALTH_CRON ?? '0 * * * *', // Hourly by default
-  runInventoryHealthCheck,
-  true
-);
+  registerJob(
+    'inventory-health-check',
+    process.env.INVENTORY_HEALTH_CRON ?? '0 * * * *', // Hourly by default
+    runInventoryHealthCheck,
+    true
+  );
 
-// Start the scheduler
-startScheduler();
+  // Start the scheduler
+  startScheduler();
+}
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('\n🛑 SIGTERM received, shutting down gracefully...');
-  stopScheduler();
+  if (RUN_INPROCESS_JOBS) {
+    stopScheduler();
+  }
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
   console.log('\n🛑 SIGINT received, shutting down gracefully...');
-  stopScheduler();
+  if (RUN_INPROCESS_JOBS) {
+    stopScheduler();
+  }
   process.exit(0);
 });
 

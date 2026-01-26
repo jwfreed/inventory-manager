@@ -64,28 +64,40 @@ async function assertCorrectionTarget(
 export async function createInventoryAdjustment(
   tenantId: string,
   data: InventoryAdjustmentInput,
-  actor?: ActorContext
+  actor?: ActorContext,
+  options?: { idempotencyKey?: string | null }
 ) {
   const normalizedLines = normalizeAdjustmentLines(data);
   const now = new Date();
   const adjustmentId = uuidv4();
   const correctedFromAdjustmentId = data.correctedFromAdjustmentId ?? null;
+  const idempotencyKey = options?.idempotencyKey ?? null;
 
   await withTransaction(async (client: PoolClient) => {
+    if (idempotencyKey) {
+      const existing = await client.query(
+        `SELECT id FROM inventory_adjustments WHERE tenant_id = $1 AND idempotency_key = $2`,
+        [tenantId, idempotencyKey]
+      );
+      if (existing.rowCount > 0) {
+        return;
+      }
+    }
     if (correctedFromAdjustmentId) {
       await assertCorrectionTarget(tenantId, correctedFromAdjustmentId, client);
     }
 
     await client.query(
       `INSERT INTO inventory_adjustments (
-          id, tenant_id, status, occurred_at, notes, corrected_from_adjustment_id, created_at, updated_at
-       ) VALUES ($1, $2, 'draft', $3, $4, $5, $6, $6)`,
+          id, tenant_id, status, occurred_at, notes, corrected_from_adjustment_id, idempotency_key, created_at, updated_at
+       ) VALUES ($1, $2, 'draft', $3, $4, $5, $6, $7, $7)`,
       [
         adjustmentId,
         tenantId,
         new Date(data.occurredAt),
         data.notes ?? null,
         correctedFromAdjustmentId,
+        idempotencyKey,
         now
       ]
     );
@@ -131,7 +143,15 @@ export async function createInventoryAdjustment(
     }
   });
 
-  const adjustment = await fetchInventoryAdjustmentById(tenantId, adjustmentId);
+  const adjustment = idempotencyKey
+    ? await fetchInventoryAdjustmentById(
+        tenantId,
+        (await pool.query<{ id: string }>(
+          'SELECT id FROM inventory_adjustments WHERE tenant_id = $1 AND idempotency_key = $2',
+          [tenantId, idempotencyKey]
+        )).rows[0]?.id ?? adjustmentId
+      )
+    : await fetchInventoryAdjustmentById(tenantId, adjustmentId);
   if (!adjustment) {
     throw new Error('ADJUSTMENT_NOT_FOUND');
   }

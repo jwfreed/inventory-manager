@@ -1,5 +1,8 @@
 import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { atpCache, cacheKey } from './cache';
+import { cacheAdapter } from './redis';
+import { publishEvent, startEventSubscriber as startRedisEventSubscriber } from './eventBus';
 
 export type ServerEvent = {
   id: string;
@@ -27,6 +30,21 @@ function formatEvent(event: ServerEvent) {
 
 function sendEvent(res: Response, event: ServerEvent) {
   res.write(formatEvent(event));
+}
+
+function emitLocalEvent(tenantId: string, event: ServerEvent) {
+  for (const client of clients.values()) {
+    if (client.tenantId !== tenantId) continue;
+    if (client.res.writableEnded) continue;
+    sendEvent(client.res, event);
+  }
+}
+
+function handleInboundEvent(tenantId: string, event: ServerEvent) {
+  if (event.type.startsWith('inventory.')) {
+    atpCache.invalidate(cacheKey('atp', tenantId));
+    cacheAdapter.invalidate(tenantId, '*').catch(() => undefined);
+  }
 }
 
 export function registerEventStream(req: Request, res: Response, tenantId: string) {
@@ -74,11 +92,8 @@ export function emitEvent(tenantId: string, type: string, data?: Record<string, 
     data
   };
 
-  for (const client of clients.values()) {
-    if (client.tenantId !== tenantId) continue;
-    if (client.res.writableEnded) continue;
-    sendEvent(client.res, event);
-  }
+  emitLocalEvent(tenantId, event);
+  publishEvent(tenantId, event);
 
   return event;
 }
@@ -92,4 +107,11 @@ export function activeEventClientCount(tenantId?: string) {
     if (client.tenantId === tenantId) count += 1;
   }
   return count;
+}
+
+export function startEventBridge() {
+  startRedisEventSubscriber((tenantId, event) => {
+    handleInboundEvent(tenantId, event);
+    emitLocalEvent(tenantId, event);
+  });
 }

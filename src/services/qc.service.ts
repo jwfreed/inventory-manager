@@ -9,7 +9,12 @@ import { calculateMovementCost } from './costing.service';
 import { createCostLayer } from './costLayers.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { validateSufficientStock } from './stockValidation.service';
-import { createInventoryMovement, createInventoryMovementLine } from '../domains/inventory';
+import {
+  createInventoryMovement,
+  createInventoryMovementLine,
+  applyInventoryBalanceDelta,
+  enqueueInventoryMovementPosted
+} from '../domains/inventory';
 
 export type QcEventInput = z.infer<typeof qcEventSchema>;
 
@@ -241,23 +246,20 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
         const costData = await calculateMovementCost(tenantId, itemId, canonicalQty, client);
         
         // Create cost layer for QC accepted inventory
-        try {
-          if (destLocationId) {
-            await createCostLayer({
-              tenant_id: tenantId,
-              item_id: itemId,
-              location_id: destLocationId,
-              uom: canonicalFields.canonicalUom,
-              quantity: canonicalQty,
-              unit_cost: costData.unitCost || 0,
-              source_type: 'receipt',
-              source_document_id: created.id,
-              movement_id: movementId,
-              notes: `QC ${data.eventType} - moved to ${destLocationId}`
-            });
-          }
-        } catch (err) {
-          console.warn('Failed to create cost layer for QC event:', err);
+        if (destLocationId) {
+          await createCostLayer({
+            tenant_id: tenantId,
+            item_id: itemId,
+            location_id: destLocationId,
+            uom: canonicalFields.canonicalUom,
+            quantity: canonicalQty,
+            unit_cost: costData.unitCost || 0,
+            source_type: 'receipt',
+            source_document_id: created.id,
+            movement_id: movementId,
+            notes: `QC ${data.eventType} - moved to ${destLocationId}`,
+            client
+          });
         }
         
         await createInventoryMovementLine(client, {
@@ -277,12 +279,22 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
           reasonCode,
           lineNotes: `QC ${data.eventType} ${enteredQty} ${data.uom}`
         });
+
+        await applyInventoryBalanceDelta(client, {
+          tenantId,
+          itemId,
+          locationId: loc,
+          uom: canonicalFields.canonicalUom,
+          deltaOnHand: canonicalQty
+        });
         await client.query(
           `INSERT INTO qc_inventory_links (
               id, tenant_id, qc_event_id, inventory_movement_id, created_at
            ) VALUES ($1, $2, $3, $4, $5)`,
           [uuidv4(), tenantId, created.id, movementId, now]
         );
+
+        await enqueueInventoryMovementPosted(client, tenantId, movementId);
       } else if (sourceLocationId && destLocationId && sourceLocationId !== destLocationId) {
          // WO / Execution: Transfer inventory
          if (!itemId) throw new Error('QC_ITEM_ID_REQUIRED');
@@ -304,7 +316,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
              overrideRequested: data.overrideNegative,
              overrideReason: data.overrideReason ?? null,
              overrideReference: `qc_${data.eventType}:${sourceId}`
-           }
+           },
+           { client }
          );
          const movementId = uuidv4();
          await createInventoryMovement(client, {
@@ -353,6 +366,14 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
             reasonCode: `${reasonCode}_out`,
             lineNotes: `QC ${data.eventType} transfer out`
           });
+
+          await applyInventoryBalanceDelta(client, {
+            tenantId,
+            itemId,
+            locationId: sourceLocationId,
+            uom: canonicalOut.canonicalUom,
+            deltaOnHand: canonicalOut.quantityDeltaCanonical
+          });
           
           const canonicalIn = await getCanonicalMovementFields(
             tenantId,
@@ -385,12 +406,22 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
              reasonCode: `${reasonCode}_in`,
              lineNotes: `QC ${data.eventType} transfer in`
            });
+
+          await applyInventoryBalanceDelta(client, {
+            tenantId,
+            itemId,
+            locationId: destLocationId,
+            uom: canonicalIn.canonicalUom,
+            deltaOnHand: canonicalIn.quantityDeltaCanonical
+          });
           await client.query(
             `INSERT INTO qc_inventory_links (
                 id, tenant_id, qc_event_id, inventory_movement_id, created_at
              ) VALUES ($1, $2, $3, $4, $5)`,
             [uuidv4(), tenantId, created.id, movementId, now]
           );
+
+          await enqueueInventoryMovementPosted(client, tenantId, movementId);
           if (validation.overrideMetadata && data.actorType) {
             await recordAuditLog(
               {
