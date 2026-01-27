@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { AuthProvider, useAuth } from '@shared/auth'
 import { useServerEvents } from '@lib/useServerEvents'
+import { useInventoryChangesPolling } from '@lib/useInventoryChangesPolling'
 
 type Props = {
   children: ReactNode
@@ -35,7 +36,8 @@ export function AppProviders({ children }: Props) {
 }
 
 function ServerEventsListener() {
-  const { status, accessToken } = useAuth()
+  const { status, accessToken, tenant } = useAuth()
   useServerEvents(status === 'authenticated' ? accessToken : null)
+  useInventoryChangesPolling(status === 'authenticated', tenant?.id)
   return null
 }

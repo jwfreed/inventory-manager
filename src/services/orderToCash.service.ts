@@ -16,7 +16,12 @@ import { upsertBackorder } from './backorders.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { ItemLifecycleStatus } from '../types/item';
 import { validateSufficientStock } from './stockValidation.service';
-import { createInventoryMovement, createInventoryMovementLine, enqueueInventoryMovementPosted } from '../domains/inventory';
+import {
+  createInventoryMovement,
+  createInventoryMovementLine,
+  enqueueInventoryMovementPosted,
+  enqueueInventoryReservationChanged
+} from '../domains/inventory';
 import { consumeCostLayers } from './costLayers.service';
 import { recordAuditLog } from '../lib/audit';
 
@@ -288,6 +293,13 @@ export async function createReservations(
         locationId: reservation.locationId,
         uom: canonical.canonicalUom,
         deltaReserved: reserveQty
+      });
+
+      await enqueueInventoryReservationChanged(client, tenantId, res.rows[0].id, {
+        itemId: reservation.itemId,
+        locationId: reservation.locationId,
+        demandId: reservation.demandId,
+        demandType: reservation.demandType
       });
     }
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
@@ -605,6 +617,13 @@ export async function postShipment(
             WHERE id = $3 AND tenant_id = $4`,
           [fulfilled, newStatus, reservation.id, tenantId]
         );
+
+        await enqueueInventoryReservationChanged(client, tenantId, reservation.id, {
+          itemId: reservation.item_id,
+          locationId: reservation.location_id,
+          demandId: reservation.demand_id,
+          demandType: reservation.demand_type
+        });
       }
     }
 

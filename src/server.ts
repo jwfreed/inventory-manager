@@ -21,6 +21,7 @@ import masterDataRouter from './routes/masterData.routes';
 import ledgerRouter from './routes/ledger.routes';
 import inventorySummaryRouter from './routes/inventorySummary.routes';
 import inventorySnapshotRouter from './routes/inventorySnapshot.routes';
+import inventoryChangesRouter from './routes/inventoryChanges.routes';
 import pickingRouter from './routes/picking.routes';
 import shippingContainersRouter from './routes/shippingContainers.routes';
 import returnsExtendedRouter from './routes/returnsExtended.routes';
@@ -49,6 +50,7 @@ import { registerJob, startScheduler, stopScheduler } from './jobs/scheduler';
 import { recalculateMetrics } from './jobs/metricsRecalculation.job';
 import { syncExchangeRates } from './jobs/exchangeRateSync.job';
 import { runInventoryHealthCheck } from './jobs/inventoryHealth.job';
+import { pruneOutboxEvents } from './jobs/outboxRetention.job';
 import inventoryHealthRouter from './routes/inventoryHealth.routes';
 import { startEventBridge } from './lib/events';
 
@@ -129,6 +131,7 @@ app.use(masterDataRouter);
 app.use(ledgerRouter);
 app.use(inventorySummaryRouter);
 app.use(inventorySnapshotRouter);
+app.use(inventoryChangesRouter);
 app.use('/atp', atpRouter);
 app.use('/supplier-scorecards', supplierScorecardRouter);
 app.use('/reports', reportsRouter);
@@ -177,6 +180,18 @@ if (RUN_INPROCESS_JOBS) {
     'inventory-health-check',
     process.env.INVENTORY_HEALTH_CRON ?? '0 * * * *', // Hourly by default
     runInventoryHealthCheck,
+    true
+  );
+
+  registerJob(
+    'outbox-retention',
+    process.env.OUTBOX_RETENTION_CRON ?? '0 3 * * *', // 03:00 UTC daily
+    async () => {
+      const result = await pruneOutboxEvents();
+      if (result.deleted > 0) {
+        console.log(`🧹 Outbox retention pruned ${result.deleted} events (retention=${result.retentionDays}d)`);
+      }
+    },
     true
   );
 

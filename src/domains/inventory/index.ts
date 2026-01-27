@@ -14,4 +14,4 @@ export {
   type InventoryBalanceRow
 } from './internal/inventoryBalance';
 
-export { enqueueInventoryMovementPosted } from './outbox';
+export { enqueueInventoryMovementPosted, enqueueInventoryReservationChanged } from './outbox';

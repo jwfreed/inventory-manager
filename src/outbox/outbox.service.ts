@@ -13,6 +13,7 @@ export type OutboxEventInput = {
 
 export type OutboxEventRow = {
   id: string;
+  event_seq: string;
   tenant_id: string;
   aggregate_type: string;
   aggregate_id: string;

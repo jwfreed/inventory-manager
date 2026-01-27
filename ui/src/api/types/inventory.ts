@@ -13,3 +13,21 @@ export type InventorySnapshotRow = {
   backordered: number
   inventoryPosition: number
 }
+
+export type InventoryChangeScope = {
+  itemId?: string
+  locationId?: string
+}
+
+export type InventoryChangeEvent = {
+  seq: string
+  type: string
+  scope: InventoryChangeScope
+  occurredAt: string
+}
+
+export type InventoryChangesResponse = {
+  events: InventoryChangeEvent[]
+  nextSeq: string
+  resetRequired?: boolean
+}
