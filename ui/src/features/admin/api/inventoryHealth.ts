@@ -1,4 +1,5 @@
 import { apiGet } from '../../../api/http'
+import type { ApiError } from '../../../api/types'
 
 export type InventoryHealthGate = {
   pass: boolean
@@ -58,6 +59,15 @@ export type InventoryHealthResult = {
 }
 
 export async function getInventoryHealth() {
-  const response = await apiGet<{ data: InventoryHealthResult }>('/admin/inventory-health')
-  return response.data
+  try {
+    const response = await apiGet<{ data: InventoryHealthResult }>('/admin/inventory-health')
+    return response.data
+  } catch (error) {
+    const err = error as ApiError
+    const details = err?.details as { data?: InventoryHealthResult } | undefined
+    if (err?.status === 409 && details?.data) {
+      return details.data
+    }
+    throw error
+  }
 }

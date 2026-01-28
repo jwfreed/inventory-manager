@@ -61,6 +61,8 @@ async function handleResponse<T>(response: Response): Promise<T> {
 type RequestOptions = RequestInit & {
   params?: Record<string, string | number | boolean | undefined>
   skipAuthRefresh?: boolean
+  rawBody?: string
+  contentType?: string
 }
 
 let refreshPromise: Promise<AuthSession | null> | null = null
@@ -106,18 +108,21 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   const accessToken = getAccessToken()
+  const contentType = options.contentType ?? (options.rawBody ? 'text/plain' : 'application/json')
   const headers = {
-    'Content-Type': 'application/json',
+    ...(contentType ? { 'Content-Type': contentType } : {}),
     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     ...(options.headers || {}),
   }
 
   let response: Response
   try {
+    const body = options.rawBody ?? options.body
     response = await fetch(url.toString(), {
       headers,
       credentials: 'include',
       ...options,
+      body,
     })
   } catch (err) {
     const error: ApiError = {
@@ -136,10 +141,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
         ...headers,
         Authorization: `Bearer ${refreshed.accessToken}`,
       }
+      const body = options.rawBody ?? options.body
       response = await fetch(url.toString(), {
         headers: retryHeaders,
         credentials: 'include',
         ...options,
+        body,
       })
     }
   }
@@ -152,6 +159,9 @@ export const apiGet = <T>(path: string, options?: RequestOptions) =>
 
 export const apiPost = <T>(path: string, body?: unknown, options?: RequestOptions) =>
   request<T>(path, { ...options, method: 'POST', body: JSON.stringify(body) })
+
+export const apiPostRaw = <T>(path: string, rawBody: string, options?: RequestOptions) =>
+  request<T>(path, { ...options, method: 'POST', rawBody })
 
 export const apiPut = <T>(path: string, body?: unknown, options?: RequestOptions) =>
   request<T>(path, { ...options, method: 'PUT', body: JSON.stringify(body) })

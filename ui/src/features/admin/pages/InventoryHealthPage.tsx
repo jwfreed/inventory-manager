@@ -1,8 +1,11 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { ApiError } from '../../../api/types'
 import { getInventoryHealth } from '../api/inventoryHealth'
 import { Badge } from '../../../components/Badge'
+import { Button } from '../../../components/Button'
+import { Alert } from '../../../components/Alert'
+import { processOutboxBatch } from '../api/outbox'
 
 export default function InventoryHealthPage() {
   const healthQuery = useQuery({
@@ -13,6 +16,18 @@ export default function InventoryHealthPage() {
 
   const health = healthQuery.data
   const gateStatus = health?.gate.pass ? 'pass' : 'fail'
+
+  const ledgerVariance = health?.ledgerVsCostLayers
+  const costingNotReady = useMemo(() => {
+    if (!ledgerVariance) return false
+    if (ledgerVariance.rowCount === 0) return false
+    if (ledgerVariance.rowsWithVariance !== ledgerVariance.rowCount) return false
+    if (ledgerVariance.variancePct < 99.9) return false
+    return (ledgerVariance.topOffenders ?? []).every((row) => Number(row.layerQty ?? 0) === 0)
+  }, [ledgerVariance])
+
+  const [projectionStatus, setProjectionStatus] = useState<'idle' | 'running'>('idle')
+  const [projectionMessage, setProjectionMessage] = useState<string | null>(null)
 
   const ledgerOffenders = useMemo(() => health?.ledgerVsCostLayers.topOffenders ?? [], [health])
   const cycleOffenders = useMemo(() => health?.cycleCountVariance.topOffenders ?? [], [health])
@@ -34,17 +49,80 @@ export default function InventoryHealthPage() {
 
       {health && (
         <div className="space-y-6">
-          <div className="flex items-center gap-3">
-            <Badge variant={gateStatus === 'pass' ? 'success' : 'danger'}>
-              Gate {gateStatus === 'pass' ? 'PASS' : 'FAIL'}
-            </Badge>
+          <div className="flex flex-wrap items-center gap-3">
+            {costingNotReady ? (
+              <Badge variant="warning">Costing Not Ready</Badge>
+            ) : (
+              <Badge variant={gateStatus === 'pass' ? 'success' : 'danger'}>
+                Gate {gateStatus === 'pass' ? 'PASS' : 'FAIL'}
+              </Badge>
+            )}
             <div className="text-sm text-slate-500">Generated {health.generatedAt}</div>
           </div>
+
+          {costingNotReady && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="font-semibold">
+                Inventory quantities are correct. Cost layers haven&apos;t been built yet.
+              </div>
+              <div className="mt-1 text-amber-800">
+                Inventory on-hand matches the ledger. Valuation and COGS reports will be inaccurate until cost
+                projections run.
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <Button
+                  onClick={async () => {
+                    setProjectionStatus('running')
+                    setProjectionMessage(null)
+                    try {
+                      const result = await processOutboxBatch(50)
+                      setProjectionMessage(
+                        result.processed > 0
+                          ? `Processed ${result.processed} events. Re-checking gate…`
+                          : 'No pending cost projections found.'
+                      )
+                      void healthQuery.refetch()
+                    } catch (err: any) {
+                      setProjectionMessage(err?.message ?? 'Failed to run projection.')
+                    } finally {
+                      setProjectionStatus('idle')
+                    }
+                  }}
+                  disabled={projectionStatus === 'running'}
+                >
+                  {projectionStatus === 'running' ? 'Running…' : 'Run cost projection'}
+                </Button>
+                <div className="text-xs text-amber-800">
+                  Builds cost layers from existing inventory movements.
+                </div>
+              </div>
+              {projectionMessage && (
+                <div className="mt-3">
+                  <Alert variant="info" title="Projection status" message={projectionMessage} />
+                </div>
+              )}
+              <details className="mt-3 text-xs text-amber-800">
+                <summary className="cursor-pointer">Why am I seeing this?</summary>
+                <div className="mt-2 space-y-1">
+                  <div>• Inventory existed before cost tracking was enabled.</div>
+                  <div>• Items were imported without cost data.</div>
+                  <div>• The projection service hasn&apos;t run yet.</div>
+                </div>
+              </details>
+              <div className="mt-3 text-xs text-amber-800">
+                Affects: Valuation · COGS · Margin reports. Does not affect: Picking · Shipping · Stock availability.
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-4 md:grid-cols-3">
             <MetricCard
               label="Ledger vs Cost Layers"
-              value={`${health.ledgerVsCostLayers.variancePct.toFixed(2)}% variance`}
+              value={
+                costingNotReady
+                  ? 'Awaiting cost projection'
+                  : `${health.ledgerVsCostLayers.variancePct.toFixed(2)}% variance`
+              }
               subValue={`${health.ledgerVsCostLayers.rowsWithVariance}/${health.ledgerVsCostLayers.rowCount} rows`}
             />
             <MetricCard
