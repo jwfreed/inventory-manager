@@ -446,14 +446,20 @@ export async function validateImportJob(params: {
         };
       }
     } catch (err: any) {
-      status = 'error';
-      errorCode = err instanceof Error ? err.message : 'IMPORT_INVALID_ROW';
-      errorDetail = err instanceof Error ? err.message : 'Invalid row.';
+      if (err instanceof Error && err.message === 'IMPORT_DUPLICATE_SKU') {
+        status = 'skipped';
+        errorCode = 'IMPORT_DUPLICATE_SKU';
+        errorDetail = 'SKU already exists.';
+      } else {
+        status = 'error';
+        errorCode = err instanceof Error ? err.message : 'IMPORT_INVALID_ROW';
+        errorDetail = err instanceof Error ? err.message : 'Invalid row.';
+      }
     }
 
     if (status === 'valid') {
       validRows += 1;
-    } else {
+    } else if (status === 'error') {
       errorRows += 1;
       if (errorSamples.length < 50) {
         errorSamples.push({ rowNumber, status, raw, errorCode, errorDetail });

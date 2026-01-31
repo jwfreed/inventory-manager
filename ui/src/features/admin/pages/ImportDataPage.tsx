@@ -69,11 +69,13 @@ export default function ImportDataPage() {
   const [countedAt, setCountedAt] = useState<string>(toDateTimeLocal(new Date().toISOString()))
   const [status, setStatus] = useState<'idle' | 'uploading' | 'validating' | 'applying'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [showOptional, setShowOptional] = useState(false)
 
   const fields = IMPORT_FIELDS[importType]
   const headers = uploadResult?.headers ?? []
 
-  const mappingComplete = fields.required.every((field) => mapping[field])
+  const missingRequired = fields.required.filter((field) => !mapping[field])
+  const mappingComplete = missingRequired.length === 0
 
   const sampleRows = useMemo(() => uploadResult?.sampleRows ?? [], [uploadResult])
 
@@ -83,6 +85,7 @@ export default function ImportDataPage() {
     setValidation(null)
     setJob(null)
     setError(null)
+    setShowOptional(false)
   }
 
   const onUpload = async () => {
@@ -214,9 +217,33 @@ export default function ImportDataPage() {
 
       {uploadResult && (
         <Card className="space-y-4">
-          <h3 className="text-lg font-semibold text-slate-100">Map columns</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-100">Map columns</h3>
+              <p className="text-sm text-slate-400">
+                {mappingComplete
+                  ? `All required fields mapped (${fields.required.length}/${fields.required.length}).`
+                  : `Required fields mapped (${fields.required.length - missingRequired.length}/${fields.required.length}).`}
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => setShowOptional((prev) => !prev)}
+            >
+              {showOptional ? 'Hide optional fields' : 'Show optional fields'}
+            </Button>
+          </div>
+
+          {!mappingComplete && (
+            <Alert
+              variant="warning"
+              title="Missing required mappings"
+              message={`Map: ${missingRequired.join(', ')}`}
+            />
+          )}
+
           <div className="grid gap-4 md:grid-cols-2">
-            {[...fields.required, ...fields.optional].map((field) => (
+            {fields.required.map((field) => (
               <div key={field}>
                 <label className="block text-sm font-medium text-slate-200">
                   {field}
@@ -225,7 +252,7 @@ export default function ImportDataPage() {
                   )}
                 </label>
                 <select
-                  className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-slate-400 focus:outline-none"
                   value={mapping[field] ?? ''}
                   onChange={(event) =>
                     setMapping((prev) => ({
@@ -244,6 +271,33 @@ export default function ImportDataPage() {
               </div>
             ))}
           </div>
+
+          {showOptional && fields.optional.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {fields.optional.map((field) => (
+                <div key={field}>
+                  <label className="block text-sm font-medium text-slate-400">{field}</label>
+                  <select
+                    className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300 focus:border-slate-500 focus:outline-none"
+                    value={mapping[field] ?? ''}
+                    onChange={(event) =>
+                      setMapping((prev) => ({
+                        ...prev,
+                        [field]: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">--</option>
+                    {headers.map((header) => (
+                      <option key={header} value={header}>
+                        {header}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <div className="text-sm text-slate-400">
               {uploadResult.totalRows} rows detected. {fields.required.length} required fields.

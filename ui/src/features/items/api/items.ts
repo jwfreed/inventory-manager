@@ -91,8 +91,14 @@ function mapItem(row: ItemApiRow): Item {
   }
 }
 
-export async function listItems(params: ListItemsParams = {}): Promise<{ data: Item[] }> {
-  const response = await apiGet<{ data?: Item[] } | Item[]>('/items', {
+type ItemsListResponse =
+  | { data?: Item[]; paging?: { limit: number; offset: number; total?: number } }
+  | Item[]
+
+export async function listItems(
+  params: ListItemsParams = {},
+): Promise<{ data: Item[]; paging?: { limit: number; offset: number; total?: number } }> {
+  const response = await apiGet<ItemsListResponse>('/items', {
     params: {
       ...(params.lifecycleStatus ? { lifecycleStatus: params.lifecycleStatus } : {}),
       ...(params.search ? { search: params.search } : {}),
@@ -102,7 +108,7 @@ export async function listItems(params: ListItemsParams = {}): Promise<{ data: I
   })
   if (Array.isArray(response)) return { data: response.map(mapItem) }
   if (!response?.data) return { data: [] }
-  return { data: response.data.map(mapItem) }
+  return { data: response.data.map(mapItem), paging: response.paging }
 }
 
 export async function getItem(id: string): Promise<Item> {

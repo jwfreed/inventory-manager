@@ -71,8 +71,8 @@ router.get('/items', async (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const items = await listItems(req.auth!.tenantId, { lifecycleStatus, search, limit, offset });
-    return res.json({ data: items, paging: { limit, offset } });
+    const { items, total } = await listItems(req.auth!.tenantId, { lifecycleStatus, search, limit, offset });
+    return res.json({ data: items, paging: { limit, offset, total } });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to list items.' });

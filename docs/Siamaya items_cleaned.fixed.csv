@@ -1,0 +1,1068 @@
+Handle,SKU,Name,Category,Description,Sold by weight,Option 1 name,Option 1 value,Option 2 name,Option 2 value,Option 3 name,Option 3 value,Default price,Cost,Barcode,SKU of included item,Quantity of included item,Track stock,Use production,Supplier,Purchase cost,Available for sale [Factory],Price [Factory],In stock [Factory],Low stock [Factory],Optimal stock [Factory],Available for sale [Stock Room],Price [Stock Room],In stock [Stock Room],Low stock [Stock Room],Optimal stock [Stock Room],item_name,uom_detail,uomDenomination,uomDimension,canonicalUom,stockingUom
+0+4-box,10315,0+4 Box,Packing,,N,,,,,,,2.35,0.00,BOX 04,,,Y,,G.M. Box Chiang Mai,,N,2.35,0.000,,,Y,2.35,0.000,20.000,,0+4 Box,,,count,each,each
+cacao-mass-(1kg-block),10184,100% Cacao Mass (1kg block),Finished Good (others),"<p>Cacao Mass, 1 kilogram block. 100% nibs.</p>",N,,,,,,,variable,216.00,,10001,1.000,N,Y,,,N,variable,3.000,,,Y,variable,0.000,,,100% Cacao Mass,1kg block,,mass,g,kg
+,,,,,,,,,,,,,,,10125,1.000,,,,,,,,,,,,,,,,,,count,each,each
+"100%-cocoa-mass,-7.5g-rounds-(melia)-(1kg)",10163,100% Cocoa Mass - Melia (1kg in 7.5g rounds),Finished Good (others),"<p>100% Cocoa Mass, 7.5g Rounds, Melia. Made with 100% Nibs. Sold in one kilogram unit.</p>",N,,,,,,,variable,216.00,,10001,1.000,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,100% Cocoa Mass - Melia,1kg in 7.5g rounds,,mass,g,kg
+,,,,,,,,,,,,,,,10125,1.000,,,,,,,,,,,,,,,,,,count,each,each
+"2""-opp-tape",10317,"2"" OPP Tape",Packing,<p>OPP Tape 2นิ้ว 72 ชิ้น</p>,N,,,,,,,41.50,0.00,,,,Y,,,,N,41.50,0.000,,,Y,41.50,74.000,18.000,,"2"" OPP Tape",,,count,each,each
+"2""-opp-tape-fragile",10441,"2"" Opp Tape Fragile",Packing,<p>2&quot; Opp Tape Fragile (Red background)</p>,N,,,,,,,variable,0.00,,,,Y,,,,N,variable,0.000,,,Y,variable,7.000,6.000,,"2"" Opp Tape Fragile",,,count,each,each
+2a-box,10316,2A Box,Packing,,N,,,,,,,3.65,0.00,BOX 2A,,,Y,,G.M. Box Chiang Mai,,N,3.65,0.000,,,Y,3.65,28.000,20.000,,2A Box,,,count,each,each
+2b-box,10311,2B Box,Packing,,N,,,,,,,5.20,0.00,BOX 2B,,,Y,,G.M. Box Chiang Mai,,N,5.20,0.000,,,Y,5.20,37.000,20.000,,2B Box,,,count,each,each
+2c-box,10313,2C Box,Packing,,N,,,,,,,7.50,0.00,BOX 2C,,,Y,,G.M. Box Chiang Mai,,N,7.50,0.000,,,Y,7.50,50.000,20.000,,2C Box,,,count,each,each
+2d-box,10309,2D Box,Packing,,N,,,,,,,10.50,0.00,BOX 2D,,,Y,,G.M. Box Chiang Mai,,N,10.50,0.000,,,Y,10.50,25.000,20.000,,2D Box,,,count,each,each
+2e-box,10308,2E Box,Packing,,N,,,,,,,15.00,0.00,BOX 2E,,,Y,,G.M. Box Chiang Mai,,N,15.00,0.000,,,Y,15.00,43.000,10.000,,2E Box,,,count,each,each
+cocoa-powder,10009,666 Cocoa Powder (kg),Ingredients,<p>1 Box is 20x 500g bag or 10 kilograms.</p>,Y,,,,,,,287.00,0.01,,,,Y,,"Thong Guan Trading (Thailand) Co., Ltd.",0.00,Y,287.00,253.094,100.000,150.000,N,variable,0.000,,,666 Cocoa Powder,kg,kg,mass,g,kg
+70%-coated-almonds---paleo-robbie-(80g),10198,70% Coated Almonds - Paleo Robbie (80g),Finished Good (others),"<p>70% Coated Almonds, for Paleo Robbie, sold in 80 gram quantities.</p>",N,,,,,,,variable,8.88,,10045,0.027,N,Y,,,N,variable,10.000,,,Y,variable,0.000,,,70% Coated Almonds - Paleo Robbie,80g,,mass,g,g
+,,,,,,,,,,,,,,,10010,0.053,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10129,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10192,1.000,,,,,,,,,,,,,,,,,,count,each,each
+70%-coated-cashews---paleo-robbie-(80g),10200,70% Coated Cashews - Paleo Robbie (80g),Finished Good (others),"<p>70% Coated Cashews, for Paleo Robbie, Sold in 80% quantities.&nbsp;</p>",N,,,,,,,variable,8.88,,10047,0.027,N,Y,,,N,variable,10.000,,,Y,variable,0.000,,,70% Coated Cashews - Paleo Robbie,80g,,mass,g,g
+,,,,,,,,,,,,,,,10010,0.053,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10129,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10193,1.000,,,,,,,,,,,,,,,,,,count,each,each
+mango-jelly-coated-milk-chocolate-70g.,10297,70% Coated Mango Jelly (70g),Finished Good (others),<p>Mango Jelly Coated Milk Chocolate 70g.</p>,N,,,,,,,variable,0.84,,10293,0.065,N,Y,,,N,variable,195.000,,,Y,variable,22.000,,,70% Coated Mango Jelly,70g,,mass,g,g
+,,,,,,,,,,,,,,,10010,0.005,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10109,2.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10119,1.000,,,,,,,,,,,,,,,,,,count,each,each
+85%-nibs---gourmet-market---dark-chocolate,10162,85% Dark Chocolate & Nibs - Gourmet Market (75g),Discontinued,"<p>85% Nibs - Gourmet Market - Dark Chocolate (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,15.78,,10001,0.005,N,Y,,,N,variable,0.000,,,Y,variable,0.000,48.000,180.000,85% Dark Chocolate & Nibs - Gourmet Market,75g,,mass,g,g
+,,,,,,,,,,,,,,,10105,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10013,0.070,,,,,,,,,,,,,,,,,,count,each,each
+sugar-free-coated-almonds---paleo-robbie-(80g),10195,85% Sugar Free Coated Almonds - Paleo Robbie (80g),Finished Good (others),"<p>Sugar Free Coated Almonds, Paleo Robbie, solid in 80 gram quantities.</p>",N,,,,,,,variable,11.40,,10045,0.027,N,Y,,,N,variable,-2.000,,,Y,variable,2.000,,,85% Sugar Free Coated Almonds - Paleo Robbie,80g,,mass,g,g
+,,,,,,,,,,,,,,,10089,0.053,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10129,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10190,1.000,,,,,,,,,,,,,,,,,,count,each,each
+sugar-free-vanilla-coated-cashews---paleo-robbie-(80g),10197,85% Sugar Free Vanilla Coated Cashews - Paleo Robbie (80g),Finished Good (others),"<p>Sugar Free Vanilla Coated Cashews, for Paleo Robbie, in 80 gram quantities.</p>",N,,,,,,,variable,11.40,,10047,0.026,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,85% Sugar Free Vanilla Coated Cashews - Paleo Robbie,80g,,mass,g,g
+,,,,,,,,,,,,,,,10089,0.053,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10059,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10129,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10191,1.000,,,,,,,,,,,,,,,,,,count,each,each
+air-bubble,10301,Air Bubble 65*20cm (roll),Packing,,N,,,,,,,330.00,0.00,BUBBLE,,,Y,,G.M. Box Chiang Mai,,N,330.00,0.000,,,Y,330.00,2.000,0.500,1.000,Air Bubble 65*20cm,roll,roll,count,each,each
+air-freshener,10439,Air Freshener,Cleaning,<p>AMBIPUR Room Fresh Gel Rose 180 g x 3</p>,N,,,,,,,variable,0.00,,,,Y,,,,N,variable,0.000,,,Y,variable,1.000,,,Air Freshener,,,count,each,each
+allspice-powder-(g),10051,Allspice Powder (kg),Ingredients,"<p>Allspice Powder, 1 Bag = 1,500g</p>",Y,,,,,,,1650.00,1650.00,,,,Y,,NguanSoon,0.00,Y,1650.00,0.600,0.500,2.000,N,variable,0.000,,,Allspice Powder,kg,kg,mass,g,kg
+almond-+-rose---valentine's-2025-(75g),10365,Almond + Rose - Valentine's 2025 (75g),Discontinued,<p>Valentine&#39;s 2025 recipe</p>,N,,,,,,,variable,13.67,,10004,0.068,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Almond + Rose - Valentine's 2025,75g,,mass,g,g
+,,,,,,,,,,,,,,,10046,0.007,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10060,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10040,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10098,1.000,,,,,,,,,,,,,,,,,,count,each,each
+almond-butter-(-kg),10085,Almond Butter (kg),Ingredients,"<p>Almond Butter, 1 Bag = 1 kg</p>",Y,,,,,,,variable,149.34,,10046,1.000,N,Y,,,N,variable,-10.640,,,N,variable,0.000,,,Almond Butter,kg,kg,mass,g,kg
+,,,,,,,,,,,,,,,10042,0.001,,,,,,,,,,,,,,,,,,count,each,each
+almond-butter-cups---paleo-robbie-(1kg),10203,Almond Butter Cups - Paleo Robbie (1kg),Finished Good (others),"<p>Almond Butter Cups, for Paleo Robbie, sold in 1 kg, 1 cup is 15 grams, approximately 67 cups in a kilogram batch. Composite item of almond butter, consisting of salt and ground almonds.</p>",N,,,,,,,variable,117.83,,10085,0.266,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Almond Butter Cups - Paleo Robbie,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10010,0.466,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10151,67.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10152,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10389,0.266,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10391,0.050,,,,,,,,,,,,,,,,,,count,each,each
+almond-flour-(kg),10202,Almond Flour (kg),Discontinued,"<p>Almond Flour, in kilograms.</p>",Y,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,0.000,,,N,variable,0.000,,,Almond Flour,kg,kg,mass,g,kg
+almond-powder-(kg),10389,Almond Powder (Kg),Ingredients,<p>&nbsp;Almond Powder 1kg/pack (for almond butter cup)</p>,N,,,,,,,307.00,0.00,,,,Y,,Yok Intertrade,,Y,307.00,4.000,2.000,3.000,N,variable,0.000,,,Almond Powder,Kg,kg,mass,g,kg
+"almonds,-chopped-(g)",10046,"Almonds, Chopped (kg)",Ingredients,"<p>Almonds, Chopped 1 Bag = 1kg</p>",Y,,,,,,,448.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,448.00,5.000,2.000,5.000,N,variable,0.000,,,"Almonds, Chopped",kg,kg,mass,g,kg
+"almonds,-whole-(g)",10045,"Almonds, Whole (kg)",Ingredients,"<p>Almonds, Whole 1 Bag = 1kg</p>",Y,,,,,,,343.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,343.00,12.000,3.000,5.000,N,variable,0.000,,,"Almonds, Whole",kg,kg,mass,g,kg
+anantara-belly-band,10390,Anantara Chiang Mai Belly band,Sleeve Logo,<p>สายคาดอนันตราเชียงใหม่ บาร์ใหญ่</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,1048.000,100.000,,Anantara Chiang Mai Belly band,,,count,each,each
+anantara-sticker-small-bar,10405,Anantara Chiang Mai Sticker band,Sleeve Logo,<p>Sticker อนันตราเชียงใหม่ บาร์เล็ก</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,2498.000,100.000,,Anantara Chiang Mai Sticker band,,,count,each,each
+anantara-cm-sleeve-8g-(85%),10445,Anantara CM Sleeve 8g (85%),Sleeve Logo,"<p>For 8g (85%) , we order 400 sleeves/time</p>",N,,,,,,,variable,0.00,,,,N,,,,Y,variable,,,,N,variable,,,,Anantara CM Sleeve 8g (85%),,,count,each,each
+anantara-cnx-box,10339,Anantara CNX Box,Packing,<p>Chiang Mai Only</p>,N,,,,,,,15.00,0.00,CNX,,,Y,,,,N,15.00,0.000,,,Y,15.00,739.000,,,Anantara CNX Box,,,count,each,each
+anantara-koh-samui-belly-band,10398,Anantara Koh Samui Belly band,Sleeve Logo,<p>สายคาด อนันตรา เกาะสมุย บาร์เล็ก</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,500.000,100.000,,Anantara Koh Samui Belly band,,,count,each,each
+anantara-cm-belly-sleeve-8-g-(-70%),10443,Anantara MahaBhirom Sleeve 8 g ( 70%),Sleeve Logo,"<p>for &nbsp;8 g ( 70% dark chocolate), order 400 sleeves / time</p>",N,,,,,,,variable,0.00,,,,N,,,,Y,variable,,,,N,variable,,,,Anantara MahaBhirom Sleeve 8 g ( 70%),,,count,each,each
+anantara-cm-sleeve-8g-(thai-tea),10444,Anantara Mahabhirom sleeve 8g (Thai tea),Sleeve Logo,"<p>For 8 g &nbsp;(Thai tea) , we order 400 sleeves/ time</p>",N,,,,,,,variable,0.00,,,,N,,,,Y,variable,,,,N,variable,,,,Anantara Mahabhirom sleeve 8g (Thai tea),,,count,each,each
+anantara-riverside-bkk-box,10440,Anantara Riverside BKK Box,Packing,<p>Box set small bars for Anantara Riverside Bangkok</p>,N,,,,,,,15.00,0.00,,,,Y,,,,N,15.00,0.000,,,Y,15.00,235.000,100.000,,Anantara Riverside BKK Box,,,count,each,each
+apple-dried-(kg),10307,Apple Dried (kg),Ingredients,<p>460B/kg</p>,N,,,,,,,460.00,0.00,,,,Y,,"Fareeda Dried Fruits Co.,Ltd.",,Y,460.00,3.594,2.000,7.000,N,variable,0.000,,,Apple Dried,kg,kg,mass,g,kg
+apple-pie-milk-chocolate---halloween-(75g),10458,Apple Pie Milk Chocolate - Halloween (75g),Finished Good (others),<p>Halloween 2026 special - apple pie milk chocolate</p>,N,,,,,,,variable,10.36,,10004,0.062,N,Y,,,N,variable,1.000,,,Y,variable,0.000,,,Apple Pie Milk Chocolate - Halloween,75g,,mass,g,g
+,,,,,,,,,,,,,,,10081,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10307,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10039,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.300,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10459,1.000,,,,,,,,,,,,,,,,,,count,each,each
+b-box,10310,B Box,Packing,,N,,,,,,,3.65,0.00,BOX B,,,Y,,G.M. Box Chiang Mai,,N,3.65,0.000,,,Y,3.65,78.000,10.000,,B Box,,,count,each,each
+baking-soda-(g),10453,Baking Soda (g),Ingredients,<p>Baking soda 300g/bag</p>,Y,,,,,,,33.00,0.00,,,,Y,,Yok Intertrade,,Y,33.00,300.000,,,N,variable,0.000,,,Baking Soda,g,g,mass,g,g
+coconut-and-banana---gourmet-market---milk-chocolate-(75%),10161,Banana & Coconut Milk Chocolate - Gourmet Market (75g),Discontinued,"<p>Coconut and Banana - Gourmet Market - Milk Chocolate 50% (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,15.58,,10004,0.066,N,Y,,,N,variable,0.000,,,Y,variable,0.000,48.000,180.000,Banana & Coconut Milk Chocolate - Gourmet Market,75g,,mass,g,g
+,,,,,,,,,,,,,,,10079,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10103,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.007,,,,,,,,,,,,,,,,,,count,each,each
+"""banana-bites""---paleo-robbie---dipped-bananas-(100g)",10298,Banana Bites - Paleo Robbie - Dipped Banana (100g),Finished Good (others),<p>Dark Chocolate Dipped Banana Bites for Paleo Robbie. 100 grams per bag.</p>,N,,,,,,,variable,6.45,,10074,0.060,N,Y,,,N,variable,-11.000,,,Y,variable,10.000,,,Banana Bites - Paleo Robbie - Dipped Banana,100g,,mass,g,g
+,,,,,,,,,,,,,,,10089,0.030,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10130,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10075,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.010,,,,,,,,,,,,,,,,,,count,each,each
+banana-chips-(kg),10187,Banana Chips (kg),Ingredients,"<p>Crispy Bananas, Dried Bananas, and Banana Chips are all the same thing.</p>",Y,,,,,,,490.00,0.00,,,,Y,,Healthy Bakery,0.00,Y,490.00,11.893,3.000,15.000,N,variable,0.000,,,Banana Chips,kg,kg,mass,g,kg
+banana-crunch---milk-chocolate-50%-(75g),8857126163995,Banana Crunch Milk Chocolate (75g),Finished Goods (Core),"<p>Banana Crunch - Milk Chocolate 50% (75g). Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,10.98,8857126163995,10079,0.002,N,Y,,,Y,variable,6.000,150.000,400.000,Y,145.00,299.000,48.000,180.000,Banana Crunch Milk Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10004,0.066,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10015,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10187,0.007,,,,,,,,,,,,,,,,,,count,each,each
+banana---milk-chocolate-50%-(20g),8857126163377,Banana Milk Chocolate (20g),Finished Goods (Core),"<p>Banana- Milk Chocolate 50% (20g). Small Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,2.99,8857126163377,10034,1.000,N,Y,,,Y,variable,531.000,100.000,300.000,Y,60.00,89.000,48.000,180.000,Banana Milk Chocolate,20g,,mass,g,g
+,,,,,,,,,,,,,,,10004,0.018,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10079,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+banana-peanuts-(100g),10255,Banana Peanuts (100g),Discontinued,"<p>Banana Peanuts are sold in 100g quantities, including wrapping.</p>",N,,,,,,,variable,11.17,,10044,0.033,N,Y,,,N,variable,0.000,,,N,variable,0.000,,,Banana Peanuts,100g,,mass,g,g
+,,,,,,,,,,,,,,,10004,0.064,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10079,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10090,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10248,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10249,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10182,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10252,2.000,,,,,,,,,,,,,,,,,,count,each,each
+banana-powder-(kg),10079,Banana Powder (kg),Ingredients,"<p>Banana Powder, 1 Bag = 1kg</p>",Y,,,,,,,480.00,0.55,,,,Y,,"Chanthaburi Global Foods Co., Ltd.",0.00,Y,480.00,6.202,5.000,10.000,N,variable,0.000,,,Banana Powder,kg,kg,mass,g,kg
+banana-split---smash-daddy's-(75g),10303,Banana Split - Smash Daddy's (75g),Finished Good (others),"<p>Banana split Milk chocolate bar - Smash Daddy&#39;s special, 75g</p>",N,,,,,,,variable,10.78,,10004,0.063,N,Y,,,Y,variable,0.000,,,Y,variable,0.000,,,Banana Split - Smash Daddy's,75g,,mass,g,g
+,,,,,,,,,,,,,,,10187,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10044,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10084,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10159,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10079,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10110,1.000,,,,,,,,,,,,,,,,,,count,each,each
+banana-sticks-(kg),10074,Banana Sticks (kg),Ingredients,"<p>Banana Sticks, 1 Bag = 1kg</p>",Y,,,,,,,250.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,250.00,4.800,3.000,5.000,N,variable,0.000,,,Banana Sticks,kg,kg,mass,g,kg
+70%-dark-chocolate-base,10010,Base - 70% Dark Chocolate (kg),Base Chocolate,<p>Plain dark chocolate. Base for plain bars and many flavored products.&nbsp;</p>,Y,,,,,,,variable,167.60,,10001,0.650,N,Y,,,Y,variable,619.090,200.000,400.000,N,variable,0.000,,,Base - 70% Dark Chocolate,kg,kg,mass,g,kg
+,,,,,,,,,,,,,,,10003,0.050,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,8 850456 103778,0.300,,,,,,,,,,,,,,,,,,count,each,each
+base---85%,10013,Base - 85% Dark Chocolate (kg),Base Chocolate,<p>Base chocolate for our signature 85%</p>,Y,,,,,,,variable,187.22,,10001,0.850,N,Y,,,N,variable,191.821,50.000,100.000,N,variable,0.000,,,Base - 85% Dark Chocolate,kg,kg,mass,g,kg
+,,,,,,,,,,,,,,,8 850456 103778,0.150,,,,,,,,,,,,,,,,,,count,each,each
+base---coconut-(kg),10087,Base - Coconut 65% Dark Chocolate (kg),Base Chocolate,<p>Base Chocolate Recipe for Coconut Dark Chocolate 65%</p>,Y,,,,,,,variable,151.92,,10001,0.620,N,Y,,,N,variable,157.216,,,N,variable,0.000,,,Base - Coconut 65% Dark Chocolate,kg,kg,mass,g,kg
+,,,,,,,,,,,,,,,10006,0.100,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10003,0.030,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,8 850456 103778,0.250,,,,,,,,,,,,,,,,,,count,each,each
+base---coffee-pomelo-(kg),10088,Base - Coffee Pomelo (kg),Base Chocolate,<p>Chocolate Base for Hill Coffee Pomelo&nbsp;</p>,Y,,,,,,,variable,159.93,,10001,0.710,N,Y,,,N,variable,245.936,,,N,variable,0.000,,,Base - Coffee Pomelo,kg,kg,mass,g,kg
+,,,,,,,,,,,,,,,10014,0.020,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,8 850456 103778,0.270,,,,,,,,,,,,,,,,,,count,each,each
+base---milk-chocolate,10004,Base - Milk Chocolate (kg),Base Chocolate,,Y,,,,,,,variable,166.30,,10001,0.400,N,Y,,,Y,variable,109.153,300.000,600.000,N,variable,0.000,,,Base - Milk Chocolate,kg,kg,mass,g,kg
+,,,,,,,,,,,,,,,8 850456 103778,0.350,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10008,0.150,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10003,0.100,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10337,3.000,,,,,,,,,,,,,,,,,,count,each,each
+base---sugar-free-(kg),10089,Base - Sugar Free (kg),Base Chocolate,<p>Recipe for Base Sugar-Free Chocolate&nbsp;</p>,Y,,,,,,,variable,215.13,,10001,0.850,N,Y,,,N,variable,131.080,,,N,variable,0.000,,,Base - Sugar Free,kg,kg,mass,g,kg
+,,,,,,,,,,,,,,,10008,0.150,,,,,,,,,,,,,,,,,,count,each,each
+base---white-chocolate-(kg),10199,Base - White Chocolate (kg),Base Chocolate,<p>White chocolate&nbsp;</p>,Y,,,,,,,variable,220.68,,10003,0.350,N,Y,,,N,variable,37.228,,,N,variable,0.000,,,Base - White Chocolate,kg,kg,mass,g,kg
+,,,,,,,,,,,,,,,10008,0.350,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,8 850456 103778,0.300,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10007,2.000,,,,,,,,,,,,,,,,,,count,each,each
+battery-aaa,10372,Battery AAA (pieces),Supplies,<p>60 pieces/box</p>,N,,,,,,,7.50,0.00,,,,Y,,Chiang Mai Plastic,,Y,7.50,74.000,15.000,30.000,N,7.50,0.000,,,Battery AAA,pieces,piece,count,each,each
+bench-scrapers,10430,Bench Scrapers,Supplies,,N,,,,,,,variable,0.00,,,,Y,,,,N,variable,19.000,6.000,15.000,N,variable,0.000,,,Bench Scrapers,,,count,each,each
+biscuit-(kg),10081,Biscuit (kg),Ingredients,"<p>Biscuit, 1 Bag = 454g&nbsp; (83B/bag)</p>",N,,,,,,,166.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,166.00,2.563,,,N,166.00,0.000,,,Biscuit,kg,kg,mass,g,kg
+black-gloves,10436,Black Gloves,Cleaning,<p>Black Gloves for Cleaning</p>,N,,,,,,,95.00,0.00,,,,Y,,,,Y,95.00,1.000,,,N,variable,0.000,,,Black Gloves,,,count,each,each
+brown-box-for-holds-12-bars,10323,Brown Box for holds 12 bars,Packing,<p>Brown Box for holds 12 bars (Paleo) Brown box#2 (300boxes/time)</p>,N,,,,,,,16.50,0.00,,,,Y,,"AIPP Printing Press Co.,Ltd.",,N,variable,0.000,,,Y,16.50,0.000,50.000,100.000,Brown Box for holds 12 bars,,,count,each,each
+brown-sugar-(kg)-1,10450,Brown sugar (kg),Ingredients,<p>Brown sugar 1kg/pack</p>,Y,,,,,,,41.00,0.00,,,,Y,,Yok Intertrade,,Y,41.00,2.000,0.500,1.000,N,variable,0.000,,,Brown sugar,kg,kg,mass,g,kg
+butter-(kg),10451,Butter (kg),Ingredients,<p>Unsalted butter 1kg/box</p>,N,,,,,,,369.00,0.00,,,,Y,,Yok Intertrade,,Y,369.00,3.000,,,N,369.00,0.000,,,Butter,kg,kg,mass,g,kg
+c-box,10321,C Box,Packing,,N,,,,,,,5.20,0.00,BOX C,,,Y,,G.M. Box Chiang Mai,,N,5.20,0.000,,,Y,5.20,53.000,20.000,,C Box,,,count,each,each
+c+8-box,10312,C+8 Box,Packing,,N,,,,,,,7.20,0.00,BOX C8,,,Y,,G.M. Box Chiang Mai,,N,7.20,0.000,,,Y,7.20,19.000,20.000,,C+8 Box,,,count,each,each
+cacao-beans,10000,Cacao Beans (kg),Ingredients,<p>Cacao beans used to create cacao nibs. For one 1kg beans we end up with about 760g nibs. 1 Sack is 20kgs.</p>,Y,,,,,,,280.00,180.00,,,,Y,,Cocoa Nakorn Lampang,180.00,Y,280.00,898.938,500.000,1000.000,N,variable,0.000,,,Cacao Beans,kg,kg,mass,g,kg
+cacao-beans-(kg)-guscoa,10305,Cacao beans (kg) Guscoa,Ingredients,"<p>Cacao beans are used to create cacao nibs. For 1kg of beans, we end up with about 760g of nibs. 1 Sack is 25 kg.</p>",N,,,,,,,240.00,0.00,,,,Y,,,0.00,Y,240.00,0.000,,,N,variable,0.000,,,Cacao beans Guscoa,kg,kg,mass,g,kg
+cacao-beans-(kg)-pk,10306,Cacao beans (kg) PK,Ingredients,<p>Cacao beans used to create cacao nibs. For one 1kg beans we end up with about 760g nibs. 1 Sack is 25kgs.</p>,N,,,,,,,280.00,0.00,,,,Y,,,0.00,N,280.00,0.000,,,N,variable,0.000,,,Cacao beans PK,kg,kg,mass,g,kg
+cocoa-butter,10003,Cacao Butter (kg),Ingredients,<p>Cacao butter from many different suppliers. Priced differently from each. Add the cost to new order from each supplier. (Coco Doi &amp; Kolob)</p>,Y,,,,,,,650.00,399.99,,,,Y,,Hill Tribe Cocoa Cof,400.00,Y,650.00,433.600,120.000,300.000,N,variable,0.000,,,Cacao Butter,kg,kg,mass,g,kg
+cacao-butter-(kg)-kolab-surat-1,10457,Cacao Butter (Kg) Kolab-Surat,Ingredients,"<p>Cacao Butter (Kg)Surat Thani - Kolob Innovation Co.,Ltd.&nbsp; (650B/kg)</p>",Y,,,,,,,650.00,0.00,,,,Y,,"Kolob Innovation Co.,Ltd.",,Y,650.00,0.000,,,N,variable,0.000,,,Cacao Butter Kolab-Surat,kg,kg,mass,g,kg
+cacao-hots-sauce-90-ml.,10429,Cacao Hot Sauce (90ml),Finished Good (others),,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,-101.000,,,Y,variable,26.000,20.000,,Cacao Hot Sauce,90ml,,volume,L,ml
+cacao-nibs---retail-(1kg),10205,Cacao Nibs - Retail (1kg),Finished Good (others),"<p>Cacao Nibs, for retail sale, sold per kilogram. Just cacao nibs.</p>",N,,,,,,,variable,216.00,,10001,1.000,N,Y,,,N,variable,0.000,,,Y,variable,2.000,,,Cacao Nibs - Retail,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10132,1.000,,,,,,,,,,,,,,,,,,count,each,each
+cacao-nibs-(250g),8857126163391,Cacao Nibs - Retail (250g),Finished Good (others),<p>Cacao nibs are sold in 250-gram quantities.</p>,N,,,,,,,variable,54.00,8857126163391,10001,0.250,N,Y,,,N,variable,0.000,,,Y,250.00,15.000,10.000,30.000,Cacao Nibs - Retail,250g,,mass,g,g
+,,,,,,,,,,,,,,,10138,2.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10289,1.000,,,,,,,,,,,,,,,,,,count,each,each
+cacao-nibs-(80g),10172,Cacao Nibs - Retail (80g),Finished Good (others),<p>Cacao Nibs sold in 80 gram quantities.</p>,N,,,,,,,variable,17.28,,10001,0.080,N,Y,,,N,variable,0.000,,,Y,110.00,26.000,3.000,10.000,Cacao Nibs - Retail,80g,,mass,g,g
+,,,,,,,,,,,,,,,10127,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10137,1.000,,,,,,,,,,,,,,,,,,count,each,each
+cacao-nibs,10001,Cacao Nibs (kg),Ingredients,<p>Cacao nibs are roasted cacao beans with the shell removed. It takes 1.315kg of beans to equal 1kg of nibs.</p>,Y,,,,,,,variable,216.00,,10000,1.200,N,Y,,,N,variable,851.454,50.000,300.000,N,variable,0.000,,,Cacao Nibs,kg,kg,mass,g,kg
+cacao-powder-(1kg),10170,Cacao Powder - Retail (1kg),Finished Good (others),<p>Cacao Powder is sold in 1-kilogram quantities.</p>,N,,,,,,,variable,153.00,,10011,0.900,N,Y,,,N,variable,0.000,,,Y,variable,15.000,3.000,10.000,Cacao Powder - Retail,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10086,0.100,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10132,1.000,,,,,,,,,,,,,,,,,,count,each,each
+cacao-powder-(200g),8857126163384,Cacao Powder - Retail (200g),Discontinued,<p>Cacao Powder is sold in 200-gram quantities.</p>,N,,,,,,,variable,38.52,8857126163384,10011,0.180,N,Y,,,N,variable,0.000,,,N,variable,0.000,10.000,30.000,Cacao Powder - Retail,200g,,mass,g,g
+,,,,,,,,,,,,,,,10086,0.020,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10135,2.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10289,1.000,,,,,,,,,,,,,,,,,,count,each,each
+cacao-powder---retail-(250g)---new,10290,Cacao Powder - Retail (250g),Finished Good (others),<p>Cacao powder blend - 250g bag for retail</p>,N,,,,,,,variable,38.25,,10011,0.225,N,Y,,,N,variable,0.000,,,Y,250.00,65.000,,,Cacao Powder - Retail,250g,,mass,g,g
+,,,,,,,,,,,,,,,10086,0.025,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10289,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10135,2.000,,,,,,,,,,,,,,,,,,count,each,each
+cacao-powder-(80g),10169,Cacao Powder - Retail (80g),Finished Good (others),<p>Finished Cacao Powder in 80-gram quantities.</p>,N,,,,,,,variable,12.24,,10011,0.072,N,Y,,,N,variable,0.000,,,Y,110.00,23.000,3.000,10.000,Cacao Powder - Retail,80g,,mass,g,g
+,,,,,,,,,,,,,,,10086,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10127,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10134,1.000,,,,,,,,,,,,,,,,,,count,each,each
+cacao-powder-chocolasia-(kg),10086,Cacao Powder Chocolasia (kg),Ingredients,"<p>Cocoa Powder Chocolasia, 1 Bag = 13kg&nbsp; (ChiangRai)</p>",Y,,,,,,,230.00,0.00,,,,Y,,"Chocolasia Co., Ltd.",0.00,Y,550.00,1.214,10.000,40.000,N,variable,0.000,,,Cacao Powder Chocolasia,kg,kg,mass,g,kg
+cocoa-powder-100%-kd30,10011,Cacao Powder KD30 (kg),Ingredients,"<p>Cocoa Powder 100% KD30, 1 Sack is 25 kg. Minimum order is 50 kg.</p>",Y,,,,,,,280.00,170.00,,,,Y,,"Khotcher Global Food Co., Ltd.",170.00,Y,280.00,90.570,50.000,100.000,N,variable,0.000,,,Cacao Powder KD30,kg,kg,mass,g,kg
+candied-orange-(kg),10082,Candied Orange (kg),Ingredients,"<p>Candied Orange, 1 Bag = 10.5kg</p>",Y,,,,,,,370.00,0.01,,,,Y,,"Fareeda Dried Fruits Co.,Ltd.",0.00,Y,370.00,4.540,5.000,10.000,N,variable,20.000,,,Candied Orange,kg,kg,mass,g,kg
+capol-254-(l),10092,Capol 254 (L),Ingredients,<p>Capol 254 - 1 Bottle = 1 Litre</p>,Y,,,,,,,variable,0.00,,,,Y,,,,N,variable,10.000,,,N,variable,0.000,,,Capol 254,L,l,volume,L,L
+capol-425-(l),10093,Capol 425 (L),Ingredients,<p>Capol 425 - 1 Bottle = 0.025 Litres</p>,Y,,,,,,,variable,0.00,,,,Y,,,,N,variable,0.000,,,N,variable,0.000,,,Capol 425,L,l,volume,L,L
+cardamom-powder-(g),10040,Cardamom Powder (kg),Ingredients,"<p>Cardamom Powder, 1 Bag = 500g</p>",Y,,,,,,,640.00,695.29,,,,Y,,"S A O Agricultural Co., Ltd.",0.00,Y,640.00,1.500,0.500,2.000,N,variable,0.000,,,Cardamom Powder,kg,kg,mass,g,kg
+carolina-reaper-70%-dark-chocolate---chili-fest-2025-(75g),10235,Carolina Reaper 70% Dark Chocolate - Chili Fest 2025 (75g),Discontinued,<p>Chili Fest 2025 special product. 70% dark chocolate with Carolina Reaper powder</p>,N,,,,,,,variable,12.61,,10010,0.075,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Carolina Reaper 70% Dark Chocolate - Chili Fest 2025,75g,,mass,g,g
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+cashews-(g),10047,Cashews (kg),Ingredients,"<p>Cashews, 1 Bag = 1kg</p>",Y,,,,,,,431.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,431.00,10.000,3.000,5.000,N,variable,0.000,,,Cashews,kg,kg,mass,g,kg
+ceremonial-chocolate-(1kg-block),10183,Ceremonial Chocolate - 100% Unroasted (1kg block),Finished Good (others),"<p>Ceremonial Chocolate, 100% unroasted Cacao beans, in 1 kg block</p>",N,,,,,,,variable,180.00,,10000,1.000,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Ceremonial Chocolate - 100% Unroasted,1kg block,,mass,g,kg
+,,,,,,,,,,,,,,,10125,1.000,,,,,,,,,,,,,,,,,,count,each,each
+matcha-white-chocolate---white-chocolate-(75g),8857126163223,Ceremonial Matcha White Chocolate (75g),Discontinued,<p>Matcha White Chocolate. White Chocolate. 75 grams. Big Bar.</p>,N,,,,,,,variable,17.27,8857126163223,10155,0.001,N,Y,,,N,variable,0.000,,,N,variable,0.000,,,Ceremonial Matcha White Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10199,0.074,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10186,1.000,,,,,,,,,,,,,,,,,,count,each,each
+chiang-mai-chocolate-dark-box,10346,Chiang Mai Chocolate Dark Box,Packaging,<p>New Package for Small Bar Gift set</p>,N,,,,,,,15.00,0.00,,,,Y,,Blueprint Design Ltd.Part.,0.00,Y,15.00,375.000,500.000,1000.000,N,variable,0.000,,,Chiang Mai Chocolate Dark Box,,,count,each,each
+chili-powder-(siri),10471,Chili Powder -Siri (kg),Ingredients,<p>Marko/Yok&nbsp; 1kg/bag</p>,N,,,,,,,289.00,0.00,,,,Y,,Yok Intertrade,,Y,289.00,0.000,,,N,variable,0.000,,,Chili Powder -Siri,kg,kg,mass,g,kg
+chili-powder-(g),10038,Chili Powder (kg),Ingredients,"<p>Chili Powder, 1 bag=1kg</p>",Y,,,,,,,150.00,0.00,,,,Y,,"S A O Agricultural Co., Ltd.",0.00,Y,150.00,3.689,1.000,3.000,N,variable,0.000,,,Chili Powder,kg,kg,mass,g,kg
+chocolate-dipped-orange-(45g),10258,Chocolate Dipped Orange (45g),Finished Good (others),"<p>Chocolate Dipped Orange, in 45g quantities, includes wrapping and sticker.</p>",N,,,,,,,variable,2.51,,10082,0.030,N,Y,,,Y,variable,0.000,,,Y,60.00,321.000,100.000,,Chocolate Dipped Orange,45g,,mass,g,g
+,,,,,,,,,,,,,,,10010,0.015,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10260,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10472,1.000,,,,,,,,,,,,,,,,,,count,each,each
+cinnamon-powder-(g),10039,Cinnamon Powder (kg),Ingredients,"<p>Cinnamon Powder, 1 Bag=1kg</p>",Y,,,,,,,230.00,0.00,,,,Y,,"S A O Agricultural Co., Ltd.",0.00,Y,230.00,0.671,1.000,2.000,N,variable,0.000,,,Cinnamon Powder,kg,kg,mass,g,kg
+cleaning-cloths,10406,Cleaning Cloths,Cleaning,<p>Cleaning Clothes for factory (brown for tempering room / blue for roasting room / gray for shop)</p>,N,,,,,,,32.00,0.00,,,,Y,,"Show At Two Family Co., Ltd.",,Y,32.00,0.000,,,N,32.00,0.000,,,Cleaning Cloths,,,count,each,each
+paleo-robbie-clear-bag---long,10130,Clear Bag - Long - Paleo Robbie,Packaging,<p>Paleo Robbie Clear Bag - Long&nbsp; Clear Nylon bag 125*200 mm</p>,N,,,,,,,113.00,0.00,,,,Y,,Yok Intertrade,0.00,N,113.00,998.000,300.000,600.000,N,113.00,0.000,,,Clear Bag - Long - Paleo Robbie,,,count,each,each
+paleo-robbie-clear-bag---short,10129,Clear Bag - Short - Paleo Robbie,Packaging,<p>Paleo Robbie Clear Bag - Short &nbsp;Clear Nylon Bag 125*150mm</p>,N,,,,,,,119.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,119.00,332.000,200.000,300.000,N,119.00,0.000,,,Clear Bag - Short - Paleo Robbie,,,count,each,each
+clear-plastic-bag-(oranger-dipped),10260,"Clear Plastic Bag 3"" x 6"" (Chocolate Dipped Orange) /pack",Packaging,<p>Clear plastic bag OPP (Chocolate Dipped Orange) 3x6 inch&nbsp;</p>,N,,,,,,,130.00,0.00,,,,Y,,Romklao Packaging,0.00,Y,130.00,2.450,,,N,variable,0.000,,,"Clear Plastic Bag 3"" x 6"" (Chocolate Dipped Orange) /pack",,,count,each,each
+clove-oil-(ml),10054,Clove Oil (ml),Ingredients,"<p>Clove Oil, 1 Bottle = 1000ml</p>",Y,,,,,,,800.00,0.00,,,,Y,,Nutrifood Creation Limited Partnership,0.00,Y,800.00,795.004,0.300,500.000,N,variable,0.000,,,Clove Oil,ml,ml,volume,L,ml
+clove-powder-(kg),10274,Clove Powder (kg),Ingredients,<p>Clove Powder 500g/pack</p>,Y,,,,,,,600.00,0.00,,,,Y,,NguanSoon,,Y,600.00,-0.968,,,N,variable,0.000,,,Clove Powder,kg,kg,mass,g,kg
+cocoa-powder-bag-(250g)-new-version,10482,Cocoa Powder Bag (250g) New Version,Packaging,<p>Bag for Cocoa powder 250g &nbsp;New Version order from Hong Kong<br>Flat bottom pouch with zipper 160*170*66 cm<br>Material: spot glossy + Matte finish<br>PET12/AL7/PE110</p>,N,,,,,,,27.00,0.00,,,,N,,,,Y,27.00,,,,N,variable,,,,Cocoa Powder Bag (250g) New Version,,,count,each,each
+coconut-cashews-(100g),10257,Coconut Cashews (100g),Discontinued,<p>Coconut Cashews are sold in 100-gram quantities. Includes wrapping.</p>,N,,,,,,,variable,11.03,,10047,0.030,N,Y,,,N,variable,0.000,,,N,variable,0.000,,,Coconut Cashews,100g,,mass,g,g
+,,,,,,,,,,,,,,,10010,0.060,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.010,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10248,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10249,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10182,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10254,2.000,,,,,,,,,,,,,,,,,,count,each,each
+coconut-curry---coconut-dark-chocolate-65%-(75g),8857126163209,Coconut Curry 65% Dark Chocolate (75g),Finished Goods (Core),"<p>Coconut Curry - Coconut Dark Chocolate 65%. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,10.00,8857126163209,10087,0.061,N,Y,,,Y,variable,61.000,150.000,400.000,Y,145.00,9.000,48.000,180.000,Coconut Curry 65% Dark Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10055,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10056,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10018,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10057,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.005,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10376,0.005,,,,,,,,,,,,,,,,,,count,each,each
+coconut-milk-dark-chocolate-(20g),8857126163124,Coconut Milk 65% Dark Chocolate (20g),Finished Goods (Core),"<p>Coconut Milk Dark Chocolate. 20g. Small Bar. Coconut Chocolate 65%. Includes wrapper, foil, chocolate, and flavoring.</p>",N,,,,,,,variable,2.73,8857126163124,10087,0.018,N,Y,,,Y,variable,988.000,150.000,450.000,Y,60.00,765.000,48.000,180.000,Coconut Milk 65% Dark Chocolate,20g,,mass,g,g
+,,,,,,,,,,,,,,,10032,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.002,,,,,,,,,,,,,,,,,,count,each,each
+coconut-milk-dark-chocolate-(75g),8857126163049,Coconut Milk 65% Dark Chocolate (75g),Finished Goods (Core),"<p>Coconut Milk Dark Chocolate. 75g. Big bar. Coconut Chocolate 65%. Includes wrapper, flavoring, chocolate, and foil.</p>",N,,,,,,,variable,10.48,8857126163049,10102,0.003,N,Y,,,Y,variable,1119.000,300.000,1000.000,Y,145.00,781.000,48.000,180.000,Coconut Milk 65% Dark Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10087,0.069,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10017,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.006,,,,,,,,,,,,,,,,,,count,each,each
+coconut-milk---coconut-dark-chocolate-65%-(8g-squares),10209,Coconut Milk 65% Dark Chocolate (8g Squares),Discontinued,"<p>Coconut Milk, made from coconut chocolate. 8g square quantities. Includes wrapper.</p>",N,,,,,,,variable,1.06,,10087,0.007,N,Y,,,N,variable,57.000,,,N,variable,0.000,,,Coconut Milk 65% Dark Chocolate,8g Squares,,mass,g,g
+,,,,,,,,,,,,,,,10043,0.001,,,,,,,,,,,,,,,,,,count,each,each
+coconut-milk-powder,10006,Coconut Milk Powder (kg),Ingredients,<p>Coconut Milk Powder. One box is 10 kilograms.</p>,Y,,,,,,,268.00,0.00,,,,Y,,"Thep Padungporn Coconut Co.,Ltd.",0.00,Y,268.00,98.000,24.000,60.000,N,variable,0.000,,,Coconut Milk Powder,kg,kg,mass,g,kg
+coffee-beans,10014,Coffee Beans (kg),Ingredients,<p>Dark Roasted (1kg/bag)</p>,N,,,,,,,480.00,0.00,,,,Y,,"Supthawee Part And Service Ltd.,Part.",0.00,Y,480.00,8.512,4.000,12.000,N,variable,0.000,,,Coffee Beans,kg,kg,mass,g,kg
+coffee-crunch-cashews-(100g),10256,Coffee Crunch Cashews (100g),Discontinued,<p>Coffee Crunch Cashews are sold in 100g quantities. Includes wrapping.</p>,N,,,,,,,variable,10.64,,10047,0.033,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Coffee Crunch Cashews,100g,,mass,g,g
+,,,,,,,,,,,,,,,10004,0.064,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10014,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10248,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10249,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10182,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10253,2.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10090,0.001,,,,,,,,,,,,,,,,,,count,each,each
+coffee-crunch---milk-chocolate-50%-(20g),8857126163148,Coffee Crunch Milk Chocolate (20g),Finished Goods (Core),"<p>Coffee Crunch - Milk Chocolate 50%. 20g. Small Bar. Includes flavoring, chocolate, wrapper, and foil.&nbsp;</p>",N,,,,,,,variable,3.16,8857126163148,10004,0.019,N,Y,,,Y,variable,487.000,100.000,300.000,Y,60.00,561.000,48.000,180.000,Coffee Crunch Milk Chocolate,20g,,mass,g,g
+,,,,,,,,,,,,,,,10014,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10035,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+coffee-crunch---milk-chocolate-50%,8857126163063,Coffee Crunch Milk Chocolate (75g),Finished Goods (Core),"<p>Coffee Crunch - Milk Chocolate 50% (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,12.14,8857126163063,10004,0.073,N,Y,,,Y,variable,448.000,200.000,600.000,Y,145.00,294.000,48.000,180.000,Coffee Crunch Milk Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10014,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10019,1.000,,,,,,,,,,,,,,,,,,count,each,each
+coffee-crunch---milk-chocolate-50%-(8g-squares),10206,Coffee Crunch Milk Chocolate (8g Squares),Discontinued,<p>Coffee Crunch. Milk Chocolate 50%. Includes wrapping. Sold and made in 8-gram squares.</p>,N,,,,,,,variable,1.33,,10004,0.008,N,Y,,,N,variable,46.000,,,N,variable,0.000,,,Coffee Crunch Milk Chocolate,8g Squares,,mass,g,g
+,,,,,,,,,,,,,,,10014,0.001,,,,,,,,,,,,,,,,,,count,each,each
+70%-couverture-(1kg-in-50-gram-blocks),10179,Couverture - 70% (1kg),Finished Good (others),<p>Couverture in 1 kg blocks</p>,N,,,,,,,variable,167.60,,10125,1.000,N,Y,,,Y,variable,0.000,,,Y,variable,18.000,,,Couverture - 70%,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10010,1.000,,,,,,,,,,,,,,,,,,count,each,each
+blackkitch-(retail---1kg),10178,Couverture - 85% (1kg),Finished Good (others),<p>85% Couverture in 1kg blocks</p>,N,,,,,,,variable,187.26,,10013,1.000,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Couverture - 85%,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10125,1.000,,,,,,,,,,,,,,,,,,count,each,each
+couverture-sugar-free-(1kg-in-50g-blocks),10181,Couverture - 85% Sugar Free (1kg),Finished Good (others),<p>Couverture in 1kg blocks</p>,N,,,,,,,variable,215.15,,10089,1.000,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Couverture - 85% Sugar Free,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10125,1.000,,,,,,,,,,,,,,,,,,count,each,each
+couverture-coconut-milk-(1kg),10185,Couverture - Coconut Milk (1kg),Finished Good (others),,N,,,,,,,variable,151.92,,10087,1.000,N,Y,,,Y,variable,0.000,,,Y,variable,0.000,,,Couverture - Coconut Milk,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10125,1.000,,,,,,,,,,,,,,,,,,count,each,each
+coffee-pomelo-couverture-(1kg-in-50-gram-blocks),10246,Couverture - Hill Coffee & Pomelo (1kg),Discontinued,<p>Coffee Pomelo Couverture. 1 kilogram blocks</p>,N,,,,,,,variable,191.40,,10088,0.909,N,Y,,,Y,variable,0.000,,,Y,variable,0.000,,,Couverture - Hill Coffee & Pomelo,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10071,0.091,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10125,1.000,,,,,,,,,,,,,,,,,,count,each,each
+khao-soi-couverture-(1kg-in-50g-blocks),10247,Couverture - Khao Soi Curry(1kg),Discontinued,"<p>Khao Soi Couverture, 1 kg blocks.&nbsp;</p>",N,,,,,,,variable,163.41,,10004,0.963,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Couverture - Khao Soi Curry,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10064,0.029,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10037,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10125,1.000,,,,,,,,,,,,,,,,,,count,each,each
+couverture-milk-(1kg-in-50-gram-blocks),10180,Couverture - Milk (1kg),Finished Good (others),<p>Couverture in 1kg blocks</p>,N,,,,,,,variable,166.30,,10004,1.000,N,Y,,,Y,variable,0.000,,,Y,variable,3.000,,,Couverture - Milk,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10125,1.000,,,,,,,,,,,,,,,,,,count,each,each
+thai-tea-couverture-(1kg-in-50g-blocks),10157,Couverture - Thai Tea (1kg),Discontinued,<p>Couverture in 50g blocks. Thai tea.</p>,N,,,,,,,variable,164.30,,10004,0.988,N,Y,,,N,variable,0.000,,,Y,variable,1.000,,,Couverture - Thai Tea,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10012,0.012,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10125,1.000,,,,,,,,,,,,,,,,,,count,each,each
+cpe-shoe-cover-(box),10373,CPE Shoe cover (box),Supplies,<p>20 packs/box (1000 pairs)</p>,N,,,,,,,1800.00,0.00,,,,Y,,Biosafe Product,,Y,1800.00,0.000,,,N,1800.00,0.000,,,CPE Shoe cover,box,box,count,each,each
+craft-cup-for-coated-chocolate-(12oz),10248,Craft Cup for Coated Nuts (12oz),Discontinued,"<p>Craft cup 12 oz 25 cups/pack ** does not come with the lid, need to buy separately**</p>",N,,,,,,,49.00,0.00,,,,Y,,PYR Giftbox,0.00,Y,49.00,0.000,100.000,,N,49.00,0.000,,,Craft Cup for Coated Nuts,12oz,,mass,g,g
+craft-lid-for-coated-chocolate-(8-12-oz),10249,Craft Lid for Coated Nuts (8-12 oz),Discontinued,"<p>Lid cup 8-12 oz 25 cups/pack ** does not come with the cup, need to buy separately**</p>",N,,,,,,,42.00,0.00,,,,Y,,PYR Giftbox,0.00,Y,42.00,0.000,100.000,,N,42.00,0.000,,,Craft Lid for Coated Nuts,8-12 oz,oz,mass,g,g
+curry-powder-(g),10037,Curry Powder (kg),Ingredients,"<p>Curry Powder, 1kg per bag</p>",Y,,,,,,,200.00,0.00,,,,Y,,"S A O Agricultural Co., Ltd.",0.00,Y,200.00,0.321,1.000,3.000,N,variable,0.000,,,Curry Powder,kg,kg,mass,g,kg
+d-box,10334,D Box,Packing,,N,,,,,,,7.20,0.00,BOX D,,,Y,,G.M. Box Chiang Mai,,N,7.20,0.000,,,Y,7.20,0.000,0.000,,D Box,,,count,each,each
+date-machine-tape,10140,Date Machine Tape,Discontinued,<p>Date Machine Tape&nbsp;</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,0.000,,,N,variable,0.000,,,Date Machine Tape,,,count,each,each
+dishwashing-liquid,10392,Dishwashing liquid,Cleaning,<p>Dishwashing liquid (20 litres)</p>,N,,,,,,,749.00,0.00,,,,Y,,Makro,,Y,749.00,2.000,,,N,749.00,1.000,,,Dishwashing liquid,,,count,each,each
+dolly-cart,10314,Dolly Cart,Supplies,<p>Dolly Cart 990B/piece &nbsp;Dimension: 41*61*15.4 cm.</p>,N,,,,,,,990.00,0.00,,,,Y,,"SWP Sahawattanaplastic Co.,Ltd",,Y,990.00,15.000,,15.000,N,990.00,0.000,,,Dolly Cart,,,count,each,each
+double-mint-powder-(kg),10351,Double Mint Powder (kg),Ingredients,<p>BKK Chemi Double Mint Powder</p>,Y,,,,,,,1025.00,1193.75,,,,Y,,Krungthepchemi,,Y,1025.00,0.856,,,N,1025.00,0.000,,,Double Mint Powder,kg,kg,mass,g,kg
+double-sided-tape,10139,Double Sided Tape,Supplies,<p>Double Sided Tape&nbsp;</p>,N,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,Double Sided Tape,,,count,each,each
+coconut-(g),10043,Dried Coconut Flakes (kg),Ingredients,"<p>Coconut, 1 bag = 1000g (เกล็ดใหญ่)</p>",Y,,,,,,,230.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,230.00,20.440,10.000,20.000,N,variable,0.000,,,Dried Coconut Flakes,kg,kg,mass,g,kg
+drinking-bag--expandable-sides-(13*20cm),10289,Drinking bag -expandable sides (13*20cm),Packaging,<p>for 250 g (10 pcs/pack) price/pack</p>,N,,,,,,,79.00,0.00,,,,Y,,"AC Plus Global Co,Ltd",0.00,Y,79.00,246.000,500.000,1500.000,N,variable,0.000,,,Drinking bag -expandable sides (13*20cm),,,count,each,each
+drinking-chocolate---no-salt-(1kg),10204,Drinking Chocolate - NO SALT (1kg),Discontinued,<p>Drinking Chocolate Powder. WITHOUT SALT. Sold in 1 kilogram units.</p>,N,,,,,,,variable,178.94,,10009,0.497,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Drinking Chocolate - NO SALT,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10086,0.055,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,8 850456 103778,0.448,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10132,1.000,,,,,,,,,,,,,,,,,,count,each,each
+drinking-chocolate-(1kg),10171,Drinking Chocolate - Retail (1kg),Finished Good (others),<p>Drinking chocolate sold in one-kilogram quantities.</p>,N,,,,,,,variable,10.68,,10009,0.495,N,Y,,,N,variable,10.000,,,Y,variable,14.000,3.000,10.000,Drinking Chocolate - Retail,1kg,,mass,g,kg
+,,,,,,,,,,,,,,,10086,0.055,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.005,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10132,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,8 850456 103778,0.445,,,,,,,,,,,,,,,,,,count,each,each
+drinking-chocolate-(300g),8857126163407,Drinking Chocolate - Retail (250g),Finished Good (others),<p>Drinking Chocolate Sold in 300-gram quantities.</p>,N,,,,,,,variable,2.67,8857126163407,10009,0.124,N,Y,,,N,variable,117.000,,,Y,220.00,57.000,10.000,30.000,Drinking Chocolate - Retail,250g,,mass,g,g
+,,,,,,,,,,,,,,,10086,0.014,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10136,2.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,8 850456 103778,0.111,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10289,1.000,,,,,,,,,,,,,,,,,,count,each,each
+drizzled-banana-chips---paleo-robbie-(100g),10196,Drizzled Banana Chips - Paleo Robbie (100g),Finished Good (others),"<p>Drizzled Banana Chips, for Paleo Robbie. Sold in 100 gram bags.</p>",N,,,,,,,variable,1.34,,10010,0.008,N,Y,,,N,variable,0.000,,,Y,variable,8.000,,,Drizzled Banana Chips - Paleo Robbie,100g,,mass,g,g
+,,,,,,,,,,,,,,,10130,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10189,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10187,0.092,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10158,0.001,,,,,,,,,,,,,,,,,,count,each,each
+durian---milk-chocolate-50%-(20g),8857126163230,Durian Milk Chocolate (20g),Finished Goods (Core),"<p>Durian- Milk Chocolate 50% (20g). Small Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,3.23,8857126163230,10004,0.019,N,Y,,,Y,variable,219.000,150.000,450.000,Y,60.00,202.000,48.000,180.000,Durian Milk Chocolate,20g,,mass,g,g
+,,,,,,,,,,,,,,,10080,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10036,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+durian-milk-chocolate-(75g),8857126163216,Durian Milk Chocolate (75g),Finished Goods (Core),"<p>Durian. Milk Chocolate 50%. large bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,11.97,8857126163216,10004,0.072,N,Y,,,Y,variable,981.000,300.000,1000.000,Y,145.00,352.000,48.000,180.000,Durian Milk Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10026,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10080,0.003,,,,,,,,,,,,,,,,,,count,each,each
+durian---milk-chocolate-50%-(8g-squares),10176,Durian Milk Chocolate (8g Squares),Discontinued,"<p>Durian - Milk Chocolate 50%. 8 gram squares. Includes chocolate, flavoring, wrapping, and foil.</p>",N,,,,,,,variable,1.33,,10004,0.008,N,Y,,,N,variable,17.000,,,N,variable,0.000,,,Durian Milk Chocolate,8g Squares,,mass,g,g
+,,,,,,,,,,,,,,,10080,0.001,,,,,,,,,,,,,,,,,,count,each,each
+durian-powder-(kg),10080,Durian Powder (kg),Ingredients,"<p>Durian Powder, 1 Bag = 1kg</p>",Y,,,,,,,690.00,0.00,,,,Y,,"Chanthaburi Global Foods Co., Ltd.",0.00,Y,690.00,2.625,3.000,10.000,N,variable,0.000,,,Durian Powder,kg,kg,mass,g,kg
+e-box,10333,E Box,Packing,,N,,,,,,,8.80,0.00,BOX E,,,Y,,G.M. Box Chiang Mai,,N,8.80,0.000,,,Y,8.80,11.000,0.000,,E Box,,,count,each,each
+earplugs-(3m-1110),10417,Earplugs (3M 1110),Supplies,<p>3M 1110</p>,N,,,,,,,15.00,0.00,,,,Y,,CK MY Shop,,Y,15.00,57.000,,,N,15.00,0.000,,,Earplugs (3M 1110),,,count,each,each
+easter-egg---70%-dark-chocolate-(150g),10338,Easter Egg - 70% Dark Chocolate (150g),Discontinued,"<p>70% Easter Egg with mango jelly inside, sprinkle design</p>",N,,,,,,,variable,16.76,,10010,0.100,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Easter Egg - 70% Dark Chocolate,150g,,mass,g,g
+,,,,,,,,,,,,,,,10293,0.050,,,,,,,,,,,,,,,,,,count,each,each
+easter-egg-milk-chocolate-(flowers)-150g,10347,Easter Egg - Milk Chocolate 150g,Discontinued,"<p>Milk chocolate easter egg filled with mango jelly, flowers only for decoration</p>",N,,,,,,,variable,17.07,,10004,0.100,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Easter Egg - Milk Chocolate 150g,,,count,each,each
+,,,,,,,,,,,,,,,10293,0.050,,,,,,,,,,,,,,,,,,count,each,each
+ethanol-alcohol---(l),10091,Ethanol Alcohol 95% food grade - (L),Ingredients,"<p>Ethanol Alcohol, 1 Bottle = 1 Litre</p>",Y,,,,,,,109.00,0.00,,,,Y,,Chemirich Thailand,,Y,109.00,1.600,1.000,1.000,N,109.00,0.000,,,Ethanol Alcohol 95% food grade -,L,l,volume,L,L
+f(ใหญ่)-box,10326,F(ใหญ่) Box,Packing,,N,,,,,,,17.50,0.00,BOX F,,,Y,,G.M. Box Chiang Mai,,N,17.50,0.000,,,Y,17.50,0.000,5.000,,F(ใหญ่) Box,,,count,each,each
+fabrics-white-bleach-cleaning-liquid,10403,Fabrics White Bleach Cleaning Liquid,Cleaning,"<h1 style=""box-sizing: border-box; margin: 0px 0px 20px; padding: 0px; border: 0px; vertical-align: baseline; font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; font-variant-numeric: inherit; font-variant-east-asian: inherit; font-variant-alternates: inherit; font-variant-position: inherit; font-variant-emoji: inherit; font-weight: 400; font-stretch: inherit; line-height: 1.2; font-family: Kanit, Arial, Helvetica, sans-serif; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-size: 34px; display: block; color: rgb(51, 51, 51); text-transform: none; overflow-wrap: break-word; --page-title-display: block; letter-spacing: normal; orphans: 2; text-align: left; text-indent: 0px; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; white-space: normal; background-color: rgb(255, 255, 255); text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial;"" id=""isPasted"">Fabrics White Bleach Cleaning Liquid (5 litres)&nbsp;</h1>",N,,,,,,,155.00,0.00,,,,Y,,,,Y,155.00,0.000,,,N,155.00,0.000,,,Fabrics White Bleach Cleaning Liquid,,,count,each,each
+five-spice-blend-(g),10052,Five Spice Blend (kg),Discontinued,"<p>Five Spice Blend, 1 Bag = 325g</p>",Y,,,,,,,2000.00,2000.00,,,,N,,,,N,2000.00,,,,N,2000.00,,,,Five Spice Blend,kg,kg,mass,g,kg
+flour,10452,Flour (kg),Ingredients,<p>&nbsp;Purpose Flour 1kg/pack</p>,N,,,,,,,36.00,0.00,,,,Y,,Yok Intertrade,,Y,36.00,9.000,1.000,2.000,N,variable,0.000,,,Flour,kg,kg,mass,g,kg
+gold-foil,10102,Flow Wrap Foil - Gold (kg),Packaging,"<p>Wrapper for Gold Flowwrap for Big Bars. &nbsp;(270B/Kg)width 19.5 cm, printed in 2 colors, matte lamination, **New model** 40 micron aluminum foil material &nbsp;without specifying the eye mark cutting distance</p>",Y,,,,,,,270.00,0.00,,,,Y,,"Package-DD2015 Co., Ltd.",0.00,Y,270.00,151.633,160.000,300.000,N,variable,0.000,,,Flow Wrap Foil - Gold,kg,kg,mass,g,kg
+foam-box-21*31*24,10341,"Foam Box 21*31*24""",Packing,,N,,,,,,,76.00,0.00,,,,Y,,,,N,76.00,0.000,,,Y,76.00,0.000,0.000,,"Foam Box 21*31*24""",,,count,each,each
+"foam-box-30*42*33""",10329,"Foam Box 30*42*33""",Packing,<p>for pack export international and other.</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,0.000,3.000,,"Foam Box 30*42*33""",,,count,each,each
+"foam-box-35*48*37""",10330,"Foam Box 35*48*37""",Packing,<p>for pack export international and other.</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,0.000,2.000,,"Foam Box 35*48*37""",,,count,each,each
+"foam-box-45*60*31""",10331,"Foam Box 45*60*31""",Packing,<p>for pack export international and other.</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,0.000,3.000,,"Foam Box 45*60*31""",,,count,each,each
+"foam-box-9*9*25""",10342,"Foam Box 9*9*25""",Packing,,N,,,,,,,68.00,0.00,,,,Y,,,,N,68.00,0.000,,,Y,68.00,0.000,0.000,,"Foam Box 9*9*25""",,,count,each,each
+20*25-insulated-foil-bag,10299,Foil Bag 20*25,Packing,<p>Small Size (20*25cm) with glue tape</p>,N,,,,,,,6.00,0.00,FB S,,,Y,,"SC Regulus Commerce&Trading Co., Ltd.",,N,6.00,0.000,,,Y,6.00,300.000,100.000,200.000,Foil Bag 20*25,,,count,each,each
+25*30-insulated-foil-bag,10300,Foil Bag 25*30,Packing,<p>Big Size (25*30cm) &nbsp;with glue tape</p>,N,,,,,,,8.00,0.00,FB B,,,Y,,"SC Regulus Commerce&Trading Co., Ltd.",,N,8.00,0.000,,,Y,8.00,250.000,100.000,200.000,Foil Bag 25*30,,,count,each,each
+foil-tin-20x20-(for-couverture),10149,Foil Tin 20x20 (for couverture),Supplies,<p>Foil tin 20x20 for couverture&nbsp;</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,23.000,,,N,variable,0.000,,,Foil Tin 20x20 (for couverture),,,count,each,each
+folded-towels-(box),10428,Folded Towels (box),Cleaning,"<p>Folded Towels: 32 packs/box (24.0 x 19.5 cm, 250 sheets CODE: 28620)</p>",N,,,,,,,975.00,0.00,,,,Y,,CJS GROUP ChiangMai,,N,975.00,0.000,,,N,975.00,4.000,,,Folded Towels,box,box,count,each,each
+fondue-ceramic-set,10446,Fondue Ceramic Set,Packing,,N,,,,,,,variable,0.00,,,,Y,,,,N,variable,0.000,,,Y,variable,0.000,,,Fondue Ceramic Set,,,count,each,each
+fondue-ceramic-set-1,10447,Fondue Ceramic Set,Packing,,N,,,,,,,variable,0.00,,,,Y,,,,N,variable,0.000,,,Y,variable,0.000,,,Fondue Ceramic Set,,,count,each,each
+galangal-oil-(ml),10055,Galangal Oil (ml),Ingredients,"<p>Galangal Oil, 1 Bottle = 900ml</p>",Y,,,,,,,800.00,0.00,,,,Y,,Nutrifood Creation Limited Partnership,0.00,Y,800.00,995.345,300.000,500.000,N,variable,0.000,,,Galangal Oil,ml,ml,volume,L,ml
+garbage-bags,10400,"Garbage bags (18*20"") (pack)",Cleaning,<p>Garbage bags (18*20 inches) 80 pcs/pack</p>,N,,,,,,,65.00,0.00,,,,Y,,Makro,,Y,65.00,0.000,,,N,65.00,0.000,,,Garbage bags,pack,pack,count,each,each
+"garbage-bags-(24*28"")-(pack)",10401,"Garbage bags (24*28"") (pack)",Cleaning,<p>Garbage bags (24*28 inches) 64 pcs/pack</p>,N,,,,,,,55.00,0.00,,,,Y,,Makro,,Y,55.00,0.000,1.000,2.000,N,55.00,0.000,,,Garbage bags,pack,pack,count,each,each
+"garbage-bags-(36*45-"")-(pack)",10402,"Garbage bags (36*45 "") (pacK)",Cleaning,<p>Garbage bags (36*45 inches) 16 pcs/pack</p>,N,,,,,,,55.00,0.00,,,,Y,,Makro,,Y,55.00,3.000,1.000,2.000,N,55.00,0.000,,,Garbage bags,pacK,pack,count,each,each
+german-chocolate-cake---christmas-(75g),10467,German Chocolate Cake - Christmas (75g),Finished Good (others),,N,,,,,,,variable,12.39,,10010,0.058,N,Y,,,N,variable,0.000,,,Y,145.00,0.000,,,German Chocolate Cake - Christmas,75g,,mass,g,g
+,,,,,,,,,,,,,,,10043,0.005,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10449,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10442,0.006,,,,,,,,,,,,,,,,,,count,each,each
+ghost-pepper-70%-dark-chocolate---chili-fest-2025-(75g),10272,Ghost Pepper 70% Dark Chocolate - Chili Fest 2025 (75g),Discontinued,<p>Chili Fest special - 70% chocolate with ghost pepper powder</p>,N,,,,,,,variable,12.61,,10010,0.075,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Ghost Pepper 70% Dark Chocolate - Chili Fest 2025,75g,,mass,g,g
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+ginger-oil-(ml),10053,Ginger Oil (ml),Ingredients,"<p>Ginger Oil, 1 Bottle = 1,000ml</p>",Y,,,,,,,800.00,0.00,,,,Y,,Nutrifood Creation Limited Partnership,0.00,Y,800.00,895.872,300.000,500.000,N,variable,0.000,,,Ginger Oil,ml,ml,volume,L,ml
+ginger-powder-(kg),10275,Ginger Powder (kg),Ingredients,<p>Ginger Powder (300B/Kg)</p>,Y,,,,,,,300.00,0.00,,,,Y,,NguanSoon,,Y,300.00,0.032,,,N,variable,0.000,,,Ginger Powder,kg,kg,mass,g,kg
+"ginger,-dried-(kg)",10070,"Ginger, Dried Diced (kg)",Ingredients,"<p>Ginger, Dried 1 Bag = 5kg</p>",Y,,,,,,,256.00,23.08,,,,Y,,GCF International Company Limited,0.00,Y,256.00,29.776,4.000,20.000,N,variable,0.000,,,"Ginger, Dried Diced",kg,kg,mass,g,kg
+gingerbread-cookie-(kg),10276,Gingerbread Cookie (kg),Ingredients,,Y,,,,,,,variable,0.00,,,,Y,,,,N,variable,-11.868,,,N,variable,0.000,,,Gingerbread Cookie,kg,kg,mass,g,kg
+gingerbread-milk-chocolate---christmas-(75g),10273,Gingerbread Milk Chocolate - Christmas (75g),Finished Good (others),<p>Seasonal - Gingerbread Milk Chocolate 75g</p>,N,,,,,,,variable,11.14,,10004,0.067,N,Y,,,Y,variable,0.000,,,Y,145.00,0.000,,,Gingerbread Milk Chocolate - Christmas,75g,,mass,g,g
+,,,,,,,,,,,,,,,10039,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10275,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10274,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10276,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10280,1.000,,,,,,,,,,,,,,,,,,count,each,each
+glass-jar-w/-lid-(100g),10148,Glass jar w/ lid (100g),Discontinued,<p>Glass jar with a lid holding 100 grams</p>,N,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,Glass jar w/ lid,100g,,mass,g,g
+gloves---l,10145,Gloves - L (Piece),Supplies,<p>Large gloves. Measured in boxes. 100pieces/box&nbsp;</p>,N,,,,,,,82.00,0.00,,,,Y,,Biosafe Product,,Y,82.00,3100.000,300.000,1000.000,N,variable,0.000,,,Gloves - L,Piece,piece,count,each,each
+gloves---m,10144,Gloves - M (Piece),Supplies,<p>Medium-Sized Gloves. Measured in boxes. 100pieces/box</p>,N,,,,,,,82.00,0.00,,,,Y,,Biosafe Product,,Y,82.00,2900.000,300.000,1000.000,N,variable,0.000,,,Gloves - M,Piece,piece,count,each,each
+gloves---s,10143,Gloves - S (piece),Supplies,<p>Small gloves (Nitrile Gloves) 100pieces/box@ 82B</p>,N,,,,,,,82.00,0.00,,,,Y,,Biosafe Product,,Y,82.00,3300.000,300.000,1000.000,N,variable,0.000,,,Gloves - S,piece,piece,count,each,each
+gold-foil---8g-cube,10167,Gold Paper - 8g Square (kg),Packaging,<p>Gold Foil is used for 8-gram squares. (7.5*10Cm)&nbsp;</p>,Y,,,,,,,variable,62.35,,,,Y,,,0.00,Y,variable,6.000,,,N,variable,0.000,,,Gold Paper - 8g Square,kg,kg,mass,g,kg
+foil---gold-flow-wrap-(25g),10166,Gold Paper - Small Bar (9*15Cm) (kg),Packaging,<p>Foil for Gold flow wrap for Small Bar. (pack)</p>,Y,,,,,,,1330.00,0.00,,,,Y,,Khun Da (Kra Dan Thong),0.00,Y,1330.00,-5.219,,,N,variable,0.000,,,Gold Paper - Small Bar,kg,kg,mass,g,kg
+hair-nets,10146,Hair Nets (pcs),Supplies,<p>Hair nets. Measured in boxes. (1000pcs/box)</p>,N,,,,,,,850.00,0.00,,,,Y,,Biosafe Product,,Y,850.00,3000.000,500.000,2000.000,N,variable,0.000,,,Hair Nets,pcs,pcs,count,each,each
+haiter-liquid-bleach,10438,Haiter Liquid Bleach (5L),Cleaning,<p>Haiter Liquid Bleach Blue 5L&nbsp;</p>,N,,,,,,,variable,0.00,,,,Y,,Makro,,N,variable,0.000,,,Y,variable,1.000,,,Haiter Liquid Bleach,5L,,volume,L,L
+"clear-bag-16""-x-26""",10131,"HD Clear Bag 16"" x 26""  (pack) (Base Chocolate)",Supplies,"<p>Clear Bag 16 inches by 26 inches, not used for final packaging&nbsp;</p><p>(1/2Kg per pack)</p><p>YEE USES FOR STORING BASE CHOCOLATE BLOCKS</p>",N,,,,,,,48.00,0.00,,,,Y,,Chiang Mai Plastic,0.00,N,48.00,20.000,,,N,48.00,0.000,,,"HD Clear Bag 16"" x 26""",pack,pack,count,each,each
+coconut-milk-dark-chocolate,8857126163186,Hill Coffee & Pomelo - 70% Dark Chocolate (75g),Finished Goods (Core),"<p>Hill Coffee &amp; Pomelo. Large bar. Includes foil, chocolate, flavoring, and wrapper.</p>",N,,,,,,,variable,10.88,8857126163186,10088,0.068,N,Y,,,Y,variable,401.000,250.000,800.000,Y,145.00,459.000,48.000,180.000,Hill Coffee & Pomelo - 70% Dark Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10071,0.007,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10025,1.000,,,,,,,,,,,,,,,,,,count,each,each
+hot-ink-rolls,10062,Hot Ink Rolls (Black),Supplies,<p>For date stamping and batch # stamping</p>,N,,,,,,,65.00,0.00,,,,Y,,PackingDD Shop,,Y,65.00,11.000,,,N,65.00,0.000,,,Hot Ink Rolls (Black),,,count,each,each
+"""hunky-monkey""---paleo-robbie---trail-mix-(100g)",10456,Hunky Monkey Trail Mix - Paleo Robbie (100g),Finished Good (others),<p>Hunky Monkey - Paleo Robbie - Trail Mix. Sold in 100 gram quantities.&nbsp;</p>,N,,,,,,,variable,5.38,,10089,0.025,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Hunky Monkey Trail Mix - Paleo Robbie,100g,,mass,g,g
+,,,,,,,,,,,,,,,10047,0.020,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10045,0.025,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10048,0.010,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10130,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10188,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10187,0.020,,,,,,,,,,,,,,,,,,count,each,each
+ice-gel-100ml,10416,Ice Gel 100ml,Packing,<p>Ice Gel 100ml (9*13&quot;) 50pcs/pack</p>,N,,,,,,,50.00,0.00,,,,Y,,PackingDD Shop,,N,50.00,0.000,,,Y,50.00,0.000,,,Ice Gel 100ml,,,count,each,each
+individual-box---chili-8g-square-(for-tasting-box),10212,Individual Box - Chili 8g Square (For Tasting Box),Packaging,<p>Individual Box for Chili in 8g Square. (For Tasting Box).</p>,N,,,,,,,variable,0.00,,,,Y,,Blueprint Design Ltd.Part.,0.00,Y,variable,400.000,,,N,variable,0.000,,,Individual Box - Chili 8g Square,For Tasting Box,box,count,each,each
+individual-box---coconut-milk-8g-square-(for-tasting-box),10218,Individual Box - Coconut Milk 8g Square (For Tasting Box),Packaging,<p>Individual Box for Coconut Milk in 8g Square. (For Tasting Box).</p>,N,,,,,,,variable,0.00,,,,Y,,Blueprint Design Ltd.Part.,0.00,Y,variable,371.000,,,N,variable,0.000,,,Individual Box - Coconut Milk 8g Square,For Tasting Box,box,count,each,each
+individual-box---coffee-crunch-8g-square-(for-tasting-box),10213,Individual Box - Coffee Crunch 8g Square (For Tasting Box),Packaging,<p>Individual Box for Coffee Crunch in 8g Square. (For Tasting Box).</p>,N,,,,,,,variable,0.00,,,,Y,,Blueprint Design Ltd.Part.,0.00,Y,variable,450.000,,,N,variable,0.000,,,Individual Box - Coffee Crunch 8g Square,For Tasting Box,box,count,each,each
+individual-box---durian-8g-square-(for-tasting-box),10211,Individual Box - Durian 8g Square (For Tasting Box),Packaging,<p>Individual Box for Durian in 8g Square. (For Tasting Box).</p>,N,,,,,,,variable,0.00,,,,Y,,Blueprint Design Ltd.Part.,,Y,variable,334.000,,,N,variable,0.000,,,Individual Box - Durian 8g Square,For Tasting Box,box,count,each,each
+individual-box---masala-chai-8g-square-(for-tasting-box),10217,Individual Box - Masala Chai 8g Square (For Tasting Box),Packaging,<p>Individual Box for Masala Chai in 8g Square. (For Tasting Box).</p>,N,,,,,,,variable,0.00,,,,Y,,Blueprint Design Ltd.Part.,,Y,variable,302.000,,,N,variable,122.000,,,Individual Box - Masala Chai 8g Square,For Tasting Box,box,count,each,each
+individual-box---signature-70%-8g-square-(for-tasting-box),10214,Individual Box - Signature 70% 8g Square (For Tasting Box),Packaging,<p>Individual Box for Signature 70% in 8g Square. (For Tasting Box).</p>,N,,,,,,,variable,0.00,,,,Y,,Blueprint Design Ltd.Part.,,Y,variable,400.000,,,N,variable,0.000,,,Individual Box - Signature 70% 8g Square,For Tasting Box,box,count,each,each
+individual-box---signature-85%-8g-square-(for-tasting-box),10215,Individual Box - Signature 85% 8g Square (For Tasting Box),Packaging,<p>Individual Box for Signature 85% in 8g Square. (For Tasting Box).</p>,N,,,,,,,variable,0.00,,,,Y,,Blueprint Design Ltd.Part.,,Y,variable,350.000,,,N,variable,0.000,,,Individual Box - Signature 85% 8g Square,For Tasting Box,box,count,each,each
+individual-box---signature-milk-8g-square-(for-tasting-box),10216,Individual Box - Signature Milk 8g Square (For Tasting Box),Packaging,<p>Individual Box for Signature Milk Chocolate in 8g Square. (For Tasting Box).</p>,N,,,,,,,variable,0.00,,,,Y,,Blueprint Design Ltd.Part.,0.00,Y,variable,316.000,,,N,variable,0.000,,,Individual Box - Signature Milk 8g Square,For Tasting Box,box,count,each,each
+individual-box---thai-tea-8g-square-(for-tasting-box),10210,Individual Box - Thai Tea 8g Square (For Tasting Box),Packaging,<p>Individual Box for Thai Tea in 8g Square. (For Tasting Box).</p>,N,,,,,,,variable,0.00,,,,Y,,Blueprint Design Ltd.Part.,,Y,variable,447.000,,,N,variable,0.000,,,Individual Box - Thai Tea 8g Square,For Tasting Box,box,count,each,each
+ink-refill,10142,Ink Refill (bottle),Supplies,<p>StazOn Ink Refill -31 Jet black (for every surface)</p>,N,,,,,,,320.00,0.00,,,,Y,,บริษัท คลังเครื่องเขียน กรุ๊ป 2555 จำกัด,,Y,320.00,4.000,,3.000,N,320.00,0.000,,,Ink Refill,bottle,bottle,count,each,each
+instand-noodles-(box),10424,Instand noodles (box),Staff Welfare,<p>Instand noodles: 30 packs /1 box&nbsp;</p>,N,,,,,,,175.00,0.00,,,,Y,,Makro,,N,175.00,1.000,,,N,175.00,0.000,,,Instand noodles,box,box,count,each,each
+foil-alumax-5mm-(1.20x20m)-(meter),10367,Insulation roll ALUMAX  (Roll),Packing,"<h1 style=""box-sizing: inherit; font-size: 22px; margin: 0px 0px 5px; font-family: Prompt; line-height: normal; font-weight: 700; padding: 0px; min-height: 1rem; color: var(--neutral-colors-gray-800, #525255); font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; letter-spacing: normal; orphans: 2; text-align: start; text-indent: 0px; text-transform: none; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; white-space: normal; background-color: rgb(255, 255, 255); text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial;"" id=""isPasted"">PE THERMAL INSULATION ROLL MPE ALUMAX 5MM 1.20X20M</h1>",N,,,,,,,4490.00,0.00,,,,Y,,HomePro,,N,variable,0.000,,,Y,4490.00,1.000,0.500,1.000,Insulation roll ALUMAX,Roll,roll,count,each,each
+milk-chocolate-jackfruit---gourmet-market---milk-chocolate-50%,10160,Jackfruit Milk Chocolate - Gourmet Market (75g),Discontinued,"<p id=""isPasted"">Milk Chocolate Jackfruit - Gourmet Market - Milk Chocolate 50% (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,20.69,,10004,0.070,N,Y,,,N,variable,0.000,50.000,150.000,Y,variable,0.000,48.000,180.000,Jackfruit Milk Chocolate - Gourmet Market,75g,,mass,g,g
+,,,,,,,,,,,,,,,10076,0.005,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10101,1.000,,,,,,,,,,,,,,,,,,count,each,each
+"jackfruit,-freeze-dried",10076,"Jackfruit, Freeze Dried (kg)",Discontinued,"<p>Jackfruit, Freeze Dried, 1 Bag = 200g</p>",Y,,,,,,,490.00,0.00,,,,Y,,J&N FOOD SHOP,0.00,N,490.00,0.691,1.500,3.000,N,490.00,0.000,,,"Jackfruit, Freeze Dried",kg,kg,mass,g,kg
+jasmine-oil-(ml),10061,Jasmine Oil (l),Discontinued,"<p>Jasmine Oil, 1 Bottle = 200 ml</p>",Y,,,,,,,700.00,701.90,,,,Y,,Nutrifood Creation Limited Partnership,0.00,N,700.00,0.050,,,N,700.00,0.000,,,Jasmine Oil,l,l,volume,L,L
+jujube-walnut---chinese-new-year-2025-(75g),10362,Jujube Walnut - Chinese New Year 2025 (75g),Discontinued,<p>Chinese New Year bar for 2025 - 70% chocolate with jujube and walnut</p>,N,,,,,,,variable,10.55,,10010,0.063,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Jujube Walnut - Chinese New Year 2025,75g,,mass,g,g
+,,,,,,,,,,,,,,,10360,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10361,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10363,1.000,,,,,,,,,,,,,,,,,,count,each,each
+"jujube,-dried-(kg)",10360,"Jujube, dried (kg)",Discontinued,<p>used for Chinese New Year 2025</p>,Y,,,,,,,variable,0.00,,,,Y,,Yok Intertrade,,N,variable,0.680,,,N,variable,0.000,,,"Jujube, dried",kg,kg,mass,g,kg
+kaffir-lime-oil-(ml),10057,Kaffir Lime Oil (ml),Ingredients,"<p>Makrut Lime Oil, 1 Bottle = 110ml</p>",Y,,,,,,,800.00,0.00,,,,Y,,Nutrifood Creation Limited Partnership,0.00,Y,800.00,892.579,300.000,500.000,N,variable,0.000,,,Kaffir Lime Oil,ml,ml,volume,L,ml
+khao-soi-noodles-(g),10066,Khao Soi Crispy Noodles (kg),Ingredients,"<p>Khao Soi Noodles, (750g/bag) 100B/bag. There is no maximum or minimum. Order when needed.**Actually, we ordered 2bags/time &nbsp;</p>",Y,,,,,,,135.00,0.00,,,,Y,,,0.00,Y,135.00,-10.965,,,N,variable,0.000,,,Khao Soi Crispy Noodles,kg,kg,mass,g,kg
+khao-soi---milk-chocolate-50%-(75g),8857126163353,Khao Soi Curry Milk Chocolate (75g),Finished Goods (Core),"<p>Khao Soi - Milk Chocolate 50%. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,11.16,8857126163353,10004,0.067,N,Y,,,Y,variable,0.000,400.000,150.000,Y,145.00,98.000,48.000,180.000,Khao Soi Curry Milk Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10066,0.004,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10064,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10037,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10016,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+king-power-mango-popping-75g,10295,King Power Mango Popping (75g),Discontinued,<p>Special bar for King Power 35th Anniversary</p>,N,,,,,,,variable,10.22,,10004,0.058,N,Y,,,N,variable,0.000,,,N,variable,0.000,,,King Power Mango Popping,75g,,mass,g,g
+,,,,,,,,,,,,,,,10293,0.011,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10068,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10294,1.000,,,,,,,,,,,,,,,,,,count,each,each
+kp-box-(new),10322,KP Box (New),Packing,<p>36*49.5*20.5 cm. กระดาษ A125/M</p>,N,,,,,,,36.00,0.00,KP N,,,Y,,Lanna Inter-Pack,,Y,variable,340.000,,,Y,36.00,752.000,100.000,,KP Box (New),,,count,each,each
+kumquat-(kg),10474,Kumquat (kg),Ingredients,<p>Kumquat 500g/per pack</p>,N,,,,,,,470.00,0.00,,,,Y,,"Fareeda Dried Fruits Co.,Ltd.",,Y,470.00,1.752,,,N,variable,0.000,,,Kumquat,kg,kg,mass,g,kg
+100*150-label-sticker,10319,Label Sticker 100*150 mm,Packing,<p>100*150 millimeter</p>,N,,,,,,,190.00,0.00,STICK 100,,,Y,,Sticker Direct thermal label,,N,190.00,0.000,,,Y,190.00,4.000,3.000,,Label Sticker 100*150 mm,,,count,each,each
+32*25-label-sticker,10320,Label Sticker 32*25 mm,Packing,,N,,,,,,,199.00,0.00,STICK 32,,,Y,,Sticker Direct thermal label,,N,199.00,0.000,,,Y,199.00,7.000,3.000,,Label Sticker 32*25 mm,,,count,each,each
+ุ60*40-label-sticker,10318,Label Sticker 60*40 mm,Packing,<p>60*40 millimeter</p>,N,,,,,,,139.00,0.00,STICK 60,,,Y,,Sticker Direct thermal label,,N,139.00,0.000,,,Y,139.00,6.000,3.000,,Label Sticker 60*40 mm,,,count,each,each
+lecithin,10007,Lecithin  Powder(g),Ingredients,"<p>Sunflower Lecithin, Pure Powder, 1 Jar is 454 grams.</p>",N,,,,,,,750.00,0.00,,,,Y,,,0.00,Y,750.00,20000.000,500.000,800.000,N,variable,0.000,,,Lecithin  Powder,g,g,mass,g,g
+lecithin-sunflower-liquid,10337,Lecithin Sunflower Liquid (ml),Ingredients,<p>Bottle / 16 fl oz (473 ml)</p>,N,,,,,,,1090.00,0.00,,,,Y,,Farmvitamin,,Y,1090.00,647.000,,,N,variable,0.000,,,Lecithin Sunflower Liquid,ml,ml,volume,L,ml
+lemongrass-and-perilla-seeds-gourmet-market-dark-choco-70-(75g),8857126163650,Lemongrass & Perilla Seed 70% Dark - Gourmet Market (75g),Discontinued,"<p>Lemongrass and Perilla Seeds - Gourmet Market - Dark Chocolate 70% (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,14.02,8857126163650,10010,0.069,N,Y,,,N,variable,0.000,50.000,150.000,Y,variable,0.000,48.000,180.000,Lemongrass & Perilla Seed 70% Dark - Gourmet Market,75g,,mass,g,g
+,,,,,,,,,,,,,,,10049,0.004,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10056,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10100,1.000,,,,,,,,,,,,,,,,,,count,each,each
+lemongrass-cashews-(100g),10288,Lemongrass Cashews (100g),Discontinued,,N,,,,,,,variable,11.99,,10010,0.065,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Lemongrass Cashews,100g,,mass,g,g
+,,,,,,,,,,,,,,,10047,0.033,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10056,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10090,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10248,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10249,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10287,2.000,,,,,,,,,,,,,,,,,,count,each,each
+lemongrass-oil-(ml),10056,Lemongrass Oil (ml),Ingredients,"<p>Lemongrass Oil, 1 Bottle = 1,000 ml</p>",Y,,,,,,,800.00,0.00,,,,Y,,Nutrifood Creation Limited Partnership,0.00,Y,800.00,995.724,300.000,500.000,N,variable,0.000,,,Lemongrass Oil,ml,ml,volume,L,ml
+lid-sticker-for-drinking-chocolate,10355,Lid Sticker for Drinking Chocolate,Discontinued,<p>Lid sticker for mint drinking chocolate</p>,N,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,Lid Sticker for Drinking Chocolate,,,count,each,each
+lotus-seeds-(kg),10262,Lotus Seeds (kg),Discontinued,"<p>Lotus seeds, used for Mooncake bar (1 kg/Bag)</p>",Y,,,,,,,590.00,0.00,,,,N,,,,N,590.00,,,,N,590.00,,,,Lotus Seeds,kg,kg,mass,g,kg
+lucky-citrus-chinese-(75g),10478,Lucky Citrus-Chinese (2026) (75g),Finished Good (others),"<p>Seasonal: kumquat, Pomelo and Orange candies in Dark Chocolate 70%</p>",N,,,,,,,variable,9.55,,10010,0.057,N,Y,,,Y,variable,-8.000,,,Y,variable,99.000,,,Lucky Citrus-Chinese,75g,,mass,g,g
+,,,,,,,,,,,,,,,10474,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10071,0.005,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10082,0.010,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10476,1.000,,,,,,,,,,,,,,,,,,count,each,each
+m+-box,10324,M+ Box,Packing,,N,,,,,,,17.50,0.00,BOX M,,,Y,,G.M. Box Chiang Mai,,N,17.50,0.000,,,Y,17.50,20.000,10.000,,M+ Box,,,count,each,each
+mala-70%-dark-chocolate---chili-fest-2025-(75g),10354,Mala 70% Dark Chocolate - Chili Fest 2025 (75g),Discontinued,<p>Chili Fest special - 70% chocolate with Mala chili powder</p>,N,,,,,,,variable,12.61,,10010,0.075,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Mala 70% Dark Chocolate - Chili Fest 2025,75g,,mass,g,g
+,,,,,,,,,,,,,,,10358,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+mala-powder-(g),10358,Mala Powder (g),Discontinued,<p>Mala used for Chili Fest 2025</p>,Y,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,450.000,,,N,variable,0.000,,,Mala Powder,g,g,mass,g,g
+mango-chili---dark-chocolate-70%-(75g),8857126163179,Mango Chili 70% Dark Chocolate (75g),Finished Goods (Core),"<p>Mango Chili - Dark Chocolate 70%. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,10.73,8857126163179,10010,0.064,N,Y,,,Y,variable,558.000,300.000,800.000,Y,145.00,530.000,48.000,180.000,Mango Chili 70% Dark Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10073,0.009,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10020,1.000,,,,,,,,,,,,,,,,,,count,each,each
+mango-jelly-(kg),10293,Mango Jelly (kg),Ingredients,<p>Mango jelly for Coated chocolate</p>,Y,,,,,,,110.00,0.00,,,,Y,,Hia Pleam LumYai Market,,Y,110.00,15.235,5.000,10.000,N,variable,0.000,,,Mango Jelly,kg,kg,mass,g,kg
+mango-jelly-popping-candy-milk-chocolate---loi-kratong-(75g),10461,Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g),Finished Good (others),<p>2025 Loi Kratong special - mango jelly popping candy milk chocolate</p>,N,,,,,,,variable,9.31,,10004,0.056,N,Y,,,N,variable,0.000,,,Y,145.00,10.000,,,Mango Jelly Popping Candy Milk Chocolate - Loi Kratong,75g,,mass,g,g
+,,,,,,,,,,,,,,,10293,0.011,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10068,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10096,1.000,,,,,,,,,,,,,,,,,,count,each,each
+"mango,-dried-(kg)",10073,"Mango, Dried (kg)",Ingredients,<p>Dried Mango Soft Diced size 8-10mm&nbsp; &nbsp;1 Bag = 12 KG</p>,Y,,,,,,,325.00,0.00,,,,Y,,Kanitsak (Garden Fruits),0.00,Y,325.00,20.920,10.000,30.000,N,variable,0.000,,,"Mango, Dried",kg,kg,mass,g,kg
+masala-chai---milk-chocolate-50%-(20g),8857126163155,Masala Chai Milk Chocolate (20g),Finished Goods (Core),"<p>Masala Chai - Milk Chocolate 50% (20g). Small Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,3.87,8857126163155,10004,0.019,N,Y,,,Y,variable,490.000,100.000,300.000,Y,60.00,195.000,48.000,180.000,Masala Chai Milk Chocolate,20g,,mass,g,g
+,,,,,,,,,,,,,,,10165,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10033,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10054,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10053,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+masala-chai---milk-chocolate-50%,8857126163070,Masala Chai Milk Chocolate (75g),Finished Goods (Core),"<p>Masala Chai - Milk Chocolate 50% (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,12.71,8857126163070,10004,0.072,N,Y,,,Y,variable,31.000,250.000,800.000,Y,145.00,130.000,48.000,180.000,Masala Chai Milk Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10054,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10053,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10021,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10165,0.001,,,,,,,,,,,,,,,,,,count,each,each
+masala-chai---milk-chocolate-50%-(8g-squares),10173,Masala Chai Milk Chocolate (8g Squares),Discontinued,"<p>Masala Chai - Milk Chocolate 50% in 8-gram square quantities. Includes foil, packaging, flavoring and chocolate.</p>",N,,,,,,,variable,1.72,,10004,0.007,N,Y,,,N,variable,0.000,,,N,variable,0.000,,,Masala Chai Milk Chocolate,8g Squares,,mass,g,g
+,,,,,,,,,,,,,,,10165,0.001,,,,,,,,,,,,,,,,,,count,each,each
+masala-chai-mix-(g),10165,Masala Chai Mix (kg),Ingredients,<p>Masala Chai Mix (g)</p>,Y,,,,,,,variable,732.07,,10039,0.660,N,Y,,,N,variable,-13.260,,,N,variable,0.000,,,Masala Chai Mix,kg,kg,mass,g,kg
+,,,,,,,,,,,,,,,10041,0.150,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10051,0.150,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10040,0.040,,,,,,,,,,,,,,,,,,count,each,each
+matcha-powder-(kg),10155,Matcha Powder (kg),Discontinued,<p>Matcha Powder (kg)</p>,Y,,,,,,,4280.00,0.00,,,,N,,,,N,4280.00,,,,N,4280.00,,,,Matcha Powder,kg,kg,mass,g,kg
+melia-box,10340,Melia Box,Packing,,N,,,,,,,15.00,0.00,MEA,,,Y,,,,N,15.00,0.000,,,Y,15.00,0.000,,,Melia Box,,,count,each,each
+mini-marshmallows-(kg),10269,Mini Marshmallows (kg),Discontinued,<p>mini mallows for Halloween Campfire Smores bar (170g/Bag)</p>,Y,,,,,,,205.00,0.00,,,,Y,,Yok Intertrade,0.00,N,205.00,0.000,,,N,205.00,0.000,,,Mini Marshmallows,kg,kg,mass,g,kg
+mint-drinking-chocolate-(150g),10350,Mint Drinking Chocolate (150g),Discontinued,"<p>Special Christmas order - Mint Drinking Chocolate 150g in silver bag, inside tin with wrapper and sticker</p>",N,,,,,,,variable,3.26,,10009,0.073,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Mint Drinking Chocolate,150g,,mass,g,g
+,,,,,,,,,,,,,,,8 850456 103778,0.066,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10086,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10351,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10355,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10352,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10353,1.000,,,,,,,,,,,,,,,,,,count,each,each
+mint-oil-(ml),10058,Mint Oil (l),Discontinued,"<p>Mint Oil, 1 Bottle = 59ml</p>",Y,,,,,,,3000.00,0.41,,,,Y,,Nutrifood Creation Limited Partnership,0.00,N,3000.00,764.158,,,N,3000.00,0.000,,,Mint Oil,l,l,volume,L,L
+molasses,10448,Molasses (g),Ingredients,"<h1 style='box-sizing: border-box; font-family: Prompt, Poppins, -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Oxygen, Ubuntu, Cantarell, ""Open Sans"", ""Helvetica Neue"", sans-serif; margin-top: 0px; margin-bottom: 0.5rem; font-weight: 700; line-height: 33px; font-size: 25px; color: rgb(28, 60, 52); font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; letter-spacing: normal; orphans: 2; text-align: left; text-indent: 0px; text-transform: none; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; white-space: normal; background-color: rgb(255, 255, 255); text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial;' id=""isPasted"">(Blackstrap Molasses) Food grade &nbsp;500 g/ gallon</h1>",N,,,,,,,381.00,0.00,,,,Y,,Yok Intertrade,,Y,381.00,2100.000,200.000,300.000,N,variable,0.000,,,Molasses,g,g,mass,g,g
+mooncake-milk-chocolate-(75g),10095,Mooncake Milk Chocolate (75g),Discontinued,"<p>Seasonal - Mooncake Milk Chocolate, with salted egg, &nbsp;roasted lotus seed, and sunflower seeds. 75g bar.</p>",N,,,,,,,variable,10.49,,10004,0.063,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Mooncake Milk Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10261,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10262,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10263,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10279,1.000,,,,,,,,,,,,,,,,,,count,each,each
+movenpick-chiang-mai-belly-band,10395,Movenpick Chiang Mai Belly band,Sleeve Logo,<p>สายคาด Movenpick สุริวงศ์เชียงใหม่</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,57.000,100.000,,Movenpick Chiang Mai Belly band,,,count,each,each
+movenpick-khao-yai-belly-band,10394,Movenpick Khao Yai Belly band,Sleeve Logo,<p>สายคาด Moven Khao Yai</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,274.000,100.000,,Movenpick Khao Yai Belly band,,,count,each,each
+movenpick-na-jomtien-belly-band,10396,Movenpick Na Jomtien Belly band,Sleeve Logo,<p>สายคาด Movenpick สาขานาจอมเทียน พัทยา</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,N,1.00,37.000,100.000,,Movenpick Na Jomtien Belly band,,,count,each,each
+nail-polish-remover,10141,Nail Polish Remover (bottle),Supplies,<p>Nail Polish Remover&nbsp;</p>,N,,,,,,,25.00,0.00,,,,Y,,,,Y,25.00,9.000,1.000,2.000,N,25.00,0.000,,,Nail Polish Remover,bottle,bottle,count,each,each
+nutmeg-(kg),10154,Nutmeg (kg),Discontinued,"<p>Nutmeg, in kilograms&nbsp;</p>",Y,,,,,,,1800.00,1804.88,,,,N,,,,N,1800.00,,,,N,1800.00,,,,Nutmeg,kg,kg,mass,g,kg
+nysa,10348,Nysa Box,Packing,,N,,,,,,,15.00,0.00,,,,Y,,,,N,variable,0.000,,,Y,15.00,1020.000,50.000,,Nysa Box,,,count,each,each
+orange-&-5-spice---chinese-new-year-(75g),10266,Orange & 5 Spice - Chinese New Year (75g),Discontinued,<p>Seasonal - Chinese New Year 75g</p>,N,,,,,,,variable,16.67,,10010,0.064,N,Y,,,N,variable,0.000,,,N,variable,0.000,,,Orange & 5 Spice - Chinese New Year,75g,,mass,g,g
+,,,,,,,,,,,,,,,10082,0.010,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10052,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10097,1.000,,,,,,,,,,,,,,,,,,count,each,each
+orange-gloves,10435,Orange Gloves,Cleaning,<p>Orange Gloves for Cleaning</p>,N,,,,,,,15.00,0.00,,,,N,,,,Y,15.00,,,,N,15.00,,,,Orange Gloves,,,count,each,each
+organic-cane-sugar,8 850456 103778,Organic Cane Sugar (kg),Ingredients,<p>Wangkanai Organic Cane Sugar. Sold in 1kg bags. Used for making base chocolate. Price includes shipping costs. Updated with each new addition to inventory. (25bags per sack)</p>,Y,,,,,,,32.00,24.00,8 850456 103778,,,Y,,"Credence Co., Ltd.",24.00,Y,32.00,533.296,500.000,1200.000,N,variable,0.000,,,Organic Cane Sugar,kg,kg,mass,g,kg
+outer-packaging-for-tasting-box,10219,Outer packing for Tasting Box,Packaging,<p>Outer packaging for tasting box. Each square also has its own packaging and foil.</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,Y,variable,300.000,,,N,variable,0.000,,,Outer packing for Tasting Box,,,count,each,each
+"paper-bag-w/-window-4.75""-x-8""",10127,"Paper Bag w/ Window 4.75"" x 8""",Packaging,<p>Paper Bag with Window 4.75 inches by 8 inches&nbsp; for 80g</p>,N,,,,,,,95.00,0.00,,,,Y,,,0.00,N,95.00,80.000,,500.000,N,95.00,0.000,,,"Paper Bag w/ Window 4.75"" x 8""",,,count,each,each
+paper-baking-cups-(for-almond-butter-cups),10151,Paper Baking Cups (for almond butter cups),Packaging,<p>Paper Baking Cups used for almond butter cups (1 roll/1000pcs)</p>,N,,,,,,,42.00,0.00,,,,Y,,,0.00,Y,42.00,7000.000,2000.000,3000.000,N,variable,0.000,,,Paper Baking Cups (for almond butter cups),,,count,each,each
+parchment-paper/-baking-paper,10150,Parchment Paper/ Baking Paper,Supplies,<p>Parchment Paper or Baking Paper&nbsp;</p>,N,,,,,,,35.00,0.00,,,,Y,,Yok Intertrade,,Y,35.00,32.000,5.000,6.000,N,35.00,0.000,,,Parchment Paper/ Baking Paper,,,count,each,each
+passion-fruit-powder-(kg),10292,Passion Fruit Powder (kg),Discontinued,<p>passion fruit powder - dehydrated for us from fresh</p>,Y,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,Passion Fruit Powder,kg,kg,mass,g,kg
+peanut-curry/masaman-(75g),8857126163193,Peanut Curry 70% Dark Chocolate (75g),Finished Goods (Core),"<p>Peanut Curry/Masaman large bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,11.07,8857126163193,10010,0.062,N,Y,,,Y,variable,-311.000,200.000,600.000,Y,145.00,98.000,48.000,180.000,Peanut Curry 70% Dark Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10044,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10070,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10039,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10037,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10056,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10054,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10023,1.000,,,,,,,,,,,,,,,,,,count,each,each
+peanuts-(g),10044,Peanuts (kg),Ingredients,"<p>Peanuts, 1 Bag =1kg</p>",Y,,,,,,,128.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,128.00,10.776,3.000,10.000,N,variable,0.000,,,Peanuts,kg,kg,mass,g,kg
+peacon-nut-(kg),10449,Pecans (kg),Ingredients,<p>Peacon 1kg/pack</p>,Y,,,,,,,936.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,936.00,2.796,1.000,2.000,N,variable,0.000,,,Pecans,kg,kg,mass,g,kg
+peppermint-&-candied-nibs-70%-dark-chocolate---christmas-(75g),10271,Peppermint & Candied Nibs 70% Dark Chocolate - Christmas (75g),Discontinued,<p>Seasonal - peppermint &amp; candied nibs in 70% dark chocolate CHRISTMAS 75g</p>,N,,,,,,,variable,12.37,,10010,0.070,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Peppermint & Candied Nibs 70% Dark Chocolate - Christmas,75g,,mass,g,g
+,,,,,,,,,,,,,,,10058,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10001,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,8 850456 103778,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10281,1.000,,,,,,,,,,,,,,,,,,count,each,each
+perilla-seeds-(g),10049,Perilla Seeds (kg),Discontinued,"<p>Perilla Seeds, 1 Bag = 2,500 g&nbsp;</p>",Y,,,,,,,350.00,44.12,,,,Y,,Yok Intertrade,0.00,N,350.00,0.810,1.000,2.000,N,350.00,0.000,,,Perilla Seeds,kg,kg,mass,g,kg
+pineapple-chips-(kg),10077,Pineapple Chips (kg),Discontinued,"<p>Pineapple Chips, 1 Bag = 2.5kg</p>",Y,,,,,,,480.00,0.00,,,,Y,,Healthy Bakery,0.00,Y,480.00,7.000,2.000,3.000,N,variable,0.000,,,Pineapple Chips,kg,kg,mass,g,kg
+coconut-and-pineapple---gourmet-market---coconut-chocolate-(75g),10164,Pineapple Coconut 65% Dark Chocolate - Gourmet Market (75g),Discontinued,"<p>Coconut and Pineapple- Gourmet Market - Coconut Chocolate 65% (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,13.07,,10087,0.060,N,Y,,,N,variable,0.000,50.000,150.000,Y,variable,0.000,48.000,180.000,Pineapple Coconut 65% Dark Chocolate - Gourmet Market,75g,,mass,g,g
+,,,,,,,,,,,,,,,10078,0.009,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10104,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10077,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.003,,,,,,,,,,,,,,,,,,count,each,each
+"""pineapple-pops""---paleo-robbie---dipped-pineapple-(100g)",10194,Pineapple Pops - Paleo Robbie (100g),Finished Good (others),"<p>&quot;Pineapple Pops&quot;, Paleo Robbie, packaged in 100-gram bags.</p>",N,,,,,,,variable,6.69,,10078,0.065,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Pineapple Pops - Paleo Robbie,100g,,mass,g,g
+,,,,,,,,,,,,,,,10089,0.030,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10050,0.005,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10130,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10094,1.000,,,,,,,,,,,,,,,,,,count,each,each
+"pineapple,-dried-(kg)",10078,"Pineapple, Dried (kg)",Ingredients,"<p>Pineapple, Dried, 1 Bag = 9.5kg</p>",Y,,,,,,,520.00,0.68,,,,Y,,,0.00,N,520.00,4.575,3.000,8.000,N,520.00,0.000,,,"Pineapple, Dried",kg,kg,mass,g,kg
+pink-salt-(g),10158,Pink Salt (kg),Ingredients,<p>Pink Salt in grams- 2kg/pack</p>,Y,,,,,,,429.00,0.47,,,,Y,,Yok Intertrade,0.00,Y,429.00,3.882,,,N,429.00,0.000,,,Pink Salt,kg,kg,mass,g,kg
+plastic-food-wrap-(roll),10374,Plastic Food Wrap (roll),Supplies,<p>40cmm* 600M</p>,N,,,,,,,617.00,0.00,,,,Y,,Yok Intertrade,,Y,617.00,2.000,,,N,617.00,0.000,,,Plastic Food Wrap,roll,roll,count,each,each
+plum-powder-(g),10050,Plum Powder (g),Ingredients,"<p>Plum Powder, 1 Bag = 1,000g</p>",Y,,,,,,,110.00,7.80,,,,Y,,Yok Intertrade,0.00,Y,110.00,2.500,0.500,2.000,N,variable,0.000,,,Plum Powder,g,g,mass,g,g
+"pomelo,-dried-(kg)",10071,"Pomelo, Dried Diced (kg)",Ingredients,"<p>Pomelo, Dried, 1 Bag = 5kg (We order 40 kg per time)</p>",Y,,,,,,,256.00,0.08,,,,Y,,GCF International Company Limited,0.00,Y,256.00,22.345,5.000,20.000,N,variable,0.000,,,"Pomelo, Dried Diced",kg,kg,mass,g,kg
+popping-candy-(g),10068,Popping Candy (kg),Ingredients,"<p>Popping Candy, 1 Bag = 300g&nbsp;</p>",Y,,,,,,,1385.00,0.00,,,,Y,,Jia Jia Intergroup,0.00,N,1385.00,4.422,,,N,1385.00,0.000,,,Popping Candy,kg,kg,mass,g,kg
+loi-kratong-popping-passion-fruit-milk-chocolate-75g,10291,Popping Passion Fruit Milk Chocolate - Loi Kratong  (75g),Discontinued,<p>Milk chocolate with passionfruit and popping candy - Loi Kratong 2024</p>,N,,,,,,,variable,109.72,,10004,0.660,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Popping Passion Fruit Milk Chocolate - Loi Kratong,75g,,mass,g,g
+,,,,,,,,,,,,,,,10068,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10096,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10292,0.003,,,,,,,,,,,,,,,,,,count,each,each
+powdered-milk,10008,Powdered Milk (kg),Ingredients,<p>Powder milk. One box is 12 kilograms. (order 30 boxes: 30*12=360kg)</p>,Y,,,,,,,188.00,210.00,,,,Y,,"Mintana Co., Ltd.",210.00,Y,188.00,367.500,200.000,500.000,N,variable,0.000,,,Powdered Milk,kg,kg,mass,g,kg
+pumpkin-seeds-(g),10048,Pumpkin Seeds (kg),Ingredients,"<p>Pumpkin Seeds, 1 Bag = 1,000g</p>",N,,,,,,,340.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,340.00,3.000,1.000,2.000,N,variable,0.000,,,Pumpkin Seeds,kg,kg,mass,g,kg
+punyisa---drinking-chocolate-(300g),10356,PUNYISA - Drinking Chocolate (300g),Discontinued,<p>300g drinking chocolate for Punyisa resort</p>,N,,,,,,,variable,3.22,,10009,0.149,N,Y,,,N,variable,40.000,,,Y,variable,0.000,,,PUNYISA - Drinking Chocolate,300g,,mass,g,g
+,,,,,,,,,,,,,,,10086,0.016,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,8 850456 103778,0.134,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10289,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10357,2.000,,,,,,,,,,,,,,,,,,count,each,each
+punyisa---sticker,10357,PUNYISA - Sticker,Discontinued,<p>Sticker for drinking chocolate</p>,N,,,,,,,variable,0.00,,,,Y,,,,N,variable,-160.000,,,N,variable,0.000,,,PUNYISA - Sticker,,,count,each,each
+raw-honey-with-cacao-nibs-250g.,10454,Raw Honey with cacao Nibs 250g.,Merchandise,,N,,,,,,,95.00,0.00,,,,Y,,"Chiangmai Healthy Product Co., Ltd.",,N,95.00,0.000,,,Y,95.00,115.000,10.000,,Raw Honey with cacao Nibs 250g.,,,count,each,each
+rayavadee-belly-band,10393,Rayavadee Belly band,Sleeve Logo,<p>สายคาด Rayavadee บาร์ใหญ่</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,68.000,100.000,,Rayavadee Belly band,,,count,each,each
+rayavadee-sticker-band,10399,Rayavadee Sticker band,Sleeve Logo,<p>Sticker Rayavadee บาร์เล็ก</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,1121.000,100.000,,Rayavadee Sticker band,,,count,each,each
+rayawadee---drinking-chocolate---retail-(300g),10332,RAYAWADEE - Drinking Chocolate - Retail (300g),,<p>Drinking chocolate 300g - silver bags - for Rayawadee Krabi</p>,N,,,,,,,variable,3.22,,10009,0.148,N,Y,,,N,variable,-40.000,,,Y,variable,0.000,,,RAYAWADEE - Drinking Chocolate - Retail,300g,,mass,g,g
+,,,,,,,,,,,,,,,10086,0.017,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,8 850456 103778,0.134,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10132,0.500,,,,,,,,,,,,,,,,,,count,each,each
+rose-oil-(ml),10060,Rose Oil (l),Discontinued,"<p>Rose Oil, 1 Bottle = 1000 ml</p>",Y,,,,,,,700.00,166.79,,,,Y,,Nutrifood Creation Limited Partnership,0.00,N,700.00,0.150,,,N,700.00,0.000,,,Rose Oil,l,l,volume,L,L
+rose-petals,10065,Rose Petals (kg),Discontinued,"<p>Rose Petals, 1 Bag = 250g</p>",Y,,,,,,,1150.00,1150.00,,,,N,,,,N,1150.00,,,,N,1150.00,,,,Rose Petals,kg,kg,mass,g,kg
+roselle-powder-(g),10067,Roselle Powder (kg),Discontinued,"<p>Roselle Powder, 1 Bag = 800g&nbsp;</p>",Y,,,,,,,590.00,590.00,,,,N,,,,N,590.00,,,,N,590.00,,,,Roselle Powder,kg,kg,mass,g,kg
+salt-(g),10042,Salt (kg),Ingredients,"<p>Salt, 1 Bag = 2000g</p>",Y,,,,,,,17.00,0.00,,,,Y,,Yok Intertrade,0.00,Y,17.00,1.893,1.000,3.000,N,variable,0.000,,,Salt,kg,kg,mass,g,kg
+salted-egg-powder-(kg),10261,Salted Egg Powder (kg),Discontinued,<p>Salted egg powder - for Mooncake bar (500g/ Bag)</p>,Y,,,,,,,960.00,0.00,,,,Y,,BK Beverage & bakery,0.00,Y,960.00,0.000,,,N,960.00,0.000,,,Salted Egg Powder,kg,kg,mass,g,kg
+sample-cubes----simply-almond---pr-(100g/100-cubes),10243,Sample Cubes -  Simply Almond - Paleo Robbie (100g),Sample Cubes,<p>Sample cubes of Simply Almond. For Paleo Robbie (PR). Using Sugar Free Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,21.39,,10089,0.091,N,Y,,,N,variable,0.000,,,Y,40.00,1.000,,,Sample Cubes -  Simply Almond - Paleo Robbie,100g,,mass,g,g
+,,,,,,,,,,,,,,,10045,0.009,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10158,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes----simply-cacao-+-milk---pr-(100g/100-cubes),10244,Sample Cubes -  Simply Cacao - Paleo Robbie (100g),Sample Cubes,<p>Sample cubes of Simply Cacao + Milk. For Paleo Robbie (PR). Using Sugar Free Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,22.32,,10089,0.100,N,Y,,,N,variable,0.000,,,Y,40.00,7.000,,,Sample Cubes -  Simply Cacao - Paleo Robbie,100g,,mass,g,g
+sample-cubes----simply-vanilla---pr-(100g/100-cubes),10242,Sample Cubes -  Simply Vanilla - Paleo Robbie (100g),Sample Cubes,<p>Sample cubes of Simply Vanilla. For Paleo Robbie (PR). Using Sugar Free Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,21.33,,10089,0.099,N,Y,,,N,variable,0.000,,,Y,40.00,1.000,,,Sample Cubes -  Simply Vanilla - Paleo Robbie,100g,,mass,g,g
+,,,,,,,,,,,,,,,10059,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---70%-dark-chocolate-(100g),10220,Sample Cubes - 70% Dark Chocolate (100g),Sample Cubes,<p>Sample cubes of 75% Dark Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,16.76,,10010,0.100,N,Y,,,N,variable,20.000,,,Y,40.00,39.000,,,Sample Cubes - 70% Dark Chocolate,100g,,mass,g,g
+sample-cubes---dark-chocolate-85%-nibs---gm-(100g/100-cubes),10239,Sample Cubes - 85% & Nibs - Gourmet Market (100g),Discontinued,<p>Sample cubes of Dark Chocolate with 85% Nibs. For Gourmet Market (GM). Using Dark Chocolate 85%. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,17.17,,10010,0.093,N,Y,,,N,variable,0.000,,,Y,40.00,8.000,,,Sample Cubes - 85% & Nibs - Gourmet Market,100g,,mass,g,g
+,,,,,,,,,,,,,,,10001,0.007,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---signature-85%-dark-chocolate-(100g/100-cubes),10233,Sample Cubes - 85% Dark Chocolate (100g),Sample Cubes,<p>Sample cubes of Dark Chocolate 85%. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,18.72,,10013,0.100,N,Y,,,N,variable,-1.000,,,Y,40.00,2.000,,,Sample Cubes - 85% Dark Chocolate,100g,,mass,g,g
+sample-cubes---almond-+-rose---valentine's-2025-(100g),10366,Sample Cubes - Almond + Rose - Valentine's 2025 (100g),Discontinued,,N,,,,,,,variable,15.99,,10004,0.091,N,Y,,,N,variable,0.000,,,Y,40.00,8.000,,,Sample Cubes - Almond + Rose - Valentine's 2025,100g,,mass,g,g
+,,,,,,,,,,,,,,,10046,0.009,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10040,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10060,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---apple-pie---halloween-(100g),10460,Sample Cubes - Apple Pie - Halloween (100g),Sample Cubes,<p>sample cubes for Halloween 2025 - apple pie milk chocolate</p>,N,,,,,,,variable,14.38,,10004,0.084,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Sample Cubes - Apple Pie - Halloween,100g,,mass,g,g
+,,,,,,,,,,,,,,,10307,0.004,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10081,0.004,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10039,0.008,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---milk-choco-coconut-+-banana---gm-(100g/100-cubes),10238,Sample Cubes - Banana & Coconut Milk - Gourmet Market (100g),Discontinued,<p>Sample cubes of Milk Chocolate Coconut and Banana. For Gourmet Market (GM). Using Milk Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,14.82,,10004,0.088,N,Y,,,N,variable,0.000,,,Y,40.00,10.000,,,Sample Cubes - Banana & Coconut Milk - Gourmet Market,100g,,mass,g,g
+,,,,,,,,,,,,,,,10079,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.009,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---banana-crunch-(100g/100-cubes),10234,Sample Cubes - Banana Crunch (100g),Sample Cubes,<p>Sample cubes of Banana Crunch. Using Milk Chocolate 50%. Using Coconut Dark Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,14.80,,10004,0.089,N,Y,,,N,variable,0.000,,,Y,40.00,0.000,,,Sample Cubes - Banana Crunch,100g,,mass,g,g
+,,,,,,,,,,,,,,,10079,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10187,0.009,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---banana-split---smash-daddy's-(100g),10336,Sample Cubes - Banana Split - Smash Daddy's (100g),Sample Cubes,<p>samples for Smash Daddy&#39;s bar</p>,Y,,,,,,,variable,14.25,,10004,0.084,N,Y,,,N,variable,0.000,,,Y,40.00,6.000,,,Sample Cubes - Banana Split - Smash Daddy's,100g,,mass,g,g
+,,,,,,,,,,,,,,,10187,0.004,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10302,0.004,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10044,0.004,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10159,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10079,0.003,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---carolina-reaper-(100g),10370,Sample Cubes - Carolina Reaper (100g),Discontinued,,Y,,,,,,,variable,16.82,,10010,0.100,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Sample Cubes - Carolina Reaper,100g,,mass,g,g
+sample-cubes---matcha-white-chocolate-(100g/100-cubes),10236,Sample Cubes - Ceremonial Matcha (100g),Discontinued,<p>Sample cubes of Matcha White Chocolate. Using White Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,21.29,,10199,0.099,N,Y,,,N,variable,0.000,,,N,variable,0.000,,,Sample Cubes - Ceremonial Matcha,100g,,mass,g,g
+,,,,,,,,,,,,,,,10155,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---coconut-curry/dom-kha-(100g/100-cubes),10231,Sample Cubes - Coconut Curry/Dom Kha (100g),Sample Cubes,<p>Sample cubes of Dom Kha/Coconut Curry. Using Coconut Dark Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,12.61,,10087,0.083,N,Y,,,N,variable,-33.000,,,Y,40.00,0.000,,,Sample Cubes - Coconut Curry/Dom Kha,100g,,mass,g,g
+,,,,,,,,,,,,,,,10055,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10056,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10057,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10376,0.008,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---coconut--(100g/100-cubes),10222,Sample Cubes - Coconut Milk  (100g),Sample Cubes,<p>Sample cubes of Coconut. 1 gram per cube. Thus 100 cubes Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,13.82,,10087,0.091,N,Y,,,Y,variable,0.000,,,Y,40.00,1.000,,,Sample Cubes - Coconut Milk,100g,,mass,g,g
+,,,,,,,,,,,,,,,10043,0.009,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---coffee-crunch-(100g/100-cubes),10224,Sample Cubes - Coffee Crunch (100g),Sample Cubes,<p>Sample cubes of Coffee Crunch using Milk Chocolate 50%. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,16.30,,10004,0.098,N,Y,,,N,variable,10.000,,,Y,40.00,0.000,,,Sample Cubes - Coffee Crunch,100g,,mass,g,g
+,,,,,,,,,,,,,,,10014,0.002,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---durian-(100g/100-cubes),10227,Sample Cubes - Durian (100g),Sample Cubes,<p>Sample cubes of Durian. Using 50% Milk Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,16.13,,10080,0.003,N,Y,,,N,variable,0.000,,,Y,40.00,10.000,,,Sample Cubes - Durian,100g,,mass,g,g
+,,,,,,,,,,,,,,,10004,0.097,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---german-chocolate-cake---christmas-(100g),10468,Sample Cubes - German Chocolate Cake - Christmas (100g),Sample Cubes,,N,,,,,,,variable,16.67,,10449,0.008,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Sample Cubes - German Chocolate Cake - Christmas,100g,,mass,g,g
+,,,,,,,,,,,,,,,10442,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10010,0.078,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---ghost-pepper-(100g),10369,Sample Cubes - Ghost Pepper (100g),Discontinued,,Y,,,,,,,variable,16.82,,10010,0.100,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Sample Cubes - Ghost Pepper,100g,,mass,g,g
+sample-cubes---gingerbread---christmas-(100g),10282,Sample Cubes - Gingerbread - Christmas (100g),Sample Cubes,"<p>Samples for Gingerbread, Christmas. 100g = 100 cubes</p>",N,,,,,,,variable,14.80,,10004,0.089,N,Y,,,N,variable,0.000,,,Y,40.00,8.000,,,Sample Cubes - Gingerbread - Christmas,100g,,mass,g,g
+,,,,,,,,,,,,,,,10276,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10275,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10274,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10039,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---pomelo-(100g/100-cubes),10228,Sample Cubes - Hill Coffee & Pomelo (100g),Sample Cubes,<p>Sample cubes of Hill coffee &amp; Pomelo. Using coffee chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,14.56,,10071,0.009,N,Y,,,N,variable,0.000,,,Y,40.00,20.000,,,Sample Cubes - Hill Coffee & Pomelo,100g,,mass,g,g
+,,,,,,,,,,,,,,,10088,0.091,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---milk-chocolate-+-jackfruit---gm-(100g/100-cubes),10237,Sample Cubes - Jackfruit - Gourmet Market (100g),Discontinued,<p>Sample cubes of Milk Chocolate and Jackfruit. For Gourmet Market (GM). Using Milk Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,15.63,,10004,0.094,N,Y,,,N,variable,0.000,,,Y,40.00,17.000,,,Sample Cubes - Jackfruit - Gourmet Market,100g,,mass,g,g
+,,,,,,,,,,,,,,,10076,0.006,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---jujube-walnut---chinese-new-year-2025-(100g),10364,Sample Cubes - Jujube Walnut - Chinese New Year 2025 (100g),Discontinued,,Y,,,,,,,variable,14.08,,10010,0.084,N,Y,,,N,variable,0.000,,,Y,40.00,0.000,,,Sample Cubes - Jujube Walnut - Chinese New Year 2025,100g,,mass,g,g
+,,,,,,,,,,,,,,,10360,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10361,0.008,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---khao-soi-(100g/100-cubes),10232,Sample Cubes - Khao Soi Curry (100g),Sample Cubes,<p>Sample cubes of Khao Soi. Using Milk Chocolate 50%. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,14.97,,10004,0.090,N,Y,,,N,variable,1.000,,,Y,40.00,3.000,,,Sample Cubes - Khao Soi Curry,100g,,mass,g,g
+,,,,,,,,,,,,,,,10066,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10064,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10037,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---lemongrass-+-perilla-seeds---gm-(100g/100-cubes),10241,Sample Cubes - Lemongrass & Perilla Seed - Gourmet Market (100g),Discontinued,<p>Sample cubes of Lemongrass and Perilla Seeds. For Gourmet Market (GM). Using Dark Chocolate 70%. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,16.21,,10010,0.092,N,Y,,,N,variable,0.000,,,Y,40.00,8.000,,,Sample Cubes - Lemongrass & Perilla Seed - Gourmet Market,100g,,mass,g,g
+,,,,,,,,,,,,,,,10049,0.007,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10056,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---lucky-citrus---chinese-(100g),10480,Sample Cubes - Lucky Citrus - Chinese (100g),Sample Cubes,,N,,,,,,,variable,15.42,,10010,0.092,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Sample Cubes - Lucky Citrus - Chinese,100g,,mass,g,g
+,,,,,,,,,,,,,,,10474,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10071,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10082,0.005,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---mala-(100g),10368,Sample Cubes - Mala (100g),Discontinued,,Y,,,,,,,variable,16.82,,10010,0.100,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Sample Cubes - Mala,100g,,mass,g,g
+,,,,,,,,,,,,,,,10358,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---mango-chili-(100g/100-cubes),10230,Sample Cubes - Mango Chili (100g),Sample Cubes,<p>Sample cubes of Mango Chili. Using Dark Chocolate 70%. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,14.58,,10010,0.087,N,Y,,,N,variable,0.000,,,Y,40.00,17.000,,,Sample Cubes - Mango Chili,100g,,mass,g,g
+,,,,,,,,,,,,,,,10073,0.013,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10042,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---mango-jelly-popping-candy---loi-kratong-(75g),10462,Sample Cubes - Mango Jelly Popping Candy - Loi Kratong (100g),Sample Cubes,,N,,,,,,,variable,12.47,,10004,0.075,N,Y,,,N,variable,-0.400,,,Y,variable,6.000,,,Sample Cubes - Mango Jelly Popping Candy - Loi Kratong,100g,,mass,g,g
+,,,,,,,,,,,,,,,10293,0.015,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10068,0.010,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---masala-chai-(100g/100-cubes),10226,Sample Cubes - Masala Chai (100g),Sample Cubes,<p>Sample cubes of Masala Chai. Using Milk Chocolate 50%. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,17.20,,10165,0.001,N,Y,,,N,variable,0.000,,,Y,40.00,0.000,,,Sample Cubes - Masala Chai,100g,,mass,g,g
+,,,,,,,,,,,,,,,10004,0.099,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10054,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10053,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---signature-milk-chocolate-(100g/100-cubes),10223,Sample Cubes - Milk Chocolate (100g),Sample Cubes,<p>Sample cubes of Signature Milk Chocolate. 1 gram per cube. Thus 100 cubes.Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,16.63,,10004,0.100,N,Y,,,N,variable,0.000,,,Y,40.00,4.000,,,Sample Cubes - Milk Chocolate,100g,,mass,g,g
+sample-cubes---orange-&-5-spice---chinese-new-year-(100g,10265,Sample Cubes - Orange & 5 Spice - Chinese New Year (100g,Discontinued,<p>Samples of Orange &amp; 5 Spice CNY - 100g = 100 cubes</p>,N,,,,,,,variable,21.76,,10010,0.085,N,Y,,,N,variable,0.000,,,N,variable,0.000,,,Sample Cubes - Orange & 5 Spice - Chinese New Year (100g,,,count,each,each
+,,,,,,,,,,,,,,,10082,0.014,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10052,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---massaman/peanut-curry-(100g/100-cubes),10229,Sample Cubes - Peanut Curry/Massaman (100g),Sample Cubes,<p>Sample cubes of Massaman/Peanut Curry. Using Dark Chocolate 70%. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,14.47,,10010,0.083,N,Y,,,N,variable,-20.000,,,Y,40.00,4.000,,,Sample Cubes - Peanut Curry/Massaman,100g,,mass,g,g
+,,,,,,,,,,,,,,,10044,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10070,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10039,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10037,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10056,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10054,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---coconut-and-pineapple---gm-(100g/100-cubes),10240,Sample Cubes - Pineapple Coconut - Gourmet Market (100g),Discontinued,<p>Sample cubes of Coconut and Pineapple. For Gourmet Market (GM). Using Coconut Chocolate. Chocolate. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,12.79,,10087,0.080,N,Y,,,N,variable,0.000,,,Y,40.00,9.000,,,Sample Cubes - Pineapple Coconut - Gourmet Market,100g,,mass,g,g
+,,,,,,,,,,,,,,,10077,0.004,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10078,0.012,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.004,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---popping-passion-fruit---loi-kratong-(100g),10296,Sample Cubes - Popping Passion Fruit - Loi Kratong (100g),Discontinued,<p>sample cubes for Loi Kratong 2024</p>,Y,,,,,,,variable,14.63,,10004,0.088,N,Y,,,N,variable,0.000,,,Y,40.00,0.000,,,Sample Cubes - Popping Passion Fruit - Loi Kratong,100g,,mass,g,g
+,,,,,,,,,,,,,,,10292,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10068,0.009,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---campfire-smores---halloween-(100g),10270,Sample Cubes - Smoky Smores - Halloween (100g),Discontinued,<p>Samples for Campfire Smores (Halloween). 100g = 100 cubes</p>,N,,,,,,,variable,14.56,,10004,0.087,N,Y,,,N,variable,0.000,,,Y,40.00,0.000,,,Sample Cubes - Smoky Smores - Halloween,100g,,mass,g,g
+,,,,,,,,,,,,,,,10081,0.009,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10269,0.004,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---sparkling-strawberry---valentine's-(100g),10481,Sample Cubes - Sparkling Strawberry - Valentine's 2026 (100g),Sample Cubes,,N,,,,,,,variable,20.40,,10199,0.092,N,Y,,,N,variable,-9.000,,,Y,variable,25.000,,,Sample Cubes - Sparkling Strawberry - Valentine's 2026,100g,,mass,g,g
+,,,,,,,,,,,,,,,10475,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10302,0.005,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10068,0.002,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---chili-dark-chocolate-70%-(100g),10221,Sample Cubes - Thai Bullet Chili (100g),Sample Cubes,<p>Sample cubes of Chili Dark Chocolate 70%. 1 gram per cube. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,16.59,,10010,0.099,N,Y,,,N,variable,0.000,,,Y,40.00,1.000,,,Sample Cubes - Thai Bullet Chili,100g,,mass,g,g
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---thai-tea-(100g/100-cubes),10225,Sample Cubes - Thai Tea (100g),Sample Cubes,<p>Sample cubes of Thai Tea. Using Milk Chocolate 50%. 1 gram per cube. Thus 100 cubes. Please measure the production in multiples of 100 grams. As that is the minimum that could be produced.</p>,N,,,,,,,variable,16.30,,10004,0.098,N,Y,,,N,variable,8.500,,,Y,40.00,15.000,,,Sample Cubes - Thai Tea,100g,,mass,g,g
+,,,,,,,,,,,,,,,10012,0.002,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---tom-yum-(100g),10349,Sample Cubes - Tom Yum (100g),Sample Cubes,,N,,,,,,,variable,14.75,,10010,0.088,N,Y,,,N,variable,20.000,,,Y,40.00,0.000,,,Sample Cubes - Tom Yum,100g,,mass,g,g
+,,,,,,,,,,,,,,,10278,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10056,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10057,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10055,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10376,0.008,,,,,,,,,,,,,,,,,,count,each,each
+sample-cubes---vanilla-jasmine---songkran-(100g),10359,Sample Cubes - Vanilla Jasmine - Songkran (100g),Discontinued,,Y,,,,,,,variable,19.46,,10004,0.100,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Sample Cubes - Vanilla Jasmine - Songkran,100g,,mass,g,g
+,,,,,,,,,,,,,,,10154,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10061,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10059,0.001,,,,,,,,,,,,,,,,,,count,each,each
+samples-cubes---mooncake-(100g),10264,Samples Cubes - Mooncake (100g),Sample Cubes,<p>Samples of Mooncake bar - 100g = 100 cubes</p>,N,,,,,,,variable,13.82,,10004,0.083,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Samples Cubes - Mooncake,100g,,mass,g,g
+,,,,,,,,,,,,,,,10262,0.005,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10261,0.005,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10263,0.007,,,,,,,,,,,,,,,,,,count,each,each
+scissor-กรรไกรเอนกประสงค์,10433,Scissor (All purpose),Supplies,<p>Scissor กรรไกรเอนกประสงค์</p>,N,,,,,,,59.00,0.00,,,,Y,,บริษัท คลังเครื่องเขียน กรุ๊ป 2555 จำกัด,,Y,59.00,2.000,,,N,59.00,0.000,,,Scissor (All purpose),,,count,each,each
+food-grade-scissor,10432,Scissor Food Grade,Supplies,<p>Food grade scissor กรรไกรใช้สำหรับอาหาร</p>,N,,,,,,,65.00,0.00,8641201020001,,,N,,,,Y,65.00,,,,N,65.00,,,,Scissor Food Grade,,,count,each,each
+seal-bag-for-coated-chocolate,10182,Seal Bag for Coated Nuts,Discontinued,"<p>Seal bag (M), side expansion, opaque material, 8.5&times;14.5 cm. 50bags/pack (36B)</p>",N,,,,,,,36.00,0.00,,,,Y,,"AC Plus Global Co,Ltd",0.00,Y,36.00,340.000,100.000,,Y,36.00,0.000,,,Seal Bag for Coated Nuts,,,count,each,each
+set-chiang-mai-dark-collection,10126,Set Chiang Mai Dark Collection,Finished Good (others),"<p>Chiang Mai small bar set - 70%, 85%, Coconut Milk</p>",N,,,,,,,300.00,9.95,,10010,0.020,N,Y,,,N,300.00,-1.000,,,Y,300.00,79.000,,,Set Chiang Mai Dark Collection,,,count,each,each
+,,,,,,,,,,,,,,,10013,0.020,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10087,0.018,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10030,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10029,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10032,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10346,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10063,1.000,,,,,,,,,,,,,,,,,,count,each,each
+set-taste-of-thailand,10120,Set Taste of Thailand,Finished Good (others),"<p>Taste of Thailand small bar set - Thai Tea, Bullet Chili, 70%</p>",N,,,,,,,variable,10.35,,10004,0.019,N,Y,,,N,variable,0.000,,,Y,300.00,0.000,100.000,,Set Taste of Thailand,,,count,each,each
+,,,,,,,,,,,,,,,10010,0.039,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10012,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10027,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10031,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10030,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10063,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10343,1.000,,,,,,,,,,,,,,,,,,count,each,each
+set-coffee-&-tea,10122,Set Tea & Coffee,Finished Good (others),"<p>Tea &amp; Coffee Set - Thai Tea, Masala Chai, Coffee Crunch</p>",N,,,,,,,variable,95.52,,10004,0.570,N,Y,,,Y,variable,0.000,,,Y,300.00,0.000,100.000,,Set Tea & Coffee,,,count,each,each
+,,,,,,,,,,,,,,,10012,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10014,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10165,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10035,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10033,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10027,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10063,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10344,1.000,,,,,,,,,,,,,,,,,,count,each,each
+set-tropical-fruit,10121,Set Tropical Fruit,Finished Good (others),"<p>Tropical Fruit Small Bar Set - banana, durian, coconut milk</p>",N,,,,,,,variable,8.92,,10004,0.037,N,Y,,,N,variable,0.000,,,Y,300.00,0.000,100.000,,Set Tropical Fruit,,,count,each,each
+,,,,,,,,,,,,,,,10087,0.018,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10079,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10080,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10036,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10034,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10032,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10063,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10345,1.000,,,,,,,,,,,,,,,,,,count,each,each
+"shallots,-dried-(mg)",10064,"Shallots, Dried (kg)",Ingredients,"<p>Shallots, Dried &nbsp;1 Bag = 1000g</p>",Y,,,,,,,302.00,0.04,,,,Y,,Makro,0.00,Y,302.00,3.350,1.000,4.000,N,variable,0.000,,,"Shallots, Dried",kg,kg,mass,g,kg
+shellac-(l),10090,Shellac (L),Ingredients,"<p>Shellac , 1 Bottle = 5 litres</p>",Y,,,,,,,variable,0.00,,,,Y,,,,N,variable,3.000,,,N,variable,0.000,,,Shellac,L,l,volume,L,L
+shrink-film-(4.5-inch)-(kg),10304,Shrink film (4.5 inch) (Kg),Packaging,<p>for wrap small bar</p>,N,,,,,,,160.00,0.00,,,,Y,,Chiang Mai Plastic,,Y,160.00,1.000,0.500,1.000,N,160.00,0.000,,,Shrink film,Kg,kg,mass,g,kg
+shrink-film-(5.5-inch)-(kg),10083,Shrink film (5.5 inch) (Kg),Packaging,<p>film for wrapping Gift Set box / Mango Jelly</p>,N,,,,,,,150.00,0.00,,,,Y,,Chiang Mai Plastic,,Y,150.00,10.000,,,N,150.00,0.000,,,Shrink film,Kg,kg,mass,g,kg
+siamaya-paper-bag,10335,Siamaya Paper Bag (Big),Packing,<p>Design 4 colors &nbsp;size 22*12*26cm&nbsp;Handle bag 11 cmm</p>,N,,,,,,,6.00,0.00,BAG,,,Y,,BangkokPack,,N,variable,0.000,,,Y,6.00,3445.000,800.000,1600.000,Siamaya Paper Bag (Big),,,count,each,each
+siamaya-paper-bag-(small),10377,Siamaya Paper Bag (Small),Packing,,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,,N,variable,0.000,,,Y,variable,2535.000,800.000,1600.000,Siamaya Paper Bag (Small),,,count,each,each
+signature-dark-chocolate-70%-(20g),8857126163100,Signature 70% Dark Chocolate (20g),Finished Goods (Core),"<p>Signature Dark Chocolate 70% (20g). Small Bar. Includes wrapper, foil, and chocolate.</p>",N,,,,,,,variable,3.35,8857126163100,10010,0.020,N,Y,,,Y,variable,958.000,100.000,300.000,Y,60.00,4.000,48.000,180.000,Signature 70% Dark Chocolate,20g,,mass,g,g
+,,,,,,,,,,,,,,,10030,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+signature-dark-70%-dark-chocolate,8 857126 163018,Signature 70% Dark Chocolate (75g),Finished Goods (Core),<p>Our 70% dark chocolate in wrapper and ready for customers to buy.</p>,N,,,,,,,variable,19.57,8857126163018,10201,1.000,N,Y,,,Y,variable,1305.000,250.000,800.000,Y,145.00,35.000,48.000,180.000,Signature 70% Dark Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10010,0.075,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+signature-70%-dark-chocolate-(8g-squares),10207,Signature 70% Dark Chocolate (8g Squares),Discontinued,<p>Signature 70% Dark Chocolate. Each square is 8 grams. Includes foil.</p>,N,,,,,,,variable,1.34,,10010,0.008,N,Y,,,N,variable,5.000,,,N,variable,0.000,,,Signature 70% Dark Chocolate,8g Squares,,mass,g,g
+signature-dark---dark-chocolate-85%-(20g),8857126163094,Signature 85% Dark Chocolate (20g),Finished Goods (Core),"<p>Signature Dark - 85% Dark Chocolate. 20g. Small Bar. Includes Chocolate, Wrapper, and Foil.</p>",N,,,,,,,variable,3.87,8857126163094,10013,0.020,N,Y,,,Y,variable,1032.000,100.000,300.000,Y,60.00,17.000,48.000,180.000,Signature 85% Dark Chocolate,20g,,mass,g,g
+,,,,,,,,,,,,,,,10029,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+signature-dark-85%,8 857126 163025,Signature 85% Dark Chocolate (75g),Finished Goods (Core),<p>Finished 85% Dark Chocolate bar.</p>,N,,,,,,,variable,21.04,8 857126 163025,10002,1.000,N,Y,,,Y,variable,86.000,150.000,400.000,Y,145.00,109.000,60.000,180.000,Signature 85% Dark Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10013,0.075,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+signature-85%-dark-chocolate-(8g-squares),10177,Signature 85% Dark Chocolate (8g Squares),Finished Good (others),"<p>Signature 85% Dark Chocolate, 8 gram squares. Includes chocolate, wrapper, and foil.</p>",N,,,,,,,variable,1.50,,10013,0.008,N,Y,,,N,variable,280.000,,,Y,variable,0.000,,,Signature 85% Dark Chocolate,8g Squares,,mass,g,g
+signature-milk---milk-chocolate-50%,8857126163131,Signature Milk Chocolate 50% (20g),Finished Goods (Core),"<p>Signature Milk - Milk Chocolate 50%. Small Bar. 20g. Includes foil, wrapping, and chocolate.</p>",N,,,,,,,variable,4.38,8857126163131,10004,0.020,N,Y,,,Y,variable,460.000,100.000,300.000,Y,60.00,94.000,48.000,180.000,Signature Milk Chocolate 50%,20g,,mass,g,g
+,,,,,,,,,,,,,,,10028,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+signature-milk---milk-chocolate,885712613056,Signature Milk Chocolate 50% (75g),Finished Goods (Core),"<p>Signature Milk - Milk Chocolate 50%. Big Bar. 75g. Includes foil, wrapping, and chocolate.</p>",N,,,,,,,variable,18.97,885712613056,10004,0.075,N,Y,,,Y,variable,386.000,100.000,400.000,Y,145.00,468.000,48.000,180.000,Signature Milk Chocolate 50%,75g,,mass,g,g
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10005,1.000,,,,,,,,,,,,,,,,,,count,each,each
+signature-milk-chocolate-50%-(8g-squares),10208,Signature Milk Chocolate 50% (8g Squares),Discontinued,<p>Signature Milk. In 8 gram squares.</p>,N,,,,,,,variable,1.33,,10004,0.008,N,Y,,,N,variable,52.000,,,N,variable,0.000,,,Signature Milk Chocolate 50%,8g Squares,,mass,g,g
+"silicone-soup-ladle,-wooden-handle",10422,"Silicone Soup Ladle, Wooden Handle",Supplies,"<p>Silicone Soup Ladle, Cream Color, Wooden Handle</p>",N,,,,,,,139.00,0.00,,,,Y,,HomePro,,Y,139.00,11.000,,,N,139.00,0.000,,,"Silicone Soup Ladle, Wooden Handle",,,count,each,each
+silicone-spatula,10423,Silicone Spatula - Long Handle (tempering team),Supplies,<p>Silicone spatula</p>,N,,,,,,,69.00,0.00,,,,Y,,,0.00,N,69.00,12.000,,,N,69.00,0.000,,,Silicone Spatula - Long Handle (tempering team),,,count,each,each
+silicone-spatula---narrow-(yee),10431,Silicone Spatula - Narrow (Yee),Supplies,<p>silicone spatula for Yee</p>,N,,,,,,,variable,0.00,,,,Y,,,,N,variable,8.000,3.000,6.000,N,variable,0.000,,,Silicone Spatula - Narrow (Yee),,,count,each,each
+"silver-bag-12""-x-16.5""---cacao-shell",10371,"Silver Bag 12"" x 16.5"" - Cacao Shell",Packaging,<p>30*40 cm (100pcs/pack)</p>,N,,,,,,,325.00,0.00,,,,Y,,"AC Plus Global Co,Ltd",0.00,Y,325.00,279.000,,,N,variable,40.000,,,"Silver Bag 12"" x 16.5"" - Cacao Shell",,,count,each,each
+"silver-bag-12""-x-9""---1kg-powders",10132,"Silver Bag 12"" x 9"" - 1kg powders",Packaging,"<p>Silver bag that holds 1kg of powders, measures 12 inches by 9 inches&nbsp;</p>",N,,,,,,,variable,0.00,,,,Y,,,,N,variable,241.500,,,N,variable,0.000,,,"Silver Bag 12"" x 9"" - 1kg powders",,,count,each,each
+silver-bags-(150g),10352,Silver Bags (150g),Discontinued,<p>For mint drinking chocolate</p>,N,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,Silver Bags,150g,,mass,g,g
+silver-foil---8g-cubes,10168,Silver Foil - 8g Square (kg),Discontinued,<p>Silver foil is used for 8-gram cubes. ( pack)</p>,Y,,,,,,,1390.00,690.00,,,,Y,,Khun Da (Kra Dan Thong),0.00,Y,1390.00,6.600,,,N,1390.00,0.000,,,Silver Foil - 8g Square,kg,kg,mass,g,kg
+simply-vanilla---paleo-robbie---sugar-free-chocolate,8857126163933,Simply Almond - Paleo Robbie - Sugar Free Chocolate (75g),Finished Good (others),"<p>Simply Almond - Paleo Robbie - Sugar Free Chocolate (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper. Also called, simply Cacao Plus Milk with Almonds and Sea Salt.</p><p>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;</p>",N,,,,,,,variable,14.63,8857126163933,10089,0.068,N,Y,,,Y,variable,117.000,50.000,150.000,Y,145.00,2.000,48.000,180.000,Simply Almond - Paleo Robbie - Sugar Free Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10046,0.006,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10158,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10108,1.000,,,,,,,,,,,,,,,,,,count,each,each
+simply-cacao---paleo-robbie---sugar-free-chocolate-(75g),10069,Simply Cacao - Paleo Robbie - Sugar Free Chocolate (75g),Finished Good (others),<p>Simply cacao plus milk - no added flavors</p>,N,,,,,,,variable,13.00,,10089,0.075,N,Y,,,Y,variable,100.000,12.000,48.000,Y,145.00,92.000,24.000,48.000,Simply Cacao - Paleo Robbie - Sugar Free Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10106,1.000,,,,,,,,,,,,,,,,,,count,each,each
+simply-vanilla---paleo-robbie---sugar-free-chocolate-(75g),8857126163926,Simply Vanilla - Paleo Robbie - Sugar Free Chocolate (75g),Finished Good (others),"<p>Simply Vanilla - Paleo Robbie - Sugar Free Chocolate (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper. Also called, simply simply Cacao Plus Milk with Vanilla.</p><p>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;</p><p>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;</p>",N,,,,,,,variable,15.96,8857126163926,10089,0.074,N,Y,,,Y,variable,180.000,50.000,150.000,Y,145.00,33.000,48.000,180.000,Simply Vanilla - Paleo Robbie - Sugar Free Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10059,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10107,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+campfire-smores---halloween-(75g),10267,Smoky Smores Milk Chocolate - Halloween (75g),Discontinued,<p>Seasonal - Campfire Smores (Halloween). Smoked milk chocolate with biscuit and mini mallows</p>,N,,,,,,,variable,10.82,,10004,0.065,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Smoky Smores Milk Chocolate - Halloween,75g,,mass,g,g
+,,,,,,,,,,,,,,,10081,0.007,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10269,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10283,1.000,,,,,,,,,,,,,,,,,,count,each,each
+snack,10425,Snack,Staff Welfare,,N,,,,,,,200.00,0.00,,,,Y,,Makro,,N,200.00,0.000,,,N,200.00,0.000,,,Snack,,,count,each,each
+snack-magic-box,10327,Snack Magic Box,Packing,,N,,,,,,,5.20,0.00,SNACK,,,Y,,,,N,5.20,0.000,,,Y,5.20,0.000,20.000,,Snack Magic Box,,,count,each,each
+sparkling-strawberry-valentine-(75g),10479,Sparkling Strawberry-Valentine's 2026 (75g),Finished Good (others),"<p>Seasonal: 2026 Valentine&#39;s: White chocolate, dried strawberry , strawberry powder and popping candy</p>",N,,,,,,,variable,11.90,,10199,0.053,N,Y,,,Y,variable,-374.000,,,Y,145.00,0.000,,,Sparkling Strawberry-Valentine's 2026,75g,,mass,g,g
+,,,,,,,,,,,,,,,10302,0.011,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10475,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10068,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10477,1.000,,,,,,,,,,,,,,,,,,count,each,each
+sponge-net-(pack),10426,Sponge Net (Pack),Cleaning,<p>Sponge: 8 pcs/pack</p>,N,,,,,,,65.00,0.00,,,,Y,,Makro,,Y,65.00,2.000,,,N,65.00,0.000,,,Sponge Net,Pack,pack,count,each,each
+stainless-steel-tray-(50×35×2cm),10419,Stainless steel tray (50×35×2cm),Supplies,<p>Stainless steel tray (50&times;35&times;2cm) for base chocolate</p>,N,,,,,,,100.00,0.00,,,,Y,,JiangHa,,Y,100.00,46.000,,,N,100.00,0.000,,,Stainless steel tray (50×35×2cm),,,count,each,each
+stainless-steel-tray-(50×35×7cm),10418,Stainless steel tray (50×35×7cm),Supplies,<p>Stainless steel tray (50&times;35&times;7cm) for base chocolate</p>,N,,,,,,,135.00,0.00,,,,Y,,JiangHa,,Y,135.00,79.000,,,N,135.00,0.000,,,Stainless steel tray (50×35×7cm),,,count,each,each
+star-anise-powder-(g),10041,Star Anise Powder (kg),Ingredients,"<p>Star Anise Powder, 1 Bag = 500g</p>",Y,,,,,,,695.00,695.00,,,,Y,,"S A O Agricultural Co., Ltd.",0.00,Y,695.00,0.300,0.500,2.000,N,variable,0.000,,,Star Anise Powder,kg,kg,mass,g,kg
+"""70%-coated-almond""-stickers---paleo-robbie",10192,Stickers - 70% Coated Almonds - Paleo Robbie,Packaging,"<p>Sticker that reads, &quot;70% Coated Almond&quot;, for Paleo Robbie.</p>",N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,192.000,,,N,variable,0.000,,,Stickers - 70% Coated Almonds - Paleo Robbie,,,count,each,each
+"""70%-coated-cashews""-stickers,-paleo-robbie",10193,Stickers - 70% Coated Cashews - Paleo Robbie,Packaging,"<p>Stickers that read, 70% Coated Cashews, for Paleo Robbie.</p>",N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,121.000,,,N,variable,0.000,,,Stickers - 70% Coated Cashews - Paleo Robbie,,,count,each,each
+stickers---70%-coated-mango-jelly,10109,Stickers - 70% Coated Mango Jelly,Packaging,,N,,,,,,,variable,0.00,,,,Y,,,,Y,variable,-1022.000,,,N,variable,0.000,,,Stickers - 70% Coated Mango Jelly,,,count,each,each
+"""sugar-free-coated-almond""-stickers---paleo-robbie",10190,Stickers - 85% Sugar Free Coated Almonds - Paleo Robbie,Packaging,"<p>Stickers that read, &quot;Sugar Free Coated Almonds&quot; for Paleo Robbie.</p>",N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,457.000,,,N,variable,0.000,,,Stickers - 85% Sugar Free Coated Almonds - Paleo Robbie,,,count,each,each
+"""sugar-free-vanilla-coated-cashews""-stickers---paleo-robbie",10191,Stickers - 85% Sugar Free Vanilla Coated Cashews - Paleo Robbie,Packaging,"<p>Stickers that read, &quot;Sugar Free Vanilla Coated Cashews&quot;, for Paleo Robbie.</p>",N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,171.000,,,N,variable,0.000,,,Stickers - 85% Sugar Free Vanilla Coated Cashews - Paleo Robbie,,,count,each,each
+"""banana-bites""-stickers---paleo-robbie",10075,Stickers - Banana Bites - Paleo Robbie,Packaging,"<p>Stickers that read Banana Bites, for Paleo Robbie.</p>",N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,194.000,,,N,variable,0.000,,,Stickers - Banana Bites - Paleo Robbie,,,count,each,each
+banana-peanuts-stickers,10252,Stickers - Banana Peanuts,Discontinued,<p>Banana Peanuts Stickers used for Banana Peanuts.&nbsp;</p>,N,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,Stickers - Banana Peanuts,,,count,each,each
+cocoa-nibs-stickers---250g,10138,Stickers - Cacao Nibs - Retail (250g),Packaging,<p>Cocoa Nibs Stickers for 250grams/ sheet</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,Y,variable,4.000,200.000,200.000,N,variable,0.000,,,Stickers - Cacao Nibs - Retail,250g,,mass,g,g
+cocoa-nibs-stickers-(80g),10137,Stickers - Cacao Nibs - Retail (80g),Packaging,<p>Cocoa Nibs Stickers for 80grams/sheet</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,242.000,,,N,variable,0.000,,,Stickers - Cacao Nibs - Retail,80g,,mass,g,g
+cocoa-powder-stickers-(200g),10135,Stickers - Cacao Powder - Retail (250g),Packaging,<p>Cocoa Powder Stickers for 250grams/sheet&nbsp;</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,Y,variable,-560.000,,,N,variable,0.000,,,Stickers - Cacao Powder - Retail,250g,,mass,g,g
+cocoa-powder-stickers-(80g),10134,Stickers - Cacao Powder - Retail (80g),Packaging,<p>Cocoa Powder Stickers for 80grams</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,237.000,,,N,variable,0.000,,,Stickers - Cacao Powder - Retail,80g,,mass,g,g
+chocolate-dipped-orange-sticker,10259,Stickers - Chocolate Dipped Orange,Discontinued,<p>Sticker for the Chocolate Dipped Orange.</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,Y,variable,1335.000,,,N,variable,0.000,,,Stickers - Chocolate Dipped Orange,,,count,each,each
+clear-stickers,10133,Stickers - Clear - King Power,Packaging,<p>Clear Stickers for King Power</p>,N,,,,,,,0.20,0.00,,,,Y,,BangkokPack,0.00,Y,0.20,141000.000,,,N,variable,0.000,,,Stickers - Clear - King Power,,,count,each,each
+"""coconut-cashews""-stickers",10254,Stickers - Coconut Cashews,Discontinued,"<p>Coconut Cashews stickers, are used for coconut cashews.</p>",N,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,Stickers - Coconut Cashews,,,count,each,each
+"""coffee-crunch-cashews""-stickers",10253,Stickers - Coffee Crunch Cashews,Discontinued,<p>Coffee Crunch Cashews Stickers used for coffee crunch cashews.</p>,N,,,,,,,variable,0.00,,,,Y,,James Design,0.00,N,variable,-10.000,,,N,variable,0.000,,,Stickers - Coffee Crunch Cashews,,,count,each,each
+drinking-chocolate-stickers-(300g),10136,Stickers - Drinking Chocolate - Retail (250g),Packaging,<p>Drinking Chocolate Stickers for 300grams</p>,N,,,,,,,variable,0.00,,,,Y,,James Design,0.00,Y,variable,-368.000,,,N,variable,0.000,,,Stickers - Drinking Chocolate - Retail,250g,,mass,g,g
+"""drizzled-banana-chips""-stickers---paleo-robbie",10189,Stickers - Drizzled Banana Chips - Paleo Robbie,Packaging,<p>Stickers for Paleo Robbie that read &quot;Drizzled Banana Chips&quot;</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,132.000,,,N,variable,0.000,,,Stickers - Drizzled Banana Chips - Paleo Robbie,,,count,each,each
+hong-kong-nutrition-stickers,10153,Stickers - Hong Kong Nutrition,Packing,<p>Hong Kong Nutrition Stickers</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,0.000,,,N,variable,0.000,,,Stickers - Hong Kong Nutrition,,,count,each,each
+stickers---hot-sauce,10437,Stickers - Hot Sauce,Packaging,,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,237.000,,,N,variable,0.000,,,Stickers - Hot Sauce,,,count,each,each
+"""hunky-monkey""-stickers--paleo-robbie",10188,Stickers - Hunky Monkey Trail Mix - Paleo Robbie,Packaging,"<p>Stickers that read Hunky Monkey, for Paleo Robbie.</p>",N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,229.000,,,N,variable,0.000,,,Stickers - Hunky Monkey Trail Mix - Paleo Robbie,,,count,each,each
+stickers---lemongrass-cashews-(100g),10287,Stickers - Lemongrass Cashews,Discontinued,,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,15.000,,,N,variable,0.000,,,Stickers - Lemongrass Cashews,,,count,each,each
+"""pineapple-pop""-stickers---paleo-robbie",10094,Stickers - Pineapple Pops - Paleo Robbie,Packaging,"<p>Stickers that read &quot;Pineapple Pop&quot;, for Paleo Robbie.</p>",N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,299.000,,,N,variable,0.000,,,Stickers - Pineapple Pops - Paleo Robbie,,,count,each,each
+stickers---tasting-box-fda,10375,Stickers - Tasting Box FDA,Packaging,<p>9 Flavors FDA: 44 stickers/page (we order 70 pages/time = 2800 stickers)&nbsp;</p>,N,,,,,,,1.00,0.00,,,,Y,,James Design,0.00,Y,1.00,110.000,,,N,1.00,0.000,,,Stickers - Tasting Box FDA,,,count,each,each
+bullet-chili-stickers,10251,Stickers - Thai Bullet Chili Peanuts,Discontinued,<p>Bullet Chili stickers used for Bullet Chili Peanuts.</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,-10.000,,,N,variable,0.000,,,Stickers - Thai Bullet Chili Peanuts,,,count,each,each
+sticker---thai-tea-peanuts-(100g),10286,Stickers - Thai Tea Peanuts,Discontinued,,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,14.000,,,N,variable,0.000,,,Stickers - Thai Tea Peanuts,,,count,each,each
+"strawberry-,-dried-(kg)",10302,"Strawberries , Dried (Kg)",Ingredients,<p>230B/Kg&nbsp;</p>,N,,,,,,,240.00,18.79,,,,Y,,Hia Pleam LumYai Market,,Y,240.00,-0.784,1.000,,N,variable,0.000,,,"Strawberries , Dried",Kg,kg,mass,g,kg
+"strawberries,-dried-(kg)",10084,"Strawberries, Dried (kg) Yok",Discontinued,"<p>Strawberries, Dried, 1 Bag = 3kg</p>",Y,,,,,,,448.00,0.00,,,,Y,,Yok Intertrade,0.00,N,448.00,-0.014,,,N,448.00,0.000,,,"Strawberries, Dried Yok",kg,kg,mass,g,kg
+"strawberry,-freeze-dried-(kg)",10159,"Strawberries, Freeze Dried  (kg)",Ingredients,<p>Strawberries freeze dried: small size (1kg/650B)</p>,N,,,,,,,650.00,123.81,,,,Y,,Hia Pleam LumYai Market,,Y,650.00,0.200,1.000,,N,variable,0.000,,,"Strawberries, Freeze Dried",kg,kg,mass,g,kg
+strawberry-powder-(kg),10475,Strawberry Powder (Kg),Ingredients,<p>Strawberry Powder from FREEZE DRIED FRUIT 100g/pack (199THB/pack)</p>,N,,,,,,,1990.00,0.00,,,,Y,,"Thaioachi Fruits Co., Ltd.",,Y,1990.00,0.248,,,N,1990.00,0.000,,,Strawberry Powder,Kg,kg,mass,g,kg
+sunflower-seeds-(kg),10263,Sunflower Seeds (kg),Discontinued,<p>Sunflower seeds - for Mooncake bar (500g/Bag)</p>,Y,,,,,,,184.00,0.00,,,,Y,,,0.00,N,184.00,0.000,,,N,184.00,0.000,,,Sunflower Seeds,kg,kg,mass,g,kg
+t-shirt-(life's-too-short)-size-2xl,10388,T-Shirt (Life's too short) Size 2XL,Merchandise,,N,,,,,,,150.00,0.00,,,,Y,,Pream ChiangMai,,N,150.00,0.000,,,Y,150.00,7.000,10.000,15.000,T-Shirt (Life's too short) Size 2XL,,,count,each,each
+t-shirt-(life's-too-short)-size-l,10386,T-Shirt (Life's too short) Size L,Merchandise,,N,,,,,,,150.00,0.00,,,,Y,,Pream ChiangMai,,N,150.00,0.000,,,Y,150.00,22.000,10.000,15.000,T-Shirt (Life's too short) Size L,,,count,each,each
+t-shirt-(life's-too-short)-size-m,10385,T-Shirt (Life's too short) Size M,Merchandise,"<p>T-Shirt (Retail) Size M, 2 color</p>",N,,,,,,,150.00,0.00,,,,Y,,Pream ChiangMai,,N,150.00,0.000,,,Y,150.00,7.000,10.000,15.000,T-Shirt (Life's too short) Size M,,,count,each,each
+t-shirt-(life's-too-short)-size-xl,10387,T-Shirt (Life's too short) Size XL,Merchandise,<p>T-Shirt (Retail) Size M&nbsp;</p>,N,,,,,,,150.00,0.00,,,,Y,,Pream ChiangMai,,N,150.00,0.000,,,Y,150.00,16.000,10.000,15.000,T-Shirt (Life's too short) Size XL,,,count,each,each
+t-shirt-(smy's-bird)-size-2xl,10384,T-Shirt (SMY's Bird) Size 2XL,Merchandise,,N,,,,,,,190.00,0.00,,,,Y,,Pream ChiangMai,,N,190.00,0.000,,,Y,190.00,28.000,10.000,15.000,T-Shirt (SMY's Bird) Size 2XL,,,count,each,each
+t-shirt-(smy's-bird)-size-l,10382,T-Shirt (SMY's Bird) Size L,Merchandise,,N,,,,,,,175.00,0.00,,,,Y,,Pream ChiangMai,,N,175.00,0.000,,,Y,175.00,57.000,10.000,15.000,T-Shirt (SMY's Bird) Size L,,,count,each,each
+t-shirt-(smy's-bird)-size-m,10381,T-Shirt (SMY's Bird) Size M,Merchandise,,N,,,,,,,175.00,0.00,,,,Y,,Pream ChiangMai,,N,175.00,0.000,,,Y,175.00,35.000,10.000,15.000,T-Shirt (SMY's Bird) Size M,,,count,each,each
+t-shirt-(smy's-bird)-size-s,10380,T-Shirt (SMY's Bird) Size S,Merchandise,<p>T-Shirt (Retail) size s</p>,N,,,,,,,175.00,0.00,,,,Y,,Pream ChiangMai,,N,175.00,0.000,,,Y,175.00,26.000,10.000,15.000,T-Shirt (SMY's Bird) Size S,,,count,each,each
+t-shirt-(smy's-bird)-size-xl,10383,T-Shirt (SMY's Bird) Size XL,Merchandise,,N,,,,,,,175.00,0.00,,,,Y,,Pream ChiangMai,,N,175.00,0.000,,,Y,175.00,13.000,10.000,15.000,T-Shirt (SMY's Bird) Size XL,,,count,each,each
+t5-box,10325,T5 Box,Packing,,N,,,,,,,24.00,0.00,BOX T5,,,Y,,G.M. Box Chiang Mai,,N,24.00,0.000,,,Y,24.00,42.000,5.000,,T5 Box,,,count,each,each
+tag---dipped-orange,10472,Tag - Dipped Orange,Packaging,,N,,,,,,,variable,0.00,,,,Y,,Ploy Printing,,N,variable,-50.000,,,N,variable,0.000,,,Tag - Dipped Orange,,,count,each,each
+taste-of-thailand-box-(new),10343,Taste of Thailand Box,Packaging,<p>New Package</p>,N,,,,,,,15.00,0.00,,,,Y,,Blueprint Design Ltd.Part.,,Y,15.00,750.000,500.000,,N,15.00,475.000,100.000,,Taste of Thailand Box,,,count,each,each
+tasting-box,10245,Tasting Box,Finished Good (others),"<p>Tasting Box. Includes ingredients, foil, individual packaging, and the packaging for the entire box itself. For 9 flavors each is 8 grams. Thai Tea, Durian, Chili, Coffee Crunch, Signature 70%, Signature 85%, Signature Milk, Masala Chai, Coconut Milk.&nbsp;</p>",Y,,,,,,,variable,12.33,,10210,1.000,N,Y,,,N,variable,0.000,,,Y,350.00,807.000,,,Tasting Box,,,mass,g,g
+,,,,,,,,,,,,,,,10211,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10212,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10213,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10214,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10215,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10216,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10217,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10218,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10219,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10013,0.008,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10010,0.015,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10087,0.007,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10004,0.040,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10012,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10014,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10080,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10165,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10375,1.000,,,,,,,,,,,,,,,,,,count,each,each
+tasting-spoons,10147,Tasting Spoons (pcs),Supplies,<p>Tasting spoons 100 pcs/ pack</p>,N,,,,,,,60.00,0.00,,,,Y,,Chiang Mai Plastic,,Y,60.00,3900.000,1000.000,2000.000,N,variable,0.000,,,Tasting Spoons,pcs,pcs,count,each,each
+tea-&-coffee-box-(new),10344,Tea & Coffee Box,Packaging,<p>New Package</p>,N,,,,,,,15.00,0.00,,,,Y,,Blueprint Design Ltd.Part.,,Y,15.00,460.000,500.000,,Y,15.00,408.000,100.000,,Tea & Coffee Box,,,count,each,each
+chili---dark-chocolate-70%-(20g),8857126163117,Thai Bullet Chili 70% Dark Chocolate (20g),Finished Goods (Core),"<p>Chili Dark Chocolate 70% (20g). Small Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,4.10,8857126163117,10031,1.000,N,Y,,,Y,variable,273.000,100.000,300.000,Y,60.00,144.000,48.000,180.000,Thai Bullet Chili 70% Dark Chocolate,20g,,mass,g,g
+,,,,,,,,,,,,,,,10010,0.019,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+chili---dark-chocolate-70%-base-(75g),8857126163032,Thai Bullet Chili 70% Dark Chocolate (75g),Finished Goods (Core),"<p>Chili - Dark Chocolate 70% Base (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,12.40,8857126163032,10010,0.074,N,Y,,,Y,variable,683.000,250.000,800.000,Y,145.00,190.000,48.000,180.000,Thai Bullet Chili 70% Dark Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10024,1.000,,,,,,,,,,,,,,,,,,count,each,each
+chili---dark-chocolate-70%-(8q-squares),10175,Thai Bullet Chili 70% Dark Chocolate (8g Squares),Discontinued,"<p>Chili, Dark Chocolate 70%. 8 gram squares. Includes flavoring, chocolate, wrapping, and foil.</p>",N,,,,,,,variable,1.17,,10010,0.007,N,Y,,,N,variable,42.000,,,N,variable,0.000,,,Thai Bullet Chili 70% Dark Chocolate,8g Squares,,mass,g,g
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+bullet-chili-peanuts-(100g),10250,Thai Bullet Chili Peanuts (100g),Discontinued,"<p>Thai Bullet Chili Peanuts, sold in 100g quantities. Includes wrapping.</p>",N,,,,,,,variable,11.55,,10044,0.033,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Thai Bullet Chili Peanuts,100g,,mass,g,g
+,,,,,,,,,,,,,,,10010,0.065,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10038,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10011,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10248,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10249,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10182,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10251,2.000,,,,,,,,,,,,,,,,,,count,each,each
+thai-tea---milk-chocolate-50%-(20g),8857126163162,Thai Tea Milk Chocolate (20g),Finished Goods (Core),"<p>Thai Tea - Milk Chocolate 50% (20g). Small Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,3.16,8857126163162,10004,0.019,N,Y,,,Y,variable,831.000,150.000,400.000,Y,60.00,624.000,48.000,180.000,Thai Tea Milk Chocolate,20g,,mass,g,g
+,,,,,,,,,,,,,,,10012,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10027,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+thai-tea---milk-chocolate-50%-(75g),8857126163087,Thai Tea Milk Chocolate (75g),Finished Goods (Core),"<p>Thai Tea- Milk Chocolate 50% (75g). Large Bar. Includes foil, chocolate, flavoring, and wrapper.&nbsp;</p>",N,,,,,,,variable,12.30,8857126163087,10004,0.074,N,Y,,,Y,variable,1086.000,300.000,1000.000,Y,145.00,168.000,48.000,180.000,Thai Tea Milk Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10012,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10022,1.000,,,,,,,,,,,,,,,,,,count,each,each
+thai-tea---milk-chocolate-50%-(8g-squares),10174,Thai Tea Milk Chocolate (8g Squares),Finished Good (others),"<p>Thai Tea Milk Chocolate 50%. Includes chocolate, flavoring, wrapping, and foil.</p>",N,,,,,,,variable,1.33,,10012,0.001,N,Y,,,N,variable,278.000,,,Y,variable,0.000,,,Thai Tea Milk Chocolate,8g Squares,,mass,g,g
+,,,,,,,,,,,,,,,10004,0.008,,,,,,,,,,,,,,,,,,count,each,each
+thai-tea-peanuts-(100g),10285,Thai Tea Peanuts (100g),Discontinued,<p>Peanuts coated with Thai Tea milk chocolate.</p>,N,,,,,,,variable,10.48,,10044,0.033,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Thai Tea Peanuts,100g,,mass,g,g
+,,,,,,,,,,,,,,,10004,0.065,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10012,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10090,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10248,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10249,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10286,2.000,,,,,,,,,,,,,,,,,,count,each,each
+thai-tea-powder,10012,Thai Tea Powder (kg),Ingredients,"<p>Nestea Thai Tea &nbsp;(200g/bag) &nbsp;12 bag/box=2.4kg, we order 5 boxes (12kg=12,000g)per time</p>",Y,,,,,,,280.00,0.00,,,,Y,,"Chiangmai Booncharoen Supply Co., Ltd.",0.00,Y,280.00,4.400,2.000,4.000,N,variable,0.000,,,Thai Tea Powder,kg,kg,mass,g,kg
+the-sharing-box,10470,The Sharing Box,Finished Good (others),<p>Small bar sharing box - 8x20g bars</p>,N,,,,,,,750.00,25.95,,10010,0.039,N,Y,,,N,variable,0.000,,,Y,750.00,0.000,,,The Sharing Box,,,count,each,each
+,,,,,,,,,,,,,,,10004,0.095,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10087,0.019,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10043,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10080,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10012,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10014,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10079,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10165,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10278,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10030,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10465,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10032,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10036,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10027,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10035,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10033,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10034,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10464,1.000,,,,,,,,,,,,,,,,,,count,each,each
+sharing-box-set-(small-bar),10464,The Sharing Box - Box,Packaging,<p>Sharing Box Set (small bar) 8 small bars set</p>,N,,,,,,,18.00,0.00,,,,Y,,Blueprint Design Ltd.Part.,0.00,Y,18.00,975.000,,,N,variable,0.000,,,The Sharing Box - Box,,,count,each,each
+the-surin-phuket-belly-band,10397,The Surin Phuket Belly band,Sleeve Logo,<p>สายคาด สุรินเบย์ ภูเก็ต บาร์เล็ก</p>,N,,,,,,,1.00,0.00,,,,Y,,,,N,1.00,0.000,,,Y,1.00,404.000,100.000,,The Surin Phuket Belly band,,,count,each,each
+tin-for-drinking-chocolate-(150g),10353,Tin for Drinking Chocolate (150g),Discontinued,<p>Tin for Mint Drinking Chocolate</p>,N,,,,,,,variable,0.00,,,,Y,,,,N,variable,6.000,,,N,variable,0.000,,,Tin for Drinking Chocolate,150g,,mass,g,g
+tin-for-mango-jelly,10119,Tin for Mango Jelly,Packaging,,N,,,,,,,12.00,0.00,,,,Y,,"Siam O-Pack Co., Ltd.",0.00,Y,12.00,966.000,500.000,1000.000,N,variable,0.000,,,Tin for Mango Jelly,,,count,each,each
+tissue-big-roll-(box),10427,Tissue Big Roll (box),Cleaning,<p>Tissue Big Roll: 12 rolls/box &nbsp;(Size 8 cm. x 600 m./roll)</p>,N,,,,,,,1105.00,0.00,,,,Y,,,,Y,1105.00,0.000,,,N,1105.00,2.000,,,Tissue Big Roll,box,box,count,each,each
+toffee-(kg),10442,Toffee (kg),Ingredients,<p>for German Chocolate Cake</p>,N,,,,,,,variable,445.34,,,,Y,,,,N,variable,3.796,,,N,variable,0.000,,,Toffee,kg,kg,mass,g,kg
+tom-yum-(20g),10469,Tom Yum 70% Dark Chocolate (20g),Finished Goods (Core),,N,,,,,,,variable,3.18,,10010,0.019,N,Y,,,Y,variable,496.000,200.000,400.000,Y,60.00,0.000,90.000,,Tom Yum 70% Dark Chocolate,20g,,mass,g,g
+,,,,,,,,,,,,,,,10278,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10057,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10055,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10056,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10166,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10465,0.001,,,,,,,,,,,,,,,,,,count,each,each
+tom-yum-65%-dark-chocolate-(75g),10277,Tom Yum Dark Chocolate (75g),Finished Goods (Core),<p>Tom Yum chocolate 75g</p>,N,,,,,,,variable,10.73,,10102,0.003,N,Y,,,Y,variable,226.000,,,Y,145.00,47.000,120.000,,Tom Yum Dark Chocolate,75g,,mass,g,g
+,,,,,,,,,,,,,,,10284,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10010,0.064,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10278,0.002,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10056,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10057,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10055,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10376,0.006,,,,,,,,,,,,,,,,,,count,each,each
+tom-yum-powder-(kg),10278,Tom Yum Powder (kg),Ingredients,,Y,,,,,,,600.00,0.00,,,,Y,,"Dor.Dekkinphak Co., Ltd.",,Y,600.00,1.091,,,N,variable,0.000,,,Tom Yum Powder,kg,kg,mass,g,kg
+"tomato-(dried),-natural-flavor-(kg)",10376,Tomato (Dried),Ingredients,<p>Dried Queen Tomato &nbsp;(Natural Flavor) By Maechuy 1kg/pack</p>,Y,,,,,,,350.00,0.00,,,,Y,,Maechuy,,Y,350.00,13.500,,,N,variable,0.000,,,Tomato (Dried),,,mass,g,g
+tomato-(kg),10072,"Tomato, Dried (kg) Natural",Discontinued,"<p>Tomato, 1 Bag &nbsp;=10kg</p>",Y,,,,,,,350.00,0.00,,,,Y,,Maechuy,0.00,Y,350.00,0.000,,,N,variable,0.000,,,"Tomato, Dried Natural",kg,kg,mass,g,kg
+tote-bag-(life's-too-short),10378,Tote Bag (Life's too short),Merchandise,<p>Tote bag (Retail)</p>,N,,,,,,,80.00,0.00,,,,Y,,Pream ChiangMai,,N,80.00,0.000,,,Y,80.00,0.000,15.000,25.000,Tote Bag (Life's too short),,,count,each,each
+tote-bag-(smy's-bird),10379,Tote Bag (SMY's Bird),Merchandise,<p>Tote Bag (Retail) 4 color</p>,N,,,,,,,100.00,0.00,,,,Y,,Pream ChiangMai,,N,100.00,0.000,,,Y,100.00,0.000,15.000,25.000,Tote Bag (SMY's Bird),,,count,each,each
+tropical-fruit-box-(new),10345,Tropical Fruit Box,Packaging,<p>New Package</p>,N,,,,,,,15.00,0.00,,,,Y,,Blueprint Design Ltd.Part.,,Y,15.00,1125.000,500.000,,Y,15.00,478.000,100.000,,Tropical Fruit Box,,,count,each,each
+vacuum-pack-bags,10125,Vacuum Pack Bags,Packaging,<p>Vacuum Pack Bags &nbsp;(25*35cm) (100bags/pack)</p>,N,,,,,,,240.00,0.00,,,,Y,,,,N,240.00,441.000,50.000,100.000,N,240.00,0.000,,,Vacuum Pack Bags,,,count,each,each
+songkran---milk-chocolate-50%-(75g),10268,Vanilla Jasmine Milk Chocolate - Songkran (75g),Discontinued,"<p>Songkran - Milk Chocolate 50%. Big Bar. 75 grams. Includes wrapping, packaging, flavors, and chocolate.</p>",N,,,,,,,variable,22.06,,10061,0.001,N,Y,,,N,variable,0.000,,,Y,variable,0.000,,,Vanilla Jasmine Milk Chocolate - Songkran,75g,,mass,g,g
+,,,,,,,,,,,,,,,10059,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10154,0.001,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10004,0.072,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10099,1.000,,,,,,,,,,,,,,,,,,count,each,each
+,,,,,,,,,,,,,,,10102,0.003,,,,,,,,,,,,,,,,,,count,each,each
+vanilla-oil-(ml),10059,Vanilla Oil (l),Ingredients,"<p>Vanilla Oil, 1 Bottle = 400ml</p>",Y,,,,,,,700.00,0.00,,,,Y,,Nutrifood Creation Limited Partnership,0.00,N,700.00,249.546,,,N,700.00,0.000,,,Vanilla Oil,l,l,volume,L,L
+vinegar-200ml.,10463,Vinegar 200ml.,Finished Good (others),,N,,,,,,,variable,0.00,,,,Y,,,,N,variable,0.000,,,Y,250.00,0.000,,,Vinegar 200ml.,,,count,each,each
+walnut-(kg),10361,Walnut (kg),Discontinued,<p>for Chinese New Year 2025</p>,Y,,,,,,,variable,0.00,,,,Y,,Yok Intertrade,,N,variable,0.680,,,N,variable,0.000,,,Walnut,kg,kg,mass,g,kg
+washing-powder,10404,Washing powder,Cleaning,<p>washing powder (3kg)</p>,N,,,,,,,99.00,0.00,,,,Y,,Makro,,Y,99.00,0.000,,,N,99.00,0.000,,,Washing powder,,,count,each,each
+"white-bag-9""-x-6""-(for-powders)",10128,"White Bag 9"" x 6"" (for powders)",Discontinued,<p>White Bag that is used for powder measuring 9 inches by 6 inches&nbsp;</p>,N,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,"White Bag 9"" x 6"" (for powders)",,,count,each,each
+white-board-pens-(blue),10420,White board pens (blue),Supplies,<p>white board pens (blue) for factory</p>,N,,,,,,,23.00,0.00,,,,Y,,บริษัท คลังเครื่องเขียน กรุ๊ป 2555 จำกัด,,Y,23.00,10.000,,,N,23.00,0.000,,,White board pens (blue),,,count,each,each
+white-boxes,10156,White Boxes,Packaging,<p>White boxes&nbsp;</p>,N,,,,,,,11.50,0.00,,,,Y,,BangkokPack,0.00,Y,11.50,7580.000,1000.000,2000.000,N,variable,0.000,,,White Boxes,,,count,each,each
+white-cake-boxes-(for-almond-butter-cups),10152,White Cake Boxes (for almond butter cups),Packaging,<p>White cake box &nbsp;(2-pound size) used for almond butter cups (10 pcs/pack)</p>,N,,,,,,,8.50,0.00,,,,Y,,Yok Intertrade,0.00,Y,8.50,-1.000,10.000,20.000,N,8.50,0.000,,,White Cake Boxes (for almond butter cups),,,count,each,each
+white-inner-box-for-giftset,10063,White inner box for Giftset,Packing,,Y,,,,,,,3.50,0.00,,,,Y,,,0.00,Y,3.50,3784.000,,,Y,3.50,1154.000,200.000,1307.000,White inner box for Giftset,,,mass,g,g
+white-long-sleeved-gown-(3xl),10415,White long-sleeved gown (3XL),Supplies,"<p>White long-sleeved gown with elastic cuffs, TC fabric, code: G112</p>",N,,,,,,,395.00,0.00,,,,Y,,"Thanapand Co., Ltd.",,Y,395.00,0.000,,,N,395.00,0.000,,,White long-sleeved gown (3XL),,,count,each,each
+white-long-sleeved-gown-(l),10414,White long-sleeved gown (L),Supplies,"<p>White long-sleeved gown with elastic cuffs, TC fabric, code: G112</p>",N,,,,,,,315.00,0.00,,,,Y,,"Thanapand Co., Ltd.",,Y,315.00,0.000,,,N,315.00,0.000,,,White long-sleeved gown,L,l,volume,L,L
+white-long-sleeved-gown-(m),10413,White long-sleeved gown (M),Supplies,"<p>White long-sleeved gown with elastic cuffs, TC fabric, code: G112</p>",N,,,,,,,315.00,0.00,,,,Y,,"Thanapand Co., Ltd.",,Y,315.00,0.000,,,N,315.00,0.000,,,White long-sleeved gown (M),,,count,each,each
+white-long-sleeved-gown-(s),10412,White long-sleeved gown (S),Supplies,"<p>White long-sleeved gown with elastic cuffs, TC fabric, code: G112</p>",N,,,,,,,315.00,0.00,,,,Y,,"Thanapand Co., Ltd.",,Y,315.00,0.000,,,N,315.00,0.000,,,White long-sleeved gown (S),,,count,each,each
+white-paper-for-butter-cup-(pack),10391,White paper for butter cup (350pcs/pack),Packaging,<p>White paper for butter cup (350pcs/pack)</p>,N,,,,,,,79.00,0.00,,,,Y,,Yok Intertrade,0.00,N,79.00,0.000,1.000,3.000,N,79.00,0.000,,,White paper for butter cup,350pcs/pack,pack,count,each,each
+white-short-sleeved-gown--(xl),10409,White short-sleeved gown  (S),Supplies,"<p>White short-sleeved gown, waterproof fabric / TC fabric, code: G109</p>",N,,,,,,,263.00,0.00,,,,Y,,"Thanapand Co., Ltd.",,Y,263.00,0.000,,,N,263.00,0.000,,,White short-sleeved gown  (S),,,count,each,each
+white-short-sleeved-gown-(2xl),10410,White short-sleeved gown (2XL),Supplies,"<p>White short-sleeved gown, waterproof fabric / TC fabric, code: G109</p>",N,,,,,,,313.00,0.00,,,,Y,,"Thanapand Co., Ltd.",,Y,313.00,0.000,,,N,313.00,0.000,,,White short-sleeved gown (2XL),,,count,each,each
+white-short-sleeved-gown-(3xl),10411,White short-sleeved gown (3XL),Supplies,"<p>White short-sleeved gown, waterproof fabric / TC fabric, code: G109</p>",N,,,,,,,343.00,0.00,,,,Y,,"Thanapand Co., Ltd.",,Y,343.00,0.000,,,N,343.00,0.000,,,White short-sleeved gown (3XL),,,count,each,each
+white-short-sleeved-gown-(s),10407,White short-sleeved gown (L),Supplies,"<p>White short-sleeved gown, waterproof fabric / TC fabric, code: G109</p>",N,,,,,,,263.00,0.00,,,,Y,,"Thanapand Co., Ltd.",,Y,263.00,0.000,,,N,263.00,0.000,,,White short-sleeved gown,L,l,volume,L,L
+white-short-sleeved-gown-(m),10408,White short-sleeved gown (M),Supplies,"<p>White short-sleeved gown, waterproof fabric / TC fabric, code: G109</p>",N,,,,,,,263.00,0.00,,,,Y,,"Thanapand Co., Ltd.",,Y,263.00,0.000,,,N,263.00,0.000,,,White short-sleeved gown (M),,,count,each,each
+whiteboard-pens-(red),10421,Whiteboard pens (red),Supplies,<p>Whiteboard pens (red) for factory</p>,N,,,,,,,23.00,0.00,,,,Y,,บริษัท คลังเครื่องเขียน กรุ๊ป 2555 จำกัด,,Y,23.00,4.000,,,N,23.00,0.000,,,Whiteboard pens (red),,,count,each,each
+wrapper----tom-yum-(20g),10465,Wrapper -  Tom Yum (20g),Packaging,<p>Wrapper &nbsp;for Tom Yum (20g)</p>,N,,,,,,,4.00,0.00,,,,Y,,Blueprint Design Ltd.Part.,,Y,4.00,1922.000,500.000,1500.000,N,variable,0.000,,,Wrapper -  Tom Yum,20g,,mass,g,g
+wrapper---gourmet-market-85%-+-nibs-(75g),10105,Wrapper - 85% & Nibs - Gourmet Market (75g),Discontinued,<p>Wrapper for Exclusive Gourmet Market 85% + Nibs Big Bar (75g)</p>,N,,,,,,,variable,2.02,,,,Y,,,0.00,N,variable,-38.000,150.000,500.000,N,variable,0.000,,,Wrapper - 85% & Nibs - Gourmet Market,75g,,mass,g,g
+wrapper---apple-pie---halloween-(75g),10459,Wrapper - Apple Pie - Halloween (75g),Packaging,,N,,,,,,,variable,0.00,,,,Y,,,,Y,variable,1072.000,,,N,variable,0.000,,,Wrapper - Apple Pie - Halloween,75g,,mass,g,g
+wrapper---banana-(20g),10034,Wrapper - Banana (20g),Packaging,<p>Wrapper for the Banana Small bar (20g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,1874.000,1000.000,2500.000,N,variable,0.000,,,Wrapper - Banana,20g,,mass,g,g
+wrapper---gourmet-market-banana-&-coconut-(75g),10103,Wrapper - Banana & Coconut Milk - Gourmet Market (75g),Discontinued,<p>Wrapper for Exclusive Gourmet Market Banana &amp; Coconut Big Bar (75g)</p>,N,,,,,,,variable,2.35,,,,Y,,,0.00,N,variable,-97.000,150.000,500.000,N,variable,0.000,,,Wrapper - Banana & Coconut Milk - Gourmet Market,75g,,mass,g,g
+wrapper---banana,10015,Wrapper - Banana Crunch (75g),Packaging,<p>Wrapper for the Banana Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,300.000,1000.000,4000.000,N,variable,0.000,,,Wrapper - Banana Crunch,75g,,mass,g,g
+wrapper---banana-slit-(75g),10110,Wrapper - Banana Split - Smash Daddy's (75g),Packaging,,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,1093.000,1000.000,,N,variable,0.000,,,Wrapper - Banana Split - Smash Daddy's,75g,,mass,g,g
+wrapper---ceremonial-matcha-(75g),10186,Wrapper - Ceremonial Matcha (75g),Discontinued,<p>Wrapper for Matcha White Chocolate Big Bar. 75g.</p>,N,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,Wrapper - Ceremonial Matcha,75g,,mass,g,g
+wrapper---coconut-curry-(75g),10018,Wrapper - Coconut Curry (75g),Packaging,<p>Wrapper for the Coconut Curry Big Bar (75g)</p>,N,,,,,,,variable,0.73,,,,Y,,BangkokPack,0.00,Y,variable,97.000,1500.000,5000.000,N,variable,0.000,,,Wrapper - Coconut Curry,75g,,mass,g,g
+wrapper---coconut-(20g),10032,Wrapper - Coconut Milk (20g),Packaging,<p>Wrapper for the Coconut Small bar (20g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,679.000,2500.000,5000.000,N,variable,0.000,,,Wrapper - Coconut Milk,20g,,mass,g,g
+wrapper---coconut,10017,Wrapper - Coconut Milk (75g),Packaging,<p>Wrapper for the Coconut Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,7.45,3557.000,3000.000,8000.000,N,variable,0.000,,,Wrapper - Coconut Milk,75g,,mass,g,g
+wrapper---coffee-(20g),10035,Wrapper - Coffee Crunch (20g),Packaging,<p>Wrapper for the Coffee Small bar (20g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,2284.000,1000.000,2500.000,N,variable,0.000,,,Wrapper - Coffee Crunch,20g,,mass,g,g
+wrapper---coffee-crunch-(75g),10019,Wrapper - Coffee Crunch (75g),Packaging,<p>Wrapper for the Coffee Crunch Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,1055.000,4000.000,8000.000,N,variable,0.000,,,Wrapper - Coffee Crunch,75g,,mass,g,g
+wrapper---durian-(20g),10036,Wrapper - Durian (20g),Packaging,<p>Wrapper for the Durian Small Bar (20g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,3808.000,2500.000,5000.000,N,variable,0.000,,,Wrapper - Durian,20g,,mass,g,g
+wrapper---durian-(75g),10026,Wrapper - Durian (75g),Packaging,<p>Wrapper for the Durian Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,732.000,4000.000,10000.000,N,variable,0.000,,,Wrapper - Durian,75g,,mass,g,g
+wrapper---german-chocolate-cake---christmas-(75g),10466,Wrapper - German Chocolate Cake - Christmas (75g),Packaging,,N,,,,,,,variable,0.00,,,,Y,,,,Y,variable,690.000,,,N,variable,0.000,,,Wrapper - German Chocolate Cake - Christmas,75g,,mass,g,g
+wrapper---gingerbread-(75g),10280,Wrapper - Gingerbread - Christmas (75g),Packaging,,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,612.000,,,N,variable,0.000,,,Wrapper - Gingerbread - Christmas,75g,,mass,g,g
+wrapper---pomelo-(75g),10025,Wrapper - Hill Coffee & Pomelo (75g),Packaging,<p>Wrapper for the Pomelo Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,1748.000,4000.000,10000.000,N,variable,0.000,,,Wrapper - Hill Coffee & Pomelo,75g,,mass,g,g
+wrapper---international-banana-&-coconut-(75g),10113,Wrapper - International Banana & Coconut (75g),Discontinued,<p>Wrapper for International Banana &amp; Coconut Big Bar (75g)</p>,N,,,,,,,variable,8.00,,,,Y,,,,N,variable,436.000,,,N,variable,0.000,,,Wrapper - International Banana & Coconut,75g,,mass,g,g
+wrapper---international-banana-crunch-(75g),10115,Wrapper - International Banana Crunch (75g),Discontinued,<p>Wrapper for International Banana Crunch Big Bar (75g)</p>,N,,,,,,,variable,8.00,,,,Y,,,,N,variable,40.000,,,N,variable,0.000,,,Wrapper - International Banana Crunch,75g,,mass,g,g
+wrapper---international-jackfruit-(75g),10112,Wrapper - International Jackfruit (75g),Discontinued,<p>Wrapper for International Jackfruit Big Bar (75g)</p>,N,,,,,,,variable,8.00,,,,Y,,,,N,variable,538.000,,,N,variable,0.000,,,Wrapper - International Jackfruit,75g,,mass,g,g
+wrapper---international-lemongrass-(75g),10111,Wrapper - International Lemongrass (75g),Discontinued,<p>Wrapper for International Lemongrass Big Bar (75g)</p>,N,,,,,,,variable,8.00,,,,Y,,,,N,variable,540.000,,,N,variable,0.000,,,Wrapper - International Lemongrass,75g,,mass,g,g
+wrapper---international-paleo-robbie-almonds-+-salt,10118,Wrapper - International Paleo Robbie - Simply Almond,Discontinued,<p>Wrapper for International Paleo Robbie Almonds + Salt Big Bar (75g)</p>,N,,,,,,,variable,3.64,,,,Y,,,0.00,N,variable,550.000,,,N,variable,0.000,,,Wrapper - International Paleo Robbie - Simply Almond,,,count,each,each
+wrapper---international-paleo-robbie-cacao-+-milk-(75g),10116,Wrapper - International Paleo Robbie - Simply Cacao (75g),Discontinued,<p>Wrapper for International Paleo Robbie Cacao + Milk Big Bar (75g)</p>,N,,,,,,,variable,8.00,,,,Y,,,0.00,N,variable,227.000,,,N,variable,0.000,,,Wrapper - International Paleo Robbie - Simply Cacao,75g,,mass,g,g
+wrapper---international-paleo-robbie-milk-+-vanilla-(75g),10117,Wrapper - International Paleo Robbie - Simply Vanilla (75g),Discontinued,<p>Wrapper for International Paleo Robbie Milk + Vanilla Big Bar (75g)</p>,N,,,,,,,variable,3.81,,,,Y,,,0.00,N,variable,573.000,,,N,variable,0.000,,,Wrapper - International Paleo Robbie - Simply Vanilla,75g,,mass,g,g
+wrapper---international-pineapple-coconut-(75g),10114,Wrapper - International Pineapple Coconut (75g),Discontinued,<p>Wrapper for International Pineapple Coconut Big Bar (75g)</p>,N,,,,,,,variable,8.00,,,,Y,,,,N,variable,71.000,,,N,variable,0.000,,,Wrapper - International Pineapple Coconut,75g,,mass,g,g
+wrapper---gourmet-market-jackfruit-(75g),10101,Wrapper - Jackfruit - Gourmet Market (75g),Discontinued,<p>Wrapper for Exclusive Gourmet Market Jackfruit Big Bar (75g)</p>,N,,,,,,,variable,8.53,,,,Y,,,0.00,N,variable,-12.000,150.000,500.000,N,variable,0.000,,,Wrapper - Jackfruit - Gourmet Market,75g,,mass,g,g
+wrapper---jujube-walnut---chinese-new-year-2025-(75g),10363,Wrapper - Jujube Walnut - Chinese New Year 2025 (75g),Discontinued,,N,,,,,,,variable,0.00,,,,Y,,,,N,variable,-82.000,,,N,variable,0.000,,,Wrapper - Jujube Walnut - Chinese New Year 2025,75g,,mass,g,g
+wrapper---khao-soi,10016,Wrapper - Khao Soi Curry (75g),Packaging,<p>Wrapper for the Khao Soi Big Bar (75g)</p>,N,,,,,,,variable,0.02,,,,Y,,BangkokPack,0.00,Y,variable,2608.000,1000.000,4000.000,N,variable,0.000,,,Wrapper - Khao Soi Curry,75g,,mass,g,g
+wrapper---king-power-35th-anniversary-75g,10294,Wrapper - King Power 35th Anniversary 75g,Discontinued,<p>Wrapper for King Power Anniversary</p>,N,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,Wrapper - King Power 35th Anniversary 75g,,,count,each,each
+wrapper---gourmet-market-lemongrass-(75g),10100,Wrapper - Lemongrass & Perilla Seed - Gourmet Market (75g),Discontinued,<p>Wrapper for Exclusive Gourmet Market Lemongrass Big Bar &nbsp;(75g)</p>,N,,,,,,,variable,1.42,,,,Y,,,0.00,N,variable,-44.000,150.000,500.000,N,variable,0.000,,,Wrapper - Lemongrass & Perilla Seed - Gourmet Market,75g,,mass,g,g
+wrapper---loi-kratong-(75g),10096,Wrapper - Loi Kratong (75g),Packaging,<p>Wrapper for Seasonal Bar Loi Kratong Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,Y,variable,950.000,,,N,variable,0.000,,,Wrapper - Loi Kratong,75g,,mass,g,g
+wrapper---lucky-citrus-(75g),10476,Wrapper - Lucky Citrus (75g),Packaging,<p>For Chinese New Year 2026</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,,Y,variable,1359.000,,,N,variable,0.000,,,Wrapper - Lucky Citrus,75g,,mass,g,g
+wrapper---mango-chili-(75g),10020,Wrapper - Mango Chili (75g),Packaging,<p>Wrapper for the Mango Chili Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,-11.000,4000.000,8000.000,N,variable,0.000,,,Wrapper - Mango Chili,75g,,mass,g,g
+wrapper---masala-(20g),10033,Wrapper - Masala Chai (20g),Packaging,<p>Wrapper for the Masala Chai Small bar (20g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,2110.000,1000.000,2500.000,N,variable,0.000,,,Wrapper - Masala Chai,20g,,mass,g,g
+wrapper---masala-chai-(75g),10021,Wrapper - Masala Chai (75g),Packaging,<p>Wrapper for the Masala Chai Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,5798.000,4000.000,8000.000,N,variable,0.000,,,Wrapper - Masala Chai,75g,,mass,g,g
+wrapper---mooncake-(75g),10279,Wrapper - Mooncake (75g),Discontinued,,N,,,,,,,variable,0.00,,,,N,,,,N,variable,,,,N,variable,,,,Wrapper - Mooncake,75g,,mass,g,g
+wrapper---chinese-new-year-(75g),10097,Wrapper - Orange & 5 Spice - Chinese New Year (75g),Discontinued,<p>Wrapper for Seasonal Chinese New Year Big Bar (75g)</p>,N,,,,,,,variable,7.50,,,,N,,,,N,variable,,,,N,variable,,,,Wrapper - Orange & 5 Spice - Chinese New Year,75g,,mass,g,g
+wrapper---peanut-curry-(75g),10023,Wrapper - Peanut Curry (75g),Packaging,<p>Wrapper for the Peanut Curry Big Bar (75g)</p>,N,,,,,,,variable,0.26,,,,Y,,BangkokPack,0.00,Y,variable,2512.000,3000.000,8000.000,N,variable,0.000,,,Wrapper - Peanut Curry,75g,,mass,g,g
+wrapper---peppermint-&-candied-nibs-(75g),10281,Wrapper - Peppermint & Candied Nibs - Christmas (75g),Discontinued,,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,N,variable,66.000,,,N,variable,0.000,,,Wrapper - Peppermint & Candied Nibs - Christmas,75g,,mass,g,g
+wrapper---gourmet-market-pineapple-coconut-(75g),10104,Wrapper - Pineapple & Coconut - Gourmet Market (75g),Discontinued,<p>Wrapper for Exclusive Gourmet Market Pineapple Coconut Big Bar (75g)</p>,N,,,,,,,variable,3.13,,,,Y,,,0.00,N,variable,-152.000,150.000,500.000,N,variable,0.000,,,Wrapper - Pineapple & Coconut - Gourmet Market,75g,,mass,g,g
+wrapper---signature-70%-(20g),10030,Wrapper - Signature 70% (20g),Packaging,<p>Wrapper for the Signature 70% Small Bar (20g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,197.000,1000.000,2500.000,N,variable,0.000,,,Wrapper - Signature 70%,20g,,mass,g,g
+signature-70%-wrapper,10201,Wrapper - Signature 70% (75g),Packaging,<p>Wrapper for the Signature Dark 70% Big Bar (75g)</p>,N,,,,,,,variable,7.00,,,,Y,,BangkokPack,7.00,Y,variable,592.000,3000.000,8000.000,N,variable,0.000,,,Wrapper - Signature 70%,75g,,mass,g,g
+wrapper---signature-85%-(25g),10029,Wrapper - Signature 85% (20g),Packaging,<p>Wrapper for the Signature 85% Small Bar (20g)</p>,N,,,,,,,variable,0.12,,,,Y,,BangkokPack,0.00,Y,variable,-672.000,1000.000,4000.000,N,variable,0.000,,,Wrapper - Signature 85%,20g,,mass,g,g
+signature-85%-wrapper,10002,Wrapper - Signature 85% (75g),Packaging,<p>Wrapper for the Signature 85% Big Bar (75g)</p>,N,,,,,,,variable,7.00,,,,Y,,BangkokPack,7.00,Y,variable,88.000,1000.000,4000.000,N,variable,0.000,,,Wrapper - Signature 85%,75g,,mass,g,g
+wrapper---signature-milk-(25g),10028,Wrapper - Signature Milk (20g),Packaging,<p>Wrapper for the Signature Milk Small Bar (20g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,949.000,1000.000,2500.000,N,variable,0.000,,,Wrapper - Signature Milk,20g,,mass,g,g
+wrapper---signature-milk,10005,Wrapper - Signature Milk (75g),Packaging,<p>Wrapper for the Signature Milk Big Bar (75g)</p>,N,,,,,,,variable,6.50,,,,Y,,BangkokPack,6.50,Y,variable,934.000,3000.000,8000.000,N,variable,0.000,,,Wrapper - Signature Milk,75g,,mass,g,g
+wrapper---paleo-robbie-almonds-+-salt-(75g_,10108,Wrapper - Simply Almond - Paleo Robbie (75g),Packaging,<p>Wrapper for Exclusive Paleo Robbie Almonds + Salt Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,Y,variable,233.000,150.000,500.000,N,variable,0.000,,,Wrapper - Simply Almond - Paleo Robbie,75g,,mass,g,g
+wrapper---paleo-robbie-cacao-+-milk-(75g),10106,Wrapper - Simply Cacao - Paleo Robbie (75g),Packaging,<p>Wrapper for Exclusive Paleo Robbie Cacao + Milk Big Bar (75g)</p>,N,,,,,,,variable,0.01,,,,Y,,,0.00,Y,8.00,349.000,150.000,500.000,N,variable,0.000,,,Wrapper - Simply Cacao - Paleo Robbie,75g,,mass,g,g
+wrapper---paleo-robbie-milk-+-vanilla-(75g),10107,Wrapper - Simply Vanilla - Paleo Robbie (75g),Packaging,<p>Wrapper for Exclusive Paleo Robbie Milk + Vanilla Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,Y,variable,266.000,150.000,500.000,N,variable,0.000,,,Wrapper - Simply Vanilla - Paleo Robbie,75g,,mass,g,g
+wrapper---campfire-smores---halloween-(75g),10283,Wrapper - Smoky Smores - Halloween (75g),Discontinued,,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,N,variable,19.000,,,N,variable,0.000,,,Wrapper - Smoky Smores - Halloween,75g,,mass,g,g
+wrapper---sparkling-strawberry-(75g),10477,Wrapper - Sparkling Strawberry -Valentine's 2026 (75g),Packaging,<p>For Valentine&#39;s Day 2026</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,,Y,variable,170.000,,,N,variable,0.000,,,Wrapper - Sparkling Strawberry -Valentine's 2026,75g,,mass,g,g
+wrapper---chili-(20g),10031,Wrapper - Thai Bullet Chili (20g),Packaging,<p>Wrapper for the Chili Small bar (20g)</p>,N,,,,,,,variable,0.65,,,,Y,,BangkokPack,0.00,Y,variable,1504.000,1000.000,2500.000,N,variable,0.000,,,Wrapper - Thai Bullet Chili,20g,,mass,g,g
+wrapper---chili-(75g),10024,Wrapper - Thai Bullet Chili (75g),Packaging,<p>Wrapper for the Chili Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,2362.000,3000.000,8000.000,N,variable,0.000,,,Wrapper - Thai Bullet Chili,75g,,mass,g,g
+wrapper---thai-tea-(25g),10027,Wrapper - Thai Tea (20g),Packaging,<p>Wrapper for the Thai Tea Small Bar (20g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,2773.000,2500.000,5000.000,N,variable,0.000,,,Wrapper - Thai Tea,20g,,mass,g,g
+wrapper---thai-tea-(75g),10022,Wrapper - Thai Tea (75g),Packaging,<p>Wrapper for the Thai Tea Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,6056.000,5000.000,10000.000,N,variable,0.000,,,Wrapper - Thai Tea,75g,,mass,g,g
+wrapper---tom-yum-(75g),10284,Wrapper - Tom Yum (75g),Packaging,,N,,,,,,,variable,0.00,,,,Y,,BangkokPack,0.00,Y,variable,2683.000,3000.000,5000.000,N,variable,0.000,,,Wrapper - Tom Yum,75g,,mass,g,g
+wrapper---valentine's-(75g),10098,Wrapper - Valentine's (75g),Discontinued,<p>Wrapper for Seasonal Valentine&#39;s Big Bar (75g)</p>,N,,,,,,,variable,0.00,,,,Y,,,0.00,N,variable,1670.000,,,N,variable,0.000,,,Wrapper - Valentine's,75g,,mass,g,g
+wrapper---songkran-(75g),10099,Wrapper - Vanilla Jasmine - Songkran (75g),Discontinued,<p>Wrapper for Seasonal Songkran Big Bar (75g)</p>,N,,,,,,,variable,7.50,,,,Y,,,0.00,N,variable,397.000,,,N,variable,0.000,,,Wrapper - Vanilla Jasmine - Songkran,75g,,mass,g,g
+wrapper--cmseo-(oem),10473,Wrapper- CMSEO (75g),Packaging,<p>CMSEO Green wrapper 75g (OEM)</p>,N,,,,,,,20.00,0.00,,,,N,,,,N,20.00,,,,N,variable,,,,Wrapper- CMSEO,75g,,mass,g,g
+yellow-gloves,10434,Yellow Gloves,Cleaning,<p>Yellow Gloves for Cleaning</p>,N,,,,,,,85.00,0.00,,,,Y,,,,Y,85.00,3.000,,,N,85.00,0.000,,,Yellow Gloves,,,count,each,each
+ziploc-bags---m,10124,Ziploc Bags - M (Kg) (25*38CM),Supplies,<p>Medium-sized Ziploc Bags &nbsp;containing the wrapped chocolate 25*38CM=10*15 inch (per KG)</p>,N,,,,,,,103.00,0.00,,,,Y,,Yok Intertrade,,N,103.00,5.000,,,N,103.00,0.000,,,Ziploc Bags - M,Kg,kg,mass,g,kg
+ziploc-bags---l,10123,Ziploc Bags (kg) (20*30cm),Supplies,<p>Large Ziploc Bags&nbsp;</p>,N,,,,,,,101.00,0.00,,,,Y,,Chiang Mai Plastic,,Y,101.00,9.000,,,N,101.00,0.000,,,Ziploc Bags,kg,kg,mass,g,kg
+ziplock-bag-(30*45-cm),10455,Ziplock Bag (30*45 cm),Supplies,,N,,,,,,,variable,0.00,,,,N,,,,Y,variable,,,,N,variable,,,,Ziplock Bag (30*45 cm),,,count,each,each
+ziplock-bag-(kg)-(13*20cm),10328,Ziplock bag (kg) (13*20cm),Supplies,<p>Ziplock bag (kg) (13*20cm) for the sample chocolate</p>,N,,,,,,,96.00,0.00,,,,Y,,Chiang Mai Plastic,,Y,96.00,6.000,1.000,3.000,N,96.00,0.000,,,Ziplock bag,kg,kg,mass,g,kg

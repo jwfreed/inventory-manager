@@ -195,8 +195,14 @@ export default function ItemsListPage() {
     }
   }, [closeColumnSelector, showColumnSelector])
 
+  const pageSize = 50
+  const [page, setPage] = useState(1)
+  const offset = (page - 1) * pageSize
   const { data, isLoading, isError, error, refetch } = useItemsList({
     lifecycleStatus: lifecycleStatus,
+    search: search || undefined,
+    limit: pageSize,
+    offset,
   })
 
   const shouldShowBulkEditTip =
@@ -225,15 +231,7 @@ export default function ItemsListPage() {
     { enabled: Boolean(data?.data?.length) },
   )
 
-  const filtered = useMemo(() => {
-    const list = data?.data ?? []
-    if (!search) return list
-    const needle = search.toLowerCase()
-    return list.filter(
-      (item) =>
-        item.sku.toLowerCase().includes(needle) || item.name.toLowerCase().includes(needle),
-    )
-  }, [data?.data, search])
+  const filtered = useMemo(() => data?.data ?? [], [data?.data])
 
   const filteredByType = useMemo(() => {
     if (!typeFilter && !abcClassFilter) return filtered
@@ -246,6 +244,10 @@ export default function ItemsListPage() {
     }
     return result
   }, [filtered, typeFilter, abcClassFilter])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, lifecycleStatus, typeFilter, abcClassFilter])
 
   const availableByItem = useMemo(() => {
     const map = new Map<string, Map<string, number>>()
@@ -623,7 +625,7 @@ export default function ItemsListPage() {
           </div>
         </div>
         <div className="pt-2 text-sm text-slate-600">
-          Showing {filteredByType.length} of {data?.data?.length ?? 0} items
+          Showing {filteredByType.length} of {data?.paging?.total ?? data?.data?.length ?? 0} items
         </div>
       </Section>
 
@@ -712,6 +714,34 @@ export default function ItemsListPage() {
                   ))}
                 </tbody>
               </table>
+              <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm">
+                <span className="text-slate-500">
+                  Page {page} of{' '}
+                  {data?.paging?.total ? Math.max(1, Math.ceil(data.paging.total / pageSize)) : 1}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page <= 1}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setPage((prev) => prev + 1)}
+                    disabled={
+                      data?.paging?.total
+                        ? page >= Math.ceil(data.paging.total / pageSize)
+                        : true
+                    }
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </Card>

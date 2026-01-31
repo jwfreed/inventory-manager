@@ -21,7 +21,7 @@ export const itemsQueryKeys = {
 }
 
 type ItemsListOptions = Omit<
-  UseQueryOptions<{ data: Item[] }, ApiError>,
+  UseQueryOptions<{ data: Item[]; paging?: { limit: number; offset: number; total?: number } }, ApiError>,
   'queryKey' | 'queryFn'
 >
 

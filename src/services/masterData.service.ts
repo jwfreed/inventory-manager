@@ -305,8 +305,14 @@ export async function listItems(
     const idx = params.length;
     conditions.push(`(i.sku ILIKE $${idx} OR i.name ILIKE $${idx})`);
   }
-  params.push(filters.limit, filters.offset);
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const countRes = await query(
+    `SELECT COUNT(*)::int AS total
+       FROM items i
+       ${where}`,
+    params
+  );
+  params.push(filters.limit, filters.offset);
   const { rows } = await query(
     `SELECT ${itemSelectColumns}
      FROM items i
@@ -316,7 +322,7 @@ export async function listItems(
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
-  return rows.map(mapItem);
+  return { items: rows.map(mapItem), total: countRes.rows[0]?.total ?? 0 };
 }
 
 export function mapLocation(row: any) {
