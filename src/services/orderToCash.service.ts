@@ -28,6 +28,26 @@ import { recordAuditLog } from '../lib/audit';
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
 export type ReservationInput = z.infer<typeof reservationSchema>;
 export type ReservationCreateInput = z.infer<typeof reservationsCreateSchema>;
+
+async function assertLocationSellable(
+  client: PoolClient,
+  tenantId: string,
+  locationId: string
+) {
+  const res = await client.query<{ is_sellable: boolean }>(
+    `SELECT is_sellable
+       FROM locations
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, locationId]
+  );
+  if (res.rowCount === 0) {
+    throw new Error('RESERVATION_LOCATION_NOT_FOUND');
+  }
+  if (!res.rows[0]?.is_sellable) {
+    throw new Error('RESERVATION_LOCATION_NOT_SELLABLE');
+  }
+}
 export type ShipmentInput = z.infer<typeof shipmentSchema>;
 export type ReturnAuthorizationInput = z.infer<typeof returnAuthorizationSchema>;
 
@@ -230,6 +250,8 @@ export async function createReservations(
           continue;
         }
       }
+
+      await assertLocationSellable(client, tenantId, reservation.locationId);
 
       const balance = await getInventoryBalanceForUpdate(
         client,

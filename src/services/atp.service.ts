@@ -26,6 +26,8 @@ function normalizeQuantity(value: unknown): number {
   return roundQuantity(toNumber(value));
 }
 
+const SELLABLE_LOCATION_FILTER = `AND l.is_sellable = true`;
+
 /**
  * Calculate Available to Promise (ATP) for inventory items.
  * ATP = on_hand - reserved
@@ -74,10 +76,12 @@ export async function getAvailableToPromise(
               SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS on_hand
          FROM inventory_movement_lines iml
          JOIN inventory_movements im ON im.id = iml.movement_id
+         JOIN locations l ON l.id = iml.location_id AND l.tenant_id = iml.tenant_id
         WHERE im.status = 'posted'
           AND iml.tenant_id = $1
           AND im.tenant_id = $1
           ${whereOnHand}
+          ${SELLABLE_LOCATION_FILTER}
         GROUP BY iml.item_id, iml.location_id, COALESCE(iml.canonical_uom, iml.uom)
      ),
      reserved AS (
@@ -87,10 +91,12 @@ export async function getAvailableToPromise(
               SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved
          FROM inventory_reservations r
          JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
+         JOIN locations l ON l.id = r.location_id AND l.tenant_id = r.tenant_id
         WHERE r.status IN ('open', 'released')
           AND r.tenant_id = $1
           AND (i.canonical_uom IS NULL OR r.uom = i.canonical_uom)
           ${whereReserved}
+          ${SELLABLE_LOCATION_FILTER}
         GROUP BY r.item_id, r.location_id, COALESCE(i.canonical_uom, r.uom)
      ),
      combined AS (
@@ -161,12 +167,14 @@ export async function getAvailableToPromiseDetail(
               SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS on_hand
          FROM inventory_movement_lines iml
          JOIN inventory_movements im ON im.id = iml.movement_id
+         JOIN locations l ON l.id = iml.location_id AND l.tenant_id = iml.tenant_id
         WHERE im.status = 'posted'
           AND iml.tenant_id = $1
           AND im.tenant_id = $1
           AND iml.item_id = $2
           AND iml.location_id = $3
           ${uomFilter}
+          ${SELLABLE_LOCATION_FILTER}
         GROUP BY COALESCE(iml.canonical_uom, iml.uom)
      ),
      reserved AS (
@@ -174,12 +182,14 @@ export async function getAvailableToPromiseDetail(
               SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved
          FROM inventory_reservations r
          JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
+         JOIN locations l ON l.id = r.location_id AND l.tenant_id = r.tenant_id
         WHERE r.status IN ('open', 'released')
           AND r.tenant_id = $1
           AND r.item_id = $2
           AND r.location_id = $3
           AND (i.canonical_uom IS NULL OR r.uom = i.canonical_uom)
           ${uomFilterReserved}
+          ${SELLABLE_LOCATION_FILTER}
         GROUP BY COALESCE(i.canonical_uom, r.uom)
      )
     SELECT i.sku AS item_sku,

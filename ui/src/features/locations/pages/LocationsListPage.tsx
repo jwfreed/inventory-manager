@@ -30,15 +30,18 @@ export default function LocationsListPage() {
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [includeReceivingQc, setIncludeReceivingQc] = useState(true)
+  const includeWarehouseZones = typeFilter === 'warehouse'
 
   const { data, isLoading, isError, error, refetch } = useLocationsList({
     active: active === '' ? undefined : active === 'true',
     type: typeFilter || undefined,
+    includeWarehouseZones,
   })
 
   const filtered = useMemo(() => {
     const list = data?.data ?? []
-    const filteredByType = typeFilter ? list.filter((loc) => loc.type === typeFilter) : list
+    const filteredByType =
+      typeFilter && typeFilter !== 'warehouse' ? list.filter((loc) => loc.type === typeFilter) : list
     if (!search) return filteredByType
     const needle = search.toLowerCase()
     return filteredByType.filter(

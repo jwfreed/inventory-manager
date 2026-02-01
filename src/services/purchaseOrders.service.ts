@@ -211,7 +211,7 @@ export async function createPurchaseOrder(
           line.exchangeRateToBase ?? null,
           line.lineAmount ?? null,
           line.baseAmount ?? null,
-          line.overReceiptTolerancePct ?? null,
+          line.overReceiptTolerancePct ?? 0,
           line.notes ?? null
         ]
       );

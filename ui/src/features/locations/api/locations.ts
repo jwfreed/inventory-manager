@@ -5,6 +5,7 @@ type LocationApiRow = Location & {
   parent_location_id?: string | null
   created_at?: string
   updated_at?: string
+  is_sellable?: boolean
 }
 
 export type LocationPayload = {
@@ -22,6 +23,7 @@ export type ListLocationsParams = {
   type?: string
   active?: boolean
   search?: string
+  includeWarehouseZones?: boolean
   limit?: number
   offset?: number
 }
@@ -32,6 +34,8 @@ function mapLocation(row: LocationApiRow): Location {
     code: row.code,
     name: row.name,
     type: row.type,
+    role: row.role,
+    isSellable: row.isSellable ?? row.is_sellable,
     active: row.active,
     parentLocationId: row.parentLocationId ?? row.parent_location_id,
     path: row.path,
@@ -50,6 +54,9 @@ export async function listLocations(params: ListLocationsParams = {}): Promise<{
       ...(params.type ? { type: params.type } : {}),
       ...(params.active !== undefined ? { active: params.active } : {}),
       ...(params.search ? { search: params.search } : {}),
+      ...(params.includeWarehouseZones !== undefined
+        ? { includeWarehouseZones: params.includeWarehouseZones }
+        : {}),
       ...(params.limit ? { limit: params.limit } : {}),
       ...(params.offset !== undefined ? { offset: params.offset } : {}),
     },

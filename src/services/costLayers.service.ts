@@ -147,6 +147,80 @@ export async function createCostLayer(params: CreateLayerParams): Promise<CostLa
 }
 
 /**
+ * Create a receipt cost layer exactly once per receipt line.
+ * Uses ON CONFLICT DO NOTHING to ensure concurrency safety.
+ */
+export async function createReceiptCostLayerOnce(params: CreateLayerParams): Promise<CostLayer> {
+  if (params.source_type !== 'receipt' || !params.source_document_id) {
+    throw new Error('COST_LAYER_RECEIPT_SOURCE_REQUIRED');
+  }
+  const id = uuidv4();
+  const layer_date = params.layer_date || new Date();
+  const extended_cost = params.quantity * params.unit_cost;
+  const executor = params.client ? params.client.query.bind(params.client) : query;
+
+  const seqResult = await executor<{ max_seq: number }>(
+    `SELECT COALESCE(MAX(layer_sequence), 0) as max_seq
+     FROM inventory_cost_layers
+     WHERE tenant_id = $1 
+       AND item_id = $2 
+       AND location_id = $3 
+       AND DATE(layer_date) = DATE($4)`,
+    [params.tenant_id, params.item_id, params.location_id, layer_date]
+  );
+  const layer_sequence = (seqResult.rows[0]?.max_seq || 0) + 1;
+
+  const insertResult = await executor<CostLayer>(
+    `INSERT INTO inventory_cost_layers (
+      id, tenant_id, item_id, location_id, uom,
+      layer_date, layer_sequence,
+      original_quantity, remaining_quantity,
+      unit_cost, extended_cost,
+      source_type, source_document_id, movement_id, lot_id, notes
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    ON CONFLICT DO NOTHING
+    RETURNING *`,
+    [
+      id,
+      params.tenant_id,
+      params.item_id,
+      params.location_id,
+      params.uom,
+      layer_date,
+      layer_sequence,
+      params.quantity,
+      params.quantity,
+      params.unit_cost,
+      extended_cost,
+      params.source_type,
+      params.source_document_id || null,
+      params.movement_id || null,
+      params.lot_id || null,
+      params.notes || null
+    ]
+  );
+
+  if (insertResult.rowCount > 0) {
+    return insertResult.rows[0];
+  }
+
+  const existing = await executor<CostLayer>(
+    `SELECT *
+       FROM inventory_cost_layers
+      WHERE tenant_id = $1
+        AND source_type = 'receipt'
+        AND source_document_id = $2
+        AND voided_at IS NULL
+      LIMIT 1`,
+    [params.tenant_id, params.source_document_id]
+  );
+  if (existing.rowCount === 0) {
+    throw new Error('COST_LAYER_RECEIPT_CONFLICT_MISSING');
+  }
+  return existing.rows[0];
+}
+
+/**
  * Get available cost layers for an item/location (FIFO order)
  */
 export async function getAvailableLayers(
@@ -163,6 +237,7 @@ export async function getAvailableLayers(
       AND item_id = $2 
       AND location_id = $3 
       AND remaining_quantity > 0
+      AND voided_at IS NULL
   `;
   const params: any[] = [tenant_id, item_id, location_id];
 
@@ -322,7 +397,8 @@ export async function getCurrentWeightedAverageCost(
      WHERE tenant_id = $1 
        AND item_id = $2 
        AND location_id = $3 
-       AND remaining_quantity > 0`,
+       AND remaining_quantity > 0
+       AND voided_at IS NULL`,
     [tenant_id, item_id, location_id]
   );
 

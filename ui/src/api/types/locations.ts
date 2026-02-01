@@ -3,6 +3,8 @@ export type Location = {
   code: string
   name: string
   type: string
+  role?: string
+  isSellable?: boolean
   active: boolean
   parentLocationId?: string | null
   path?: string | null

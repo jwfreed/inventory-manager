@@ -93,6 +93,7 @@ export async function getInventoryValuationByCostLayers(
     JOIN items i ON cl.item_id = i.id
     JOIN locations l ON cl.location_id = l.id
     WHERE cl.tenant_id = $1
+      AND cl.voided_at IS NULL
       ${whereClause}
     GROUP BY i.id, i.sku, i.name, l.id, l.code, l.name, cl.uom
     ${minValue ? `HAVING SUM(cl.extended_cost) >= $${params.push(minValue)}` : ''}
@@ -117,6 +118,7 @@ export async function getInventoryValuationByCostLayers(
     JOIN items i ON cl.item_id = i.id
     JOIN locations l ON cl.location_id = l.id
     WHERE cl.tenant_id = $1
+      AND cl.voided_at IS NULL
       AND cl.remaining_quantity > 0
       ${whereClause}`,
     [tenantId, ...(locationId ? [locationId] : []), ...(itemType ? [itemType] : [])]
@@ -207,6 +209,7 @@ export async function getCostVarianceByCostLayers(
     JOIN items i ON cl.item_id = i.id
     JOIN locations l ON cl.location_id = l.id
     WHERE cl.tenant_id = $1
+      AND cl.voided_at IS NULL
       ${whereClause}
     GROUP BY i.id, i.sku, i.name, COALESCE(i.standard_cost_base, i.standard_cost), l.id, l.code
     HAVING SUM(cl.remaining_quantity) > 0
@@ -330,7 +333,7 @@ export async function getCOGSAnalysis(
       SUM(clc.extended_cost) as total_cogs,
       COUNT(clc.id) as consumption_count
     FROM cost_layer_consumptions clc
-    JOIN inventory_cost_layers cl ON clc.cost_layer_id = cl.id
+    JOIN inventory_cost_layers cl ON clc.cost_layer_id = cl.id AND cl.voided_at IS NULL
     LEFT JOIN items i ON cl.item_id = i.id
     LEFT JOIN locations l ON cl.location_id = l.id
     WHERE clc.tenant_id = $1
@@ -409,6 +412,7 @@ export async function getInventoryAgingByCostLayers(
         EXTRACT(DAY FROM AGE(NOW(), cl.layer_date))::integer as age
       FROM inventory_cost_layers cl
       WHERE cl.tenant_id = $1
+        AND cl.voided_at IS NULL
         ${whereClause}
     )
     SELECT 

@@ -7,6 +7,8 @@ export type InventoryMovementInput = {
   movementType: string;
   status: string;
   externalRef: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
   idempotencyKey?: string | null;
   occurredAt: Date | string;
   postedAt?: Date | string | null;
@@ -70,14 +72,16 @@ export async function createInventoryMovement(
   try {
     await client.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, idempotency_key, occurred_at, posted_at, notes, metadata, created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          id, tenant_id, movement_type, status, external_ref, source_type, source_id, idempotency_key, occurred_at, posted_at, notes, metadata, created_at, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         id,
         input.tenantId,
         input.movementType,
         input.status,
         input.externalRef,
+        input.sourceType ?? null,
+        input.sourceId ?? null,
         input.idempotencyKey ?? null,
         input.occurredAt,
         input.postedAt ?? null,
@@ -89,6 +93,18 @@ export async function createInventoryMovement(
     );
   } catch (err: any) {
     if (err?.code === '23505') {
+      if (input.sourceType && input.sourceId) {
+        const existingBySource = await findMovementBySource(
+          client,
+          input.tenantId,
+          input.sourceType,
+          input.sourceId,
+          input.movementType
+        );
+        if (existingBySource) {
+          return { id: existingBySource, created: false };
+        }
+      }
       const existingId = await findMovementByExternalRef(client, input.tenantId, input.externalRef);
       if (existingId) {
         return { id: existingId, created: false };
@@ -175,6 +191,26 @@ async function findMovementByExternalRef(
   const res = await client.query<{ id: string }>(
     'SELECT id FROM inventory_movements WHERE tenant_id = $1 AND external_ref = $2 LIMIT 1',
     [tenantId, externalRef]
+  );
+  if (res.rowCount === 0) return null;
+  return res.rows[0].id;
+}
+
+async function findMovementBySource(
+  client: PoolClient,
+  tenantId: string,
+  sourceType: string,
+  sourceId: string,
+  movementType: string
+): Promise<string | null> {
+  const res = await client.query<{ id: string }>(
+    `SELECT id FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_type = $2
+        AND source_id = $3
+        AND movement_type = $4
+      LIMIT 1`,
+    [tenantId, sourceType, sourceId, movementType]
   );
   if (res.rowCount === 0) return null;
   return res.rows[0].id;

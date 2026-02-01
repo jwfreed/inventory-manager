@@ -257,23 +257,14 @@ export default function ItemDetailPage() {
   const locationStageLabel = useCallback(
     (locationId: string) => {
       const loc = locationLookup.get(locationId)
-      const code = loc?.code?.toLowerCase() ?? ''
-      const name = loc?.name?.toLowerCase() ?? ''
-      const type = loc?.type ?? ''
-      const haystack = `${code} ${name}`
-      if (['scrap'].includes(type) || /scrap|reject|rejected/.test(haystack)) {
+      if (!loc) return 'External / Virtual'
+      if (loc.role && loc.role !== 'SELLABLE') {
         return 'Quarantine / Rejected'
       }
-      if (/qc|hold|quarantine/.test(haystack)) {
+      if (loc.isSellable === false) {
         return 'Quarantine / Rejected'
       }
-      if (/receiv|staging/.test(haystack)) {
-        return 'Receiving & Staging'
-      }
-      if (/wip|work|production/.test(haystack)) {
-        return 'Production / WIP'
-      }
-      if (['warehouse', 'bin', 'store'].includes(type)) {
+      if (['warehouse', 'bin', 'store'].includes(loc.type)) {
         return 'Storage / Available'
       }
       return 'External / Virtual'

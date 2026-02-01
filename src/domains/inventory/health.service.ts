@@ -95,6 +95,7 @@ export async function computeInventoryHealth(
               SUM(remaining_quantity) AS qty
          FROM inventory_cost_layers
         WHERE tenant_id = $1
+          AND voided_at IS NULL
         GROUP BY item_id, location_id, uom
      ),
      combined AS (
@@ -148,6 +149,7 @@ export async function computeInventoryHealth(
               SUM(remaining_quantity) AS qty
          FROM inventory_cost_layers
         WHERE tenant_id = $1
+          AND voided_at IS NULL
         GROUP BY item_id, location_id, uom
      ),
      combined AS (

@@ -77,6 +77,8 @@ export const locationSchema = z.object({
   code: z.string().min(1).max(255),
   name: z.string().min(1).max(255),
   type: z.enum(['warehouse', 'bin', 'store', 'customer', 'vendor', 'scrap', 'virtual']),
+  role: z.enum(['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRAP']).optional(),
+  isSellable: z.boolean().optional(),
   active: z.boolean().optional(),
   parentLocationId: z.string().uuid().nullable().optional(),
   maxWeight: z.number().positive().nullable().optional(),

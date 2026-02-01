@@ -15,8 +15,16 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { query as baseQuery } from '../db';
 import { updatePoStatusFromReceipts } from './status/purchaseOrdersStatus.service';
 import { recordAuditLog } from '../lib/audit';
-import { updateMovingAverageCost } from './costing.service';
-import { createCostLayer } from './costLayers.service';
+import { calculateMovementCostWithUnitCost, updateMovingAverageCost } from './costing.service';
+import { createReceiptCostLayerOnce } from './costLayers.service';
+import { getCanonicalMovementFields } from './uomCanonical.service';
+import { resolveDefaultLocationForRole } from './warehouseDefaults.service';
+import {
+  applyInventoryBalanceDelta,
+  createInventoryMovement,
+  createInventoryMovementLine,
+  enqueueInventoryMovementPosted
+} from '../domains/inventory';
 
 type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
 
@@ -444,18 +452,48 @@ export async function createPurchaseOrderReceipt(
   const now = new Date();
   await withTransaction(async (client) => {
     const receiptNumber = await generateReceiptNumber();
+    if (!resolvedReceivedToLocationId) {
+      throw new Error('RECEIPT_RECEIVING_LOCATION_REQUIRED');
+    }
+    let qaLocationId: string;
+    try {
+      qaLocationId = await resolveDefaultLocationForRole(tenantId, resolvedReceivedToLocationId, 'QA', client);
+    } catch (error) {
+      if ((error as Error)?.message === 'WAREHOUSE_DEFAULT_LOCATION_REQUIRED') {
+        throw new Error('QA_LOCATION_REQUIRED');
+      }
+      throw error;
+    }
+    const occurredAt = data.receivedAt ? new Date(data.receivedAt) : now;
+    const movementResult = await createInventoryMovement(client, {
+      tenantId,
+      movementType: 'receive',
+      status: 'posted',
+      externalRef: `po_receipt:${receiptId}`,
+      sourceType: 'po_receipt',
+      sourceId: receiptId,
+      idempotencyKey: data.idempotencyKey ?? null,
+      occurredAt,
+      postedAt: occurredAt,
+      notes: `PO receipt ${receiptId}`,
+      createdAt: now,
+      updatedAt: now
+    });
+    const movementId = movementResult.id;
+
     await client.query(
       `INSERT INTO purchase_order_receipts (
           id, tenant_id, purchase_order_id, status, received_at, received_to_location_id,
           inventory_movement_id, external_ref, notes, idempotency_key, receipt_number
-       ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $10)`,
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         receiptId,
         tenantId,
         data.purchaseOrderId,
         'posted',
         new Date(data.receivedAt),
-        resolvedReceivedToLocationId,
+        qaLocationId,
+        movementId,
         data.externalRef ?? null,
         data.notes ?? null,
         data.idempotencyKey ?? null,
@@ -464,6 +502,7 @@ export async function createPurchaseOrderReceipt(
     );
 
     for (const line of data.lines) {
+      const receiptLineId = uuidv4();
       const receivedQty = toNumber(line.quantityReceived);
       const expectedQty = roundQuantity(toNumber(poLineMap.get(line.purchaseOrderLineId)?.quantity_ordered ?? 0));
       const hasDiscrepancy = Math.abs(roundQuantity(receivedQty) - expectedQty) > 1e-6;
@@ -482,7 +521,7 @@ export async function createPurchaseOrderReceipt(
             lot_code, serial_numbers, over_receipt_approved
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
-          uuidv4(),
+          receiptLineId,
           tenantId,
           receiptId,
           line.purchaseOrderLineId,
@@ -498,34 +537,78 @@ export async function createPurchaseOrderReceipt(
         ]
       );
 
-      // Update moving average cost if unit cost is available
-      if (unitCost !== null && unitCost > 0 && poLine?.item_id) {
+      if (!poLine?.item_id) {
+        throw new Error('RECEIPT_LINE_ITEM_REQUIRED');
+      }
+
+      const canonicalFields = await getCanonicalMovementFields(
+        tenantId,
+        poLine.item_id,
+        receivedQty,
+        line.uom,
+        client
+      );
+      const canonicalQty = canonicalFields.quantityDeltaCanonical;
+      const costData =
+        unitCost !== null && unitCost !== undefined
+          ? calculateMovementCostWithUnitCost(canonicalQty, unitCost)
+          : { unitCost: null, extendedCost: null };
+
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId,
+        itemId: poLine.item_id,
+        locationId: qaLocationId,
+        quantityDelta: canonicalQty,
+        uom: canonicalFields.canonicalUom,
+        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+        uomEntered: canonicalFields.uomEntered,
+        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+        canonicalUom: canonicalFields.canonicalUom,
+        uomDimension: canonicalFields.uomDimension,
+        unitCost: costData.unitCost,
+        extendedCost: costData.extendedCost,
+        reasonCode: 'receipt',
+        lineNotes: `PO receipt line ${receiptLineId}`
+      });
+
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: poLine.item_id,
+        locationId: qaLocationId,
+        uom: canonicalFields.canonicalUom,
+        deltaOnHand: canonicalQty
+      });
+
+      // Valuation note: cost layers are item/lot-level, not location-level.
+      // Receipts create the single cost layer; transfers only move quantities.
+      if (unitCost !== null && unitCost !== undefined) {
         await updateMovingAverageCost(
           tenantId,
           poLine.item_id,
-          receivedQty,
+          canonicalQty,
           unitCost,
           client
         );
-        
-        // Create cost layer for FIFO tracking
-        if (resolvedReceivedToLocationId) {
-          await createCostLayer({
-            tenant_id: tenantId,
-            item_id: poLine.item_id,
-            location_id: resolvedReceivedToLocationId,
-            uom: normalized.uom,
-            quantity: normalized.quantity,
-            unit_cost: unitCost,
-            source_type: 'receipt',
-            source_document_id: line.purchaseOrderLineId,
-            layer_date: new Date(data.receivedAt),
-            notes: `Receipt from PO line ${line.purchaseOrderLineId}`,
-            client
-          });
-        }
+
+        await createReceiptCostLayerOnce({
+          tenant_id: tenantId,
+          item_id: poLine.item_id,
+          location_id: qaLocationId,
+          uom: canonicalFields.canonicalUom,
+          quantity: canonicalQty,
+          unit_cost: unitCost,
+          source_type: 'receipt',
+          source_document_id: receiptLineId,
+          movement_id: movementId,
+          layer_date: new Date(data.receivedAt),
+          notes: `Receipt from PO line ${line.purchaseOrderLineId}`,
+          client
+        });
       }
     }
+
+    await enqueueInventoryMovementPosted(client, tenantId, movementId);
 
     if (actor) {
       await recordAuditLog(
@@ -937,7 +1020,7 @@ async function findDefaultReceivingLocation(tenantId: string): Promise<string | 
        FROM locations
       WHERE tenant_id = $1
         AND active = true
-        AND (type = 'receiving' OR code ILIKE '%recv%' OR name ILIKE '%receiv%')
+        AND type = 'warehouse'
       ORDER BY created_at ASC
       LIMIT 1`,
     [tenantId]

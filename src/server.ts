@@ -51,6 +51,8 @@ import { registerJob, startScheduler, stopScheduler } from './jobs/scheduler';
 import { recalculateMetrics } from './jobs/metricsRecalculation.job';
 import { syncExchangeRates } from './jobs/exchangeRateSync.job';
 import { runInventoryHealthCheck } from './jobs/inventoryHealth.job';
+import { runInventoryInvariantCheck } from './jobs/inventoryInvariants.job';
+import { ensureWarehouseDefaults } from './services/warehouseDefaults.service';
 import { pruneOutboxEvents } from './jobs/outboxRetention.job';
 import inventoryHealthRouter from './routes/inventoryHealth.routes';
 import outboxAdminRouter from './routes/outboxAdmin.routes';
@@ -188,6 +190,13 @@ if (RUN_INPROCESS_JOBS) {
   );
 
   registerJob(
+    'inventory-invariant-check',
+    process.env.INVENTORY_INVARIANT_CRON ?? '30 * * * *', // Hourly by default
+    runInventoryInvariantCheck,
+    true
+  );
+
+  registerJob(
     'outbox-retention',
     process.env.OUTBOX_RETENTION_CRON ?? '0 3 * * *', // 03:00 UTC daily
     async () => {
@@ -220,8 +229,16 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-app.listen(PORT, () => {
-  console.log(`\n🚀 Inventory Manager API listening on port ${PORT}`);
-  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`   Timezone: UTC (for scheduled jobs)\n`);
+async function start() {
+  await ensureWarehouseDefaults();
+  app.listen(PORT, () => {
+    console.log(`\n🚀 Inventory Manager API listening on port ${PORT}`);
+    console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`   Timezone: UTC (for scheduled jobs)\n`);
+  });
+}
+
+start().catch((error) => {
+  console.error('Startup failed:', error);
+  process.exit(1);
 });

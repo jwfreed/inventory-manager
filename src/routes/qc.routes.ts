@@ -9,6 +9,8 @@ import {
   listQcEventsForExecutionLine 
 } from '../services/qc.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { getIdempotencyKey } from '../lib/idempotency';
+import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -19,10 +21,36 @@ router.post('/qc-events', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
+  const idempotencyKey = getIdempotencyKey(req);
+  let idempotencyStarted = false;
+
   try {
+    if (idempotencyKey) {
+      const record = await beginIdempotency(idempotencyKey, hashRequestBody(req.body));
+      if (record.status === 'SUCCEEDED' && record.responseRef) {
+        const [kind, id] = record.responseRef.split(':');
+        if (kind === 'qc_event') {
+          const existing = await getQcEventById(req.auth!.tenantId, id);
+          if (existing) {
+            return res.status(200).json(existing);
+          }
+        }
+        return res.status(409).json({ error: 'QC event already processed for this request.' });
+      }
+      if (record.status === 'IN_PROGRESS') {
+        return res.status(409).json({ error: 'QC event already in progress for this key.' });
+      }
+      idempotencyStarted = true;
+    }
     const event = await createQcEvent(req.auth!.tenantId, parsed.data);
+    if (idempotencyKey && idempotencyStarted) {
+      await completeIdempotency(idempotencyKey, 'SUCCEEDED', `qc_event:${event.id}`);
+    }
     return res.status(201).json(event);
   } catch (error: any) {
+    if (idempotencyKey && idempotencyStarted) {
+      await completeIdempotency(idempotencyKey, 'FAILED', null);
+    }
     if (error?.message === 'QC_LINE_NOT_FOUND') {
       return res.status(404).json({ error: 'Receipt line not found.' });
     }
@@ -52,6 +80,15 @@ router.post('/qc-events', async (req: Request, res: Response) => {
     }
     if (error?.message === 'QC_ACCEPT_LOCATION_REQUIRED') {
       return res.status(400).json({ error: 'Source has no receiving location to post accepted inventory.' });
+    }
+    if (error?.message === 'QC_HOLD_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Hold location is required for QC hold events.' });
+    }
+    if (error?.message === 'QC_REJECT_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Reject location is required for QC reject events.' });
+    }
+    if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
+      return res.status(409).json({ error: 'Idempotency key reused with a different request payload.' });
     }
     if (error?.message === 'QC_SOURCE_REQUIRED') {
       return res.status(400).json({ error: 'A valid source (receipt line, work order, or execution line) is required.' });

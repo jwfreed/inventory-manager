@@ -44,6 +44,63 @@ Roll back the latest batch if needed:
 npm run migrate:down
 ```
 
+### Location roles and warehouse defaults
+
+Locations now carry explicit inventory roles and a sellable flag:
+
+- `role`: `SELLABLE`, `QA`, `HOLD`, `REJECT`, `SCRAP`
+- `is_sellable`: must match `role` (`SELLABLE` = `true`, all others = `false`)
+
+Available-to-Promise (ATP) calculations include **only** locations where `is_sellable = true`.
+
+Each warehouse must have default locations configured for:
+
+- `SELLABLE`
+- `QA`
+- `HOLD`
+- `REJECT`
+
+Defaults are stored in `warehouse_default_location`. The standard warehouse template creates the required locations and defaults. If defaults are missing during migration, the migration will fail with `WAREHOUSE_DEFAULT_LOCATIONS_REQUIRED`.
+
+Warehouse scope vs zones:
+
+- `type = 'warehouse'` represents the warehouse scope (root).
+- Child bins under the warehouse act as zones (e.g., FG/RAW/WIP).
+- Use `GET /locations?type=warehouse&includeWarehouseZones=true` to return the root warehouse plus sellable child zones for UI compatibility.
+
+### Idempotency keys (receipts + QC)
+
+Receipt posting and QC events require safe retries:
+
+- Use `Idempotency-Key` on:
+  - `POST /purchase-order-receipts`
+  - `POST /qc-events`
+- The server records request hashes in `idempotency_keys` and returns the original response on retry.
+- Reusing a key with a different payload returns `409`.
+
+### Cost layer dedupe (receipts)
+
+Receipt cost layers are single-write per receipt line:
+
+- `inventory_cost_layers` includes `voided_at`, `void_reason`, `superseded_by_id`.
+- Duplicate active receipt layers are voided during migration.
+- A partial unique index enforces one active layer per receipt line.
+
+### Valuation stance (transfers)
+
+Cost layers are item/lot-level only. Transfers reclassify quantities between locations but **do not**
+create or mutate cost layers.
+
+### Deploy notes
+
+- Apply migrations in order; `1771800000000` sets location roles/defaults, `1771800001000` dedupes
+  cost layers before enforcing uniqueness, `1771800002000` adds idempotency keys and movement
+  source uniqueness, and `1772000000000+` hardens warehouse defaults, movement source backfill,
+  and reservation sellable enforcement.
+- Ensure every warehouse has defaults for `SELLABLE`, `QA`, `HOLD`, `REJECT` before starting the API.
+- Run the inventory invariants check once post-deploy to confirm movement/source alignment.
+- Rollback: `npm run migrate:down` (one step) and re-run after fixing missing defaults.
+
 ### Smoke test / manual verification
 
 After running the migrations on an empty database, confirm the schema with `psql` (or any SQL client):

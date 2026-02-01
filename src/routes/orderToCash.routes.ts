@@ -112,6 +112,12 @@ router.post('/reservations', async (req: Request, res: Response) => {
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
     }
+    if ((error as Error)?.message === 'RESERVATION_LOCATION_NOT_SELLABLE') {
+      return res.status(409).json({ error: 'Reservation location must be sellable.' });
+    }
+    if ((error as Error)?.message === 'RESERVATION_LOCATION_NOT_FOUND') {
+      return res.status(400).json({ error: 'Reservation location not found.' });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create reservation.' });
   }

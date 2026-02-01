@@ -4,6 +4,8 @@ import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
 import { createPurchaseOrderReceipt, fetchReceiptById, fetchReceiptByIdempotencyKey, listReceipts, voidReceipt } from '../services/receipts.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
+import { getIdempotencyKey } from '../lib/idempotency';
+import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -14,9 +16,37 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
+  const headerKey = getIdempotencyKey(req);
+  const idempotencyKey = parsed.data.idempotencyKey ?? headerKey;
+  if (!parsed.data.idempotencyKey && idempotencyKey) {
+    parsed.data.idempotencyKey = idempotencyKey;
+  }
+  let idempotencyStarted = false;
+
   try {
+    if (idempotencyKey) {
+      const record = await beginIdempotency(idempotencyKey, hashRequestBody(req.body));
+      if (record.status === 'SUCCEEDED' && record.responseRef) {
+        const [kind, id] = record.responseRef.split(':');
+        if (kind === 'purchase_order_receipt') {
+          const existing = await fetchReceiptById(req.auth!.tenantId, id);
+          if (existing) {
+            return res.status(200).json(existing);
+          }
+        }
+        return res.status(409).json({ error: 'Receipt already posted for this request.' });
+      }
+      // Only reject if it's an EXISTING in-progress operation (not our new insert)
+      if (record.status === 'IN_PROGRESS' && !record.isNew) {
+        return res.status(409).json({ error: 'Receipt posting already in progress for this key.' });
+      }
+      idempotencyStarted = true;
+    }
     const tenantId = req.auth!.tenantId;
     const receipt = await createPurchaseOrderReceipt(tenantId, parsed.data, { type: 'user', id: req.auth!.userId });
+    if (idempotencyKey && idempotencyStarted) {
+      await completeIdempotency(idempotencyKey, 'SUCCEEDED', `purchase_order_receipt:${receipt.id}`);
+    }
     const itemIds = Array.from(new Set(receipt.lines.map((line: any) => line.itemId).filter(Boolean)));
     const locationIds = Array.from(
       new Set(
@@ -35,6 +65,9 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
     });
     return res.status(201).json(receipt);
   } catch (error: any) {
+    if (idempotencyKey && idempotencyStarted) {
+      await completeIdempotency(idempotencyKey, 'FAILED', null);
+    }
     if (error?.message === 'RECEIPT_PO_LINES_NOT_FOUND') {
       return res.status(400).json({ error: 'One or more purchase order lines were not found.' });
     }
@@ -60,6 +93,18 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
     }
     if (error?.message === 'RECEIPT_DISCREPANCY_REASON_REQUIRED') {
       return res.status(400).json({ error: 'Discrepancy reason is required when received quantity differs from expected.' });
+    }
+    if (error?.message === 'RECEIPT_LINE_ITEM_REQUIRED') {
+      return res.status(400).json({ error: 'Receipt line item is required.' });
+    }
+    if (error?.message === 'QA_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'QA location is required to receive inventory.' });
+    }
+    if (error?.message === 'RECEIPT_RECEIVING_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Receiving location is required to receive inventory.' });
+    }
+    if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
+      return res.status(409).json({ error: 'Idempotency key reused with a different request payload.' });
     }
     if (error?.message === 'RECEIPT_LOT_REQUIRED') {
       return res.status(400).json({ error: 'Lot code is required for one or more items.' });

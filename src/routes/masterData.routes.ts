@@ -185,6 +185,9 @@ router.post('/locations', async (req: Request, res: Response) => {
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
     }
+    if ((error as Error)?.message === 'LOCATION_ROLE_SELLABLE_MISMATCH') {
+      return res.status(400).json({ error: 'Location role must match sellable flag.' });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create location.' });
   }
@@ -195,10 +198,22 @@ router.get('/locations', async (req: Request, res: Response) => {
     typeof req.query.active === 'string' ? req.query.active.toLowerCase() === 'true' : undefined;
   const type = typeof req.query.type === 'string' ? req.query.type : undefined;
   const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+  const includeWarehouseZones =
+    typeof req.query.includeWarehouseZones === 'string'
+      ? req.query.includeWarehouseZones.toLowerCase() === 'true'
+      : undefined;
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const locations = await listLocations({ tenantId: req.auth!.tenantId, active, type, search, limit, offset });
+    const locations = await listLocations({
+      tenantId: req.auth!.tenantId,
+      active,
+      type,
+      search,
+      includeWarehouseZones,
+      limit,
+      offset
+    });
     return res.json({ data: locations, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -245,6 +260,9 @@ router.put('/locations/:id', async (req: Request, res: Response) => {
     });
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
+    }
+    if ((error as Error)?.message === 'LOCATION_ROLE_SELLABLE_MISMATCH') {
+      return res.status(400).json({ error: 'Location role must match sellable flag.' });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to update location.' });

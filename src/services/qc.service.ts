@@ -4,11 +4,11 @@ import { query, withTransaction } from '../db';
 import { qcEventSchema } from '../schemas/qc.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { recordAuditLog } from '../lib/audit';
-import { createNcr, findMrbLocation } from './ncr.service';
+import { createNcr } from './ncr.service';
 import { calculateMovementCost } from './costing.service';
-import { createCostLayer } from './costLayers.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { validateSufficientStock } from './stockValidation.service';
+import { resolveDefaultLocationForRole } from './warehouseDefaults.service';
 import {
   createInventoryMovement,
   createInventoryMovementLine,
@@ -185,116 +185,212 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
       client
     );
 
-    if (data.eventType === 'accept' || data.eventType === 'reject') {
+    if (data.eventType === 'accept' || data.eventType === 'reject' || data.eventType === 'hold') {
       let targetLocationId: string | null = null;
-      let movementType = 'receive';
       let reasonCode = 'qc_release';
       let notes = `QC ${data.eventType} for receipt line ${sourceId}`;
 
-      if (data.eventType === 'reject') {
-        targetLocationId = await findMrbLocation(tenantId, client);
-        if (!targetLocationId) {
-          throw new Error('QC_MRB_LOCATION_REQUIRED');
+      if (sourceType === 'receipt') {
+        if (data.eventType === 'reject') {
+          if (!locationId) throw new Error('QC_LOCATION_REQUIRED');
+          try {
+            targetLocationId = await resolveDefaultLocationForRole(tenantId, locationId, 'REJECT', client);
+          } catch (error) {
+            if ((error as Error)?.message === 'WAREHOUSE_DEFAULT_LOCATION_REQUIRED') {
+              throw new Error('QC_REJECT_LOCATION_REQUIRED');
+            }
+            throw error;
+          }
+          await createNcr(tenantId, created.id, client);
+          reasonCode = 'qc_reject';
+          notes = `QC reject for receipt line ${sourceId}`;
+        } else if (data.eventType === 'hold') {
+          if (!locationId) throw new Error('QC_LOCATION_REQUIRED');
+          try {
+            targetLocationId = await resolveDefaultLocationForRole(tenantId, locationId, 'HOLD', client);
+          } catch (error) {
+            if ((error as Error)?.message === 'WAREHOUSE_DEFAULT_LOCATION_REQUIRED') {
+              throw new Error('QC_HOLD_LOCATION_REQUIRED');
+            }
+            throw error;
+          }
+          reasonCode = 'qc_hold';
+          notes = `QC hold for receipt line ${sourceId}`;
+        } else {
+          if (!locationId) throw new Error('QC_LOCATION_REQUIRED');
+          try {
+            targetLocationId = await resolveDefaultLocationForRole(tenantId, locationId, 'SELLABLE', client);
+          } catch (error) {
+            if ((error as Error)?.message === 'WAREHOUSE_DEFAULT_LOCATION_REQUIRED') {
+              throw new Error('QC_ACCEPT_LOCATION_REQUIRED');
+            }
+            throw error;
+          }
         }
-        await createNcr(tenantId, created.id, client);
-        reasonCode = 'qc_reject_mrb';
-        notes = `QC reject to MRB for receipt line ${sourceId}`;
       } else {
-        // Accept logic
-        if (itemId) {
-          const itemResult = await client.query(
-            'SELECT default_location_id FROM items WHERE id = $1 AND tenant_id = $2',
-            [itemId, tenantId]
-          );
-          targetLocationId = itemResult.rows[0]?.default_location_id ?? null;
-        }
+        targetLocationId = locationId;
       }
       
       const sourceLocationId = locationId;
-      const destLocationId = targetLocationId ?? sourceLocationId;
+      let destLocationId = targetLocationId ?? sourceLocationId;
+      if (sourceType === 'receipt') {
+        destLocationId = targetLocationId;
+      }
 
       if (sourceType === 'receipt') {
-        // PO Receipt: Create new inventory (Receive)
-        const loc = destLocationId; // For receipt, we receive INTO the target (Stock or MRB)
-        if (!loc) throw new Error('QC_LOCATION_REQUIRED');
+        // PO Receipt: Reclassify inventory from QA to target location via transfer.
+        // Valuation note: transfers do not create or mutate cost layers.
+        if (!sourceLocationId) throw new Error('QC_LOCATION_REQUIRED');
+        if (!destLocationId) throw new Error('QC_LOCATION_REQUIRED');
         if (!itemId) throw new Error('QC_ITEM_ID_REQUIRED');
-        
+
         const now = new Date();
-        const movementId = uuidv4();
-        await createInventoryMovement(client, {
-          id: movementId,
-          tenantId,
-          movementType: 'receive',
-          status: 'posted',
-          externalRef: `qc_${data.eventType}:${created.id}`,
-          occurredAt: now,
-          postedAt: now,
-          notes,
-          createdAt: now,
-          updatedAt: now
-        });
-        
-        const canonicalFields = await getCanonicalMovementFields(
-          tenantId,
-          itemId,
-          enteredQty,
-          data.uom,
-          client
-        );
-        const canonicalQty = canonicalFields.quantityDeltaCanonical;
-        // Calculate cost for QC receive movement
-        const costData = await calculateMovementCost(tenantId, itemId, canonicalQty, client);
-        
-        // Create cost layer for QC accepted inventory
-        if (destLocationId) {
-          await createCostLayer({
-            tenant_id: tenantId,
-            item_id: itemId,
-            location_id: destLocationId,
-            uom: canonicalFields.canonicalUom,
-            quantity: canonicalQty,
-            unit_cost: costData.unitCost || 0,
-            source_type: 'receipt',
-            source_document_id: created.id,
-            movement_id: movementId,
-            notes: `QC ${data.eventType} - moved to ${destLocationId}`,
-            client
+        if (sourceLocationId !== destLocationId) {
+          const validation = await validateSufficientStock(
+            tenantId,
+            now,
+            [
+              {
+                itemId,
+                locationId: sourceLocationId,
+                uom: data.uom,
+                quantityToConsume: enteredQty
+              }
+            ],
+            {
+              actorId: data.actorId ?? null,
+              overrideRequested: data.overrideNegative,
+              overrideReason: data.overrideReason ?? null,
+              overrideReference: `qc_${data.eventType}:${sourceId}`
+            },
+            { client }
+          );
+          const movementId = uuidv4();
+          await createInventoryMovement(client, {
+            id: movementId,
+            tenantId,
+            movementType: 'transfer',
+            status: 'posted',
+            externalRef: `qc_${data.eventType}:${created.id}`,
+            sourceType: 'qc_event',
+            sourceId: created.id,
+            occurredAt: now,
+            postedAt: now,
+            notes,
+            metadata: validation.overrideMetadata ?? null,
+            createdAt: now,
+            updatedAt: now
           });
+
+          const canonicalOut = await getCanonicalMovementFields(
+            tenantId,
+            itemId,
+            -enteredQty,
+            data.uom,
+            client
+          );
+          const costDataOut = await calculateMovementCost(
+            tenantId,
+            itemId,
+            canonicalOut.quantityDeltaCanonical,
+            client
+          );
+          await createInventoryMovementLine(client, {
+            tenantId,
+            movementId,
+            itemId,
+            locationId: sourceLocationId,
+            quantityDelta: canonicalOut.quantityDeltaCanonical,
+            uom: canonicalOut.canonicalUom,
+            quantityDeltaEntered: canonicalOut.quantityDeltaEntered,
+            uomEntered: canonicalOut.uomEntered,
+            quantityDeltaCanonical: canonicalOut.quantityDeltaCanonical,
+            canonicalUom: canonicalOut.canonicalUom,
+            uomDimension: canonicalOut.uomDimension,
+            unitCost: costDataOut.unitCost,
+            extendedCost: costDataOut.extendedCost,
+            reasonCode: `${reasonCode}_out`,
+            lineNotes: `QC ${data.eventType} transfer out`
+          });
+
+          await applyInventoryBalanceDelta(client, {
+            tenantId,
+            itemId,
+            locationId: sourceLocationId,
+            uom: canonicalOut.canonicalUom,
+            deltaOnHand: canonicalOut.quantityDeltaCanonical
+          });
+
+          const canonicalIn = await getCanonicalMovementFields(
+            tenantId,
+            itemId,
+            enteredQty,
+            data.uom,
+            client
+          );
+          const costDataIn = await calculateMovementCost(
+            tenantId,
+            itemId,
+            canonicalIn.quantityDeltaCanonical,
+            client
+          );
+          await createInventoryMovementLine(client, {
+            tenantId,
+            movementId,
+            itemId,
+            locationId: destLocationId,
+            quantityDelta: canonicalIn.quantityDeltaCanonical,
+            uom: canonicalIn.canonicalUom,
+            quantityDeltaEntered: canonicalIn.quantityDeltaEntered,
+            uomEntered: canonicalIn.uomEntered,
+            quantityDeltaCanonical: canonicalIn.quantityDeltaCanonical,
+            canonicalUom: canonicalIn.canonicalUom,
+            uomDimension: canonicalIn.uomDimension,
+            unitCost: costDataIn.unitCost,
+            extendedCost: costDataIn.extendedCost,
+            reasonCode: `${reasonCode}_in`,
+            lineNotes: `QC ${data.eventType} transfer in`
+          });
+
+          await applyInventoryBalanceDelta(client, {
+            tenantId,
+            itemId,
+            locationId: destLocationId,
+            uom: canonicalIn.canonicalUom,
+            deltaOnHand: canonicalIn.quantityDeltaCanonical
+          });
+          await client.query(
+            `INSERT INTO qc_inventory_links (
+                id, tenant_id, qc_event_id, inventory_movement_id, created_at
+             ) VALUES ($1, $2, $3, $4, $5)`,
+            [uuidv4(), tenantId, created.id, movementId, now]
+          );
+
+          await enqueueInventoryMovementPosted(client, tenantId, movementId);
+          if (validation.overrideMetadata && data.actorType) {
+            await recordAuditLog(
+              {
+                tenantId,
+                actorType: data.actorType,
+                actorId: data.actorId ?? null,
+                action: 'negative_override',
+                entityType: 'inventory_movement',
+                entityId: movementId,
+                occurredAt: now,
+                metadata: {
+                  reason: validation.overrideMetadata.override_reason ?? null,
+                  reference: validation.overrideMetadata.override_reference ?? null,
+                  qcEventId: created.id,
+                  itemId,
+                  locationId: sourceLocationId,
+                  uom: data.uom,
+                  quantity: enteredQty
+                }
+              },
+              client
+            );
+          }
         }
-        
-        await createInventoryMovementLine(client, {
-          tenantId,
-          movementId,
-          itemId,
-          locationId: loc,
-          quantityDelta: canonicalQty,
-          uom: canonicalFields.canonicalUom,
-          quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-          uomEntered: canonicalFields.uomEntered,
-          quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-          canonicalUom: canonicalFields.canonicalUom,
-          uomDimension: canonicalFields.uomDimension,
-          unitCost: costData.unitCost,
-          extendedCost: costData.extendedCost,
-          reasonCode,
-          lineNotes: `QC ${data.eventType} ${enteredQty} ${data.uom}`
-        });
-
-        await applyInventoryBalanceDelta(client, {
-          tenantId,
-          itemId,
-          locationId: loc,
-          uom: canonicalFields.canonicalUom,
-          deltaOnHand: canonicalQty
-        });
-        await client.query(
-          `INSERT INTO qc_inventory_links (
-              id, tenant_id, qc_event_id, inventory_movement_id, created_at
-           ) VALUES ($1, $2, $3, $4, $5)`,
-          [uuidv4(), tenantId, created.id, movementId, now]
-        );
-
-        await enqueueInventoryMovementPosted(client, tenantId, movementId);
       } else if (sourceLocationId && destLocationId && sourceLocationId !== destLocationId) {
          // WO / Execution: Transfer inventory
          if (!itemId) throw new Error('QC_ITEM_ID_REQUIRED');
@@ -326,6 +422,8 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
            movementType: 'transfer',
            status: 'posted',
            externalRef: `qc_${data.eventType}:${created.id}`,
+           sourceType: 'qc_event',
+           sourceId: created.id,
            occurredAt: now,
            postedAt: now,
            notes,
