@@ -327,12 +327,13 @@ export async function listItems(
 }
 
 export function mapLocation(row: any) {
+  const resolvedRole = row.role ?? (row.is_sellable ? 'SELLABLE' : null);
   return {
     id: row.id,
     code: row.code,
     name: row.name,
     type: row.type,
-    role: row.role,
+    role: resolvedRole,
     isSellable: row.is_sellable,
     active: row.active,
     parentLocationId: row.parent_location_id,

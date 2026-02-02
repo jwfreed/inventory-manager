@@ -12,6 +12,7 @@ export type AtpResult = {
   uom: string;
   onHand: number;
   reserved: number;
+  allocated: number;
   availableToPromise: number;
 };
 
@@ -84,11 +85,24 @@ export async function getAvailableToPromise(
           ${SELLABLE_LOCATION_FILTER}
         GROUP BY iml.item_id, iml.location_id, COALESCE(iml.canonical_uom, iml.uom)
      ),
-     reserved AS (
+     reserved_allocated AS (
        SELECT r.item_id,
               r.location_id,
               COALESCE(i.canonical_uom, r.uom) AS uom,
-              SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved
+              SUM(
+                CASE
+                  WHEN r.status = 'RESERVED'
+                  THEN GREATEST(0, r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0))
+                  ELSE 0
+                END
+              ) AS reserved,
+              SUM(
+                CASE
+                  WHEN r.status = 'ALLOCATED'
+                  THEN GREATEST(0, r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0))
+                  ELSE 0
+                END
+              ) AS allocated
          FROM inventory_reservations r
          JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
          JOIN locations l ON l.id = r.location_id AND l.tenant_id = r.tenant_id
@@ -100,16 +114,17 @@ export async function getAvailableToPromise(
         GROUP BY r.item_id, r.location_id, COALESCE(i.canonical_uom, r.uom)
      ),
      combined AS (
-       SELECT COALESCE(oh.item_id, rs.item_id) AS item_id,
-              COALESCE(oh.location_id, rs.location_id) AS location_id,
-              COALESCE(oh.uom, rs.uom) AS uom,
+       SELECT COALESCE(oh.item_id, ra.item_id) AS item_id,
+              COALESCE(oh.location_id, ra.location_id) AS location_id,
+              COALESCE(oh.uom, ra.uom) AS uom,
               COALESCE(oh.on_hand, 0) AS on_hand,
-              COALESCE(rs.reserved, 0) AS reserved
+              COALESCE(ra.reserved, 0) AS reserved,
+              COALESCE(ra.allocated, 0) AS allocated
          FROM on_hand oh
-         FULL OUTER JOIN reserved rs
-           ON oh.item_id = rs.item_id
-          AND oh.location_id = rs.location_id
-          AND oh.uom = rs.uom
+         FULL OUTER JOIN reserved_allocated ra
+           ON oh.item_id = ra.item_id
+          AND oh.location_id = ra.location_id
+          AND oh.uom = ra.uom
      )
     SELECT c.item_id,
            i.sku AS item_sku,
@@ -120,11 +135,12 @@ export async function getAvailableToPromise(
            c.uom,
            c.on_hand,
            c.reserved,
-           (c.on_hand - c.reserved) AS available_to_promise
+           c.allocated,
+           (c.on_hand - c.reserved - c.allocated) AS available_to_promise
       FROM combined c
       JOIN items i ON i.id = c.item_id AND i.tenant_id = $1
       JOIN locations l ON l.id = c.location_id AND l.tenant_id = $1
-     WHERE c.on_hand <> 0 OR c.reserved <> 0
+     WHERE c.on_hand <> 0 OR c.reserved <> 0 OR c.allocated <> 0
      ORDER BY i.sku, l.code, c.uom
      LIMIT $${limitParam} OFFSET $${offsetParam}`,
     paramsList
@@ -139,6 +155,7 @@ export async function getAvailableToPromise(
     uom: row.uom,
     onHand: normalizeQuantity(row.on_hand),
     reserved: normalizeQuantity(row.reserved),
+    allocated: normalizeQuantity(row.allocated),
     availableToPromise: normalizeQuantity(row.available_to_promise)
   }));
 
@@ -177,9 +194,22 @@ export async function getAvailableToPromiseDetail(
           ${SELLABLE_LOCATION_FILTER}
         GROUP BY COALESCE(iml.canonical_uom, iml.uom)
      ),
-     reserved AS (
+     reserved_allocated AS (
        SELECT COALESCE(i.canonical_uom, r.uom) AS uom,
-              SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved
+              SUM(
+                CASE
+                  WHEN r.status = 'RESERVED'
+                  THEN GREATEST(0, r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0))
+                  ELSE 0
+                END
+              ) AS reserved,
+              SUM(
+                CASE
+                  WHEN r.status = 'ALLOCATED'
+                  THEN GREATEST(0, r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0))
+                  ELSE 0
+                END
+              ) AS allocated
          FROM inventory_reservations r
          JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
          JOIN locations l ON l.id = r.location_id AND l.tenant_id = r.tenant_id
@@ -196,15 +226,16 @@ export async function getAvailableToPromiseDetail(
            i.name AS item_name,
            l.code AS location_code,
            l.name AS location_name,
-           COALESCE(oh.uom, rs.uom) AS uom,
+           COALESCE(oh.uom, ra.uom) AS uom,
            COALESCE(oh.on_hand, 0) AS on_hand,
-           COALESCE(rs.reserved, 0) AS reserved,
-           (COALESCE(oh.on_hand, 0) - COALESCE(rs.reserved, 0)) AS available_to_promise
+           COALESCE(ra.reserved, 0) AS reserved,
+           COALESCE(ra.allocated, 0) AS allocated,
+           (COALESCE(oh.on_hand, 0) - COALESCE(ra.reserved, 0) - COALESCE(ra.allocated, 0)) AS available_to_promise
       FROM on_hand oh
-      FULL OUTER JOIN reserved rs ON oh.uom = rs.uom
+      FULL OUTER JOIN reserved_allocated ra ON oh.uom = ra.uom
       CROSS JOIN items i
       CROSS JOIN locations l
-     WHERE (COALESCE(oh.on_hand, 0) <> 0 OR COALESCE(rs.reserved, 0) <> 0)
+     WHERE (COALESCE(oh.on_hand, 0) <> 0 OR COALESCE(ra.reserved, 0) <> 0 OR COALESCE(ra.allocated, 0) <> 0)
        AND i.id = $2 AND i.tenant_id = $1
        AND l.id = $3 AND l.tenant_id = $1`,
     params
@@ -222,6 +253,7 @@ export async function getAvailableToPromiseDetail(
       uom: row.uom,
       onHand: normalizeQuantity(row.on_hand),
       reserved: normalizeQuantity(row.reserved),
+      allocated: normalizeQuantity(row.allocated),
       availableToPromise: normalizeQuantity(row.available_to_promise)
     };
   }

@@ -156,7 +156,7 @@ async function ensureDefaultsForWarehouse(
       const type = role === 'SCRAP' ? 'scrap' : 'bin';
       const isSellable = role === 'SELLABLE';
       const now = new Date();
-      await executor(
+      const insertRes = await executor(
         `INSERT INTO locations (
             id,
             tenant_id,
@@ -169,23 +169,35 @@ async function ensureDefaultsForWarehouse(
             parent_location_id,
             created_at,
             updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $9)`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $9)
+         ON CONFLICT (code) DO NOTHING
+         RETURNING id`,
         [id, tenantId, code, name, type, role, isSellable, warehouseId, now]
       );
-      locationId = id;
-      await executor(
-        `INSERT INTO config_issues (id, tenant_id, issue_type, entity_type, entity_id, details, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)`,
-        [
-          uuidv4(),
-          tenantId,
-          'WAREHOUSE_DEFAULT_AUTO_CREATED',
-          'location',
-          id,
-          JSON.stringify({ role, warehouseId }),
-          now
-        ]
-      );
+      if (insertRes.rowCount && insertRes.rows[0]?.id) {
+        locationId = insertRes.rows[0].id;
+        await executor(
+          `INSERT INTO config_issues (id, tenant_id, issue_type, entity_type, entity_id, details, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)`,
+          [
+            uuidv4(),
+            tenantId,
+            'WAREHOUSE_DEFAULT_AUTO_CREATED',
+            'location',
+            locationId,
+            JSON.stringify({ role, warehouseId }),
+            now
+          ]
+        );
+      } else {
+        const existingLoc = await executor<{ id: string }>(
+          `SELECT id FROM locations WHERE tenant_id = $1 AND code = $2`,
+          [tenantId, code]
+        );
+        if (existingLoc.rowCount > 0) {
+          locationId = existingLoc.rows[0].id;
+        }
+      }
     }
     await executor(
       `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)

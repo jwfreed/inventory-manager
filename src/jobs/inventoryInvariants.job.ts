@@ -16,6 +16,7 @@ type InventoryInvariantSummary = {
   qcLegacyMovementCount: number;
   sellableMismatchCount: number;
   negativeCount: number;
+  reservationBalanceMismatchCount: number;
 };
 
 async function getAllActiveTenants(): Promise<Tenant[]> {
@@ -40,6 +41,8 @@ export async function runInventoryInvariantCheck(
   isRunning = true;
   const start = Date.now();
   const windowDays = Number(process.env.INVENTORY_INVARIANT_WINDOW_DAYS ?? 7);
+  const reconTolerance = Number(process.env.RESERVATION_BALANCE_RECON_TOLERANCE ?? 1e-6);
+  const reconLimit = Number(process.env.RESERVATION_BALANCE_RECON_LIMIT ?? 5);
   const results: InventoryInvariantSummary[] = [];
 
   try {
@@ -150,6 +153,109 @@ export async function runInventoryInvariantCheck(
           [tenant.id]
         );
 
+        const reservationBalanceMismatch = await query<{ count: string }>(
+          `WITH reservation_committed AS (
+             SELECT tenant_id,
+                    item_id,
+                    location_id,
+                    uom,
+                    SUM(
+                      CASE
+                        WHEN status = 'RESERVED'
+                        THEN GREATEST(0, quantity_reserved - COALESCE(quantity_fulfilled, 0))
+                        ELSE 0
+                      END
+                    ) AS reserved,
+                    SUM(
+                      CASE
+                        WHEN status = 'ALLOCATED'
+                        THEN GREATEST(0, quantity_reserved - COALESCE(quantity_fulfilled, 0))
+                        ELSE 0
+                      END
+                    ) AS allocated
+               FROM inventory_reservations
+              WHERE tenant_id = $1
+                AND status IN ('RESERVED','ALLOCATED')
+              GROUP BY tenant_id, item_id, location_id, uom
+           ),
+           combined AS (
+             SELECT b.tenant_id,
+                    b.item_id,
+                    b.location_id,
+                    b.uom,
+                    (b.reserved + b.allocated) AS balance_committed,
+                    COALESCE(r.reserved, 0) + COALESCE(r.allocated, 0) AS reservation_committed
+               FROM inventory_balance b
+               LEFT JOIN reservation_committed r
+                 ON r.tenant_id = b.tenant_id
+                AND r.item_id = b.item_id
+                AND r.location_id = b.location_id
+                AND r.uom = b.uom
+              WHERE b.tenant_id = $1
+           )
+           SELECT COUNT(*) AS count
+             FROM combined
+            WHERE ABS(balance_committed - reservation_committed) > $2`,
+          [tenant.id, reconTolerance]
+        );
+
+        const mismatchCount = Number(reservationBalanceMismatch.rows[0]?.count ?? 0);
+
+        if (mismatchCount > 0) {
+          const samples = await query(
+            `WITH reservation_committed AS (
+               SELECT tenant_id,
+                      item_id,
+                      location_id,
+                      uom,
+                      SUM(
+                        CASE
+                          WHEN status = 'RESERVED'
+                          THEN GREATEST(0, quantity_reserved - COALESCE(quantity_fulfilled, 0))
+                          ELSE 0
+                        END
+                      ) AS reserved,
+                      SUM(
+                        CASE
+                          WHEN status = 'ALLOCATED'
+                          THEN GREATEST(0, quantity_reserved - COALESCE(quantity_fulfilled, 0))
+                          ELSE 0
+                        END
+                      ) AS allocated
+                 FROM inventory_reservations
+                WHERE tenant_id = $1
+                  AND status IN ('RESERVED','ALLOCATED')
+                GROUP BY tenant_id, item_id, location_id, uom
+             ),
+             combined AS (
+               SELECT b.tenant_id,
+                      b.item_id,
+                      b.location_id,
+                      b.uom,
+                      (b.reserved + b.allocated) AS balance_committed,
+                      COALESCE(r.reserved, 0) + COALESCE(r.allocated, 0) AS reservation_committed
+                 FROM inventory_balance b
+                 LEFT JOIN reservation_committed r
+                   ON r.tenant_id = b.tenant_id
+                  AND r.item_id = b.item_id
+                  AND r.location_id = b.location_id
+                  AND r.uom = b.uom
+                WHERE b.tenant_id = $1
+             )
+             SELECT item_id, location_id, uom, balance_committed, reservation_committed,
+                    (balance_committed - reservation_committed) AS delta
+               FROM combined
+              WHERE ABS(balance_committed - reservation_committed) > $2
+              ORDER BY ABS(balance_committed - reservation_committed) DESC
+              LIMIT $3`,
+            [tenant.id, reconTolerance, reconLimit]
+          );
+          console.warn(
+            `Invariant mismatch for tenant ${tenant.slug}: ${mismatchCount} reservation balance drift(s)`,
+            { examples: samples.rows }
+          );
+        }
+
         const receiptLineCount = Number(receiptLines.rows[0]?.count ?? 0);
         const receiptMovementLineCount = Number(receiptMovementLines.rows[0]?.count ?? 0);
         const receiptLegacyMovementCount = Number(receiptLegacyMovements.rows[0]?.count ?? 0);
@@ -200,7 +306,8 @@ export async function runInventoryInvariantCheck(
           qcTransferCount,
           qcLegacyMovementCount,
           sellableMismatchCount,
-          negativeCount
+          negativeCount,
+          reservationBalanceMismatchCount: mismatchCount
         });
       } catch (error) {
         console.error(`Inventory invariant check failed for tenant ${tenant.slug}:`, error);

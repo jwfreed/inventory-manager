@@ -26,6 +26,7 @@ import {
 } from '../domains/inventory';
 import { consumeCostLayers } from './costLayers.service';
 import { recordAuditLog } from '../lib/audit';
+import { atpCache, cacheKey } from '../lib/cache';
 
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
 export type ReservationInput = z.infer<typeof reservationSchema>;
@@ -288,8 +289,13 @@ export async function createReservations(
         canonical.canonicalUom
       );
       const available = roundQuantity(balance.onHand - balance.reserved - balance.allocated);
-      const reserveQty = roundQuantity(Math.max(0, Math.min(canonical.quantity, available)));
-      const backorderQty = roundQuantity(Math.max(0, canonical.quantity - reserveQty));
+      let reserveQty = roundQuantity(Math.max(0, Math.min(canonical.quantity, available)));
+      let backorderQty = roundQuantity(Math.max(0, canonical.quantity - reserveQty));
+      // Tolerate tiny rounding drift so we don't reject valid reservations.
+      if (backorderQty > 0 && backorderQty <= 1e-6) {
+        backorderQty = 0;
+        reserveQty = canonical.quantity;
+      }
       const allowBackorder =
         reservation.allowBackorder !== undefined ? reservation.allowBackorder : BACKORDERS_ENABLED;
 
@@ -320,32 +326,73 @@ export async function createReservations(
       const fulfilledQty =
         reservation.quantityFulfilled != null ? Math.min(reservation.quantityFulfilled, reserveQty) : 0;
       const warehouseId = await resolveWarehouseIdForLocation(tenantId, reservation.locationId, client);
-      const res = await client.query(
-        `INSERT INTO inventory_reservations (
-          id, tenant_id, client_id, status, demand_type, demand_id, item_id, location_id, warehouse_id, uom,
-          quantity_reserved, quantity_fulfilled, reserved_at, expires_at, notes, idempotency_key, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
-        RETURNING *`,
-        [
-          uuidv4(),
-          tenantId,
-          tenantId,
-          'RESERVED',
-          reservation.demandType,
-          reservation.demandId,
-          reservation.itemId,
-          reservation.locationId,
-          warehouseId,
-          canonical.canonicalUom,
-          reserveQty,
-          fulfilledQty,
-          now,
-          reservation.expiresAt ? new Date(reservation.expiresAt) : null,
-          reservation.notes ?? null,
-          idempotencyKey,
-          now,
-        ],
-      );
+      let res;
+      try {
+        res = await client.query(
+          `INSERT INTO inventory_reservations (
+            id, tenant_id, client_id, status, demand_type, demand_id, item_id, location_id, warehouse_id, uom,
+            quantity_reserved, quantity_fulfilled, reserved_at, expires_at, notes, idempotency_key, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
+          RETURNING *`,
+          [
+            uuidv4(),
+            tenantId,
+            tenantId,
+            'RESERVED',
+            reservation.demandType,
+            reservation.demandId,
+            reservation.itemId,
+            reservation.locationId,
+            warehouseId,
+            canonical.canonicalUom,
+            reserveQty,
+            fulfilledQty,
+            now,
+            reservation.expiresAt ? new Date(reservation.expiresAt) : null,
+            reservation.notes ?? null,
+            idempotencyKey,
+            now,
+          ],
+        );
+      } catch (error: any) {
+        if (error?.code === '23505') {
+          if (idempotencyKey && error?.constraint === 'uq_inventory_reservations_idempotency_client') {
+            const existing = await client.query(
+              `SELECT * FROM inventory_reservations
+                WHERE client_id = $1 AND idempotency_key = $2`,
+              [tenantId, idempotencyKey]
+            );
+            if (existing.rowCount > 0) {
+              results.push(existing.rows[0]);
+              continue;
+            }
+          }
+          if (error?.constraint === 'inventory_reservations_unique') {
+            const existing = await client.query(
+              `SELECT * FROM inventory_reservations
+                WHERE tenant_id = $1
+                  AND demand_type = $2
+                  AND demand_id = $3
+                  AND item_id = $4
+                  AND location_id = $5
+                  AND uom = $6`,
+              [
+                tenantId,
+                reservation.demandType,
+                reservation.demandId,
+                reservation.itemId,
+                reservation.locationId,
+                canonical.canonicalUom
+              ]
+            );
+            if (existing.rowCount > 0) {
+              results.push(existing.rows[0]);
+              continue;
+            }
+          }
+        }
+        throw error;
+      }
       results.push(res.rows[0]);
 
       await applyInventoryBalanceDelta(client, {
@@ -366,6 +413,7 @@ export async function createReservations(
       });
     }
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+  atpCache.invalidate(cacheKey('atp', tenantId));
   return results.map(mapReservation);
 }
 
@@ -392,7 +440,7 @@ export async function allocateReservation(
   options?: { idempotencyKey?: string | null }
 ) {
   const now = new Date();
-  return withTransactionRetry(async (client) => {
+  const result = await withTransactionRetry(async (client) => {
     const idempotencyKey = options?.idempotencyKey ?? null;
     if (idempotencyKey) {
       const record = await beginIdempotency(`reservation:${id}:allocate:${idempotencyKey}`, hashRequestBody({ id }), client);
@@ -471,6 +519,8 @@ export async function allocateReservation(
     }
     return updated.rowCount ? mapReservation(updated.rows[0]) : null;
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+  atpCache.invalidate(cacheKey('atp', tenantId));
+  return result;
 }
 
 export async function cancelReservation(
@@ -479,8 +529,8 @@ export async function cancelReservation(
   params?: { reason?: string | null; idempotencyKey?: string | null }
 ) {
   const now = new Date();
-  const allowAllocatedCancel = process.env.ALLOW_ALLOCATED_CANCEL === 'true';
-  return withTransactionRetry(async (client) => {
+  const allowAllocatedCancel = false;
+  const result = await withTransactionRetry(async (client) => {
     const idempotencyKey = params?.idempotencyKey ?? null;
     if (idempotencyKey) {
       const record = await beginIdempotency(`reservation:${id}:cancel:${idempotencyKey}`, hashRequestBody({ id, reason: params?.reason ?? null }), client);
@@ -569,6 +619,8 @@ export async function cancelReservation(
     }
     return updated.rowCount ? mapReservation(updated.rows[0]) : null;
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+  atpCache.invalidate(cacheKey('atp', tenantId));
+  return result;
 }
 
 export async function fulfillReservation(
@@ -577,7 +629,7 @@ export async function fulfillReservation(
   params?: { quantity?: number; idempotencyKey?: string | null }
 ) {
   const now = new Date();
-  return withTransactionRetry(async (client) => {
+  const result = await withTransactionRetry(async (client) => {
     const idempotencyKey = params?.idempotencyKey ?? null;
     if (idempotencyKey) {
       const record = await beginIdempotency(
@@ -663,10 +715,13 @@ export async function fulfillReservation(
     }
     return updated.rowCount ? mapReservation(updated.rows[0]) : null;
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+  atpCache.invalidate(cacheKey('atp', tenantId));
+  return result;
 }
 
 export async function expireReservationsJob() {
   const now = new Date();
+  const affectedTenants = new Set<string>();
   await withTransactionRetry(async (client) => {
     const res = await client.query(
       `SELECT id, tenant_id, item_id, location_id, uom, quantity_reserved, quantity_fulfilled
@@ -677,6 +732,7 @@ export async function expireReservationsJob() {
         FOR UPDATE SKIP LOCKED`
     );
     for (const row of res.rows) {
+      affectedTenants.add(row.tenant_id);
       const remaining = roundQuantity(
         Math.max(0, toNumber(row.quantity_reserved) - toNumber(row.quantity_fulfilled ?? 0))
       );
@@ -700,6 +756,9 @@ export async function expireReservationsJob() {
       await insertReservationEvent(client, row.tenant_id, row.id, 'EXPIRED', -remaining, 0);
     }
   }, { isolationLevel: 'SERIALIZABLE', retries: 1 });
+  for (const tenantId of affectedTenants) {
+    atpCache.invalidate(cacheKey('atp', tenantId));
+  }
 }
 
 export function mapShipment(row: any, lines: any[]) {

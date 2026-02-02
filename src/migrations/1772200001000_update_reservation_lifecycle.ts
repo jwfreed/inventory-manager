@@ -14,6 +14,9 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
     expired_at: { type: 'timestamptz' },
   });
 
+  // Drop the old constraint BEFORE transforming data so the UPDATE doesn't violate it
+  pgm.dropConstraint('inventory_reservations', 'chk_reservation_status', { ifExists: true });
+
   pgm.sql(
     `UPDATE inventory_reservations
         SET client_id = tenant_id
@@ -42,7 +45,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
 
   pgm.alterColumn('inventory_reservations', 'client_id', { notNull: true });
 
-  pgm.dropConstraint('inventory_reservations', 'chk_reservation_status', { ifExists: true });
+  // Add the new constraint AFTER transforming data
   pgm.addConstraint('inventory_reservations', 'chk_reservation_status', {
     check: `status IN ${RESERVATION_STATUS_VALUES}`,
   });

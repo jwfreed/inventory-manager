@@ -167,8 +167,18 @@ router.post('/auth/bootstrap', async (req: Request, res: Response) => {
   const userId = uuidv4();
 
   try {
+    await query(
+      `INSERT INTO currencies (code, name, symbol, decimal_places, active)
+       VALUES ('THB', 'Thai Baht', 'THB', 2, true)
+       ON CONFLICT (code) DO NOTHING`
+    );
     const passwordHash = await hashPassword(adminPassword);
     const result = await withTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO currencies (code, name, symbol, decimal_places, active)
+         VALUES ('THB', 'Thai Baht', 'THB', 2, true)
+         ON CONFLICT (code) DO NOTHING`
+      );
       if ((existingTenant.rowCount ?? 0) === 0) {
         await client.query(
           `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
@@ -201,6 +211,9 @@ router.post('/auth/bootstrap', async (req: Request, res: Response) => {
     const session = await createSession(res, result.user, result.membership);
     return res.status(201).json(session);
   } catch (error) {
+    if ((error as any)?.code === '23505') {
+      return res.status(409).json({ error: 'Bootstrap already completed.' });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to bootstrap auth.' });
   }

@@ -7,7 +7,7 @@ import { Pool } from 'pg';
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = `reservation-lifecycle-${Date.now()}`;
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
 
 function createPool() {
   return new Pool({ connectionString: process.env.DATABASE_URL });
@@ -261,6 +261,44 @@ test('Retry reserve with same idempotency key does not duplicate', async (t) => 
   });
   assert.equal(res2.res.status, 201);
   assert.equal(res2.payload.data[0].id, res1.payload.data[0].id);
+});
+
+test('Concurrent reserve with same idempotency key returns same reservation', async (t) => {
+  const pool = createPool();
+  t.after(async () => {
+    await pool.end();
+  });
+
+  const session = await ensureSession();
+  const token = session.accessToken;
+  assert.ok(token);
+
+  const { sellable } = await ensureWarehouse(token);
+  const itemId = await seedItemAndStock(token, sellable.id, 5);
+
+  const idemKey = `reserve-${randomUUID()}`;
+  const body = {
+    reservations: [
+      {
+        demandType: 'sales_order_line',
+        demandId: randomUUID(),
+        itemId,
+        locationId: sellable.id,
+        uom: 'each',
+        quantityReserved: 2,
+        allowBackorder: false,
+      },
+    ],
+  };
+
+  const [r1, r2] = await Promise.all([
+    apiRequest('POST', '/reservations', { token, headers: { 'Idempotency-Key': idemKey }, body }),
+    apiRequest('POST', '/reservations', { token, headers: { 'Idempotency-Key': idemKey }, body }),
+  ]);
+
+  assert.ok([200, 201].includes(r1.res.status));
+  assert.ok([200, 201].includes(r2.res.status));
+  assert.equal(r1.payload.data[0].id, r2.payload.data[0].id);
 });
 
 test('Concurrent reservations against limited stock: one succeeds, one fails', async (t) => {
