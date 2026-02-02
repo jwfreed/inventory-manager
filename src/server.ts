@@ -54,6 +54,7 @@ import { runInventoryHealthCheck } from './jobs/inventoryHealth.job';
 import { runInventoryInvariantCheck } from './jobs/inventoryInvariants.job';
 import { ensureWarehouseDefaults } from './services/warehouseDefaults.service';
 import { pruneOutboxEvents } from './jobs/outboxRetention.job';
+import { runReservationExpiry } from './jobs/reservationExpiry.job';
 import inventoryHealthRouter from './routes/inventoryHealth.routes';
 import outboxAdminRouter from './routes/outboxAdmin.routes';
 import { startEventBridge } from './lib/events';
@@ -205,6 +206,13 @@ if (RUN_INPROCESS_JOBS) {
         console.log(`🧹 Outbox retention pruned ${result.deleted} events (retention=${result.retentionDays}d)`);
       }
     },
+    true
+  );
+
+  registerJob(
+    'reservation-expiry',
+    process.env.RESERVATION_EXPIRY_CRON ?? '*/15 * * * *', // Every 15 minutes by default
+    runReservationExpiry,
     true
   );
 

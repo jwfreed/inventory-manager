@@ -94,7 +94,7 @@ async function loadReserved(
       WHERE r.tenant_id = $1
         AND r.item_id = $2
         AND r.location_id = $3
-        AND r.status IN ('open', 'released')
+        AND r.status IN ('RESERVED', 'ALLOCATED')
         AND (i.canonical_uom IS NULL OR r.uom = i.canonical_uom)
         ${uomFilter}
       GROUP BY COALESCE(i.canonical_uom, r.uom)`,
@@ -502,7 +502,7 @@ export async function getInventorySnapshotSummary(
               SUM(r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0)) AS reserved
          FROM inventory_reservations r
          JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
-        WHERE r.status IN ('open', 'released')
+        WHERE r.status IN ('RESERVED', 'ALLOCATED')
           AND r.tenant_id = $1
           AND (i.canonical_uom IS NULL OR r.uom = i.canonical_uom)
           ${whereReserved}

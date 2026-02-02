@@ -11,6 +11,7 @@ export type InventoryBalanceRow = {
   uom: string;
   on_hand: string | number;
   reserved: string | number;
+  allocated: string | number;
   created_at: string;
   updated_at: string;
 };
@@ -28,8 +29,8 @@ export async function ensureInventoryBalanceRow(
 ) {
   await client.query(
     `INSERT INTO inventory_balance (
-        tenant_id, item_id, location_id, uom, on_hand, reserved, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, 0, 0, now(), now())
+        tenant_id, item_id, location_id, uom, on_hand, reserved, allocated, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, 0, 0, 0, now(), now())
      ON CONFLICT (tenant_id, item_id, location_id, uom) DO NOTHING`,
     [tenantId, itemId, locationId, uom]
   );
@@ -55,7 +56,8 @@ export async function getInventoryBalanceForUpdate(
   const row = res.rows[0];
   return {
     onHand: normalizeQuantity(row.on_hand),
-    reserved: normalizeQuantity(row.reserved)
+    reserved: normalizeQuantity(row.reserved),
+    allocated: normalizeQuantity(row.allocated)
   };
 }
 
@@ -68,11 +70,17 @@ export async function applyInventoryBalanceDelta(
     uom: string;
     deltaOnHand?: number;
     deltaReserved?: number;
+    deltaAllocated?: number;
   }
 ) {
   const deltaOnHand = params.deltaOnHand ?? 0;
   const deltaReserved = params.deltaReserved ?? 0;
-  if (Math.abs(deltaOnHand) <= EPSILON && Math.abs(deltaReserved) <= EPSILON) {
+  const deltaAllocated = params.deltaAllocated ?? 0;
+  if (
+    Math.abs(deltaOnHand) <= EPSILON &&
+    Math.abs(deltaReserved) <= EPSILON &&
+    Math.abs(deltaAllocated) <= EPSILON
+  ) {
     return;
   }
   const current = await getInventoryBalanceForUpdate(
@@ -84,16 +92,29 @@ export async function applyInventoryBalanceDelta(
   );
   const nextOnHand = roundQuantity(current.onHand + deltaOnHand);
   const nextReserved = roundQuantity(current.reserved + deltaReserved);
+  const nextAllocated = roundQuantity(current.allocated + deltaAllocated);
   if (nextReserved < -EPSILON) {
     throw new Error('INVENTORY_BALANCE_RESERVED_NEGATIVE');
+  }
+  if (nextAllocated < -EPSILON) {
+    throw new Error('INVENTORY_BALANCE_ALLOCATED_NEGATIVE');
   }
   await client.query(
     `UPDATE inventory_balance
         SET on_hand = $1,
             reserved = $2,
+            allocated = $3,
             updated_at = now()
-      WHERE tenant_id = $3 AND item_id = $4 AND location_id = $5 AND uom = $6`,
-    [nextOnHand, Math.max(0, nextReserved), params.tenantId, params.itemId, params.locationId, params.uom]
+      WHERE tenant_id = $4 AND item_id = $5 AND location_id = $6 AND uom = $7`,
+    [
+      nextOnHand,
+      Math.max(0, nextReserved),
+      Math.max(0, nextAllocated),
+      params.tenantId,
+      params.itemId,
+      params.locationId,
+      params.uom
+    ]
   );
 }
 
@@ -114,9 +135,11 @@ export async function getInventoryBalance(
   const row = res.rows[0];
   const onHand = normalizeQuantity(row.on_hand);
   const reserved = normalizeQuantity(row.reserved);
+  const allocated = normalizeQuantity(row.allocated);
   return {
     onHand,
     reserved,
-    available: roundQuantity(onHand - reserved)
+    allocated,
+    available: roundQuantity(onHand - reserved - allocated)
   };
 }

@@ -82,11 +82,27 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
     body: { includeReceivingQc: true }
   });
 
-  const qaLocation = (await getLocationByRole(token, 'QA')) || (await getLocationByCode(token, 'QC'));
-  const recvLocation = (await getLocationByRole(token, 'SELLABLE')) || (await getLocationByCode(token, 'RECV'));
-  const fgLocation = (await getLocationByRole(token, 'SELLABLE')) || (await getLocationByCode(token, 'FG'));
+  // Find warehouse and get warehouse defaults
+  const locationsRes = await apiRequest('GET', '/locations', { token });
+  assert.equal(locationsRes.res.status, 200);
+  const warehouse = locationsRes.payload.data.find(l => l.type === 'warehouse');
+  assert.ok(warehouse, 'Warehouse required');
+
+  // Get warehouse default locations - these are what the receipt service will use
+  const defaultsRes = await pool.query(
+    `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
+    [tenantId, warehouse.id]
+  );
+  const defaults = new Map(defaultsRes.rows.map(r => [r.role, r.location_id]));
+  const qaLocationId = defaults.get('QA');
+  const sellableLocationId = defaults.get('SELLABLE');
+  assert.ok(qaLocationId, 'QA default required');
+  assert.ok(sellableLocationId, 'SELLABLE default required');
+
+  // Get location objects for the defaults
+  const qaLocation = locationsRes.payload.data.find(l => l.id === qaLocationId);
+  const fgLocation = locationsRes.payload.data.find(l => l.id === sellableLocationId);
   assert.ok(qaLocation, 'QA location must exist');
-  assert.ok(recvLocation, 'Receiving location must exist');
   assert.ok(fgLocation, 'Sellable location must exist');
 
   const vendorCode = `V-${Date.now()}`;
@@ -97,7 +113,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.equal(vendorRes.res.status, 201);
   const vendorId = vendorRes.payload.id;
 
-  const sku = `ITEM-${Date.now()}`;
+  const sku = `ITEM-${randomUUID()}`;
   const itemRes = await apiRequest('POST', '/items', {
     token,
     body: {
@@ -151,7 +167,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
     body: {
       vendorId,
       shipToLocationId: fgLocation.id,
-      receivingLocationId: recvLocation.id,
+      receivingLocationId: fgLocation.id,
       expectedDate: today,
       status: 'approved',
       lines: [
@@ -216,22 +232,25 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.equal(movementLinesRes.res.status, 200);
   const movementLines = movementLinesRes.payload.data || [];
   const qaLine = movementLines.find((line) => line.locationId === qaLocation.id);
-  assert.ok(qaLine);
+  assert.ok(qaLine, `No movement line for QA location. Lines: ${JSON.stringify(movementLines.map(l => ({ locationId: l.locationId, qty: l.quantityDelta })))}, qaLocation.id: ${qaLocation.id}`);
   assert.ok(Number(qaLine.quantityDelta) > 0);
 
   const qaSnapshot = await apiRequest('GET', '/inventory-snapshot', {
     token,
     params: { itemId, locationId: qaLocation.id }
   });
-  assert.equal(qaSnapshot.res.status, 200);
-  assert.ok(Math.abs(Number(qaSnapshot.payload.data.onHand) - 10) < 1e-6);
+  assert.equal(qaSnapshot.res.status, 200, `Snapshot failed: ${JSON.stringify(qaSnapshot.payload)}`);
+  assert.ok(Array.isArray(qaSnapshot.payload.data), `Snapshot data not array: ${JSON.stringify(qaSnapshot.payload)}`);
+  const qaOnHand = qaSnapshot.payload.data[0]?.onHand ?? 0;
+  assert.ok(Math.abs(Number(qaOnHand) - 10) < 1e-6, `QA on-hand expected 10, got ${qaOnHand}`);
 
   const fgSnapshot = await apiRequest('GET', '/inventory-snapshot', {
     token,
     params: { itemId, locationId: fgLocation.id }
   });
   assert.equal(fgSnapshot.res.status, 200);
-  assert.ok(Math.abs(Number(fgSnapshot.payload.data.onHand)) < 1e-6);
+  const fgOnHand = fgSnapshot.payload.data?.[0]?.onHand ?? 0;
+  assert.ok(Math.abs(Number(fgOnHand)) < 1e-6);
 
   const atpRes = await apiRequest('GET', '/atp', {
     token,
@@ -319,10 +338,10 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
 
   const qcMovementsRes = await apiRequest('GET', '/inventory-movements', {
     token,
-    params: { external_ref: `qc_accept:${qcEventId}`, limit: 5 }
+    params: { external_ref: `qc_event:${qcEventId}`, limit: 5 }
   });
   assert.equal(qcMovementsRes.res.status, 200);
-  assert.ok((qcMovementsRes.payload.data || []).length >= 1);
+  assert.ok((qcMovementsRes.payload.data || []).length >= 1, `No QC movements found for qc_event:${qcEventId}`);
   const qcMovement = qcMovementsRes.payload.data[0];
   assert.equal(qcMovement.movementType, 'transfer');
 
@@ -349,12 +368,14 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
     params: { itemId, locationId: qaLocation.id }
   });
   assert.equal(qaSnapshotAfter.res.status, 200);
-  assert.ok(Math.abs(Number(qaSnapshotAfter.payload.data.onHand)) < 1e-6);
+  const qaOnHandAfter = qaSnapshotAfter.payload.data?.[0]?.onHand ?? 0;
+  assert.ok(Math.abs(Number(qaOnHandAfter)) < 1e-6);
 
   const fgSnapshotAfter = await apiRequest('GET', '/inventory-snapshot', {
     token,
     params: { itemId, locationId: fgLocation.id }
   });
   assert.equal(fgSnapshotAfter.res.status, 200);
-  assert.ok(Math.abs(Number(fgSnapshotAfter.payload.data.onHand) - 10) < 1e-6);
+  const fgOnHandAfter = fgSnapshotAfter.payload.data?.[0]?.onHand ?? 0;
+  assert.ok(Math.abs(Number(fgOnHandAfter) - 10) < 1e-6);
 });

@@ -244,6 +244,7 @@ test('reservation creates backorder when insufficient on-hand', async () => {
           locationId,
           uom: 'each',
           quantityReserved: 7,
+          allowBackorder: true,
         },
       ],
     },

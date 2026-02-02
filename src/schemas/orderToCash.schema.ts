@@ -64,7 +64,9 @@ export const reservationSchema = z.object({
   uom: z.string().min(1).max(32),
   quantityReserved: z.number().positive(),
   quantityFulfilled: z.number().nonnegative().optional(),
-  status: z.enum(['open', 'released', 'fulfilled', 'canceled']).optional(),
+  expiresAt: isoDateTimeString.optional(),
+  allowBackorder: z.boolean().optional(),
+  status: z.enum(['RESERVED', 'ALLOCATED', 'FULFILLED', 'CANCELLED', 'EXPIRED']).optional(),
   notes: z.string().max(1000).optional(),
 });
 

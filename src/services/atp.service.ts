@@ -30,7 +30,7 @@ const SELLABLE_LOCATION_FILTER = `AND l.is_sellable = true`;
 
 /**
  * Calculate Available to Promise (ATP) for inventory items.
- * ATP = on_hand - reserved
+ * ATP = on_hand - reserved - allocated
  * 
  * This provides a simplified view focused on ATP calculation,
  * excluding other inventory status fields like held, rejected, etc.
@@ -92,7 +92,7 @@ export async function getAvailableToPromise(
          FROM inventory_reservations r
          JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
          JOIN locations l ON l.id = r.location_id AND l.tenant_id = r.tenant_id
-        WHERE r.status IN ('open', 'released')
+        WHERE r.status IN ('RESERVED', 'ALLOCATED')
           AND r.tenant_id = $1
           AND (i.canonical_uom IS NULL OR r.uom = i.canonical_uom)
           ${whereReserved}
@@ -183,7 +183,7 @@ export async function getAvailableToPromiseDetail(
          FROM inventory_reservations r
          JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
          JOIN locations l ON l.id = r.location_id AND l.tenant_id = r.tenant_id
-        WHERE r.status IN ('open', 'released')
+        WHERE r.status IN ('RESERVED', 'ALLOCATED')
           AND r.tenant_id = $1
           AND r.item_id = $2
           AND r.location_id = $3

@@ -128,7 +128,7 @@ export async function createWave(tenantId: string, salesOrderIds: string[]) {
        JOIN sales_order_lines sol ON r.demand_id = sol.id
        WHERE sol.sales_order_id = ANY($1)
        AND r.demand_type = 'sales_order_line'
-       AND r.status = 'open'`,
+       AND r.status = 'RESERVED'`,
       [salesOrderIds]
     );
 

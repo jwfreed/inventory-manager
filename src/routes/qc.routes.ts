@@ -37,7 +37,8 @@ router.post('/qc-events', async (req: Request, res: Response) => {
         }
         return res.status(409).json({ error: 'QC event already processed for this request.' });
       }
-      if (record.status === 'IN_PROGRESS') {
+      // Only reject if it's an EXISTING in-progress operation (not our new insert)
+      if (record.status === 'IN_PROGRESS' && !record.isNew) {
         return res.status(409).json({ error: 'QC event already in progress for this key.' });
       }
       idempotencyStarted = true;
@@ -87,11 +88,53 @@ router.post('/qc-events', async (req: Request, res: Response) => {
     if (error?.message === 'QC_REJECT_LOCATION_REQUIRED') {
       return res.status(400).json({ error: 'Reject location is required for QC reject events.' });
     }
+    if (error?.message === 'QC_QA_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'QA location is required for QC disposition.' });
+    }
+    if (error?.message === 'QC_TRANSFER_IN_PROGRESS') {
+      return res.status(409).json({ error: 'QC transfer already in progress for this event.' });
+    }
+    if (error?.message === 'QC_SOURCE_MUST_BE_QA') {
+      return res.status(400).json({ error: 'QC transfers must source from a QA location.' });
+    }
+    if (error?.message === 'QC_ACCEPT_REQUIRES_SELLABLE_ROLE') {
+      return res.status(400).json({ error: 'QC accept requires a sellable destination.' });
+    }
+    if (error?.message === 'QC_ACCEPT_REQUIRES_SELLABLE_FLAG') {
+      return res.status(400).json({ error: 'QC accept destination must be sellable.' });
+    }
+    if (error?.message === 'QC_HOLD_REQUIRES_HOLD_ROLE') {
+      return res.status(400).json({ error: 'QC hold requires a hold destination.' });
+    }
+    if (error?.message === 'QC_HOLD_MUST_NOT_BE_SELLABLE') {
+      return res.status(400).json({ error: 'QC hold destination must be non-sellable.' });
+    }
+    if (error?.message === 'QC_REJECT_REQUIRES_REJECT_ROLE') {
+      return res.status(400).json({ error: 'QC reject requires a reject destination.' });
+    }
+    if (error?.message === 'QC_REJECT_MUST_NOT_BE_SELLABLE') {
+      return res.status(400).json({ error: 'QC reject destination must be non-sellable.' });
+    }
+    if (error?.message === 'TRANSFER_DESTINATION_NOT_FOUND') {
+      return res.status(400).json({ error: 'Destination location not found.' });
+    }
+    if (error?.message === 'TRANSFER_SOURCE_NOT_FOUND') {
+      return res.status(400).json({ error: 'Source location not found.' });
+    }
     if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
       return res.status(409).json({ error: 'Idempotency key reused with a different request payload.' });
     }
     if (error?.message === 'QC_SOURCE_REQUIRED') {
       return res.status(400).json({ error: 'A valid source (receipt line, work order, or execution line) is required.' });
+    }
+    if (error?.message === 'QC_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'QC source location is required.' });
+    }
+    if (error?.message === 'QC_ITEM_ID_REQUIRED') {
+      return res.status(400).json({ error: 'QC item is required.' });
+    }
+    if (error?.message === 'QC_ACTION_REQUIRED') {
+      return res.status(400).json({ error: 'QC action is required.' });
     }
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({

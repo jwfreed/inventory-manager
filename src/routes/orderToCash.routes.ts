@@ -2,6 +2,9 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import {
   createReservations,
+  allocateReservation,
+  cancelReservation,
+  fulfillReservation,
   createReturnAuthorization,
   createSalesOrder,
   createShipment,
@@ -27,6 +30,12 @@ import { getIdempotencyKey } from '../lib/idempotency';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
+const reservationCancelSchema = z.object({
+  reason: z.string().max(1000).optional(),
+});
+const reservationFulfillSchema = z.object({
+  quantity: z.number().positive().optional(),
+});
 
 router.post('/sales-orders', async (req: Request, res: Response) => {
   const parsed = salesOrderSchema.safeParse(req.body);
@@ -118,8 +127,109 @@ router.post('/reservations', async (req: Request, res: Response) => {
     if ((error as Error)?.message === 'RESERVATION_LOCATION_NOT_FOUND') {
       return res.status(400).json({ error: 'Reservation location not found.' });
     }
+    if ((error as Error)?.message === 'RESERVATION_INSUFFICIENT_AVAILABLE') {
+      return res.status(409).json({ error: 'Insufficient sellable inventory for reservation.' });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create reservation.' });
+  }
+});
+
+router.post('/reservations/:id/allocate', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid reservation id.' });
+  }
+  const idempotencyKey = getIdempotencyKey(req);
+  if (!idempotencyKey) {
+    return res.status(400).json({ error: 'Idempotency-Key header is required.' });
+  }
+  try {
+    const reservation = await allocateReservation(req.auth!.tenantId, id, { idempotencyKey });
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
+    return res.json(reservation);
+  } catch (error: any) {
+    if (error?.message === 'RESERVATION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Reservation not found.' });
+    }
+    if (error?.message === 'RESERVATION_INVALID_TRANSITION') {
+      return res.status(409).json({ error: 'Reservation cannot be allocated from current state.' });
+    }
+    if (error?.message === 'RESERVATION_ALLOCATE_IN_PROGRESS') {
+      return res.status(409).json({ error: 'Reservation allocation already in progress.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to allocate reservation.' });
+  }
+});
+
+router.post('/reservations/:id/cancel', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid reservation id.' });
+  }
+  const parsed = reservationCancelSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const idempotencyKey = getIdempotencyKey(req);
+  if (!idempotencyKey) {
+    return res.status(400).json({ error: 'Idempotency-Key header is required.' });
+  }
+  try {
+    const reservation = await cancelReservation(req.auth!.tenantId, id, {
+      reason: parsed.data.reason ?? null,
+      idempotencyKey
+    });
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
+    return res.json(reservation);
+  } catch (error: any) {
+    if (error?.message === 'RESERVATION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Reservation not found.' });
+    }
+    if (error?.message === 'RESERVATION_ALLOCATED_CANCEL_FORBIDDEN') {
+      return res.status(409).json({ error: 'Allocated reservations cannot be canceled.' });
+    }
+    if (error?.message === 'RESERVATION_CANCEL_IN_PROGRESS') {
+      return res.status(409).json({ error: 'Reservation cancel already in progress.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to cancel reservation.' });
+  }
+});
+
+router.post('/reservations/:id/fulfill', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid reservation id.' });
+  }
+  const parsed = reservationFulfillSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const idempotencyKey = getIdempotencyKey(req);
+  if (!idempotencyKey) {
+    return res.status(400).json({ error: 'Idempotency-Key header is required.' });
+  }
+  try {
+    const reservation = await fulfillReservation(req.auth!.tenantId, id, {
+      quantity: parsed.data.quantity,
+      idempotencyKey
+    });
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
+    return res.json(reservation);
+  } catch (error: any) {
+    if (error?.message === 'RESERVATION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Reservation not found.' });
+    }
+    if (error?.message === 'RESERVATION_INVALID_TRANSITION') {
+      return res.status(409).json({ error: 'Reservation cannot be fulfilled from current state.' });
+    }
+    if (error?.message === 'RESERVATION_FULFILL_IN_PROGRESS') {
+      return res.status(409).json({ error: 'Reservation fulfill already in progress.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fulfill reservation.' });
   }
 });
 

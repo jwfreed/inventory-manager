@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import type { PoolClient } from 'pg';
 import { query } from '../db';
 
 export type IdempotencyStatus = 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED';
@@ -16,9 +17,14 @@ export function hashRequestBody(body: unknown): string {
   return createHash('sha256').update(payload).digest('hex');
 }
 
-export async function beginIdempotency(key: string, requestHash: string): Promise<IdempotencyRecord> {
+export async function beginIdempotency(
+  key: string,
+  requestHash: string,
+  client?: PoolClient
+): Promise<IdempotencyRecord> {
+  const executor = client ? client.query.bind(client) : query;
   try {
-    const insert = await query<{
+    const insert = await executor<{
       key: string;
       request_hash: string;
       status: IdempotencyStatus;
@@ -43,7 +49,7 @@ export async function beginIdempotency(key: string, requestHash: string): Promis
     }
   }
 
-  const existing = await query<{
+  const existing = await executor<{
     key: string;
     request_hash: string;
     status: IdempotencyStatus;
@@ -64,7 +70,7 @@ export async function beginIdempotency(key: string, requestHash: string): Promis
     throw error;
   }
   if (row.status === 'FAILED') {
-    const retry = await query(
+    const retry = await executor(
       `UPDATE idempotency_keys
           SET status = 'IN_PROGRESS',
               updated_at = now()
@@ -93,9 +99,11 @@ export async function beginIdempotency(key: string, requestHash: string): Promis
 export async function completeIdempotency(
   key: string,
   status: IdempotencyStatus,
-  responseRef: string | null
+  responseRef: string | null,
+  client?: PoolClient
 ): Promise<void> {
-  await query(
+  const executor = client ? client.query.bind(client) : query;
+  await executor(
     `UPDATE idempotency_keys
         SET status = $2,
             response_ref = $3,
