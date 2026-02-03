@@ -14,6 +14,8 @@ function createPool() {
   return new Pool({ connectionString: process.env.DATABASE_URL });
 }
 
+const sharedPool = createPool();
+
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
   if (params) {
@@ -54,7 +56,13 @@ async function ensureSession() {
   return login.payload;
 }
 
-async function ensureWarehouse(token) {
+async function ensureWarehouse(token, tenantId, pool = sharedPool) {
+  if (!tenantId) {
+    const meRes = await apiRequest('GET', '/auth/me', { token });
+    assert.equal(meRes.res.status, 200);
+    tenantId = meRes.payload?.tenantId || meRes.payload?.tenant?.id || meRes.payload?.user?.tenantId;
+  }
+  assert.ok(tenantId);
   await apiRequest('POST', '/locations/templates/standard-warehouse', {
     token,
     body: { includeReceivingQc: true },
@@ -62,7 +70,19 @@ async function ensureWarehouse(token) {
   const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
   assert.equal(locationsRes.res.status, 200);
   const locations = locationsRes.payload.data || [];
-  const sellable = locations.find((loc) => loc.role === 'SELLABLE');
+  const warehouse = locations.find((loc) => loc.type === 'warehouse');
+  assert.ok(warehouse);
+  const defaultsRes = await pool.query(
+    `SELECT location_id
+       FROM warehouse_default_location
+      WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
+    [tenantId, warehouse.id]
+  );
+  const defaultSellableId = defaultsRes.rows[0]?.location_id;
+  const sellable =
+    locations.find((loc) => loc.id === defaultSellableId) ||
+    locations.find((loc) => loc.role === 'SELLABLE' && loc.parentLocationId === warehouse.id) ||
+    locations.find((loc) => loc.role === 'SELLABLE');
   assert.ok(sellable);
   return { sellable };
 }
@@ -161,7 +181,7 @@ test('Reservation balance reconciliation matches reservations remaining qty', as
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { sellable } = await ensureWarehouse(token);
+  const { sellable } = await ensureWarehouse(token, session.tenant.id, pool);
   const itemId = await seedItemAndStock(token, sellable.id, 12);
 
   const reserveRes = await apiRequest('POST', '/reservations', {

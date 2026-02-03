@@ -87,6 +87,10 @@ async function resolveMembership(userId: string, tenantId?: string, tenantSlug?:
   );
 
   if (membershipRes.rowCount === 1) return membershipRes.rows[0];
+  if (membershipRes.rowCount > 1) {
+    const defaultMembership = membershipRes.rows.find((row: any) => row.slug === 'default');
+    if (defaultMembership) return defaultMembership;
+  }
   return null;
 }
 
@@ -156,6 +160,59 @@ router.post('/auth/bootstrap', async (req: Request, res: Response) => {
 
   const existingUser = await query('SELECT id FROM users LIMIT 1');
   if ((existingUser.rowCount ?? 0) > 0) {
+    const tenantSlugFinal = tenantSlug ?? 'default';
+    const tenantRes = await query('SELECT id FROM tenants WHERE slug = $1', [tenantSlugFinal]);
+    if ((tenantRes.rowCount ?? 0) === 0) {
+      return res.status(409).json({ error: 'Bootstrap already completed.' });
+    }
+    const tenantId = tenantRes.rows[0].id;
+    const existingAdmin = await query('SELECT id FROM users WHERE email = $1', [adminEmail]);
+    try {
+      const now = new Date();
+      const passwordHash = await hashPassword(adminPassword);
+      await withTransaction(async (client) => {
+        await client.query(
+          `INSERT INTO currencies (code, name, symbol, decimal_places, active)
+           VALUES ('THB', 'Thai Baht', 'THB', 2, true)
+           ON CONFLICT (code) DO NOTHING`
+        );
+        if ((existingAdmin.rowCount ?? 0) === 0) {
+          const userId = uuidv4();
+          await client.query(
+            `INSERT INTO users (id, email, password_hash, full_name, base_currency, active, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'THB', true, $5, $5)`,
+            [userId, adminEmail, passwordHash, adminName ?? null, now]
+          );
+          await client.query(
+            `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
+             VALUES ($1, $2, $3, 'admin', 'active', $4)`,
+            [uuidv4(), tenantId, userId, now]
+          );
+        } else {
+          const userId = existingAdmin.rows[0].id;
+          await client.query(
+            `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
+             VALUES ($1, $2, $3, 'admin', 'active', $4)
+             ON CONFLICT DO NOTHING`,
+            [uuidv4(), tenantId, userId, now]
+          );
+          if (process.env.NODE_ENV !== 'production') {
+            await client.query(
+              `UPDATE users
+                  SET password_hash = $1,
+                      base_currency = COALESCE(base_currency, 'THB'),
+                      updated_at = $2
+                WHERE id = $3`,
+              [passwordHash, now, userId]
+            );
+          }
+        }
+      });
+    } catch (error) {
+      if ((error as any)?.code !== '23505') {
+        console.error(error);
+      }
+    }
     return res.status(409).json({ error: 'Bootstrap already completed.' });
   }
 
@@ -187,8 +244,8 @@ router.post('/auth/bootstrap', async (req: Request, res: Response) => {
         );
       }
       await client.query(
-        `INSERT INTO users (id, email, password_hash, full_name, active, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, true, $5, $5)`,
+        `INSERT INTO users (id, email, password_hash, full_name, base_currency, active, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'THB', true, $5, $5)`,
         [userId, adminEmail, passwordHash, adminName ?? null, now]
       );
       await client.query(

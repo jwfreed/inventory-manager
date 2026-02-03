@@ -253,9 +253,9 @@ export async function createReservations(
   options?: { idempotencyKey?: string | null }
 ) {
   const now = new Date();
-  const results: any[] = [];
   const baseIdempotency = options?.idempotencyKey ?? null;
-  await withTransactionRetry(async (client) => {
+  const results = await withTransactionRetry(async (client) => {
+    const rows: any[] = [];
     for (const reservation of data.reservations) {
       const canonical = await convertToCanonical(
         tenantId,
@@ -274,7 +274,7 @@ export async function createReservations(
           [tenantId, idempotencyKey]
         );
         if (existing.rowCount > 0) {
-          results.push(existing.rows[0]);
+          rows.push(existing.rows[0]);
           continue;
         }
       }
@@ -325,7 +325,12 @@ export async function createReservations(
       }
       const fulfilledQty =
         reservation.quantityFulfilled != null ? Math.min(reservation.quantityFulfilled, reserveQty) : 0;
-      const warehouseId = await resolveWarehouseIdForLocation(tenantId, reservation.locationId, client);
+      let warehouseId: string | null = null;
+      try {
+        warehouseId = await resolveWarehouseIdForLocation(tenantId, reservation.locationId, client);
+      } catch (error) {
+        warehouseId = null;
+      }
       let res;
       try {
         res = await client.query(
@@ -363,7 +368,7 @@ export async function createReservations(
               [tenantId, idempotencyKey]
             );
             if (existing.rowCount > 0) {
-              results.push(existing.rows[0]);
+              rows.push(existing.rows[0]);
               continue;
             }
           }
@@ -386,14 +391,14 @@ export async function createReservations(
               ]
             );
             if (existing.rowCount > 0) {
-              results.push(existing.rows[0]);
+              rows.push(existing.rows[0]);
               continue;
             }
           }
         }
         throw error;
       }
-      results.push(res.rows[0]);
+      rows.push(res.rows[0]);
 
       await applyInventoryBalanceDelta(client, {
         tenantId,
@@ -412,6 +417,7 @@ export async function createReservations(
         demandType: reservation.demandType
       });
     }
+    return rows;
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
   atpCache.invalidate(cacheKey('atp', tenantId));
   return results.map(mapReservation);

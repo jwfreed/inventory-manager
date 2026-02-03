@@ -71,7 +71,7 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   // Create vendor, item, PO
   const vendorRes = await apiRequest('POST', '/vendors', {
     token,
-    body: { code: `V-${Date.now()}`, name: 'Test Vendor' }
+    body: { code: `V-${randomUUID()}`, name: 'Test Vendor' }
   });
   assert.equal(vendorRes.res.status, 201);
 
@@ -218,7 +218,7 @@ test('QC partial split: accept + hold', async () => {
 
   const vendorRes = await apiRequest('POST', '/vendors', {
     token,
-    body: { code: `V-${Date.now()}`, name: 'Vendor' }
+    body: { code: `V-${randomUUID()}`, name: 'Vendor' }
   });
   const itemRes = await apiRequest('POST', '/items', {
     token,
@@ -350,7 +350,7 @@ test('QC validation: qty exceeds QA on-hand', async (t) => {
 
   const vendorRes = await apiRequest('POST', '/vendors', {
     token,
-    body: { code: `V-${Date.now()}`, name: 'Vendor' }
+    body: { code: `V-${randomUUID()}`, name: 'Vendor' }
   });
   assert.equal(vendorRes.res.status, 201);
 
