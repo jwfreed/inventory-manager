@@ -203,18 +203,24 @@ test('QC partial split: accept + hold', async () => {
   });
 
   const locationsRes = await apiRequest('GET', '/locations', { token });
-  const qaLocation = locationsRes.payload.data.find(l => l.role === 'QA');
   const warehouse = locationsRes.payload.data.find(l => l.type === 'warehouse');
-  const holdLocation = locationsRes.payload.data.find(l => l.role === 'HOLD');
-  assert.ok(qaLocation && warehouse && holdLocation);
+  assert.ok(warehouse);
 
-  // Find the actual SELLABLE default for this warehouse (what QC will use)
   const defaultsRes = await pool.query(
-    `SELECT location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
+    `SELECT role, location_id
+       FROM warehouse_default_location
+      WHERE tenant_id = $1 AND warehouse_id = $2 AND role IN ('SELLABLE','QA','HOLD')`,
     [tenantId, warehouse.id]
   );
-  assert.equal(defaultsRes.rowCount, 1, 'SELLABLE default required');
-  const sellableLocationId = defaultsRes.rows[0].location_id;
+  const defaults = new Map(defaultsRes.rows.map((row) => [row.role, row.location_id]));
+  const qaLocationId = defaults.get('QA');
+  const holdLocationId = defaults.get('HOLD');
+  const sellableLocationId = defaults.get('SELLABLE');
+  assert.ok(qaLocationId && holdLocationId && sellableLocationId);
+
+  const qaLocation = locationsRes.payload.data.find(l => l.id === qaLocationId);
+  const holdLocation = locationsRes.payload.data.find(l => l.id === holdLocationId);
+  assert.ok(qaLocation && holdLocation);
 
   const vendorRes = await apiRequest('POST', '/vendors', {
     token,

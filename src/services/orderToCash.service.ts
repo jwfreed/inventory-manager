@@ -11,8 +11,9 @@ import {
 } from '../schemas/orderToCash.schema';
 import { convertToCanonical, getCanonicalMovementFields } from './uomCanonical.service';
 import { getItem } from './masterData.service';
-import { applyInventoryBalanceDelta, getInventoryBalanceForUpdate } from '../domains/inventory';
+import { applyInventoryBalanceDelta, ensureInventoryBalanceRow, getInventoryBalanceForUpdate } from '../domains/inventory';
 import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
+import { getSellableSupplyMap } from './atp.service';
 import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
 import { upsertBackorder } from './backorders.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
@@ -84,7 +85,7 @@ function normalizeLineNumbers<T extends { lineNumber?: number }>(lines: T[]) {
   });
 }
 
-export function mapSalesOrder(row: any, lines: any[]) {
+export function mapSalesOrder(row: any, lines: any[], derivedBackorders?: Map<string, number>) {
   return {
     id: row.id,
     soNumber: row.so_number,
@@ -104,6 +105,7 @@ export function mapSalesOrder(row: any, lines: any[]) {
       itemId: line.item_id,
       uom: line.uom,
       quantityOrdered: line.quantity_ordered,
+      derivedBackorderQty: derivedBackorders?.get(line.id) ?? 0,
       unitPrice: line.unit_price != null ? Number(line.unit_price) : null,
       currencyCode: line.currency_code ?? null,
       exchangeRateToBase: line.exchange_rate_to_base != null ? Number(line.exchange_rate_to_base) : null,
@@ -115,13 +117,68 @@ export function mapSalesOrder(row: any, lines: any[]) {
   };
 }
 
+async function computeDerivedBackorders(tenantId: string, orderRow: any, lines: any[]) {
+  if (!lines.length) return new Map<string, number>();
+  const itemIds = Array.from(new Set(lines.map((line) => line.item_id)));
+  const locationId = orderRow.ship_from_location_id ?? undefined;
+  const supplyMap = await getSellableSupplyMap(tenantId, { itemIds, locationId });
+
+  const shippedRows = await query(
+    `SELECT sol.id AS line_id,
+            sol.item_id,
+            sosl.uom,
+            SUM(sosl.quantity_shipped) AS quantity_shipped
+       FROM sales_order_shipment_lines sosl
+       JOIN sales_order_shipments sos
+         ON sos.id = sosl.sales_order_shipment_id
+        AND sos.tenant_id = sosl.tenant_id
+       JOIN sales_order_lines sol
+         ON sol.id = sosl.sales_order_line_id
+        AND sol.tenant_id = sosl.tenant_id
+      WHERE sos.tenant_id = $1
+        AND sos.sales_order_id = $2
+      GROUP BY sol.id, sol.item_id, sosl.uom`,
+    [tenantId, orderRow.id],
+  );
+  const shippedByLine = new Map<string, number>();
+  for (const row of shippedRows.rows) {
+    const canonical = await convertToCanonical(
+      tenantId,
+      row.item_id,
+      Number(row.quantity_shipped),
+      row.uom
+    );
+    const prev = shippedByLine.get(row.line_id) ?? 0;
+    shippedByLine.set(row.line_id, roundQuantity(prev + canonical.quantity));
+  }
+
+  const derived = new Map<string, number>();
+  for (const line of lines) {
+    const ordered = await convertToCanonical(
+      tenantId,
+      line.item_id,
+      Number(line.quantity_ordered),
+      line.uom
+    );
+    const shipped = shippedByLine.get(line.id) ?? 0;
+    const openDemand = roundQuantity(Math.max(0, ordered.quantity - shipped));
+    const supplyKey = `${line.item_id}:${ordered.canonicalUom}`;
+    const supply = supplyMap.get(supplyKey) ?? { onHand: 0, reserved: 0, allocated: 0 };
+    const committed = roundQuantity(supply.reserved + supply.allocated);
+    const fulfillable = roundQuantity(Math.max(0, supply.onHand - committed));
+    const backorder = roundQuantity(Math.max(0, openDemand - fulfillable));
+    derived.set(line.id, backorder);
+  }
+  return derived;
+}
+
 export async function createSalesOrder(tenantId: string, data: SalesOrderInput) {
   const now = new Date();
   const id = uuidv4();
   const status = data.status ?? 'draft';
   const normalizedLines = normalizeLineNumbers(data.lines);
 
-  return withTransaction(async (client) => {
+  const result = await withTransaction(async (client) => {
     const orderResult = await client.query(
       `INSERT INTO sales_orders (
         id, tenant_id, so_number, customer_id, status, order_date, requested_ship_date,
@@ -176,8 +233,10 @@ export async function createSalesOrder(tenantId: string, data: SalesOrderInput) 
       lines.push(lineResult.rows[0]);
     }
 
-    return mapSalesOrder(orderResult.rows[0], lines);
+    return { order: orderResult.rows[0], lines };
   });
+  const derivedBackorders = await computeDerivedBackorders(tenantId, result.order, result.lines);
+  return mapSalesOrder(result.order, result.lines, derivedBackorders);
 }
 
 export async function getSalesOrder(tenantId: string, id: string) {
@@ -187,7 +246,8 @@ export async function getSalesOrder(tenantId: string, id: string) {
     'SELECT * FROM sales_order_lines WHERE sales_order_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
     [id, tenantId],
   );
-  return mapSalesOrder(orderResult.rows[0], lines.rows);
+  const derivedBackorders = await computeDerivedBackorders(tenantId, orderResult.rows[0], lines.rows);
+  return mapSalesOrder(orderResult.rows[0], lines.rows, derivedBackorders);
 }
 
 export async function listSalesOrders(
@@ -281,30 +341,27 @@ export async function createReservations(
 
       await assertLocationSellable(client, tenantId, reservation.locationId);
 
-      const balance = await getInventoryBalanceForUpdate(
-        client,
-        tenantId,
-        reservation.itemId,
-        reservation.locationId,
-        canonical.canonicalUom
-      );
-      const available = roundQuantity(balance.onHand - balance.reserved - balance.allocated);
-      let reserveQty = roundQuantity(Math.max(0, Math.min(canonical.quantity, available)));
-      let backorderQty = roundQuantity(Math.max(0, canonical.quantity - reserveQty));
+      const allowBackorder =
+        reservation.allowBackorder !== undefined ? reservation.allowBackorder : BACKORDERS_ENABLED;
+      let reserveQty = roundQuantity(canonical.quantity);
+      let backorderQty = 0;
+      if (allowBackorder) {
+        const balance = await getInventoryBalanceForUpdate(
+          client,
+          tenantId,
+          reservation.itemId,
+          reservation.locationId,
+          canonical.canonicalUom
+        );
+        const available = roundQuantity(balance.onHand - balance.reserved - balance.allocated);
+        reserveQty = roundQuantity(Math.max(0, Math.min(canonical.quantity, available)));
+        backorderQty = roundQuantity(Math.max(0, canonical.quantity - reserveQty));
+      }
       // Tolerate tiny rounding drift so we don't reject valid reservations.
       if (backorderQty > 0 && backorderQty <= 1e-6) {
         backorderQty = 0;
         reserveQty = canonical.quantity;
       }
-      const allowBackorder =
-        reservation.allowBackorder !== undefined ? reservation.allowBackorder : BACKORDERS_ENABLED;
-
-      if (backorderQty > 0 && !allowBackorder) {
-        const err: any = new Error('RESERVATION_INSUFFICIENT_AVAILABLE');
-        err.code = 'RESERVATION_INSUFFICIENT_AVAILABLE';
-        throw err;
-      }
-
       if (backorderQty > 0) {
         await upsertBackorder(
           tenantId,
@@ -323,6 +380,21 @@ export async function createReservations(
       if (reserveQty <= 0) {
         continue;
       }
+      if (!allowBackorder) {
+        const balance = await getInventoryBalanceForUpdate(
+          client,
+          tenantId,
+          reservation.itemId,
+          reservation.locationId,
+          canonical.canonicalUom
+        );
+        const available = roundQuantity(balance.onHand - balance.reserved - balance.allocated);
+        if (available + 1e-6 < reserveQty) {
+          const err: any = new Error('RESERVATION_INSUFFICIENT_AVAILABLE');
+          err.code = 'RESERVATION_INSUFFICIENT_AVAILABLE';
+          throw err;
+        }
+      }
       const fulfilledQty =
         reservation.quantityFulfilled != null ? Math.min(reservation.quantityFulfilled, reserveQty) : 0;
       let warehouseId: string | null = null;
@@ -331,82 +403,102 @@ export async function createReservations(
       } catch (error) {
         warehouseId = null;
       }
-      let res;
-      try {
-        res = await client.query(
-          `INSERT INTO inventory_reservations (
-            id, tenant_id, client_id, status, demand_type, demand_id, item_id, location_id, warehouse_id, uom,
-            quantity_reserved, quantity_fulfilled, reserved_at, expires_at, notes, idempotency_key, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
-          RETURNING *`,
+      const res = await client.query(
+        `INSERT INTO inventory_reservations (
+          id, tenant_id, client_id, status, demand_type, demand_id, item_id, location_id, warehouse_id, uom,
+          quantity_reserved, quantity_fulfilled, reserved_at, expires_at, notes, idempotency_key, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
+        ON CONFLICT DO NOTHING
+        RETURNING *`,
+        [
+          uuidv4(),
+          tenantId,
+          tenantId,
+          'RESERVED',
+          reservation.demandType,
+          reservation.demandId,
+          reservation.itemId,
+          reservation.locationId,
+          warehouseId,
+          canonical.canonicalUom,
+          reserveQty,
+          fulfilledQty,
+          now,
+          reservation.expiresAt ? new Date(reservation.expiresAt) : null,
+          reservation.notes ?? null,
+          idempotencyKey,
+          now,
+        ],
+      );
+      if (res.rowCount === 0) {
+        if (idempotencyKey) {
+          const existing = await client.query(
+            `SELECT * FROM inventory_reservations
+              WHERE client_id = $1 AND idempotency_key = $2`,
+            [tenantId, idempotencyKey]
+          );
+          if (existing.rowCount > 0) {
+            rows.push(existing.rows[0]);
+            continue;
+          }
+        }
+        const existing = await client.query(
+          `SELECT * FROM inventory_reservations
+            WHERE tenant_id = $1
+              AND demand_type = $2
+              AND demand_id = $3
+              AND item_id = $4
+              AND location_id = $5
+              AND uom = $6`,
           [
-            uuidv4(),
             tenantId,
-            tenantId,
-            'RESERVED',
             reservation.demandType,
             reservation.demandId,
             reservation.itemId,
             reservation.locationId,
-            warehouseId,
-            canonical.canonicalUom,
-            reserveQty,
-            fulfilledQty,
-            now,
-            reservation.expiresAt ? new Date(reservation.expiresAt) : null,
-            reservation.notes ?? null,
-            idempotencyKey,
-            now,
-          ],
+            canonical.canonicalUom
+          ]
         );
-      } catch (error: any) {
-        if (error?.code === '23505') {
-          if (idempotencyKey && error?.constraint === 'uq_inventory_reservations_idempotency_client') {
-            const existing = await client.query(
-              `SELECT * FROM inventory_reservations
-                WHERE client_id = $1 AND idempotency_key = $2`,
-              [tenantId, idempotencyKey]
-            );
-            if (existing.rowCount > 0) {
-              rows.push(existing.rows[0]);
-              continue;
-            }
-          }
-          if (error?.constraint === 'inventory_reservations_unique') {
-            const existing = await client.query(
-              `SELECT * FROM inventory_reservations
-                WHERE tenant_id = $1
-                  AND demand_type = $2
-                  AND demand_id = $3
-                  AND item_id = $4
-                  AND location_id = $5
-                  AND uom = $6`,
-              [
-                tenantId,
-                reservation.demandType,
-                reservation.demandId,
-                reservation.itemId,
-                reservation.locationId,
-                canonical.canonicalUom
-              ]
-            );
-            if (existing.rowCount > 0) {
-              rows.push(existing.rows[0]);
-              continue;
-            }
-          }
+        if (existing.rowCount > 0) {
+          rows.push(existing.rows[0]);
+          continue;
         }
-        throw error;
+        throw new Error('RESERVATION_CONFLICT');
       }
       rows.push(res.rows[0]);
-
-      await applyInventoryBalanceDelta(client, {
-        tenantId,
-        itemId: reservation.itemId,
-        locationId: reservation.locationId,
-        uom: canonical.canonicalUom,
-        deltaReserved: reserveQty
-      });
+      if (allowBackorder) {
+        await applyInventoryBalanceDelta(client, {
+          tenantId,
+          itemId: reservation.itemId,
+          locationId: reservation.locationId,
+          uom: canonical.canonicalUom,
+          deltaReserved: reserveQty
+        });
+      } else {
+        await ensureInventoryBalanceRow(
+          client,
+          tenantId,
+          reservation.itemId,
+          reservation.locationId,
+          canonical.canonicalUom
+        );
+        await client.query(
+          `UPDATE inventory_balance
+              SET reserved = reserved + $1,
+                  updated_at = now()
+            WHERE tenant_id = $2
+              AND item_id = $3
+              AND location_id = $4
+              AND uom = $5`,
+          [
+            reserveQty,
+            tenantId,
+            reservation.itemId,
+            reservation.locationId,
+            canonical.canonicalUom
+          ]
+        );
+      }
 
       await insertReservationEvent(client, tenantId, res.rows[0].id, 'RESERVED', reserveQty, 0);
 

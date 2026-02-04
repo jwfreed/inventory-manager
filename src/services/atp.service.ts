@@ -23,11 +23,127 @@ export type AtpQueryParams = {
   offset?: number;
 };
 
+export type SellableSupply = {
+  onHand: number;
+  reserved: number;
+  allocated: number;
+};
+
 function normalizeQuantity(value: unknown): number {
   return roundQuantity(toNumber(value));
 }
 
 const SELLABLE_LOCATION_FILTER = `AND l.is_sellable = true`;
+
+export async function getSellableSupplyMap(
+  tenantId: string,
+  params: { itemIds: string[]; locationId?: string }
+): Promise<Map<string, SellableSupply>> {
+  if (!params.itemIds.length) return new Map();
+  const paramList: any[] = [tenantId, params.itemIds];
+  const locationParam = params.locationId ? paramList.push(params.locationId) : null;
+  const locationClause = locationParam ? `AND iml.location_id = $${locationParam}` : '';
+  const locationClauseReserved = locationParam ? `AND r.location_id = $${locationParam}` : '';
+
+  const { rows } = await query(
+    `WITH on_hand_base AS (
+       SELECT iml.item_id,
+              COALESCE(iml.canonical_uom, iml.uom) AS uom,
+              SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS on_hand
+         FROM inventory_movement_lines iml
+         JOIN inventory_movements im ON im.id = iml.movement_id
+         JOIN locations l ON l.id = iml.location_id AND l.tenant_id = iml.tenant_id
+        WHERE im.status = 'posted'
+          AND iml.tenant_id = $1
+          AND im.tenant_id = $1
+          AND iml.item_id = ANY($2)
+          ${locationClause}
+          ${SELLABLE_LOCATION_FILTER}
+        GROUP BY iml.item_id, COALESCE(iml.canonical_uom, iml.uom)
+     ),
+     expired_lots AS (
+       SELECT iml.item_id,
+              COALESCE(iml.canonical_uom, iml.uom) AS uom,
+              SUM(imlot.quantity_delta) AS expired_qty
+         FROM inventory_movement_lots imlot
+         JOIN inventory_movement_lines iml ON iml.id = imlot.inventory_movement_line_id
+         JOIN inventory_movements im ON im.id = iml.movement_id
+         JOIN locations l ON l.id = iml.location_id AND l.tenant_id = iml.tenant_id
+         JOIN lots lot ON lot.id = imlot.lot_id AND lot.tenant_id = iml.tenant_id
+        WHERE im.status = 'posted'
+          AND iml.tenant_id = $1
+          AND im.tenant_id = $1
+          AND iml.item_id = ANY($2)
+          ${locationClause}
+          ${SELLABLE_LOCATION_FILTER}
+          AND lot.expires_at IS NOT NULL
+          AND lot.expires_at::date < CURRENT_DATE
+        GROUP BY iml.item_id, COALESCE(iml.canonical_uom, iml.uom)
+     ),
+     on_hand AS (
+       SELECT oh.item_id,
+              oh.uom,
+              GREATEST(0, oh.on_hand - COALESCE(el.expired_qty, 0)) AS on_hand
+         FROM on_hand_base oh
+         LEFT JOIN expired_lots el
+           ON el.item_id = oh.item_id
+          AND el.uom = oh.uom
+     ),
+     reserved_allocated AS (
+       SELECT r.item_id,
+              COALESCE(i.canonical_uom, r.uom) AS uom,
+              SUM(
+                CASE
+                  WHEN r.status = 'RESERVED'
+                  THEN GREATEST(0, r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0))
+                  ELSE 0
+                END
+              ) AS reserved,
+              SUM(
+                CASE
+                  WHEN r.status = 'ALLOCATED'
+                  THEN GREATEST(0, r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0))
+                  ELSE 0
+                END
+              ) AS allocated
+         FROM inventory_reservations r
+         JOIN items i ON i.id = r.item_id AND i.tenant_id = r.tenant_id
+         JOIN locations l ON l.id = r.location_id AND l.tenant_id = r.tenant_id
+        WHERE r.status IN ('RESERVED', 'ALLOCATED')
+          AND r.tenant_id = $1
+          AND r.item_id = ANY($2)
+          AND (i.canonical_uom IS NULL OR r.uom = i.canonical_uom)
+          ${locationClauseReserved}
+          ${SELLABLE_LOCATION_FILTER}
+        GROUP BY r.item_id, COALESCE(i.canonical_uom, r.uom)
+     ),
+     combined AS (
+       SELECT COALESCE(oh.item_id, ra.item_id) AS item_id,
+              COALESCE(oh.uom, ra.uom) AS uom,
+              COALESCE(oh.on_hand, 0) AS on_hand,
+              COALESCE(ra.reserved, 0) AS reserved,
+              COALESCE(ra.allocated, 0) AS allocated
+         FROM on_hand oh
+         FULL OUTER JOIN reserved_allocated ra
+           ON oh.item_id = ra.item_id
+          AND oh.uom = ra.uom
+     )
+    SELECT item_id, uom, on_hand, reserved, allocated
+      FROM combined
+     WHERE on_hand <> 0 OR reserved <> 0 OR allocated <> 0`,
+    paramList
+  );
+
+  const map = new Map<string, SellableSupply>();
+  for (const row of rows) {
+    map.set(`${row.item_id}:${row.uom}`, {
+      onHand: normalizeQuantity(row.on_hand),
+      reserved: normalizeQuantity(row.reserved),
+      allocated: normalizeQuantity(row.allocated)
+    });
+  }
+  return map;
+}
 
 /**
  * Calculate Available to Promise (ATP) for inventory items.
@@ -70,7 +186,7 @@ export async function getAvailableToPromise(
   const offsetParam = paramsList.push(offset);
 
   const { rows } = await query(
-    `WITH on_hand AS (
+    `WITH on_hand_base AS (
        SELECT iml.item_id,
               iml.location_id,
               COALESCE(iml.canonical_uom, iml.uom) AS uom,
@@ -84,6 +200,36 @@ export async function getAvailableToPromise(
           ${whereOnHand}
           ${SELLABLE_LOCATION_FILTER}
         GROUP BY iml.item_id, iml.location_id, COALESCE(iml.canonical_uom, iml.uom)
+     ),
+     expired_lots AS (
+       SELECT iml.item_id,
+              iml.location_id,
+              COALESCE(iml.canonical_uom, iml.uom) AS uom,
+              SUM(imlot.quantity_delta) AS expired_qty
+         FROM inventory_movement_lots imlot
+         JOIN inventory_movement_lines iml ON iml.id = imlot.inventory_movement_line_id
+         JOIN inventory_movements im ON im.id = iml.movement_id
+         JOIN locations l ON l.id = iml.location_id AND l.tenant_id = iml.tenant_id
+         JOIN lots lot ON lot.id = imlot.lot_id AND lot.tenant_id = iml.tenant_id
+        WHERE im.status = 'posted'
+          AND iml.tenant_id = $1
+          AND im.tenant_id = $1
+          ${whereOnHand}
+          ${SELLABLE_LOCATION_FILTER}
+          AND lot.expires_at IS NOT NULL
+          AND lot.expires_at::date < CURRENT_DATE
+        GROUP BY iml.item_id, iml.location_id, COALESCE(iml.canonical_uom, iml.uom)
+     ),
+     on_hand AS (
+       SELECT oh.item_id,
+              oh.location_id,
+              oh.uom,
+              GREATEST(0, oh.on_hand - COALESCE(el.expired_qty, 0)) AS on_hand
+         FROM on_hand_base oh
+         LEFT JOIN expired_lots el
+           ON el.item_id = oh.item_id
+          AND el.location_id = oh.location_id
+          AND el.uom = oh.uom
      ),
      reserved_allocated AS (
        SELECT r.item_id,
@@ -179,7 +325,7 @@ export async function getAvailableToPromiseDetail(
   const uomFilterReserved = uom ? `AND COALESCE(i.canonical_uom, r.uom) = $${params.length}` : '';
 
   const { rows } = await query(
-    `WITH on_hand AS (
+    `WITH on_hand_base AS (
        SELECT COALESCE(iml.canonical_uom, iml.uom) AS uom,
               SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS on_hand
          FROM inventory_movement_lines iml
@@ -193,6 +339,32 @@ export async function getAvailableToPromiseDetail(
           ${uomFilter}
           ${SELLABLE_LOCATION_FILTER}
         GROUP BY COALESCE(iml.canonical_uom, iml.uom)
+     ),
+     expired_lots AS (
+       SELECT COALESCE(iml.canonical_uom, iml.uom) AS uom,
+              SUM(imlot.quantity_delta) AS expired_qty
+         FROM inventory_movement_lots imlot
+         JOIN inventory_movement_lines iml ON iml.id = imlot.inventory_movement_line_id
+         JOIN inventory_movements im ON im.id = iml.movement_id
+         JOIN locations l ON l.id = iml.location_id AND l.tenant_id = iml.tenant_id
+         JOIN lots lot ON lot.id = imlot.lot_id AND lot.tenant_id = iml.tenant_id
+        WHERE im.status = 'posted'
+          AND iml.tenant_id = $1
+          AND im.tenant_id = $1
+          AND iml.item_id = $2
+          AND iml.location_id = $3
+          ${uomFilter}
+          ${SELLABLE_LOCATION_FILTER}
+          AND lot.expires_at IS NOT NULL
+          AND lot.expires_at::date < CURRENT_DATE
+        GROUP BY COALESCE(iml.canonical_uom, iml.uom)
+     ),
+     on_hand AS (
+       SELECT oh.uom,
+              GREATEST(0, oh.on_hand - COALESCE(el.expired_qty, 0)) AS on_hand
+         FROM on_hand_base oh
+         LEFT JOIN expired_lots el
+           ON el.uom = oh.uom
      ),
      reserved_allocated AS (
        SELECT COALESCE(i.canonical_uom, r.uom) AS uom,
