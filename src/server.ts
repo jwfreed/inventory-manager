@@ -20,6 +20,7 @@ import orderToCashRouter from './routes/orderToCash.routes';
 import masterDataRouter from './routes/masterData.routes';
 import ledgerRouter from './routes/ledger.routes';
 import inventorySummaryRouter from './routes/inventorySummary.routes';
+import inventoryLedgerReconcileRouter from './routes/inventoryLedgerReconcile.routes';
 import inventorySnapshotRouter from './routes/inventorySnapshot.routes';
 import inventoryChangesRouter from './routes/inventoryChanges.routes';
 import importsRouter from './routes/imports.routes';
@@ -52,6 +53,7 @@ import { recalculateMetrics } from './jobs/metricsRecalculation.job';
 import { syncExchangeRates } from './jobs/exchangeRateSync.job';
 import { runInventoryHealthCheck } from './jobs/inventoryHealth.job';
 import { runInventoryInvariantCheck } from './jobs/inventoryInvariants.job';
+import { runInventoryLedgerReconcileAndRepair } from './jobs/inventoryLedgerReconcileAndRepair.job';
 import { ensureWarehouseDefaults } from './services/warehouseDefaults.service';
 import { pruneOutboxEvents } from './jobs/outboxRetention.job';
 import { runReservationExpiry } from './jobs/reservationExpiry.job';
@@ -135,6 +137,7 @@ app.use(orderToCashRouter);
 app.use(masterDataRouter);
 app.use(ledgerRouter);
 app.use(inventorySummaryRouter);
+app.use(inventoryLedgerReconcileRouter);
 app.use(inventorySnapshotRouter);
 app.use(inventoryChangesRouter);
 app.use(importsRouter);
@@ -194,6 +197,18 @@ if (RUN_INPROCESS_JOBS) {
     'inventory-invariant-check',
     process.env.INVENTORY_INVARIANT_CRON ?? '30 * * * *', // Hourly by default
     runInventoryInvariantCheck,
+    true
+  );
+
+  registerJob(
+    'inventory-ledger-reconcile',
+    process.env.INVENTORY_LEDGER_RECONCILE_CRON ?? '15 3 * * *', // 03:15 UTC daily by default
+    async () => {
+      await runInventoryLedgerReconcileAndRepair({
+        mode: (process.env.INVENTORY_LEDGER_RECONCILE_MODE as 'report' | 'strict') ?? 'report',
+        allowRepair: process.env.FEATURE_BALANCE_REBUILD === 'true'
+      });
+    },
     true
   );
 
