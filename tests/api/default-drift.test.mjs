@@ -1,0 +1,318 @@
+import 'dotenv/config';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+
+const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
+const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+async function apiRequest(method, path, { token, body, params, headers } = {}) {
+  const url = new URL(baseUrl + path);
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined) continue;
+      url.searchParams.set(key, String(value));
+    }
+  }
+  const mergedHeaders = { 'Content-Type': 'application/json', ...(headers ?? {}) };
+  if (token) mergedHeaders.Authorization = `Bearer ${token}`;
+  const res = await fetch(url.toString(), {
+    method,
+    headers: mergedHeaders,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
+  const payload = isJson ? await res.json().catch(() => null) : await res.text().catch(() => '');
+  return { res, payload };
+}
+
+function safeJson(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function assertOk(res, label, payload, requestBody, allowed = [200, 201]) {
+  if (!allowed.includes(res.status)) {
+    const body = typeof payload === 'string' ? payload : safeJson(payload);
+    const req = requestBody ? safeJson(requestBody) : '';
+    throw new Error(`BOOTSTRAP_FAILED ${label} status=${res.status} body=${body}${req ? ` request=${req}` : ''}`);
+  }
+}
+
+function formatLocation(location) {
+  if (!location) return null;
+  return {
+    id: location.id,
+    code: location.code,
+    name: location.name,
+    type: location.type,
+    role: location.role,
+    parentLocationId: location.parentLocationId,
+  };
+}
+
+async function ensureSession(tenantSlug) {
+  const bootstrapBody = {
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName: `Default Drift ${tenantSlug}`,
+  };
+  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
+  if (bootstrap.res.ok) return bootstrap.payload;
+  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
+
+  const userRes = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [adminEmail]);
+  const userId = userRes.rows[0]?.id;
+  if (!userId) throw new Error(`Login failed: user not found for ${adminEmail}`);
+
+  const tenantRes = await pool.query('SELECT id FROM tenants WHERE slug = $1 LIMIT 1', [tenantSlug]);
+  let tenantId = tenantRes.rows[0]?.id;
+  if (!tenantId) {
+    tenantId = randomUUID();
+    await pool.query(
+      `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
+       VALUES ($1, $2, $3, NULL, now())`,
+      [tenantId, `Default Drift ${tenantSlug}`, tenantSlug]
+    );
+  }
+  await pool.query(
+    `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
+     VALUES ($1, $2, $3, 'admin', 'active', now())
+     ON CONFLICT (tenant_id, user_id) DO NOTHING`,
+    [randomUUID(), tenantId, userId]
+  );
+  const membershipCheck = await pool.query(
+    `SELECT 1 FROM tenant_memberships WHERE tenant_id = $1 AND user_id = $2`,
+    [tenantId, userId]
+  );
+  if (membershipCheck.rowCount === 0) {
+    throw new Error(`Tenant membership missing: tenantSlug=${tenantSlug} tenantId=${tenantId} userId=${userId}`);
+  }
+
+  const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
+  const login = await apiRequest('POST', '/auth/login', { body: loginBody });
+  assertOk(login.res, 'POST /auth/login', login.payload, loginBody, [200]);
+  return login.payload;
+}
+
+async function setWarehouseDefault({ tenantId, warehouseId, role, locationId }) {
+  await pool.query(
+    `DELETE FROM warehouse_default_location
+      WHERE tenant_id = $1 AND warehouse_id = $2 AND role = $3`,
+    [tenantId, warehouseId, role]
+  );
+  await pool.query(
+    `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
+     VALUES ($1, $2, $3, $4)`,
+    [tenantId, warehouseId, role, locationId]
+  );
+  const verify = await pool.query(
+    `SELECT location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2 AND role = $3`,
+    [tenantId, warehouseId, role]
+  );
+  if (verify.rowCount !== 1 || verify.rows[0].location_id !== locationId) {
+    throw new Error(`DEFAULT_SET_FAILED role=${role} tenantId=${tenantId} warehouseId=${warehouseId} locationId=${locationId}`);
+  }
+}
+
+async function createWarehouseGraph(token) {
+  const warehouseCode = `WH-${randomUUID().slice(0, 8)}`;
+  const warehouseBody = {
+    code: warehouseCode,
+    name: `Warehouse ${warehouseCode}`,
+    type: 'warehouse',
+    role: 'SELLABLE',
+    isSellable: true,
+    active: true,
+  };
+  const warehouseRes = await apiRequest('POST', '/locations', { token, body: warehouseBody });
+  assertOk(warehouseRes.res, 'POST /locations (warehouse)', warehouseRes.payload, warehouseBody, [201]);
+  const warehouse = warehouseRes.payload;
+
+  const createChild = async (role, label) => {
+    const body = {
+      code: `${role}-${label}-${randomUUID().slice(0, 8)}`,
+      name: `${role} ${label}`,
+      type: 'bin',
+      role,
+      isSellable: role === 'SELLABLE',
+      parentLocationId: warehouse.id,
+    };
+    const res = await apiRequest('POST', '/locations', { token, body });
+    assertOk(res.res, `POST /locations (${role} ${label})`, res.payload, body, [201]);
+    return res.payload;
+  };
+
+  const qaLocation = await createChild('QA', 'QA');
+  const sellableA = await createChild('SELLABLE', 'A');
+  const sellableB = await createChild('SELLABLE', 'B');
+
+  return { warehouse, qaLocation, sellableA, sellableB };
+}
+
+async function createItem(token, defaultLocationId) {
+  const sku = `DEF-${randomUUID().slice(0, 8)}`;
+  const body = {
+    sku,
+    name: `Default Drift Item ${sku}`,
+    uomDimension: 'count',
+    canonicalUom: 'each',
+    stockingUom: 'each',
+    defaultLocationId,
+  };
+  const res = await apiRequest('POST', '/items', { token, body });
+  assertOk(res.res, 'POST /items', res.payload, body, [201]);
+  return res.payload.id;
+}
+
+async function receiveIntoQa(token, vendorId, itemId, qaLocationId, quantity) {
+  const today = new Date().toISOString().slice(0, 10);
+  const poRes = await apiRequest('POST', '/purchase-orders', {
+    token,
+    body: {
+      vendorId,
+      shipToLocationId: qaLocationId,
+      receivingLocationId: qaLocationId,
+      expectedDate: today,
+      status: 'approved',
+      lines: [{ itemId, uom: 'each', quantityOrdered: quantity, unitCost: 5, currencyCode: 'THB' }],
+    },
+  });
+  assertOk(poRes.res, 'POST /purchase-orders', poRes.payload, { itemId, qaLocationId }, [201]);
+
+  const poId = poRes.payload.id;
+  const poLineId = poRes.payload.lines[0].id;
+  const receiptRes = await apiRequest('POST', '/purchase-order-receipts', {
+    token,
+    headers: { 'Idempotency-Key': `receipt-${randomUUID()}` },
+    body: {
+      purchaseOrderId: poId,
+      receivedAt: new Date().toISOString(),
+      lines: [{ purchaseOrderLineId: poLineId, uom: 'each', quantityReceived: quantity, unitCost: 5 }],
+    },
+  });
+  assertOk(receiptRes.res, 'POST /purchase-order-receipts', receiptRes.payload, { poId }, [201]);
+  return receiptRes.payload.lines[0].id;
+}
+
+async function qcAccept(token, receiptLineId, quantity, actorId) {
+  const res = await apiRequest('POST', '/qc-events', {
+    token,
+    body: {
+      purchaseOrderReceiptLineId: receiptLineId,
+      eventType: 'accept',
+      quantity,
+      uom: 'each',
+      actorType: 'user',
+      actorId,
+    },
+  });
+  assertOk(res.res, 'POST /qc-events (accept)', res.payload, { receiptLineId, quantity }, [201]);
+}
+
+async function getSnapshot(token, itemId, locationId) {
+  const res = await apiRequest('GET', '/inventory-snapshot', {
+    token,
+    params: { itemId, locationId },
+  });
+  assertOk(res.res, 'GET /inventory-snapshot', res.payload, { itemId, locationId }, [200]);
+  const row = res.payload.data?.[0];
+  return Number(row?.onHand ?? 0);
+}
+
+test('default sellable location changes take effect immediately', async () => {
+  const tenantSlug = `default-drift-${randomUUID()}`;
+  const session = await ensureSession(tenantSlug);
+  const token = session.accessToken;
+  const tenantId = session.tenant?.id;
+  const actorId = session.user?.id;
+  assert.ok(token);
+  assert.ok(tenantId);
+  assert.ok(actorId);
+
+  const { warehouse, qaLocation, sellableA, sellableB } = await createWarehouseGraph(token);
+
+  await setWarehouseDefault({
+    tenantId,
+    warehouseId: warehouse.id,
+    role: 'QA',
+    locationId: qaLocation.id,
+  });
+  await setWarehouseDefault({
+    tenantId,
+    warehouseId: warehouse.id,
+    role: 'SELLABLE',
+    locationId: sellableA.id,
+  });
+
+  const itemId = await createItem(token, sellableA.id);
+  const vendorRes = await apiRequest('POST', '/vendors', {
+    token,
+    body: { code: `V-${randomUUID().slice(0, 8)}`, name: 'Default Drift Vendor' },
+  });
+  assertOk(vendorRes.res, 'POST /vendors', vendorRes.payload, null, [201]);
+  const vendorId = vendorRes.payload.id;
+
+  const receiptLineA = await receiveIntoQa(token, vendorId, itemId, qaLocation.id, 5);
+  await qcAccept(token, receiptLineA, 5, actorId);
+
+  const onHandA1 = await getSnapshot(token, itemId, sellableA.id);
+  const onHandB1 = await getSnapshot(token, itemId, sellableB.id);
+  if (Math.abs(onHandA1 - 5) > 1e-6 || Math.abs(onHandB1) > 1e-6) {
+    const defaults = await pool.query(
+      `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
+      [tenantId, warehouse.id]
+    );
+    const diag = {
+      tenantId,
+      warehouseId: warehouse.id,
+      qa: formatLocation(qaLocation),
+      sellableA: formatLocation(sellableA),
+      sellableB: formatLocation(sellableB),
+      defaults: defaults.rows,
+      onHandA1,
+      onHandB1,
+    };
+    throw new Error(`DEFAULT_DRIFT_ASSERT_1\n${safeJson(diag)}`);
+  }
+
+  await setWarehouseDefault({
+    tenantId,
+    warehouseId: warehouse.id,
+    role: 'SELLABLE',
+    locationId: sellableB.id,
+  });
+
+  const receiptLineB = await receiveIntoQa(token, vendorId, itemId, qaLocation.id, 7);
+  await qcAccept(token, receiptLineB, 7, actorId);
+
+  const onHandA2 = await getSnapshot(token, itemId, sellableA.id);
+  const onHandB2 = await getSnapshot(token, itemId, sellableB.id);
+  if (Math.abs(onHandA2 - 5) > 1e-6 || Math.abs(onHandB2 - 7) > 1e-6) {
+    const defaults = await pool.query(
+      `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
+      [tenantId, warehouse.id]
+    );
+    const diag = {
+      tenantId,
+      warehouseId: warehouse.id,
+      qa: formatLocation(qaLocation),
+      sellableA: formatLocation(sellableA),
+      sellableB: formatLocation(sellableB),
+      defaults: defaults.rows,
+      onHandA2,
+      onHandB2,
+    };
+    throw new Error(`DEFAULT_DRIFT_ASSERT_2\n${safeJson(diag)}`);
+  }
+});
+

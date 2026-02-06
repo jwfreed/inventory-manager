@@ -32,17 +32,177 @@ async function apiRequest(method, path, { token, body, params, headers } = {}) {
   return { res, payload };
 }
 
+function safeJson(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function assertOk(res, label, payload, requestBody, allowed = [200, 201]) {
+  if (!allowed.includes(res.status)) {
+    const body = typeof payload === 'string' ? payload : safeJson(payload);
+    const req = requestBody ? safeJson(requestBody) : '';
+    throw new Error(`BOOTSTRAP_FAILED ${label} status=${res.status} body=${body}${req ? ` request=${req}` : ''}`);
+  }
+}
+
+function isDescendant(location, warehouseId, byId) {
+  let current = location;
+  const visited = new Set();
+  let depth = 0;
+  while (current && current.parentLocationId) {
+    if (visited.has(current.id)) return false;
+    visited.add(current.id);
+    if (current.parentLocationId === warehouseId) return true;
+    current = byId.get(current.parentLocationId);
+    depth += 1;
+    if (depth > 20) return false;
+  }
+  return false;
+}
+
+function formatLocation(location) {
+  if (!location) return null;
+  return {
+    id: location.id,
+    code: location.code,
+    name: location.name,
+    type: location.type,
+    role: location.role,
+    parentLocationId: location.parentLocationId
+  };
+}
+
+async function bootstrapWarehouseGraph(token, tenantId, options = {}) {
+  const {
+    requireSellable = true,
+    requireQA = true,
+    requireDefaultsFor = []
+  } = options;
+  assert.ok(tenantId);
+
+  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
+  assert.equal(locationsRes.res.status, 200);
+  let locations = locationsRes.payload.data || [];
+  let warehouse = locations.find((loc) => loc.type === 'warehouse');
+  if (!warehouse) {
+    const code = `WH-${randomUUID()}`;
+    const body = {
+      code,
+      name: `Warehouse ${code}`,
+      type: 'warehouse',
+      role: 'SELLABLE',
+      isSellable: true,
+      active: true
+    };
+    const createRes = await apiRequest('POST', '/locations', { token, body });
+    assertOk(createRes.res, 'POST /locations (warehouse)', createRes.payload, body, [201]);
+    warehouse = createRes.payload;
+    locations = [...locations, warehouse];
+  }
+
+  const ensureRole = async (role) => {
+    let loc = locations.find(
+      (entry) => entry.role === role && entry.parentLocationId === warehouse.id
+    );
+    if (!loc) {
+      const code = `${role}-${randomUUID().slice(0, 8)}`;
+      const body = {
+        code,
+        name: `${role} Location`,
+        type: 'bin',
+        role,
+        isSellable: role === 'SELLABLE',
+        parentLocationId: warehouse.id
+      };
+      const createRes = await apiRequest('POST', '/locations', { token, body });
+      assertOk(createRes.res, `POST /locations (${role})`, createRes.payload, body, [201]);
+      loc = createRes.payload;
+      locations = [...locations, loc];
+    }
+    return loc;
+  };
+
+  const qaLocation = requireQA ? await ensureRole('QA') : null;
+  const sellableLocation = requireSellable ? await ensureRole('SELLABLE') : null;
+
+  const defaultsRequired = Array.isArray(requireDefaultsFor) ? requireDefaultsFor : [];
+  for (const role of defaultsRequired) {
+    const locationId =
+      role === 'QA'
+        ? qaLocation?.id
+        : role === 'SELLABLE'
+          ? sellableLocation?.id
+          : null;
+    if (!locationId) {
+      throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID default_${role.toLowerCase()}_missing_location`);
+    }
+    await pool.query(
+      `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT DO NOTHING`,
+      [tenantId, warehouse.id, role, locationId]
+    );
+  }
+
+  const byId = new Map(locations.map((loc) => [loc.id, loc]));
+  const defaultsRes = defaultsRequired.length
+    ? await pool.query(
+        `SELECT role, location_id
+           FROM warehouse_default_location
+          WHERE tenant_id = $1 AND warehouse_id = $2 AND role = ANY($3::text[])`,
+        [tenantId, warehouse.id, defaultsRequired]
+      )
+    : { rows: [] };
+  const defaults = new Map(defaultsRes.rows.map((row) => [row.role, row.location_id]));
+  const diagnostics = {
+    warehouseId: warehouse.id,
+    warehouse: formatLocation(warehouse),
+    qaLocation: formatLocation(qaLocation),
+    sellableLocation: formatLocation(sellableLocation),
+    locations: locations.map(formatLocation),
+    defaults: defaultsRes.rows
+  };
+
+  if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
+    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
+  }
+  if (requireQA) {
+    if (!qaLocation?.parentLocationId || !isDescendant(qaLocation, warehouse.id, byId)) {
+      throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID qa\n${safeJson(diagnostics)}`);
+    }
+  }
+  if (requireSellable) {
+    if (!sellableLocation?.parentLocationId || !isDescendant(sellableLocation, warehouse.id, byId)) {
+      throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID sellable\n${safeJson(diagnostics)}`);
+    }
+  }
+  for (const role of defaultsRequired) {
+    const defaultLocationId = defaults.get(role);
+    if (!defaultLocationId) {
+      throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID default_${role.toLowerCase()}\n${safeJson(diagnostics)}`);
+    }
+    const defaultLocation = locations.find((loc) => loc.id === defaultLocationId);
+    if (!defaultLocation || !isDescendant(defaultLocation, warehouse.id, byId)) {
+      throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID default_${role.toLowerCase()}\n${safeJson(diagnostics)}`);
+    }
+  }
+
+  return { warehouse, qaLocation, sellableLocation, locations };
+}
+
 async function ensureSession() {
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', {
-    body: {
-      adminEmail,
-      adminPassword,
-      tenantSlug,
-      tenantName: 'Reservation Sellable Tenant',
-    },
-  });
+  const bootstrapBody = {
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName: 'Reservation Sellable Tenant',
+  };
+  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
   if (bootstrap.res.ok) return bootstrap.payload;
-  assert.equal(bootstrap.res.status, 409);
+  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
 
   let login = await apiRequest('POST', '/auth/login', {
     body: { email: adminEmail, password: adminPassword, tenantSlug },
@@ -69,11 +229,10 @@ async function ensureSession() {
        ON CONFLICT (tenant_id, user_id) DO NOTHING`,
       [randomUUID(), tenantId, userId]
     );
-    login = await apiRequest('POST', '/auth/login', {
-      body: { email: adminEmail, password: adminPassword, tenantSlug },
-    });
+    const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
+    login = await apiRequest('POST', '/auth/login', { body: loginBody });
   }
-  assert.equal(login.res.status, 200);
+  assertOk(login.res, 'POST /auth/login', login.payload, { email: adminEmail, tenantSlug }, [200]);
   return login.payload;
 }
 
@@ -84,17 +243,11 @@ test('reservations require sellable locations', async (t) => {
   const session = await ensureSession();
   const token = session.accessToken;
   assert.ok(token);
-
-  await apiRequest('POST', '/locations/templates/standard-warehouse', {
-    token,
-    body: { includeReceivingQc: true },
+  const { qaLocation, sellableLocation } = await bootstrapWarehouseGraph(token, session.tenant?.id, {
+    requireSellable: true,
+    requireQA: true,
+    requireDefaultsFor: []
   });
-
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
-  assert.equal(locationsRes.res.status, 200);
-  const locations = locationsRes.payload.data || [];
-  const qaLocation = locations.find((loc) => loc.role === 'QA') || locations.find((loc) => loc.code === 'QC');
-  const sellableLocation = locations.find((loc) => loc.role === 'SELLABLE') || locations.find((loc) => loc.code === 'FG');
   assert.ok(qaLocation, 'QA location required');
   assert.ok(sellableLocation, 'Sellable location required');
 
