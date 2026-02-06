@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "migrate": "npm run migrate:up",
-    "migrate:up": "NODE_PG_MIGRATE_TS_NODE=true TS_NODE_TRANSPILE_ONLY=true node -r ts-node/register -r tsconfig-paths/register ./node_modules/.bin/node-pg-migrate up --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
-    "migrate:down": "NODE_PG_MIGRATE_TS_NODE=true TS_NODE_TRANSPILE_ONLY=true node -r ts-node/register -r tsconfig-paths/register ./node_modules/.bin/node-pg-migrate down --migrations-dir src/migrations --migrations-table inventory_schema_migrations",
+    "migrate:up": "NODE_PG_MIGRATE_TS_NODE=true TS_NODE_TRANSPILE_ONLY=true node -r ts-node/register -r tsconfig-paths/register ./node_modules/.bin/node-pg-migrate up --migrations-dir src/migrations --migrations-table inventory_schema_migrations --no-single-transaction",
+    "migrate:down": "NODE_PG_MIGRATE_TS_NODE=true TS_NODE_TRANSPILE_ONLY=true node -r ts-node/register -r tsconfig-paths/register ./node_modules/.bin/node-pg-migrate down --migrations-dir src/migrations --migrations-table inventory_schema_migrations --no-single-transaction",
     "dev": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts",
     "dev:watch": "nodemon --watch src --ext ts --exec \"ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts\"",
     "db:reset": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/db-reset.ts",
