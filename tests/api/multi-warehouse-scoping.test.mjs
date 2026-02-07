@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
+const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });

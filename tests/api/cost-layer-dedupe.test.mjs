@@ -1,11 +1,12 @@
 import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
+const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
 const tenantSlug = `cost-layer-dedupe-${Date.now()}`;
 
