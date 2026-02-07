@@ -17,6 +17,8 @@ type InventoryInvariantSummary = {
   sellableMismatchCount: number;
   negativeCount: number;
   reservationBalanceMismatchCount: number;
+  warehouseIdDriftCount: number;
+  reservationWarehouseHistoricalMismatchCount: number;
 };
 
 async function getAllActiveTenants(): Promise<Tenant[]> {
@@ -201,6 +203,79 @@ export async function runInventoryInvariantCheck(
 
         const mismatchCount = Number(reservationBalanceMismatch.rows[0]?.count ?? 0);
 
+        const warehouseIdDrift = await query<{
+          location_id: string;
+          stored_warehouse_id: string | null;
+          expected_warehouse_id: string | null;
+        }>(
+          `SELECT l.id AS location_id,
+                  l.warehouse_id AS stored_warehouse_id,
+                  resolve_warehouse_for_location(l.tenant_id, l.id) AS expected_warehouse_id
+             FROM locations l
+            WHERE l.tenant_id = $1
+              AND l.warehouse_id IS DISTINCT FROM resolve_warehouse_for_location(l.tenant_id, l.id)`,
+          [tenant.id]
+        );
+        const warehouseIdDriftCount = warehouseIdDrift.rowCount;
+        if (warehouseIdDriftCount > 0) {
+          const samples = warehouseIdDrift.rows.slice(0, 5);
+          console.error(
+            `CRITICAL invariant violation for tenant ${tenant.slug}: ${warehouseIdDriftCount} warehouse_id drift(s)`,
+            { examples: samples }
+          );
+          await query(
+            `INSERT INTO inventory_invariant_blocks (tenant_id, code, active, details, created_at, updated_at)
+             VALUES ($1, 'WAREHOUSE_ID_DRIFT', true, $2::jsonb, now(), now())
+             ON CONFLICT (tenant_id, code)
+             DO UPDATE SET active = true, details = EXCLUDED.details, updated_at = now()`,
+            [tenant.id, JSON.stringify({ count: warehouseIdDriftCount, samples })]
+          );
+        } else {
+          await query(
+            `UPDATE inventory_invariant_blocks
+                SET active = false,
+                    updated_at = now()
+              WHERE tenant_id = $1
+                AND code = 'WAREHOUSE_ID_DRIFT'
+                AND active = true`,
+            [tenant.id]
+          );
+        }
+
+        const reservationWarehouseHistoricalMismatch = await query<{ count: string }>(
+          `SELECT COUNT(*) AS count
+             FROM inventory_reservations r
+             JOIN locations l
+               ON l.id = r.location_id
+              AND l.tenant_id = r.tenant_id
+            WHERE r.tenant_id = $1
+              AND r.warehouse_id IS NOT NULL
+              AND r.warehouse_id <> l.warehouse_id`,
+          [tenant.id]
+        );
+        const reservationWarehouseHistoricalMismatchCount = Number(
+          reservationWarehouseHistoricalMismatch.rows[0]?.count ?? 0
+        );
+        if (reservationWarehouseHistoricalMismatchCount > 0) {
+          const samples = await query(
+            `SELECT r.id, r.location_id, r.warehouse_id, l.warehouse_id AS current_warehouse_id
+               FROM inventory_reservations r
+               JOIN locations l
+                 ON l.id = r.location_id
+                AND l.tenant_id = r.tenant_id
+              WHERE r.tenant_id = $1
+                AND r.warehouse_id IS NOT NULL
+                AND r.warehouse_id <> l.warehouse_id
+              ORDER BY r.created_at DESC
+              LIMIT 25`,
+            [tenant.id]
+          );
+          console.warn(
+            `Invariant warning for tenant ${tenant.slug}: ${reservationWarehouseHistoricalMismatchCount} reservation warehouse historical mismatch(es)`,
+            { examples: samples.rows }
+          );
+        }
+
         if (mismatchCount > 0) {
           const samples = await query(
             `WITH reservation_committed AS (
@@ -307,7 +382,9 @@ export async function runInventoryInvariantCheck(
           qcLegacyMovementCount,
           sellableMismatchCount,
           negativeCount,
-          reservationBalanceMismatchCount: mismatchCount
+          reservationBalanceMismatchCount: mismatchCount,
+          warehouseIdDriftCount,
+          reservationWarehouseHistoricalMismatchCount
         });
       } catch (error) {
         console.error(`Inventory invariant check failed for tenant ${tenant.slug}:`, error);

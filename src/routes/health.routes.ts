@@ -10,6 +10,15 @@ const DB_TIMEOUT_MS = Number(process.env.HEALTH_DB_TIMEOUT_MS || 1500);
 const REDIS_TIMEOUT_MS = Number(process.env.HEALTH_REDIS_TIMEOUT_MS || 1000);
 const REQUIRED_SCHEMA_VERSION = process.env.REQUIRED_SCHEMA_VERSION;
 
+router.get('/healthz', async (_req: Request, res: Response) => {
+  try {
+    await withTimeout(query('SELECT 1'), DB_TIMEOUT_MS, 'db');
+    res.status(200).json({ ok: true });
+  } catch {
+    res.status(503).json({ ok: false });
+  }
+});
+
 router.get('/health/live', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
