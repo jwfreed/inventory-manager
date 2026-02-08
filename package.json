@@ -17,7 +17,7 @@
     "dev:seed:chocolate": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/chocolate-seed.ts",
     "seed:phase0": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/phase0-seed.ts",
     "pretest:api": "npm run migrate:up",
-    "test:api": "node --test tests/api/*.test.mjs",
+    "test:api": "node --test --test-reporter=spec tests/api/*.test.mjs",
     "lint:inventory-writes": "ts-node --transpile-only -r dotenv/config scripts/check-inventory-writes.ts",
     "inventory:health": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/inventory-health.ts",
     "backfill:movement-canonical": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/backfill-movement-canonical.ts",

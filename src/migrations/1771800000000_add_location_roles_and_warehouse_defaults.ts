@@ -4,8 +4,8 @@ const LOCATION_ROLE_VALUES = "('SELLABLE','QA','HOLD','REJECT','SCRAP')";
 
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.addColumn('locations', {
-    role: { type: 'text', default: 'SELLABLE' },
-    is_sellable: { type: 'boolean', notNull: true, default: true }
+    role: { type: 'text' },
+    is_sellable: { type: 'boolean', notNull: true, default: false }
   });
 
   pgm.addConstraint('locations', 'chk_locations_role', {

@@ -524,16 +524,23 @@ export async function createStandardWarehouseTemplate(
   const now = new Date();
   async function resolveUniqueLocationCode(
     client: any,
+    scopedTenantId: string,
     desiredCode: string,
     suffixSeed: string
   ): Promise<string> {
-    const exists = await client.query('SELECT 1 FROM locations WHERE code = $1 LIMIT 1', [desiredCode]);
+    const exists = await client.query(
+      'SELECT 1 FROM locations WHERE tenant_id = $1 AND code = $2 LIMIT 1',
+      [scopedTenantId, desiredCode]
+    );
     if ((exists.rowCount ?? 0) === 0) return desiredCode;
     const suffixBase = suffixSeed.slice(0, 8);
     let candidate = `${desiredCode}-${suffixBase}`;
     let counter = 1;
     while (true) {
-      const res = await client.query('SELECT 1 FROM locations WHERE code = $1 LIMIT 1', [candidate]);
+      const res = await client.query(
+        'SELECT 1 FROM locations WHERE tenant_id = $1 AND code = $2 LIMIT 1',
+        [scopedTenantId, candidate]
+      );
       if ((res.rowCount ?? 0) === 0) return candidate;
       candidate = `${desiredCode}-${suffixBase}-${counter}`;
       counter += 1;
@@ -542,22 +549,45 @@ export async function createStandardWarehouseTemplate(
   return withTransaction(async (client) => {
     const created: any[] = [];
     let warehouseId: string;
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('warehouse_template:' || $1::text))`,
+      [tenantId]
+    );
 
-    const existingWarehouseRes = await client.query<{ id: string }>(
-      `SELECT id FROM locations WHERE tenant_id = $1 AND type = 'warehouse' ORDER BY created_at ASC LIMIT 1`,
+    const existingWarehouseRes = await client.query<{
+      id: string;
+      role: string | null;
+      is_sellable: boolean;
+      parent_location_id: string | null;
+    }>(
+      `SELECT id, role, is_sellable, parent_location_id
+         FROM locations
+        WHERE tenant_id = $1 AND type = 'warehouse'
+        ORDER BY created_at ASC
+        LIMIT 1`,
       [tenantId]
     );
     if (existingWarehouseRes.rowCount > 0) {
-      warehouseId = existingWarehouseRes.rows[0].id;
+      const existingWarehouse = existingWarehouseRes.rows[0];
+      if (
+        existingWarehouse.role !== null ||
+        existingWarehouse.is_sellable ||
+        existingWarehouse.parent_location_id !== null
+      ) {
+        throw new Error(
+          `WAREHOUSE_ROOT_INVALID role=${existingWarehouse.role ?? 'null'} is_sellable=${existingWarehouse.is_sellable} parent_location_id=${existingWarehouse.parent_location_id ?? 'null'}`
+        );
+      }
+      warehouseId = existingWarehouse.id;
     } else {
       const warehouseIdNew = uuidv4();
-      const warehouseCode = await resolveUniqueLocationCode(client, 'MAIN', tenantId);
+      const warehouseCode = await resolveUniqueLocationCode(client, tenantId, 'MAIN', tenantId);
       const warehouseRes = await client.query(
         `INSERT INTO locations (
-            id, tenant_id, code, name, type, role, is_sellable, active, parent_location_id, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, NULL, false, true, NULL, $6, $6)
+            id, tenant_id, code, name, type, role, is_sellable, active, parent_location_id, warehouse_id, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, NULL, false, true, NULL, $6, $7, $7)
          RETURNING *`,
-        [warehouseIdNew, tenantId, warehouseCode, 'Main Warehouse', 'warehouse', now]
+        [warehouseIdNew, tenantId, warehouseCode, 'Main Warehouse', 'warehouse', warehouseIdNew, now]
       );
       if (warehouseRes.rowCount > 0) {
         created.push(mapLocation(warehouseRes.rows[0]));
@@ -582,11 +612,6 @@ export async function createStandardWarehouseTemplate(
       });
     }
 
-    const existingRes = await client.query<{ code: string }>(
-      'SELECT code FROM locations WHERE tenant_id = $1',
-      [tenantId]
-    );
-    const existingCodes = new Set(existingRes.rows.map((r) => r.code));
     const existingRoleRes = await client.query<{ role: string }>(
       `SELECT role
          FROM locations
@@ -597,17 +622,33 @@ export async function createStandardWarehouseTemplate(
       [tenantId, warehouseId, ['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRAP']]
     );
     const existingRoles = new Set(existingRoleRes.rows.map((r) => r.role));
+    const skippedRoles: string[] = [];
+    const recvRes = await client.query<{ id: string }>(
+      `SELECT id
+         FROM locations
+        WHERE tenant_id = $1
+          AND parent_location_id = $2
+          AND warehouse_id = $2
+          AND code = $3
+        LIMIT 1`,
+      [tenantId, warehouseId, 'RECV']
+    );
+    const hasRecv = (recvRes.rowCount ?? 0) > 0;
 
     for (const loc of baseLocations) {
-      if (loc.role && existingRoles.has(loc.role)) continue;
-      if (existingCodes.has(loc.code)) continue;
-      const code = await resolveUniqueLocationCode(client, loc.code, warehouseId);
+      if (loc.role && existingRoles.has(loc.role)) {
+        skippedRoles.push(loc.role);
+        continue;
+      }
+      if (!loc.role && loc.code === 'RECV' && hasRecv) {
+        continue;
+      }
+      const code = await resolveUniqueLocationCode(client, tenantId, loc.code, warehouseId);
       const id = uuidv4();
       const res = await client.query(
         `INSERT INTO locations (
-            id, tenant_id, code, name, type, role, is_sellable, active, parent_location_id, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $9)
-         ON CONFLICT (code) DO NOTHING
+            id, tenant_id, code, name, type, role, is_sellable, active, parent_location_id, warehouse_id, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $10)
          RETURNING *`,
         [
           id,
@@ -618,6 +659,7 @@ export async function createStandardWarehouseTemplate(
           loc.role,
           loc.role === 'SELLABLE',
           loc.parentLocationId ?? null,
+          warehouseId,
           now
         ]
       );
@@ -630,7 +672,7 @@ export async function createStandardWarehouseTemplate(
 
     return {
       created,
-      skipped: Array.from(existingCodes)
+      skipped: skippedRoles
     };
   });
 }
