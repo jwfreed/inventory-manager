@@ -285,7 +285,11 @@ router.post('/locations/templates/standard-warehouse', async (req: Request, res:
     );
     return res.status(result.created.length > 0 ? 201 : 200).json(result);
   } catch (error) {
-    console.error(error);
+    console.error('standard-warehouse template failed', {
+      tenantId: req.auth?.tenantId,
+      code: (error as any)?.code,
+      message: (error as Error)?.message
+    });
     return res.status(500).json({ error: 'Failed to create standard warehouse template.' });
   }
 });

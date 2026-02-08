@@ -80,22 +80,40 @@ test('standard warehouse template creates role bins even with conflicting codes'
     [warehouseId, tenantId, `ROOT-${warehouseId.slice(0, 8)}`, 'Root', 'warehouse', warehouseId, now]
   );
 
-  await db.query(
-    `INSERT INTO locations (
-        id, tenant_id, code, name, type, role, is_sellable, active, parent_location_id, warehouse_id, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, true, true, $7, $8, $9, $9)`,
-    [
-      randomUUID(),
-      tenantId,
-      'QA',
-      'Conflicting QA Code',
-      'bin',
-      'SELLABLE',
-      warehouseId,
-      warehouseId,
-      now
-    ]
+  const existingQa = await db.query(
+    `SELECT id FROM locations WHERE code = 'QA' LIMIT 1`
   );
+  if ((existingQa.rowCount ?? 0) === 0) {
+    const otherTenantId = randomUUID();
+    await db.query(
+      `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
+       VALUES ($1, $2, $3, NULL, now())`,
+      [otherTenantId, 'Template Role Bin Codes Other', `tmpl-codes-other-${randomUUID().slice(0, 8)}`]
+    );
+    const otherWarehouseId = randomUUID();
+    await db.query(
+      `INSERT INTO locations (
+          id, tenant_id, code, name, type, role, is_sellable, active, parent_location_id, warehouse_id, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, NULL, false, true, NULL, $6, $7, $7)`,
+      [otherWarehouseId, otherTenantId, `ROOT-${otherWarehouseId.slice(0, 8)}`, 'Other Root', 'warehouse', otherWarehouseId, now]
+    );
+    await db.query(
+      `INSERT INTO locations (
+          id, tenant_id, code, name, type, role, is_sellable, active, parent_location_id, warehouse_id, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, false, true, $7, $8, $9, $9)`,
+      [
+        randomUUID(),
+        otherTenantId,
+        'QA',
+        'Conflicting QA Code',
+        'bin',
+        'QA',
+        otherWarehouseId,
+        otherWarehouseId,
+        now
+      ]
+    );
+  }
 
   const first = await apiRequest('POST', '/locations/templates/standard-warehouse', {
     token,

@@ -77,13 +77,59 @@ export const locationSchema = z.object({
   code: z.string().min(1).max(255),
   name: z.string().min(1).max(255),
   type: z.enum(['warehouse', 'bin', 'store', 'customer', 'vendor', 'scrap', 'virtual']),
-  role: z.enum(['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRAP']).optional(),
+  role: z.enum(['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRAP']).nullable().optional(),
   isSellable: z.boolean().optional(),
   active: z.boolean().optional(),
   parentLocationId: z.string().uuid().nullable().optional(),
   maxWeight: z.number().positive().nullable().optional(),
   maxVolume: z.number().positive().nullable().optional(),
   zone: z.string().max(255).nullable().optional(),
+}).superRefine((data, ctx) => {
+  if (data.type === 'warehouse') {
+    if (data.role != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Warehouse roots cannot have a role.',
+        path: ['role']
+      });
+    }
+    if (data.isSellable === true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Warehouse roots cannot be sellable.',
+        path: ['isSellable']
+      });
+    }
+    if (data.parentLocationId != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Warehouse roots cannot have a parent.',
+        path: ['parentLocationId']
+      });
+    }
+    return;
+  }
+  if (data.role === 'SELLABLE' && data.isSellable === false) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Location role must match sellable flag.',
+      path: ['isSellable']
+    });
+  }
+  if (data.role && data.role !== 'SELLABLE' && data.isSellable === true) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Location role must match sellable flag.',
+      path: ['isSellable']
+    });
+  }
+  if (data.role == null && data.isSellable === true) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Location role must match sellable flag.',
+      path: ['isSellable']
+    });
+  }
 });
 
 export const uomConversionSchema = z.object({

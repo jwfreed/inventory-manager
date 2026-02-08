@@ -87,54 +87,23 @@ async function getSession() {
 }
 
 async function ensureWarehouse(token, tenantId) {
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
+  const templateRes = await apiRequest('POST', '/locations/templates/standard-warehouse', {
+    token,
+    body: { includeReceivingQc: true }
+  });
+  assertOk(
+    templateRes.res,
+    'POST /locations/templates/standard-warehouse',
+    templateRes.payload,
+    { includeReceivingQc: true },
+    [200, 201]
+  );
+
+  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 500 } });
   assert.equal(locationsRes.res.status, 200);
-  let locations = locationsRes.payload.data || [];
-  let warehouse = locations.find((loc) => loc.type === 'warehouse');
-  if (!warehouse) {
-    const code = `WH-${randomUUID()}`;
-    const body = {
-      code,
-      name: `Warehouse ${code}`,
-      type: 'warehouse',
-      role: null,
-      isSellable: false,
-      active: true
-    };
-    const createRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(createRes.res, 'POST /locations (warehouse)', createRes.payload, body, [201]);
-    warehouse = createRes.payload;
-    locations = [...locations, warehouse];
-  }
-  const ensureRole = async (role) => {
-    let loc = locations.find(
-      (entry) => entry.role === role && entry.parentLocationId === warehouse.id
-    );
-    if (!loc) {
-      const code = `${role}-${randomUUID().slice(0, 8)}`;
-      const body = {
-        code,
-        name: `${role} Location`,
-        type: role === 'SCRAP' ? 'scrap' : 'bin',
-        role,
-        isSellable: role === 'SELLABLE',
-        parentLocationId: warehouse.id
-      };
-      const createRes = await apiRequest('POST', '/locations', { token, body });
-      assertOk(createRes.res, `POST /locations (${role})`, createRes.payload, body, [201]);
-      loc = createRes.payload;
-      locations = [...locations, loc];
-    }
-    await db.query(
-      `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT DO NOTHING`,
-      [tenantId, warehouse.id, role, loc.id]
-    );
-    return loc;
-  };
-  await ensureRole('SELLABLE');
-  await ensureRole('QA');
+  const locations = locationsRes.payload.data || [];
+  const warehouse = locations.find((loc) => loc.type === 'warehouse');
+  assert.ok(warehouse, 'Warehouse required');
 
   const defaultsRes = await db.query(
     `SELECT role, location_id
@@ -145,11 +114,8 @@ async function ensureWarehouse(token, tenantId) {
   const defaults = new Map(defaultsRes.rows.map((row) => [row.role, row.location_id]));
   const sellableId = defaults.get('SELLABLE');
   const qaId = defaults.get('QA');
-  assert.ok(sellableId);
-  assert.ok(qaId);
   const sellable = locations.find((loc) => loc.id === sellableId);
   const qa = locations.find((loc) => loc.id === qaId);
-  assert.ok(sellable && qa);
   const byId = new Map(locations.map((loc) => [loc.id, loc]));
   const diagnostics = {
     warehouseId: warehouse.id,
@@ -159,6 +125,9 @@ async function ensureWarehouse(token, tenantId) {
     locations: locations.map(formatLocation),
     defaults: defaultsRes.rows
   };
+  if (!sellableId || !qaId || !sellable || !qa) {
+    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID defaults\n${safeJson(diagnostics)}`);
+  }
   if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
     throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
   }

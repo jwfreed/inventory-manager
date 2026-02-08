@@ -351,7 +351,7 @@ export async function createLocation(tenantId: string, data: LocationInput) {
   const now = new Date();
   const id = uuidv4();
   const active = data.active ?? true;
-  const role = data.type === 'warehouse' ? null : (data.role ?? 'SELLABLE');
+  const role = data.type === 'warehouse' ? null : (data.role === undefined ? 'SELLABLE' : data.role);
   const isSellable = data.type === 'warehouse' ? false : (data.isSellable ?? role === 'SELLABLE');
 
   return withTransaction(async (client) => {
@@ -430,7 +430,7 @@ export async function updateLocation(tenantId: string, id: string, data: Locatio
       isSellable = false;
       parentLocationId = null;
     } else {
-      role = data.role ?? existing.role ?? 'SELLABLE';
+      role = data.role === undefined ? (existing.role ?? 'SELLABLE') : data.role;
       isSellable = data.isSellable ?? existing.is_sellable ?? role === 'SELLABLE';
       parentLocationId = data.parentLocationId ?? null;
     }
@@ -524,13 +524,12 @@ export async function createStandardWarehouseTemplate(
   const now = new Date();
   async function resolveUniqueLocationCode(
     client: any,
-    scopedTenantId: string,
     desiredCode: string,
     suffixSeed: string
   ): Promise<string> {
     const exists = await client.query(
-      'SELECT 1 FROM locations WHERE tenant_id = $1 AND code = $2 LIMIT 1',
-      [scopedTenantId, desiredCode]
+      'SELECT 1 FROM locations WHERE code = $1 LIMIT 1',
+      [desiredCode]
     );
     if ((exists.rowCount ?? 0) === 0) return desiredCode;
     const suffixBase = suffixSeed.slice(0, 8);
@@ -538,8 +537,8 @@ export async function createStandardWarehouseTemplate(
     let counter = 1;
     while (true) {
       const res = await client.query(
-        'SELECT 1 FROM locations WHERE tenant_id = $1 AND code = $2 LIMIT 1',
-        [scopedTenantId, candidate]
+        'SELECT 1 FROM locations WHERE code = $1 LIMIT 1',
+        [candidate]
       );
       if ((res.rowCount ?? 0) === 0) return candidate;
       candidate = `${desiredCode}-${suffixBase}-${counter}`;
@@ -581,7 +580,7 @@ export async function createStandardWarehouseTemplate(
       warehouseId = existingWarehouse.id;
     } else {
       const warehouseIdNew = uuidv4();
-      const warehouseCode = await resolveUniqueLocationCode(client, tenantId, 'MAIN', tenantId);
+      const warehouseCode = await resolveUniqueLocationCode(client, 'MAIN', tenantId);
       const warehouseRes = await client.query(
         `INSERT INTO locations (
             id, tenant_id, code, name, type, role, is_sellable, active, parent_location_id, warehouse_id, created_at, updated_at
@@ -643,7 +642,7 @@ export async function createStandardWarehouseTemplate(
       if (!loc.role && loc.code === 'RECV' && hasRecv) {
         continue;
       }
-      const code = await resolveUniqueLocationCode(client, tenantId, loc.code, warehouseId);
+      const code = await resolveUniqueLocationCode(client, loc.code, warehouseId);
       const id = uuidv4();
       const res = await client.query(
         `INSERT INTO locations (

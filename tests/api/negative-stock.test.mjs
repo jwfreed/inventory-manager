@@ -30,27 +30,43 @@ async function apiRequest(method, path, { token, body, params } = {}) {
 }
 
 async function getSession() {
-  const session = await ensureSession({
+  return ensureSession({
     apiRequest,
     adminEmail,
     adminPassword,
     tenantSlug: tenantSlug,
     tenantName: 'Negative Stock Tenant'
   });
-  return session.accessToken;
+}
+
+async function ensureWarehouse(token) {
+  const templateRes = await apiRequest('POST', '/locations/templates/standard-warehouse', {
+    token,
+    body: { includeReceivingQc: true },
+  })
+  if (![200, 201].includes(templateRes.res.status)) {
+    throw new Error(`WAREHOUSE_BOOTSTRAP_FAILED status=${templateRes.res.status} body=${JSON.stringify(templateRes.payload)}`)
+  }
+  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 500 } })
+  assert.equal(locationsRes.res.status, 200)
+  const locations = locationsRes.payload.data || []
+  const warehouse = locations.find((loc) => loc.type === 'warehouse')
+  assert.ok(warehouse)
+  const sellable = locations.find(
+    (loc) => loc.role === 'SELLABLE' && loc.parentLocationId === warehouse.id
+  )
+  assert.ok(sellable)
+  return { warehouse, sellable }
 }
 
 test('posting work order issue and batch blocks on insufficient usable stock', async () => {
-  const token = await getSession()
+  const session = await getSession()
+  const token = session.accessToken
   assert.ok(token)
   const unique = Date.now()
 
-  const locationRes = await apiRequest('POST', '/locations', {
-    token,
-    body: { code: `NEG-LOC-${unique}`, name: 'Negative Test Location', type: 'warehouse', active: true },
-  })
-  assert.equal(locationRes.res.status, 201)
-  const locationId = locationRes.payload.id
+  const { sellable } = await ensureWarehouse(token)
+  const locationId = sellable.id
 
   const itemRes = await apiRequest('POST', '/items', {
     token,
@@ -141,16 +157,13 @@ test('posting work order issue and batch blocks on insufficient usable stock', a
 })
 
 test('posting negative inventory adjustment blocks on insufficient stock', async () => {
-  const token = await getSession()
+  const session = await getSession()
+  const token = session.accessToken
   assert.ok(token)
   const unique = Date.now()
 
-  const locationRes = await apiRequest('POST', '/locations', {
-    token,
-    body: { code: `NEG-LOC-ADJ-${unique}`, name: 'Negative Adj Location', type: 'warehouse', active: true },
-  })
-  assert.equal(locationRes.res.status, 201)
-  const locationId = locationRes.payload.id
+  const { sellable } = await ensureWarehouse(token)
+  const locationId = sellable.id
 
   const itemRes = await apiRequest('POST', '/items', {
     token,
@@ -198,16 +211,13 @@ test('posting negative inventory adjustment blocks on insufficient stock', async
 })
 
 test('reservation creates backorder when insufficient on-hand', async () => {
-  const token = await getSession()
+  const session = await getSession()
+  const token = session.accessToken
   assert.ok(token)
   const unique = Date.now()
 
-  const locationRes = await apiRequest('POST', '/locations', {
-    token,
-    body: { code: `NEG-LOC-BO-${unique}`, name: 'Negative Backorder Location', type: 'warehouse', active: true },
-  })
-  assert.equal(locationRes.res.status, 201)
-  const locationId = locationRes.payload.id
+  const { sellable } = await ensureWarehouse(token)
+  const locationId = sellable.id
 
   const itemRes = await apiRequest('POST', '/items', {
     token,
@@ -256,16 +266,13 @@ test('reservation creates backorder when insufficient on-hand', async () => {
 })
 
 test('inventory snapshot aggregates canonical quantities with UOM conversion', async () => {
-  const token = await ensureSession()
+  const session = await getSession()
+  const token = session.accessToken
   assert.ok(token)
   const unique = Date.now()
 
-  const locationRes = await apiRequest('POST', '/locations', {
-    token,
-    body: { code: `NEG-LOC-UOM-${unique}`, name: 'Negative UOM Location', type: 'warehouse', active: true },
-  })
-  assert.equal(locationRes.res.status, 201)
-  const locationId = locationRes.payload.id
+  const { sellable } = await ensureWarehouse(token)
+  const locationId = sellable.id
 
   const itemRes = await apiRequest('POST', '/items', {
     token,

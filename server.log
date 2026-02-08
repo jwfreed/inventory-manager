@@ -1680,3 +1680,2020 @@ Error: listen EADDRINUSE: address already in use :::3000
   address: '::',
   port: 3000
 }
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+
+📅 Registering scheduled jobs (in-process)...
+
+📅 Registering scheduled jobs (in-process)...
+
+📅 Registering scheduled jobs (in-process)...
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: development
+   Timezone: UTC (for scheduled jobs)
+
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 29ms
+🚀 Starting job: reservation-expiry
+🚀 Starting job: inventory-health-check
+✅ Job "reservation-expiry" completed in 32ms
+Inventory health gate failed for tenant default: ledger_variance_pct>1
+✅ Job "inventory-health-check" completed in 143ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 28ms
+🚀 Starting job: inventory-invariant-check
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 28ms
+Legacy movement sources for tenant default: 2 receipt movements missing source_type
+Legacy movement sources for tenant invariants-1d6f4f49: 1 receipt movements missing source_type
+✅ Job "inventory-invariant-check" completed in 165ms
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: Connection terminated due to connection timeout
+    at [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39mnode_modules/[4mpg-pool[24m/index.js:45:11
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async query [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:45:14[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:289:25[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m {
+  [cause]: Error: Connection terminated unexpectedly
+      at Connection.<anonymous> [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39mnode_modules/[4mpg[24m/lib/client.js:136:73[90m)[39m
+  [90m    at Object.onceWrapper (node:events:633:28)[39m
+  [90m    at Connection.emit (node:events:519:28)[39m
+  [90m    at Connection.emit (node:domain:489:12)[39m
+      at Socket.<anonymous> [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39mnode_modules/[4mpg[24m/lib/connection.js:62:12[90m)[39m
+  [90m    at Socket.emit (node:events:519:28)[39m
+  [90m    at Socket.emit (node:domain:489:12)[39m
+  [90m    at TCP.<anonymous> (node:net:346:12)[39m
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: Connection terminated due to connection timeout
+    at [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39mnode_modules/[4mpg-pool[24m/index.js:45:11
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async query [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:45:14[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:289:25[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m {
+  [cause]: Error: Connection terminated unexpectedly
+      at Connection.<anonymous> [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39mnode_modules/[4mpg[24m/lib/client.js:136:73[90m)[39m
+  [90m    at Object.onceWrapper (node:events:633:28)[39m
+  [90m    at Connection.emit (node:events:519:28)[39m
+  [90m    at Connection.emit (node:domain:489:12)[39m
+      at Socket.<anonymous> [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39mnode_modules/[4mpg[24m/lib/connection.js:62:12[90m)[39m
+  [90m    at Socket.emit (node:events:519:28)[39m
+  [90m    at Socket.emit (node:domain:489:12)[39m
+  [90m    at TCP.<anonymous> (node:net:346:12)[39m
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: Connection terminated due to connection timeout
+    at [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39mnode_modules/[4mpg-pool[24m/index.js:45:11
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async query [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:45:14[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:289:25[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m {
+  [cause]: Error: Connection terminated unexpectedly
+      at Connection.<anonymous> [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39mnode_modules/[4mpg[24m/lib/client.js:136:73[90m)[39m
+  [90m    at Object.onceWrapper (node:events:633:28)[39m
+  [90m    at Connection.emit (node:events:519:28)[39m
+  [90m    at Connection.emit (node:domain:489:12)[39m
+      at Socket.<anonymous> [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39mnode_modules/[4mpg[24m/lib/connection.js:62:12[90m)[39m
+  [90m    at Socket.emit (node:events:519:28)[39m
+  [90m    at Socket.emit (node:domain:489:12)[39m
+  [90m    at TCP.<anonymous> (node:net:346:12)[39m
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: development
+   Timezone: UTC (for scheduled jobs)
+
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+📅 Registering scheduled jobs (in-process)...
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+📊 Ledger reconcile summary {
+  mode: [32m'strict'[39m,
+  allowRepair: [33mtrue[39m,
+  mismatchCount: [33m3[39m,
+  repairedCount: [33m3[39m,
+  topMismatches: [
+    {
+      tenantId: [32m'00000000-0000-0000-0000-000000000001'[39m,
+      itemId: [32m'70d67b37-c2c6-4839-bd51-df89eb132cba'[39m,
+      locationId: [32m'b81a5e7e-c7f3-4bce-8fd3-9451847a803a'[39m,
+      uom: [32m'each'[39m,
+      balanceQty: [33m15[39m,
+      ledgerQty: [33m10[39m,
+      delta: [33m5[39m
+    },
+    {
+      tenantId: [32m'00000000-0000-0000-0000-000000000001'[39m,
+      itemId: [32m'acff028b-aad9-4ba6-a6c0-f96bac543751'[39m,
+      locationId: [32m'ac0842d9-0a52-4cac-af9e-eeee6c211154'[39m,
+      uom: [32m'each'[39m,
+      balanceQty: [33m15[39m,
+      ledgerQty: [33m10[39m,
+      delta: [33m5[39m
+    },
+    {
+      tenantId: [32m'00000000-0000-0000-0000-000000000001'[39m,
+      itemId: [32m'4c7915c1-782f-4a46-bfc8-84ef9925c02d'[39m,
+      locationId: [32m'acbded16-535e-4eef-bbb7-7f64bb5d45d9'[39m,
+      uom: [32m'each'[39m,
+      balanceQty: [33m15[39m,
+      ledgerQty: [33m10[39m,
+      delta: [33m5[39m
+    }
+  ]
+}
+error: could not serialize access due to read/write dependencies among transactions
+    at [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39mnode_modules/[4mpg[24m/lib/client.js:545:17
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async insertReservationEvent [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/orderToCash.service.ts:46:3[90m)[39m
+    at async results.isolationLevel [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/orderToCash.service.ts:503:7[90m)[39m
+    at async withTransactionRetry [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:112:22[90m)[39m
+    at async createReservations [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/orderToCash.service.ts:317:19[90m)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/routes/orderToCash.routes.ts:105:21 {
+  length: [33m403[39m,
+  severity: [32m'ERROR'[39m,
+  code: [32m'40001'[39m,
+  detail: [32m'Reason code: Canceled on conflict out to pivot 34148, during read.'[39m,
+  hint: [32m'The transaction might succeed if retried.'[39m,
+  position: [90mundefined[39m,
+  internalPosition: [90mundefined[39m,
+  internalQuery: [90mundefined[39m,
+  where: [32m'SQL statement "SELECT 1 FROM ONLY "public"."inventory_reservations" x WHERE "id" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x"'[39m,
+  schema: [90mundefined[39m,
+  table: [90mundefined[39m,
+  column: [90mundefined[39m,
+  dataType: [90mundefined[39m,
+  constraint: [90mundefined[39m,
+  file: [32m'predicate.c'[39m,
+  line: [32m'4680'[39m,
+  routine: [32m'OnConflict_CheckForSerializationFailure'[39m
+}
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: development
+   Timezone: UTC (for scheduled jobs)
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: development
+   Timezone: UTC (for scheduled jobs)
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: development
+   Timezone: UTC (for scheduled jobs)
+

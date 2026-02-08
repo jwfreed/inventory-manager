@@ -81,56 +81,24 @@ async function getSession() {
 }
 
 async function ensureWarehouseWithDefaults(token, tenantId) {
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
+  const templateRes = await apiRequest('POST', '/locations/templates/standard-warehouse', {
+    token,
+    body: { includeReceivingQc: true }
+  });
+  assertOk(
+    templateRes.res,
+    'POST /locations/templates/standard-warehouse',
+    templateRes.payload,
+    { includeReceivingQc: true },
+    [200, 201]
+  );
+
+  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 500 } });
   assert.equal(locationsRes.res.status, 200);
-  let locations = locationsRes.payload.data || [];
-  let warehouse = locations.find((loc) => loc.type === 'warehouse');
-  if (!warehouse) {
-    const code = `WH-${randomUUID()}`;
-    const body = {
-      code,
-      name: `Warehouse ${code}`,
-      type: 'warehouse',
-      role: null,
-      isSellable: false,
-      active: true
-    };
-    const createRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(createRes.res, 'POST /locations (warehouse)', createRes.payload, body, [201]);
-    warehouse = createRes.payload;
-    locations = [...locations, warehouse];
-  }
-  const ensureRole = async (role) => {
-    let loc = locations.find(
-      (entry) => entry.role === role && entry.parentLocationId === warehouse.id
-    );
-    if (!loc) {
-      const code = `${role}-${randomUUID().slice(0, 8)}`;
-      const body = {
-        code,
-        name: `${role} Location`,
-        type: role === 'SCRAP' ? 'scrap' : 'bin',
-        role,
-        isSellable: role === 'SELLABLE',
-        parentLocationId: warehouse.id
-      };
-      const createRes = await apiRequest('POST', '/locations', { token, body });
-      assertOk(createRes.res, `POST /locations (${role})`, createRes.payload, body, [201]);
-      loc = createRes.payload;
-      locations = [...locations, loc];
-    }
-    await db.query(
-      `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT DO NOTHING`,
-      [tenantId, warehouse.id, role, loc.id]
-    );
-    return loc;
-  };
-  await ensureRole('SELLABLE');
-  await ensureRole('QA');
-  await ensureRole('HOLD');
-  await ensureRole('REJECT');
+  const locations = locationsRes.payload.data || [];
+  const warehouse = locations.find((loc) => loc.type === 'warehouse');
+  assert.ok(warehouse, 'Warehouse required');
+
   const defaultsRes = await db.query(
     `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
     [tenantId, warehouse.id]
@@ -138,14 +106,17 @@ async function ensureWarehouseWithDefaults(token, tenantId) {
   const defaults = new Map(defaultsRes.rows.map((row) => [row.role, row.location_id]));
   const qaLocationId = defaults.get('QA');
   const sellableLocationId = defaults.get('SELLABLE');
+  const holdLocationId = defaults.get('HOLD');
   const qaLocation = locations.find((loc) => loc.id === qaLocationId);
   const sellableLocation = locations.find((loc) => loc.id === sellableLocationId);
+  const holdLocation = locations.find((loc) => loc.id === holdLocationId);
   const byId = new Map(locations.map((loc) => [loc.id, loc]));
   const diagnostics = {
     warehouseId: warehouse.id,
     warehouse: formatLocation(warehouse),
     qaLocation: formatLocation(qaLocation),
     sellableLocation: formatLocation(sellableLocation),
+    holdLocation: formatLocation(holdLocation),
     locations: locations.map(formatLocation),
     defaults: defaultsRes.rows
   };
@@ -157,6 +128,9 @@ async function ensureWarehouseWithDefaults(token, tenantId) {
   }
   if (!sellableLocation?.parentLocationId || !isDescendant(sellableLocation, warehouse.id, byId)) {
     throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID sellable\n${safeJson(diagnostics)}`);
+  }
+  if (!holdLocation?.parentLocationId || !isDescendant(holdLocation, warehouse.id, byId)) {
+    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID hold\n${safeJson(diagnostics)}`);
   }
 }
 
@@ -173,18 +147,24 @@ test('QC accept is idempotent and creates no cost layers', async () => {
 
   const locationsRes = await apiRequest('GET', '/locations', { token });
   assert.equal(locationsRes.res.status, 200);
-  const qaLocation = locationsRes.payload.data.find(l => l.role === 'QA');
-  const warehouse = locationsRes.payload.data.find(l => l.type === 'warehouse');
-  assert.ok(qaLocation, 'QA location required');
+  const locations = locationsRes.payload.data || [];
+  const warehouse = locations.find(l => l.type === 'warehouse');
   assert.ok(warehouse, 'Warehouse required');
 
-  // Find the actual SELLABLE default for this warehouse (what QC will use)
+  // Find the actual defaults for this warehouse
   const defaultsRes = await db.query(
-    `SELECT location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
+    `SELECT role, location_id
+       FROM warehouse_default_location
+      WHERE tenant_id = $1 AND warehouse_id = $2 AND role IN ('SELLABLE','QA')`,
     [tenantId, warehouse.id]
   );
-  assert.equal(defaultsRes.rowCount, 1, 'SELLABLE default required');
-  const sellableLocationId = defaultsRes.rows[0].location_id;
+  const defaults = new Map(defaultsRes.rows.map((row) => [row.role, row.location_id]));
+  const sellableLocationId = defaults.get('SELLABLE');
+  const qaLocationId = defaults.get('QA');
+  assert.ok(sellableLocationId, 'SELLABLE default required');
+  assert.ok(qaLocationId, 'QA default required');
+  const qaLocation = locations.find(l => l.id === qaLocationId);
+  assert.ok(qaLocation, 'QA location required');
 
   // Create vendor, item, PO
   const vendorRes = await apiRequest('POST', '/vendors', {
@@ -235,6 +215,21 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   assert.equal(receiptRes.res.status, 201);
   const receiptLineId = receiptRes.payload.lines[0].id;
 
+  const countReceiptLayers = async () => {
+    const res = await db.query(
+      `SELECT COUNT(*) AS count
+         FROM inventory_cost_layers
+        WHERE tenant_id = $1
+          AND source_type = 'receipt'
+          AND item_id = $2
+          AND location_id = $3`,
+      [tenantId, itemId, qaLocation.id]
+    );
+    return Number(res.rows[0].count);
+  };
+  const costBefore = await countReceiptLayers();
+  assert.ok(costBefore >= 1, `Expected receipt cost layer to exist, got ${costBefore}`);
+
   // Verify QA has stock
   const qaBalanceBefore = await db.query(
     `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
@@ -260,6 +255,9 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   assert.equal(qcRes.res.status, 201);
   const qcEventId = qcRes.payload.id;
 
+  const costAfterFirst = await countReceiptLayers();
+  assert.equal(costAfterFirst, costBefore);
+
   // Retry same QC accept (idempotent)
   const qcRetryRes = await apiRequest('POST', '/qc-events', {
     token,
@@ -275,6 +273,9 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   });
   assert.equal(qcRetryRes.res.status, 200);
   assert.equal(qcRetryRes.payload.id, qcEventId);
+
+  const costAfterSecond = await countReceiptLayers();
+  assert.equal(costAfterSecond, costAfterFirst);
 
   // Verify only one transfer movement via qc_inventory_links
   const linksResult = await db.query(
