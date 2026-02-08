@@ -1,11 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com'
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local'
-const tenantSlug = process.env.SEED_TENANT_SLUG || `default-${randomUUID().slice(0,8)}`
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default'
 
 async function apiRequest(method, path, { token, body, params } = {}) {
   const url = new URL(baseUrl + path)
@@ -28,27 +29,19 @@ async function apiRequest(method, path, { token, body, params } = {}) {
   return { res, payload }
 }
 
-async function ensureSession() {
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', {
-    body: {
-      adminEmail,
-      adminPassword,
-      tenantSlug,
-      tenantName: 'Discrete UOM Tenant',
-    },
-  })
-  if (bootstrap.res.ok) return bootstrap.payload.accessToken
-  assert.equal(bootstrap.res.status, 409)
-
-  const login = await apiRequest('POST', '/auth/login', {
-    body: { email: adminEmail, password: adminPassword, tenantSlug },
-  })
-  assert.equal(login.res.status, 200)
-  return login.payload.accessToken
+async function getSession() {
+  const session = await ensureSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug: tenantSlug,
+    tenantName: 'Discrete UOM Tenant'
+  });
+  return session.accessToken;
 }
 
 test('count items reject fractional quantities on posting', async () => {
-  const token = await ensureSession()
+  const token = await getSession()
   const unique = Date.now()
 
   const locationRes = await apiRequest('POST', '/locations', {
@@ -102,7 +95,7 @@ test('count items reject fractional quantities on posting', async () => {
 })
 
 test('count items accept whole number quantities on posting', async () => {
-  const token = await ensureSession()
+  const token = await getSession()
   const unique = Date.now()
 
   const locationRes = await apiRequest('POST', '/locations', {
@@ -151,7 +144,7 @@ test('count items accept whole number quantities on posting', async () => {
 })
 
 test('mass items allow fractional quantities on posting', async () => {
-  const token = await ensureSession()
+  const token = await getSession()
   const unique = Date.now()
 
   const locationRes = await apiRequest('POST', '/locations', {
@@ -200,7 +193,7 @@ test('mass items allow fractional quantities on posting', async () => {
 })
 
 test('count UOM conversions require integer factors', async () => {
-  const token = await ensureSession()
+  const token = await getSession()
   const unique = Date.now()
 
   const itemRes = await apiRequest('POST', '/items', {

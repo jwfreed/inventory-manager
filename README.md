@@ -44,6 +44,26 @@ Roll back the latest batch if needed:
 npm run migrate:down
 ```
 
+### Reset local dev DB (dummy data)
+
+Use this when you need a clean local database after schema changes.
+
+```bash
+export DATABASE_URL="postgres://$USER@localhost:5432/inventory_dev"
+# or, if your local role is postgres:
+# export DATABASE_URL="postgres://postgres@localhost:5432/inventory_dev"
+npm run db:conn:check
+npm run db:reset-and-migrate:dev
+npm run dev
+npm run test:api
+```
+
+The reset and connection-check scripts **do not** load `.env` and only use the
+shell-provided `DATABASE_URL`. The `user:pass` placeholder you may see elsewhere
+must match a real Postgres role on your machine. The reset script refuses to drop
+databases unless the name contains `dev` or `test`, and it will not run with
+`NODE_ENV=production`.
+
 ### Location roles and warehouse defaults
 
 Locations now carry explicit inventory roles and a sellable flag:

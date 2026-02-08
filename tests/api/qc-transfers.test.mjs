@@ -2,14 +2,13 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = process.env.SEED_TENANT_SLUG || `default-${randomUUID().slice(0,8)}`;
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+let db;
 
 async function apiRequest(method, path, { token, body, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -69,15 +68,16 @@ function formatLocation(location) {
   };
 }
 
-async function ensureSession() {
-  const bootstrapBody = { adminEmail, adminPassword, tenantSlug, tenantName: 'QC Test Tenant' };
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
-  if (bootstrap.res.ok) return bootstrap.payload;
-  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
-  const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
-  const login = await apiRequest('POST', '/auth/login', { body: loginBody });
-  assertOk(login.res, 'POST /auth/login', login.payload, loginBody, [200]);
-  return login.payload;
+async function getSession() {
+  const session = await ensureSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug: tenantSlug,
+    tenantName: 'QC Test Tenant'
+  });
+  db = session.pool;
+  return session;
 }
 
 async function ensureWarehouseWithDefaults(token, tenantId) {
@@ -91,8 +91,8 @@ async function ensureWarehouseWithDefaults(token, tenantId) {
       code,
       name: `Warehouse ${code}`,
       type: 'warehouse',
-      role: 'SELLABLE',
-      isSellable: true,
+      role: null,
+      isSellable: false,
       active: true
     };
     const createRes = await apiRequest('POST', '/locations', { token, body });
@@ -119,7 +119,7 @@ async function ensureWarehouseWithDefaults(token, tenantId) {
       loc = createRes.payload;
       locations = [...locations, loc];
     }
-    await pool.query(
+    await db.query(
       `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING`,
@@ -131,7 +131,7 @@ async function ensureWarehouseWithDefaults(token, tenantId) {
   await ensureRole('QA');
   await ensureRole('HOLD');
   await ensureRole('REJECT');
-  const defaultsRes = await pool.query(
+  const defaultsRes = await db.query(
     `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
     [tenantId, warehouse.id]
   );
@@ -161,7 +161,7 @@ async function ensureWarehouseWithDefaults(token, tenantId) {
 }
 
 test('QC accept is idempotent and creates no cost layers', async () => {
-  const session = await ensureSession();
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   const userId = session.user?.id;
@@ -179,7 +179,7 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   assert.ok(warehouse, 'Warehouse required');
 
   // Find the actual SELLABLE default for this warehouse (what QC will use)
-  const defaultsRes = await pool.query(
+  const defaultsRes = await db.query(
     `SELECT location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
     [tenantId, warehouse.id]
   );
@@ -236,7 +236,7 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   const receiptLineId = receiptRes.payload.lines[0].id;
 
   // Verify QA has stock
-  const qaBalanceBefore = await pool.query(
+  const qaBalanceBefore = await db.query(
     `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
     [tenantId, itemId, qaLocation.id, 'each']
   );
@@ -277,7 +277,7 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   assert.equal(qcRetryRes.payload.id, qcEventId);
 
   // Verify only one transfer movement via qc_inventory_links
-  const linksResult = await pool.query(
+  const linksResult = await db.query(
     `SELECT inventory_movement_id FROM qc_inventory_links WHERE tenant_id = $1 AND qc_event_id = $2`,
     [tenantId, qcEventId]
   );
@@ -285,7 +285,7 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   const movementId = linksResult.rows[0].inventory_movement_id;
 
   // Verify it's a transfer
-  const movementResult = await pool.query(
+  const movementResult = await db.query(
     `SELECT movement_type, status FROM inventory_movements WHERE id = $1`,
     [movementId]
   );
@@ -293,14 +293,14 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   assert.equal(movementResult.rows[0].status, 'posted');
 
   // Verify QA is 0, SELLABLE is 10
-  const qaBalanceAfter = await pool.query(
+  const qaBalanceAfter = await db.query(
     `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
     [tenantId, itemId, qaLocation.id, 'each']
   );
   assert.equal(qaBalanceAfter.rowCount, 1);
   assert.ok(Math.abs(Number(qaBalanceAfter.rows[0].on_hand)) < 1e-6);
 
-  const sellableBalance = await pool.query(
+  const sellableBalance = await db.query(
     `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
     [tenantId, itemId, sellableLocationId, 'each']
   );
@@ -309,7 +309,7 @@ test('QC accept is idempotent and creates no cost layers', async () => {
 });
 
 test('QC partial split: accept + hold', async () => {
-  const session = await ensureSession();
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   const userId = session.user?.id;
@@ -321,7 +321,7 @@ test('QC partial split: accept + hold', async () => {
   const warehouse = locationsRes.payload.data.find(l => l.type === 'warehouse');
   assert.ok(warehouse);
 
-  const defaultsRes = await pool.query(
+  const defaultsRes = await db.query(
     `SELECT role, location_id
        FROM warehouse_default_location
       WHERE tenant_id = $1 AND warehouse_id = $2 AND role IN ('SELLABLE','QA','HOLD')`,
@@ -409,44 +409,40 @@ test('QC partial split: accept + hold', async () => {
   assert.equal(qcHoldRes.res.status, 201);
 
   // Verify balances
-  const qaBalance = await pool.query(
+  const qaBalance = await db.query(
     `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
     [tenantId, itemId, qaLocation.id, 'each']
   );
   assert.ok(Math.abs(Number(qaBalance.rows[0]?.on_hand ?? 0)) < 1e-6, 'QA should be empty');
 
-  const sellableBalance = await pool.query(
+  const sellableBalance = await db.query(
     `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
     [tenantId, itemId, sellableLocationId, 'each']
   );
   assert.ok(Math.abs(Number(sellableBalance.rows[0]?.on_hand ?? 0) - 6) < 1e-6, 'SELLABLE should be 6');
 
-  const holdBalance = await pool.query(
+  const holdBalance = await db.query(
     `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
     [tenantId, itemId, holdLocation.id, 'each']
   );
   assert.ok(Math.abs(Number(holdBalance.rows[0]?.on_hand ?? 0) - 4) < 1e-6, 'HOLD should be 4');
 
   // Verify two transfer movements via qc_inventory_links
-  const acceptLinks = await pool.query(
+  const acceptLinks = await db.query(
     `SELECT inventory_movement_id FROM qc_inventory_links WHERE tenant_id = $1 AND qc_event_id = $2`,
     [tenantId, qcAcceptRes.payload.id]
   );
   assert.equal(acceptLinks.rowCount, 1, 'Accept should have one movement');
 
-  const holdLinks = await pool.query(
+  const holdLinks = await db.query(
     `SELECT inventory_movement_id FROM qc_inventory_links WHERE tenant_id = $1 AND qc_event_id = $2`,
     [tenantId, qcHoldRes.payload.id]
   );
   assert.equal(holdLinks.rowCount, 1, 'Hold should have one movement');
 });
 
-test('QC validation: qty exceeds QA on-hand', async (t) => {
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('QC validation: qty exceeds QA on-hand', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token);
@@ -459,7 +455,7 @@ test('QC validation: qty exceeds QA on-hand', async (t) => {
   assert.ok(qaLocation && warehouse);
 
   // Find the actual SELLABLE default for this warehouse
-  const defaultsRes = await pool.query(
+  const defaultsRes = await db.query(
     `SELECT location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
     [tenantId, warehouse.id]
   );

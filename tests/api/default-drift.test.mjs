@@ -2,13 +2,13 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
+let db;
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -59,63 +59,30 @@ function formatLocation(location) {
   };
 }
 
-async function ensureSession(tenantSlug) {
-  const bootstrapBody = {
+async function getSession(tenantSlug) {
+  const session = await ensureSession({
+    apiRequest,
     adminEmail,
     adminPassword,
-    tenantSlug,
-    tenantName: `Default Drift ${tenantSlug}`,
-  };
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
-  if (bootstrap.res.ok) return bootstrap.payload;
-  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
-
-  const userRes = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [adminEmail]);
-  const userId = userRes.rows[0]?.id;
-  if (!userId) throw new Error(`Login failed: user not found for ${adminEmail}`);
-
-  const tenantRes = await pool.query('SELECT id FROM tenants WHERE slug = $1 LIMIT 1', [tenantSlug]);
-  let tenantId = tenantRes.rows[0]?.id;
-  if (!tenantId) {
-    tenantId = randomUUID();
-    await pool.query(
-      `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
-       VALUES ($1, $2, $3, NULL, now())`,
-      [tenantId, `Default Drift ${tenantSlug}`, tenantSlug]
-    );
-  }
-  await pool.query(
-    `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
-     VALUES ($1, $2, $3, 'admin', 'active', now())
-     ON CONFLICT (tenant_id, user_id) DO NOTHING`,
-    [randomUUID(), tenantId, userId]
-  );
-  const membershipCheck = await pool.query(
-    `SELECT 1 FROM tenant_memberships WHERE tenant_id = $1 AND user_id = $2`,
-    [tenantId, userId]
-  );
-  if (membershipCheck.rowCount === 0) {
-    throw new Error(`Tenant membership missing: tenantSlug=${tenantSlug} tenantId=${tenantId} userId=${userId}`);
-  }
-
-  const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
-  const login = await apiRequest('POST', '/auth/login', { body: loginBody });
-  assertOk(login.res, 'POST /auth/login', login.payload, loginBody, [200]);
-  return login.payload;
+    tenantSlug: tenantSlug,
+    tenantName: `Default Drift ${tenantSlug}`
+  });
+  db = session.pool;
+  return session;
 }
 
 async function setWarehouseDefault({ tenantId, warehouseId, role, locationId }) {
-  await pool.query(
+  await db.query(
     `DELETE FROM warehouse_default_location
       WHERE tenant_id = $1 AND warehouse_id = $2 AND role = $3`,
     [tenantId, warehouseId, role]
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
      VALUES ($1, $2, $3, $4)`,
     [tenantId, warehouseId, role, locationId]
   );
-  const verify = await pool.query(
+  const verify = await db.query(
     `SELECT location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2 AND role = $3`,
     [tenantId, warehouseId, role]
   );
@@ -130,8 +97,8 @@ async function createWarehouseGraph(token) {
     code: warehouseCode,
     name: `Warehouse ${warehouseCode}`,
     type: 'warehouse',
-    role: 'SELLABLE',
-    isSellable: true,
+    role: null,
+    isSellable: false,
     active: true,
   };
   const warehouseRes = await apiRequest('POST', '/locations', { token, body: warehouseBody });
@@ -230,8 +197,9 @@ async function getSnapshot(token, itemId, locationId) {
 }
 
 test('default sellable location changes take effect immediately', async () => {
-  const tenantSlug = `default-drift-${randomUUID()}`;
-  const session = await ensureSession(tenantSlug);
+  const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+let db;
+  const session = await getSession(tenantSlug);
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   const actorId = session.user?.id;
@@ -268,7 +236,7 @@ test('default sellable location changes take effect immediately', async () => {
   const onHandA1 = await getSnapshot(token, itemId, sellableA.id);
   const onHandB1 = await getSnapshot(token, itemId, sellableB.id);
   if (Math.abs(onHandA1 - 5) > 1e-6 || Math.abs(onHandB1) > 1e-6) {
-    const defaults = await pool.query(
+    const defaults = await db.query(
       `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
       [tenantId, warehouse.id]
     );
@@ -298,7 +266,7 @@ test('default sellable location changes take effect immediately', async () => {
   const onHandA2 = await getSnapshot(token, itemId, sellableA.id);
   const onHandB2 = await getSnapshot(token, itemId, sellableB.id);
   if (Math.abs(onHandA2 - 5) > 1e-6 || Math.abs(onHandB2 - 7) > 1e-6) {
-    const defaults = await pool.query(
+    const defaults = await db.query(
       `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
       [tenantId, warehouse.id]
     );
@@ -315,4 +283,3 @@ test('default sellable location changes take effect immediately', async () => {
     throw new Error(`DEFAULT_DRIFT_ASSERT_2\n${safeJson(diag)}`);
   }
 });
-

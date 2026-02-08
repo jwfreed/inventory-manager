@@ -2,9 +2,16 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool, Client } from 'pg';
+import { Client } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+let db;
+
+test.before(async () => {
+  const session = await ensureSession();
+  db = session.pool;
+});
+
 
 function safeJson(value) {
   try {
@@ -15,7 +22,7 @@ function safeJson(value) {
 }
 
 async function withTx(fn) {
-  const client = await pool.connect();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     const result = await fn(client);
@@ -55,8 +62,8 @@ async function insertTenant(db, label) {
 }
 
 async function cleanupTenant(tenantId) {
-  await pool.query(`DELETE FROM locations WHERE tenant_id = $1`, [tenantId]);
-  await pool.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
+  await db.query(`DELETE FROM locations WHERE tenant_id = $1`, [tenantId]);
+  await db.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
 }
 
 async function insertWarehouseRoot(db, tenantId, label) {
@@ -66,7 +73,7 @@ async function insertWarehouseRoot(db, tenantId, label) {
     `INSERT INTO locations (
       id, tenant_id, code, name, type, active, created_at, updated_at,
       role, is_sellable, parent_location_id, warehouse_id
-    ) VALUES ($1, $2, $3, $4, 'warehouse', true, now(), now(), 'SELLABLE', true, NULL, $1)`,
+    ) VALUES ($1, $2, $3, $4, 'warehouse', true, now(), now(), NULL, false, NULL, $1)`,
     [id, tenantId, code, `Warehouse ${label}`]
   );
   return { id, code };
@@ -369,28 +376,28 @@ test('lock conflict fails atomically with CASCADE_LOCK_CONFLICT', async () => {
   let tenantId;
   let lockClient;
   try {
-    tenantId = await insertTenant(pool, 'lock');
-    const w1 = await insertWarehouseRoot(pool, tenantId, 'A');
-    const w2 = await insertWarehouseRoot(pool, tenantId, 'B');
-    const parentA = await insertNode(pool, {
+    tenantId = await insertTenant(db, 'lock');
+    const w1 = await insertWarehouseRoot(db, tenantId, 'A');
+    const w2 = await insertWarehouseRoot(db, tenantId, 'B');
+    const parentA = await insertNode(db, {
       tenantId,
       parentId: w1.id,
       warehouseId: w1.id,
       label: 'A'
     });
-    const parentB = await insertNode(pool, {
+    const parentB = await insertNode(db, {
       tenantId,
       parentId: w2.id,
       warehouseId: w2.id,
       label: 'B'
     });
-    const rootId = await insertNode(pool, {
+    const rootId = await insertNode(db, {
       tenantId,
       parentId: parentA,
       warehouseId: w1.id,
       label: 'P'
     });
-    await createDescendants(pool, {
+    await createDescendants(db, {
       tenantId,
       parentId: rootId,
       warehouseId: w1.id,
@@ -398,7 +405,7 @@ test('lock conflict fails atomically with CASCADE_LOCK_CONFLICT', async () => {
       label: 'D'
     });
 
-    const baseDescendants = await fetchDescendants(pool, tenantId, rootId);
+    const baseDescendants = await fetchDescendants(db, tenantId, rootId);
     const lockedId = baseDescendants[0]?.id;
     assert.ok(lockedId);
 
@@ -440,4 +447,3 @@ test('lock conflict fails atomically with CASCADE_LOCK_CONFLICT', async () => {
     if (tenantId) await cleanupTenant(tenantId);
   }
 });
-

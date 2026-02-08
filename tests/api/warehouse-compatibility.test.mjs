@@ -2,14 +2,14 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = `warehouse-compat-${Date.now()}`;
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+let db;
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -48,54 +48,19 @@ function assertOk(res, label, payload, requestBody, allowed = [200, 201]) {
   }
 }
 
-async function ensureSession() {
-  const bootstrapBody = {
+async function getSession() {
+  return ensureSession({
+    apiRequest,
     adminEmail,
     adminPassword,
-    tenantSlug,
-    tenantName: 'Warehouse Compat Tenant',
-  };
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
-  if (bootstrap.res.ok) return bootstrap.payload;
-  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
-
-  let login = await apiRequest('POST', '/auth/login', {
-    body: { email: adminEmail, password: adminPassword, tenantSlug },
+    tenantSlug: tenantSlug,
+    tenantName: 'Warehouse Compat Tenant'
   });
-  if (login.res.status === 400) {
-    const userRes = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [adminEmail]);
-    const userId = userRes.rows[0]?.id;
-    if (!userId) {
-      throw new Error('Login failed: user not found');
-    }
-    const tenantRes = await pool.query('SELECT id FROM tenants WHERE slug = $1', [tenantSlug]);
-    let tenantId = tenantRes.rows[0]?.id;
-    if (!tenantId) {
-      tenantId = randomUUID();
-      await pool.query(
-        `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
-         VALUES ($1, $2, $3, NULL, now())`,
-        [tenantId, 'Warehouse Compat Tenant', tenantSlug]
-      );
-    }
-    await pool.query(
-      `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
-       VALUES ($1, $2, $3, 'admin', 'active', now())
-       ON CONFLICT (tenant_id, user_id) DO NOTHING`,
-      [randomUUID(), tenantId, userId]
-    );
-    const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
-    login = await apiRequest('POST', '/auth/login', { body: loginBody });
-  }
-  assertOk(login.res, 'POST /auth/login', login.payload, { email: adminEmail, tenantSlug }, [200]);
-  return login.payload;
 }
 
 test('warehouse listing includes zones when requested', async (t) => {
-  t.after(async () => {
-    await pool.end();
-  });
-  const session = await ensureSession();
+  const session = await getSession();
+  db = session.pool;
   const token = session.accessToken;
   assert.ok(token);
 
@@ -109,8 +74,8 @@ test('warehouse listing includes zones when requested', async (t) => {
       code,
       name: `Warehouse ${code}`,
       type: 'warehouse',
-      role: 'SELLABLE',
-      isSellable: true,
+      role: null,
+      isSellable: false,
       active: true
     };
     const createRes = await apiRequest('POST', '/locations', { token, body });

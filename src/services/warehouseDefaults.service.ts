@@ -120,6 +120,27 @@ async function ensureDefaultsForWarehouse(
   client?: PoolClient
 ): Promise<void> {
   const executor = client ? client.query.bind(client) : query;
+  const warehouseRes = await executor<{
+    role: LocationRole | null;
+    is_sellable: boolean;
+    parent_location_id: string | null;
+  }>(
+    `SELECT role, is_sellable, parent_location_id
+       FROM locations
+      WHERE tenant_id = $1
+        AND id = $2
+        AND type = 'warehouse'`,
+    [tenantId, warehouseId]
+  );
+  if (warehouseRes.rowCount === 0) {
+    throw new Error('WAREHOUSE_ROOT_NOT_FOUND');
+  }
+  const warehouse = warehouseRes.rows[0];
+  if (warehouse.role !== null || warehouse.is_sellable || warehouse.parent_location_id !== null) {
+    throw new Error(
+      `WAREHOUSE_ROOT_INVALID role=${warehouse.role ?? 'null'} is_sellable=${warehouse.is_sellable} parent_location_id=${warehouse.parent_location_id ?? 'null'}`
+    );
+  }
   const defaultsRes = await executor<{ role: LocationRole; location_id: string }>(
     `SELECT role, location_id
        FROM warehouse_default_location
@@ -130,24 +151,69 @@ async function ensureDefaultsForWarehouse(
   for (const row of defaultsRes.rows) {
     defaults.set(row.role, row.location_id);
   }
-
-  const roleLocRes = await executor<{ id: string; role: LocationRole }>(
-    `SELECT id, role
+  const defaultLocationIds = Array.from(defaults.values());
+  const defaultLocationById = new Map<
+    string,
+    { id: string; role: LocationRole; parent_location_id: string | null; warehouse_id: string; type: string; is_sellable: boolean }
+  >();
+  if (defaultLocationIds.length > 0) {
+    const defaultLocRes = await executor<{
+      id: string;
+      role: LocationRole;
+      parent_location_id: string | null;
+      warehouse_id: string;
+      type: string;
+      is_sellable: boolean;
+    }>(
+      `SELECT id, role, parent_location_id, warehouse_id, type, is_sellable
+         FROM locations
+        WHERE tenant_id = $1
+          AND id = ANY($2::uuid[])`,
+      [tenantId, defaultLocationIds]
+    );
+    for (const row of defaultLocRes.rows) {
+      defaultLocationById.set(row.id, row);
+    }
+  }
+  const roleLocRes = await executor<{ id: string; role: LocationRole; type: string; is_sellable: boolean }>(
+    `SELECT id, role, type, is_sellable
        FROM locations
       WHERE tenant_id = $1
         AND parent_location_id = $2
-        AND role = ANY($3::text[])`,
+        AND role = ANY($3::text[])
+        AND warehouse_id = $2
+        AND (role <> 'SELLABLE' OR is_sellable = true)
+      ORDER BY role, created_at ASC, id ASC`,
     [tenantId, warehouseId, DEFAULT_ROLES]
   );
   const roleLocations = new Map<LocationRole, string>();
   for (const row of roleLocRes.rows) {
+    const expectedType = row.role === 'SCRAP' ? 'scrap' : 'bin';
+    if (row.type !== expectedType) continue;
     if (!roleLocations.has(row.role)) {
       roleLocations.set(row.role, row.id);
     }
   }
 
   for (const role of DEFAULT_ROLES) {
-    if (defaults.has(role)) continue;
+    const existingDefaultId = defaults.get(role) ?? null;
+    const existingDefault = existingDefaultId ? defaultLocationById.get(existingDefaultId) : null;
+    const expectedType = role === 'SCRAP' ? 'scrap' : 'bin';
+    const defaultValid =
+      existingDefault &&
+      existingDefault.role === role &&
+      existingDefault.parent_location_id === warehouseId &&
+      existingDefault.warehouse_id === warehouseId &&
+      existingDefault.type === expectedType &&
+      (role !== 'SELLABLE' || existingDefault.is_sellable);
+
+    if (defaults.has(role)) {
+      if (!defaultValid) {
+        throw new Error('WAREHOUSE_DEFAULT_INVALID');
+      }
+      continue;
+    }
+
     let locationId = roleLocations.get(role) ?? null;
     if (!locationId) {
       const id = uuidv4();
@@ -167,12 +233,13 @@ async function ensureDefaultsForWarehouse(
             is_sellable,
             active,
             parent_location_id,
+            warehouse_id,
             created_at,
             updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $9)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $10)
          ON CONFLICT (code) DO NOTHING
          RETURNING id`,
-        [id, tenantId, code, name, type, role, isSellable, warehouseId, now]
+        [id, tenantId, code, name, type, role, isSellable, warehouseId, warehouseId, now]
       );
       if (insertRes.rowCount && insertRes.rows[0]?.id) {
         locationId = insertRes.rows[0].id;
@@ -199,10 +266,14 @@ async function ensureDefaultsForWarehouse(
         }
       }
     }
+    if (!locationId) {
+      throw new Error('WAREHOUSE_DEFAULT_LOCATION_REQUIRED');
+    }
     await executor(
       `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT DO NOTHING`,
+       ON CONFLICT (tenant_id, warehouse_id, role)
+       DO NOTHING`,
       [tenantId, warehouseId, role, locationId]
     );
   }
@@ -232,5 +303,11 @@ export async function ensureWarehouseDefaultsForWarehouse(
   warehouseId: string,
   client?: PoolClient
 ): Promise<void> {
-  await ensureDefaultsForWarehouse(tenantId, warehouseId, client);
+  if (client) {
+    await ensureDefaultsForWarehouse(tenantId, warehouseId, client);
+    return;
+  }
+  await withTransaction(async (tx) => {
+    await ensureDefaultsForWarehouse(tenantId, warehouseId, tx);
+  });
 }

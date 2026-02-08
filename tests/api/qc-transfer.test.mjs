@@ -2,16 +2,13 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = process.env.SEED_TENANT_SLUG || `default-${randomUUID().slice(0,8)}`;
-
-function createPool() {
-  return new Pool({ connectionString: process.env.DATABASE_URL });
-}
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+let db;
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -77,24 +74,19 @@ function formatLocation(location) {
   };
 }
 
-async function ensureSession() {
-  const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
-  const login = await apiRequest('POST', '/auth/login', { body: loginBody });
-  if (login.res.status === 200) return login.payload;
-  const bootstrapBody = {
+async function getSession() {
+  const session = await ensureSession({
+    apiRequest,
     adminEmail,
     adminPassword,
-    tenantSlug,
+    tenantSlug: tenantSlug,
     tenantName: 'QC Transfer Test Tenant'
-  };
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
-  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
-  const retry = await apiRequest('POST', '/auth/login', { body: loginBody });
-  assertOk(retry.res, 'POST /auth/login', retry.payload, loginBody, [200]);
-  return retry.payload;
+  });
+  db = session.pool;
+  return session;
 }
 
-async function ensureWarehouse(token, tenantId, pool) {
+async function ensureWarehouse(token, tenantId, db) {
   const locationsRes = await apiRequest('GET', '/locations', { token });
   assert.equal(locationsRes.res.status, 200);
   let locations = locationsRes.payload.data || [];
@@ -105,8 +97,8 @@ async function ensureWarehouse(token, tenantId, pool) {
       code,
       name: `Warehouse ${code}`,
       type: 'warehouse',
-      role: 'SELLABLE',
-      isSellable: true,
+      role: null,
+      isSellable: false,
       active: true
     };
     const createRes = await apiRequest('POST', '/locations', { token, body });
@@ -133,7 +125,7 @@ async function ensureWarehouse(token, tenantId, pool) {
       loc = createRes.payload;
       locations = [...locations, loc];
     }
-    await pool.query(
+    await db.query(
       `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING`,
@@ -146,7 +138,7 @@ async function ensureWarehouse(token, tenantId, pool) {
   await ensureRole('HOLD');
   await ensureRole('REJECT');
   assert.ok(warehouse, 'Warehouse required');
-  const defaultsRes = await pool.query(
+  const defaultsRes = await db.query(
     `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
     [tenantId, warehouse.id]
   );
@@ -247,25 +239,20 @@ async function createReceipt({ token, vendorId, itemId, sellableLocationId, quan
   return receiptRes.payload;
 }
 
-test('QC accept retry is idempotent and does not create extra cost layers', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('QC accept retry is idempotent and does not create extra cost layers', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { qaLocationId, sellableLocationId } = await ensureWarehouse(token, tenantId, pool);
+  const { qaLocationId, sellableLocationId } = await ensureWarehouse(token, tenantId, db);
   const vendorId = await createVendor(token);
   const itemId = await createItem(token, sellableLocationId);
   const receipt = await createReceipt({ token, vendorId, itemId, sellableLocationId, quantity: 10 });
   const receiptLineId = receipt.lines[0].id;
 
-  const costRes1 = await pool.query(
+  const costRes1 = await db.query(
     `SELECT COUNT(*) AS count
        FROM inventory_cost_layers
       WHERE tenant_id = $1
@@ -305,7 +292,7 @@ test('QC accept retry is idempotent and does not create extra cost layers', asyn
   assert.equal(qcRes2.res.status, 200);
   assert.equal(qcRes2.payload.id, qcRes.payload.id);
 
-  const movementRes = await pool.query(
+  const movementRes = await db.query(
     `SELECT COUNT(*) AS count
        FROM inventory_movements
       WHERE tenant_id = $1
@@ -316,7 +303,7 @@ test('QC accept retry is idempotent and does not create extra cost layers', asyn
   );
   assert.equal(Number(movementRes.rows[0].count), 1);
 
-  const costRes2 = await pool.query(
+  const costRes2 = await db.query(
     `SELECT COUNT(*) AS count
        FROM inventory_cost_layers
       WHERE tenant_id = $1
@@ -334,19 +321,14 @@ test('QC accept retry is idempotent and does not create extra cost layers', asyn
   assert.ok(Math.abs(Number(qaSnapshot.payload.data?.[0]?.onHand ?? 0)) < 1e-6);
 });
 
-test('QC partial split routes to accept and hold without new cost layers', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('QC partial split routes to accept and hold without new cost layers', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { qaLocationId, sellableLocationId, holdLocationId } = await ensureWarehouse(token, tenantId, pool);
+  const { qaLocationId, sellableLocationId, holdLocationId } = await ensureWarehouse(token, tenantId, db);
   const vendorId = await createVendor(token);
   const itemId = await createItem(token, sellableLocationId);
   const receipt = await createReceipt({ token, vendorId, itemId, sellableLocationId, quantity: 10 });
@@ -402,13 +384,8 @@ test('QC partial split routes to accept and hold without new cost layers', async
   assert.ok(Math.abs(Number(holdSnapshot.payload.data?.[0]?.onHand ?? 0) - 4) < 1e-6);
 });
 
-test('QC validation failures produce no side effects', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('QC validation failures produce no side effects', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token);
@@ -417,7 +394,7 @@ test('QC validation failures produce no side effects', async (t) => {
   const { qaLocationId, sellableLocationId, holdLocationId, warehouse } = await ensureWarehouse(
     token,
     tenantId,
-    pool
+    db
   );
   const vendorId = await createVendor(token);
   const itemId = await createItem(token, sellableLocationId);
@@ -451,7 +428,7 @@ test('QC validation failures produce no side effects', async (t) => {
   });
   assert.equal(insufficientRes.res.status, 409);
 
-  const defaultsBefore = await pool.query(
+  const defaultsBefore = await db.query(
     `SELECT location_id FROM warehouse_default_location
       WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
     [tenantId, warehouse.id]
@@ -471,7 +448,7 @@ test('QC validation failures produce no side effects', async (t) => {
   });
   assert.equal(mismatchLocationRes.res.status, 201);
   const mismatchLocationId = mismatchLocationRes.payload.id;
-  await pool.query(
+  await db.query(
     `UPDATE warehouse_default_location
         SET location_id = $1
       WHERE tenant_id = $2 AND warehouse_id = $3 AND role = 'SELLABLE'`,
@@ -492,7 +469,7 @@ test('QC validation failures produce no side effects', async (t) => {
   });
   assert.equal(mismatchRes.res.status, 400);
 
-  await pool.query(
+  await db.query(
     `UPDATE warehouse_default_location
         SET location_id = $1
       WHERE tenant_id = $2 AND warehouse_id = $3 AND role = 'SELLABLE'`,

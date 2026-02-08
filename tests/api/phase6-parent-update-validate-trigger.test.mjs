@@ -2,9 +2,14 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+let db;
+
+test.before(async () => {
+  const session = await ensureSession();
+  db = session.pool;
+});
 
 function safeJson(value) {
   try {
@@ -15,7 +20,7 @@ function safeJson(value) {
 }
 
 async function withTx(fn) {
-  const client = await pool.connect();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     const result = await fn(client);
@@ -55,9 +60,9 @@ async function insertTenant(client, label) {
 }
 
 async function cleanupTenant(tenantId) {
-  await pool.query(`DELETE FROM warehouse_default_location WHERE tenant_id = $1`, [tenantId]);
-  await pool.query(`DELETE FROM locations WHERE tenant_id = $1`, [tenantId]);
-  await pool.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
+  await db.query(`DELETE FROM warehouse_default_location WHERE tenant_id = $1`, [tenantId]);
+  await db.query(`DELETE FROM locations WHERE tenant_id = $1`, [tenantId]);
+  await db.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
 }
 
 async function insertWarehouseRoot(db, tenantId, label) {
@@ -67,7 +72,7 @@ async function insertWarehouseRoot(db, tenantId, label) {
     `INSERT INTO locations (
       id, tenant_id, code, name, type, active, created_at, updated_at,
       role, is_sellable, parent_location_id, warehouse_id
-    ) VALUES ($1, $2, $3, $4, 'warehouse', true, now(), now(), 'SELLABLE', true, NULL, $1)`,
+    ) VALUES ($1, $2, $3, $4, 'warehouse', true, now(), now(), NULL, false, NULL, $1)`,
     [id, tenantId, code, `Warehouse ${label}`]
   );
   return { id, code };
@@ -365,4 +370,3 @@ test('blocks move when default points to deep descendant', async () => {
     if (tenantId) await cleanupTenant(tenantId);
   }
 });
-

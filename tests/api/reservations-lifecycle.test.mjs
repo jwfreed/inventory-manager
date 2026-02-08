@@ -2,18 +2,13 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = process.env.SEED_TENANT_SLUG || `default-${randomUUID().slice(0,8)}`;
-
-function createPool() {
-  return new Pool({ connectionString: process.env.DATABASE_URL });
-}
-
-const sharedPool = createPool();
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+let db;
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -79,24 +74,19 @@ function formatLocation(location) {
   };
 }
 
-async function ensureSession() {
-  const bootstrapBody = {
+async function getSession() {
+  const session = await ensureSession({
+    apiRequest,
     adminEmail,
     adminPassword,
-    tenantSlug,
-    tenantName: 'Reservation Lifecycle Tenant',
-  };
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
-  if (bootstrap.res.ok) return bootstrap.payload;
-  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
-
-  const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
-  const login = await apiRequest('POST', '/auth/login', { body: loginBody });
-  assertOk(login.res, 'POST /auth/login', login.payload, loginBody, [200]);
-  return login.payload;
+    tenantSlug: tenantSlug,
+    tenantName: 'Reservation Lifecycle Tenant'
+  });
+  db = session.pool;
+  return session;
 }
 
-async function ensureWarehouse(token, tenantId, pool = sharedPool) {
+async function ensureWarehouse(token, tenantId, db) {
   if (!tenantId) {
     const meRes = await apiRequest('GET', '/auth/me', { token });
     assert.equal(meRes.res.status, 200);
@@ -113,8 +103,8 @@ async function ensureWarehouse(token, tenantId, pool = sharedPool) {
         code,
         name: `Warehouse ${code}`,
         type: 'warehouse',
-        role: 'SELLABLE',
-        isSellable: true,
+        role: null,
+        isSellable: false,
         active: true
     };
     const createRes = await apiRequest('POST', '/locations', { token, body });
@@ -141,7 +131,7 @@ async function ensureWarehouse(token, tenantId, pool = sharedPool) {
       loc = createRes.payload;
       locations = [...locations, loc];
     }
-    await pool.query(
+    await db.query(
       `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING`,
@@ -153,7 +143,7 @@ async function ensureWarehouse(token, tenantId, pool = sharedPool) {
   await ensureRole('QA');
   await ensureRole('HOLD');
   await ensureRole('REJECT');
-  const defaultsRes = await pool.query(
+  const defaultsRes = await db.query(
     `SELECT location_id
        FROM warehouse_default_location
       WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
@@ -221,17 +211,12 @@ async function seedItemAndStock(token, sellableLocationId, quantity = 10) {
   return itemId;
 }
 
-test('Reserve → Cancel → ATP returns', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Reserve → Cancel → ATP returns', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   assert.ok(token);
 
-  const { sellable } = await ensureWarehouse(token, session.tenant.id, pool);
+  const { sellable } = await ensureWarehouse(token, session.tenant.id, db);
   const itemId = await seedItemAndStock(token, sellable.id, 10);
 
   const reserveRes = await apiRequest('POST', '/reservations', {
@@ -274,19 +259,14 @@ test('Reserve → Cancel → ATP returns', async (t) => {
   assert.ok(Math.abs(Number(row2.availableToPromise) - 10) < 1e-6);
 });
 
-test('Reserve → Allocate → Fulfill keeps ATP reduced until fulfilled', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Reserve → Allocate → Fulfill keeps ATP reduced until fulfilled', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { sellable } = await ensureWarehouse(token);
+  const { sellable } = await ensureWarehouse(token, tenantId, db);
   const itemId = await seedItemAndStock(token, sellable.id, 8);
 
   const reserveRes = await apiRequest('POST', '/reservations', {
@@ -324,7 +304,7 @@ test('Reserve → Allocate → Fulfill keeps ATP reduced until fulfilled', async
   assert.equal(fulfillRes.res.status, 200);
   assert.equal(fulfillRes.payload.status, 'FULFILLED');
 
-  const balanceRes = await pool.query(
+  const balanceRes = await db.query(
     `SELECT reserved, allocated
        FROM inventory_balance
       WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
@@ -335,17 +315,13 @@ test('Reserve → Allocate → Fulfill keeps ATP reduced until fulfilled', async
   assert.ok(Math.abs(Number(balanceRes.rows[0].allocated)) < 1e-6);
 });
 
-test('Retry reserve with same idempotency key does not duplicate', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Retry reserve with same idempotency key does not duplicate', async () => {
+  const session = await getSession();
   const token = session.accessToken;
+  const tenantId = session.tenant?.id;
   assert.ok(token);
 
-  const { sellable } = await ensureWarehouse(token);
+  const { sellable } = await ensureWarehouse(token, tenantId, db);
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
   const idemKey = `reserve-${randomUUID()}`;
@@ -377,17 +353,13 @@ test('Retry reserve with same idempotency key does not duplicate', async (t) => 
   assert.equal(res2.payload.data[0].id, res1.payload.data[0].id);
 });
 
-test('Concurrent reserve with same idempotency key returns same reservation', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Concurrent reserve with same idempotency key returns same reservation', async () => {
+  const session = await getSession();
   const token = session.accessToken;
+  const tenantId = session.tenant?.id;
   assert.ok(token);
 
-  const { sellable } = await ensureWarehouse(token);
+  const { sellable } = await ensureWarehouse(token, tenantId, db);
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
   const idemKey = `reserve-${randomUUID()}`;
@@ -415,17 +387,13 @@ test('Concurrent reserve with same idempotency key returns same reservation', as
   assert.equal(r1.payload.data[0].id, r2.payload.data[0].id);
 });
 
-test('Concurrent reservations against limited stock: one succeeds, one fails', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Concurrent reservations against limited stock: one succeeds, one fails', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   assert.ok(token);
 
-  const { sellable } = await ensureWarehouse(token);
+  const tenantId = session.tenant?.id;
+  const { sellable } = await ensureWarehouse(token, tenantId, db);
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
   const makeReservation = (key) =>
@@ -456,17 +424,12 @@ test('Concurrent reservations against limited stock: one succeeds, one fails', a
   assert.deepEqual(statuses, [201, 409]);
 });
 
-test('Guardrails reject illegal transitions', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Guardrails reject illegal transitions', async () => {
+  const session = await getSession();
   const token = session.accessToken;
+  const tenantId = session.tenant?.id;
   assert.ok(token);
-
-  const { sellable } = await ensureWarehouse(token);
+  const { sellable } = await ensureWarehouse(token, tenantId, db);
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
   const reserveRes = await apiRequest('POST', '/reservations', {

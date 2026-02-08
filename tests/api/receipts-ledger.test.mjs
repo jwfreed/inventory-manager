@@ -2,14 +2,13 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = process.env.SEED_TENANT_SLUG || `default-${randomUUID().slice(0,8)}`;
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+let db;
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -75,21 +74,16 @@ function formatLocation(location) {
   };
 }
 
-async function ensureSession() {
-  const bootstrapBody = {
+async function getSession() {
+  const session = await ensureSession({
+    apiRequest,
     adminEmail,
     adminPassword,
-    tenantSlug,
-    tenantName: 'Receipt Test Tenant',
-  };
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
-  if (bootstrap.res.ok) return bootstrap.payload;
-  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
-
-  const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
-  const login = await apiRequest('POST', '/auth/login', { body: loginBody });
-  assertOk(login.res, 'POST /auth/login', login.payload, loginBody, [200]);
-  return login.payload;
+    tenantSlug: tenantSlug,
+    tenantName: 'Receipt Test Tenant'
+  });
+  db = session.pool;
+  return session;
 }
 
 async function getLocationByCode(token, code) {
@@ -106,12 +100,8 @@ async function getLocationByRole(token, role) {
   return rows.find((loc) => loc.role === role) || null;
 }
 
-test('PO receipt posts ledger into QA and QC reclassifies without new cost layers', async (t) => {
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('PO receipt posts ledger into QA and QC reclassifies without new cost layers', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   const userId = session.user?.id;
@@ -128,8 +118,8 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
       code,
       name: `Warehouse ${code}`,
       type: 'warehouse',
-      role: 'SELLABLE',
-      isSellable: true,
+      role: null,
+      isSellable: false,
       active: true
     };
     const createRes = await apiRequest('POST', '/locations', { token, body });
@@ -156,7 +146,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
       loc = createRes.payload;
       locations = [...locations, loc];
     }
-    await pool.query(
+    await db.query(
       `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING`,
@@ -171,7 +161,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.ok(warehouse, 'Warehouse required');
 
   // Get warehouse default locations - these are what the receipt service will use
-  const defaultsRes = await pool.query(
+  const defaultsRes = await db.query(
     `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
     [tenantId, warehouse.id]
   );
@@ -299,7 +289,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   let receiptPayload = receiptRes.payload;
   if (receiptRes.res.status !== 201) {
     if (receiptRes.res.status === 409) {
-      const existing = await pool.query(
+      const existing = await db.query(
         `SELECT id
            FROM purchase_order_receipts
           WHERE tenant_id = $1
@@ -361,7 +351,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   const qaAtp = atpRows.find((row) => row.locationId === qaLocation.id);
   assert.equal(qaAtp, undefined);
 
-  const balanceRes = await pool.query(
+  const balanceRes = await db.query(
     `SELECT on_hand
        FROM inventory_balance
       WHERE tenant_id = $1
@@ -373,7 +363,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.equal(balanceRes.rowCount, 1);
   assert.ok(Math.abs(Number(balanceRes.rows[0].on_hand) - 10) < 1e-6);
 
-  const costRes1 = await pool.query(
+  const costRes1 = await db.query(
     `SELECT COUNT(*) AS count
        FROM inventory_cost_layers
       WHERE tenant_id = $1
@@ -395,7 +385,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.equal(receiptRes2.res.status, 200);
   assert.equal(receiptRes2.payload.id, receiptId);
 
-  const costRes2 = await pool.query(
+  const costRes2 = await db.query(
     `SELECT COUNT(*) AS count
        FROM inventory_cost_layers
       WHERE tenant_id = $1
@@ -453,7 +443,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.ok(qaOut && Number(qaOut.quantityDelta) < 0);
   assert.ok(fgIn && Number(fgIn.quantityDelta) > 0);
 
-  const costRes3 = await pool.query(
+  const costRes3 = await db.query(
     `SELECT COUNT(*) AS count
        FROM inventory_cost_layers
       WHERE tenant_id = $1

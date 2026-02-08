@@ -351,8 +351,8 @@ export async function createLocation(tenantId: string, data: LocationInput) {
   const now = new Date();
   const id = uuidv4();
   const active = data.active ?? true;
-  const role = data.role ?? 'SELLABLE';
-  const isSellable = data.isSellable ?? role === 'SELLABLE';
+  const role = data.type === 'warehouse' ? null : (data.role ?? 'SELLABLE');
+  const isSellable = data.type === 'warehouse' ? false : (data.isSellable ?? role === 'SELLABLE');
 
   return withTransaction(async (client) => {
     if (role === 'SELLABLE' && !isSellable) {
@@ -376,7 +376,7 @@ export async function createLocation(tenantId: string, data: LocationInput) {
         role,
         isSellable,
         active,
-        data.parentLocationId ?? null,
+        data.type === 'warehouse' ? null : (data.parentLocationId ?? null),
         data.maxWeight ?? null,
         data.maxVolume ?? null,
         data.zone ?? null,
@@ -401,14 +401,39 @@ export async function updateLocation(tenantId: string, id: string, data: Locatio
   const now = new Date();
   const active = data.active ?? true;
   return withTransaction(async (client) => {
-    const existingRes = await client.query<{ role: string; is_sellable: boolean }>(
-      `SELECT role, is_sellable FROM locations WHERE id = $1 AND tenant_id = $2`,
+    const existingRes = await client.query<{
+      role: string | null;
+      is_sellable: boolean;
+      type: string;
+      parent_location_id: string | null;
+    }>(
+      `SELECT role, is_sellable, type, parent_location_id
+         FROM locations
+        WHERE id = $1 AND tenant_id = $2`,
       [id, tenantId]
     );
     if (existingRes.rowCount === 0) return null;
     const existing = existingRes.rows[0];
-    const role = data.role ?? existing.role ?? 'SELLABLE';
-    const isSellable = data.isSellable ?? existing.is_sellable ?? role === 'SELLABLE';
+    let role: string | null;
+    let isSellable: boolean;
+    let parentLocationId: string | null;
+    const targetType = data.type ?? existing.type;
+    if (targetType === 'warehouse') {
+      if (existing.type === 'warehouse' &&
+          (existing.role !== null || existing.is_sellable || existing.parent_location_id !== null)) {
+        throw new Error('WAREHOUSE_ROOT_INVALID');
+      }
+      if (data.role != null || data.isSellable === true || data.parentLocationId != null) {
+        throw new Error('WAREHOUSE_ROOT_INVALID');
+      }
+      role = null;
+      isSellable = false;
+      parentLocationId = null;
+    } else {
+      role = data.role ?? existing.role ?? 'SELLABLE';
+      isSellable = data.isSellable ?? existing.is_sellable ?? role === 'SELLABLE';
+      parentLocationId = data.parentLocationId ?? null;
+    }
     if (role === 'SELLABLE' && !isSellable) {
       throw new Error('LOCATION_ROLE_SELLABLE_MISMATCH');
     }
@@ -437,7 +462,7 @@ export async function updateLocation(tenantId: string, id: string, data: Locatio
         role,
         isSellable,
         active,
-        data.parentLocationId ?? null,
+        parentLocationId,
         data.maxWeight ?? null,
         data.maxVolume ?? null,
         data.zone ?? null,
@@ -530,9 +555,9 @@ export async function createStandardWarehouseTemplate(
       const warehouseRes = await client.query(
         `INSERT INTO locations (
             id, tenant_id, code, name, type, role, is_sellable, active, parent_location_id, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, NULL, $8, $8)
+         ) VALUES ($1, $2, $3, $4, $5, NULL, false, true, NULL, $6, $6)
          RETURNING *`,
-        [warehouseIdNew, tenantId, warehouseCode, 'Main Warehouse', 'warehouse', 'SELLABLE', true, now]
+        [warehouseIdNew, tenantId, warehouseCode, 'Main Warehouse', 'warehouse', now]
       );
       if (warehouseRes.rowCount > 0) {
         created.push(mapLocation(warehouseRes.rows[0]));
@@ -541,28 +566,18 @@ export async function createStandardWarehouseTemplate(
     }
 
     const baseLocations = [
-      { code: 'RAW', name: 'Raw Stock', type: 'bin', role: 'SELLABLE', parentLocationId: warehouseId },
-      { code: 'WIP', name: 'Work in Progress', type: 'bin', role: 'SELLABLE', parentLocationId: warehouseId },
-      { code: 'FG', name: 'Finished Goods', type: 'bin', role: 'SELLABLE', parentLocationId: warehouseId },
-      { code: 'SHIP-STG', name: 'Shipping Staging', type: 'bin', role: 'SELLABLE', parentLocationId: warehouseId },
+      { code: 'SELLABLE', name: 'Sellable', type: 'bin', role: 'SELLABLE', parentLocationId: warehouseId },
+      { code: 'QA', name: 'Quality Inspection', type: 'bin', role: 'QA', parentLocationId: warehouseId },
       { code: 'HOLD', name: 'QC Hold', type: 'bin', role: 'HOLD', parentLocationId: warehouseId },
       { code: 'REJECT', name: 'QC Reject', type: 'bin', role: 'REJECT', parentLocationId: warehouseId },
-      { code: 'SCRAP', name: 'Scrap', type: 'scrap', role: 'SCRAP', parentLocationId: warehouseId },
-      { code: 'STORE', name: 'Store/Customer', type: 'customer', role: 'SELLABLE', parentLocationId: null }
+      { code: 'SCRAP', name: 'Scrap', type: 'scrap', role: 'SCRAP', parentLocationId: warehouseId }
     ];
     if (includeReceivingQc) {
       baseLocations.push({
         code: 'RECV',
         name: 'Receiving',
         type: 'bin',
-        role: 'SELLABLE',
-        parentLocationId: warehouseId
-      });
-      baseLocations.push({
-        code: 'QC',
-        name: 'Quality Inspection',
-        type: 'bin',
-        role: 'QA',
+        role: null,
         parentLocationId: warehouseId
       });
     }
@@ -572,8 +587,19 @@ export async function createStandardWarehouseTemplate(
       [tenantId]
     );
     const existingCodes = new Set(existingRes.rows.map((r) => r.code));
+    const existingRoleRes = await client.query<{ role: string }>(
+      `SELECT role
+         FROM locations
+        WHERE tenant_id = $1
+          AND parent_location_id = $2
+          AND role = ANY($3::text[])
+          AND warehouse_id = $2`,
+      [tenantId, warehouseId, ['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRAP']]
+    );
+    const existingRoles = new Set(existingRoleRes.rows.map((r) => r.role));
 
     for (const loc of baseLocations) {
+      if (loc.role && existingRoles.has(loc.role)) continue;
       if (existingCodes.has(loc.code)) continue;
       const code = await resolveUniqueLocationCode(client, loc.code, warehouseId);
       const id = uuidv4();

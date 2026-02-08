@@ -1,11 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com'
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local'
-const tenantSlug = process.env.SEED_TENANT_SLUG || `default-${randomUUID().slice(0,8)}`
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default'
 
 async function apiRequest(method, path, { token, body, params } = {}) {
   const url = new URL(baseUrl + path)
@@ -28,27 +29,19 @@ async function apiRequest(method, path, { token, body, params } = {}) {
   return { res, payload }
 }
 
-async function ensureSession() {
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', {
-    body: {
-      adminEmail,
-      adminPassword,
-      tenantSlug,
-      tenantName: 'Negative Stock Tenant',
-    },
-  })
-  if (bootstrap.res.ok) return bootstrap.payload.accessToken
-  assert.equal(bootstrap.res.status, 409)
-
-  const login = await apiRequest('POST', '/auth/login', {
-    body: { email: adminEmail, password: adminPassword, tenantSlug },
-  })
-  assert.equal(login.res.status, 200)
-  return login.payload.accessToken
+async function getSession() {
+  const session = await ensureSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug: tenantSlug,
+    tenantName: 'Negative Stock Tenant'
+  });
+  return session.accessToken;
 }
 
 test('posting work order issue and batch blocks on insufficient usable stock', async () => {
-  const token = await ensureSession()
+  const token = await getSession()
   assert.ok(token)
   const unique = Date.now()
 
@@ -148,7 +141,7 @@ test('posting work order issue and batch blocks on insufficient usable stock', a
 })
 
 test('posting negative inventory adjustment blocks on insufficient stock', async () => {
-  const token = await ensureSession()
+  const token = await getSession()
   assert.ok(token)
   const unique = Date.now()
 
@@ -205,7 +198,7 @@ test('posting negative inventory adjustment blocks on insufficient stock', async
 })
 
 test('reservation creates backorder when insufficient on-hand', async () => {
-  const token = await ensureSession()
+  const token = await getSession()
   assert.ok(token)
   const unique = Date.now()
 

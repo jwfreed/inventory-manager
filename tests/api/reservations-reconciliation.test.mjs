@@ -2,19 +2,14 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = process.env.SEED_TENANT_SLUG || `default-${randomUUID().slice(0,8)}`;
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+let db;
 const TOLERANCE = 1e-6;
-
-function createPool() {
-  return new Pool({ connectionString: process.env.DATABASE_URL });
-}
-
-const sharedPool = createPool();
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -80,24 +75,19 @@ function formatLocation(location) {
   };
 }
 
-async function ensureSession() {
-  const bootstrapBody = {
+async function getSession() {
+  const session = await ensureSession({
+    apiRequest,
     adminEmail,
     adminPassword,
-    tenantSlug,
-    tenantName: 'Reservation Reconciliation Tenant',
-  };
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
-  if (bootstrap.res.ok) return bootstrap.payload;
-  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
-
-  const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
-  const login = await apiRequest('POST', '/auth/login', { body: loginBody });
-  assertOk(login.res, 'POST /auth/login', login.payload, loginBody, [200]);
-  return login.payload;
+    tenantSlug: tenantSlug,
+    tenantName: 'Reservation Reconciliation Tenant'
+  });
+  db = session.pool;
+  return session;
 }
 
-async function ensureWarehouse(token, tenantId, pool = sharedPool) {
+async function ensureWarehouse(token, tenantId, db) {
   if (!tenantId) {
     const meRes = await apiRequest('GET', '/auth/me', { token });
     assert.equal(meRes.res.status, 200);
@@ -114,8 +104,8 @@ async function ensureWarehouse(token, tenantId, pool = sharedPool) {
         code,
         name: `Warehouse ${code}`,
         type: 'warehouse',
-        role: 'SELLABLE',
-        isSellable: true,
+        role: null,
+        isSellable: false,
         active: true
     };
     const createRes = await apiRequest('POST', '/locations', { token, body });
@@ -142,7 +132,7 @@ async function ensureWarehouse(token, tenantId, pool = sharedPool) {
       loc = createRes.payload;
       locations = [...locations, loc];
     }
-    await pool.query(
+    await db.query(
       `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING`,
@@ -154,7 +144,7 @@ async function ensureWarehouse(token, tenantId, pool = sharedPool) {
   await ensureRole('QA');
   await ensureRole('HOLD');
   await ensureRole('REJECT');
-  const defaultsRes = await pool.query(
+  const defaultsRes = await db.query(
     `SELECT location_id
        FROM warehouse_default_location
       WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
@@ -222,8 +212,8 @@ async function seedItemAndStock(token, sellableLocationId, quantity = 10) {
   return itemId;
 }
 
-async function expireReservationsDirect(pool, tenantId) {
-  const client = await pool.connect();
+async function expireReservationsDirect(db, tenantId) {
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     const res = await client.query(
@@ -265,19 +255,14 @@ async function expireReservationsDirect(pool, tenantId) {
   }
 }
 
-test('Reservation balance reconciliation matches reservations remaining qty', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Reservation balance reconciliation matches reservations remaining qty', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { sellable } = await ensureWarehouse(token, session.tenant.id, pool);
+  const { sellable } = await ensureWarehouse(token, session.tenant.id, db);
   const itemId = await seedItemAndStock(token, sellable.id, 12);
 
   const reserveRes = await apiRequest('POST', '/reservations', {
@@ -333,9 +318,9 @@ test('Reservation balance reconciliation matches reservations remaining qty', as
   });
   assert.equal(expReserve.res.status, 201);
 
-  await expireReservationsDirect(pool, tenantId);
+  await expireReservationsDirect(db, tenantId);
 
-  const recon = await pool.query(
+  const recon = await db.query(
     `WITH reservation_committed AS (
        SELECT tenant_id,
               item_id,

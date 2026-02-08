@@ -1,15 +1,14 @@
 import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = `cost-layer-concurrency-${Date.now()}`;
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+let db;
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -47,45 +46,16 @@ function assertOk(res, label, payload, requestBody, allowed = [200, 201]) {
     throw new Error(`BOOTSTRAP_FAILED ${label} status=${res.status} body=${body}${req ? ` request=${req}` : ''}`);
   }
 }
-async function ensureSession() {
-  const bootstrapBody = {
+async function getSession() {
+  const session = await ensureSession({
+    apiRequest,
     adminEmail,
     adminPassword,
-    tenantSlug,
-    tenantName: 'Cost Layer Concurrency Tenant',
-  };
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
-  if (bootstrap.res.ok) return bootstrap.payload;
-  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
-
-  let login = await apiRequest('POST', '/auth/login', {
-    body: { email: adminEmail, password: adminPassword, tenantSlug },
+    tenantSlug: tenantSlug,
+    tenantName: 'Cost Layer Concurrency Tenant'
   });
-  if (login.res.status === 400) {
-    const userRes = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [adminEmail]);
-    const baseUserId = userRes.rows[0]?.id;
-    assert.ok(baseUserId);
-    const tenantRes = await pool.query('SELECT id FROM tenants WHERE slug = $1', [tenantSlug]);
-    let tenantId = tenantRes.rows[0]?.id;
-    if (!tenantId) {
-      tenantId = randomUUID();
-      await pool.query(
-        `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
-         VALUES ($1, $2, $3, NULL, now())`,
-        [tenantId, 'Cost Layer Concurrency Tenant', tenantSlug]
-      );
-    }
-    await pool.query(
-      `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
-       VALUES ($1, $2, $3, 'admin', 'active', now())
-       ON CONFLICT (tenant_id, user_id) DO NOTHING`,
-      [randomUUID(), tenantId, baseUserId]
-    );
-    const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
-    login = await apiRequest('POST', '/auth/login', { body: loginBody });
-  }
-  assertOk(login.res, 'POST /auth/login', login.payload, { email: adminEmail, tenantSlug }, [200]);
-  return login.payload;
+  db = session.pool;
+  return session;
 }
 
 async function ensureWarehouseRoot(token) {
@@ -99,8 +69,8 @@ async function ensureWarehouseRoot(token) {
       code,
       name: `Warehouse ${code}`,
       type: 'warehouse',
-      role: 'SELLABLE',
-      isSellable: true,
+      role: null,
+      isSellable: false,
       active: true
     };
     const createRes = await apiRequest('POST', '/locations', { token, body });
@@ -149,12 +119,8 @@ async function ensureWarehouseRoot(token) {
   return warehouse;
 }
 
-test('cost layer inserts are concurrency-safe for receipts', async (t) => {
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('cost layer inserts are concurrency-safe for receipts', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token);
@@ -184,7 +150,7 @@ test('cost layer inserts are concurrency-safe for receipts', async (t) => {
 
   const sourceId = randomUUID();
   const insertLayer = () =>
-    pool.query(
+    db.query(
       `INSERT INTO inventory_cost_layers (
           id, tenant_id, item_id, location_id, uom, layer_date, layer_sequence,
           original_quantity, remaining_quantity, unit_cost, extended_cost,
@@ -196,7 +162,7 @@ test('cost layer inserts are concurrency-safe for receipts', async (t) => {
 
   await Promise.all([insertLayer(), insertLayer()]);
 
-  const countRes = await pool.query(
+  const countRes = await db.query(
     `SELECT COUNT(*)::int AS count
        FROM inventory_cost_layers
       WHERE tenant_id = $1

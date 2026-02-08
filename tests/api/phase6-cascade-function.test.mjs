@@ -2,9 +2,16 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool, Client } from 'pg';
+import { Client } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+let db;
+
+test.before(async () => {
+  const session = await ensureSession();
+  db = session.pool;
+});
+
 
 function safeJson(value) {
   try {
@@ -15,7 +22,7 @@ function safeJson(value) {
 }
 
 async function withTx(fn) {
-  const client = await pool.connect();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     const result = await fn(client);
@@ -41,8 +48,8 @@ async function createTenant(client, label) {
 }
 
 async function cleanupTenant(tenantId) {
-  await pool.query(`DELETE FROM locations WHERE tenant_id = $1`, [tenantId]);
-  await pool.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
+  await db.query(`DELETE FROM locations WHERE tenant_id = $1`, [tenantId]);
+  await db.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
 }
 
 async function createWarehouseRoot(client, tenantId, label) {
@@ -52,7 +59,7 @@ async function createWarehouseRoot(client, tenantId, label) {
     `INSERT INTO locations (
       id, tenant_id, code, name, type, active, created_at, updated_at,
       role, is_sellable, parent_location_id, warehouse_id
-    ) VALUES ($1, $2, $3, $4, 'warehouse', true, now(), now(), 'SELLABLE', true, NULL, $1)`,
+    ) VALUES ($1, $2, $3, $4, 'warehouse', true, now(), now(), NULL, false, NULL, $1)`,
     [id, tenantId, code, `Warehouse ${label}`]
   );
   return { id, code };
@@ -242,20 +249,20 @@ test('cascade function aborts on lock conflict with no partial updates', async (
   try {
     tenantId = randomUUID();
     const slug = `phase6-lock-${randomUUID().slice(0, 8)}`;
-    await pool.query(
+    await db.query(
       `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
        VALUES ($1, $2, $3, NULL, now())`,
       [tenantId, `Phase6 lock`, slug]
     );
-    const w1 = await createWarehouseRoot(pool, tenantId, 'A');
-    const w2 = await createWarehouseRoot(pool, tenantId, 'B');
-    const parentId = await createLocation(pool, {
+    const w1 = await createWarehouseRoot(db, tenantId, 'A');
+    const w2 = await createWarehouseRoot(db, tenantId, 'B');
+    const parentId = await createLocation(db, {
       tenantId,
       parentLocationId: w1.id,
       warehouseId: w1.id,
       label: 'P-LOCK'
     });
-    await createDescendants(pool, {
+    await createDescendants(db, {
       tenantId,
       parentId,
       warehouseId: w1.id,
@@ -263,7 +270,7 @@ test('cascade function aborts on lock conflict with no partial updates', async (
       label: 'D-LOCK'
     });
 
-    const baseDescendants = await fetchDescendants(pool, tenantId, parentId);
+    const baseDescendants = await fetchDescendants(db, tenantId, parentId);
     const lockedId = baseDescendants[0]?.id;
     assert.ok(lockedId);
 

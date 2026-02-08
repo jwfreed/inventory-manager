@@ -4,7 +4,7 @@ const LOCATION_ROLE_VALUES = "('SELLABLE','QA','HOLD','REJECT','SCRAP')";
 
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.addColumn('locations', {
-    role: { type: 'text', notNull: true, default: 'SELLABLE' },
+    role: { type: 'text', default: 'SELLABLE' },
     is_sellable: { type: 'boolean', notNull: true, default: true }
   });
 
@@ -33,6 +33,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.sql(`
     UPDATE locations
        SET role = CASE
+         WHEN type = 'warehouse' THEN NULL
          WHEN LOWER(type) IN ('qa','quarantine') THEN 'QA'
          WHEN LOWER(type) = 'hold' THEN 'HOLD'
          WHEN LOWER(type) IN ('reject','mrb') THEN 'REJECT'
@@ -43,7 +44,10 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
 
   pgm.sql(`
     UPDATE locations
-       SET is_sellable = (role = 'SELLABLE')
+       SET is_sellable = CASE
+         WHEN type = 'warehouse' THEN false
+         ELSE (role = 'SELLABLE')
+       END
   `);
 
   // Record potential role misclassifications for manual review (no runtime heuristics).

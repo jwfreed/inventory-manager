@@ -2,14 +2,13 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = process.env.SEED_TENANT_SLUG || `default-${randomUUID().slice(0,8)}`;
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+let db;
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -75,21 +74,16 @@ function formatLocation(location) {
   };
 }
 
-async function ensureSession() {
-  const bootstrapBody = {
+async function getSession() {
+  const session = await ensureSession({
+    apiRequest,
     adminEmail,
     adminPassword,
-    tenantSlug,
+    tenantSlug: tenantSlug,
     tenantName: 'ATP Expired Lots Tenant'
-  };
-  const bootstrap = await apiRequest('POST', '/auth/bootstrap', { body: bootstrapBody });
-  if (bootstrap.res.ok) return bootstrap.payload;
-  assertOk(bootstrap.res, 'POST /auth/bootstrap', bootstrap.payload, bootstrapBody, [200, 201, 409]);
-
-  const loginBody = { email: adminEmail, password: adminPassword, tenantSlug };
-  const login = await apiRequest('POST', '/auth/login', { body: loginBody });
-  assertOk(login.res, 'POST /auth/login', login.payload, loginBody, [200]);
-  return login.payload;
+  });
+  db = session.pool;
+  return session;
 }
 
 async function ensureWarehouse(token, tenantId) {
@@ -103,8 +97,8 @@ async function ensureWarehouse(token, tenantId) {
       code,
       name: `Warehouse ${code}`,
       type: 'warehouse',
-      role: 'SELLABLE',
-      isSellable: true,
+      role: null,
+      isSellable: false,
       active: true
     };
     const createRes = await apiRequest('POST', '/locations', { token, body });
@@ -131,7 +125,7 @@ async function ensureWarehouse(token, tenantId) {
       loc = createRes.payload;
       locations = [...locations, loc];
     }
-    await pool.query(
+    await db.query(
       `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING`,
@@ -142,7 +136,7 @@ async function ensureWarehouse(token, tenantId) {
   await ensureRole('SELLABLE');
   await ensureRole('QA');
 
-  const defaultsRes = await pool.query(
+  const defaultsRes = await db.query(
     `SELECT role, location_id
        FROM warehouse_default_location
       WHERE tenant_id = $1 AND warehouse_id = $2 AND role IN ('SELLABLE','QA')`,
@@ -180,7 +174,7 @@ async function ensureWarehouse(token, tenantId) {
 async function createCustomer(tenantId) {
   const id = randomUUID();
   const code = `C-${randomUUID()}`;
-  await pool.query(
+  await db.query(
     `INSERT INTO customers (id, tenant_id, code, name, active, created_at, updated_at)
      VALUES ($1, $2, $3, $4, true, now(), now())`,
     [id, tenantId, code, `Customer ${code}`]
@@ -334,7 +328,7 @@ async function qcAccept(token, receiptLineId, quantity, actorId) {
 }
 
 test('ATP excludes expired lots from sellable on-hand', async () => {
-  const session = await ensureSession();
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token && tenantId);
@@ -358,7 +352,7 @@ test('ATP excludes expired lots from sellable on-hand', async () => {
 });
 
 test('QC accept into sellable for expired lot stays excluded from ATP', async () => {
-  const session = await ensureSession();
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   const userId = session.user?.id;
@@ -377,7 +371,7 @@ test('QC accept into sellable for expired lot stays excluded from ATP', async ()
   const receiptLineId = await receiveIntoQa(token, vendorRes.payload.id, itemId, sellable.id, 10);
   const qcEventId = await qcAccept(token, receiptLineId, 10, userId);
 
-  const linkRes = await pool.query(
+  const linkRes = await db.query(
     `SELECT inventory_movement_id FROM qc_inventory_links WHERE tenant_id = $1 AND qc_event_id = $2`,
     [tenantId, qcEventId]
   );
@@ -398,12 +392,8 @@ test('QC accept into sellable for expired lot stays excluded from ATP', async ()
   assert.equal(atp, null);
 });
 
-test('Derived backorder ignores expired lots', async (t) => {
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Derived backorder ignores expired lots', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token && tenantId);

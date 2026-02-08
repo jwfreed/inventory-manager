@@ -2,16 +2,13 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || `ci-admin+${randomUUID().slice(0,8)}@example.com`;
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = process.env.SEED_TENANT_SLUG || `default-${randomUUID().slice(0,8)}`;
-
-function createPool() {
-  return new Pool({ connectionString: process.env.DATABASE_URL });
-}
+const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+let db;
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -34,23 +31,25 @@ async function apiRequest(method, path, { token, body, params, headers } = {}) {
   return { res, payload };
 }
 
-async function ensureSession() {
-  const res = await apiRequest('POST', '/auth/login', {
-    body: { email: adminEmail, password: adminPassword, tenantSlug }
+async function getSession() {
+  const session = await ensureSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug: tenantSlug,
+    tenantName: tenantSlug
   });
-  if (res.res.status !== 200) {
-    throw new Error(`Login failed: ${res.res.status}`);
-  }
-  return res.payload;
+  db = session.pool;
+  return session;
 }
 
-async function ensureWarehouse(token, tenantId, pool) {
+async function ensureWarehouse(token, tenantId, db) {
   const locationsRes = await apiRequest('GET', '/locations', { token });
   assert.equal(locationsRes.res.status, 200);
   const locations = locationsRes.payload.data || [];
   const warehouse = locations.find((loc) => loc.type === 'warehouse');
   assert.ok(warehouse);
-  const defaultsRes = await pool.query(
+  const defaultsRes = await db.query(
     `SELECT location_id
        FROM warehouse_default_location
       WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
@@ -104,19 +103,14 @@ async function seedItemAndStock(token, sellableLocationId, quantity = 10) {
   return itemId;
 }
 
-test('Ledger reconcile strict mode fails on drift when repair disabled', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Ledger reconcile strict mode fails on drift when repair disabled', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant.id;
-  const { sellable } = await ensureWarehouse(token, tenantId, pool);
+  const { sellable } = await ensureWarehouse(token, tenantId, db);
   const itemId = await seedItemAndStock(token, sellable.id, 10);
 
-  await pool.query(
+  await db.query(
     `UPDATE inventory_balance
         SET on_hand = on_hand + 5
       WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
@@ -131,19 +125,14 @@ test('Ledger reconcile strict mode fails on drift when repair disabled', async (
   assert.ok(res.payload?.error);
 });
 
-test('Ledger reconcile repair fixes drift and clears mismatches', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Ledger reconcile repair fixes drift and clears mismatches', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant.id;
-  const { sellable } = await ensureWarehouse(token, tenantId, pool);
+  const { sellable } = await ensureWarehouse(token, tenantId, db);
   const itemId = await seedItemAndStock(token, sellable.id, 10);
 
-  await pool.query(
+  await db.query(
     `UPDATE inventory_balance
         SET on_hand = on_hand + 5
       WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
@@ -159,7 +148,7 @@ test('Ledger reconcile repair fixes drift and clears mismatches', async (t) => {
   assert.ok(summary);
   assert.ok(summary.repairedCount >= 1);
 
-  const balanceRes = await pool.query(
+  const balanceRes = await db.query(
     `SELECT on_hand FROM inventory_balance
       WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
     [tenantId, itemId, sellable.id, 'each']
@@ -168,19 +157,14 @@ test('Ledger reconcile repair fixes drift and clears mismatches', async (t) => {
   assert.ok(Math.abs(Number(balanceRes.rows[0].on_hand) - 10) < 1e-6);
 });
 
-test('Ledger reconcile repair aborts when threshold exceeded', async (t) => {
-  const pool = createPool();
-  t.after(async () => {
-    await pool.end();
-  });
-
-  const session = await ensureSession();
+test('Ledger reconcile repair aborts when threshold exceeded', async () => {
+  const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant.id;
-  const { sellable } = await ensureWarehouse(token, tenantId, pool);
+  const { sellable } = await ensureWarehouse(token, tenantId, db);
   const itemId = await seedItemAndStock(token, sellable.id, 10);
 
-  await pool.query(
+  await db.query(
     `UPDATE inventory_balance
         SET on_hand = on_hand + 5
       WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,

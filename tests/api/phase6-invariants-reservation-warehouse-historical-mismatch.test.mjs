@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { ensureSession } from './helpers/ensureSession.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -11,7 +11,12 @@ require('tsconfig-paths/register');
 
 const { runInventoryInvariantCheck } = require('../../src/jobs/inventoryInvariants.job.ts');
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+let db;
+
+test.before(async () => {
+  const session = await ensureSession();
+  db = session.pool;
+});
 
 function safeJson(value) {
   try {
@@ -39,7 +44,7 @@ async function insertWarehouseRoot(client, tenantId, label) {
     `INSERT INTO locations (
       id, tenant_id, code, name, type, active, created_at, updated_at,
       role, is_sellable, parent_location_id, warehouse_id
-    ) VALUES ($1, $2, $3, $4, 'warehouse', true, now(), now(), 'SELLABLE', true, NULL, $1)`,
+    ) VALUES ($1, $2, $3, $4, 'warehouse', true, now(), now(), NULL, false, NULL, $1)`,
     [id, tenantId, code, `Warehouse ${label}`]
   );
   return { id, code };
@@ -108,7 +113,7 @@ async function fetchBlock(client, tenantId) {
 }
 
 test('detects reservation warehouse historical mismatch (warning only)', async () => {
-  const client = await pool.connect();
+  const client = await db.connect();
   let tenantId;
   try {
     await client.query('BEGIN');
@@ -184,7 +189,7 @@ test('detects reservation warehouse historical mismatch (warning only)', async (
 });
 
 test('does not report mismatch when reservation warehouse matches current location warehouse', async () => {
-  const client = await pool.connect();
+  const client = await db.connect();
   let tenantId;
   try {
     await client.query('BEGIN');
@@ -232,8 +237,4 @@ test('does not report mismatch when reservation warehouse matches current locati
     }
     client.release();
   }
-});
-
-test.after(async () => {
-  await pool.end();
 });
