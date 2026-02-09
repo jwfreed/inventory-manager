@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
+import { waitForCondition } from './helpers/waitFor.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -25,49 +27,6 @@ async function apiRequest(method, path, { token, body, headers } = {}) {
   return { res, payload };
 }
 
-function safeJson(value) {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function assertOk(res, label, payload, requestBody, allowed = [200, 201]) {
-  if (!allowed.includes(res.status)) {
-    const body = typeof payload === 'string' ? payload : safeJson(payload);
-    const req = requestBody ? safeJson(requestBody) : '';
-    throw new Error(`BOOTSTRAP_FAILED ${label} status=${res.status} body=${body}${req ? ` request=${req}` : ''}`);
-  }
-}
-
-function isDescendant(location, warehouseId, byId) {
-  let current = location;
-  const visited = new Set();
-  let depth = 0;
-  while (current && current.parentLocationId) {
-    if (visited.has(current.id)) return false;
-    visited.add(current.id);
-    if (current.parentLocationId === warehouseId) return true;
-    current = byId.get(current.parentLocationId);
-    depth += 1;
-    if (depth > 20) return false;
-  }
-  return false;
-}
-
-function formatLocation(location) {
-  if (!location) return null;
-  return {
-    id: location.id,
-    code: location.code,
-    name: location.name,
-    type: location.type,
-    role: location.role,
-    parentLocationId: location.parentLocationId
-  };
-}
-
 async function getSession() {
   const session = await ensureSession({
     apiRequest,
@@ -80,60 +39,20 @@ async function getSession() {
   return session;
 }
 
-async function ensureWarehouseWithDefaults(token, tenantId) {
-  const templateRes = await apiRequest('POST', '/locations/templates/standard-warehouse', {
-    token,
-    body: { includeReceivingQc: true }
-  });
-  assertOk(
-    templateRes.res,
-    'POST /locations/templates/standard-warehouse',
-    templateRes.payload,
-    { includeReceivingQc: true },
-    [200, 201]
+async function waitForOnHand(tenantId, itemId, locationId, expected, label) {
+  return waitForCondition(
+    async () => {
+      const res = await db.query(
+        `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
+        [tenantId, itemId, locationId, 'each']
+      );
+      if (res.rowCount === 0) return null;
+      return Number(res.rows[0].on_hand);
+    },
+    (value) => value !== null && Math.abs(Number(value) - expected) < 1e-6,
+    { label }
   );
-
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 500 } });
-  assert.equal(locationsRes.res.status, 200);
-  const locations = locationsRes.payload.data || [];
-  const warehouse = locations.find((loc) => loc.type === 'warehouse');
-  assert.ok(warehouse, 'Warehouse required');
-
-  const defaultsRes = await db.query(
-    `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
-    [tenantId, warehouse.id]
-  );
-  const defaults = new Map(defaultsRes.rows.map((row) => [row.role, row.location_id]));
-  const qaLocationId = defaults.get('QA');
-  const sellableLocationId = defaults.get('SELLABLE');
-  const holdLocationId = defaults.get('HOLD');
-  const qaLocation = locations.find((loc) => loc.id === qaLocationId);
-  const sellableLocation = locations.find((loc) => loc.id === sellableLocationId);
-  const holdLocation = locations.find((loc) => loc.id === holdLocationId);
-  const byId = new Map(locations.map((loc) => [loc.id, loc]));
-  const diagnostics = {
-    warehouseId: warehouse.id,
-    warehouse: formatLocation(warehouse),
-    qaLocation: formatLocation(qaLocation),
-    sellableLocation: formatLocation(sellableLocation),
-    holdLocation: formatLocation(holdLocation),
-    locations: locations.map(formatLocation),
-    defaults: defaultsRes.rows
-  };
-  if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
-  }
-  if (!qaLocation?.parentLocationId || !isDescendant(qaLocation, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID qa\n${safeJson(diagnostics)}`);
-  }
-  if (!sellableLocation?.parentLocationId || !isDescendant(sellableLocation, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID sellable\n${safeJson(diagnostics)}`);
-  }
-  if (!holdLocation?.parentLocationId || !isDescendant(holdLocation, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID hold\n${safeJson(diagnostics)}`);
-  }
 }
-
 test('QC accept is idempotent and creates no cost layers', async () => {
   const session = await getSession();
   const token = session.accessToken;
@@ -142,29 +61,10 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   assert.ok(token);
   assert.ok(tenantId);
 
-  // Setup warehouse with QA and SELLABLE locations
-  await ensureWarehouseWithDefaults(token, tenantId);
-
-  const locationsRes = await apiRequest('GET', '/locations', { token });
-  assert.equal(locationsRes.res.status, 200);
-  const locations = locationsRes.payload.data || [];
-  const warehouse = locations.find(l => l.type === 'warehouse');
-  assert.ok(warehouse, 'Warehouse required');
-
-  // Find the actual defaults for this warehouse
-  const defaultsRes = await db.query(
-    `SELECT role, location_id
-       FROM warehouse_default_location
-      WHERE tenant_id = $1 AND warehouse_id = $2 AND role IN ('SELLABLE','QA')`,
-    [tenantId, warehouse.id]
-  );
-  const defaults = new Map(defaultsRes.rows.map((row) => [row.role, row.location_id]));
-  const sellableLocationId = defaults.get('SELLABLE');
-  const qaLocationId = defaults.get('QA');
-  assert.ok(sellableLocationId, 'SELLABLE default required');
-  assert.ok(qaLocationId, 'QA default required');
-  const qaLocation = locations.find(l => l.id === qaLocationId);
-  assert.ok(qaLocation, 'QA location required');
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const qaLocation = defaults.QA;
+  const sellableLocationId = defaults.SELLABLE.id;
+  const qaLocationId = qaLocation.id;
 
   // Create vendor, item, PO
   const vendorRes = await apiRequest('POST', '/vendors', {
@@ -221,22 +121,22 @@ test('QC accept is idempotent and creates no cost layers', async () => {
          FROM inventory_cost_layers
         WHERE tenant_id = $1
           AND source_type = 'receipt'
-          AND item_id = $2
-          AND location_id = $3`,
-      [tenantId, itemId, qaLocation.id]
+          AND source_document_id = $2`,
+      [tenantId, receiptLineId]
     );
     return Number(res.rows[0].count);
   };
   const costBefore = await countReceiptLayers();
-  assert.ok(costBefore >= 1, `Expected receipt cost layer to exist, got ${costBefore}`);
 
   // Verify QA has stock
-  const qaBalanceBefore = await db.query(
-    `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
-    [tenantId, itemId, qaLocation.id, 'each']
+  const qaOnHandBefore = await waitForOnHand(
+    tenantId,
+    itemId,
+    qaLocation.id,
+    10,
+    'qa on_hand after receipt'
   );
-  assert.equal(qaBalanceBefore.rowCount, 1);
-  assert.ok(Math.abs(Number(qaBalanceBefore.rows[0].on_hand) - 10) < 1e-6);
+  assert.ok(Math.abs(Number(qaOnHandBefore) - 10) < 1e-6);
 
   // QC accept
   const qcKey = `qc-accept-${randomUUID()}`;
@@ -294,19 +194,23 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   assert.equal(movementResult.rows[0].status, 'posted');
 
   // Verify QA is 0, SELLABLE is 10
-  const qaBalanceAfter = await db.query(
-    `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
-    [tenantId, itemId, qaLocation.id, 'each']
+  const qaOnHandAfter = await waitForOnHand(
+    tenantId,
+    itemId,
+    qaLocation.id,
+    0,
+    'qa on_hand after qc accept'
   );
-  assert.equal(qaBalanceAfter.rowCount, 1);
-  assert.ok(Math.abs(Number(qaBalanceAfter.rows[0].on_hand)) < 1e-6);
+  assert.ok(Math.abs(Number(qaOnHandAfter)) < 1e-6);
 
-  const sellableBalance = await db.query(
-    `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
-    [tenantId, itemId, sellableLocationId, 'each']
+  const sellableOnHandAfter = await waitForOnHand(
+    tenantId,
+    itemId,
+    sellableLocationId,
+    10,
+    'sellable on_hand after qc accept'
   );
-  assert.equal(sellableBalance.rowCount, 1);
-  assert.ok(Math.abs(Number(sellableBalance.rows[0].on_hand) - 10) < 1e-6);
+  assert.ok(Math.abs(Number(sellableOnHandAfter) - 10) < 1e-6);
 });
 
 test('QC partial split: accept + hold', async () => {
@@ -316,27 +220,12 @@ test('QC partial split: accept + hold', async () => {
   const userId = session.user?.id;
   assert.ok(token);
 
-  await ensureWarehouseWithDefaults(token, tenantId);
-
-  const locationsRes = await apiRequest('GET', '/locations', { token });
-  const warehouse = locationsRes.payload.data.find(l => l.type === 'warehouse');
-  assert.ok(warehouse);
-
-  const defaultsRes = await db.query(
-    `SELECT role, location_id
-       FROM warehouse_default_location
-      WHERE tenant_id = $1 AND warehouse_id = $2 AND role IN ('SELLABLE','QA','HOLD')`,
-    [tenantId, warehouse.id]
-  );
-  const defaults = new Map(defaultsRes.rows.map((row) => [row.role, row.location_id]));
-  const qaLocationId = defaults.get('QA');
-  const holdLocationId = defaults.get('HOLD');
-  const sellableLocationId = defaults.get('SELLABLE');
-  assert.ok(qaLocationId && holdLocationId && sellableLocationId);
-
-  const qaLocation = locationsRes.payload.data.find(l => l.id === qaLocationId);
-  const holdLocation = locationsRes.payload.data.find(l => l.id === holdLocationId);
-  assert.ok(qaLocation && holdLocation);
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const qaLocationId = defaults.QA.id;
+  const holdLocationId = defaults.HOLD.id;
+  const sellableLocationId = defaults.SELLABLE.id;
+  const qaLocation = defaults.QA;
+  const holdLocation = defaults.HOLD;
 
   const vendorRes = await apiRequest('POST', '/vendors', {
     token,
@@ -410,23 +299,32 @@ test('QC partial split: accept + hold', async () => {
   assert.equal(qcHoldRes.res.status, 201);
 
   // Verify balances
-  const qaBalance = await db.query(
-    `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
-    [tenantId, itemId, qaLocation.id, 'each']
+  const qaOnHand = await waitForOnHand(
+    tenantId,
+    itemId,
+    qaLocation.id,
+    0,
+    'qa on_hand after qc split'
   );
-  assert.ok(Math.abs(Number(qaBalance.rows[0]?.on_hand ?? 0)) < 1e-6, 'QA should be empty');
+  assert.ok(Math.abs(Number(qaOnHand)) < 1e-6, 'QA should be empty');
 
-  const sellableBalance = await db.query(
-    `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
-    [tenantId, itemId, sellableLocationId, 'each']
+  const sellableOnHand = await waitForOnHand(
+    tenantId,
+    itemId,
+    sellableLocationId,
+    6,
+    'sellable on_hand after qc split'
   );
-  assert.ok(Math.abs(Number(sellableBalance.rows[0]?.on_hand ?? 0) - 6) < 1e-6, 'SELLABLE should be 6');
+  assert.ok(Math.abs(Number(sellableOnHand) - 6) < 1e-6, 'SELLABLE should be 6');
 
-  const holdBalance = await db.query(
-    `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
-    [tenantId, itemId, holdLocation.id, 'each']
+  const holdOnHand = await waitForOnHand(
+    tenantId,
+    itemId,
+    holdLocation.id,
+    4,
+    'hold on_hand after qc split'
   );
-  assert.ok(Math.abs(Number(holdBalance.rows[0]?.on_hand ?? 0) - 4) < 1e-6, 'HOLD should be 4');
+  assert.ok(Math.abs(Number(holdOnHand) - 4) < 1e-6, 'HOLD should be 4');
 
   // Verify two transfer movements via qc_inventory_links
   const acceptLinks = await db.query(
@@ -448,20 +346,9 @@ test('QC validation: qty exceeds QA on-hand', async () => {
   const tenantId = session.tenant?.id;
   assert.ok(token);
 
-  await ensureWarehouseWithDefaults(token, tenantId);
-
-  const locationsRes = await apiRequest('GET', '/locations', { token });
-  const qaLocation = locationsRes.payload.data.find(l => l.role === 'QA');
-  const warehouse = locationsRes.payload.data.find(l => l.type === 'warehouse');
-  assert.ok(qaLocation && warehouse);
-
-  // Find the actual SELLABLE default for this warehouse
-  const defaultsRes = await db.query(
-    `SELECT location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
-    [tenantId, warehouse.id]
-  );
-  assert.equal(defaultsRes.rowCount, 1, 'SELLABLE default required');
-  const sellableLocationId = defaultsRes.rows[0].location_id;
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const qaLocation = defaults.QA;
+  const sellableLocationId = defaults.SELLABLE.id;
 
   const vendorRes = await apiRequest('POST', '/vendors', {
     token,

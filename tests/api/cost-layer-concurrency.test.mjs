@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
+import { waitForCondition } from './helpers/waitFor.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -58,66 +60,6 @@ async function getSession() {
   return session;
 }
 
-async function ensureWarehouseRoot(token) {
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
-  assert.equal(locationsRes.res.status, 200);
-  let locations = locationsRes.payload.data || [];
-  let warehouse = locations.find((loc) => loc.type === 'warehouse');
-  if (!warehouse) {
-    const code = `WH-${randomUUID()}`;
-    const body = {
-      code,
-      name: `Warehouse ${code}`,
-      type: 'warehouse',
-      role: null,
-      isSellable: false,
-      active: true
-    };
-    const createRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(createRes.res, 'POST /locations (warehouse)', createRes.payload, body, [201]);
-    warehouse = createRes.payload;
-    locations = [...locations, warehouse];
-  }
-  let sellable = locations.find(
-    (loc) => loc.role === 'SELLABLE' && loc.parentLocationId === warehouse.id
-  );
-  if (!sellable) {
-    const code = `SELL-${randomUUID().slice(0, 8)}`;
-    const body = {
-      code,
-      name: 'Sellable Location',
-      type: 'bin',
-      role: 'SELLABLE',
-      isSellable: true,
-      parentLocationId: warehouse.id
-    };
-    const createRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(createRes.res, 'POST /locations (SELLABLE)', createRes.payload, body, [201]);
-  }
-  if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
-    const diagnostics = {
-      warehouseId: warehouse.id,
-      warehouse: {
-        id: warehouse.id,
-        code: warehouse.code,
-        name: warehouse.name,
-        type: warehouse.type,
-        role: warehouse.role,
-        parentLocationId: warehouse.parentLocationId
-      },
-      locations: locations.map((loc) => ({
-        id: loc.id,
-        code: loc.code,
-        name: loc.name,
-        type: loc.type,
-        role: loc.role,
-        parentLocationId: loc.parentLocationId
-      }))
-    };
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
-  }
-  return warehouse;
-}
 
 test('cost layer inserts are concurrency-safe for receipts', async () => {
   const session = await getSession();
@@ -126,11 +68,8 @@ test('cost layer inserts are concurrency-safe for receipts', async () => {
   assert.ok(token);
   assert.ok(tenantId);
 
-  await ensureWarehouseRoot(token);
-
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
-  assert.equal(locationsRes.res.status, 200);
-  const location = (locationsRes.payload.data || []).find((loc) => loc.role === 'SELLABLE');
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const location = defaults.SELLABLE;
   assert.ok(location);
 
   const sku = `CL-${Date.now()}`;
@@ -162,14 +101,21 @@ test('cost layer inserts are concurrency-safe for receipts', async () => {
 
   await Promise.all([insertLayer(), insertLayer()]);
 
-  const countRes = await db.query(
-    `SELECT COUNT(*)::int AS count
-       FROM inventory_cost_layers
-      WHERE tenant_id = $1
-        AND source_type = 'receipt'
-        AND source_document_id = $2
-        AND voided_at IS NULL`,
-    [tenantId, sourceId]
+  const activeCount = await waitForCondition(
+    async () => {
+      const countRes = await db.query(
+        `SELECT COUNT(*)::int AS count
+           FROM inventory_cost_layers
+          WHERE tenant_id = $1
+            AND source_type = 'receipt'
+            AND source_document_id = $2
+            AND voided_at IS NULL`,
+        [tenantId, sourceId]
+      );
+      return countRes.rows[0].count;
+    },
+    (count) => count === 1,
+    { label: 'active receipt cost layers' }
   );
-  assert.equal(countRes.rows[0].count, 1);
+  assert.equal(activeCount, 1);
 });

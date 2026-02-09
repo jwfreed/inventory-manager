@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com'
@@ -39,33 +40,14 @@ async function getSession() {
   });
 }
 
-async function ensureWarehouse(token) {
-  const templateRes = await apiRequest('POST', '/locations/templates/standard-warehouse', {
-    token,
-    body: { includeReceivingQc: true },
-  })
-  if (![200, 201].includes(templateRes.res.status)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_FAILED status=${templateRes.res.status} body=${JSON.stringify(templateRes.payload)}`)
-  }
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 500 } })
-  assert.equal(locationsRes.res.status, 200)
-  const locations = locationsRes.payload.data || []
-  const warehouse = locations.find((loc) => loc.type === 'warehouse')
-  assert.ok(warehouse)
-  const sellable = locations.find(
-    (loc) => loc.role === 'SELLABLE' && loc.parentLocationId === warehouse.id
-  )
-  assert.ok(sellable)
-  return { warehouse, sellable }
-}
-
 test('posting work order issue and batch blocks on insufficient usable stock', async () => {
   const session = await getSession()
   const token = session.accessToken
   assert.ok(token)
   const unique = Date.now()
 
-  const { sellable } = await ensureWarehouse(token)
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const sellable = defaults.SELLABLE
   const locationId = sellable.id
 
   const itemRes = await apiRequest('POST', '/items', {
@@ -162,7 +144,8 @@ test('posting negative inventory adjustment blocks on insufficient stock', async
   assert.ok(token)
   const unique = Date.now()
 
-  const { sellable } = await ensureWarehouse(token)
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const sellable = defaults.SELLABLE
   const locationId = sellable.id
 
   const itemRes = await apiRequest('POST', '/items', {
@@ -216,7 +199,8 @@ test('reservation creates backorder when insufficient on-hand', async () => {
   assert.ok(token)
   const unique = Date.now()
 
-  const { sellable } = await ensureWarehouse(token)
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const sellable = defaults.SELLABLE
   const locationId = sellable.id
 
   const itemRes = await apiRequest('POST', '/items', {
@@ -271,7 +255,8 @@ test('inventory snapshot aggregates canonical quantities with UOM conversion', a
   assert.ok(token)
   const unique = Date.now()
 
-  const { sellable } = await ensureWarehouse(token)
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const sellable = defaults.SELLABLE
   const locationId = sellable.id
 
   const itemRes = await apiRequest('POST', '/items', {

@@ -117,19 +117,6 @@ async function createWarehouseGraph(token, tenantId, label) {
   const qaLocation = await createChild('QA', false);
   const sellableLocation = await createChild('SELLABLE', true);
 
-  await db.query(
-    `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT DO NOTHING`,
-    [tenantId, warehouse.id, 'QA', qaLocation.id]
-  );
-  await db.query(
-    `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT DO NOTHING`,
-    [tenantId, warehouse.id, 'SELLABLE', sellableLocation.id]
-  );
-
   return {
     warehouse,
     qaLocation,

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
 
@@ -71,14 +72,7 @@ test('standard warehouse template creates role bins even with conflicting codes'
   const tenantId = session.tenant?.id;
   assert.ok(tenantId, 'tenantId is required');
 
-  const warehouseId = randomUUID();
   const now = new Date();
-  await db.query(
-    `INSERT INTO locations (
-        id, tenant_id, code, name, type, role, is_sellable, active, parent_location_id, warehouse_id, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, NULL, false, true, NULL, $6, $7, $7)`,
-    [warehouseId, tenantId, `ROOT-${warehouseId.slice(0, 8)}`, 'Root', 'warehouse', warehouseId, now]
-  );
 
   const existingQa = await db.query(
     `SELECT id FROM locations WHERE code = 'QA' LIMIT 1`
@@ -115,13 +109,8 @@ test('standard warehouse template creates role bins even with conflicting codes'
     );
   }
 
-  const first = await apiRequest('POST', '/locations/templates/standard-warehouse', {
-    token,
-    body: { includeReceivingQc: true }
-  });
-  assertOk(first.res, 'POST /locations/templates/standard-warehouse (first)', first.payload, {
-    includeReceivingQc: true
-  });
+  const { warehouse } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const warehouseId = warehouse.id;
 
   const qaRes = await db.query(
     `SELECT id, code
@@ -148,13 +137,7 @@ test('standard warehouse template creates role bins even with conflicting codes'
     assert.ok(isDescendant(row.location_id, warehouseId, byId), `default ${role} not under warehouse`);
   }
 
-  const second = await apiRequest('POST', '/locations/templates/standard-warehouse', {
-    token,
-    body: { includeReceivingQc: true }
-  });
-  assertOk(second.res, 'POST /locations/templates/standard-warehouse (second)', second.payload, {
-    includeReceivingQc: true
-  });
+  await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
 
   const qaResAfter = await db.query(
     `SELECT id

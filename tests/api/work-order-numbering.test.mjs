@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com'
@@ -45,11 +46,8 @@ test('work orders get sequential identifiers and ignore client-supplied numbers'
   assert.ok(token)
   const unique = Date.now()
 
-  const locationRes = await apiRequest('POST', '/locations', {
-    token,
-    body: { code: `WO-LOC-${unique}`, name: 'WO Numbering Location', type: 'warehouse', active: true },
-  })
-  assert.equal(locationRes.res.status, 201)
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const locationId = defaults.SELLABLE.id
 
   const itemRes = await apiRequest('POST', '/items', {
     token,
@@ -61,7 +59,7 @@ test('work orders get sequential identifiers and ignore client-supplied numbers'
       uomDimension: 'count',
       canonicalUom: 'each',
       stockingUom: 'each',
-      defaultLocationId: locationRes.payload.id,
+      defaultLocationId: locationId,
       active: true,
     },
   })

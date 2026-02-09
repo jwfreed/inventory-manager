@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
+import { waitForCondition } from './helpers/waitFor.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -31,49 +33,6 @@ async function apiRequest(method, path, { token, body, params, headers } = {}) {
   return { res, payload };
 }
 
-function safeJson(value) {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function assertOk(res, label, payload, requestBody, allowed = [200, 201]) {
-  if (!allowed.includes(res.status)) {
-    const body = typeof payload === 'string' ? payload : safeJson(payload);
-    const req = requestBody ? safeJson(requestBody) : '';
-    throw new Error(`BOOTSTRAP_FAILED ${label} status=${res.status} body=${body}${req ? ` request=${req}` : ''}`);
-  }
-}
-
-function isDescendant(location, warehouseId, byId) {
-  let current = location;
-  const visited = new Set();
-  let depth = 0;
-  while (current && current.parentLocationId) {
-    if (visited.has(current.id)) return false;
-    visited.add(current.id);
-    if (current.parentLocationId === warehouseId) return true;
-    current = byId.get(current.parentLocationId);
-    depth += 1;
-    if (depth > 20) return false;
-  }
-  return false;
-}
-
-function formatLocation(location) {
-  if (!location) return null;
-  return {
-    id: location.id,
-    code: location.code,
-    name: location.name,
-    type: location.type,
-    role: location.role,
-    parentLocationId: location.parentLocationId
-  };
-}
-
 async function getSession() {
   const session = await ensureSession({
     apiRequest,
@@ -86,20 +45,6 @@ async function getSession() {
   return session;
 }
 
-async function getLocationByCode(token, code) {
-  const res = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
-  assert.equal(res.res.status, 200);
-  const rows = res.payload.data || [];
-  return rows.find((loc) => loc.code === code) || null;
-}
-
-async function getLocationByRole(token, role) {
-  const res = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
-  assert.equal(res.res.status, 200);
-  const rows = res.payload.data || [];
-  return rows.find((loc) => loc.role === role) || null;
-}
-
 test('PO receipt posts ledger into QA and QC reclassifies without new cost layers', async () => {
   const session = await getSession();
   const token = session.accessToken;
@@ -108,92 +53,11 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.ok(token);
   assert.ok(tenantId);
 
-  const locationsRes = await apiRequest('GET', '/locations', { token });
-  assert.equal(locationsRes.res.status, 200);
-  let locations = locationsRes.payload.data || [];
-  let warehouse = locations.find((loc) => loc.type === 'warehouse');
-  if (!warehouse) {
-    const code = `WH-${randomUUID()}`;
-    const body = {
-      code,
-      name: `Warehouse ${code}`,
-      type: 'warehouse',
-      role: null,
-      isSellable: false,
-      active: true
-    };
-    const createRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(createRes.res, 'POST /locations (warehouse)', createRes.payload, body, [201]);
-    warehouse = createRes.payload;
-    locations = [...locations, warehouse];
-  }
-  const ensureRole = async (role) => {
-    let loc = locations.find(
-      (entry) => entry.role === role && entry.parentLocationId === warehouse.id
-    );
-    if (!loc) {
-      const code = `${role}-${randomUUID().slice(0, 8)}`;
-      const body = {
-        code,
-        name: `${role} Location`,
-        type: role === 'SCRAP' ? 'scrap' : 'bin',
-        role,
-        isSellable: role === 'SELLABLE',
-        parentLocationId: warehouse.id
-      };
-      const createRes = await apiRequest('POST', '/locations', { token, body });
-      assertOk(createRes.res, `POST /locations (${role})`, createRes.payload, body, [201]);
-      loc = createRes.payload;
-      locations = [...locations, loc];
-    }
-    await db.query(
-      `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT DO NOTHING`,
-      [tenantId, warehouse.id, role, loc.id]
-    );
-    return loc;
-  };
-  await ensureRole('SELLABLE');
-  await ensureRole('QA');
-
-  // Find warehouse and get warehouse defaults
-  assert.ok(warehouse, 'Warehouse required');
-
-  // Get warehouse default locations - these are what the receipt service will use
-  const defaultsRes = await db.query(
-    `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
-    [tenantId, warehouse.id]
-  );
-  const defaults = new Map(defaultsRes.rows.map(r => [r.role, r.location_id]));
-  const qaLocationId = defaults.get('QA');
-  const sellableLocationId = defaults.get('SELLABLE');
-  assert.ok(qaLocationId, 'QA default required');
-  assert.ok(sellableLocationId, 'SELLABLE default required');
-
-  // Get location objects for the defaults
-  const qaLocation = locations.find(l => l.id === qaLocationId);
-  const fgLocation = locations.find(l => l.id === sellableLocationId);
-  assert.ok(qaLocation, 'QA location must exist');
-  assert.ok(fgLocation, 'Sellable location must exist');
-  const byId = new Map(locations.map((loc) => [loc.id, loc]));
-  const diagnostics = {
-    warehouseId: warehouse.id,
-    warehouse: formatLocation(warehouse),
-    qaLocation: formatLocation(qaLocation),
-    sellableLocation: formatLocation(fgLocation),
-    locations: locations.map(formatLocation),
-    defaults: defaultsRes.rows
-  };
-  if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
-  }
-  if (!qaLocation.parentLocationId || !isDescendant(qaLocation, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID qa\n${safeJson(diagnostics)}`);
-  }
-  if (!fgLocation.parentLocationId || !isDescendant(fgLocation, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID sellable\n${safeJson(diagnostics)}`);
-  }
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const qaLocation = defaults.QA;
+  const fgLocation = defaults.SELLABLE;
+  const qaLocationId = qaLocation.id;
+  const sellableLocationId = fgLocation.id;
 
   const vendorCode = `V-${Date.now()}`;
   const vendorRes = await apiRequest('POST', '/vendors', {
@@ -453,19 +317,31 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   );
   assert.equal(Number(costRes3.rows[0].count), 1);
 
-  const qaSnapshotAfter = await apiRequest('GET', '/inventory-snapshot', {
-    token,
-    params: { itemId, locationId: qaLocation.id }
-  });
-  assert.equal(qaSnapshotAfter.res.status, 200);
-  const qaOnHandAfter = qaSnapshotAfter.payload.data?.[0]?.onHand ?? 0;
+  const qaOnHandAfter = await waitForCondition(
+    async () => {
+      const snapshot = await apiRequest('GET', '/inventory-snapshot', {
+        token,
+        params: { itemId, locationId: qaLocation.id }
+      });
+      assert.equal(snapshot.res.status, 200);
+      return Number(snapshot.payload.data?.[0]?.onHand ?? 0);
+    },
+    (value) => Math.abs(value) < 1e-6,
+    { label: 'qa snapshot after qc accept' }
+  );
   assert.ok(Math.abs(Number(qaOnHandAfter)) < 1e-6);
 
-  const fgSnapshotAfter = await apiRequest('GET', '/inventory-snapshot', {
-    token,
-    params: { itemId, locationId: fgLocation.id }
-  });
-  assert.equal(fgSnapshotAfter.res.status, 200);
-  const fgOnHandAfter = fgSnapshotAfter.payload.data?.[0]?.onHand ?? 0;
+  const fgOnHandAfter = await waitForCondition(
+    async () => {
+      const snapshot = await apiRequest('GET', '/inventory-snapshot', {
+        token,
+        params: { itemId, locationId: fgLocation.id }
+      });
+      assert.equal(snapshot.res.status, 200);
+      return Number(snapshot.payload.data?.[0]?.onHand ?? 0);
+    },
+    (value) => Math.abs(value - 10) < 1e-6,
+    { label: 'sellable snapshot after qc accept' }
+  );
   assert.ok(Math.abs(Number(fgOnHandAfter) - 10) < 1e-6);
 });

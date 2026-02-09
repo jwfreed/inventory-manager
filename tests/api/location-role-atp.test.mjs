@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -86,79 +87,6 @@ async function getSession() {
   return session;
 }
 
-async function ensureWarehouseWithSellable(token, tenantId) {
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
-  assert.equal(locationsRes.res.status, 200);
-  let locations = locationsRes.payload.data || [];
-  let warehouse = locations.find((loc) => loc.type === 'warehouse');
-  if (!warehouse) {
-    const code = `WH-${Date.now()}`;
-    const body = {
-      code,
-      name: `Warehouse ${code}`,
-      type: 'warehouse',
-      role: null,
-      isSellable: false,
-      active: true
-    };
-    const createRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(createRes.res, 'POST /locations (warehouse)', createRes.payload, body, [201]);
-    warehouse = createRes.payload;
-    locations = [...locations, warehouse];
-  }
-  let sellable = locations.find(
-    (loc) => loc.role === 'SELLABLE' && loc.parentLocationId === warehouse.id
-  );
-  if (!sellable) {
-    const code = `SELL-${Date.now()}`;
-    const body = {
-      code,
-      name: 'Sellable Location',
-      type: 'bin',
-      role: 'SELLABLE',
-      isSellable: true,
-      parentLocationId: warehouse.id
-    };
-    const createRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(createRes.res, 'POST /locations (SELLABLE)', createRes.payload, body, [201]);
-    sellable = createRes.payload;
-  }
-  assert.ok(tenantId);
-  await db.query(
-    `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
-     VALUES ($1, $2, 'SELLABLE', $3)
-     ON CONFLICT DO NOTHING`,
-    [tenantId, warehouse.id, sellable.id]
-  );
-  const defaultsRes = await db.query(
-    `SELECT location_id
-       FROM warehouse_default_location
-      WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
-    [tenantId, warehouse.id]
-  );
-  const defaultSellableId = defaultsRes.rows[0]?.location_id;
-  if (!defaultSellableId) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID default_sellable\n${safeJson({ warehouseId: warehouse.id })}`);
-  }
-  const byId = new Map(locations.map((loc) => [loc.id, loc]));
-  const diagnostics = {
-    warehouseId: warehouse.id,
-    warehouse: formatLocation(warehouse),
-    sellable: formatLocation(sellable),
-    locations: locations.map(formatLocation)
-  };
-  if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
-  }
-  if (!sellable.parentLocationId || !isDescendant(sellable, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID sellable\n${safeJson(diagnostics)}`);
-  }
-  const defaultSellable = locations.find((loc) => loc.id === defaultSellableId);
-  if (!defaultSellable || !isDescendant(defaultSellable, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID default_sellable\n${safeJson(diagnostics)}`);
-  }
-  return { sellable };
-}
 
 test('ATP respects location role and sellable flag', async () => {
   const session = await getSession();
@@ -167,7 +95,8 @@ test('ATP respects location role and sellable flag', async () => {
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { sellable: fgLocation } = await ensureWarehouseWithSellable(token, tenantId);
+  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const fgLocation = defaults.SELLABLE;
   assert.ok(fgLocation);
 
   const locRes = await apiRequest('POST', '/locations', {

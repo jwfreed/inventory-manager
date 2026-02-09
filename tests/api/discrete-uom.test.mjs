@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com'
@@ -44,11 +45,8 @@ test('count items reject fractional quantities on posting', async () => {
   const token = await getSession()
   const unique = Date.now()
 
-  const locationRes = await apiRequest('POST', '/locations', {
-    token,
-    body: { code: `DISC-LOC-${unique}`, name: 'Discrete UOM Location', type: 'warehouse', active: true },
-  })
-  assert.equal(locationRes.res.status, 201)
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const locationId = defaults.SELLABLE.id
 
   const itemRes = await apiRequest('POST', '/items', {
     token,
@@ -60,7 +58,7 @@ test('count items reject fractional quantities on posting', async () => {
       uomDimension: 'count',
       canonicalUom: 'each',
       stockingUom: 'each',
-      defaultLocationId: locationRes.payload.id,
+      defaultLocationId: locationId,
     },
   })
   assert.equal(itemRes.res.status, 201)
@@ -74,7 +72,7 @@ test('count items reject fractional quantities on posting', async () => {
         {
           lineNumber: 1,
           itemId: itemRes.payload.id,
-          locationId: locationRes.payload.id,
+          locationId: locationId,
           uom: 'each',
           quantityDelta: 1.5,
           reasonCode: 'correction',
@@ -98,11 +96,8 @@ test('count items accept whole number quantities on posting', async () => {
   const token = await getSession()
   const unique = Date.now()
 
-  const locationRes = await apiRequest('POST', '/locations', {
-    token,
-    body: { code: `DISC-LOC-WHOLE-${unique}`, name: 'Discrete UOM Location Whole', type: 'warehouse', active: true },
-  })
-  assert.equal(locationRes.res.status, 201)
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const locationId = defaults.SELLABLE.id
 
   const itemRes = await apiRequest('POST', '/items', {
     token,
@@ -114,7 +109,7 @@ test('count items accept whole number quantities on posting', async () => {
       uomDimension: 'count',
       canonicalUom: 'each',
       stockingUom: 'each',
-      defaultLocationId: locationRes.payload.id,
+      defaultLocationId: locationId,
     },
   })
   assert.equal(itemRes.res.status, 201)
@@ -128,7 +123,7 @@ test('count items accept whole number quantities on posting', async () => {
         {
           lineNumber: 1,
           itemId: itemRes.payload.id,
-          locationId: locationRes.payload.id,
+          locationId: locationId,
           uom: 'each',
           quantityDelta: 2,
           reasonCode: 'correction',
@@ -147,11 +142,8 @@ test('mass items allow fractional quantities on posting', async () => {
   const token = await getSession()
   const unique = Date.now()
 
-  const locationRes = await apiRequest('POST', '/locations', {
-    token,
-    body: { code: `DISC-LOC-MASS-${unique}`, name: 'Mass Location', type: 'warehouse', active: true },
-  })
-  assert.equal(locationRes.res.status, 201)
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const locationId = defaults.SELLABLE.id
 
   const itemRes = await apiRequest('POST', '/items', {
     token,
@@ -163,7 +155,7 @@ test('mass items allow fractional quantities on posting', async () => {
       uomDimension: 'mass',
       canonicalUom: 'g',
       stockingUom: 'g',
-      defaultLocationId: locationRes.payload.id,
+      defaultLocationId: locationId,
     },
   })
   assert.equal(itemRes.res.status, 201)
@@ -177,7 +169,7 @@ test('mass items allow fractional quantities on posting', async () => {
         {
           lineNumber: 1,
           itemId: itemRes.payload.id,
-          locationId: locationRes.payload.id,
+          locationId: locationId,
           uom: 'g',
           quantityDelta: 1.5,
           reasonCode: 'correction',

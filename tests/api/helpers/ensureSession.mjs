@@ -14,6 +14,13 @@ function getSharedPool() {
   return sharedPool;
 }
 
+export async function closeEnsureSessionPool() {
+  if (sharedPool) {
+    await sharedPool.end();
+    sharedPool = null;
+  }
+}
+
 function getTestScopeKey() {
   const stack = new Error().stack ?? '';
   const lines = stack.split('\n').slice(1);
@@ -38,6 +45,11 @@ function buildTenantSlug(scopePath) {
   const base = path.basename(scopePath, '.test.mjs');
   const hash = createHash('sha1').update(scopePath).digest('hex').slice(0, 8);
   return slugify(`test-${base}-${hash}-${process.pid}`);
+}
+
+function buildScopedTenantSlug(base, scopePath) {
+  const hash = createHash('sha1').update(scopePath).digest('hex').slice(0, 8);
+  return slugify(`${base}-${hash}-${process.pid}`);
 }
 
 async function defaultApiRequest(method, path, { body } = {}) {
@@ -66,8 +78,12 @@ export async function ensureSession({
   await ensureTestServer();
   const resolvedAdminEmail = adminEmail ?? process.env.SEED_ADMIN_EMAIL ?? 'jon.freed@gmail.com';
   const resolvedAdminPassword = adminPassword ?? process.env.SEED_ADMIN_PASSWORD ?? 'admin@local';
-  const resolvedTenantSlug =
-    tenantSlug ?? buildTenantSlug(scopeKey);
+  const requestedTenantSlug = tenantSlug ?? process.env.SEED_TENANT_SLUG;
+  const resolvedTenantSlug = requestedTenantSlug
+    ? (requestedTenantSlug === 'default' || requestedTenantSlug === process.env.SEED_TENANT_SLUG
+      ? buildScopedTenantSlug(requestedTenantSlug, scopeKey)
+      : requestedTenantSlug)
+    : buildTenantSlug(scopeKey);
   const resolvedTenantName = tenantName ?? resolvedTenantSlug;
   const cacheKey = `${scopeKey}::${resolvedTenantSlug}`;
 

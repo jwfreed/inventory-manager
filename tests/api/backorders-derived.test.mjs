@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { waitForCondition } from './helpers/waitFor.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -47,32 +49,6 @@ function assertOk(res, label, payload, requestBody, allowed = [200, 201]) {
   }
 }
 
-function isDescendant(location, warehouseId, byId) {
-  let current = location;
-  const visited = new Set();
-  let depth = 0;
-  while (current && current.parentLocationId) {
-    if (visited.has(current.id)) return false;
-    visited.add(current.id);
-    if (current.parentLocationId === warehouseId) return true;
-    current = byId.get(current.parentLocationId);
-    depth += 1;
-    if (depth > 20) return false;
-  }
-  return false;
-}
-
-function formatLocation(location) {
-  if (!location) return null;
-  return {
-    id: location.id,
-    code: location.code,
-    name: location.name,
-    type: location.type,
-    role: location.role,
-    parentLocationId: location.parentLocationId
-  };
-}
 
 async function getSession() {
   const session = await ensureSession({
@@ -86,91 +62,6 @@ async function getSession() {
   return session;
 }
 
-async function ensureWarehouse(token, tenantId) {
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
-  assert.equal(locationsRes.res.status, 200);
-  let locations = locationsRes.payload.data || [];
-  let warehouse = locations.find((loc) => loc.type === 'warehouse');
-  if (!warehouse) {
-    const code = `WH-${randomUUID()}`;
-    const body = {
-      code,
-      name: `Warehouse ${code}`,
-      type: 'warehouse',
-      role: null,
-      isSellable: false,
-      active: true
-    };
-    const createRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(createRes.res, 'POST /locations (warehouse)', createRes.payload, body, [201]);
-    warehouse = createRes.payload;
-    locations = [...locations, warehouse];
-  }
-  const ensureRole = async (role) => {
-    let loc = locations.find(
-      (entry) => entry.role === role && entry.parentLocationId === warehouse.id
-    );
-    if (!loc) {
-      const code = `${role}-${randomUUID().slice(0, 8)}`;
-      const body = {
-        code,
-        name: `${role} Location`,
-        type: role === 'SCRAP' ? 'scrap' : 'bin',
-        role,
-        isSellable: role === 'SELLABLE',
-        parentLocationId: warehouse.id
-      };
-      const createRes = await apiRequest('POST', '/locations', { token, body });
-      assertOk(createRes.res, `POST /locations (${role})`, createRes.payload, body, [201]);
-      loc = createRes.payload;
-      locations = [...locations, loc];
-    }
-    await db.query(
-      `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT DO NOTHING`,
-      [tenantId, warehouse.id, role, loc.id]
-    );
-    return loc;
-  };
-  await ensureRole('SELLABLE');
-  await ensureRole('QA');
-
-  const defaultsRes = await db.query(
-    `SELECT role, location_id
-       FROM warehouse_default_location
-      WHERE tenant_id = $1 AND warehouse_id = $2`,
-    [tenantId, warehouse.id]
-  );
-  const defaults = new Map(defaultsRes.rows.map((row) => [row.role, row.location_id]));
-  const qaId = defaults.get('QA');
-  const sellableId = defaults.get('SELLABLE');
-  assert.ok(qaId);
-  assert.ok(sellableId);
-  const qa = locations.find((loc) => loc.id === qaId);
-  const sellable = locations.find((loc) => loc.id === sellableId);
-  assert.ok(qa);
-  assert.ok(sellable);
-  const byId = new Map(locations.map((loc) => [loc.id, loc]));
-  const diagnostics = {
-    warehouseId: warehouse.id,
-    warehouse: formatLocation(warehouse),
-    qaLocation: formatLocation(qa),
-    sellableLocation: formatLocation(sellable),
-    locations: locations.map(formatLocation),
-    defaults: defaultsRes.rows
-  };
-  if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
-  }
-  if (!qa.parentLocationId || !isDescendant(qa, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID qa\n${safeJson(diagnostics)}`);
-  }
-  if (!sellable.parentLocationId || !isDescendant(sellable, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID sellable\n${safeJson(diagnostics)}`);
-  }
-  return { qa, sellable };
-}
 
 async function createVendor(token) {
   const code = `V-${randomUUID()}`;
@@ -325,7 +216,9 @@ test('Derived backorder tracks sellable supply and commitments', async () => {
   assert.ok(tenantId);
   assert.ok(userId);
 
-  const { qa, sellable } = await ensureWarehouse(token, tenantId);
+  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const qa = defaults.QA;
+  const sellable = defaults.SELLABLE;
   const vendorId = await createVendor(token);
   const customerId = await createCustomer(tenantId);
   const itemId = await createItem(token, sellable.id);
@@ -335,18 +228,34 @@ test('Derived backorder tracks sellable supply and commitments', async () => {
   assert.ok(Math.abs(initialBackorder - 10) < 1e-6);
 
   const receiptLineId = await receiveIntoQa(token, vendorId, itemId, sellable.id, 10);
-  const afterQaReceipt = await getLineBackorder(token, orderId);
+  const afterQaReceipt = await waitForCondition(
+    () => getLineBackorder(token, orderId),
+    (value) => Math.abs(value - 10) < 1e-6,
+    { label: 'backorder after QA receipt' }
+  );
   assert.ok(Math.abs(afterQaReceipt - 10) < 1e-6, `Expected backorder unchanged after QA receipt`);
 
   await qcAccept(token, receiptLineId, 10, userId);
-  const afterQcAccept = await getLineBackorder(token, orderId);
+  const afterQcAccept = await waitForCondition(
+    () => getLineBackorder(token, orderId),
+    (value) => Math.abs(value) < 1e-6,
+    { label: 'backorder after QC accept' }
+  );
   assert.ok(Math.abs(afterQcAccept) < 1e-6, `Expected backorder to clear after QC accept`);
 
   const reservationId = await createReservation(token, lineId, itemId, sellable.id, 2);
-  const afterReserve = await getLineBackorder(token, orderId);
+  const afterReserve = await waitForCondition(
+    () => getLineBackorder(token, orderId),
+    (value) => Math.abs(value - 2) < 1e-6,
+    { label: 'backorder after reserve' }
+  );
   assert.ok(Math.abs(afterReserve - 2) < 1e-6, `Expected backorder to increase after reservation`);
 
   await cancelReservation(token, reservationId);
-  const afterCancel = await getLineBackorder(token, orderId);
+  const afterCancel = await waitForCondition(
+    () => getLineBackorder(token, orderId),
+    (value) => Math.abs(value) < 1e-6,
+    { label: 'backorder after cancel' }
+  );
   assert.ok(Math.abs(afterCancel) < 1e-6, `Expected backorder to return to 0 after cancel`);
 });

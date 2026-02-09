@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
+import { waitForCondition } from './helpers/waitFor.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -86,59 +88,6 @@ async function getSession() {
   return session;
 }
 
-async function ensureWarehouse(token, tenantId) {
-  const templateRes = await apiRequest('POST', '/locations/templates/standard-warehouse', {
-    token,
-    body: { includeReceivingQc: true }
-  });
-  assertOk(
-    templateRes.res,
-    'POST /locations/templates/standard-warehouse',
-    templateRes.payload,
-    { includeReceivingQc: true },
-    [200, 201]
-  );
-
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 500 } });
-  assert.equal(locationsRes.res.status, 200);
-  const locations = locationsRes.payload.data || [];
-  const warehouse = locations.find((loc) => loc.type === 'warehouse');
-  assert.ok(warehouse, 'Warehouse required');
-
-  const defaultsRes = await db.query(
-    `SELECT role, location_id
-       FROM warehouse_default_location
-      WHERE tenant_id = $1 AND warehouse_id = $2 AND role IN ('SELLABLE','QA')`,
-    [tenantId, warehouse.id]
-  );
-  const defaults = new Map(defaultsRes.rows.map((row) => [row.role, row.location_id]));
-  const sellableId = defaults.get('SELLABLE');
-  const qaId = defaults.get('QA');
-  const sellable = locations.find((loc) => loc.id === sellableId);
-  const qa = locations.find((loc) => loc.id === qaId);
-  const byId = new Map(locations.map((loc) => [loc.id, loc]));
-  const diagnostics = {
-    warehouseId: warehouse.id,
-    warehouse: formatLocation(warehouse),
-    qaLocation: formatLocation(qa),
-    sellableLocation: formatLocation(sellable),
-    locations: locations.map(formatLocation),
-    defaults: defaultsRes.rows
-  };
-  if (!sellableId || !qaId || !sellable || !qa) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID defaults\n${safeJson(diagnostics)}`);
-  }
-  if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
-  }
-  if (!qa.parentLocationId || !isDescendant(qa, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID qa\n${safeJson(diagnostics)}`);
-  }
-  if (!sellable.parentLocationId || !isDescendant(sellable, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID sellable\n${safeJson(diagnostics)}`);
-  }
-  return { sellable, qa };
-}
 
 async function createCustomer(tenantId) {
   const id = randomUUID();
@@ -302,7 +251,8 @@ test('ATP excludes expired lots from sellable on-hand', async () => {
   const tenantId = session.tenant?.id;
   assert.ok(token && tenantId);
 
-  const { sellable } = await ensureWarehouse(token, tenantId);
+  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await createItem(token, sellable.id);
   const expiredAt = new Date(Date.now() - 86400000).toISOString();
   const validAt = new Date(Date.now() + 86400000).toISOString();
@@ -314,7 +264,11 @@ test('ATP excludes expired lots from sellable on-hand', async () => {
     { lotId: validLotId, uom: 'each', quantityDelta: '6' }
   ]);
 
-  const atp = await getAtpDetail(token, itemId, sellable.id);
+  const atp = await waitForCondition(
+    () => getAtpDetail(token, itemId, sellable.id),
+    (value) => value && Math.abs(Number(value.onHand) - 6) < 1e-6,
+    { label: 'atp onHand after lots adjustment' }
+  );
   assert.ok(atp);
   assert.ok(Math.abs(Number(atp.onHand) - 6) < 1e-6, `Expected onHand 6, got ${atp.onHand}`);
   assert.ok(Math.abs(Number(atp.availableToPromise) - 6) < 1e-6);
@@ -327,7 +281,8 @@ test('QC accept into sellable for expired lot stays excluded from ATP', async ()
   const userId = session.user?.id;
   assert.ok(token && tenantId && userId);
 
-  const { sellable } = await ensureWarehouse(token, tenantId);
+  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const vendorRes = await apiRequest('POST', '/vendors', {
     token,
     body: { code: `V-${randomUUID()}`, name: 'Vendor' }
@@ -357,7 +312,11 @@ test('QC accept into sellable for expired lot stays excluded from ATP', async ()
   });
   assert.equal(allocRes.res.status, 201);
 
-  const atp = await getAtpDetail(token, itemId, sellable.id, { allowNotFound: true });
+  const atp = await waitForCondition(
+    () => getAtpDetail(token, itemId, sellable.id, { allowNotFound: true }),
+    (value) => value === null,
+    { label: 'atp excludes expired lot after qc accept' }
+  );
   assert.equal(atp, null);
 });
 
@@ -367,7 +326,8 @@ test('Derived backorder ignores expired lots', async () => {
   const tenantId = session.tenant?.id;
   assert.ok(token && tenantId);
 
-  const { sellable } = await ensureWarehouse(token, tenantId);
+  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const customerId = await createCustomer(tenantId);
   const itemId = await createItem(token, sellable.id);
   const expiredAt = new Date(Date.now() - 86400000).toISOString();

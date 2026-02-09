@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -86,51 +87,6 @@ async function getSession() {
   return session;
 }
 
-async function ensureWarehouse(token, tenantId) {
-  const templateRes = await apiRequest('POST', '/locations/templates/standard-warehouse', {
-    token,
-    body: { includeReceivingQc: true }
-  });
-  assertOk(
-    templateRes.res,
-    'POST /locations/templates/standard-warehouse',
-    templateRes.payload,
-    { includeReceivingQc: true },
-    [200, 201]
-  );
-
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 500 } });
-  assert.equal(locationsRes.res.status, 200);
-  const locations = locationsRes.payload.data || [];
-  const warehouse = locations.find((loc) => loc.type === 'warehouse');
-  assert.ok(warehouse, 'Warehouse required');
-
-  const defaultsRes = await db.query(
-    `SELECT location_id
-       FROM warehouse_default_location
-      WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
-    [tenantId, warehouse.id]
-  );
-  const defaultSellableId = defaultsRes.rows[0]?.location_id;
-  const sellable = locations.find((loc) => loc.id === defaultSellableId);
-  const byId = new Map(locations.map((loc) => [loc.id, loc]));
-  const diagnostics = {
-    warehouseId: warehouse.id,
-    warehouse: formatLocation(warehouse),
-    sellable: formatLocation(sellable),
-    locations: locations.map(formatLocation)
-  };
-  if (!defaultSellableId || !sellable) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID default_sellable\n${safeJson(diagnostics)}`);
-  }
-  if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
-  }
-  if (!sellable.parentLocationId || !isDescendant(sellable, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID sellable\n${safeJson(diagnostics)}`);
-  }
-  return { sellable };
-}
 
 async function seedItemAndStock(token, sellableLocationId, quantity = 10) {
   const sku = `ATP-${randomUUID()}`;
@@ -178,7 +134,8 @@ test('ATP subtracts allocated explicitly', async () => {
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { sellable } = await ensureWarehouse(token, tenantId);
+  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 10);
 
   const reserveRes = await apiRequest('POST', '/reservations', {

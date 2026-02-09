@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -41,27 +42,6 @@ async function getSession() {
   });
   db = session.pool;
   return session;
-}
-
-async function ensureWarehouse(token, tenantId, db) {
-  const locationsRes = await apiRequest('GET', '/locations', { token });
-  assert.equal(locationsRes.res.status, 200);
-  const locations = locationsRes.payload.data || [];
-  const warehouse = locations.find((loc) => loc.type === 'warehouse');
-  assert.ok(warehouse);
-  const defaultsRes = await db.query(
-    `SELECT location_id
-       FROM warehouse_default_location
-      WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
-    [tenantId, warehouse.id]
-  );
-  const defaultSellableId = defaultsRes.rows[0]?.location_id;
-  const sellable =
-    locations.find((loc) => loc.id === defaultSellableId) ||
-    locations.find((loc) => loc.role === 'SELLABLE' && loc.parentLocationId === warehouse.id) ||
-    locations.find((loc) => loc.role === 'SELLABLE');
-  assert.ok(sellable);
-  return { sellable };
 }
 
 async function seedItemAndStock(token, sellableLocationId, quantity = 10) {
@@ -107,7 +87,8 @@ test('Ledger reconcile strict mode fails on drift when repair disabled', async (
   const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant.id;
-  const { sellable } = await ensureWarehouse(token, tenantId, db);
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 10);
 
   await db.query(
@@ -129,7 +110,8 @@ test('Ledger reconcile repair fixes drift and clears mismatches', async () => {
   const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant.id;
-  const { sellable } = await ensureWarehouse(token, tenantId, db);
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 10);
 
   await db.query(
@@ -161,7 +143,8 @@ test('Ledger reconcile repair aborts when threshold exceeded', async () => {
   const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant.id;
-  const { sellable } = await ensureWarehouse(token, tenantId, db);
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 10);
 
   await db.query(

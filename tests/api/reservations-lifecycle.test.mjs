@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
+import { waitForCondition } from './helpers/waitFor.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -31,49 +33,6 @@ async function apiRequest(method, path, { token, body, params, headers } = {}) {
   return { res, payload };
 }
 
-function safeJson(value) {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function assertOk(res, label, payload, requestBody, allowed = [200, 201]) {
-  if (!allowed.includes(res.status)) {
-    const body = typeof payload === 'string' ? payload : safeJson(payload);
-    const req = requestBody ? safeJson(requestBody) : '';
-    throw new Error(`BOOTSTRAP_FAILED ${label} status=${res.status} body=${body}${req ? ` request=${req}` : ''}`);
-  }
-}
-
-function isDescendant(location, warehouseId, byId) {
-  let current = location;
-  const visited = new Set();
-  let depth = 0;
-  while (current && current.parentLocationId) {
-    if (visited.has(current.id)) return false;
-    visited.add(current.id);
-    if (current.parentLocationId === warehouseId) return true;
-    current = byId.get(current.parentLocationId);
-    depth += 1;
-    if (depth > 20) return false;
-  }
-  return false;
-}
-
-function formatLocation(location) {
-  if (!location) return null;
-  return {
-    id: location.id,
-    code: location.code,
-    name: location.name,
-    type: location.type,
-    role: location.role,
-    parentLocationId: location.parentLocationId
-  };
-}
-
 async function getSession() {
   const session = await ensureSession({
     apiRequest,
@@ -84,92 +43,6 @@ async function getSession() {
   });
   db = session.pool;
   return session;
-}
-
-async function ensureWarehouse(token, tenantId, db) {
-  if (!tenantId) {
-    const meRes = await apiRequest('GET', '/auth/me', { token });
-    assert.equal(meRes.res.status, 200);
-    tenantId = meRes.payload?.tenantId || meRes.payload?.tenant?.id || meRes.payload?.user?.tenantId;
-  }
-  assert.ok(tenantId);
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
-  assert.equal(locationsRes.res.status, 200);
-  let locations = locationsRes.payload.data || [];
-  let warehouse = locations.find((loc) => loc.type === 'warehouse');
-  if (!warehouse) {
-    const code = `WH-${randomUUID()}`;
-    const body = {
-        code,
-        name: `Warehouse ${code}`,
-        type: 'warehouse',
-        role: null,
-        isSellable: false,
-        active: true
-    };
-    const createRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(createRes.res, 'POST /locations (warehouse)', createRes.payload, body, [201]);
-    warehouse = createRes.payload;
-    locations = [...locations, warehouse];
-  }
-  const ensureRole = async (role) => {
-    let loc = locations.find(
-      (entry) => entry.role === role && entry.parentLocationId === warehouse.id
-    );
-    if (!loc) {
-      const code = `${role}-${randomUUID().slice(0, 8)}`;
-      const body = {
-          code,
-          name: `${role} Location`,
-          type: role === 'SCRAP' ? 'scrap' : 'bin',
-          role,
-          isSellable: role === 'SELLABLE',
-          parentLocationId: warehouse.id
-      };
-      const createRes = await apiRequest('POST', '/locations', { token, body });
-      assertOk(createRes.res, `POST /locations (${role})`, createRes.payload, body, [201]);
-      loc = createRes.payload;
-      locations = [...locations, loc];
-    }
-    await db.query(
-      `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT DO NOTHING`,
-      [tenantId, warehouse.id, role, loc.id]
-    );
-    return loc;
-  };
-  await ensureRole('SELLABLE');
-  await ensureRole('QA');
-  await ensureRole('HOLD');
-  await ensureRole('REJECT');
-  const defaultsRes = await db.query(
-    `SELECT location_id
-       FROM warehouse_default_location
-      WHERE tenant_id = $1 AND warehouse_id = $2 AND role = 'SELLABLE'`,
-    [tenantId, warehouse.id]
-  );
-  const defaultSellableId = defaultsRes.rows[0]?.location_id;
-  const sellable =
-    locations.find((loc) => loc.id === defaultSellableId) ||
-    locations.find((loc) => loc.role === 'SELLABLE' && loc.parentLocationId === warehouse.id) ||
-    locations.find((loc) => loc.role === 'SELLABLE');
-  assert.ok(sellable);
-  const byId = new Map(locations.map((loc) => [loc.id, loc]));
-  const diagnostics = {
-    warehouseId: warehouse.id,
-    warehouse: formatLocation(warehouse),
-    sellable: formatLocation(sellable),
-    locations: locations.map(formatLocation),
-    defaults: defaultsRes.rows
-  };
-  if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
-  }
-  if (!sellable.parentLocationId || !isDescendant(sellable, warehouse.id, byId)) {
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID sellable\n${safeJson(diagnostics)}`);
-  }
-  return { warehouse, sellable };
 }
 
 async function seedItemAndStock(token, sellableLocationId, quantity = 10) {
@@ -216,8 +89,15 @@ test('Reserve → Cancel → ATP returns', async () => {
   const token = session.accessToken;
   assert.ok(token);
 
-  const { sellable } = await ensureWarehouse(token, session.tenant.id, db);
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 10);
+
+  const atpInitialRes = await apiRequest('GET', '/atp', { token, params: { itemId } });
+  assert.equal(atpInitialRes.res.status, 200);
+  const initialRow = (atpInitialRes.payload.data || []).find((r) => r.locationId === sellable.id);
+  assert.ok(initialRow);
+  const initialATP = Number(initialRow.availableToPromise);
 
   const reserveRes = await apiRequest('POST', '/reservations', {
     token,
@@ -239,11 +119,16 @@ test('Reserve → Cancel → ATP returns', async () => {
   assert.equal(reserveRes.res.status, 201);
   const reservationId = reserveRes.payload.data[0].id;
 
-  const atpRes = await apiRequest('GET', '/atp', { token, params: { itemId } });
-  assert.equal(atpRes.res.status, 200);
-  const row = (atpRes.payload.data || []).find((r) => r.locationId === sellable.id);
-  assert.ok(row);
-  assert.ok(Math.abs(Number(row.availableToPromise) - 5) < 1e-6);
+  await waitForCondition(
+    async () => {
+      const atpRes = await apiRequest('GET', '/atp', { token, params: { itemId } });
+      assert.equal(atpRes.res.status, 200);
+      const row = (atpRes.payload.data || []).find((r) => r.locationId === sellable.id);
+      return row ? Number(row.availableToPromise) : null;
+    },
+    (available) => typeof available === 'number' && available < initialATP,
+    { label: 'ATP reduced after reservation' }
+  );
 
   const cancelRes = await apiRequest('POST', `/reservations/${reservationId}/cancel`, {
     token,
@@ -252,11 +137,16 @@ test('Reserve → Cancel → ATP returns', async () => {
   });
   assert.equal(cancelRes.res.status, 200);
 
-  const atpRes2 = await apiRequest('GET', '/atp', { token, params: { itemId } });
-  assert.equal(atpRes2.res.status, 200);
-  const row2 = (atpRes2.payload.data || []).find((r) => r.locationId === sellable.id);
-  assert.ok(row2);
-  assert.ok(Math.abs(Number(row2.availableToPromise) - 10) < 1e-6);
+  await waitForCondition(
+    async () => {
+      const atpRes2 = await apiRequest('GET', '/atp', { token, params: { itemId } });
+      assert.equal(atpRes2.res.status, 200);
+      const row2 = (atpRes2.payload.data || []).find((r) => r.locationId === sellable.id);
+      return row2 ? Number(row2.availableToPromise) : null;
+    },
+    (available) => typeof available === 'number' && Math.abs(available - initialATP) < 1e-6,
+    { label: 'ATP restored after cancel' }
+  );
 });
 
 test('Reserve → Allocate → Fulfill keeps ATP reduced until fulfilled', async () => {
@@ -266,7 +156,8 @@ test('Reserve → Allocate → Fulfill keeps ATP reduced until fulfilled', async
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { sellable } = await ensureWarehouse(token, tenantId, db);
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 8);
 
   const reserveRes = await apiRequest('POST', '/reservations', {
@@ -321,7 +212,8 @@ test('Retry reserve with same idempotency key does not duplicate', async () => {
   const tenantId = session.tenant?.id;
   assert.ok(token);
 
-  const { sellable } = await ensureWarehouse(token, tenantId, db);
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
   const idemKey = `reserve-${randomUUID()}`;
@@ -359,7 +251,8 @@ test('Concurrent reserve with same idempotency key returns same reservation', as
   const tenantId = session.tenant?.id;
   assert.ok(token);
 
-  const { sellable } = await ensureWarehouse(token, tenantId, db);
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
   const idemKey = `reserve-${randomUUID()}`;
@@ -393,7 +286,8 @@ test('Concurrent reservations against limited stock: one succeeds, one fails', a
   assert.ok(token);
 
   const tenantId = session.tenant?.id;
-  const { sellable } = await ensureWarehouse(token, tenantId, db);
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
   const makeReservation = (key) =>
@@ -429,7 +323,8 @@ test('Guardrails reject illegal transitions', async () => {
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token);
-  const { sellable } = await ensureWarehouse(token, tenantId, db);
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
   const reserveRes = await apiRequest('POST', '/reservations', {

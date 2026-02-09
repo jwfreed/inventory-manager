@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
+import { waitForCondition } from './helpers/waitFor.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -51,17 +53,8 @@ test('cost layer dedupe keeps one active receipt layer per source', async () => 
   assert.ok(token);
   assert.ok(tenantId);
 
-  const locationRes = await apiRequest('POST', '/locations', {
-    token,
-    body: {
-      code: `DEDUP-LOC-${Date.now()}`,
-      name: 'Dedupe Location',
-      type: 'warehouse',
-      active: true
-    }
-  });
-  assert.equal(locationRes.res.status, 201);
-  const locationId = locationRes.payload.id;
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const locationId = defaults.SELLABLE.id;
 
   const itemRes = await apiRequest('POST', '/items', {
     token,
@@ -139,20 +132,44 @@ test('cost layer dedupe keeps one active receipt layer per source', async () => 
         AND r.rn > 1`
   );
 
+  await waitForCondition(
+    async () => {
+      const countRes = await db.query(
+        `SELECT COUNT(*)::int AS count
+           FROM inventory_cost_layers
+          WHERE tenant_id = $1
+            AND source_type = 'receipt'
+            AND source_document_id = $2
+            AND voided_at IS NULL`,
+        [tenantId, sourceId]
+      );
+      return countRes.rows[0].count;
+    },
+    (count) => count === 1,
+    { label: 'dedupe active receipt layers before index' }
+  );
+
   await db.query(
     `CREATE UNIQUE INDEX uq_cost_layers_receipt_source_active
        ON inventory_cost_layers (tenant_id, source_document_id)
       WHERE source_type = 'receipt' AND source_document_id IS NOT NULL AND voided_at IS NULL`
   );
 
-  const countRes = await db.query(
-    `SELECT COUNT(*)::int AS count
-       FROM inventory_cost_layers
-      WHERE tenant_id = $1
-        AND source_type = 'receipt'
-        AND source_document_id = $2
-        AND voided_at IS NULL`,
-    [tenantId, sourceId]
+  const finalCount = await waitForCondition(
+    async () => {
+      const countRes = await db.query(
+        `SELECT COUNT(*)::int AS count
+           FROM inventory_cost_layers
+          WHERE tenant_id = $1
+            AND source_type = 'receipt'
+            AND source_document_id = $2
+            AND voided_at IS NULL`,
+        [tenantId, sourceId]
+      );
+      return countRes.rows[0].count;
+    },
+    (count) => count === 1,
+    { label: 'dedupe active receipt layers after index' }
   );
-  assert.equal(countRes.rows[0].count, 1);
+  assert.equal(finalCount, 1);
 });

@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -64,63 +65,7 @@ test('warehouse listing includes zones when requested', async (t) => {
   const token = session.accessToken;
   assert.ok(token);
 
-  const locationsRes = await apiRequest('GET', '/locations', { token, params: { limit: 200 } });
-  assert.equal(locationsRes.res.status, 200);
-  let locations = locationsRes.payload.data || [];
-  let warehouse = locations.find((loc) => loc.type === 'warehouse');
-  if (!warehouse) {
-    const code = `WH-${randomUUID()}`;
-    const body = {
-      code,
-      name: `Warehouse ${code}`,
-      type: 'warehouse',
-      role: null,
-      isSellable: false,
-      active: true
-    };
-    const createRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(createRes.res, 'POST /locations (warehouse)', createRes.payload, body, [201]);
-    warehouse = createRes.payload;
-    locations = [...locations, warehouse];
-  }
-  const zone = locations.find(
-    (loc) => loc.type === 'bin' && loc.parentLocationId === warehouse.id
-  );
-  if (!zone) {
-    const code = `ZONE-${randomUUID().slice(0, 8)}`;
-    const body = {
-      code,
-      name: 'Zone Bin',
-      type: 'bin',
-      role: 'SELLABLE',
-      isSellable: true,
-      parentLocationId: warehouse.id
-    };
-    const zoneRes = await apiRequest('POST', '/locations', { token, body });
-    assertOk(zoneRes.res, 'POST /locations (zone)', zoneRes.payload, body, [201]);
-  }
-  if (warehouse.parentLocationId !== null || warehouse.type !== 'warehouse') {
-    const diagnostics = {
-      warehouseId: warehouse.id,
-      warehouse: {
-        id: warehouse.id,
-        code: warehouse.code,
-        name: warehouse.name,
-        type: warehouse.type,
-        role: warehouse.role,
-        parentLocationId: warehouse.parentLocationId
-      },
-      locations: locations.map((loc) => ({
-        id: loc.id,
-        code: loc.code,
-        name: loc.name,
-        type: loc.type,
-        role: loc.role,
-        parentLocationId: loc.parentLocationId
-      }))
-    };
-    throw new Error(`WAREHOUSE_BOOTSTRAP_INVALID root\n${safeJson(diagnostics)}`);
-  }
+  await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
 
   const res = await apiRequest('GET', '/locations', {
     token,
