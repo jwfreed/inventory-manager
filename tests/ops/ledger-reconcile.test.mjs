@@ -2,8 +2,8 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ensureSession } from './helpers/ensureSession.mjs';
-import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
+import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
+import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -33,7 +33,7 @@ async function apiRequest(method, path, { token, body, params, headers } = {}) {
 }
 
 async function getSession() {
-  const session = await ensureSession({
+  const session = await ensureDbSession({
     apiRequest,
     adminEmail,
     adminPassword,

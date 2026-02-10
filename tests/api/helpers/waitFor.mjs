@@ -1,3 +1,11 @@
+/**
+ * Helper: waitForCondition / waitForValue
+ * Purpose: Poll for eventual consistency in tests without leaking timers.
+ * Preconditions: Caller provides an async function and predicate; optional timeout/interval/label.
+ * Postconditions: Resolves with last value when predicate passes; throws with diagnostics on timeout.
+ * Consumers: API, ops, and db tests.
+ * Common failures: Timeout due to unmet condition; caller not awaiting the promise.
+ */
 const activeTimers = new Set();
 
 function sleep(ms, signal) {

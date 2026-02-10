@@ -1,5 +1,34 @@
 # inventory-manager
 
+## Philosophy
+
+Inventory systems fail quietly. This project prioritizes **auditability first**: ledger authority, invariant enforcement, and deterministic warehouse scoping over convenience.
+
+## Quick dev loop
+
+```bash
+export DATABASE_URL="postgres://$USER@localhost:5432/inventory_dev"
+npm install
+npm run migrate:up
+npm run dev
+npm run test:api
+```
+
+## Test suites
+
+- `npm run test:api` — API behavior checks
+- `npm run test:ops` — AK-47 operational flows
+- `npm run test:db` — DB triggers and invariants
+- `npm run test:all` — full suite
+
+## Runbooks
+
+- `docs/runbooks/invariants.md`
+- `docs/runbooks/warehouses.md`
+- `docs/runbooks/debugging_tests.md`
+- `docs/runbooks/ci.md`
+- `docs/operational-suite.md`
+
 ## Phase Summary (0–7)
 
 This repository uses `node-pg-migrate` with timestamped TypeScript migrations. All phases are implemented:

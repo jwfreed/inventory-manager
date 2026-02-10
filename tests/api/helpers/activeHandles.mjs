@@ -1,3 +1,11 @@
+/**
+ * Helper: active handle diagnostics
+ * Purpose: Snapshot active handles/requests to diagnose event-loop leaks in tests.
+ * Preconditions: TEST_DEBUG_HANDLES=1 enables logging in tests/setup.mjs.
+ * Postconditions: Returns normalized handle info for diffing; no side effects.
+ * Consumers: test harness only.
+ * Common failures: None; output may be noisy if stdio handles are included.
+ */
 function isStdio(handle) {
   return handle === process.stdout || handle === process.stderr || handle === process.stdin;
 }

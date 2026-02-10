@@ -6379,3 +6379,1764 @@ Error: listen EADDRINUSE: address already in use :::3000
   address: '::',
   port: 3000
 }
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+📅 Registering scheduled jobs (in-process)...
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+📅 Registering scheduled jobs (in-process)...
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+> inventory-manager@0.1.0 dev
+> ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts
+
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
+    at ensureDefaultsForWarehouse [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:212:15[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at async [90m/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:295:7
+    at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
+    at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
+    at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m

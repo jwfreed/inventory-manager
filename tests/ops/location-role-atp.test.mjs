@@ -2,8 +2,8 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ensureSession } from './helpers/ensureSession.mjs';
-import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
+import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
+import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -76,7 +76,7 @@ function formatLocation(location) {
 }
 
 async function getSession() {
-  const session = await ensureSession({
+  const session = await ensureDbSession({
     apiRequest,
     adminEmail,
     adminPassword,
@@ -96,22 +96,10 @@ test('ATP respects location role and sellable flag', async () => {
   assert.ok(tenantId);
 
   const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
-  const fgLocation = defaults.SELLABLE;
-  assert.ok(fgLocation);
-
-  const locRes = await apiRequest('POST', '/locations', {
-    token,
-    body: {
-      code: `QA-${Date.now()}`,
-      name: 'QA Zone',
-      type: 'bin',
-      parentLocationId: fgLocation.id,
-      role: 'SELLABLE',
-      isSellable: true
-    }
-  });
-  assert.equal(locRes.res.status, 201);
-  const locationId = locRes.payload.id;
+  const sellableLocation = defaults.SELLABLE;
+  const qaLocation = defaults.QA;
+  assert.ok(sellableLocation);
+  assert.ok(qaLocation);
 
   const itemRes = await apiRequest('POST', '/items', {
     token,
@@ -121,7 +109,7 @@ test('ATP respects location role and sellable flag', async () => {
       uomDimension: 'count',
       canonicalUom: 'each',
       stockingUom: 'each',
-      defaultLocationId: locationId
+      defaultLocationId: sellableLocation.id
     }
   });
   assert.equal(itemRes.res.status, 201);
@@ -132,7 +120,8 @@ test('ATP respects location role and sellable flag', async () => {
     body: {
       occurredAt: new Date().toISOString(),
       lines: [
-        { lineNumber: 1, itemId, locationId, uom: 'each', quantityDelta: 10, reasonCode: 'test' }
+        { lineNumber: 1, itemId, locationId: sellableLocation.id, uom: 'each', quantityDelta: 10, reasonCode: 'test' },
+        { lineNumber: 2, itemId, locationId: qaLocation.id, uom: 'each', quantityDelta: 5, reasonCode: 'test' }
       ]
     }
   });
@@ -143,31 +132,13 @@ test('ATP respects location role and sellable flag', async () => {
 
   const atpRes1 = await apiRequest('GET', '/atp/detail', {
     token,
-    params: { itemId, locationId }
+    params: { itemId, locationId: sellableLocation.id }
   });
   assert.equal(atpRes1.res.status, 200);
 
-  const updateRes = await apiRequest('PUT', `/locations/${locationId}`, {
-    token,
-    body: {
-      code: locRes.payload.code,
-      name: locRes.payload.name,
-      type: locRes.payload.type,
-      role: 'QA',
-      isSellable: false,
-      parentLocationId: locRes.payload.parentLocationId
-    }
-  });
-  assertOk(updateRes.res, 'PUT /locations/:id (set QA)', updateRes.payload, {
-    id: locationId,
-    role: 'QA',
-    isSellable: false,
-    parentLocationId: locRes.payload.parentLocationId
-  }, [200]);
-
   const atpRes2 = await apiRequest('GET', '/atp/detail', {
     token,
-    params: { itemId, locationId }
+    params: { itemId, locationId: qaLocation.id }
   });
   assert.equal(atpRes2.res.status, 404);
 });

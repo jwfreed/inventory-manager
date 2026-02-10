@@ -2,12 +2,12 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
 
 let db;
 
 test.before(async () => {
-  const session = await ensureSession();
+  const session = await ensureDbSession();
   db = session.pool;
 });
 

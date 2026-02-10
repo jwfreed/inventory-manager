@@ -36,9 +36,8 @@ function assertOk(res, label, payload, requestBody, allowed = [200, 201]) {
 }
 
 test('POST /locations accepts role-less warehouse roots and rejects sellable roots', async () => {
-  const tenantSlug = `wh-root-${randomUUID().slice(0, 8)}`;
   const session = await ensureSession({
-    tenantSlug,
+    tenantSlug: process.env.SEED_TENANT_SLUG || 'default',
     tenantName: 'Warehouse Root Create'
   });
   const token = session.accessToken;

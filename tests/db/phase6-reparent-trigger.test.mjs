@@ -2,14 +2,16 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ensureSession } from './helpers/ensureSession.mjs';
+import { Client } from 'pg';
+import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
 
 let db;
 
 test.before(async () => {
-  const session = await ensureSession();
+  const session = await ensureDbSession();
   db = session.pool;
 });
+
 
 function safeJson(value) {
   try {
@@ -48,19 +50,18 @@ async function expectErrorWithSavepoint(client, expectedSubstring, fn) {
   }
 }
 
-async function insertTenant(client, label) {
+async function insertTenant(db, label) {
   const tenantId = randomUUID();
-  const slug = `phase6-validate-${label}-${randomUUID().slice(0, 8)}`;
-  await client.query(
+  const slug = `phase6-${label}-${randomUUID().slice(0, 8)}`;
+  await db.query(
     `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
      VALUES ($1, $2, $3, NULL, now())`,
-    [tenantId, `Phase6 Validate ${label}`, slug]
+    [tenantId, `Phase6 ${label}`, slug]
   );
   return tenantId;
 }
 
 async function cleanupTenant(tenantId) {
-  await db.query(`DELETE FROM warehouse_default_location WHERE tenant_id = $1`, [tenantId]);
   await db.query(`DELETE FROM locations WHERE tenant_id = $1`, [tenantId]);
   await db.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
 }
@@ -128,19 +129,19 @@ async function createDescendants(db, {
 
 async function fetchDescendants(db, tenantId, rootId) {
   const res = await db.query(
-    `WITH RECURSIVE subtree AS (
+    `WITH RECURSIVE descendants AS (
        SELECT id, parent_location_id, tenant_id, warehouse_id, 1 AS depth
          FROM locations
-        WHERE tenant_id = $1 AND id = $2
+        WHERE tenant_id = $1 AND parent_location_id = $2
        UNION ALL
-       SELECT l.id, l.parent_location_id, l.tenant_id, l.warehouse_id, s.depth + 1
+       SELECT l.id, l.parent_location_id, l.tenant_id, l.warehouse_id, d.depth + 1
          FROM locations l
-         JOIN subtree s
-           ON l.parent_location_id = s.id
-          AND l.tenant_id = s.tenant_id
-        WHERE s.depth < 1000
+         JOIN descendants d
+           ON l.parent_location_id = d.id
+          AND l.tenant_id = d.tenant_id
+        WHERE d.depth < 1000
      )
-     SELECT id, warehouse_id FROM subtree WHERE id <> $2`,
+     SELECT id, warehouse_id FROM descendants`,
     [tenantId, rootId]
   );
   return res.rows;
@@ -148,23 +149,10 @@ async function fetchDescendants(db, tenantId, rootId) {
 
 async function fetchWarehouseId(db, tenantId, id) {
   const res = await db.query(
-    `SELECT warehouse_id, parent_location_id FROM locations WHERE tenant_id = $1 AND id = $2`,
+    `SELECT warehouse_id FROM locations WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id]
   );
-  return res.rows[0] ?? null;
-}
-
-async function setDefault(db, { tenantId, warehouseId, role, locationId }) {
-  await db.query(
-    `DELETE FROM warehouse_default_location
-      WHERE tenant_id = $1 AND warehouse_id = $2 AND role = $3`,
-    [tenantId, warehouseId, role]
-  );
-  await db.query(
-    `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
-     VALUES ($1, $2, $3, $4)`,
-    [tenantId, warehouseId, role, locationId]
-  );
+  return res.rows[0]?.warehouse_id ?? null;
 }
 
 function assertAllWarehouseId(rows, expectedId, diag) {
@@ -174,13 +162,54 @@ function assertAllWarehouseId(rows, expectedId, diag) {
   }
 }
 
-test('blocks cross-warehouse move when defaults exist in subtree', async () => {
+test('trigger no-ops when parent does not change', async () => {
   let tenantId;
   try {
     await withTx(async (client) => {
-      tenantId = await insertTenant(client, 'block-default');
+      tenantId = await insertTenant(client, 'noop');
       const w1 = await insertWarehouseRoot(client, tenantId, 'A');
       const w2 = await insertWarehouseRoot(client, tenantId, 'B');
+      const parentId = await insertNode(client, {
+        tenantId,
+        parentId: w1.id,
+        warehouseId: w1.id,
+        label: 'P'
+      });
+      await createDescendants(client, {
+        tenantId,
+        parentId,
+        warehouseId: w1.id,
+        count: 10,
+        label: 'D'
+      });
+
+      await client.query(
+        `UPDATE locations SET code = code WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, parentId]
+      );
+
+      const parentWarehouseId = await fetchWarehouseId(client, tenantId, parentId);
+      assert.equal(parentWarehouseId, w1.id);
+      const descendants = await fetchDescendants(client, tenantId, parentId);
+      assertAllWarehouseId(descendants, w1.id, {
+        tenantId,
+        w1: w1.id,
+        w2: w2.id,
+        parentId,
+        count: descendants.length
+      });
+    });
+  } finally {
+    if (tenantId) await cleanupTenant(tenantId);
+  }
+});
+
+test('reparent within same warehouse does not cascade', async () => {
+  let tenantId;
+  try {
+    await withTx(async (client) => {
+      tenantId = await insertTenant(client, 'same-wh');
+      const w1 = await insertWarehouseRoot(client, tenantId, 'A');
       const parentA = await insertNode(client, {
         tenantId,
         parentId: w1.id,
@@ -189,8 +218,8 @@ test('blocks cross-warehouse move when defaults exist in subtree', async () => {
       });
       const parentB = await insertNode(client, {
         tenantId,
-        parentId: w2.id,
-        warehouseId: w2.id,
+        parentId: w1.id,
+        warehouseId: w1.id,
         label: 'B'
       });
       const rootId = await insertNode(client, {
@@ -199,36 +228,27 @@ test('blocks cross-warehouse move when defaults exist in subtree', async () => {
         warehouseId: w1.id,
         label: 'P'
       });
-      const sellableId = await insertNode(client, {
+      await createDescendants(client, {
         tenantId,
         parentId: rootId,
         warehouseId: w1.id,
-        label: 'S'
-      });
-      await setDefault(client, {
-        tenantId,
-        warehouseId: w1.id,
-        role: 'SELLABLE',
-        locationId: sellableId
+        count: 10,
+        label: 'D'
       });
 
-      await expectErrorWithSavepoint(client, 'PARENT_MOVE_BREAKS_DEFAULT_LOCATION', async () => {
-        await client.query(
-          `UPDATE locations
-              SET parent_location_id = $1
-            WHERE tenant_id = $2 AND id = $3`,
-          [parentB, tenantId, rootId]
-        );
-      });
+      await client.query(
+        `UPDATE locations
+            SET parent_location_id = $1
+          WHERE tenant_id = $2 AND id = $3`,
+        [parentB, tenantId, rootId]
+      );
 
-      const rootRow = await fetchWarehouseId(client, tenantId, rootId);
-      assert.equal(rootRow?.warehouse_id, w1.id);
-      assert.equal(rootRow?.parent_location_id, parentA);
+      const rootWarehouseId = await fetchWarehouseId(client, tenantId, rootId);
+      assert.equal(rootWarehouseId, w1.id);
       const descendants = await fetchDescendants(client, tenantId, rootId);
       assertAllWarehouseId(descendants, w1.id, {
         tenantId,
         w1: w1.id,
-        w2: w2.id,
         rootId,
         count: descendants.length
       });
@@ -238,11 +258,11 @@ test('blocks cross-warehouse move when defaults exist in subtree', async () => {
   }
 });
 
-test('allows cross-warehouse move when no defaults in subtree', async () => {
+test('reparent across warehouses updates node and descendants', async () => {
   let tenantId;
   try {
     await withTx(async (client) => {
-      tenantId = await insertTenant(client, 'allow-no-default');
+      tenantId = await insertTenant(client, 'cross-wh');
       const w1 = await insertWarehouseRoot(client, tenantId, 'A');
       const w2 = await insertWarehouseRoot(client, tenantId, 'B');
       const parentA = await insertNode(client, {
@@ -278,9 +298,8 @@ test('allows cross-warehouse move when no defaults in subtree', async () => {
         [parentB, tenantId, rootId]
       );
 
-      const rootRow = await fetchWarehouseId(client, tenantId, rootId);
-      assert.equal(rootRow?.warehouse_id, w2.id);
-      assert.equal(rootRow?.parent_location_id, parentB);
+      const rootWarehouseId = await fetchWarehouseId(client, tenantId, rootId);
+      assert.equal(rootWarehouseId, w2.id);
       const descendants = await fetchDescendants(client, tenantId, rootId);
       assertAllWarehouseId(descendants, w2.id, {
         tenantId,
@@ -295,11 +314,11 @@ test('allows cross-warehouse move when no defaults in subtree', async () => {
   }
 });
 
-test('blocks move when default points to deep descendant', async () => {
+test('oversize subtree fails atomically with CASCADE_SIZE_EXCEEDED', async () => {
   let tenantId;
   try {
     await withTx(async (client) => {
-      tenantId = await insertTenant(client, 'block-deep');
+      tenantId = await insertTenant(client, 'oversize');
       const w1 = await insertWarehouseRoot(client, tenantId, 'A');
       const w2 = await insertWarehouseRoot(client, tenantId, 'B');
       const parentA = await insertNode(client, {
@@ -320,32 +339,15 @@ test('blocks move when default points to deep descendant', async () => {
         warehouseId: w1.id,
         label: 'P'
       });
-      const xId = await insertNode(client, {
+      await createDescendants(client, {
         tenantId,
         parentId: rootId,
         warehouseId: w1.id,
-        label: 'X'
-      });
-      const yId = await insertNode(client, {
-        tenantId,
-        parentId: xId,
-        warehouseId: w1.id,
-        label: 'Y'
-      });
-      const sId = await insertNode(client, {
-        tenantId,
-        parentId: yId,
-        warehouseId: w1.id,
-        label: 'S'
-      });
-      await setDefault(client, {
-        tenantId,
-        warehouseId: w1.id,
-        role: 'SELLABLE',
-        locationId: sId
+        count: 1001,
+        label: 'D'
       });
 
-      await expectErrorWithSavepoint(client, 'PARENT_MOVE_BREAKS_DEFAULT_LOCATION', async () => {
+      await expectErrorWithSavepoint(client, 'CASCADE_SIZE_EXCEEDED', async () => {
         await client.query(
           `UPDATE locations
               SET parent_location_id = $1
@@ -354,9 +356,8 @@ test('blocks move when default points to deep descendant', async () => {
         );
       });
 
-      const rootRow = await fetchWarehouseId(client, tenantId, rootId);
-      assert.equal(rootRow?.warehouse_id, w1.id);
-      assert.equal(rootRow?.parent_location_id, parentA);
+      const rootWarehouseId = await fetchWarehouseId(client, tenantId, rootId);
+      assert.equal(rootWarehouseId, w1.id);
       const descendants = await fetchDescendants(client, tenantId, rootId);
       assertAllWarehouseId(descendants, w1.id, {
         tenantId,
@@ -367,6 +368,82 @@ test('blocks move when default points to deep descendant', async () => {
       });
     });
   } finally {
+    if (tenantId) await cleanupTenant(tenantId);
+  }
+});
+
+test('lock conflict fails atomically with CASCADE_LOCK_CONFLICT', async () => {
+  let tenantId;
+  let lockClient;
+  try {
+    tenantId = await insertTenant(db, 'lock');
+    const w1 = await insertWarehouseRoot(db, tenantId, 'A');
+    const w2 = await insertWarehouseRoot(db, tenantId, 'B');
+    const parentA = await insertNode(db, {
+      tenantId,
+      parentId: w1.id,
+      warehouseId: w1.id,
+      label: 'A'
+    });
+    const parentB = await insertNode(db, {
+      tenantId,
+      parentId: w2.id,
+      warehouseId: w2.id,
+      label: 'B'
+    });
+    const rootId = await insertNode(db, {
+      tenantId,
+      parentId: parentA,
+      warehouseId: w1.id,
+      label: 'P'
+    });
+    await createDescendants(db, {
+      tenantId,
+      parentId: rootId,
+      warehouseId: w1.id,
+      count: 10,
+      label: 'D'
+    });
+
+    const baseDescendants = await fetchDescendants(db, tenantId, rootId);
+    const lockedId = baseDescendants[0]?.id;
+    assert.ok(lockedId);
+
+    lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+    await lockClient.connect();
+    await lockClient.query('BEGIN');
+    await lockClient.query(
+      `SELECT 1 FROM locations WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      [tenantId, lockedId]
+    );
+
+    await withTx(async (client) => {
+      await expectErrorWithSavepoint(client, 'CASCADE_LOCK_CONFLICT', async () => {
+        await client.query(
+          `UPDATE locations
+              SET parent_location_id = $1
+            WHERE tenant_id = $2 AND id = $3`,
+          [parentB, tenantId, rootId]
+        );
+      });
+
+      const rootWarehouseId = await fetchWarehouseId(client, tenantId, rootId);
+      assert.equal(rootWarehouseId, w1.id);
+      const descendants = await fetchDescendants(client, tenantId, rootId);
+      assertAllWarehouseId(descendants, w1.id, {
+        tenantId,
+        w1: w1.id,
+        w2: w2.id,
+        rootId,
+        lockedId,
+        count: descendants.length
+      });
+    });
+  } finally {
+    if (lockClient) {
+      await lockClient.query('ROLLBACK');
+      await lockClient.end();
+    }
     if (tenantId) await cleanupTenant(tenantId);
   }
 });

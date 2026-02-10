@@ -2,7 +2,7 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -75,7 +75,7 @@ function formatLocation(location) {
 }
 
 async function getSession(tenantSlug) {
-  const session = await ensureSession({
+  const session = await ensureDbSession({
     apiRequest,
     adminEmail,
     adminPassword,
@@ -101,6 +101,34 @@ async function createWarehouseGraph(token, tenantId, label) {
   const warehouse = createWarehouse.payload;
 
   const createChild = async (role, isSellable) => {
+    if (role === 'SELLABLE') {
+      const tempBody = {
+        code: `BIN-${label}-${randomUUID().slice(0, 8)}`,
+        name: `BIN ${label}`,
+        type: 'bin',
+        role: null,
+        isSellable: false,
+        parentLocationId: warehouse.id,
+      };
+      const tempRes = await apiRequest('POST', '/locations', { token, body: tempBody });
+      assertOk(tempRes.res, `POST /locations (temp ${label})`, tempRes.payload, tempBody, [201]);
+
+      const updateBody = {
+        code: tempRes.payload.code,
+        name: tempRes.payload.name,
+        type: tempRes.payload.type,
+        role: 'SELLABLE',
+        isSellable: true,
+        parentLocationId: tempRes.payload.parentLocationId
+      };
+      const updateRes = await apiRequest('PUT', `/locations/${tempRes.payload.id}`, {
+        token,
+        body: updateBody
+      });
+      assertOk(updateRes.res, `PUT /locations (SELLABLE ${label})`, updateRes.payload, updateBody, [200]);
+      return updateRes.payload;
+    }
+
     const body = {
       code: `${role}-${label}-${randomUUID().slice(0, 8)}`,
       name: `${role} ${label}`,
@@ -184,7 +212,7 @@ async function getSnapshot(token, itemId, locationId) {
 }
 
 test('ATP and snapshot are warehouse-scoped', async () => {
-  const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+  const tenantSlug = `multi-wh-${randomUUID().slice(0, 8)}`;
 let db;
   const session = await getSession(tenantSlug);
   const token = session.accessToken;
@@ -216,7 +244,7 @@ let db;
 });
 
 test('reservations do not consume supply across warehouses', async () => {
-  const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+  const tenantSlug = `multi-wh-${randomUUID().slice(0, 8)}`;
   const session = await getSession(tenantSlug);
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
@@ -282,7 +310,7 @@ test('reservations do not consume supply across warehouses', async () => {
 });
 
 test('defaults are warehouse-local', async () => {
-  const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+  const tenantSlug = `multi-wh-${randomUUID().slice(0, 8)}`;
   const session = await getSession(tenantSlug);
   const token = session.accessToken;
   const tenantId = session.tenant?.id;

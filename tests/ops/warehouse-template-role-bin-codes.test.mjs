@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ensureSession } from './helpers/ensureSession.mjs';
-import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
+import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
+import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
 
@@ -63,7 +63,7 @@ function isDescendant(locationId, warehouseId, byId) {
 
 test('standard warehouse template creates role bins even with conflicting codes', async () => {
   const tenantSlug = `tmpl-codes-${randomUUID().slice(0, 8)}`;
-  const session = await ensureSession({
+  const session = await ensureDbSession({
     tenantSlug,
     tenantName: 'Template Role Bin Codes'
   });

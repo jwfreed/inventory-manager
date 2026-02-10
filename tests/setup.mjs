@@ -1,7 +1,7 @@
 import { afterEach, after, beforeEach } from 'node:test';
 import { clearWaitForTimers } from './api/helpers/waitFor.mjs';
 import { snapshotActiveHandles, diffHandleSnapshots } from './api/helpers/activeHandles.mjs';
-import { closeEnsureSessionPool } from './api/helpers/ensureSession.mjs';
+import { closeDbPool } from './helpers/dbPool.mjs';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -10,11 +10,15 @@ function sleep(ms) {
 const delayMs = Number(process.env.TEST_AFTER_EACH_DELAY_MS ?? '100');
 const debugHandles = process.env.TEST_DEBUG_HANDLES === '1';
 
+// NOTE:
+// TEST_DEBUG_HANDLES=1 can be used to diagnose event-loop leaks.
+// Full sequential run verified clean as of 2026-02-09.
+
 let handleSnapshot;
 
 if (debugHandles) {
   // Usage:
-  // TEST_DEBUG_HANDLES=1 node --test --test-reporter=spec --test-timeout=120000 --test-concurrency=1 --import ./tests/setup.mjs tests/api/*.test.mjs
+  // TEST_DEBUG_HANDLES=1 node --test --test-reporter=spec --test-timeout=120000 --test-concurrency=1 --import ./tests/setup.mjs tests/api/*.test.mjs tests/ops/*.test.mjs tests/db/*.test.mjs
   beforeEach(() => {
     handleSnapshot = snapshotActiveHandles();
   });
@@ -53,5 +57,5 @@ after(async () => {
       console.error(`[handles] final active requests:`, finalSnapshot.requests);
     }
   }
-  await closeEnsureSessionPool();
+  await closeDbPool();
 });

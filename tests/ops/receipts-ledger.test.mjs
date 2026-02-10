@@ -2,14 +2,14 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ensureSession } from './helpers/ensureSession.mjs';
-import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
-import { waitForCondition } from './helpers/waitFor.mjs';
+import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
+import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
+import { waitForCondition } from '../api/helpers/waitFor.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+const tenantSlug = process.env.SEED_TENANT_SLUG || `receipts-ledger-${randomUUID()}`;
 let db;
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
@@ -34,7 +34,7 @@ async function apiRequest(method, path, { token, body, params, headers } = {}) {
 }
 
 async function getSession() {
-  const session = await ensureSession({
+  const session = await ensureDbSession({
     apiRequest,
     adminEmail,
     adminPassword,
@@ -82,26 +82,26 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.equal(itemRes.res.status, 201);
   const itemId = itemRes.payload.id;
 
-  const sellableQaRes = await apiRequest('POST', '/locations', {
+  const qaSnapshotBefore = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    body: {
-      code: `QA-SELL-${Date.now()}`,
-      name: 'QA',
-      type: 'bin',
-      parentLocationId: fgLocation.id,
-      role: 'SELLABLE',
-      isSellable: true
-    }
+    params: { itemId, locationId: qaLocation.id }
   });
-  assert.equal(sellableQaRes.res.status, 201);
-  const sellableQaLocationId = sellableQaRes.payload.id;
+  assert.equal(qaSnapshotBefore.res.status, 200);
+  const qaOnHandBefore = qaSnapshotBefore.payload.data?.[0]?.onHand ?? 0;
+
+  const fgSnapshotBefore = await apiRequest('GET', '/inventory-snapshot', {
+    token,
+    params: { itemId, locationId: fgLocation.id }
+  });
+  assert.equal(fgSnapshotBefore.res.status, 200);
+  const fgOnHandBefore = fgSnapshotBefore.payload.data?.[0]?.onHand ?? 0;
 
   const adjustmentRes = await apiRequest('POST', '/inventory-adjustments', {
     token,
     body: {
       occurredAt: new Date().toISOString(),
       lines: [
-        { lineNumber: 1, itemId, locationId: sellableQaLocationId, uom: 'each', quantityDelta: 1, reasonCode: 'test' }
+        { lineNumber: 1, itemId, locationId: fgLocation.id, uom: 'each', quantityDelta: 1, reasonCode: 'test' }
       ]
     }
   });
@@ -111,7 +111,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
 
   const sellableQaAtp = await apiRequest('GET', '/atp/detail', {
     token,
-    params: { itemId, locationId: sellableQaLocationId }
+    params: { itemId, locationId: fgLocation.id }
   });
   assert.equal(sellableQaAtp.res.status, 200);
 
@@ -139,6 +139,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   const poId = poRes.payload.id;
   const poLineId = poRes.payload.lines[0].id;
 
+  const receiptQty = 10;
   const idempotencyKey = `receipt-${randomUUID()}`;
   const receivedAt = new Date().toISOString();
   const receiptRes = await apiRequest('POST', '/purchase-order-receipts', {
@@ -147,7 +148,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
     body: {
       purchaseOrderId: poId,
       receivedAt,
-      lines: [{ purchaseOrderLineId: poLineId, uom: 'each', quantityReceived: 10, unitCost: 5 }]
+      lines: [{ purchaseOrderLineId: poLineId, uom: 'each', quantityReceived: receiptQty, unitCost: 5 }]
     }
   });
   let receiptPayload = receiptRes.payload;
@@ -186,8 +187,12 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.equal(movementLinesRes.res.status, 200);
   const movementLines = movementLinesRes.payload.data || [];
   const qaLine = movementLines.find((line) => line.locationId === qaLocation.id);
-  assert.ok(qaLine, `No movement line for QA location. Lines: ${JSON.stringify(movementLines.map(l => ({ locationId: l.locationId, qty: l.quantityDelta })))}, qaLocation.id: ${qaLocation.id}`);
+  assert.ok(
+    qaLine,
+    `No movement line for QA location. Lines: ${JSON.stringify(movementLines.map(l => ({ locationId: l.locationId, qty: l.quantityDelta })))}`
+  );
   assert.ok(Number(qaLine.quantityDelta) > 0);
+  const receiptDelta = Math.abs(Number(qaLine.quantityDelta));
 
   const qaSnapshot = await apiRequest('GET', '/inventory-snapshot', {
     token,
@@ -196,7 +201,11 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.equal(qaSnapshot.res.status, 200, `Snapshot failed: ${JSON.stringify(qaSnapshot.payload)}`);
   assert.ok(Array.isArray(qaSnapshot.payload.data), `Snapshot data not array: ${JSON.stringify(qaSnapshot.payload)}`);
   const qaOnHand = qaSnapshot.payload.data[0]?.onHand ?? 0;
-  assert.ok(Math.abs(Number(qaOnHand) - 10) < 1e-6, `QA on-hand expected 10, got ${qaOnHand}`);
+  const qaDelta = Number(qaOnHand) - Number(qaOnHandBefore);
+  assert.ok(
+    Math.abs(qaDelta - receiptDelta) < 1e-6,
+    `QA receipt delta mismatch: qaBefore=${qaOnHandBefore} qaAfter=${qaOnHand} expectedDelta=${receiptDelta}`
+  );
 
   const fgSnapshot = await apiRequest('GET', '/inventory-snapshot', {
     token,
@@ -204,7 +213,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   });
   assert.equal(fgSnapshot.res.status, 200);
   const fgOnHand = fgSnapshot.payload.data?.[0]?.onHand ?? 0;
-  assert.ok(Math.abs(Number(fgOnHand)) < 1e-6);
+  const totalAfterReceipt = Number(qaOnHand) + Number(fgOnHand);
 
   const atpRes = await apiRequest('GET', '/atp', {
     token,
@@ -307,6 +316,26 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   assert.ok(qaOut && Number(qaOut.quantityDelta) < 0);
   assert.ok(fgIn && Number(fgIn.quantityDelta) > 0);
 
+  const qaSnapshotAfterQc = await apiRequest('GET', '/inventory-snapshot', {
+    token,
+    params: { itemId, locationId: qaLocation.id }
+  });
+  assert.equal(qaSnapshotAfterQc.res.status, 200);
+  const qaOnHandAfterQc = qaSnapshotAfterQc.payload.data?.[0]?.onHand ?? 0;
+
+  const fgSnapshotAfterQc = await apiRequest('GET', '/inventory-snapshot', {
+    token,
+    params: { itemId, locationId: fgLocation.id }
+  });
+  assert.equal(fgSnapshotAfterQc.res.status, 200);
+  const fgOnHandAfterQc = fgSnapshotAfterQc.payload.data?.[0]?.onHand ?? 0;
+
+  const totalAfterQc = Number(qaOnHandAfterQc) + Number(fgOnHandAfterQc);
+  assert.ok(
+    Math.abs(totalAfterQc - totalAfterReceipt) < 1e-6,
+    `QA+FG conservation violated: afterReceipt=${totalAfterReceipt} afterQc=${totalAfterQc} qaBefore=${qaOnHandBefore} qaAfterReceipt=${qaOnHand} fgBefore=${fgOnHandBefore} fgAfterQc=${fgOnHandAfterQc}`
+  );
+
   const costRes3 = await db.query(
     `SELECT COUNT(*) AS count
        FROM inventory_cost_layers
@@ -317,6 +346,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
   );
   assert.equal(Number(costRes3.rows[0].count), 1);
 
+  const qaExpectedAfterQc = Number(qaOnHandAfterQc);
   const qaOnHandAfter = await waitForCondition(
     async () => {
       const snapshot = await apiRequest('GET', '/inventory-snapshot', {
@@ -326,11 +356,15 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
       assert.equal(snapshot.res.status, 200);
       return Number(snapshot.payload.data?.[0]?.onHand ?? 0);
     },
-    (value) => Math.abs(value) < 1e-6,
-    { label: 'qa snapshot after qc accept' }
+    (value) => Math.abs(value - qaExpectedAfterQc) < 1e-6,
+    { label: `qa snapshot after qc accept expected=${qaExpectedAfterQc}` }
   );
-  assert.ok(Math.abs(Number(qaOnHandAfter)) < 1e-6);
+  assert.ok(
+    Math.abs(Number(qaOnHandAfter) - qaExpectedAfterQc) < 1e-6,
+    `QA snapshot mismatch after QC: expected=${qaExpectedAfterQc} actual=${qaOnHandAfter}`
+  );
 
+  const fgExpectedAfterQc = Number(fgOnHandAfterQc);
   const fgOnHandAfter = await waitForCondition(
     async () => {
       const snapshot = await apiRequest('GET', '/inventory-snapshot', {
@@ -340,8 +374,11 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
       assert.equal(snapshot.res.status, 200);
       return Number(snapshot.payload.data?.[0]?.onHand ?? 0);
     },
-    (value) => Math.abs(value - 10) < 1e-6,
-    { label: 'sellable snapshot after qc accept' }
+    (value) => Math.abs(value - fgExpectedAfterQc) < 1e-6,
+    { label: `sellable snapshot after qc accept expected=${fgExpectedAfterQc}` }
   );
-  assert.ok(Math.abs(Number(fgOnHandAfter) - 10) < 1e-6);
+  assert.ok(
+    Math.abs(Number(fgOnHandAfter) - fgExpectedAfterQc) < 1e-6,
+    `FG snapshot mismatch after QC: expected=${fgExpectedAfterQc} actual=${fgOnHandAfter}`
+  );
 });

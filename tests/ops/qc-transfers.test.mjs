@@ -2,9 +2,9 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ensureSession } from './helpers/ensureSession.mjs';
-import { ensureStandardWarehouse } from './helpers/warehouse-bootstrap.mjs';
-import { waitForCondition } from './helpers/waitFor.mjs';
+import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
+import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
+import { waitForCondition } from '../api/helpers/waitFor.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -28,7 +28,7 @@ async function apiRequest(method, path, { token, body, headers } = {}) {
 }
 
 async function getSession() {
-  const session = await ensureSession({
+  const session = await ensureDbSession({
     apiRequest,
     adminEmail,
     adminPassword,
@@ -61,7 +61,12 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({
+    token,
+    apiRequest,
+    scope: import.meta.url,
+    includeReceivingQc: false
+  });
   const qaLocation = defaults.QA;
   const sellableLocationId = defaults.SELLABLE.id;
   const qaLocationId = qaLocation.id;
@@ -220,7 +225,12 @@ test('QC partial split: accept + hold', async () => {
   const userId = session.user?.id;
   assert.ok(token);
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { defaults } = await ensureStandardWarehouse({
+    token,
+    apiRequest,
+    scope: import.meta.url,
+    mode: 'reuse'
+  });
   const qaLocationId = defaults.QA.id;
   const holdLocationId = defaults.HOLD.id;
   const sellableLocationId = defaults.SELLABLE.id;
@@ -346,7 +356,12 @@ test('QC validation: qty exceeds QA on-hand', async () => {
   const tenantId = session.tenant?.id;
   assert.ok(token);
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { defaults } = await ensureStandardWarehouse({
+    token,
+    apiRequest,
+    scope: import.meta.url,
+    mode: 'reuse'
+  });
   const qaLocation = defaults.QA;
   const sellableLocationId = defaults.SELLABLE.id;
 

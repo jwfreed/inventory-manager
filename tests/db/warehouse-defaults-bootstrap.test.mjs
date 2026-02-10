@@ -1,8 +1,7 @@
 import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
-import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -48,13 +47,15 @@ function assertOk(res, label, payload, requestBody, allowed = [200, 201]) {
 }
 
 async function getSession() {
-  return ensureSession({
+  const session = await ensureDbSession({
     apiRequest,
     adminEmail,
     adminPassword,
     tenantSlug,
     tenantName: 'Warehouse Defaults Tenant'
   });
+  db = session.pool;
+  return session;
 }
 
 async function fetchWarehouseId(tenantId) {
@@ -116,7 +117,6 @@ async function fetchDefaults(tenantId, warehouseId, roles) {
 
 test('warehouse bootstrap creates defaults and is idempotent', async () => {
   const session = await getSession();
-  db = session.pool;
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(tenantId, 'tenantId is required');

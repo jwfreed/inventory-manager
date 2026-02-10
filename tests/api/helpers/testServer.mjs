@@ -1,3 +1,11 @@
+/**
+ * Helper: test server lifecycle
+ * Purpose: Start/stop the API server for tests and gate readiness via /healthz.
+ * Preconditions: npm run dev available; API_BASE_URL/TEST_BASE_URL configured or defaulted.
+ * Postconditions: ensureTestServer resolves only after server is healthy.
+ * Consumers: test harness and ensureSession.
+ * Common failures: SERVER_STARTUP_TIMEOUT when server fails to boot or port is in use.
+ */
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';

@@ -2,7 +2,8 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ensureSession } from './helpers/ensureSession.mjs';
+import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
+import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -60,7 +61,7 @@ function formatLocation(location) {
 }
 
 async function getSession(tenantSlug) {
-  const session = await ensureSession({
+  const session = await ensureDbSession({
     apiRequest,
     adminEmail,
     adminPassword,
@@ -92,37 +93,33 @@ async function setWarehouseDefault({ tenantId, warehouseId, role, locationId }) 
 }
 
 async function createWarehouseGraph(token) {
-  const warehouseCode = `WH-${randomUUID().slice(0, 8)}`;
-  const warehouseBody = {
-    code: warehouseCode,
-    name: `Warehouse ${warehouseCode}`,
-    type: 'warehouse',
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url });
+  const qaLocation = defaults.QA;
+  const sellableA = defaults.SELLABLE;
+
+  const tempBody = {
+    code: `BIN-${randomUUID().slice(0, 8)}`,
+    name: 'Sellable B',
+    type: 'bin',
     role: null,
     isSellable: false,
-    active: true,
+    parentLocationId: sellableA.id,
   };
-  const warehouseRes = await apiRequest('POST', '/locations', { token, body: warehouseBody });
-  assertOk(warehouseRes.res, 'POST /locations (warehouse)', warehouseRes.payload, warehouseBody, [201]);
-  const warehouse = warehouseRes.payload;
+  const tempRes = await apiRequest('POST', '/locations', { token, body: tempBody });
+  assertOk(tempRes.res, 'POST /locations (temp bin)', tempRes.payload, tempBody, [201]);
 
-  const createChild = async (role, label) => {
-    const body = {
-      code: `${role}-${label}-${randomUUID().slice(0, 8)}`,
-      name: `${role} ${label}`,
-      type: 'bin',
-      role,
-      isSellable: role === 'SELLABLE',
-      parentLocationId: warehouse.id,
-    };
-    const res = await apiRequest('POST', '/locations', { token, body });
-    assertOk(res.res, `POST /locations (${role} ${label})`, res.payload, body, [201]);
-    return res.payload;
+  const updateBody = {
+    code: tempRes.payload.code,
+    name: tempRes.payload.name,
+    type: tempRes.payload.type,
+    role: 'SELLABLE',
+    isSellable: true,
+    parentLocationId: tempRes.payload.parentLocationId
   };
+  const updateRes = await apiRequest('PUT', `/locations/${tempRes.payload.id}`, { token, body: updateBody });
+  assertOk(updateRes.res, 'PUT /locations (sellable B)', updateRes.payload, updateBody, [200]);
 
-  const qaLocation = await createChild('QA', 'QA');
-  const sellableA = await createChild('SELLABLE', 'A');
-  const sellableB = await createChild('SELLABLE', 'B');
-
+  const sellableB = updateRes.payload;
   return { warehouse, qaLocation, sellableA, sellableB };
 }
 
@@ -197,7 +194,7 @@ async function getSnapshot(token, itemId, locationId) {
 }
 
 test('default sellable location changes take effect immediately', async () => {
-  const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+  const tenantSlug = `default-drift-${randomUUID().slice(0, 8)}`;
 let db;
   const session = await getSession(tenantSlug);
   const token = session.accessToken;

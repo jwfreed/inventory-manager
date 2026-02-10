@@ -9,7 +9,6 @@ const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
 const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
-let db;
 
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
@@ -61,7 +60,6 @@ async function getSession() {
 
 test('warehouse listing includes zones when requested', async (t) => {
   const session = await getSession();
-  db = session.pool;
   const token = session.accessToken;
   assert.ok(token);
 
