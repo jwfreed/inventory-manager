@@ -10,7 +10,7 @@ import { waitForCondition } from '../api/helpers/waitFor.mjs';
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = process.env.SEED_TENANT_SLUG || 'default';
+const tenantSlug = process.env.SEED_TENANT_SLUG || `cost-layer-dedupe-${randomUUID().slice(0, 8)}`;
 let db;
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
@@ -46,7 +46,8 @@ async function getSession() {
   return session;
 }
 
-test('cost layer dedupe keeps one active receipt layer per source', async () => {
+test('cost layer dedupe keeps one active receipt layer per source', async (t) => {
+  let indexName;
   const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
@@ -70,8 +71,10 @@ test('cost layer dedupe keeps one active receipt layer per source', async () => 
   assert.equal(itemRes.res.status, 201);
   const itemId = itemRes.payload.id;
   const sourceId = uuidv4();
-
-  await db.query('DROP INDEX IF EXISTS uq_cost_layers_receipt_source_active');
+  indexName = `uq_cost_layers_receipt_source_active_${sourceId.slice(0, 8)}`;
+  if (t?.context) {
+    t.context.indexName = indexName;
+  }
 
   const insertLayer = async (createdAt) => {
     await db.query(
@@ -150,7 +153,7 @@ test('cost layer dedupe keeps one active receipt layer per source', async () => 
   );
 
   await db.query(
-    `CREATE UNIQUE INDEX uq_cost_layers_receipt_source_active
+    `CREATE UNIQUE INDEX ${indexName}
        ON inventory_cost_layers (tenant_id, source_document_id)
       WHERE source_type = 'receipt' AND source_document_id IS NOT NULL AND voided_at IS NULL`
   );
@@ -172,4 +175,18 @@ test('cost layer dedupe keeps one active receipt layer per source', async () => 
     { label: 'dedupe active receipt layers after index' }
   );
   assert.equal(finalCount, 1);
+
+  await db.query(`DROP INDEX IF EXISTS ${indexName}`);
+});
+
+test.afterEach(async (t) => {
+  // best-effort cleanup if test fails before drop
+  const name = t?.context?.indexName;
+  if (name && db) {
+    try {
+      await db.query(`DROP INDEX IF EXISTS ${name}`);
+    } catch {
+      // ignore cleanup errors
+    }
+  }
 });

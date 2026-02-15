@@ -2,6 +2,11 @@ import { afterEach, after, beforeEach } from 'node:test';
 import { clearWaitForTimers } from './api/helpers/waitFor.mjs';
 import { snapshotActiveHandles, diffHandleSnapshots } from './api/helpers/activeHandles.mjs';
 import { closeDbPool } from './helpers/dbPool.mjs';
+import {
+  resetInvariantLogs,
+  recordInvariantLog,
+  assertInvariantLogsSatisfied
+} from './helpers/invariantLogs.mjs';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -15,12 +20,35 @@ const debugHandles = process.env.TEST_DEBUG_HANDLES === '1';
 // Full sequential run verified clean as of 2026-02-09.
 
 let handleSnapshot;
+const originalWarn = console.warn.bind(console);
+const originalError = console.error.bind(console);
+const originalInfo = console.info.bind(console);
+
+console.warn = (...args) => {
+  recordInvariantLog('warn', args);
+  originalWarn(...args);
+};
+
+console.error = (...args) => {
+  recordInvariantLog('error', args);
+  originalError(...args);
+};
+
+console.info = (...args) => {
+  recordInvariantLog('info', args);
+  originalInfo(...args);
+};
 
 if (debugHandles) {
   // Usage:
   // TEST_DEBUG_HANDLES=1 node --test --test-reporter=spec --test-timeout=120000 --test-concurrency=1 --import ./tests/setup.mjs tests/api/*.test.mjs tests/ops/*.test.mjs tests/db/*.test.mjs
   beforeEach(() => {
     handleSnapshot = snapshotActiveHandles();
+    resetInvariantLogs();
+  });
+} else {
+  beforeEach(() => {
+    resetInvariantLogs();
   });
 }
 
@@ -34,6 +62,7 @@ if (delayMs > 0) {
       }
     }
     clearWaitForTimers();
+    assertInvariantLogsSatisfied();
     await sleep(delayMs);
   });
 } else {
@@ -46,6 +75,7 @@ if (delayMs > 0) {
       }
     }
     clearWaitForTimers();
+    assertInvariantLogsSatisfied();
   });
 }
 

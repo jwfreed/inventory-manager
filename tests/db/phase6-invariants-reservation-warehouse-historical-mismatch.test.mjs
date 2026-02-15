@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
+import { expectInvariantLog } from '../helpers/invariantLogs.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -146,6 +147,7 @@ test('detects reservation warehouse historical mismatch (warning only)', async (
     );
     await client.query('COMMIT');
 
+    expectInvariantLog(/reservation warehouse historical mismatch/);
     const results = await runInventoryInvariantCheck({ tenantIds: [tenantId] });
     const summary = results.find((row) => row.tenantId === tenantId);
     assert.equal(summary?.reservationWarehouseHistoricalMismatchCount, 1);

@@ -62,8 +62,8 @@ async function ensureTestServer() {
     startedByUs = true;
     const logPath = path.resolve(process.cwd(), 'server.log');
     logStream = fs.createWriteStream(logPath, { flags: 'a' });
-    child = spawn('npm', ['run', 'dev'], {
-      env: { ...process.env },
+    child = spawn('node', ['-r', 'ts-node/register/transpile-only', '-r', 'tsconfig-paths/register', 'src/server.ts'], {
+      env: { ...process.env, NODE_ENV: 'test' },
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: process.platform === 'win32'
     });

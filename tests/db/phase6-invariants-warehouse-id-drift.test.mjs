@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
+import { expectInvariantLog } from '../helpers/invariantLogs.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -165,6 +166,7 @@ test('WAREHOUSE_ID_DRIFT is detected and blocks reparent until cleared', async (
       [w2.id, tenantId, childId]
     );
 
+    expectInvariantLog(/CRITICAL invariant violation/);
     const results = await runInventoryInvariantCheck({ tenantIds: [tenantId] });
     const summary = results.find((row) => row.tenantId === tenantId);
     assert.ok(summary?.warehouseIdDriftCount && summary.warehouseIdDriftCount > 0);
