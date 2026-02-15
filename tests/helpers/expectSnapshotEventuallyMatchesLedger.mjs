@@ -39,6 +39,7 @@ export async function expectSnapshotEventuallyMatchesLedger({
   tenantId,
   itemId,
   locationId,
+  warehouseId,
   uom,
   label
 }) {
@@ -49,12 +50,22 @@ export async function expectSnapshotEventuallyMatchesLedger({
   assert.ok(itemId, 'itemId required');
   assert.ok(locationId, 'locationId required');
 
+  let resolvedWarehouseId = warehouseId;
+  if (!resolvedWarehouseId) {
+    const warehouseRes = await db.query(
+      `SELECT warehouse_id FROM locations WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, locationId]
+    );
+    resolvedWarehouseId = warehouseRes.rows[0]?.warehouse_id ?? null;
+  }
+  assert.ok(resolvedWarehouseId, 'warehouseId required');
+
   const result = await waitForCondition(
     async () => {
       const ledgerOnHand = await getLedgerOnHand({ db, tenantId, itemId, locationId, uom });
       const snapshot = await apiRequest('GET', '/inventory-snapshot', {
         token,
-        params: { itemId, locationId }
+        params: { warehouseId: resolvedWarehouseId, itemId, locationId }
       });
       assert.equal(snapshot.res.status, 200);
       const snapshotOnHand = Number(snapshot.payload.data?.[0]?.onHand ?? 0);

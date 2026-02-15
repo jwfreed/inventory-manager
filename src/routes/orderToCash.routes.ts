@@ -31,11 +31,30 @@ import { getIdempotencyKey } from '../lib/idempotency';
 const router = Router();
 const uuidSchema = z.string().uuid();
 const reservationCancelSchema = z.object({
+  warehouseId: z.string().uuid(),
   reason: z.string().max(1000).optional(),
 });
 const reservationFulfillSchema = z.object({
+  warehouseId: z.string().uuid(),
   quantity: z.number().positive().optional(),
 });
+const reservationAllocateSchema = z.object({
+  warehouseId: z.string().uuid()
+});
+
+function requireWarehouseId(
+  warehouseId: unknown,
+  res: Response
+): warehouseId is string {
+  if (typeof warehouseId === 'string' && warehouseId.trim().length > 0) return true;
+  res.status(400).json({
+    error: {
+      code: 'WAREHOUSE_ID_REQUIRED',
+      message: 'warehouseId is required.'
+    }
+  });
+  return false;
+}
 
 router.post('/sales-orders', async (req: Request, res: Response) => {
   const parsed = salesOrderSchema.safeParse(req.body);
@@ -95,6 +114,16 @@ router.get('/sales-orders/:id', async (req: Request, res: Response) => {
 });
 
 router.post('/reservations', async (req: Request, res: Response) => {
+  const reservations = Array.isArray(req.body?.reservations) ? req.body.reservations : [];
+  if (!reservations.length || reservations.some((entry: any) => !entry?.warehouseId)) {
+    return res.status(400).json({
+      error: {
+        code: 'WAREHOUSE_ID_REQUIRED',
+        message: 'warehouseId is required for each reservation.'
+      }
+    });
+  }
+
   const parsed = reservationsCreateSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -130,6 +159,9 @@ router.post('/reservations', async (req: Request, res: Response) => {
     if ((error as Error)?.message === 'RESERVATION_INSUFFICIENT_AVAILABLE') {
       return res.status(409).json({ error: 'Insufficient sellable inventory for reservation.' });
     }
+    if ((error as Error)?.message === 'RESERVATION_WAREHOUSE_MISMATCH') {
+      return res.status(409).json({ error: 'Reservation warehouse does not match reservation location.' });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create reservation.' });
   }
@@ -140,12 +172,19 @@ router.post('/reservations/:id/allocate', async (req: Request, res: Response) =>
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid reservation id.' });
   }
+  if (!requireWarehouseId(req.body?.warehouseId, res)) {
+    return;
+  }
+  const parsed = reservationAllocateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
   const idempotencyKey = getIdempotencyKey(req);
   if (!idempotencyKey) {
     return res.status(400).json({ error: 'Idempotency-Key header is required.' });
   }
   try {
-    const reservation = await allocateReservation(req.auth!.tenantId, id, { idempotencyKey });
+    const reservation = await allocateReservation(req.auth!.tenantId, id, parsed.data.warehouseId, { idempotencyKey });
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error: any) {
@@ -168,6 +207,9 @@ router.post('/reservations/:id/cancel', async (req: Request, res: Response) => {
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid reservation id.' });
   }
+  if (!requireWarehouseId(req.body?.warehouseId, res)) {
+    return;
+  }
   const parsed = reservationCancelSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -177,7 +219,7 @@ router.post('/reservations/:id/cancel', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Idempotency-Key header is required.' });
   }
   try {
-    const reservation = await cancelReservation(req.auth!.tenantId, id, {
+    const reservation = await cancelReservation(req.auth!.tenantId, id, parsed.data.warehouseId, {
       reason: parsed.data.reason ?? null,
       idempotencyKey
     });
@@ -203,6 +245,9 @@ router.post('/reservations/:id/fulfill', async (req: Request, res: Response) => 
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid reservation id.' });
   }
+  if (!requireWarehouseId(req.body?.warehouseId, res)) {
+    return;
+  }
   const parsed = reservationFulfillSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -212,7 +257,7 @@ router.post('/reservations/:id/fulfill', async (req: Request, res: Response) => 
     return res.status(400).json({ error: 'Idempotency-Key header is required.' });
   }
   try {
-    const reservation = await fulfillReservation(req.auth!.tenantId, id, {
+    const reservation = await fulfillReservation(req.auth!.tenantId, id, parsed.data.warehouseId, {
       quantity: parsed.data.quantity,
       idempotencyKey
     });
@@ -290,10 +335,17 @@ router.post('/shipments/:id/post', async (req: Request, res: Response) => {
 });
 
 router.get('/reservations', async (req: Request, res: Response) => {
+  const warehouseId = Array.isArray(req.query.warehouseId) ? req.query.warehouseId[0] : req.query.warehouseId;
+  if (!requireWarehouseId(warehouseId, res)) {
+    return;
+  }
+  if (!uuidSchema.safeParse(warehouseId).success) {
+    return res.status(400).json({ error: 'Invalid warehouseId.' });
+  }
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const rows = await listReservations(req.auth!.tenantId, limit, offset);
+    const rows = await listReservations(req.auth!.tenantId, warehouseId, limit, offset);
     return res.json({ data: rows, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -306,8 +358,15 @@ router.get('/reservations/:id', async (req: Request, res: Response) => {
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid reservation id.' });
   }
+  const warehouseId = Array.isArray(req.query.warehouseId) ? req.query.warehouseId[0] : req.query.warehouseId;
+  if (!requireWarehouseId(warehouseId, res)) {
+    return;
+  }
+  if (!uuidSchema.safeParse(warehouseId).success) {
+    return res.status(400).json({ error: 'Invalid warehouseId.' });
+  }
   try {
-    const reservation = await getReservation(req.auth!.tenantId, id);
+    const reservation = await getReservation(req.auth!.tenantId, id, warehouseId);
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error) {

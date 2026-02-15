@@ -3,6 +3,7 @@ export type Location = {
   code: string
   name: string
   type: string
+  warehouseId?: string | null
   role?: string
   isSellable?: boolean
   active: boolean

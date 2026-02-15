@@ -12,13 +12,32 @@ import {
 
 const router = Router();
 
+function requireWarehouseId(
+  warehouseId: unknown,
+  res: Response
+): warehouseId is string {
+  if (typeof warehouseId === 'string' && warehouseId.trim().length > 0) return true;
+  res.status(400).json({
+    error: {
+      code: 'WAREHOUSE_ID_REQUIRED',
+      message: 'warehouseId is required.'
+    }
+  });
+  return false;
+}
+
 router.get('/inventory-snapshot', async (req: Request, res: Response) => {
+  const warehouseId = Array.isArray(req.query.warehouseId) ? req.query.warehouseId[0] : req.query.warehouseId;
+  if (!requireWarehouseId(warehouseId, res)) {
+    return;
+  }
+
   const parsed = inventorySnapshotQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid query params.', details: parsed.error.format() });
   }
 
-  const { itemId, locationId, uom } = parsed.data;
+  const { warehouseId: parsedWarehouseId, itemId, locationId, uom } = parsed.data;
   const tenantId = req.auth!.tenantId;
 
   const [itemExists, locationExists] = await Promise.all([
@@ -34,7 +53,12 @@ router.get('/inventory-snapshot', async (req: Request, res: Response) => {
   }
 
   try {
-    const snapshot = await getInventorySnapshot(tenantId, { itemId, locationId, uom });
+    const snapshot = await getInventorySnapshot(tenantId, {
+      warehouseId: parsedWarehouseId,
+      itemId,
+      locationId,
+      uom
+    });
     return res.json({ data: snapshot });
   } catch (error) {
     console.error(error);
@@ -43,6 +67,11 @@ router.get('/inventory-snapshot', async (req: Request, res: Response) => {
 });
 
 router.get('/inventory-snapshot/summary', async (req: Request, res: Response) => {
+  const warehouseId = Array.isArray(req.query.warehouseId) ? req.query.warehouseId[0] : req.query.warehouseId;
+  if (!requireWarehouseId(warehouseId, res)) {
+    return;
+  }
+
   const parsed = inventorySnapshotSummaryQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid query params.', details: parsed.error.format() });

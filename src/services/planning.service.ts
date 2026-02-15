@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import { query, withTransaction } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { getInventorySnapshot } from './inventorySnapshot.service';
+import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import type {
   kpiRollupInputsCreateSchema,
   kpiRunSchema,
@@ -695,7 +696,9 @@ export async function computeReplenishmentRecommendations(tenantId: string, limi
 
     let snapshot = defaultInventorySnapshot(row.item_id, row.site_location_id, row.uom);
     try {
+      const warehouseId = await resolveWarehouseIdForLocation(tenantId, row.site_location_id);
       const snap = await getInventorySnapshot(tenantId, {
+        warehouseId,
         itemId: row.item_id,
         locationId: row.site_location_id,
         uom: row.uom

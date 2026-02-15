@@ -1,10 +1,11 @@
 import { getInventoryNegativePolicy } from '../config/inventoryPolicy';
-import { getInventorySnapshot } from './inventorySnapshot.service';
+import { getInventorySnapshot, getInventorySnapshotSummary } from './inventorySnapshot.service';
 import { getInventoryBalance, getInventoryBalanceForUpdate } from '../domains/inventory';
 import type { PoolClient } from 'pg';
 import { toNumber } from '../lib/numbers';
 import { getLocation, getItem, convertQuantity } from './masterData.service';
 import { convertToCanonical } from './uomCanonical.service';
+import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 
 export type StockValidationLine = {
   itemId: string;
@@ -90,11 +91,17 @@ export async function validateSufficientStock(
     const balance = options?.client
       ? await getInventoryBalanceForUpdate(options.client, tenantId, line.itemId, line.locationId, line.uom)
       : await getInventoryBalance(tenantId, line.itemId, line.locationId, line.uom);
-    let available =
-      balance && 'available' in balance ? balance.available : balance ? balance.onHand - balance.reserved : null;
+    const balanceAvailable =
+      balance && typeof (balance as any).available === 'number'
+        ? toNumber((balance as any).available)
+        : null;
+    let available: number | null =
+      balance ? (balanceAvailable ?? toNumber(balance.onHand) - toNumber(balance.reserved)) : null;
     if (available === null) {
+      const warehouseId = await resolveWarehouseIdForLocation(tenantId, line.locationId, options?.client);
       // TODO: inventory snapshot is current-state only; extend to historical as needed for occurredAt fidelity.
       const snapshot = await getInventorySnapshot(tenantId, {
+        warehouseId,
         itemId: line.itemId,
         locationId: line.locationId,
         uom: line.uom
@@ -211,7 +218,12 @@ export async function validateLocationCapacity(
   if (!location.maxWeight && !location.maxVolume) return;
 
   // Get current inventory
-  const currentInventory = await getInventorySnapshotSummary(tenantId, { locationId, limit: 10000 });
+  const warehouseId = await resolveWarehouseIdForLocation(tenantId, locationId);
+  const currentInventory = await getInventorySnapshotSummary(tenantId, {
+    warehouseId,
+    locationId,
+    limit: 10000
+  });
   
   let currentWeight = 0;
   let currentVolume = 0;

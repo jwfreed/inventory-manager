@@ -333,6 +333,7 @@ export function mapLocation(row: any) {
     code: row.code,
     name: row.name,
     type: row.type,
+    warehouseId: row.warehouse_id ?? null,
     role: resolvedRole,
     isSellable: row.is_sellable,
     active: row.active,

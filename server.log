@@ -9032,3 +9032,206 @@ Startup failed: Error: WAREHOUSE_DEFAULT_INVALID
     at async withTransaction [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/db.ts:81:20[90m)[39m
     at async ensureWarehouseDefaults [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/services/warehouseDefaults.service.ts:294:5[90m)[39m
     at async start [90m(/Users/jonathanfreed/Documents/Development/inventory-manager/[39msrc/server.ts:256:3[90m)[39m
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:257:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+🚀 Starting job: inventory-health-check
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 31ms
+Inventory health gate failed for tenant default-6712ba15: ledger_variance_pct>1
+Inventory health gate failed for tenant default-f1ff5b32: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770073810273: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770346525798: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770179653304: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770339840808: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770186110042: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770339145913: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770187538150: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770388048211: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770295900347: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770192386228: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770365456958: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770079952025: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770089675622: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770092984045: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770389242517: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770096401179: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770101541807: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770455119132: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770114859236: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770121122857: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770122372194: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770452410349: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770033111396: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770163228863: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770448391343: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770166310144: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770438586126: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770167522533: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770386831586: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770388561699: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770170463583: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770034024945: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770347501999: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-concurrency-1770173977894: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770114859275: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770455119180: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770339145964: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770388048251: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770101541833: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770347502036: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770448391382: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770166310179: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770167522569: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770339840876: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770079952064: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770365456996: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770173977932: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770089675651: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770438586170: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770389242567: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770163228904: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770092984064: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770031489404: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770386831632: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770096401215: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770388561734: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770186110085: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770179653346: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770121122899: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770452410391: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770187538189: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770033111420: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770170463622: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770295900413: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770122372245: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770192386269: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770073810295: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770289725811: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770034024968: ledger_variance_pct>1
+Inventory health gate failed for tenant cost-layer-dedupe-1770346525842: ledger_variance_pct>1
+Inventory health gate failed for tenant default-drift-3ff04dba-c053-40a2-b4f1-e2cd8e3a8425: ledger_variance_pct>1
+Inventory health gate failed for tenant default-drift-6764d539-7d2c-4772-a99f-b042b0d03ba2: ledger_variance_pct>1
+Inventory health gate failed for tenant default-drift-7d4ab041-c21b-41a0-aae4-7d8315746dfd: ledger_variance_pct>1
+Inventory health gate failed for tenant default-drift-7e67b738-d6e8-47ce-9e41-9a6e33bd882f: ledger_variance_pct>1
+Inventory health gate failed for tenant default-drift-8f43f957-6c2b-4c49-8a05-23cfde69b1d4: ledger_variance_pct>1
+Inventory health gate failed for tenant default-drift-9cb68166-9324-4956-a36c-1b95e4e313d9: ledger_variance_pct>1
+Inventory health gate failed for tenant default-drift-c131cf83-8f00-451c-8cf8-eb0e4eb4ffd9: ledger_variance_pct>1
+Inventory health gate failed for tenant default-drift-cc91d4b2-4386-4ca6-a7b1-3be6c0d4ea77: ledger_variance_pct>1
+Inventory health gate failed for tenant default-drift-d2edcd5c-d6fe-46ce-be5d-0deb2fe6a781: ledger_variance_pct>1
+Inventory health gate failed for tenant default-drift-fe402b13-378c-4699-be84-6678626a28dd: ledger_variance_pct>1
+Inventory health gate failed for tenant default: ledger_variance_pct>1
+Inventory health gate failed for tenant default-76f49b75: ledger_variance_pct>1
+Inventory health gate failed for tenant default-1ca6666b: ledger_variance_pct>1
+✅ Job "inventory-health-check" completed in 1316ms
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+🚀 Starting job: inventory-invariant-check
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 30ms
+✅ Job "inventory-invariant-check" completed in 52ms

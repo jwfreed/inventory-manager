@@ -3,6 +3,7 @@ import type { Location, LocationInventoryRow } from '../../../api/types'
 
 type LocationApiRow = Location & {
   parent_location_id?: string | null
+  warehouse_id?: string | null
   created_at?: string
   updated_at?: string
   is_sellable?: boolean
@@ -34,6 +35,7 @@ function mapLocation(row: LocationApiRow): Location {
     code: row.code,
     name: row.name,
     type: row.type,
+    warehouseId: row.warehouseId ?? row.warehouse_id ?? null,
     role: row.role,
     isSellable: row.isSellable ?? row.is_sellable,
     active: row.active,

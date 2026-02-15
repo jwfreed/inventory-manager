@@ -13,6 +13,7 @@ const toUuidString = (val: unknown) => {
 };
 
 export const inventorySnapshotQuerySchema = z.object({
+  warehouseId: z.preprocess(toUuidString, z.string().uuid()),
   itemId: z.preprocess(toUuidString, z.string().uuid()),
   locationId: z.preprocess(toUuidString, z.string().uuid()),
   uom: z.preprocess(toSingleString, z.string().min(1).max(32)).optional()
@@ -21,6 +22,7 @@ export const inventorySnapshotQuerySchema = z.object({
 export type InventorySnapshotQuery = z.infer<typeof inventorySnapshotQuerySchema>;
 
 export const inventorySnapshotSummaryQuerySchema = z.object({
+  warehouseId: z.preprocess(toUuidString, z.string().uuid()),
   itemId: z.preprocess(toUuidString, z.string().uuid()).optional(),
   locationId: z.preprocess(toUuidString, z.string().uuid()).optional(),
   limit: z.preprocess((val) => Number(toSingleString(val)), z.number().int().positive().max(2000)).optional(),

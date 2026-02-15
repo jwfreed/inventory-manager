@@ -8,12 +8,31 @@ import {
 
 const router = Router();
 
+function requireWarehouseId(
+  warehouseId: unknown,
+  res: Response
+): warehouseId is string {
+  if (typeof warehouseId === 'string' && warehouseId.trim().length > 0) return true;
+  res.status(400).json({
+    error: {
+      code: 'WAREHOUSE_ID_REQUIRED',
+      message: 'warehouseId is required.'
+    }
+  });
+  return false;
+}
+
 /**
  * GET /atp
  * Query Available to Promise across items and locations
  * Query params: itemId, locationId, limit, offset
  */
 router.get('/', async (req: Request, res: Response) => {
+  const warehouseId = Array.isArray(req.query.warehouseId) ? req.query.warehouseId[0] : req.query.warehouseId;
+  if (!requireWarehouseId(warehouseId, res)) {
+    return;
+  }
+
   const parsed = atpQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid query params.', details: parsed.error.format() });
@@ -34,15 +53,20 @@ router.get('/', async (req: Request, res: Response) => {
  * Query params: itemId (required), locationId (required), uom (optional)
  */
 router.get('/detail', async (req: Request, res: Response) => {
+  const warehouseId = Array.isArray(req.query.warehouseId) ? req.query.warehouseId[0] : req.query.warehouseId;
+  if (!requireWarehouseId(warehouseId, res)) {
+    return;
+  }
+
   const parsed = atpDetailQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid query params.', details: parsed.error.format() });
   }
 
-  const { itemId, locationId, uom } = parsed.data;
+  const { warehouseId: parsedWarehouseId, itemId, locationId, uom } = parsed.data;
 
   try {
-    const result = await getAvailableToPromiseDetail(req.auth!.tenantId, itemId, locationId, uom);
+    const result = await getAvailableToPromiseDetail(req.auth!.tenantId, parsedWarehouseId, itemId, locationId, uom);
     
     if (!result) {
       return res.status(404).json({ error: 'No inventory found for the specified item/location.' });
@@ -61,16 +85,21 @@ router.get('/detail', async (req: Request, res: Response) => {
  * Body: { itemId, locationId, uom, quantity }
  */
 router.post('/check', async (req: Request, res: Response) => {
+  if (!requireWarehouseId(req.body?.warehouseId, res)) {
+    return;
+  }
+
   const parsed = atpCheckSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid request body.', details: parsed.error.format() });
   }
 
-  const { itemId, locationId, uom, quantity } = parsed.data;
+  const { warehouseId: parsedWarehouseId, itemId, locationId, uom, quantity } = parsed.data;
 
   try {
     const result = await checkAtpSufficiency(
       req.auth!.tenantId,
+      parsedWarehouseId,
       itemId,
       locationId,
       uom,

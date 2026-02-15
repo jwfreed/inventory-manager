@@ -70,6 +70,34 @@ async function assertLocationSellable(
     throw new Error('RESERVATION_LOCATION_NOT_SELLABLE');
   }
 }
+
+async function getCanonicalAvailability(
+  client: PoolClient,
+  tenantId: string,
+  warehouseId: string,
+  itemId: string,
+  locationId: string,
+  uom: string
+) {
+  const res = await client.query(
+    `SELECT on_hand, reserved, allocated, available
+       FROM inventory_availability_location_v
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND item_id = $3
+        AND location_id = $4
+        AND uom = $5
+      LIMIT 1`,
+    [tenantId, warehouseId, itemId, locationId, uom]
+  );
+  const row = res.rows[0];
+  return {
+    onHand: toNumber(row?.on_hand ?? 0),
+    reserved: toNumber(row?.reserved ?? 0),
+    allocated: toNumber(row?.allocated ?? 0),
+    available: toNumber(row?.available ?? 0)
+  };
+}
 export type ShipmentInput = z.infer<typeof shipmentSchema>;
 export type ReturnAuthorizationInput = z.infer<typeof returnAuthorizationSchema>;
 
@@ -121,7 +149,12 @@ async function computeDerivedBackorders(tenantId: string, orderRow: any, lines: 
   if (!lines.length) return new Map<string, number>();
   const itemIds = Array.from(new Set(lines.map((line) => line.item_id)));
   const locationId = orderRow.ship_from_location_id ?? undefined;
-  const supplyMap = await getSellableSupplyMap(tenantId, { itemIds, locationId });
+  const warehouseId = locationId
+    ? await resolveWarehouseIdForLocation(tenantId, locationId)
+    : null;
+  const supplyMap = warehouseId
+    ? await getSellableSupplyMap(tenantId, { warehouseId, itemIds, locationId })
+    : new Map<string, { onHand: number; reserved: number; allocated: number }>();
 
   const shippedRows = await query(
     `SELECT sol.id AS line_id,
@@ -325,7 +358,7 @@ export async function createReservations(
         client
       );
       const idempotencyKey = baseIdempotency
-        ? `${baseIdempotency}:${reservation.demandId}:${reservation.itemId}:${reservation.locationId}:${canonical.canonicalUom}`
+        ? `${baseIdempotency}:${reservation.demandId}:${reservation.itemId}:${reservation.locationId}:${reservation.warehouseId}:${canonical.canonicalUom}`
         : null;
       if (idempotencyKey) {
         const existing = await client.query(
@@ -340,20 +373,35 @@ export async function createReservations(
       }
 
       await assertLocationSellable(client, tenantId, reservation.locationId);
+      const warehouseId = await resolveWarehouseIdForLocation(tenantId, reservation.locationId, client);
+      if (!warehouseId) {
+        throw new Error('RESERVATION_WAREHOUSE_REQUIRED');
+      }
+      if (warehouseId !== reservation.warehouseId) {
+        throw new Error('RESERVATION_WAREHOUSE_MISMATCH');
+      }
 
       const allowBackorder =
         reservation.allowBackorder !== undefined ? reservation.allowBackorder : BACKORDERS_ENABLED;
       let reserveQty = roundQuantity(canonical.quantity);
       let backorderQty = 0;
       if (allowBackorder) {
-        const balance = await getInventoryBalanceForUpdate(
+        await getInventoryBalanceForUpdate(
           client,
           tenantId,
           reservation.itemId,
           reservation.locationId,
           canonical.canonicalUom
         );
-        const available = roundQuantity(balance.onHand - balance.reserved - balance.allocated);
+        const availability = await getCanonicalAvailability(
+          client,
+          tenantId,
+          warehouseId,
+          reservation.itemId,
+          reservation.locationId,
+          canonical.canonicalUom
+        );
+        const available = roundQuantity(availability.available);
         reserveQty = roundQuantity(Math.max(0, Math.min(canonical.quantity, available)));
         backorderQty = roundQuantity(Math.max(0, canonical.quantity - reserveQty));
       }
@@ -381,14 +429,22 @@ export async function createReservations(
         continue;
       }
       if (!allowBackorder) {
-        const balance = await getInventoryBalanceForUpdate(
+        await getInventoryBalanceForUpdate(
           client,
           tenantId,
           reservation.itemId,
           reservation.locationId,
           canonical.canonicalUom
         );
-        const available = roundQuantity(balance.onHand - balance.reserved - balance.allocated);
+        const availability = await getCanonicalAvailability(
+          client,
+          tenantId,
+          warehouseId,
+          reservation.itemId,
+          reservation.locationId,
+          canonical.canonicalUom
+        );
+        const available = roundQuantity(availability.available);
         if (available + 1e-6 < reserveQty) {
           const err: any = new Error('RESERVATION_INSUFFICIENT_AVAILABLE');
           err.code = 'RESERVATION_INSUFFICIENT_AVAILABLE';
@@ -397,12 +453,6 @@ export async function createReservations(
       }
       const fulfilledQty =
         reservation.quantityFulfilled != null ? Math.min(reservation.quantityFulfilled, reserveQty) : 0;
-      let warehouseId: string | null = null;
-      try {
-        warehouseId = await resolveWarehouseIdForLocation(tenantId, reservation.locationId, client);
-      } catch (error) {
-        warehouseId = null;
-      }
       const res = await client.query(
         `INSERT INTO inventory_reservations (
           id, tenant_id, client_id, status, demand_type, demand_id, item_id, location_id, warehouse_id, uom,
@@ -515,19 +565,23 @@ export async function createReservations(
   return results.map(mapReservation);
 }
 
-export async function listReservations(tenantId: string, limit: number, offset: number) {
+export async function listReservations(tenantId: string, warehouseId: string, limit: number, offset: number) {
   const { rows } = await query(
     `SELECT * FROM inventory_reservations
      WHERE tenant_id = $1
+       AND warehouse_id = $2
      ORDER BY reserved_at DESC
-     LIMIT $2 OFFSET $3`,
-    [tenantId, limit, offset],
+     LIMIT $3 OFFSET $4`,
+    [tenantId, warehouseId, limit, offset],
   );
   return rows.map(mapReservation);
 }
 
-export async function getReservation(tenantId: string, id: string) {
-  const res = await query('SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+export async function getReservation(tenantId: string, id: string, warehouseId: string) {
+  const res = await query(
+    'SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3',
+    [id, tenantId, warehouseId]
+  );
   if (res.rowCount === 0) return null;
   return mapReservation(res.rows[0]);
 }
@@ -535,6 +589,7 @@ export async function getReservation(tenantId: string, id: string) {
 export async function allocateReservation(
   tenantId: string,
   id: string,
+  warehouseId: string,
   options?: { idempotencyKey?: string | null }
 ) {
   const now = new Date();
@@ -543,10 +598,14 @@ export async function allocateReservation(
     if (idempotencyKey) {
       const record = await beginIdempotency(`reservation:${id}:allocate:${idempotencyKey}`, hashRequestBody({ id }), client);
       if (record.status === 'SUCCEEDED') {
-        const res = await client.query('SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2', [
-          id,
-          tenantId
-        ]);
+        const res = await client.query(
+          'SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3',
+          [
+            id,
+            tenantId,
+            warehouseId
+          ]
+        );
         return res.rowCount ? mapReservation(res.rows[0]) : null;
       }
       if (record.status === 'IN_PROGRESS' && !record.isNew) {
@@ -555,8 +614,8 @@ export async function allocateReservation(
     }
 
     const reservationRes = await client.query(
-      `SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
-      [id, tenantId]
+      `SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3 FOR UPDATE`,
+      [id, tenantId, warehouseId]
     );
     if (reservationRes.rowCount === 0) {
       throw new Error('RESERVATION_NOT_FOUND');
@@ -624,6 +683,7 @@ export async function allocateReservation(
 export async function cancelReservation(
   tenantId: string,
   id: string,
+  warehouseId: string,
   params?: { reason?: string | null; idempotencyKey?: string | null }
 ) {
   const now = new Date();
@@ -633,10 +693,10 @@ export async function cancelReservation(
     if (idempotencyKey) {
       const record = await beginIdempotency(`reservation:${id}:cancel:${idempotencyKey}`, hashRequestBody({ id, reason: params?.reason ?? null }), client);
       if (record.status === 'SUCCEEDED') {
-        const res = await client.query('SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2', [
-          id,
-          tenantId
-        ]);
+        const res = await client.query(
+          'SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3',
+          [id, tenantId, warehouseId]
+        );
         return res.rowCount ? mapReservation(res.rows[0]) : null;
       }
       if (record.status === 'IN_PROGRESS' && !record.isNew) {
@@ -645,8 +705,8 @@ export async function cancelReservation(
     }
 
     const reservationRes = await client.query(
-      `SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
-      [id, tenantId]
+      `SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3 FOR UPDATE`,
+      [id, tenantId, warehouseId]
     );
     if (reservationRes.rowCount === 0) {
       throw new Error('RESERVATION_NOT_FOUND');
@@ -724,6 +784,7 @@ export async function cancelReservation(
 export async function fulfillReservation(
   tenantId: string,
   id: string,
+  warehouseId: string,
   params?: { quantity?: number; idempotencyKey?: string | null }
 ) {
   const now = new Date();
@@ -736,10 +797,10 @@ export async function fulfillReservation(
         client
       );
       if (record.status === 'SUCCEEDED') {
-        const res = await client.query('SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2', [
-          id,
-          tenantId
-        ]);
+        const res = await client.query(
+          'SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3',
+          [id, tenantId, warehouseId]
+        );
         return res.rowCount ? mapReservation(res.rows[0]) : null;
       }
       if (record.status === 'IN_PROGRESS' && !record.isNew) {
@@ -748,8 +809,8 @@ export async function fulfillReservation(
     }
 
     const reservationRes = await client.query(
-      `SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
-      [id, tenantId]
+      `SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3 FOR UPDATE`,
+      [id, tenantId, warehouseId]
     );
     if (reservationRes.rowCount === 0) {
       throw new Error('RESERVATION_NOT_FOUND');

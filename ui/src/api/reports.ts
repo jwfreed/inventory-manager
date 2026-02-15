@@ -1,14 +1,21 @@
 import { apiGet, apiPost } from './http'
 import type { AtpResult, SupplierScorecard, LicensePlate } from './types'
+import { resolveWarehouseId } from './warehouseContext'
 
 // ATP API
 export async function getAtp(params?: {
+  warehouseId?: string
   itemId?: string
   locationId?: string
   limit?: number
   offset?: number
 }): Promise<{ data: AtpResult[] }> {
+  const warehouseId = await resolveWarehouseId({
+    warehouseId: params?.warehouseId,
+    locationId: params?.locationId
+  })
   const searchParams = new URLSearchParams()
+  searchParams.append('warehouseId', warehouseId)
   if (params?.itemId) searchParams.append('itemId', params.itemId)
   if (params?.locationId) searchParams.append('locationId', params.locationId)
   if (params?.limit) searchParams.append('limit', String(params.limit))
@@ -20,23 +27,33 @@ export async function getAtp(params?: {
 export async function getAtpDetail(
   itemId: string,
   locationId: string,
-  uom?: string
+  uom?: string,
+  warehouseId?: string
 ): Promise<{ data: AtpResult }> {
-  const searchParams = new URLSearchParams({ itemId, locationId })
+  const resolvedWarehouseId = await resolveWarehouseId({ warehouseId, locationId })
+  const searchParams = new URLSearchParams({ warehouseId: resolvedWarehouseId, itemId, locationId })
   if (uom) searchParams.append('uom', uom)
   
   return apiGet<{ data: AtpResult }>(`/atp/detail?${searchParams.toString()}`)
 }
 
 export async function checkAtpSufficiency(data: {
+  warehouseId?: string
   itemId: string
   locationId: string
   uom: string
   quantity: number
 }): Promise<{ data: { sufficient: boolean; atp: number; requested: number } }> {
+  const warehouseId = await resolveWarehouseId({
+    warehouseId: data.warehouseId,
+    locationId: data.locationId
+  })
   return apiPost<{ data: { sufficient: boolean; atp: number; requested: number } }>(
     '/atp/check',
-    data
+    {
+      ...data,
+      warehouseId
+    }
   )
 }
 
