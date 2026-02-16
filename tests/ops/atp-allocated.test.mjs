@@ -134,7 +134,7 @@ test('ATP subtracts allocated explicitly', async () => {
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 10);
 
@@ -147,6 +147,7 @@ test('ATP subtracts allocated explicitly', async () => {
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouse.id,
           locationId: sellable.id,
           uom: 'each',
           quantityReserved: 6,
@@ -161,10 +162,11 @@ test('ATP subtracts allocated explicitly', async () => {
   const allocateRes = await apiRequest('POST', `/reservations/${reservationId}/allocate`, {
     token,
     headers: { 'Idempotency-Key': `alloc-${randomUUID()}` },
+    body: { warehouseId: warehouse.id },
   });
   assert.equal(allocateRes.res.status, 200);
 
-  const atpRes = await apiRequest('GET', '/atp', { token, params: { itemId } });
+  const atpRes = await apiRequest('GET', '/atp', { token, params: { warehouseId: warehouse.id, itemId } });
   assert.equal(atpRes.res.status, 200);
   const row = (atpRes.payload.data || []).find((r) => r.locationId === sellable.id);
   assert.ok(row);

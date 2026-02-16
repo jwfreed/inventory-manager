@@ -177,7 +177,7 @@ async function qcAccept(token, receiptLineId, quantity, actorId) {
   assert.equal(res.res.status, 201);
 }
 
-async function createReservation(token, lineId, itemId, locationId, quantity) {
+async function createReservation(token, lineId, itemId, warehouseId, locationId, quantity) {
   const res = await apiRequest('POST', '/reservations', {
     token,
     headers: { 'Idempotency-Key': `res-${randomUUID()}` },
@@ -187,6 +187,7 @@ async function createReservation(token, lineId, itemId, locationId, quantity) {
           demandType: 'sales_order_line',
           demandId: lineId,
           itemId,
+          warehouseId,
           locationId,
           uom: 'each',
           quantityReserved: quantity
@@ -198,11 +199,11 @@ async function createReservation(token, lineId, itemId, locationId, quantity) {
   return res.payload.data[0].id;
 }
 
-async function cancelReservation(token, reservationId) {
+async function cancelReservation(token, reservationId, warehouseId) {
   const res = await apiRequest('POST', `/reservations/${reservationId}/cancel`, {
     token,
     headers: { 'Idempotency-Key': `cancel-${randomUUID()}` },
-    body: { reason: 'test' }
+    body: { warehouseId, reason: 'test' }
   });
   assert.equal(res.res.status, 200);
 }
@@ -216,7 +217,7 @@ test('Derived backorder tracks sellable supply and commitments', async () => {
   assert.ok(tenantId);
   assert.ok(userId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
   const qa = defaults.QA;
   const sellable = defaults.SELLABLE;
   const vendorId = await createVendor(token);
@@ -243,7 +244,7 @@ test('Derived backorder tracks sellable supply and commitments', async () => {
   );
   assert.ok(Math.abs(afterQcAccept) < 1e-6, `Expected backorder to clear after QC accept`);
 
-  const reservationId = await createReservation(token, lineId, itemId, sellable.id, 2);
+  const reservationId = await createReservation(token, lineId, itemId, warehouse.id, sellable.id, 2);
   const afterReserve = await waitForCondition(
     () => getLineBackorder(token, orderId),
     (value) => Math.abs(value - 2) < 1e-6,
@@ -251,7 +252,7 @@ test('Derived backorder tracks sellable supply and commitments', async () => {
   );
   assert.ok(Math.abs(afterReserve - 2) < 1e-6, `Expected backorder to increase after reservation`);
 
-  await cancelReservation(token, reservationId);
+  await cancelReservation(token, reservationId, warehouse.id);
   const afterCancel = await waitForCondition(
     () => getLineBackorder(token, orderId),
     (value) => Math.abs(value) < 1e-6,

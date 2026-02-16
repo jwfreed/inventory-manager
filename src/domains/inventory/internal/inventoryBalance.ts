@@ -43,6 +43,16 @@ export async function getInventoryBalanceForUpdate(
   locationId: string,
   uom: string
 ) {
+  return ensureInventoryBalanceRowAndLock(client, tenantId, itemId, locationId, uom);
+}
+
+export async function ensureInventoryBalanceRowAndLock(
+  client: PoolClient,
+  tenantId: string,
+  itemId: string,
+  locationId: string,
+  uom: string
+) {
   await ensureInventoryBalanceRow(client, tenantId, itemId, locationId, uom);
   const res = await client.query<InventoryBalanceRow>(
     `SELECT * FROM inventory_balance

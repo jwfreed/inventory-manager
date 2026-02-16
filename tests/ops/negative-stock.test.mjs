@@ -46,7 +46,7 @@ test('posting work order issue and batch blocks on insufficient usable stock', a
   assert.ok(token)
   const unique = Date.now()
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
   const sellable = defaults.SELLABLE
   const locationId = sellable.id
 
@@ -144,7 +144,7 @@ test('posting negative inventory adjustment blocks on insufficient stock', async
   assert.ok(token)
   const unique = Date.now()
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
   const sellable = defaults.SELLABLE
   const locationId = sellable.id
 
@@ -199,7 +199,7 @@ test('reservation creates backorder when insufficient on-hand', async () => {
   assert.ok(token)
   const unique = Date.now()
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
   const sellable = defaults.SELLABLE
   const locationId = sellable.id
 
@@ -228,6 +228,7 @@ test('reservation creates backorder when insufficient on-hand', async () => {
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouse.id,
           locationId,
           uom: 'each',
           quantityReserved: 7,
@@ -240,7 +241,7 @@ test('reservation creates backorder when insufficient on-hand', async () => {
 
   const snapshotRes = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId },
+    params: { warehouseId: warehouse.id, itemId, locationId },
   })
   assert.equal(snapshotRes.res.status, 200)
   const row = snapshotRes.payload?.data?.find((entry) => entry.uom === 'each')
@@ -255,7 +256,7 @@ test('inventory snapshot aggregates canonical quantities with UOM conversion', a
   assert.ok(token)
   const unique = Date.now()
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url})
   const sellable = defaults.SELLABLE
   const locationId = sellable.id
 
@@ -310,7 +311,7 @@ test('inventory snapshot aggregates canonical quantities with UOM conversion', a
 
   const snapshotRes = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId, uom: 'g' },
+    params: { warehouseId: warehouse.id, itemId, locationId, uom: 'g' },
   })
   assert.equal(snapshotRes.res.status, 200)
   const row = snapshotRes.payload?.data?.find((entry) => entry.uom === 'g')

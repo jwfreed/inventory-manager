@@ -157,7 +157,7 @@ test('late QC updates ATP/backorder after commitments', async () => {
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url });
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url });
   const qaLocation = defaults.QA;
   const sellableLocation = defaults.SELLABLE;
 
@@ -179,6 +179,7 @@ test('late QC updates ATP/backorder after commitments', async () => {
           demandType: 'sales_order_line',
           demandId: lineId,
           itemId,
+          warehouseId: warehouse.id,
           locationId: sellableLocation.id,
           uom: 'each',
           quantityReserved: 5
@@ -217,7 +218,7 @@ test('late QC updates ATP/backorder after commitments', async () => {
     async () => {
       const res = await apiRequest('GET', '/inventory-snapshot', {
         token,
-        params: { itemId, locationId: sellableLocation.id }
+        params: { warehouseId: warehouse.id, itemId, locationId: sellableLocation.id }
       });
       assert.equal(res.res.status, 200);
       return Number(res.payload.data?.[0]?.onHand ?? 0);
@@ -237,6 +238,7 @@ test('late QC updates ATP/backorder after commitments', async () => {
             demandType: 'sales_order_line',
             demandId: lineId,
             itemId,
+            warehouseId: warehouse.id,
             locationId: sellableLocation.id,
             uom: 'each',
             quantityReserved: 5

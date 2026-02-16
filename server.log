@@ -9235,3 +9235,985 @@ Inventory health gate failed for tenant default-1ca6666b: ledger_variance_pct>1
 🚀 Starting job: reservation-expiry
 ✅ Job "reservation-expiry" completed in 30ms
 ✅ Job "inventory-invariant-check" completed in 52ms
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+🚀 Starting job: inventory-health-check
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 2ms
+✅ Job "inventory-health-check" completed in 43ms
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+error: could not serialize access due to concurrent update
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async ensureInventoryBalanceRowAndLock (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:57:15)
+    at async results.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:422:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async createReservations (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:375:19)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:134:21 {
+  length: 114,
+  severity: 'ERROR',
+  code: '40001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'nodeLockRows.c',
+  line: '228',
+  routine: 'ExecLockRows'
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8
+  throw new Error('DATABASE_URL must be set before starting the API');
+        ^
+Error: DATABASE_URL must be set before starting the API
+    at Object.<anonymous> (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8:9)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module.m._compile (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1618:23)
+    at node:internal/modules/cjs/loader:1839:10
+    at Object.require.extensions.<computed> [as .ts] (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8
+  throw new Error('DATABASE_URL must be set before starting the API');
+        ^
+Error: DATABASE_URL must be set before starting the API
+    at Object.<anonymous> (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8:9)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module.m._compile (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1618:23)
+    at node:internal/modules/cjs/loader:1839:10
+    at Object.require.extensions.<computed> [as .ts] (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+error: RESERVATION_INVALID_TRANSITION
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async result.isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:785:24)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async cancelReservation (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/orderToCash.service.ts:760:18)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/orderToCash.routes.ts:221:25 {
+  length: 168,
+  severity: 'ERROR',
+  code: 'P0001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: 'PL/pgSQL function enforce_reservation_status_transition() line 13 at RAISE',
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'pl_exec.c',
+  line: '3937',
+  routine: 'exec_stmt_raise'
+}
+/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8
+  throw new Error('DATABASE_URL must be set before starting the API');
+        ^
+Error: DATABASE_URL must be set before starting the API
+    at Object.<anonymous> (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8:9)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module.m._compile (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1618:23)
+    at node:internal/modules/cjs/loader:1839:10
+    at Object.require.extensions.<computed> [as .ts] (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8
+  throw new Error('DATABASE_URL must be set before starting the API');
+        ^
+Error: DATABASE_URL must be set before starting the API
+    at Object.<anonymous> (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8:9)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module.m._compile (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1618:23)
+    at node:internal/modules/cjs/loader:1839:10
+    at Object.require.extensions.<computed> [as .ts] (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+🚀 Starting job: inventory-health-check
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 29ms
+✅ Job "inventory-health-check" completed in 81ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 31ms
+🚀 Starting job: inventory-invariant-check
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 1ms
+✅ Job "inventory-invariant-check" completed in 60ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 30ms

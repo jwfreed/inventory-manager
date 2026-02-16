@@ -134,7 +134,7 @@ test('Reservation balance reconciliation matches reservations remaining qty', as
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 12);
 
@@ -147,6 +147,7 @@ test('Reservation balance reconciliation matches reservations remaining qty', as
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouse.id,
           locationId: sellable.id,
           uom: 'each',
           quantityReserved: 6,
@@ -161,13 +162,14 @@ test('Reservation balance reconciliation matches reservations remaining qty', as
   const allocateRes = await apiRequest('POST', `/reservations/${reservationId}/allocate`, {
     token,
     headers: { 'Idempotency-Key': `alloc-${randomUUID()}` },
+    body: { warehouseId: warehouse.id },
   });
   assert.equal(allocateRes.res.status, 200);
 
   const fulfillRes = await apiRequest('POST', `/reservations/${reservationId}/fulfill`, {
     token,
     headers: { 'Idempotency-Key': `fulfill-${randomUUID()}` },
-    body: { quantity: 6 },
+    body: { warehouseId: warehouse.id, quantity: 6 },
   });
   assert.equal(fulfillRes.res.status, 200);
 
@@ -180,6 +182,7 @@ test('Reservation balance reconciliation matches reservations remaining qty', as
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouse.id,
           locationId: sellable.id,
           uom: 'each',
           quantityReserved: 2,

@@ -46,7 +46,7 @@ test('reservations require sellable locations', async () => {
   const session = await getSession();
   const token = session.accessToken;
   assert.ok(token);
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
   const nonSellableLocation = defaults.HOLD ?? defaults.QA;
   const sellableLocation = defaults.SELLABLE;
   assert.ok(nonSellableLocation, 'Non-sellable location required');
@@ -90,6 +90,7 @@ test('reservations require sellable locations', async () => {
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouse.id,
           locationId: nonSellableLocation.id,
           uom: 'each',
           quantityReserved: 1,
@@ -111,6 +112,7 @@ test('reservations require sellable locations', async () => {
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouse.id,
           locationId: sellableLocation.id,
           uom: 'each',
           quantityReserved: 1,

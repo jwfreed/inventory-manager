@@ -11,7 +11,11 @@ import {
 } from '../schemas/orderToCash.schema';
 import { convertToCanonical, getCanonicalMovementFields } from './uomCanonical.service';
 import { getItem } from './masterData.service';
-import { applyInventoryBalanceDelta, ensureInventoryBalanceRow, getInventoryBalanceForUpdate } from '../domains/inventory';
+import {
+  applyInventoryBalanceDelta,
+  ensureInventoryBalanceRowAndLock,
+  getInventoryBalanceForUpdate
+} from '../domains/inventory';
 import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import { getSellableSupplyMap } from './atp.service';
 import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
@@ -32,8 +36,85 @@ import { atpCache, cacheKey } from '../lib/cache';
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
 export type ReservationInput = z.infer<typeof reservationSchema>;
 export type ReservationCreateInput = z.infer<typeof reservationsCreateSchema>;
+type ReservationCreateLine = ReservationCreateInput['reservations'][number];
+type PreparedReservationCreateLine = {
+  reservation: ReservationCreateLine;
+  canonicalQuantity: number;
+  canonicalUom: string;
+};
+type ReservationRow = {
+  id: string;
+  tenant_id: string;
+  warehouse_id: string;
+  status: string;
+  item_id: string;
+  location_id: string;
+  uom: string;
+  quantity_reserved: string | number;
+  quantity_fulfilled: string | number | null;
+  demand_id: string;
+  demand_type: string;
+};
 
 const BACKORDERS_ENABLED = process.env.BACKORDERS_ENABLED !== 'false';
+
+function compareReservationLockKey(
+  left: PreparedReservationCreateLine,
+  right: PreparedReservationCreateLine
+): number {
+  const itemCompare = left.reservation.itemId.localeCompare(right.reservation.itemId);
+  if (itemCompare !== 0) return itemCompare;
+  const locationCompare = left.reservation.locationId.localeCompare(right.reservation.locationId);
+  if (locationCompare !== 0) return locationCompare;
+  const uomCompare = left.canonicalUom.toLowerCase().localeCompare(right.canonicalUom.toLowerCase());
+  if (uomCompare !== 0) return uomCompare;
+  const demandCompare = left.reservation.demandId.localeCompare(right.reservation.demandId);
+  if (demandCompare !== 0) return demandCompare;
+  return left.reservation.demandType.localeCompare(right.reservation.demandType);
+}
+
+function reservationInvalidState() {
+  return new Error('RESERVATION_INVALID_STATE');
+}
+
+function reservationInvalidQuantity() {
+  return new Error('RESERVATION_INVALID_QUANTITY');
+}
+
+async function lockReservationsForUpdate(
+  client: PoolClient,
+  tenantId: string,
+  warehouseId: string,
+  reservationIds: string[]
+) {
+  const uniqueSortedIds = Array.from(new Set(reservationIds)).sort((a, b) => a.localeCompare(b));
+  if (uniqueSortedIds.length === 0) {
+    return [];
+  }
+  const res = await client.query<ReservationRow>(
+    `SELECT * FROM inventory_reservations
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND id = ANY($3::uuid[])
+      ORDER BY id ASC
+      FOR UPDATE`,
+    [tenantId, warehouseId, uniqueSortedIds]
+  );
+  return res.rows;
+}
+
+async function lockReservationForUpdate(
+  client: PoolClient,
+  tenantId: string,
+  reservationId: string,
+  warehouseId: string
+) {
+  const rows = await lockReservationsForUpdate(client, tenantId, warehouseId, [reservationId]);
+  if (rows.length === 0) {
+    throw new Error('RESERVATION_NOT_FOUND');
+  }
+  return rows[0];
+}
 
 async function insertReservationEvent(
   client: any,
@@ -349,6 +430,7 @@ export async function createReservations(
   const baseIdempotency = options?.idempotencyKey ?? null;
   const results = await withTransactionRetry(async (client) => {
     const rows: any[] = [];
+    const preparedLines: PreparedReservationCreateLine[] = [];
     for (const reservation of data.reservations) {
       const canonical = await convertToCanonical(
         tenantId,
@@ -357,8 +439,18 @@ export async function createReservations(
         reservation.uom,
         client
       );
+      preparedLines.push({
+        reservation,
+        canonicalQuantity: roundQuantity(canonical.quantity),
+        canonicalUom: canonical.canonicalUom
+      });
+    }
+    preparedLines.sort(compareReservationLockKey);
+
+    for (const line of preparedLines) {
+      const { reservation, canonicalQuantity, canonicalUom } = line;
       const idempotencyKey = baseIdempotency
-        ? `${baseIdempotency}:${reservation.demandId}:${reservation.itemId}:${reservation.locationId}:${reservation.warehouseId}:${canonical.canonicalUom}`
+        ? `${baseIdempotency}:${reservation.demandId}:${reservation.itemId}:${reservation.locationId}:${reservation.warehouseId}:${canonicalUom}`
         : null;
       if (idempotencyKey) {
         const existing = await client.query(
@@ -383,32 +475,33 @@ export async function createReservations(
 
       const allowBackorder =
         reservation.allowBackorder !== undefined ? reservation.allowBackorder : BACKORDERS_ENABLED;
-      let reserveQty = roundQuantity(canonical.quantity);
+      await ensureInventoryBalanceRowAndLock(
+        client,
+        tenantId,
+        reservation.itemId,
+        reservation.locationId,
+        canonicalUom
+      );
+
+      let reserveQty = canonicalQuantity;
       let backorderQty = 0;
       if (allowBackorder) {
-        await getInventoryBalanceForUpdate(
-          client,
-          tenantId,
-          reservation.itemId,
-          reservation.locationId,
-          canonical.canonicalUom
-        );
         const availability = await getCanonicalAvailability(
           client,
           tenantId,
           warehouseId,
           reservation.itemId,
           reservation.locationId,
-          canonical.canonicalUom
+          canonicalUom
         );
         const available = roundQuantity(availability.available);
-        reserveQty = roundQuantity(Math.max(0, Math.min(canonical.quantity, available)));
-        backorderQty = roundQuantity(Math.max(0, canonical.quantity - reserveQty));
+        reserveQty = roundQuantity(Math.max(0, Math.min(canonicalQuantity, available)));
+        backorderQty = roundQuantity(Math.max(0, canonicalQuantity - reserveQty));
       }
       // Tolerate tiny rounding drift so we don't reject valid reservations.
       if (backorderQty > 0 && backorderQty <= 1e-6) {
         backorderQty = 0;
-        reserveQty = canonical.quantity;
+        reserveQty = canonicalQuantity;
       }
       if (backorderQty > 0) {
         await upsertBackorder(
@@ -418,7 +511,7 @@ export async function createReservations(
             demandId: reservation.demandId,
             itemId: reservation.itemId,
             locationId: reservation.locationId,
-            uom: canonical.canonicalUom,
+            uom: canonicalUom,
             quantity: backorderQty,
             notes: reservation.notes ?? null
           },
@@ -429,20 +522,13 @@ export async function createReservations(
         continue;
       }
       if (!allowBackorder) {
-        await getInventoryBalanceForUpdate(
-          client,
-          tenantId,
-          reservation.itemId,
-          reservation.locationId,
-          canonical.canonicalUom
-        );
         const availability = await getCanonicalAvailability(
           client,
           tenantId,
           warehouseId,
           reservation.itemId,
           reservation.locationId,
-          canonical.canonicalUom
+          canonicalUom
         );
         const available = roundQuantity(availability.available);
         if (available + 1e-6 < reserveQty) {
@@ -470,7 +556,7 @@ export async function createReservations(
           reservation.itemId,
           reservation.locationId,
           warehouseId,
-          canonical.canonicalUom,
+          canonicalUom,
           reserveQty,
           fulfilledQty,
           now,
@@ -506,7 +592,7 @@ export async function createReservations(
             reservation.demandId,
             reservation.itemId,
             reservation.locationId,
-            canonical.canonicalUom
+            canonicalUom
           ]
         );
         if (existing.rowCount > 0) {
@@ -516,39 +602,22 @@ export async function createReservations(
         throw new Error('RESERVATION_CONFLICT');
       }
       rows.push(res.rows[0]);
-      if (allowBackorder) {
-        await applyInventoryBalanceDelta(client, {
-          tenantId,
-          itemId: reservation.itemId,
-          locationId: reservation.locationId,
-          uom: canonical.canonicalUom,
-          deltaReserved: reserveQty
-        });
-      } else {
-        await ensureInventoryBalanceRow(
-          client,
+      await client.query(
+        `UPDATE inventory_balance
+            SET reserved = reserved + $1,
+                updated_at = now()
+          WHERE tenant_id = $2
+            AND item_id = $3
+            AND location_id = $4
+            AND uom = $5`,
+        [
+          reserveQty,
           tenantId,
           reservation.itemId,
           reservation.locationId,
-          canonical.canonicalUom
-        );
-        await client.query(
-          `UPDATE inventory_balance
-              SET reserved = reserved + $1,
-                  updated_at = now()
-            WHERE tenant_id = $2
-              AND item_id = $3
-              AND location_id = $4
-              AND uom = $5`,
-          [
-            reserveQty,
-            tenantId,
-            reservation.itemId,
-            reservation.locationId,
-            canonical.canonicalUom
-          ]
-        );
-      }
+          canonicalUom
+        ]
+      );
 
       await insertReservationEvent(client, tenantId, res.rows[0].id, 'RESERVED', reserveQty, 0);
 
@@ -560,7 +629,7 @@ export async function createReservations(
       });
     }
     return rows;
-  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+  }, { isolationLevel: 'SERIALIZABLE', retries: 6 });
   atpCache.invalidate(cacheKey('atp', tenantId));
   return results.map(mapReservation);
 }
@@ -613,59 +682,59 @@ export async function allocateReservation(
       }
     }
 
-    const reservationRes = await client.query(
-      `SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3 FOR UPDATE`,
-      [id, tenantId, warehouseId]
-    );
-    if (reservationRes.rowCount === 0) {
-      throw new Error('RESERVATION_NOT_FOUND');
-    }
-    const reservation = reservationRes.rows[0];
-    if (reservation.status === 'ALLOCATED' || reservation.status === 'FULFILLED') {
-      if (idempotencyKey) {
-        await completeIdempotency(`reservation:${id}:allocate:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
-      }
-      return mapReservation(reservation);
-    }
+    const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
     if (reservation.status !== 'RESERVED') {
-      throw new Error('RESERVATION_INVALID_TRANSITION');
+      throw reservationInvalidState();
     }
 
-    const remaining = roundQuantity(
+    const openQty = roundQuantity(
       Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0))
     );
-    if (remaining > 0) {
+    if (openQty <= 1e-6) {
+      throw reservationInvalidState();
+    }
+
+    const transition = await client.query(
+      `UPDATE inventory_reservations
+          SET status = 'ALLOCATED',
+              allocated_at = COALESCE(allocated_at, $1),
+              updated_at = $1
+        WHERE id = $2
+          AND tenant_id = $3
+          AND warehouse_id = $4
+          AND status = 'RESERVED'`,
+      [now, id, tenantId, warehouseId]
+    );
+    if (transition.rowCount === 0) {
+      throw reservationInvalidState();
+    }
+
+    if (openQty > 0) {
       await applyInventoryBalanceDelta(client, {
         tenantId,
         itemId: reservation.item_id,
         locationId: reservation.location_id,
         uom: reservation.uom,
-        deltaReserved: -remaining,
-        deltaAllocated: remaining
+        deltaReserved: -openQty,
+        deltaAllocated: openQty
       });
     }
 
-    await client.query(
-      `UPDATE inventory_reservations
-          SET status = 'ALLOCATED',
-              allocated_at = COALESCE(allocated_at, $1),
-              updated_at = $1
-        WHERE id = $2 AND tenant_id = $3`,
-      [now, id, tenantId]
-    );
-
-    if (remaining > 0) {
-      await insertReservationEvent(client, tenantId, id, 'ALLOCATED', -remaining, remaining);
+    if (openQty > 0) {
+      await insertReservationEvent(client, tenantId, id, 'ALLOCATED', -openQty, openQty);
     }
 
     if (idempotencyKey) {
       await completeIdempotency(`reservation:${id}:allocate:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
     }
 
-    const updated = await client.query('SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2', [
-      id,
-      tenantId
-    ]);
+    const updated = await client.query(
+      `SELECT * FROM inventory_reservations
+        WHERE id = $1
+          AND tenant_id = $2
+          AND warehouse_id = $3`,
+      [id, tenantId, warehouseId]
+    );
     if (updated.rowCount > 0) {
       await enqueueInventoryReservationChanged(client, tenantId, updated.rows[0].id, {
         itemId: updated.rows[0].item_id,
@@ -687,7 +756,7 @@ export async function cancelReservation(
   params?: { reason?: string | null; idempotencyKey?: string | null }
 ) {
   const now = new Date();
-  const allowAllocatedCancel = false;
+  const allowAllocatedCancel = true;
   const result = await withTransactionRetry(async (client) => {
     const idempotencyKey = params?.idempotencyKey ?? null;
     if (idempotencyKey) {
@@ -704,24 +773,31 @@ export async function cancelReservation(
       }
     }
 
-    const reservationRes = await client.query(
-      `SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3 FOR UPDATE`,
-      [id, tenantId, warehouseId]
-    );
-    if (reservationRes.rowCount === 0) {
-      throw new Error('RESERVATION_NOT_FOUND');
-    }
-    const reservation = reservationRes.rows[0];
-    if (['CANCELLED', 'EXPIRED', 'FULFILLED'].includes(reservation.status)) {
-      if (idempotencyKey) {
-        await completeIdempotency(`reservation:${id}:cancel:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
-      }
-      return mapReservation(reservation);
+    const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
+    const cancellableStatuses = allowAllocatedCancel ? ['RESERVED', 'ALLOCATED'] : ['RESERVED'];
+    if (!cancellableStatuses.includes(reservation.status)) {
+      throw reservationInvalidState();
     }
 
     const remaining = roundQuantity(
       Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0))
     );
+    const transition = await client.query(
+      `UPDATE inventory_reservations
+          SET status = 'CANCELLED',
+              cancel_reason = $1,
+              canceled_at = $2,
+              updated_at = $2
+        WHERE id = $3
+          AND tenant_id = $4
+          AND warehouse_id = $5
+          AND status = ANY($6::text[])`,
+      [params?.reason ?? null, now, id, tenantId, warehouseId, cancellableStatuses]
+    );
+    if (transition.rowCount === 0) {
+      throw reservationInvalidState();
+    }
+
     if (reservation.status === 'RESERVED') {
       if (remaining > 0) {
         await applyInventoryBalanceDelta(client, {
@@ -734,9 +810,6 @@ export async function cancelReservation(
       }
       await insertReservationEvent(client, tenantId, id, 'CANCELLED', -remaining, 0);
     } else if (reservation.status === 'ALLOCATED') {
-      if (!allowAllocatedCancel) {
-        throw new Error('RESERVATION_ALLOCATED_CANCEL_FORBIDDEN');
-      }
       if (remaining > 0) {
         await applyInventoryBalanceDelta(client, {
           tenantId,
@@ -749,24 +822,17 @@ export async function cancelReservation(
       await insertReservationEvent(client, tenantId, id, 'CANCELLED', 0, -remaining);
     }
 
-    await client.query(
-      `UPDATE inventory_reservations
-          SET status = 'CANCELLED',
-              cancel_reason = $1,
-              canceled_at = $2,
-              updated_at = $2
-        WHERE id = $3 AND tenant_id = $4`,
-      [params?.reason ?? null, now, id, tenantId]
-    );
-
     if (idempotencyKey) {
       await completeIdempotency(`reservation:${id}:cancel:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
     }
 
-    const updated = await client.query('SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2', [
-      id,
-      tenantId
-    ]);
+    const updated = await client.query(
+      `SELECT * FROM inventory_reservations
+        WHERE id = $1
+          AND tenant_id = $2
+          AND warehouse_id = $3`,
+      [id, tenantId, warehouseId]
+    );
     if (updated.rowCount > 0) {
       await enqueueInventoryReservationChanged(client, tenantId, updated.rows[0].id, {
         itemId: updated.rows[0].item_id,
@@ -808,28 +874,53 @@ export async function fulfillReservation(
       }
     }
 
-    const reservationRes = await client.query(
-      `SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3 FOR UPDATE`,
-      [id, tenantId, warehouseId]
-    );
-    if (reservationRes.rowCount === 0) {
-      throw new Error('RESERVATION_NOT_FOUND');
-    }
-    const reservation = reservationRes.rows[0];
-    if (reservation.status === 'FULFILLED') {
-      if (idempotencyKey) {
-        await completeIdempotency(`reservation:${id}:fulfill:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
-      }
-      return mapReservation(reservation);
-    }
+    const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
     if (reservation.status !== 'ALLOCATED') {
-      throw new Error('RESERVATION_INVALID_TRANSITION');
+      throw reservationInvalidState();
     }
 
+    const quantityReserved = toNumber(reservation.quantity_reserved);
+    const quantityFulfilled = toNumber(reservation.quantity_fulfilled ?? 0);
+    if (quantityFulfilled - quantityReserved > 1e-6) {
+      throw reservationInvalidState();
+    }
     const remaining = roundQuantity(
-      Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0))
+      Math.max(0, quantityReserved - quantityFulfilled)
     );
-    const fulfillQty = params?.quantity != null ? Math.min(params.quantity, remaining) : remaining;
+    if (remaining <= 1e-6) {
+      throw reservationInvalidState();
+    }
+    const requestedInput = params?.quantity;
+    if (typeof requestedInput !== 'number' || !Number.isFinite(requestedInput)) {
+      throw reservationInvalidQuantity();
+    }
+    const requestedQty = roundQuantity(requestedInput);
+    if (requestedQty <= 1e-6) {
+      throw reservationInvalidQuantity();
+    }
+    const fulfillQty = roundQuantity(Math.max(0, Math.min(requestedQty, remaining)));
+    const fulfilledTotal = roundQuantity(quantityFulfilled + fulfillQty);
+    if (fulfilledTotal + 1e-6 < quantityFulfilled || fulfilledTotal - quantityReserved > 1e-6) {
+      throw reservationInvalidState();
+    }
+    const newStatus = fulfilledTotal + 1e-6 >= quantityReserved ? 'FULFILLED' : 'ALLOCATED';
+
+    const transition = await client.query(
+      `UPDATE inventory_reservations
+          SET quantity_fulfilled = $1,
+              status = $2,
+              fulfilled_at = CASE WHEN $2 = 'FULFILLED' THEN COALESCE(fulfilled_at, $3) ELSE fulfilled_at END,
+              updated_at = $3
+        WHERE id = $4
+          AND tenant_id = $5
+          AND warehouse_id = $6
+          AND status = 'ALLOCATED'`,
+      [fulfilledTotal, newStatus, now, id, tenantId, warehouseId]
+    );
+    if (transition.rowCount === 0) {
+      throw reservationInvalidState();
+    }
+
     if (fulfillQty > 0) {
       await applyInventoryBalanceDelta(client, {
         tenantId,
@@ -840,18 +931,6 @@ export async function fulfillReservation(
       });
     }
 
-    const fulfilledTotal = roundQuantity(toNumber(reservation.quantity_fulfilled ?? 0) + fulfillQty);
-    const newStatus = fulfilledTotal + 1e-6 >= toNumber(reservation.quantity_reserved) ? 'FULFILLED' : 'ALLOCATED';
-    await client.query(
-      `UPDATE inventory_reservations
-          SET quantity_fulfilled = $1,
-              status = $2,
-              fulfilled_at = CASE WHEN $2 = 'FULFILLED' THEN COALESCE(fulfilled_at, $3) ELSE fulfilled_at END,
-              updated_at = $3
-        WHERE id = $4 AND tenant_id = $5`,
-      [fulfilledTotal, newStatus, now, id, tenantId]
-    );
-
     if (fulfillQty > 0) {
       await insertReservationEvent(client, tenantId, id, 'FULFILLED', 0, -fulfillQty);
     }
@@ -860,10 +939,13 @@ export async function fulfillReservation(
       await completeIdempotency(`reservation:${id}:fulfill:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
     }
 
-    const updated = await client.query('SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2', [
-      id,
-      tenantId
-    ]);
+    const updated = await client.query(
+      `SELECT * FROM inventory_reservations
+        WHERE id = $1
+          AND tenant_id = $2
+          AND warehouse_id = $3`,
+      [id, tenantId, warehouseId]
+    );
     if (updated.rowCount > 0) {
       await enqueueInventoryReservationChanged(client, tenantId, updated.rows[0].id, {
         itemId: updated.rows[0].item_id,
@@ -1073,8 +1155,7 @@ export async function postShipment(
         overrideRequested: params.overrideRequested,
         overrideReason: params.overrideReason ?? null,
         overrideReference: `shipment:${shipmentId}`
-      },
-      { client }
+      }
     );
 
     const movement = await createInventoryMovement(client, {
@@ -1111,12 +1192,20 @@ export async function postShipment(
       }
     }
 
+    const shipFromWarehouseId = await resolveWarehouseIdForLocation(tenantId, shipment.ship_from_location_id, client);
+    type ShipmentLineContext = {
+      line: any;
+      canonicalOut: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
+      issueQty: number;
+      reservationId: string | null;
+    };
+    const shipmentLineContexts: ShipmentLineContext[] = [];
+    const reservationIdsToLock = new Set<string>();
     for (const line of linesRes.rows) {
       const qtyShipped = toNumber(line.quantity_shipped);
       if (qtyShipped <= 0) {
         throw new Error('SHIPMENT_INVALID_QUANTITY');
       }
-
       const canonicalOut = await getCanonicalMovementFields(
         tenantId,
         line.item_id,
@@ -1125,6 +1214,53 @@ export async function postShipment(
         client
       );
       const issueQty = Math.abs(canonicalOut.quantityDeltaCanonical);
+      const reservationIdRes = await client.query<{ id: string }>(
+        `SELECT id
+           FROM inventory_reservations
+          WHERE tenant_id = $1
+            AND warehouse_id = $2
+            AND demand_type = 'sales_order_line'
+            AND demand_id = $3
+            AND item_id = $4
+            AND location_id = $5
+            AND uom = $6
+            AND status IN ('RESERVED', 'ALLOCATED')
+          LIMIT 1`,
+        [
+          tenantId,
+          shipFromWarehouseId,
+          line.sales_order_line_id,
+          line.item_id,
+          shipment.ship_from_location_id,
+          canonicalOut.canonicalUom
+        ]
+      );
+      const reservationId = reservationIdRes.rows[0]?.id ?? null;
+      if (reservationId) {
+        reservationIdsToLock.add(reservationId);
+      }
+      shipmentLineContexts.push({ line, canonicalOut, issueQty, reservationId });
+    }
+
+    const lockedReservations = await lockReservationsForUpdate(
+      client,
+      tenantId,
+      shipFromWarehouseId,
+      Array.from(reservationIdsToLock)
+    );
+    const lockedReservationsById = new Map(lockedReservations.map((row) => [row.id, row]));
+
+    for (const lineContext of shipmentLineContexts) {
+      const { line, canonicalOut, issueQty, reservationId } = lineContext;
+      const reservation = reservationId ? lockedReservationsById.get(reservationId) ?? null : null;
+      if (reservationId && !reservation) {
+        throw reservationInvalidState();
+      }
+      const reservedRemaining = reservation
+        && (reservation.status === 'RESERVED' || reservation.status === 'ALLOCATED')
+        ? roundQuantity(Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0)))
+        : 0;
+      const reserveConsume = Math.min(issueQty, reservedRemaining);
 
       const balance = await getInventoryBalanceForUpdate(
         client,
@@ -1137,24 +1273,6 @@ export async function postShipment(
       if (available + 1e-6 < issueQty && !validation.overrideMetadata) {
         throw new Error('INSUFFICIENT_STOCK');
       }
-
-      const reservationRes = await client.query(
-        `SELECT * FROM inventory_reservations
-          WHERE tenant_id = $1
-            AND demand_type = 'sales_order_line'
-            AND demand_id = $2
-            AND item_id = $3
-            AND location_id = $4
-            AND uom = $5
-            AND status IN ('RESERVED','ALLOCATED')
-          FOR UPDATE`,
-        [tenantId, line.sales_order_line_id, line.item_id, shipment.ship_from_location_id, canonicalOut.canonicalUom]
-      );
-      const reservation = reservationRes.rows[0] ?? null;
-      const reservedRemaining = reservation
-        ? roundQuantity(toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0))
-        : 0;
-      const reserveConsume = Math.min(issueQty, Math.max(0, reservedRemaining));
 
       const consumption = await consumeCostLayers({
         tenant_id: tenantId,
@@ -1188,6 +1306,21 @@ export async function postShipment(
       });
 
       if (reservation && reserveConsume > 0 && reservation.status === 'RESERVED') {
+        const allocateTransition = await client.query(
+          `UPDATE inventory_reservations
+              SET status = 'ALLOCATED',
+                  allocated_at = COALESCE(allocated_at, $1),
+                  updated_at = $1
+            WHERE id = $2
+              AND tenant_id = $3
+              AND warehouse_id = $4
+              AND status = 'RESERVED'`,
+          [now, reservation.id, tenantId, shipFromWarehouseId]
+        );
+        if (allocateTransition.rowCount === 0) {
+          throw reservationInvalidState();
+        }
+
         await applyInventoryBalanceDelta(client, {
           tenantId,
           itemId: line.item_id,
@@ -1196,15 +1329,8 @@ export async function postShipment(
           deltaReserved: -reserveConsume,
           deltaAllocated: reserveConsume
         });
-        await client.query(
-          `UPDATE inventory_reservations
-              SET status = 'ALLOCATED',
-                  allocated_at = COALESCE(allocated_at, now()),
-                  updated_at = now()
-            WHERE id = $1 AND tenant_id = $2`,
-          [reservation.id, tenantId]
-        );
         await insertReservationEvent(client, tenantId, reservation.id, 'ALLOCATED', -reserveConsume, reserveConsume);
+        reservation.status = 'ALLOCATED';
       }
 
       await applyInventoryBalanceDelta(client, {
@@ -1216,35 +1342,43 @@ export async function postShipment(
         deltaAllocated: -reserveConsume
       });
 
-      if (reservation) {
+      if (reservation && reserveConsume > 0) {
+        if (reservation.status !== 'ALLOCATED') {
+          throw reservationInvalidState();
+        }
         const fulfilled = roundQuantity(
           Math.min(
             toNumber(reservation.quantity_reserved),
             toNumber(reservation.quantity_fulfilled ?? 0) + reserveConsume
           )
         );
-        const newStatus =
-          fulfilled + 1e-6 >= toNumber(reservation.quantity_reserved) ? 'FULFILLED' : reservation.status;
-        await client.query(
+        const newStatus = fulfilled + 1e-6 >= toNumber(reservation.quantity_reserved) ? 'FULFILLED' : 'ALLOCATED';
+        const fulfillTransition = await client.query(
           `UPDATE inventory_reservations
               SET quantity_fulfilled = $1,
                   status = $2,
-                  updated_at = now(),
-                  fulfilled_at = CASE WHEN $2 = 'FULFILLED' THEN COALESCE(fulfilled_at, now()) ELSE fulfilled_at END
-            WHERE id = $3 AND tenant_id = $4`,
-          [fulfilled, newStatus, reservation.id, tenantId]
+                  updated_at = $3,
+                  fulfilled_at = CASE WHEN $2 = 'FULFILLED' THEN COALESCE(fulfilled_at, $3) ELSE fulfilled_at END
+            WHERE id = $4
+              AND tenant_id = $5
+              AND warehouse_id = $6
+              AND status = 'ALLOCATED'`,
+          [fulfilled, newStatus, now, reservation.id, tenantId, shipFromWarehouseId]
         );
-
-        if (reserveConsume > 0) {
-          await insertReservationEvent(
-            client,
-            tenantId,
-            reservation.id,
-            newStatus === 'FULFILLED' ? 'FULFILLED' : 'ALLOCATED',
-            0,
-            -reserveConsume
-          );
+        if (fulfillTransition.rowCount === 0) {
+          throw reservationInvalidState();
         }
+
+        await insertReservationEvent(
+          client,
+          tenantId,
+          reservation.id,
+          newStatus === 'FULFILLED' ? 'FULFILLED' : 'ALLOCATED',
+          0,
+          -reserveConsume
+        );
+        reservation.quantity_fulfilled = fulfilled;
+        reservation.status = newStatus;
 
         await enqueueInventoryReservationChanged(client, tenantId, reservation.id, {
           itemId: reservation.item_id,

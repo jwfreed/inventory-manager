@@ -192,22 +192,22 @@ async function seedOnHand(token, itemId, locationId, quantity) {
   assertOk(postRes.res, 'POST /inventory-adjustments/:id/post', postRes.payload, null, [200]);
 }
 
-async function getAtpDetail(token, itemId, locationId, { allowNotFound = false } = {}) {
+async function getAtpDetail(token, warehouseId, itemId, locationId, { allowNotFound = false } = {}) {
   const res = await apiRequest('GET', '/atp/detail', {
     token,
-    params: { itemId, locationId },
+    params: { warehouseId, itemId, locationId },
   });
   if (allowNotFound && res.res.status === 404) return null;
-  assertOk(res.res, 'GET /atp/detail', res.payload, { itemId, locationId }, [200]);
+  assertOk(res.res, 'GET /atp/detail', res.payload, { warehouseId, itemId, locationId }, [200]);
   return res.payload.data;
 }
 
-async function getSnapshot(token, itemId, locationId) {
+async function getSnapshot(token, warehouseId, itemId, locationId) {
   const res = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId },
+    params: { warehouseId, itemId, locationId },
   });
-  assertOk(res.res, 'GET /inventory-snapshot', res.payload, { itemId, locationId }, [200]);
+  assertOk(res.res, 'GET /inventory-snapshot', res.payload, { warehouseId, itemId, locationId }, [200]);
   return res.payload.data || [];
 }
 
@@ -226,19 +226,19 @@ let db;
   const itemId = await createItem(token, warehouseA.sellableLocation.id);
   await seedOnHand(token, itemId, warehouseA.sellableLocation.id, 5);
 
-  const atpA = await getAtpDetail(token, itemId, warehouseA.sellableLocation.id);
+  const atpA = await getAtpDetail(token, warehouseA.warehouse.id, itemId, warehouseA.sellableLocation.id);
   assert.ok(Number(atpA.availableToPromise) > 0, safeJson({ atpA }));
 
-  const atpB = await getAtpDetail(token, itemId, warehouseB.sellableLocation.id, { allowNotFound: true });
+  const atpB = await getAtpDetail(token, warehouseB.warehouse.id, itemId, warehouseB.sellableLocation.id, { allowNotFound: true });
   if (atpB) {
     assert.ok(Math.abs(Number(atpB.availableToPromise)) < 1e-6, safeJson({ atpB }));
   }
 
-  const snapshotA = await getSnapshot(token, itemId, warehouseA.sellableLocation.id);
+  const snapshotA = await getSnapshot(token, warehouseA.warehouse.id, itemId, warehouseA.sellableLocation.id);
   const onHandA = Number(snapshotA[0]?.onHand ?? 0);
   assert.ok(onHandA > 0, safeJson({ snapshotA }));
 
-  const snapshotB = await getSnapshot(token, itemId, warehouseB.sellableLocation.id);
+  const snapshotB = await getSnapshot(token, warehouseB.warehouse.id, itemId, warehouseB.sellableLocation.id);
   const onHandB = Number(snapshotB[0]?.onHand ?? 0);
   assert.ok(Math.abs(onHandB) < 1e-6, safeJson({ snapshotB }));
 });
@@ -257,8 +257,8 @@ test('reservations do not consume supply across warehouses', async () => {
   const itemId = await createItem(token, warehouseA.sellableLocation.id);
   await seedOnHand(token, itemId, warehouseA.sellableLocation.id, 1);
 
-  const preAtpA = await getAtpDetail(token, itemId, warehouseA.sellableLocation.id);
-  const preAtpB = await getAtpDetail(token, itemId, warehouseB.sellableLocation.id, { allowNotFound: true });
+  const preAtpA = await getAtpDetail(token, warehouseA.warehouse.id, itemId, warehouseA.sellableLocation.id);
+  const preAtpB = await getAtpDetail(token, warehouseB.warehouse.id, itemId, warehouseB.sellableLocation.id, { allowNotFound: true });
 
   const reserveB = await apiRequest('POST', '/reservations', {
     token,
@@ -268,6 +268,7 @@ test('reservations do not consume supply across warehouses', async () => {
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouseB.warehouse.id,
           locationId: warehouseB.sellableLocation.id,
           uom: 'each',
           quantityReserved: 1,
@@ -285,6 +286,7 @@ test('reservations do not consume supply across warehouses', async () => {
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouseA.warehouse.id,
           locationId: warehouseA.sellableLocation.id,
           uom: 'each',
           quantityReserved: 1,

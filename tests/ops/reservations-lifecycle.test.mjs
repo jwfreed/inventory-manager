@@ -89,11 +89,11 @@ test('Reserve → Cancel → ATP returns', async () => {
   const token = session.accessToken;
   assert.ok(token);
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 10);
 
-  const atpInitialRes = await apiRequest('GET', '/atp', { token, params: { itemId } });
+  const atpInitialRes = await apiRequest('GET', '/atp', { token, params: { warehouseId: warehouse.id, itemId } });
   assert.equal(atpInitialRes.res.status, 200);
   const initialRow = (atpInitialRes.payload.data || []).find((r) => r.locationId === sellable.id);
   assert.ok(initialRow);
@@ -108,6 +108,7 @@ test('Reserve → Cancel → ATP returns', async () => {
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouse.id,
           locationId: sellable.id,
           uom: 'each',
           quantityReserved: 5,
@@ -121,7 +122,10 @@ test('Reserve → Cancel → ATP returns', async () => {
 
   await waitForCondition(
     async () => {
-      const atpRes = await apiRequest('GET', '/atp', { token, params: { itemId } });
+      const atpRes = await apiRequest('GET', '/atp', {
+        token,
+        params: { warehouseId: warehouse.id, itemId }
+      });
       assert.equal(atpRes.res.status, 200);
       const row = (atpRes.payload.data || []).find((r) => r.locationId === sellable.id);
       return row ? Number(row.availableToPromise) : null;
@@ -133,13 +137,16 @@ test('Reserve → Cancel → ATP returns', async () => {
   const cancelRes = await apiRequest('POST', `/reservations/${reservationId}/cancel`, {
     token,
     headers: { 'Idempotency-Key': `cancel-${randomUUID()}` },
-    body: { reason: 'test' },
+    body: { warehouseId: warehouse.id, reason: 'test' },
   });
   assert.equal(cancelRes.res.status, 200);
 
   await waitForCondition(
     async () => {
-      const atpRes2 = await apiRequest('GET', '/atp', { token, params: { itemId } });
+      const atpRes2 = await apiRequest('GET', '/atp', {
+        token,
+        params: { warehouseId: warehouse.id, itemId }
+      });
       assert.equal(atpRes2.res.status, 200);
       const row2 = (atpRes2.payload.data || []).find((r) => r.locationId === sellable.id);
       return row2 ? Number(row2.availableToPromise) : null;
@@ -156,7 +163,7 @@ test('Reserve → Allocate → Fulfill keeps ATP reduced until fulfilled', async
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 8);
 
@@ -169,6 +176,7 @@ test('Reserve → Allocate → Fulfill keeps ATP reduced until fulfilled', async
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouse.id,
           locationId: sellable.id,
           uom: 'each',
           quantityReserved: 4,
@@ -183,6 +191,7 @@ test('Reserve → Allocate → Fulfill keeps ATP reduced until fulfilled', async
   const allocateRes = await apiRequest('POST', `/reservations/${reservationId}/allocate`, {
     token,
     headers: { 'Idempotency-Key': `alloc-${randomUUID()}` },
+    body: { warehouseId: warehouse.id },
   });
   assert.equal(allocateRes.res.status, 200);
   assert.equal(allocateRes.payload.status, 'ALLOCATED');
@@ -190,7 +199,7 @@ test('Reserve → Allocate → Fulfill keeps ATP reduced until fulfilled', async
   const fulfillRes = await apiRequest('POST', `/reservations/${reservationId}/fulfill`, {
     token,
     headers: { 'Idempotency-Key': `fulfill-${randomUUID()}` },
-    body: { quantity: 4 },
+    body: { warehouseId: warehouse.id, quantity: 4 },
   });
   assert.equal(fulfillRes.res.status, 200);
   assert.equal(fulfillRes.payload.status, 'FULFILLED');
@@ -212,7 +221,7 @@ test('Retry reserve with same idempotency key does not duplicate', async () => {
   const tenantId = session.tenant?.id;
   assert.ok(token);
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
@@ -223,6 +232,7 @@ test('Retry reserve with same idempotency key does not duplicate', async () => {
         demandType: 'sales_order_line',
         demandId: randomUUID(),
         itemId,
+        warehouseId: warehouse.id,
         locationId: sellable.id,
         uom: 'each',
         quantityReserved: 3,
@@ -251,7 +261,7 @@ test('Concurrent reserve with same idempotency key returns same reservation', as
   const tenantId = session.tenant?.id;
   assert.ok(token);
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
@@ -262,6 +272,7 @@ test('Concurrent reserve with same idempotency key returns same reservation', as
         demandType: 'sales_order_line',
         demandId: randomUUID(),
         itemId,
+        warehouseId: warehouse.id,
         locationId: sellable.id,
         uom: 'each',
         quantityReserved: 2,
@@ -286,7 +297,7 @@ test('Concurrent reservations against limited stock: one succeeds, one fails', a
   assert.ok(token);
 
   const tenantId = session.tenant?.id;
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
@@ -300,6 +311,7 @@ test('Concurrent reservations against limited stock: one succeeds, one fails', a
             demandType: 'sales_order_line',
             demandId: randomUUID(),
             itemId,
+            warehouseId: warehouse.id,
             locationId: sellable.id,
             uom: 'each',
             quantityReserved: 5,
@@ -323,7 +335,7 @@ test('Guardrails reject illegal transitions', async () => {
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
   assert.ok(token);
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const itemId = await seedItemAndStock(token, sellable.id, 5);
 
@@ -336,6 +348,7 @@ test('Guardrails reject illegal transitions', async () => {
           demandType: 'sales_order_line',
           demandId: randomUUID(),
           itemId,
+          warehouseId: warehouse.id,
           locationId: sellable.id,
           uom: 'each',
           quantityReserved: 2,
@@ -350,20 +363,22 @@ test('Guardrails reject illegal transitions', async () => {
   const fulfillRes = await apiRequest('POST', `/reservations/${reservationId}/fulfill`, {
     token,
     headers: { 'Idempotency-Key': `fulfill-${randomUUID()}` },
-    body: { quantity: 1 },
+    body: { warehouseId: warehouse.id, quantity: 1 },
   });
   assert.equal(fulfillRes.res.status, 409);
 
   const allocRes = await apiRequest('POST', `/reservations/${reservationId}/allocate`, {
     token,
     headers: { 'Idempotency-Key': `alloc-${randomUUID()}` },
+    body: { warehouseId: warehouse.id },
   });
   assert.equal(allocRes.res.status, 200);
 
   const cancelRes = await apiRequest('POST', `/reservations/${reservationId}/cancel`, {
     token,
     headers: { 'Idempotency-Key': `cancel-${randomUUID()}` },
-    body: { reason: 'test' },
+    body: { warehouseId: warehouse.id, reason: 'test' },
   });
-  assert.equal(cancelRes.res.status, 409);
+  assert.equal(cancelRes.res.status, 200);
+  assert.equal(cancelRes.payload.status, 'CANCELLED');
 });

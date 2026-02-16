@@ -9,6 +9,7 @@ export {
 export {
   applyInventoryBalanceDelta,
   ensureInventoryBalanceRow,
+  ensureInventoryBalanceRowAndLock,
   getInventoryBalance,
   getInventoryBalanceForUpdate,
   type InventoryBalanceRow

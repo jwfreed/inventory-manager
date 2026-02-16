@@ -35,8 +35,7 @@ const reservationCancelSchema = z.object({
   reason: z.string().max(1000).optional(),
 });
 const reservationFulfillSchema = z.object({
-  warehouseId: z.string().uuid(),
-  quantity: z.number().positive().optional(),
+  quantity: z.number(),
 });
 const reservationAllocateSchema = z.object({
   warehouseId: z.string().uuid()
@@ -191,7 +190,7 @@ router.post('/reservations/:id/allocate', async (req: Request, res: Response) =>
     if (error?.message === 'RESERVATION_NOT_FOUND') {
       return res.status(404).json({ error: 'Reservation not found.' });
     }
-    if (error?.message === 'RESERVATION_INVALID_TRANSITION') {
+    if (error?.message === 'RESERVATION_INVALID_TRANSITION' || error?.message === 'RESERVATION_INVALID_STATE') {
       return res.status(409).json({ error: 'Reservation cannot be allocated from current state.' });
     }
     if (error?.message === 'RESERVATION_ALLOCATE_IN_PROGRESS') {
@@ -229,8 +228,8 @@ router.post('/reservations/:id/cancel', async (req: Request, res: Response) => {
     if (error?.message === 'RESERVATION_NOT_FOUND') {
       return res.status(404).json({ error: 'Reservation not found.' });
     }
-    if (error?.message === 'RESERVATION_ALLOCATED_CANCEL_FORBIDDEN') {
-      return res.status(409).json({ error: 'Allocated reservations cannot be canceled.' });
+    if (error?.message === 'RESERVATION_INVALID_STATE' || error?.message === 'RESERVATION_ALLOCATED_CANCEL_FORBIDDEN') {
+      return res.status(409).json({ error: 'Reservation cannot be canceled from current state.' });
     }
     if (error?.message === 'RESERVATION_CANCEL_IN_PROGRESS') {
       return res.status(409).json({ error: 'Reservation cancel already in progress.' });
@@ -245,10 +244,11 @@ router.post('/reservations/:id/fulfill', async (req: Request, res: Response) => 
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid reservation id.' });
   }
-  if (!requireWarehouseId(req.body?.warehouseId, res)) {
+  const warehouseId = req.body?.warehouseId;
+  if (!requireWarehouseId(warehouseId, res)) {
     return;
   }
-  const parsed = reservationFulfillSchema.safeParse(req.body ?? {});
+  const parsed = reservationFulfillSchema.safeParse({ quantity: req.body?.quantity });
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
@@ -257,7 +257,7 @@ router.post('/reservations/:id/fulfill', async (req: Request, res: Response) => 
     return res.status(400).json({ error: 'Idempotency-Key header is required.' });
   }
   try {
-    const reservation = await fulfillReservation(req.auth!.tenantId, id, parsed.data.warehouseId, {
+    const reservation = await fulfillReservation(req.auth!.tenantId, id, warehouseId, {
       quantity: parsed.data.quantity,
       idempotencyKey
     });
@@ -267,7 +267,15 @@ router.post('/reservations/:id/fulfill', async (req: Request, res: Response) => 
     if (error?.message === 'RESERVATION_NOT_FOUND') {
       return res.status(404).json({ error: 'Reservation not found.' });
     }
-    if (error?.message === 'RESERVATION_INVALID_TRANSITION') {
+    if (error?.message === 'RESERVATION_INVALID_QUANTITY') {
+      return res.status(400).json({
+        error: {
+          code: 'RESERVATION_INVALID_QUANTITY',
+          message: 'quantity must be a positive number.'
+        }
+      });
+    }
+    if (error?.message === 'RESERVATION_INVALID_TRANSITION' || error?.message === 'RESERVATION_INVALID_STATE') {
       return res.status(409).json({ error: 'Reservation cannot be fulfilled from current state.' });
     }
     if (error?.message === 'RESERVATION_FULFILL_IN_PROGRESS') {
@@ -328,6 +336,9 @@ router.post('/shipments/:id/post', async (req: Request, res: Response) => {
     }
     if (error?.message === 'SHIPMENT_LOCATION_REQUIRED') {
       return res.status(400).json({ error: 'Shipment requires ship_from_location_id.' });
+    }
+    if (error?.message === 'RESERVATION_INVALID_STATE') {
+      return res.status(409).json({ error: 'Reservation state changed while posting shipment. Please retry.' });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post shipment.' });
