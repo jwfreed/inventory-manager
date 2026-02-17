@@ -6,7 +6,6 @@ import type { z } from 'zod';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock, validateLocationCapacity } from './stockValidation.service';
-import { calculateMovementCost } from './costing.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import {
   createInventoryMovement,
@@ -14,6 +13,7 @@ import {
   applyInventoryBalanceDelta,
   enqueueInventoryMovementPosted
 } from '../domains/inventory';
+import { relocateTransferCostLayersInTx, type TransferLinePair } from './transferCosting.service';
 import {
   calculateAcceptedQuantity,
   calculatePutawayAvailability,
@@ -507,11 +507,11 @@ export async function postPutaway(
       }
     }
 
+    const transferPairs: TransferLinePair[] = [];
     for (const line of pendingLines) {
       const qty = toNumber(line.quantity_planned);
       const lineNote = `Putaway ${id} line ${line.line_number}`;
       
-      // Calculate cost for this movement
       const canonicalOut = await getCanonicalMovementFields(
         tenantId,
         line.item_id,
@@ -519,14 +519,8 @@ export async function postPutaway(
         line.uom,
         client
       );
-      const costData = await calculateMovementCost(
-        tenantId,
-        line.item_id,
-        canonicalOut.quantityDeltaCanonical,
-        client
-      );
       
-      await createInventoryMovementLine(client, {
+      const outLineId = await createInventoryMovementLine(client, {
         tenantId,
         movementId: movement.id,
         itemId: line.item_id,
@@ -538,8 +532,6 @@ export async function postPutaway(
         quantityDeltaCanonical: canonicalOut.quantityDeltaCanonical,
         canonicalUom: canonicalOut.canonicalUom,
         uomDimension: canonicalOut.uomDimension,
-        unitCost: costData.unitCost,
-        extendedCost: costData.extendedCost,
         reasonCode: 'putaway',
         lineNotes: lineNote
       });
@@ -560,14 +552,14 @@ export async function postPutaway(
         line.uom,
         client
       );
-      const costDataPositive = await calculateMovementCost(
-        tenantId,
-        line.item_id,
-        canonicalIn.quantityDeltaCanonical,
-        client
-      );
+      if (
+        canonicalOut.canonicalUom !== canonicalIn.canonicalUom
+        || Math.abs(Math.abs(canonicalOut.quantityDeltaCanonical) - canonicalIn.quantityDeltaCanonical) > 1e-6
+      ) {
+        throw new Error('TRANSFER_CANONICAL_MISMATCH');
+      }
       
-      await createInventoryMovementLine(client, {
+      const inLineId = await createInventoryMovementLine(client, {
         tenantId,
         movementId: movement.id,
         itemId: line.item_id,
@@ -579,8 +571,6 @@ export async function postPutaway(
         quantityDeltaCanonical: canonicalIn.quantityDeltaCanonical,
         canonicalUom: canonicalIn.canonicalUom,
         uomDimension: canonicalIn.uomDimension,
-        unitCost: costDataPositive.unitCost,
-        extendedCost: costDataPositive.extendedCost,
         reasonCode: 'putaway',
         lineNotes: lineNote
       });
@@ -601,7 +591,26 @@ export async function postPutaway(
          WHERE id = $4 AND tenant_id = $5`,
         [qty, movement.id, now, line.id, tenantId]
       );
+
+      transferPairs.push({
+        itemId: line.item_id,
+        sourceLocationId: line.from_location_id,
+        destinationLocationId: line.to_location_id,
+        outLineId,
+        inLineId,
+        quantity: canonicalIn.quantityDeltaCanonical,
+        uom: canonicalIn.canonicalUom
+      });
     }
+
+    await relocateTransferCostLayersInTx({
+      client,
+      tenantId,
+      transferMovementId: movement.id,
+      occurredAt: now,
+      notes: `Putaway ${id}`,
+      pairs: transferPairs
+    });
 
     await client.query(
       `UPDATE putaways

@@ -135,7 +135,9 @@ export async function projectInventoryMovement(
   const locationIds = Array.from(new Set(lines.map((line) => line.location_id)));
 
   const hasCosts = await hasCostLayerActivity(client, tenantId, movementId);
-  if (!hasCosts) {
+  const transferCostingHandledInPosting =
+    movement.movement_type === 'transfer' || movement.movement_type === 'transfer_reversal';
+  if (!hasCosts && !transferCostingHandledInPosting) {
     const sourceType = sourceTypeForMovement(movement);
 
     for (const line of lines) {

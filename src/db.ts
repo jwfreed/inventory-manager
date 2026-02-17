@@ -115,9 +115,17 @@ export async function withTransactionRetry<T>(
     } catch (err: any) {
       await client.query('ROLLBACK');
       const code = err?.code;
-      if ((code === '40001' || code === '40P01') && attempt < retries) {
-        attempt += 1;
-        continue;
+      if (code === '40001' || code === '40P01') {
+        if (attempt < retries) {
+          attempt += 1;
+          continue;
+        }
+        const exhausted: any = new Error('TX_RETRY_EXHAUSTED');
+        exhausted.code = 'TX_RETRY_EXHAUSTED';
+        exhausted.cause = err;
+        exhausted.retrySqlState = code;
+        exhausted.retryAttempts = attempt + 1;
+        throw exhausted;
       }
       throw err;
     } finally {

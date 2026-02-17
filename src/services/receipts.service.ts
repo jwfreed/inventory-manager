@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
-import { query, withTransaction } from '../db';
+import { query, withTransaction, withTransactionRetry } from '../db';
 import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
 import type { z } from 'zod';
 import {
@@ -15,7 +15,7 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { query as baseQuery } from '../db';
 import { updatePoStatusFromReceipts } from './status/purchaseOrdersStatus.service';
 import { recordAuditLog } from '../lib/audit';
-import { calculateMovementCostWithUnitCost, updateMovingAverageCost } from './costing.service';
+import { calculateMovementCostWithUnitCost, updateItemQuantityOnHand, updateMovingAverageCost } from './costing.service';
 import { createReceiptCostLayerOnce } from './costLayers.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { resolveDefaultLocationForRole } from './warehouseDefaults.service';
@@ -140,6 +140,7 @@ async function generateReceiptNumber() {
 }
 
 const STATUS_EPSILON = 1e-6;
+const REVERSAL_MOVEMENT_TYPE = 'receipt_reversal';
 
 type ReceiptTotals = {
   totalReceived: number;
@@ -158,6 +159,8 @@ type ReceiptStatusSummary = {
   qcEligible: boolean;
   putawayEligible: boolean;
 };
+
+type ReceiptVoidActor = { type: 'user' | 'system'; id?: string | null };
 
 function buildReceiptStatusSummary(baseStatus: string | null | undefined, totals: ReceiptTotals): ReceiptStatusSummary {
   const totalReceived = roundQuantity(totals.totalReceived);
@@ -580,8 +583,7 @@ export async function createPurchaseOrderReceipt(
         deltaOnHand: canonicalQty
       });
 
-      // Valuation note: cost layers are item/lot-level, not location-level.
-      // Receipts create the single cost layer; transfers only move quantities.
+      // Valuation note: receipts create the initial layer at QA; transfer posting relocates FIFO layers in-tx.
       if (unitCost !== null && unitCost !== undefined) {
         await updateMovingAverageCost(
           tenantId,
@@ -958,18 +960,225 @@ export async function deleteReceipt(tenantId: string, id: string) {
   });
 }
 
-export async function voidReceipt(tenantId: string, id: string, actor: { type: 'user' | 'system'; id?: string | null }) {
-  return withTransaction(async (client) => {
-    const receiptResult = await client.query(
-      'SELECT id, status FROM purchase_order_receipts WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+function assertReason(reason: string) {
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    throw new Error('RECEIPT_VOID_REASON_REQUIRED');
+  }
+  return trimmed;
+}
+
+async function findExistingReversalMovement(
+  client: PoolClient,
+  tenantId: string,
+  originalMovementId: string
+) {
+  const existing = await client.query(
+    `SELECT id, movement_type, status
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND reversal_of_movement_id = $2
+      LIMIT 1`,
+    [tenantId, originalMovementId]
+  );
+  return existing.rows[0] ?? null;
+}
+
+async function assertReceiptCostLayersReversible(
+  client: PoolClient,
+  tenantId: string,
+  originalMovementId: string
+): Promise<string[]> {
+  const layersResult = await client.query<{
+    id: string;
+    original_quantity: string | number;
+    remaining_quantity: string | number;
+  }>(
+    `SELECT id, original_quantity, remaining_quantity
+       FROM inventory_cost_layers
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND source_type = 'receipt'
+        AND voided_at IS NULL
+      FOR UPDATE`,
+    [tenantId, originalMovementId]
+  );
+
+  if (layersResult.rowCount === 0) {
+    return [];
+  }
+
+  const layerIds = layersResult.rows.map((row) => row.id);
+  const consumptionResult = await client.query<{ cost_layer_id: string }>(
+    `SELECT DISTINCT cost_layer_id
+       FROM cost_layer_consumptions
+      WHERE tenant_id = $1
+        AND cost_layer_id = ANY($2::uuid[])`,
+    [tenantId, layerIds]
+  );
+  const consumedLayerIds = new Set(consumptionResult.rows.map((row) => row.cost_layer_id));
+
+  for (const layer of layersResult.rows) {
+    const originalQty = roundQuantity(toNumber(layer.original_quantity));
+    const remainingQty = roundQuantity(toNumber(layer.remaining_quantity));
+    if (consumedLayerIds.has(layer.id)) {
+      throw new Error('RECEIPT_REVERSAL_NOT_POSSIBLE_CONSUMED');
+    }
+    if (Math.abs(remainingQty - originalQty) > STATUS_EPSILON) {
+      throw new Error('RECEIPT_REVERSAL_NOT_POSSIBLE_CONSUMED');
+    }
+  }
+
+  return layerIds;
+}
+
+async function insertReversalLinesAndCollectDeltas(
+  client: PoolClient,
+  tenantId: string,
+  originalMovementId: string,
+  reversalMovementId: string,
+  reason: string,
+  createdAt: Date
+) {
+  const insertResult = await client.query<{
+    item_id: string;
+    location_id: string;
+    balance_uom: string;
+    quantity_delta_effective: string | number;
+  }>(
+    `INSERT INTO inventory_movement_lines (
+       id,
+       tenant_id,
+       movement_id,
+       item_id,
+       location_id,
+       quantity_delta,
+       uom,
+       quantity_delta_entered,
+       uom_entered,
+       quantity_delta_canonical,
+       canonical_uom,
+       uom_dimension,
+       unit_cost,
+       extended_cost,
+       reason_code,
+       line_notes,
+       created_at
+     )
+     SELECT
+       gen_random_uuid(),
+       iml.tenant_id,
+       $3,
+       iml.item_id,
+       iml.location_id,
+       -iml.quantity_delta,
+       iml.uom,
+       CASE
+         WHEN iml.quantity_delta_entered IS NULL
+         THEN NULL
+         ELSE -iml.quantity_delta_entered
+       END,
+       iml.uom_entered,
+       CASE
+         WHEN iml.quantity_delta_canonical IS NULL
+         THEN NULL
+         ELSE -iml.quantity_delta_canonical
+       END,
+       iml.canonical_uom,
+       iml.uom_dimension,
+       iml.unit_cost,
+       CASE
+         WHEN iml.extended_cost IS NULL
+         THEN NULL
+         ELSE -iml.extended_cost
+       END,
+       COALESCE(iml.reason_code, 'receipt_void_reversal'),
+       CONCAT('Reversal of movement line ', iml.id, ' (', $4::text, ')'),
+       $5
+      FROM inventory_movement_lines iml
+     WHERE iml.tenant_id = $1
+       AND iml.movement_id = $2
+     RETURNING
+       item_id,
+       location_id,
+       COALESCE(canonical_uom, uom) AS balance_uom,
+       COALESCE(quantity_delta_canonical, quantity_delta) AS quantity_delta_effective`,
+    [tenantId, originalMovementId, reversalMovementId, reason, createdAt]
+  );
+
+  if (insertResult.rowCount === 0) {
+    throw new Error('RECEIPT_NOT_POSTED');
+  }
+
+  return insertResult.rows;
+}
+
+export async function voidReceipt(
+  tenantId: string,
+  id: string,
+  params: { reason: string; actor: ReceiptVoidActor; idempotencyKey?: string | null }
+) {
+  const reason = assertReason(params.reason);
+
+  return withTransactionRetry(async (client) => {
+    const now = new Date();
+    const receiptResult = await client.query<{
+      id: string;
+      status: string;
+      inventory_movement_id: string | null;
+    }>(
+      `SELECT id, status, inventory_movement_id
+         FROM purchase_order_receipts
+        WHERE id = $1
+          AND tenant_id = $2
+        FOR UPDATE`,
       [id, tenantId]
     );
     if (receiptResult.rowCount === 0) {
       throw new Error('RECEIPT_NOT_FOUND');
     }
     const receipt = receiptResult.rows[0];
-    if (receipt.status === 'voided') {
-      throw new Error('RECEIPT_ALREADY_VOIDED');
+    if (!receipt.inventory_movement_id) {
+      throw new Error('RECEIPT_NOT_POSTED');
+    }
+
+    const originalMovementResult = await client.query<{
+      id: string;
+      status: string;
+      movement_type: string;
+      reversal_of_movement_id: string | null;
+      reversed_by_movement_id: string | null;
+    }>(
+      `SELECT id, status, movement_type, reversal_of_movement_id, reversed_by_movement_id
+         FROM inventory_movements
+        WHERE id = $1
+          AND tenant_id = $2
+        FOR UPDATE`,
+      [receipt.inventory_movement_id, tenantId]
+    );
+    if (originalMovementResult.rowCount === 0) {
+      throw new Error('RECEIPT_NOT_POSTED');
+    }
+    const originalMovement = originalMovementResult.rows[0];
+    if (originalMovement.status !== 'posted') {
+      throw new Error('RECEIPT_NOT_POSTED');
+    }
+    if (
+      originalMovement.movement_type === REVERSAL_MOVEMENT_TYPE
+      || originalMovement.reversal_of_movement_id !== null
+    ) {
+      throw new Error('RECEIPT_REVERSAL_INVALID_TARGET');
+    }
+    if (originalMovement.reversed_by_movement_id !== null) {
+      throw new Error('RECEIPT_ALREADY_REVERSED');
+    }
+    if (originalMovement.movement_type !== 'receive') {
+      throw new Error('RECEIPT_NOT_POSTED');
+    }
+
+    const existingReversal = await findExistingReversalMovement(client, tenantId, originalMovement.id);
+    if (receipt.status === 'voided' || existingReversal) {
+      throw new Error('RECEIPT_ALREADY_REVERSED');
     }
 
     const { rows: putawayRefs } = await client.query(
@@ -980,39 +1189,157 @@ export async function voidReceipt(tenantId: string, id: string, actor: { type: '
          FROM putaway_lines pl
          JOIN putaways p ON p.id = pl.putaway_id AND p.tenant_id = pl.tenant_id
         WHERE pl.purchase_order_receipt_line_id IN (
-              SELECT id FROM purchase_order_receipt_lines WHERE purchase_order_receipt_id = $1 AND tenant_id = $2
+              SELECT id
+                FROM purchase_order_receipt_lines
+               WHERE purchase_order_receipt_id = $1
+                 AND tenant_id = $2
             )
           AND pl.tenant_id = $2`,
       [id, tenantId]
     );
     if (putawayRefs.length > 0) {
       const hasPosted = putawayRefs.some(
-        (r) => r.line_status === 'completed' || r.putaway_status === 'completed' || r.inventory_movement_id
+        (row) => row.line_status === 'completed' || row.putaway_status === 'completed' || row.inventory_movement_id
       );
       if (hasPosted) {
         throw new Error('RECEIPT_HAS_PUTAWAYS_POSTED');
       }
     }
 
+    const reversibleLayerIds = await assertReceiptCostLayersReversible(client, tenantId, originalMovement.id);
+
+    const reversalMovement = await createInventoryMovement(client, {
+      tenantId,
+      movementType: REVERSAL_MOVEMENT_TYPE,
+      status: 'posted',
+      externalRef: `po_receipt_void:${id}`,
+      sourceType: 'po_receipt_void',
+      sourceId: id,
+      idempotencyKey: params.idempotencyKey ?? null,
+      occurredAt: now,
+      postedAt: now,
+      notes: `Receipt void reversal ${id}: ${reason}`,
+      reversalOfMovementId: originalMovement.id,
+      reversalReason: reason,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    if (!reversalMovement.created) {
+      const existingMovementResult = await client.query<{
+        id: string;
+        movement_type: string;
+        reversal_of_movement_id: string | null;
+      }>(
+        `SELECT id, movement_type, reversal_of_movement_id
+           FROM inventory_movements
+          WHERE id = $1
+            AND tenant_id = $2
+          FOR UPDATE`,
+        [reversalMovement.id, tenantId]
+      );
+      const existingMovement = existingMovementResult.rows[0];
+      if (
+        existingMovement &&
+        existingMovement.movement_type === REVERSAL_MOVEMENT_TYPE &&
+        existingMovement.reversal_of_movement_id === originalMovement.id
+      ) {
+        throw new Error('RECEIPT_ALREADY_REVERSED');
+      }
+      throw new Error('RECEIPT_VOID_CONFLICT');
+    }
+
+    const lineRows = await insertReversalLinesAndCollectDeltas(
+      client,
+      tenantId,
+      originalMovement.id,
+      reversalMovement.id,
+      reason,
+      now
+    );
+
+    const balanceDeltaByKey = new Map<string, {
+      itemId: string;
+      locationId: string;
+      uom: string;
+      deltaOnHand: number;
+    }>();
+    const itemQtyDeltaById = new Map<string, number>();
+    for (const row of lineRows) {
+      const delta = roundQuantity(toNumber(row.quantity_delta_effective));
+      const key = `${row.item_id}|${row.location_id}|${row.balance_uom}`;
+      const current = balanceDeltaByKey.get(key) ?? {
+        itemId: row.item_id,
+        locationId: row.location_id,
+        uom: row.balance_uom,
+        deltaOnHand: 0
+      };
+      current.deltaOnHand = roundQuantity(current.deltaOnHand + delta);
+      balanceDeltaByKey.set(key, current);
+
+      const currentItemDelta = itemQtyDeltaById.get(row.item_id) ?? 0;
+      itemQtyDeltaById.set(row.item_id, roundQuantity(currentItemDelta + delta));
+    }
+
+    for (const delta of balanceDeltaByKey.values()) {
+      if (Math.abs(delta.deltaOnHand) <= STATUS_EPSILON) continue;
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: delta.itemId,
+        locationId: delta.locationId,
+        uom: delta.uom,
+        deltaOnHand: delta.deltaOnHand
+      });
+    }
+
+    for (const [itemId, quantityDelta] of itemQtyDeltaById.entries()) {
+      if (Math.abs(quantityDelta) <= STATUS_EPSILON) continue;
+      await updateItemQuantityOnHand(tenantId, itemId, quantityDelta, client);
+    }
+
+    if (reversibleLayerIds.length > 0) {
+      await client.query(
+        `UPDATE inventory_cost_layers
+            SET voided_at = $3,
+                void_reason = $4,
+                updated_at = $3
+          WHERE tenant_id = $1
+            AND id = ANY($2::uuid[])`,
+        [tenantId, reversibleLayerIds, now, `receipt_void:${id}`]
+      );
+    }
+
     await client.query(
       `UPDATE purchase_order_receipts
           SET status = 'voided'
-        WHERE id = $1 AND tenant_id = $2`,
+        WHERE id = $1
+          AND tenant_id = $2`,
       [id, tenantId]
     );
 
-    await recordAuditLog({
-      tenantId,
-      actorType: actor.type,
-      actorId: actor.id ?? null,
-      action: 'update',
-      entityType: 'purchase_order_receipt',
-      entityId: id,
-      metadata: { statusFrom: receipt.status, statusTo: 'voided' }
-    }, client);
+    await enqueueInventoryMovementPosted(client, tenantId, reversalMovement.id);
+
+    await recordAuditLog(
+      {
+        tenantId,
+        actorType: params.actor.type,
+        actorId: params.actor.id ?? null,
+        action: 'update',
+        entityType: 'purchase_order_receipt',
+        entityId: id,
+        metadata: {
+          statusFrom: receipt.status,
+          statusTo: 'voided',
+          reversalMovementId: reversalMovement.id,
+          reversalOfMovementId: originalMovement.id,
+          reason
+        }
+      },
+      client
+    );
 
     return fetchReceiptById(tenantId, id, client);
-  });
+  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
 }
 async function findDefaultReceivingLocation(tenantId: string): Promise<string | null> {
   const { rows } = await baseQuery(

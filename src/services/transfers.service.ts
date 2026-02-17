@@ -1,20 +1,22 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import { withTransactionRetry } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { validateSufficientStock } from './stockValidation.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
-import { calculateMovementCost } from './costing.service';
 import {
   createInventoryMovement,
   createInventoryMovementLine,
   applyInventoryBalanceDelta,
   enqueueInventoryMovementPosted
 } from '../domains/inventory';
+import { relocateTransferCostLayersInTx, reverseTransferCostLayersInTx } from './transferCosting.service';
+
+const TRANSFER_REVERSAL_MOVEMENT_TYPE = 'transfer_reversal';
 
 /**
  * Canonical transfer primitive for inventory movements.
- * Transfers NEVER create or mutate cost layers - cost is inherited from source.
- * QC disposition transfers existing inventory; cost layers are receipt-authored only.
+ * Transfers must relocate FIFO cost layers inside the posting transaction.
  */
 export type TransferInventoryInput = {
   tenantId: string;
@@ -40,6 +42,41 @@ export type TransferInventoryInput = {
 export type TransferInventoryResult = {
   movementId: string;
   created: boolean;
+};
+
+export type TransferVoidActor = {
+  type: 'user' | 'system';
+  id?: string | null;
+};
+
+function negateNullable(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  return roundQuantity(-toNumber(value));
+}
+
+function assertReason(reason: string): string {
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    throw new Error('TRANSFER_VOID_REASON_REQUIRED');
+  }
+  return trimmed;
+}
+
+type MovementLineRow = {
+  id: string;
+  item_id: string;
+  location_id: string;
+  quantity_delta: string | number;
+  uom: string;
+  quantity_delta_entered: string | number | null;
+  uom_entered: string | null;
+  quantity_delta_canonical: string | number | null;
+  canonical_uom: string | null;
+  uom_dimension: string | null;
+  unit_cost: string | number | null;
+  extended_cost: string | number | null;
+  reason_code: string | null;
+  line_notes: string | null;
 };
 
 export async function transferInventory(
@@ -74,7 +111,6 @@ export async function transferInventory(
     throw new Error('TRANSFER_INVALID_QUANTITY');
   }
 
-  // Validate destination location role
   const destCheck = await client.query(
     `SELECT role, is_sellable FROM locations WHERE id = $1 AND tenant_id = $2`,
     [destinationLocationId, tenantId]
@@ -124,7 +160,6 @@ export async function transferInventory(
     }
   }
 
-  // Validate sufficient stock at source
   const validation = await validateSufficientStock(
     tenantId,
     occurredAt,
@@ -148,7 +183,6 @@ export async function transferInventory(
   const movementId = uuidv4();
   const externalRef = `${sourceType}:${sourceId}`;
 
-  // Create transfer movement (idempotent via source_type + source_id uniqueness)
   const movementResult = await createInventoryMovement(client, {
     id: movementId,
     tenantId,
@@ -166,15 +200,19 @@ export async function transferInventory(
   });
 
   if (!movementResult.created) {
-    // Idempotent: movement already exists
     return { movementId: movementResult.id, created: false };
   }
 
-  // Create outbound line (negative quantity at source)
   const canonicalOut = await getCanonicalMovementFields(tenantId, itemId, -enteredQty, uom, client);
-  const costDataOut = await calculateMovementCost(tenantId, itemId, canonicalOut.quantityDeltaCanonical, client);
+  const canonicalIn = await getCanonicalMovementFields(tenantId, itemId, enteredQty, uom, client);
+  if (
+    canonicalOut.canonicalUom !== canonicalIn.canonicalUom
+    || Math.abs(Math.abs(canonicalOut.quantityDeltaCanonical) - canonicalIn.quantityDeltaCanonical) > 1e-6
+  ) {
+    throw new Error('TRANSFER_CANONICAL_MISMATCH');
+  }
 
-  await createInventoryMovementLine(client, {
+  const outLineId = await createInventoryMovementLine(client, {
     tenantId,
     movementId,
     itemId,
@@ -186,8 +224,6 @@ export async function transferInventory(
     quantityDeltaCanonical: canonicalOut.quantityDeltaCanonical,
     canonicalUom: canonicalOut.canonicalUom,
     uomDimension: canonicalOut.uomDimension,
-    unitCost: costDataOut.unitCost,
-    extendedCost: costDataOut.extendedCost,
     reasonCode: `${reasonCode}_out`,
     lineNotes: `${notes} (outbound)`
   });
@@ -200,11 +236,7 @@ export async function transferInventory(
     deltaOnHand: canonicalOut.quantityDeltaCanonical
   });
 
-  // Create inbound line (positive quantity at destination)
-  const canonicalIn = await getCanonicalMovementFields(tenantId, itemId, enteredQty, uom, client);
-  const costDataIn = await calculateMovementCost(tenantId, itemId, canonicalIn.quantityDeltaCanonical, client);
-
-  await createInventoryMovementLine(client, {
+  const inLineId = await createInventoryMovementLine(client, {
     tenantId,
     movementId,
     itemId,
@@ -216,8 +248,6 @@ export async function transferInventory(
     quantityDeltaCanonical: canonicalIn.quantityDeltaCanonical,
     canonicalUom: canonicalIn.canonicalUom,
     uomDimension: canonicalIn.uomDimension,
-    unitCost: costDataIn.unitCost,
-    extendedCost: costDataIn.extendedCost,
     reasonCode: `${reasonCode}_in`,
     lineNotes: `${notes} (inbound)`
   });
@@ -230,7 +260,219 @@ export async function transferInventory(
     deltaOnHand: canonicalIn.quantityDeltaCanonical
   });
 
+  await relocateTransferCostLayersInTx({
+    client,
+    tenantId,
+    transferMovementId: movementId,
+    occurredAt,
+    notes,
+    pairs: [
+      {
+        itemId,
+        sourceLocationId,
+        destinationLocationId,
+        outLineId,
+        inLineId,
+        quantity: canonicalIn.quantityDeltaCanonical,
+        uom: canonicalIn.canonicalUom
+      }
+    ]
+  });
+
   await enqueueInventoryMovementPosted(client, tenantId, movementId);
 
   return { movementId, created: true };
+}
+
+export async function voidTransferMovement(
+  tenantId: string,
+  movementId: string,
+  params: { reason: string; actor: TransferVoidActor; idempotencyKey?: string | null }
+) {
+  const reason = assertReason(params.reason);
+
+  return withTransactionRetry(async (client) => {
+    const now = new Date();
+
+    const originalMovementResult = await client.query<{
+      id: string;
+      status: string;
+      movement_type: string;
+      reversal_of_movement_id: string | null;
+    }>(
+      `SELECT id, status, movement_type, reversal_of_movement_id
+         FROM inventory_movements
+        WHERE id = $1
+          AND tenant_id = $2
+        FOR UPDATE`,
+      [movementId, tenantId]
+    );
+    if (originalMovementResult.rowCount === 0) {
+      throw new Error('TRANSFER_NOT_FOUND');
+    }
+    const originalMovement = originalMovementResult.rows[0];
+    if (originalMovement.status !== 'posted') {
+      throw new Error('TRANSFER_NOT_POSTED');
+    }
+    if (
+      originalMovement.movement_type === TRANSFER_REVERSAL_MOVEMENT_TYPE
+      || originalMovement.reversal_of_movement_id !== null
+    ) {
+      throw new Error('TRANSFER_REVERSAL_INVALID_TARGET');
+    }
+    if (originalMovement.movement_type !== 'transfer') {
+      throw new Error('TRANSFER_NOT_TRANSFER');
+    }
+
+    const existingReversal = await client.query<{ id: string }>(
+      `SELECT id
+         FROM inventory_movements
+        WHERE tenant_id = $1
+          AND reversal_of_movement_id = $2
+        LIMIT 1`,
+      [tenantId, movementId]
+    );
+    if (existingReversal.rowCount > 0) {
+      throw new Error('TRANSFER_ALREADY_REVERSED');
+    }
+
+    const reversalMovement = await createInventoryMovement(client, {
+      tenantId,
+      movementType: TRANSFER_REVERSAL_MOVEMENT_TYPE,
+      status: 'posted',
+      externalRef: `transfer_void:${movementId}`,
+      sourceType: 'transfer_void',
+      sourceId: movementId,
+      idempotencyKey: params.idempotencyKey ?? null,
+      occurredAt: now,
+      postedAt: now,
+      notes: `Transfer void reversal ${movementId}: ${reason}`,
+      reversalOfMovementId: movementId,
+      reversalReason: reason,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    if (!reversalMovement.created) {
+      const existingMovementResult = await client.query<{
+        id: string;
+        movement_type: string;
+        reversal_of_movement_id: string | null;
+      }>(
+        `SELECT id, movement_type, reversal_of_movement_id
+           FROM inventory_movements
+          WHERE id = $1
+            AND tenant_id = $2
+          FOR UPDATE`,
+        [reversalMovement.id, tenantId]
+      );
+      const existingMovement = existingMovementResult.rows[0];
+      if (
+        existingMovement
+        && existingMovement.movement_type === TRANSFER_REVERSAL_MOVEMENT_TYPE
+        && existingMovement.reversal_of_movement_id === movementId
+      ) {
+        throw new Error('TRANSFER_ALREADY_REVERSED');
+      }
+      throw new Error('TRANSFER_VOID_CONFLICT');
+    }
+
+    const originalLinesResult = await client.query<MovementLineRow>(
+      `SELECT id,
+              item_id,
+              location_id,
+              quantity_delta,
+              uom,
+              quantity_delta_entered,
+              uom_entered,
+              quantity_delta_canonical,
+              canonical_uom,
+              uom_dimension,
+              unit_cost,
+              extended_cost,
+              reason_code,
+              line_notes
+         FROM inventory_movement_lines
+        WHERE tenant_id = $1
+          AND movement_id = $2
+        ORDER BY created_at ASC, id ASC
+        FOR UPDATE`,
+      [tenantId, movementId]
+    );
+    if (originalLinesResult.rowCount === 0) {
+      throw new Error('TRANSFER_NOT_POSTED');
+    }
+
+    const reversalLineByOriginalLineId = new Map<string, string>();
+    const balanceDeltaByKey = new Map<string, { itemId: string; locationId: string; uom: string; deltaOnHand: number }>();
+
+    for (const line of originalLinesResult.rows) {
+      const effectiveUom = line.canonical_uom ?? line.uom;
+      const effectiveQty = roundQuantity(toNumber(line.quantity_delta_canonical ?? line.quantity_delta));
+      const reversalLineId = await createInventoryMovementLine(client, {
+        tenantId,
+        movementId: reversalMovement.id,
+        itemId: line.item_id,
+        locationId: line.location_id,
+        quantityDelta: roundQuantity(-toNumber(line.quantity_delta)),
+        uom: line.uom,
+        quantityDeltaEntered: negateNullable(line.quantity_delta_entered),
+        uomEntered: line.uom_entered,
+        quantityDeltaCanonical: negateNullable(line.quantity_delta_canonical),
+        canonicalUom: line.canonical_uom,
+        uomDimension: line.uom_dimension,
+        unitCost: line.unit_cost != null ? roundQuantity(toNumber(line.unit_cost)) : null,
+        extendedCost: negateNullable(line.extended_cost),
+        reasonCode: line.reason_code ? `${line.reason_code}_reversal` : 'transfer_reversal',
+        lineNotes: line.line_notes ? `Reversal of ${line.id}: ${line.line_notes}` : `Reversal of ${line.id}`,
+        createdAt: now
+      });
+      reversalLineByOriginalLineId.set(line.id, reversalLineId);
+
+      const key = `${line.item_id}|${line.location_id}|${effectiveUom}`;
+      const current = balanceDeltaByKey.get(key) ?? {
+        itemId: line.item_id,
+        locationId: line.location_id,
+        uom: effectiveUom,
+        deltaOnHand: 0
+      };
+      current.deltaOnHand = roundQuantity(current.deltaOnHand - effectiveQty);
+      balanceDeltaByKey.set(key, current);
+    }
+
+    await reverseTransferCostLayersInTx({
+      client,
+      tenantId,
+      originalTransferMovementId: movementId,
+      reversalMovementId: reversalMovement.id,
+      occurredAt: now,
+      notes: `Transfer reversal ${movementId}`,
+      reversalLineByOriginalLineId
+    });
+
+    for (const delta of balanceDeltaByKey.values()) {
+      if (Math.abs(delta.deltaOnHand) <= 1e-6) continue;
+      try {
+        await applyInventoryBalanceDelta(client, {
+          tenantId,
+          itemId: delta.itemId,
+          locationId: delta.locationId,
+          uom: delta.uom,
+          deltaOnHand: delta.deltaOnHand
+        });
+      } catch (error: any) {
+        if (error?.code === '23514' && error?.constraint === 'chk_inventory_balance_nonneg') {
+          throw new Error('TRANSFER_REVERSAL_NOT_POSSIBLE_CONSUMED');
+        }
+        throw error;
+      }
+    }
+
+    await enqueueInventoryMovementPosted(client, tenantId, reversalMovement.id);
+
+    return {
+      reversalMovementId: reversalMovement.id,
+      reversalOfMovementId: movementId
+    };
+  }, { isolationLevel: 'SERIALIZABLE', retries: 6 });
 }

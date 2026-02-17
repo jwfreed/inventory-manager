@@ -9,6 +9,9 @@ import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/i
 
 const router = Router();
 const uuidSchema = z.string().uuid();
+const receiptVoidSchema = z.object({
+  reason: z.string().trim().min(1).max(2000)
+});
 
 router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
   const parsed = purchaseOrderReceiptSchema.safeParse(req.body);
@@ -213,23 +216,88 @@ router.post('/purchase-order-receipts/:id/void', async (req: Request, res: Respo
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid receipt id.' });
   }
+  const parsed = receiptVoidSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const idempotencyKey = getIdempotencyKey(req);
+  let idempotencyStarted = false;
+
   try {
+    if (idempotencyKey) {
+      const record = await beginIdempotency(idempotencyKey, hashRequestBody(req.body));
+      if (record.status === 'SUCCEEDED' && record.responseRef) {
+        const [kind, receiptId] = record.responseRef.split(':');
+        if (kind === 'purchase_order_receipt' && receiptId) {
+          const existing = await fetchReceiptById(req.auth!.tenantId, receiptId);
+          if (existing) {
+            return res.status(200).json(existing);
+          }
+        }
+        return res.status(409).json({ error: 'Receipt void already completed for this key.' });
+      }
+      if (record.status === 'IN_PROGRESS' && !record.isNew) {
+        return res.status(409).json({ error: 'Receipt void already in progress for this key.' });
+      }
+      idempotencyStarted = true;
+    }
+
     const tenantId = req.auth!.tenantId;
     const receipt = await voidReceipt(tenantId, id, {
-      type: 'user',
-      id: req.auth!.userId
+      reason: parsed.data.reason,
+      idempotencyKey: idempotencyKey ?? null,
+      actor: {
+        type: 'user',
+        id: req.auth!.userId
+      }
     });
+    if (idempotencyKey && idempotencyStarted) {
+      await completeIdempotency(idempotencyKey, 'SUCCEEDED', `purchase_order_receipt:${receipt.id}`);
+    }
     emitEvent(tenantId, 'inventory.receipt.voided', { receiptId: id });
     return res.json(receipt);
   } catch (error: any) {
+    if (idempotencyKey && idempotencyStarted) {
+      await completeIdempotency(idempotencyKey, 'FAILED', null);
+    }
+    if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
+      return res.status(409).json({ error: 'Idempotency key reused with a different request payload.' });
+    }
     if (error?.message === 'RECEIPT_NOT_FOUND') {
       return res.status(404).json({ error: 'Receipt not found.' });
     }
-    if (error?.message === 'RECEIPT_ALREADY_VOIDED') {
-      return res.status(409).json({ error: 'Receipt is already voided.' });
+    if (error?.message === 'RECEIPT_VOID_REASON_REQUIRED') {
+      return res.status(400).json({ error: 'Void reason is required.' });
+    }
+    if (error?.message === 'RECEIPT_NOT_POSTED') {
+      return res.status(409).json({ error: 'Only posted receipt movements can be reversed.' });
+    }
+    if (error?.message === 'RECEIPT_REVERSAL_INVALID_TARGET') {
+      return res.status(409).json({ error: 'Receipt reversal target is invalid.' });
+    }
+    if (error?.message === 'RECEIPT_ALREADY_REVERSED' || error?.message === 'RECEIPT_ALREADY_VOIDED') {
+      return res.status(409).json({ error: 'Receipt was already reversed.' });
     }
     if (error?.message === 'RECEIPT_HAS_PUTAWAYS_POSTED') {
       return res.status(409).json({ error: 'Receipt has posted putaway lines and cannot be voided.' });
+    }
+    if (error?.message === 'RECEIPT_REVERSAL_NOT_POSSIBLE_CONSUMED') {
+      return res.status(409).json({ error: 'Receipt reversal is blocked because quantity has already been consumed.' });
+    }
+    if (error?.message === 'RECEIPT_VOID_CONFLICT') {
+      return res.status(409).json({ error: 'Receipt void conflicted with another reversal attempt.' });
+    }
+    if (error?.code === '23505' && error?.constraint === 'uq_inventory_movements_reversal_of') {
+      return res.status(409).json({ error: 'Receipt was already reversed.' });
+    }
+    if (error?.code === 'TX_RETRY_EXHAUSTED') {
+      return res.status(409).json({
+        error: {
+          code: 'TX_RETRY_EXHAUSTED',
+          message: 'Receipt void contention was too high. Retry this request.'
+        }
+      });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to void receipt.' });

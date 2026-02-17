@@ -217,7 +217,7 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
         throw error;
       }
 
-      // QC disposition transfers existing inventory; cost layers are receipt-authored only. Transfers never create/modify cost layers.
+      // QC disposition transfers existing inventory. Transfer posting relocates FIFO layers in the same transaction.
       const transferKey = `${created.id}:${action}`;
       const transferHash = hashRequestBody({
         qcEventId: created.id,

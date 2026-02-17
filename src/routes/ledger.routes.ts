@@ -2,9 +2,14 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { movementListQuerySchema, movementWindowQuerySchema } from '../schemas/ledger.schema';
 import { getMovement, getMovementLines, getMovementWindow, listMovements } from '../services/ledger.service';
+import { voidTransferMovement } from '../services/transfers.service';
+import { getIdempotencyKey } from '../lib/idempotency';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
+const transferVoidSchema = z.object({
+  reason: z.string().min(1).max(2000)
+});
 
 router.get('/inventory-movements', async (req: Request, res: Response) => {
   const parsed = movementListQuerySchema.safeParse(req.query);
@@ -79,6 +84,61 @@ router.get('/inventory-movements/:id/lines', async (req: Request, res: Response)
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to fetch inventory movement lines.' });
+  }
+});
+
+router.post('/inventory-movements/:id/void-transfer', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid movement id.' });
+  }
+  const parsed = transferVoidSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    const result = await voidTransferMovement(req.auth!.tenantId, id, {
+      reason: parsed.data.reason,
+      actor: { type: 'user', id: req.auth!.userId },
+      idempotencyKey: getIdempotencyKey(req)
+    });
+    return res.status(201).json(result);
+  } catch (error: any) {
+    if (error?.code === 'TX_RETRY_EXHAUSTED') {
+      return res.status(409).json({
+        error: {
+          code: 'TX_RETRY_EXHAUSTED',
+          message: 'High write contention detected. Please retry.'
+        }
+      });
+    }
+    if (error?.message === 'TRANSFER_NOT_FOUND') {
+      return res.status(404).json({ error: 'Transfer movement not found.' });
+    }
+    if (error?.message === 'TRANSFER_NOT_TRANSFER') {
+      return res.status(409).json({ error: 'Only transfer movements can be voided here.' });
+    }
+    if (error?.message === 'TRANSFER_NOT_POSTED') {
+      return res.status(409).json({ error: 'Only posted transfer movements can be voided.' });
+    }
+    if (error?.message === 'TRANSFER_ALREADY_REVERSED') {
+      return res.status(409).json({ error: 'Transfer is already reversed.' });
+    }
+    if (error?.message === 'TRANSFER_REVERSAL_INVALID_TARGET') {
+      return res.status(409).json({ error: 'Cannot reverse a reversal movement.' });
+    }
+    if (error?.message === 'TRANSFER_REVERSAL_NOT_POSSIBLE_CONSUMED') {
+      return res.status(409).json({ error: 'Transfer reversal is blocked because destination layers were consumed.' });
+    }
+    if (error?.message === 'TRANSFER_VOID_REASON_REQUIRED') {
+      return res.status(400).json({ error: 'reason is required.' });
+    }
+    if (error?.message === 'TRANSFER_VOID_CONFLICT') {
+      return res.status(409).json({ error: 'Transfer void conflict.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to void transfer movement.' });
   }
 });
 

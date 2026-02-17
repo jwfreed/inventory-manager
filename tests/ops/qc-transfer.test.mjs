@@ -45,12 +45,12 @@ async function getSession() {
   return session;
 }
 
-async function waitForSnapshot(token, itemId, locationId, expected, label) {
+async function waitForSnapshot(token, itemId, warehouseId, locationId, expected, label) {
   return waitForCondition(
     async () => {
       const res = await apiRequest('GET', '/inventory-snapshot', {
         token,
-        params: { itemId, locationId }
+        params: { itemId, warehouseId, locationId }
       });
       assert.equal(res.res.status, 200);
       return Number(res.payload.data?.[0]?.onHand ?? 0);
@@ -133,7 +133,8 @@ test('QC accept retry is idempotent and does not create extra cost layers', asyn
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { defaults, warehouse } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const warehouseId = warehouse.id;
   const qaLocationId = defaults.QA.id;
   const sellableLocationId = defaults.SELLABLE.id;
   const vendorId = await createVendor(token);
@@ -202,7 +203,14 @@ test('QC accept retry is idempotent and does not create extra cost layers', asyn
   );
   assert.equal(Number(costRes2.rows[0].count), 1);
 
-  const qaOnHand = await waitForSnapshot(token, itemId, qaLocationId, 0, 'qa on_hand after qc accept');
+  const qaOnHand = await waitForSnapshot(
+    token,
+    itemId,
+    warehouseId,
+    qaLocationId,
+    0,
+    'qa on_hand after qc accept'
+  );
   assert.ok(Math.abs(Number(qaOnHand)) < 1e-6);
 });
 
@@ -213,7 +221,8 @@ test('QC partial split routes to accept and hold without new cost layers', async
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const { defaults, warehouse } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
+  const warehouseId = warehouse.id;
   const qaLocationId = defaults.QA.id;
   const sellableLocationId = defaults.SELLABLE.id;
   const holdLocationId = defaults.HOLD.id;
@@ -250,19 +259,34 @@ test('QC partial split routes to accept and hold without new cost layers', async
   });
   assert.equal(holdRes.res.status, 201);
 
-  const qaOnHand = await waitForSnapshot(token, itemId, qaLocationId, 0, 'qa on_hand after split');
+  const qaOnHand = await waitForSnapshot(
+    token,
+    itemId,
+    warehouseId,
+    qaLocationId,
+    0,
+    'qa on_hand after split'
+  );
   assert.ok(Math.abs(Number(qaOnHand)) < 1e-6);
 
   const sellableOnHand = await waitForSnapshot(
     token,
     itemId,
+    warehouseId,
     sellableLocationId,
     6,
     'sellable on_hand after split'
   );
   assert.ok(Math.abs(Number(sellableOnHand) - 6) < 1e-6);
 
-  const holdOnHand = await waitForSnapshot(token, itemId, holdLocationId, 4, 'hold on_hand after split');
+  const holdOnHand = await waitForSnapshot(
+    token,
+    itemId,
+    warehouseId,
+    holdLocationId,
+    4,
+    'hold on_hand after split'
+  );
   assert.ok(Math.abs(Number(holdOnHand) - 4) < 1e-6);
 });
 

@@ -228,7 +228,8 @@ export async function getAvailableLayers(
   item_id: string,
   location_id: string,
   lot_id?: string,
-  client?: PoolClient
+  client?: PoolClient,
+  options?: { forUpdate?: boolean }
 ): Promise<CostLayer[]> {
   const executor = client ? client.query.bind(client) : query;
   let sql = `
@@ -246,7 +247,10 @@ export async function getAvailableLayers(
     params.push(lot_id);
   }
 
-  sql += ` ORDER BY layer_date ASC, layer_sequence ASC`;
+  sql += ` ORDER BY layer_date ASC, layer_sequence ASC, id ASC`;
+  if (options?.forUpdate) {
+    sql += ' FOR UPDATE';
+  }
 
   const result = await executor<CostLayer>(sql, params);
   return result.rows;
@@ -272,7 +276,8 @@ export async function consumeCostLayers(params: ConsumeLayersParams): Promise<Co
       params.item_id,
       params.location_id,
       params.lot_id,
-      client
+      client,
+      { forUpdate: true }
     );
 
     if (layers.length === 0) {

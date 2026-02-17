@@ -10217,3 +10217,1075 @@ Startup failed: AggregateError
 ✅ Job "inventory-invariant-check" completed in 60ms
 🚀 Starting job: reservation-expiry
 ✅ Job "reservation-expiry" completed in 30ms
+🚀 Starting job: inventory-health-check
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 30ms
+Inventory health gate failed for tenant default: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-ed7f4189: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-5ecedc75: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-301db031: ledger_variance_pct>1
+✅ Job "inventory-health-check" completed in 177ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 32ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 24ms
+🚀 Starting job: inventory-invariant-check
+✅ Job "inventory-invariant-check" completed in 124ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 30ms
+🚀 Starting job: reservation-expiry
+🚀 Starting job: inventory-health-check
+✅ Job "reservation-expiry" completed in 40ms
+🚀 Starting job: exchange-rate-sync
+📊 Fetching latest exchange rates...
+Inventory health gate failed for tenant default: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-ed7f4189: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-5ecedc75: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-301db031: ledger_variance_pct>1
+✅ Job "inventory-health-check" completed in 188ms
+   Base currency: USD
+   Effective date: 2026-02-13
+   Rates received: 29
+✅ Synced 58 exchange rates in 4142ms
+✅ Job "exchange-rate-sync" completed in 4143ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 29ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 22ms
+🚀 Starting job: inventory-invariant-check
+✅ Job "inventory-invariant-check" completed in 129ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 3ms
+🚀 Starting job: reservation-expiry
+🚀 Starting job: inventory-health-check
+✅ Job "reservation-expiry" completed in 32ms
+Inventory health gate failed for tenant default: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-301db031: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-5ecedc75: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-ed7f4189: ledger_variance_pct>1
+✅ Job "inventory-health-check" completed in 155ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 33ms
+🚀 Starting job: reservation-expiry
+🚀 Starting job: inventory-invariant-check
+✅ Job "reservation-expiry" completed in 27ms
+✅ Job "inventory-invariant-check" completed in 152ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 27ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 27ms
+🚀 Starting job: inventory-health-check
+Inventory health gate failed for tenant default: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-301db031: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-5ecedc75: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-ed7f4189: ledger_variance_pct>1
+✅ Job "inventory-health-check" completed in 124ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 32ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 25ms
+🚀 Starting job: inventory-invariant-check
+✅ Job "inventory-invariant-check" completed in 124ms
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 33ms
+🚀 Starting job: reservation-expiry
+🚀 Starting job: inventory-health-check
+✅ Job "reservation-expiry" completed in 33ms
+Inventory health gate failed for tenant default: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-301db031: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-5ecedc75: ledger_variance_pct>1
+Inventory health gate failed for tenant late-qc-ed7f4189: ledger_variance_pct>1
+✅ Job "inventory-health-check" completed in 186ms
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 35ms
+🚀 Starting job: inventory-invariant-check
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 27ms
+✅ Job "inventory-invariant-check" completed in 172ms
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+error: could not determine data type of parameter $4
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async insertReversalLinesAndCollectDeltas (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/receipts.service.ts:1044:24)
+    at async isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/receipts.service.ts:1239:22)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/receipts.routes.ts:247:21 {
+  length: 124,
+  severity: 'ERROR',
+  code: '42P18',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '735',
+  routine: 'pg_analyze_and_rewrite_varparams'
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8
+  throw new Error('DATABASE_URL must be set before starting the API');
+        ^
+Error: DATABASE_URL must be set before starting the API
+    at Object.<anonymous> (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8:9)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module.m._compile (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1618:23)
+    at node:internal/modules/cjs/loader:1839:10
+    at Object.require.extensions.<computed> [as .ts] (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+error: POSTED_INVENTORY_MOVEMENT_IMMUTABLE
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/receipts.service.ts:1253:32)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/receipts.routes.ts:247:21 {
+  length: 183,
+  severity: 'ERROR',
+  code: 'P0001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: 'PL/pgSQL function prevent_update_delete_posted_inventory_movements() line 4 at RAISE',
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'pl_exec.c',
+  line: '3937',
+  routine: 'exec_stmt_raise'
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+error: POSTED_INVENTORY_MOVEMENT_LINE_IMMUTABLE
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async updateMovementLineCost (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/transferCosting.service.ts:96:3)
+    at async applyTransferLineCosts (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/transferCosting.service.ts:116:5)
+    at async relocateTransferCostLayersInTx (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/transferCosting.service.ts:249:3)
+    at async transferInventory (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/transfers.service.ts:263:3)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/services/qc.service.ts:263:30
+    at async withTransaction (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:81:20)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/qc.routes.ts:46:19 {
+  length: 193,
+  severity: 'ERROR',
+  code: 'P0001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: 'PL/pgSQL function prevent_update_delete_posted_inventory_movement_lines() line 7 at RAISE',
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'pl_exec.c',
+  line: '3937',
+  routine: 'exec_stmt_raise'
+}
+error: POSTED_INVENTORY_MOVEMENT_LINE_IMMUTABLE
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async updateMovementLineCost (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/transferCosting.service.ts:96:3)
+    at async applyTransferLineCosts (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/transferCosting.service.ts:116:5)
+    at async relocateTransferCostLayersInTx (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/transferCosting.service.ts:249:3)
+    at async transferInventory (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/transfers.service.ts:263:3)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/services/qc.service.ts:263:30
+    at async withTransaction (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:81:20)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/qc.routes.ts:46:19 {
+  length: 193,
+  severity: 'ERROR',
+  code: 'P0001',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: 'PL/pgSQL function prevent_update_delete_posted_inventory_movement_lines() line 7 at RAISE',
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'pl_exec.c',
+  line: '3937',
+  routine: 'exec_stmt_raise'
+}
+🚀 Starting job: reservation-expiry
+✅ Job "reservation-expiry" completed in 37ms
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:289:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:256:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+error: new row for relation "inventory_balance" violates check constraint "chk_inventory_balance_nonneg"
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg/lib/client.js:545:17
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async applyInventoryBalanceDelta (/Users/jonathanfreed/Documents/Development/inventory-manager/src/domains/inventory/internal/inventoryBalance.ts:112:3)
+    at async isolationLevel (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/transfers.service.ts:445:7)
+    at async withTransactionRetry (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:112:22)
+    at async /Users/jonathanfreed/Documents/Development/inventory-manager/src/routes/ledger.routes.ts:101:20 {
+  length: 454,
+  severity: 'ERROR',
+  code: '23514',
+  detail: 'Failing row contains (4b12a069-91e3-43a1-9250-183d40b6bb2e, 490a21f1-8cf9-4223-8ce8-01ce24ce9476, ec24d8ea-f83a-48cb-9f4e-25b12eeca6bf, each, -1.000000, 0.000000, 2026-02-16 19:24:04.956653+07, 2026-02-16 19:24:05.013017+07, 0.000000).',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'inventory_balance',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'chk_inventory_balance_nonneg',
+  file: 'execMain.c',
+  line: '2077',
+  routine: 'ExecConstraints'
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+

@@ -11,6 +11,7 @@ import {
   applyInventoryBalanceDelta,
   enqueueInventoryMovementPosted
 } from '../domains/inventory';
+import { relocateTransferCostLayersInTx } from './transferCosting.service';
 
 export type LpnStatus = 'active' | 'consumed' | 'shipped' | 'damaged' | 'quarantine' | 'expired';
 
@@ -488,6 +489,12 @@ export async function moveLicensePlate(
       lpn.uom,
       client
     );
+    if (
+      canonicalOut.canonicalUom !== canonicalIn.canonicalUom
+      || Math.abs(Math.abs(canonicalOut.quantityDeltaCanonical) - canonicalIn.quantityDeltaCanonical) > 1e-6
+    ) {
+      throw new Error('TRANSFER_CANONICAL_MISMATCH');
+    }
     await createInventoryMovementLine(client, {
       id: lineIdIn,
       tenantId,
@@ -511,6 +518,25 @@ export async function moveLicensePlate(
       locationId: data.toLocationId,
       uom: canonicalIn.canonicalUom,
       deltaOnHand: canonicalIn.quantityDeltaCanonical
+    });
+
+    await relocateTransferCostLayersInTx({
+      client,
+      tenantId,
+      transferMovementId: movement.id,
+      occurredAt: now,
+      notes: data.notes ?? `LPN ${lpn.lpn} moved from ${lpn.locationCode} to new location`,
+      pairs: [
+        {
+          itemId: lpn.itemId,
+          sourceLocationId: data.fromLocationId,
+          destinationLocationId: data.toLocationId,
+          outLineId: lineIdOut,
+          inLineId: lineIdIn,
+          quantity: canonicalIn.quantityDeltaCanonical,
+          uom: canonicalIn.canonicalUom
+        }
+      ]
     });
 
     // Link the LPN to the movement

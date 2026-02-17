@@ -890,6 +890,7 @@ export async function fulfillReservation(
     if (remaining <= 1e-6) {
       throw reservationInvalidState();
     }
+    // Fulfill is incremental: quantity is "consume now", never an absolute fulfilled total.
     const requestedInput = params?.quantity;
     if (typeof requestedInput !== 'number' || !Number.isFinite(requestedInput)) {
       throw reservationInvalidQuantity();
@@ -964,6 +965,7 @@ export async function expireReservationsJob() {
   const now = new Date();
   const affectedTenants = new Set<string>();
   await withTransactionRetry(async (client) => {
+    // Lock order invariant: reservation rows -> inventory_balance rows.
     const res = await client.query(
       `SELECT id, tenant_id, item_id, location_id, uom, quantity_reserved, quantity_fulfilled
          FROM inventory_reservations
@@ -986,14 +988,19 @@ export async function expireReservationsJob() {
           deltaReserved: -remaining
         });
       }
-      await client.query(
+      const transition = await client.query(
         `UPDATE inventory_reservations
             SET status = 'EXPIRED',
                 expired_at = $1,
                 updated_at = $1
-          WHERE id = $2 AND tenant_id = $3`,
+          WHERE id = $2
+            AND tenant_id = $3
+            AND status = 'RESERVED'`,
         [now, row.id, row.tenant_id]
       );
+      if (transition.rowCount === 0) {
+        continue;
+      }
       await insertReservationEvent(client, row.tenant_id, row.id, 'EXPIRED', -remaining, 0);
     }
   }, { isolationLevel: 'SERIALIZABLE', retries: 1 });

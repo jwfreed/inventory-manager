@@ -34,6 +34,7 @@ const reservationCancelSchema = z.object({
   warehouseId: z.string().uuid(),
   reason: z.string().max(1000).optional(),
 });
+// Fulfill quantity is an incremental amount consumed by this request, not an absolute total.
 const reservationFulfillSchema = z.object({
   quantity: z.number(),
 });
@@ -53,6 +54,19 @@ function requireWarehouseId(
     }
   });
   return false;
+}
+
+function mapTxRetryExhausted(error: any, res: Response): boolean {
+  if (error?.code !== 'TX_RETRY_EXHAUSTED') {
+    return false;
+  }
+  res.status(409).json({
+    error: {
+      code: 'TX_RETRY_EXHAUSTED',
+      message: 'High write contention detected. Please retry.'
+    }
+  });
+  return true;
 }
 
 router.post('/sales-orders', async (req: Request, res: Response) => {
@@ -141,6 +155,9 @@ router.post('/reservations', async (req: Request, res: Response) => {
     });
     return res.status(201).json({ data: results });
   } catch (error) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     const mapped = mapPgErrorToHttp(error, {
       foreignKey: () => ({ status: 400, body: { error: 'Referenced item, location, or demand not found.' } }),
       check: () => ({ status: 400, body: { error: 'Invalid reservation status or quantities.' } }),
@@ -187,6 +204,9 @@ router.post('/reservations/:id/allocate', async (req: Request, res: Response) =>
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.message === 'RESERVATION_NOT_FOUND') {
       return res.status(404).json({ error: 'Reservation not found.' });
     }
@@ -225,6 +245,9 @@ router.post('/reservations/:id/cancel', async (req: Request, res: Response) => {
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.message === 'RESERVATION_NOT_FOUND') {
       return res.status(404).json({ error: 'Reservation not found.' });
     }
@@ -264,6 +287,9 @@ router.post('/reservations/:id/fulfill', async (req: Request, res: Response) => 
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.message === 'RESERVATION_NOT_FOUND') {
       return res.status(404).json({ error: 'Reservation not found.' });
     }
@@ -313,6 +339,9 @@ router.post('/shipments/:id/post', async (req: Request, res: Response) => {
     });
     return res.json(shipment);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.code === 'INSUFFICIENT_STOCK' || error?.message === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({ error: 'Insufficient stock to post shipment.', details: error?.details });
     }
