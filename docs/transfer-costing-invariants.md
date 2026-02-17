@@ -31,6 +31,12 @@ Transfer posting is now responsible for FIFO relocation in the same transaction 
 - Voided rows are frozen for quantity/value and provenance fields; only `void_reason` and `updated_at` may change.
 - Corrections must be posted as new movements/layers (or supersession/void flows), never by updating `unit_cost`.
 
+## Canonical Valuation (Policy B)
+
+- Canonical inventory value is always `remaining_quantity * unit_cost` at query time.
+- `inventory_cost_layers.extended_cost` is cache/informational only and is not authoritative.
+- Valuation views and reports must aggregate `SUM(remaining_quantity * unit_cost)` to avoid drift and rounding ambiguity.
+
 ## Link Semantic Integrity
 
 - A link row must align across tenant/item/location/uom:

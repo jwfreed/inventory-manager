@@ -392,10 +392,10 @@ export async function getCurrentWeightedAverageCost(
   }>(
     `SELECT 
        SUM(remaining_quantity) as total_quantity,
-       SUM(extended_cost) as total_value,
+       SUM(remaining_quantity * unit_cost) as total_value,
        CASE 
          WHEN SUM(remaining_quantity) > 0 
-         THEN SUM(extended_cost) / SUM(remaining_quantity)
+         THEN SUM(remaining_quantity * unit_cost) / SUM(remaining_quantity)
          ELSE 0
        END as average_cost
      FROM inventory_cost_layers

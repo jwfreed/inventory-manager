@@ -27,6 +27,7 @@ import {
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
+import { handlePostShipmentConflict, mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -54,19 +55,6 @@ function requireWarehouseId(
     }
   });
   return false;
-}
-
-function mapTxRetryExhausted(error: any, res: Response): boolean {
-  if (error?.code !== 'TX_RETRY_EXHAUSTED') {
-    return false;
-  }
-  res.status(409).json({
-    error: {
-      code: 'TX_RETRY_EXHAUSTED',
-      message: 'High write contention detected. Please retry.'
-    }
-  });
-  return true;
 }
 
 router.post('/sales-orders', async (req: Request, res: Response) => {
@@ -339,23 +327,14 @@ router.post('/shipments/:id/post', async (req: Request, res: Response) => {
     });
     return res.json(shipment);
   } catch (error: any) {
-    if (mapTxRetryExhausted(error, res)) {
+    if (handlePostShipmentConflict(error, res)) {
       return;
-    }
-    if (error?.code === 'INSUFFICIENT_STOCK' || error?.message === 'INSUFFICIENT_STOCK') {
-      return res.status(409).json({ error: 'Insufficient stock to post shipment.', details: error?.details });
     }
     if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
       return res.status(403).json({ error: error.details?.message ?? 'Negative override not allowed.', details: error?.details });
     }
-    if (error?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
-      return res.status(409).json({ error: error.details?.message ?? 'Negative override requires a reason.', details: error?.details });
-    }
     if (error?.message === 'SHIPMENT_NOT_FOUND') {
       return res.status(404).json({ error: 'Shipment not found.' });
-    }
-    if (error?.message === 'SHIPMENT_CANCELED') {
-      return res.status(409).json({ error: 'Canceled shipments cannot be posted.' });
     }
     if (error?.message === 'SHIPMENT_NO_LINES') {
       return res.status(400).json({ error: 'Shipment has no lines to post.' });
@@ -365,9 +344,6 @@ router.post('/shipments/:id/post', async (req: Request, res: Response) => {
     }
     if (error?.message === 'SHIPMENT_LOCATION_REQUIRED') {
       return res.status(400).json({ error: 'Shipment requires ship_from_location_id.' });
-    }
-    if (error?.message === 'RESERVATION_INVALID_STATE') {
-      return res.status(409).json({ error: 'Reservation state changed while posting shipment. Please retry.' });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post shipment.' });

@@ -530,6 +530,111 @@ test('cancel vs shipment post race does not deadlock and keeps reservation/balan
   );
 });
 
+test('shipment allows reservation-consumption allowance when available + reserveConsume meets ship qty', async () => {
+  const session = await getSession();
+  const token = session.accessToken;
+  const tenantId = session.tenant?.id;
+  const db = session.pool;
+  assert.ok(token);
+  assert.ok(tenantId);
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({
+    token,
+    apiRequest,
+    scope: `${import.meta.url}:reserve-consume-allow`
+  });
+  const sellable = defaults.SELLABLE;
+  const itemId = await createItem(token, sellable.id, 'RSVALLOW');
+  await seedStock(token, itemId, sellable.id, 10);
+  const customerId = await createCustomer(tenantId, db);
+  const order = await createSalesOrder(token, {
+    customerId,
+    itemId,
+    quantityOrdered: 5,
+    shipFromLocationId: sellable.id
+  });
+  const lineId = order.lines[0]?.id;
+  assert.ok(lineId, 'sales order line id missing');
+
+  await createReservationForDemand(token, {
+    warehouseId: warehouse.id,
+    locationId: sellable.id,
+    itemId,
+    quantityReserved: 5,
+    demandId: lineId
+  });
+
+  const shipment = await createShipment(token, {
+    salesOrderId: order.id,
+    salesOrderLineId: lineId,
+    shipFromLocationId: sellable.id,
+    quantityShipped: 5
+  });
+
+  const postRes = await apiRequest('POST', `/shipments/${shipment.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `ship-${randomUUID()}` },
+    body: {}
+  });
+  assert.equal(postRes.res.status, 200, JSON.stringify(postRes.payload));
+});
+
+test('shipment blocks when ship qty exceeds available + reserveConsume allowance', async () => {
+  const session = await getSession();
+  const token = session.accessToken;
+  const tenantId = session.tenant?.id;
+  const db = session.pool;
+  assert.ok(token);
+  assert.ok(tenantId);
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({
+    token,
+    apiRequest,
+    scope: `${import.meta.url}:reserve-consume-block`
+  });
+  const sellable = defaults.SELLABLE;
+  const itemId = await createItem(token, sellable.id, 'RSVBLOCK');
+  await seedStock(token, itemId, sellable.id, 10);
+  const customerId = await createCustomer(tenantId, db);
+  const order = await createSalesOrder(token, {
+    customerId,
+    itemId,
+    quantityOrdered: 11,
+    shipFromLocationId: sellable.id
+  });
+  const lineId = order.lines[0]?.id;
+  assert.ok(lineId, 'sales order line id missing');
+
+  await createReservationForDemand(token, {
+    warehouseId: warehouse.id,
+    locationId: sellable.id,
+    itemId,
+    quantityReserved: 5,
+    demandId: lineId
+  });
+
+  const shipment = await createShipment(token, {
+    salesOrderId: order.id,
+    salesOrderLineId: lineId,
+    shipFromLocationId: sellable.id,
+    quantityShipped: 11
+  });
+
+  const postRes = await apiRequest('POST', `/shipments/${shipment.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `ship-${randomUUID()}` },
+    body: {}
+  });
+  assert.equal(postRes.res.status, 409, JSON.stringify(postRes.payload));
+  assert.equal(postRes.payload?.error?.code, 'INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE');
+  assert.equal(typeof postRes.payload?.error?.message, 'string');
+  assert.ok(
+    postRes.payload?.error?.details === undefined
+      || (typeof postRes.payload?.error?.details === 'object' && postRes.payload?.error?.details !== null),
+    'error.details must be object or undefined'
+  );
+});
+
 test('three-way fulfill/cancel race preserves reservation and balance invariants', async () => {
   const session = await getSession();
   const token = session.accessToken;

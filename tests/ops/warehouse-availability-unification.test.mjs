@@ -104,7 +104,7 @@ async function createItem(token, defaultLocationId, suffix = 'ITEM') {
   return itemRes.payload.id;
 }
 
-async function seedStock(token, itemId, locationId, quantity) {
+async function seedStock(token, itemId, locationId, quantity, uom = 'each') {
   const adjustmentRes = await apiRequest('POST', '/inventory-adjustments', {
     token,
     body: {
@@ -115,7 +115,7 @@ async function seedStock(token, itemId, locationId, quantity) {
           lineNumber: 1,
           itemId,
           locationId,
-          uom: 'each',
+          uom,
           quantityDelta: quantity,
           reasonCode: 'seed'
         }
@@ -246,8 +246,8 @@ test('canonical availability is exact on_hand - reserved - allocated', async () 
   );
 
   const canonicalRes = await db.query(
-    `SELECT on_hand, reserved, allocated, available
-       FROM inventory_availability_location_v
+    `SELECT on_hand_qty, reserved_qty, allocated_qty, available_qty
+       FROM inventory_available_location_v
       WHERE tenant_id = $1
         AND warehouse_id = $2
         AND item_id = $3
@@ -256,14 +256,47 @@ test('canonical availability is exact on_hand - reserved - allocated', async () 
     [tenantId, warehouse.id, itemId, sellable.id]
   );
   assert.equal(canonicalRes.rowCount, 1);
-  assert.ok(Math.abs(Number(canonicalRes.rows[0].on_hand) - 10) < 1e-6);
-  assert.ok(Math.abs(Number(canonicalRes.rows[0].reserved) - 3) < 1e-6);
-  assert.ok(Math.abs(Number(canonicalRes.rows[0].allocated) - 2) < 1e-6);
-  assert.ok(Math.abs(Number(canonicalRes.rows[0].available) - 5) < 1e-6);
+  assert.ok(Math.abs(Number(canonicalRes.rows[0].on_hand_qty) - 10) < 1e-6);
+  assert.ok(Math.abs(Number(canonicalRes.rows[0].reserved_qty) - 3) < 1e-6);
+  assert.ok(Math.abs(Number(canonicalRes.rows[0].allocated_qty) - 2) < 1e-6);
+  assert.ok(Math.abs(Number(canonicalRes.rows[0].available_qty) - 5) < 1e-6);
+  assert.ok(
+    Math.abs(
+      Number(canonicalRes.rows[0].on_hand_qty) -
+        (Number(canonicalRes.rows[0].available_qty) + Number(canonicalRes.rows[0].reserved_qty) + Number(canonicalRes.rows[0].allocated_qty))
+    ) < 1e-6
+  );
+
+  const onHandLocation = await db.query(
+    `SELECT on_hand_qty
+       FROM inventory_on_hand_location_v
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND item_id = $3
+        AND location_id = $4
+        AND uom = 'each'`,
+    [tenantId, warehouse.id, itemId, sellable.id]
+  );
+  assert.equal(onHandLocation.rowCount, 1);
+  assert.ok(Math.abs(Number(onHandLocation.rows[0].on_hand_qty) - 10) < 1e-6);
+
+  const commitmentsLocation = await db.query(
+    `SELECT reserved_qty, allocated_qty
+       FROM inventory_commitments_location_v
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND item_id = $3
+        AND location_id = $4
+        AND uom = 'each'`,
+    [tenantId, warehouse.id, itemId, sellable.id]
+  );
+  assert.equal(commitmentsLocation.rowCount, 1);
+  assert.ok(Math.abs(Number(commitmentsLocation.rows[0].reserved_qty) - 3) < 1e-6);
+  assert.ok(Math.abs(Number(commitmentsLocation.rows[0].allocated_qty) - 2) < 1e-6);
 
   const warehouseRes = await db.query(
-    `SELECT on_hand, reserved, allocated, available
-       FROM inventory_availability_v
+    `SELECT on_hand_qty, reserved_qty, allocated_qty, available_qty
+       FROM inventory_available_v
       WHERE tenant_id = $1
         AND warehouse_id = $2
         AND item_id = $3
@@ -271,10 +304,196 @@ test('canonical availability is exact on_hand - reserved - allocated', async () 
     [tenantId, warehouse.id, itemId]
   );
   assert.equal(warehouseRes.rowCount, 1);
-  assert.ok(Math.abs(Number(warehouseRes.rows[0].on_hand) - 10) < 1e-6);
-  assert.ok(Math.abs(Number(warehouseRes.rows[0].reserved) - 3) < 1e-6);
-  assert.ok(Math.abs(Number(warehouseRes.rows[0].allocated) - 2) < 1e-6);
-  assert.ok(Math.abs(Number(warehouseRes.rows[0].available) - 5) < 1e-6);
+  assert.ok(Math.abs(Number(warehouseRes.rows[0].on_hand_qty) - 10) < 1e-6);
+  assert.ok(Math.abs(Number(warehouseRes.rows[0].reserved_qty) - 3) < 1e-6);
+  assert.ok(Math.abs(Number(warehouseRes.rows[0].allocated_qty) - 2) < 1e-6);
+  assert.ok(Math.abs(Number(warehouseRes.rows[0].available_qty) - 5) < 1e-6);
+  assert.ok(
+    Math.abs(
+      Number(warehouseRes.rows[0].on_hand_qty) -
+        (Number(warehouseRes.rows[0].available_qty) + Number(warehouseRes.rows[0].reserved_qty) + Number(warehouseRes.rows[0].allocated_qty))
+    ) < 1e-6
+  );
+});
+
+test('availability reconciliation view stays empty for consistent rows', async () => {
+  const session = await getSession();
+  const token = session.accessToken;
+  const tenantId = session.tenant?.id;
+  const db = session.pool;
+  assert.ok(token);
+  assert.ok(tenantId);
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:reconcile` });
+  const itemId = await createItem(token, defaults.SELLABLE.id, 'RECON');
+  await seedStock(token, itemId, defaults.SELLABLE.id, 8);
+
+  await createReservation(token, {
+    warehouseId: warehouse.id,
+    itemId,
+    locationId: defaults.SELLABLE.id,
+    quantity: 3
+  });
+
+  const mismatchRes = await db.query(
+    `SELECT tenant_id, warehouse_id, location_id, item_id, uom, reconciliation_diff
+       FROM inventory_availability_reconciliation_v
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND item_id = $3`,
+    [tenantId, warehouse.id, itemId]
+  );
+  assert.equal(mismatchRes.rowCount, 0);
+});
+
+test('RESERVED to ALLOCATED transition does not double-count commitments', async () => {
+  const session = await getSession();
+  const token = session.accessToken;
+  const tenantId = session.tenant?.id;
+  const db = session.pool;
+  assert.ok(token);
+  assert.ok(tenantId);
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:commitment-transition` });
+  const sellable = defaults.SELLABLE;
+  const itemId = await createItem(token, sellable.id, 'TRANSITION');
+  await seedStock(token, itemId, sellable.id, 10);
+
+  const reservationId = await createReservation(token, {
+    warehouseId: warehouse.id,
+    itemId,
+    locationId: sellable.id,
+    quantity: 4
+  });
+
+  const beforeAllocate = await db.query(
+    `SELECT reserved_qty, allocated_qty, available_qty
+       FROM inventory_available_location_v
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND item_id = $3
+        AND location_id = $4
+        AND uom = 'each'`,
+    [tenantId, warehouse.id, itemId, sellable.id]
+  );
+  assert.equal(beforeAllocate.rowCount, 1);
+  assert.ok(Math.abs(Number(beforeAllocate.rows[0].reserved_qty) - 4) < 1e-6);
+  assert.ok(Math.abs(Number(beforeAllocate.rows[0].allocated_qty) - 0) < 1e-6);
+  assert.ok(Math.abs(Number(beforeAllocate.rows[0].available_qty) - 6) < 1e-6);
+
+  const allocateRes = await apiRequest('POST', `/reservations/${reservationId}/allocate`, {
+    token,
+    headers: { 'Idempotency-Key': `alloc-${randomUUID()}` },
+    body: { warehouseId: warehouse.id }
+  });
+  assert.equal(allocateRes.res.status, 200);
+
+  const afterAllocate = await db.query(
+    `SELECT reserved_qty, allocated_qty, available_qty
+       FROM inventory_available_location_v
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND item_id = $3
+        AND location_id = $4
+        AND uom = 'each'`,
+    [tenantId, warehouse.id, itemId, sellable.id]
+  );
+  assert.equal(afterAllocate.rowCount, 1);
+  assert.ok(Math.abs(Number(afterAllocate.rows[0].reserved_qty) - 0) < 1e-6);
+  assert.ok(Math.abs(Number(afterAllocate.rows[0].allocated_qty) - 4) < 1e-6);
+  assert.ok(Math.abs(Number(afterAllocate.rows[0].available_qty) - 6) < 1e-6);
+
+  const reconcileRows = await db.query(
+    `SELECT 1
+       FROM inventory_availability_reconciliation_v
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND item_id = $3`,
+    [tenantId, warehouse.id, itemId]
+  );
+  assert.equal(reconcileRows.rowCount, 0);
+});
+
+test('reconciliation tolerance handles decimal canonical quantities without false positives', async () => {
+  const session = await getSession();
+  const token = session.accessToken;
+  const tenantId = session.tenant?.id;
+  const db = session.pool;
+  assert.ok(token);
+  assert.ok(tenantId);
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:decimal-tolerance` });
+  const sellable = defaults.SELLABLE;
+
+  const sku = `DEC-${randomUUID().slice(0, 8)}`;
+  const itemRes = await apiRequest('POST', '/items', {
+    token,
+    body: {
+      sku,
+      name: `Item ${sku}`,
+      uomDimension: 'mass',
+      canonicalUom: 'g',
+      stockingUom: 'g',
+      defaultLocationId: sellable.id
+    }
+  });
+  assert.equal(itemRes.res.status, 201);
+  const itemId = itemRes.payload.id;
+
+  const conversionRes = await apiRequest('POST', `/items/${itemId}/uom-conversions`, {
+    token,
+    body: { fromUom: 'kg', toUom: 'g', factor: 1000 }
+  });
+  assert.equal(conversionRes.res.status, 201);
+
+  await seedStock(token, itemId, sellable.id, 1.234567, 'kg');
+
+  const reserveRes = await apiRequest('POST', '/reservations', {
+    token,
+    headers: { 'Idempotency-Key': `reserve-dec-${randomUUID()}` },
+    body: {
+      reservations: [
+        {
+          demandType: 'sales_order_line',
+          demandId: randomUUID(),
+          itemId,
+          warehouseId: warehouse.id,
+          locationId: sellable.id,
+          uom: 'g',
+          quantityReserved: 111.111,
+          allowBackorder: false
+        }
+      ]
+    }
+  });
+  assert.equal(reserveRes.res.status, 201);
+
+  const availability = await db.query(
+    `SELECT on_hand_qty, reserved_qty, allocated_qty, available_qty
+       FROM inventory_available_location_v
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND item_id = $3
+        AND location_id = $4
+        AND uom = 'g'`,
+    [tenantId, warehouse.id, itemId, sellable.id]
+  );
+  assert.equal(availability.rowCount, 1);
+  const row = availability.rows[0];
+  assert.ok(Math.abs(Number(row.on_hand_qty) - 1234.567) < 1e-6);
+  assert.ok(Math.abs(Number(row.reserved_qty) - 111.111) < 1e-6);
+  assert.ok(Math.abs(Number(row.allocated_qty) - 0) < 1e-6);
+  assert.ok(Math.abs(Number(row.available_qty) - 1123.456) < 1e-6);
+
+  const mismatchRes = await db.query(
+    `SELECT 1
+       FROM inventory_availability_reconciliation_v
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND item_id = $3`,
+    [tenantId, warehouse.id, itemId]
+  );
+  assert.equal(mismatchRes.rowCount, 0);
 });
 
 test('warehouse-scoped ATP isolates stock between warehouses', async () => {
@@ -384,8 +603,8 @@ test('sellable warehouse view equals sum of sellable location view for same item
   await waitForCondition(
     async () => {
       const sellableWarehouse = await db.query(
-        `SELECT on_hand, reserved, allocated, available
-           FROM inventory_availability_sellable_v
+        `SELECT on_hand_qty, reserved_qty, allocated_qty, available_qty
+           FROM inventory_available_sellable_v
           WHERE tenant_id = $1
             AND warehouse_id = $2
             AND item_id = $3
@@ -397,19 +616,19 @@ test('sellable warehouse view equals sum of sellable location view for same item
     },
     (row) =>
       row &&
-      Math.abs(Number(row.on_hand) - 9) < 1e-6 &&
-      Math.abs(Number(row.reserved) - 2) < 1e-6 &&
-      Math.abs(Number(row.allocated) - 1) < 1e-6 &&
-      Math.abs(Number(row.available) - 6) < 1e-6,
+      Math.abs(Number(row.on_hand_qty) - 9) < 1e-6 &&
+      Math.abs(Number(row.reserved_qty) - 2) < 1e-6 &&
+      Math.abs(Number(row.allocated_qty) - 1) < 1e-6 &&
+      Math.abs(Number(row.available_qty) - 6) < 1e-6,
     { label: 'sellable view consistency' }
   );
 
   const sellableLocationSum = await db.query(
-    `SELECT COALESCE(SUM(on_hand), 0) AS on_hand,
-            COALESCE(SUM(reserved), 0) AS reserved,
-            COALESCE(SUM(allocated), 0) AS allocated,
-            COALESCE(SUM(available), 0) AS available
-       FROM inventory_availability_location_sellable_v
+    `SELECT COALESCE(SUM(on_hand_qty), 0) AS on_hand_qty,
+            COALESCE(SUM(reserved_qty), 0) AS reserved_qty,
+            COALESCE(SUM(allocated_qty), 0) AS allocated_qty,
+            COALESCE(SUM(available_qty), 0) AS available_qty
+       FROM inventory_available_location_sellable_v
       WHERE tenant_id = $1
         AND warehouse_id = $2
         AND item_id = $3
@@ -418,8 +637,8 @@ test('sellable warehouse view equals sum of sellable location view for same item
   );
 
   const sellableWarehouse = await db.query(
-    `SELECT on_hand, reserved, allocated, available
-       FROM inventory_availability_sellable_v
+    `SELECT on_hand_qty, reserved_qty, allocated_qty, available_qty
+       FROM inventory_available_sellable_v
       WHERE tenant_id = $1
         AND warehouse_id = $2
         AND item_id = $3
@@ -428,10 +647,10 @@ test('sellable warehouse view equals sum of sellable location view for same item
   );
 
   assert.equal(sellableWarehouse.rowCount, 1);
-  assert.ok(Math.abs(Number(sellableLocationSum.rows[0].on_hand) - Number(sellableWarehouse.rows[0].on_hand)) < 1e-6);
-  assert.ok(Math.abs(Number(sellableLocationSum.rows[0].reserved) - Number(sellableWarehouse.rows[0].reserved)) < 1e-6);
-  assert.ok(Math.abs(Number(sellableLocationSum.rows[0].allocated) - Number(sellableWarehouse.rows[0].allocated)) < 1e-6);
-  assert.ok(Math.abs(Number(sellableLocationSum.rows[0].available) - Number(sellableWarehouse.rows[0].available)) < 1e-6);
+  assert.ok(Math.abs(Number(sellableLocationSum.rows[0].on_hand_qty) - Number(sellableWarehouse.rows[0].on_hand_qty)) < 1e-6);
+  assert.ok(Math.abs(Number(sellableLocationSum.rows[0].reserved_qty) - Number(sellableWarehouse.rows[0].reserved_qty)) < 1e-6);
+  assert.ok(Math.abs(Number(sellableLocationSum.rows[0].allocated_qty) - Number(sellableWarehouse.rows[0].allocated_qty)) < 1e-6);
+  assert.ok(Math.abs(Number(sellableLocationSum.rows[0].available_qty) - Number(sellableWarehouse.rows[0].available_qty)) < 1e-6);
 });
 
 test('warehouse view equals sum of location view for same item/uom', async () => {
@@ -474,8 +693,8 @@ test('warehouse view equals sum of location view for same item/uom', async () =>
   await waitForCondition(
     async () => {
       const warehouseRes = await db.query(
-        `SELECT on_hand, reserved, allocated, available
-           FROM inventory_availability_v
+        `SELECT on_hand_qty, reserved_qty, allocated_qty, available_qty
+           FROM inventory_available_v
           WHERE tenant_id = $1
             AND warehouse_id = $2
             AND item_id = $3
@@ -487,19 +706,19 @@ test('warehouse view equals sum of location view for same item/uom', async () =>
     },
     (row) =>
       row &&
-      Math.abs(Number(row.on_hand) - 15) < 1e-6 &&
-      Math.abs(Number(row.reserved) - 3) < 1e-6 &&
-      Math.abs(Number(row.allocated) - 2) < 1e-6 &&
-      Math.abs(Number(row.available) - 10) < 1e-6,
+      Math.abs(Number(row.on_hand_qty) - 15) < 1e-6 &&
+      Math.abs(Number(row.reserved_qty) - 3) < 1e-6 &&
+      Math.abs(Number(row.allocated_qty) - 2) < 1e-6 &&
+      Math.abs(Number(row.available_qty) - 10) < 1e-6,
     { label: 'warehouse availability consistency' }
   );
 
   const summedLocations = await db.query(
-    `SELECT COALESCE(SUM(on_hand), 0) AS on_hand,
-            COALESCE(SUM(reserved), 0) AS reserved,
-            COALESCE(SUM(allocated), 0) AS allocated,
-            COALESCE(SUM(available), 0) AS available
-       FROM inventory_availability_location_v
+    `SELECT COALESCE(SUM(on_hand_qty), 0) AS on_hand_qty,
+            COALESCE(SUM(reserved_qty), 0) AS reserved_qty,
+            COALESCE(SUM(allocated_qty), 0) AS allocated_qty,
+            COALESCE(SUM(available_qty), 0) AS available_qty
+       FROM inventory_available_location_v
       WHERE tenant_id = $1
         AND warehouse_id = $2
         AND item_id = $3
@@ -507,8 +726,8 @@ test('warehouse view equals sum of location view for same item/uom', async () =>
     [tenantId, warehouse.id, itemId]
   );
   const warehouseAgg = await db.query(
-    `SELECT on_hand, reserved, allocated, available
-       FROM inventory_availability_v
+    `SELECT on_hand_qty, reserved_qty, allocated_qty, available_qty
+       FROM inventory_available_v
       WHERE tenant_id = $1
         AND warehouse_id = $2
         AND item_id = $3
@@ -517,8 +736,8 @@ test('warehouse view equals sum of location view for same item/uom', async () =>
   );
 
   assert.equal(warehouseAgg.rowCount, 1);
-  assert.ok(Math.abs(Number(summedLocations.rows[0].on_hand) - Number(warehouseAgg.rows[0].on_hand)) < 1e-6);
-  assert.ok(Math.abs(Number(summedLocations.rows[0].reserved) - Number(warehouseAgg.rows[0].reserved)) < 1e-6);
-  assert.ok(Math.abs(Number(summedLocations.rows[0].allocated) - Number(warehouseAgg.rows[0].allocated)) < 1e-6);
-  assert.ok(Math.abs(Number(summedLocations.rows[0].available) - Number(warehouseAgg.rows[0].available)) < 1e-6);
+  assert.ok(Math.abs(Number(summedLocations.rows[0].on_hand_qty) - Number(warehouseAgg.rows[0].on_hand_qty)) < 1e-6);
+  assert.ok(Math.abs(Number(summedLocations.rows[0].reserved_qty) - Number(warehouseAgg.rows[0].reserved_qty)) < 1e-6);
+  assert.ok(Math.abs(Number(summedLocations.rows[0].allocated_qty) - Number(warehouseAgg.rows[0].allocated_qty)) < 1e-6);
+  assert.ok(Math.abs(Number(summedLocations.rows[0].available_qty) - Number(warehouseAgg.rows[0].available_qty)) < 1e-6);
 });

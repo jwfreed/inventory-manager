@@ -85,7 +85,7 @@ export async function getInventoryValuationByCostLayers(
       l.name as location_name,
       cl.uom,
       SUM(cl.remaining_quantity) as quantity_on_hand,
-      SUM(cl.extended_cost) as total_value,
+      SUM(cl.remaining_quantity * cl.unit_cost) as total_value,
       COUNT(cl.id) as layer_count,
       MIN(cl.layer_date) as oldest_layer,
       MAX(cl.layer_date) as newest_layer
@@ -96,7 +96,7 @@ export async function getInventoryValuationByCostLayers(
       AND cl.voided_at IS NULL
       ${whereClause}
     GROUP BY i.id, i.sku, i.name, l.id, l.code, l.name, cl.uom
-    ${minValue ? `HAVING SUM(cl.extended_cost) >= $${params.push(minValue)}` : ''}
+    ${minValue ? `HAVING SUM(cl.remaining_quantity * cl.unit_cost) >= $${params.push(minValue)}` : ''}
     ORDER BY total_value DESC
     LIMIT $${params.push(limit)} OFFSET $${params.push(offset)}`,
     params
@@ -112,7 +112,7 @@ export async function getInventoryValuationByCostLayers(
     `SELECT 
       COUNT(DISTINCT CONCAT(i.id, '|', l.id)) as total_items,
       SUM(cl.remaining_quantity) as total_quantity,
-      SUM(cl.extended_cost) as total_value,
+      SUM(cl.remaining_quantity * cl.unit_cost) as total_value,
       COUNT(cl.id) as total_layers
     FROM inventory_cost_layers cl
     JOIN items i ON cl.item_id = i.id
@@ -204,7 +204,7 @@ export async function getCostVarianceByCostLayers(
       l.code as location_code,
       COALESCE(i.standard_cost_base, i.standard_cost) AS standard_cost,
       SUM(cl.remaining_quantity) as quantity_on_hand,
-      SUM(cl.extended_cost) as total_value
+      SUM(cl.remaining_quantity * cl.unit_cost) as total_value
     FROM inventory_cost_layers cl
     JOIN items i ON cl.item_id = i.id
     JOIN locations l ON cl.location_id = l.id
@@ -426,7 +426,7 @@ export async function getInventoryAgingByCostLayers(
         ELSE '${agingBuckets[agingBuckets.length - 1]}+ days'
       END as aging_bucket,
       SUM(la.remaining_quantity) as quantity,
-      SUM(la.extended_cost) as value,
+      SUM(la.remaining_quantity * la.unit_cost) as value,
       AVG(la.age) as avg_age
     FROM layer_age la
     JOIN items i ON la.item_id = i.id

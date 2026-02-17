@@ -95,8 +95,7 @@ export async function validateSufficientStock(
       balance && typeof (balance as any).available === 'number'
         ? toNumber((balance as any).available)
         : null;
-    let available: number | null =
-      balance ? (balanceAvailable ?? toNumber(balance.onHand) - toNumber(balance.reserved)) : null;
+    let available: number | null = balance ? balanceAvailable : null;
     if (available === null) {
       const warehouseId = await resolveWarehouseIdForLocation(tenantId, line.locationId, options?.client);
       // TODO: inventory snapshot is current-state only; extend to historical as needed for occurredAt fidelity.

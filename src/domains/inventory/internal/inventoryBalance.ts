@@ -64,10 +64,14 @@ export async function ensureInventoryBalanceRowAndLock(
     throw new Error('INVENTORY_BALANCE_ROW_MISSING');
   }
   const row = res.rows[0];
+  const onHand = normalizeQuantity(row.on_hand);
+  const reserved = normalizeQuantity(row.reserved);
+  const allocated = normalizeQuantity(row.allocated);
   return {
-    onHand: normalizeQuantity(row.on_hand),
-    reserved: normalizeQuantity(row.reserved),
-    allocated: normalizeQuantity(row.allocated)
+    onHand,
+    reserved,
+    allocated,
+    available: roundQuantity(onHand - reserved - allocated)
   };
 }
 

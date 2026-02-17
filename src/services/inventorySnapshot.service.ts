@@ -61,11 +61,11 @@ async function loadAvailability(
   const uomFilter = uom ? `AND v.uom = $${params.push(uom)}` : '';
   const { rows } = await query(
     `SELECT v.uom,
-            SUM(v.on_hand) AS on_hand,
-            SUM(v.reserved) AS reserved,
-            SUM(v.allocated) AS allocated,
-            SUM(v.available) AS available
-       FROM inventory_availability_location_v v
+            SUM(v.on_hand_qty) AS on_hand,
+            SUM(v.reserved_qty) AS reserved,
+            SUM(v.allocated_qty) AS allocated,
+            SUM(v.available_qty) AS available
+       FROM inventory_available_location_v v
       WHERE v.tenant_id = $1
         AND v.warehouse_id = $2
         AND v.item_id = $3
@@ -480,10 +480,10 @@ export async function getInventorySnapshotSummary(
        SELECT v.item_id,
               v.location_id,
               v.uom,
-              SUM(v.on_hand) AS on_hand,
-              SUM(v.reserved + v.allocated) AS reserved,
-              SUM(v.available) AS available
-         FROM inventory_availability_location_v v
+              SUM(v.on_hand_qty) AS on_hand,
+              SUM(v.reserved_qty + v.allocated_qty) AS reserved,
+              SUM(v.available_qty) AS available
+         FROM inventory_available_location_v v
         WHERE v.tenant_id = $1
           AND v.warehouse_id = $2
           ${whereAvailability}

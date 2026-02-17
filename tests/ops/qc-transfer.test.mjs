@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
 import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
 import { waitForCondition } from '../api/helpers/waitFor.mjs';
+import { stopTestServer } from '../api/helpers/testServer.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -332,4 +333,8 @@ test('QC validation failures produce no side effects', async () => {
     }
   });
   assert.equal(insufficientRes.res.status, 409);
+});
+
+test.after(async () => {
+  await stopTestServer();
 });

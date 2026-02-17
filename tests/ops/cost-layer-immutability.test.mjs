@@ -185,6 +185,17 @@ test('inventory_cost_layers unit_cost and immutable fields cannot be mutated aft
     'COST_LAYER_IMMUTABLE_FIELD_UPDATE'
   );
 
+  await expectSqlException(
+    db.query(
+      `UPDATE inventory_cost_layers
+          SET movement_id = $2,
+              updated_at = now()
+        WHERE id = $1`,
+      [layerId, randomUUID()]
+    ),
+    'COST_LAYER_IMMUTABLE_FIELD_UPDATE'
+  );
+
   await db.query(
     `UPDATE inventory_cost_layers
         SET remaining_quantity = 7,
@@ -229,7 +240,64 @@ test('inventory_cost_layers unit_cost and immutable fields cannot be mutated aft
   );
 });
 
-test('cost_layer_transfer_links blocks item/location/tenant mismatches with deterministic error', async () => {
+test('valuation view ignores extended_cost drift and uses remaining_quantity * unit_cost', async () => {
+  const session = await getSession();
+  const token = session.accessToken;
+  const tenantId = session.tenant.id;
+  const db = session.pool;
+  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:valuation-policy-b` });
+  const sellable = defaults.SELLABLE;
+
+  const itemId = await createItem(token, sellable.id);
+  const layerId = randomUUID();
+  const createdAt = new Date().toISOString();
+  await db.query(
+    `INSERT INTO inventory_cost_layers (
+       id,
+       tenant_id,
+       item_id,
+       location_id,
+       uom,
+       layer_date,
+       layer_sequence,
+       original_quantity,
+       remaining_quantity,
+       unit_cost,
+       extended_cost,
+       source_type,
+       notes,
+       created_at,
+       updated_at
+     ) VALUES ($1,$2,$3,$4,'each',$5,1,10,10,5,50,'adjustment','policy-b seed',$6,$6)`,
+    [layerId, tenantId, itemId, sellable.id, createdAt, createdAt]
+  );
+
+  // Under Policy B this drift is allowed on the cache column but must not affect valuation.
+  await db.query(
+    `UPDATE inventory_cost_layers
+        SET extended_cost = 999,
+            updated_at = now()
+      WHERE id = $1`,
+    [layerId]
+  );
+
+  const valuation = await db.query(
+    `SELECT qty_on_hand_costed, inventory_value
+       FROM inventory_valuation_location_v
+      WHERE tenant_id = $1
+        AND item_id = $2
+        AND location_id = $3
+        AND uom = 'each'`,
+    [tenantId, itemId, sellable.id]
+  );
+  assert.equal(valuation.rowCount, 1);
+  const qtyOnHand = Number(valuation.rows[0].qty_on_hand_costed);
+  const inventoryValue = Number(valuation.rows[0].inventory_value);
+  assert.ok(Math.abs(qtyOnHand - 10) < 1e-6);
+  assert.ok(Math.abs(inventoryValue - 50) < 1e-6, `Expected valuation 50 from qty*unit_cost, got ${inventoryValue}`);
+});
+
+test('attempted malicious swap link insert is blocked by dimension trigger', async () => {
   const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant.id;
@@ -276,8 +344,11 @@ test('cost_layer_transfer_links blocks item/location/tenant mismatches with dete
   assert.equal(inLine.item_id, itemA);
 
   const mismatchSourceLayerId = randomUUID();
-  const extraDestLayerId = randomUUID();
+  const mismatchDestLayerId = randomUUID();
   const timestamp = new Date().toISOString();
+  const outQty = Math.abs(Number(outLine.qty));
+  const maliciousUnitCost = 4;
+  const maliciousExtended = outQty * maliciousUnitCost;
   await db.query(
     `INSERT INTO inventory_cost_layers (
        id,
@@ -296,8 +367,8 @@ test('cost_layer_transfer_links blocks item/location/tenant mismatches with dete
        created_at,
        updated_at
      ) VALUES
-       ($1,$2,$3,$4,$5,$6,1,2,2,4,8,'adjustment','mismatch source',$6,$6),
-       ($7,$2,$8,$9,$5,$6,2,2,2,4,8,'adjustment','extra dest',$6,$6)`,
+       ($1,$2,$3,$4,$5,$6,1,$10,$10,$11,$12,'adjustment','malicious source',$6,$6),
+       ($7,$2,$8,$9,$5,$6,2,$10,$10,$11,$12,'adjustment','malicious dest',$6,$6)`,
     [
       mismatchSourceLayerId,
       tenantId,
@@ -305,9 +376,12 @@ test('cost_layer_transfer_links blocks item/location/tenant mismatches with dete
       outLine.location_id,
       outLine.uom,
       timestamp,
-      extraDestLayerId,
-      itemA,
-      inLine.location_id
+      mismatchDestLayerId,
+      itemB,
+      inLine.location_id,
+      outQty,
+      maliciousUnitCost,
+      maliciousExtended
     ]
   );
 
@@ -325,7 +399,7 @@ test('cost_layer_transfer_links blocks item/location/tenant mismatches with dete
          unit_cost,
          extended_cost,
          created_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,1,4,4,$8)`,
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         randomUUID(),
         tenantId,
@@ -333,7 +407,10 @@ test('cost_layer_transfer_links blocks item/location/tenant mismatches with dete
         outLine.id,
         inLine.id,
         mismatchSourceLayerId,
-        extraDestLayerId,
+        mismatchDestLayerId,
+        outQty,
+        maliciousUnitCost,
+        maliciousExtended,
         timestamp
       ]
     ),

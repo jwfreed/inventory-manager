@@ -28,6 +28,7 @@ export type SellableSupply = {
   onHand: number;
   reserved: number;
   allocated: number;
+  available: number;
 };
 
 function normalizeQuantity(value: unknown): number {
@@ -46,10 +47,11 @@ export async function getSellableSupplyMap(
   const { rows } = await query(
     `SELECT v.item_id,
             v.uom,
-            SUM(v.on_hand) AS on_hand,
-            SUM(v.reserved) AS reserved,
-            SUM(v.allocated) AS allocated
-       FROM inventory_availability_location_sellable_v v
+            SUM(v.on_hand_qty) AS on_hand,
+            SUM(v.reserved_qty) AS reserved,
+            SUM(v.allocated_qty) AS allocated,
+            SUM(v.available_qty) AS available
+       FROM inventory_available_location_sellable_v v
       WHERE v.tenant_id = $1
         AND v.warehouse_id = $2
         AND v.item_id = ANY($3::uuid[])
@@ -63,7 +65,8 @@ export async function getSellableSupplyMap(
     map.set(`${row.item_id}:${row.uom}`, {
       onHand: normalizeQuantity(row.on_hand),
       reserved: normalizeQuantity(row.reserved),
-      allocated: normalizeQuantity(row.allocated)
+      allocated: normalizeQuantity(row.allocated),
+      available: normalizeQuantity(row.available)
     });
   }
   return map;
@@ -99,11 +102,11 @@ export async function getAvailableToPromise(
             l.code AS location_code,
             l.name AS location_name,
             v.uom,
-            v.on_hand,
-            v.reserved,
-            v.allocated,
-            v.available AS available_to_promise
-       FROM inventory_availability_location_sellable_v v
+            v.on_hand_qty AS on_hand,
+            v.reserved_qty AS reserved,
+            v.allocated_qty AS allocated,
+            v.available_qty AS available_to_promise
+       FROM inventory_available_location_sellable_v v
        JOIN items i
          ON i.id = v.item_id
         AND i.tenant_id = v.tenant_id
@@ -113,7 +116,7 @@ export async function getAvailableToPromise(
       WHERE v.tenant_id = $1
         AND v.warehouse_id = $2
         ${where}
-        AND (v.on_hand <> 0 OR v.reserved <> 0 OR v.allocated <> 0)
+        AND (v.on_hand_qty <> 0 OR v.reserved_qty <> 0 OR v.allocated_qty <> 0)
       ORDER BY i.sku, l.code, v.uom
       LIMIT $${limitParam} OFFSET $${offsetParam}`,
     sqlParams
@@ -153,11 +156,11 @@ export async function getAvailableToPromiseDetail(
             l.code AS location_code,
             l.name AS location_name,
             v.uom,
-            v.on_hand,
-            v.reserved,
-            v.allocated,
-            v.available AS available_to_promise
-       FROM inventory_availability_location_sellable_v v
+            v.on_hand_qty AS on_hand,
+            v.reserved_qty AS reserved,
+            v.allocated_qty AS allocated,
+            v.available_qty AS available_to_promise
+       FROM inventory_available_location_sellable_v v
        JOIN items i
          ON i.id = v.item_id
         AND i.tenant_id = v.tenant_id
@@ -169,7 +172,7 @@ export async function getAvailableToPromiseDetail(
         AND v.item_id = $3
         AND v.location_id = $4
         ${whereUom}
-        AND (v.on_hand <> 0 OR v.reserved <> 0 OR v.allocated <> 0)
+        AND (v.on_hand_qty <> 0 OR v.reserved_qty <> 0 OR v.allocated_qty <> 0)
       ORDER BY v.uom
       LIMIT 1`,
     sqlParams

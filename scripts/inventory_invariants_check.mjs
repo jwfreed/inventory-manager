@@ -223,6 +223,31 @@ const warehouseSpotCheckSql = `
    LIMIT $3
 `;
 
+const availabilityReconciliationCountSql = `
+  SELECT COUNT(*)::int AS count
+    FROM inventory_availability_reconciliation_v v
+   WHERE v.tenant_id = $1
+     AND ($2::uuid IS NULL OR v.warehouse_id = $2::uuid)
+`;
+
+const availabilityReconciliationRowsSql = `
+  SELECT v.tenant_id,
+         v.warehouse_id,
+         v.location_id,
+         v.item_id,
+         v.uom,
+         v.on_hand_qty,
+         v.reserved_qty,
+         v.allocated_qty,
+         v.available_qty,
+         v.reconciliation_diff
+    FROM inventory_availability_reconciliation_v v
+   WHERE v.tenant_id = $1
+     AND ($2::uuid IS NULL OR v.warehouse_id = $2::uuid)
+   ORDER BY ABS(v.reconciliation_diff) DESC, v.item_id, v.location_id, v.uom
+   LIMIT $3
+`;
+
 let exitCode = 0;
 
 try {
@@ -262,6 +287,20 @@ try {
     if (spotCheckRes.rowCount > 0) {
       exitCode = 2;
     }
+  }
+
+  const [availabilityReconciliationCountRes, availabilityReconciliationRowsRes] = await Promise.all([
+    pool.query(availabilityReconciliationCountSql, params2),
+    pool.query(availabilityReconciliationRowsSql, params3)
+  ]);
+  const availabilityReconciliationCount = Number(availabilityReconciliationCountRes.rows[0]?.count ?? 0);
+  printSection(
+    'availability_reconciliation_drift',
+    availabilityReconciliationCount,
+    availabilityReconciliationRowsRes.rows
+  );
+  if (availabilityReconciliationCount > 0) {
+    exitCode = 2;
   }
 
   process.exit(exitCode);

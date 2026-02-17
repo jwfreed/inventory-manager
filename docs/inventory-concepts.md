@@ -4,17 +4,35 @@ This doc is the operational glossary for the inventory snapshot endpoint (`GET /
 
 ## Field definitions
 
-- `onHand`: Posted inventory movement quantity for the `itemId` at `locationId` and `uom` (ledger-derived, `inventory_movements.status = 'posted'`).
-- `reserved`: Sales-order reservation quantity still outstanding at the same `itemId`/`locationId`/`uom` (statuses `open` + `released`, computed as `quantity_reserved - quantity_fulfilled`, clamped at `0`).
-- `available`: `onHand - reserved` (no additional clamping).
+- `onHand`: Posted inventory movement quantity for the `itemId` at `locationId` and `uom` (ledger-derived, `inventory_movements.status = 'posted'`, using canonical quantity when present).
+- `reserved`: Open commitment quantity shown by snapshot as total commitments (`RESERVED + ALLOCATED` open qty at the same `itemId`/`locationId`/`uom`).
+- `available`: Canonical availability: `onHand - reservedQty - allocatedQty` (no additional clamping). In snapshot payload, this is exposed directly as `available`.
 - `onOrder`: Outstanding purchase order quantity (`submitted` POs only) for the `itemId` and `uom` shipping to `locationId`, computed as `quantity_ordered - quantity_received`, clamped at `0`.
 - `inTransit`: Received-but-not-posted/putaway quantity for the `itemId` and `uom` tied to `locationId` via `received_to_location_id` (fallback to PO `ship_to_location_id`), using accepted receipt qty minus posted putaway qty. Pending putaways remain in `inTransit`.
 - `backordered`: Always `0` in Phase 1 (no first-class backorder source available yet).
 - `inventoryPosition`: `onHand + onOrder + inTransit - reserved - backordered`.
 
+## Reservation commitment mapping
+
+- Reservation rows are location-scoped (`inventory_reservations.location_id` is required).
+- Commitments are computed as `openQty = quantity_reserved - COALESCE(quantity_fulfilled, 0)`, clamped at `0`.
+- State mapping for canonical commitment views:
+  - `RESERVED` contributes only to `reserved_qty`
+  - `ALLOCATED` contributes only to `allocated_qty`
+  - `CANCELLED`, `EXPIRED`, and `FULFILLED` contribute to neither bucket
+- Warehouse-level commitment views are rollups of location-grain commitments (no warehouse-only reservation rows).
+
+## Reservation Consumption Allowance Policy
+
+- Definition: shipment posting may pass stock validation when `available + reserveConsume >= shipQty`.
+- `available` is canonical from `inventory_available_location_v`; `reserveConsume` is the portion of the linked reservation consumed by that shipment line in the same transaction.
+- Why: shipping consumes that commitment immediately, so strict `available >= shipQty` would falsely block valid reservation-backed shipments.
+- Hard constraint: this allowance is valid only in shipment posting for that reservation consumption path.
+- No other service may add allowances or recompute availability outside canonical `inventory_available_*` views.
+
 ## Relationships
 
-- `available = onHand - reserved`
+- `available = onHand - reservedQty - allocatedQty`
 - `inventoryPosition = onHand + onOrder + inTransit - reserved - backordered`
 
 ## Approximations & limitations
@@ -29,8 +47,8 @@ This doc is the operational glossary for the inventory snapshot endpoint (`GET /
 - `locationId`: Location UUID (`locations.id`) — warehouse/bin/store/etc.
 - `uom`: Unit of measure code used for the row.
 - `onHand`: Posted quantity in ledger for that item/location/uom.
-- `reserved`: Open/released sales-order allocations at that location/uom.
-- `available`: On-hand less reserved; what remains to allocate.
+- `reserved`: Snapshot-facing committed quantity (`RESERVED + ALLOCATED` open qty).
+- `available`: On-hand less open commitments; what remains to promise/consume.
 - `onOrder`: Open PO quantity expected into that location/uom.
 - `inTransit`: Received/accepted quantity not yet posted to inventory for that location/uom.
 - `backordered`: Unfulfilled demand without stock; `0` here.
@@ -56,7 +74,7 @@ Expect `200` and `data` array sorted by `uom`; fields present with numeric value
 
 2) Invariants to spot-check on a sample row:
 
-- `available === onHand - reserved`
+- `available === onHand - reservedQty - allocatedQty` (internally), and snapshot `reserved` already includes both commitment buckets
 - `inventoryPosition === onHand + onOrder + inTransit - reserved - backordered`
 - Missing sources imply `0` (never `null`)
 - Query param UUIDs invalid → `400`; unknown `itemId`/`locationId` → `404`

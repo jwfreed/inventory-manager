@@ -22,7 +22,7 @@ import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/i
 import { upsertBackorder } from './backorders.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { ItemLifecycleStatus } from '../types/item';
-import { validateSufficientStock } from './stockValidation.service';
+import { validateSufficientStock, type StockValidationResult } from './stockValidation.service';
 import {
   createInventoryMovement,
   createInventoryMovementLine,
@@ -79,6 +79,35 @@ function reservationInvalidState() {
 
 function reservationInvalidQuantity() {
   return new Error('RESERVATION_INVALID_QUANTITY');
+}
+
+function insufficientAvailableWithAllowance(details?: Record<string, unknown>) {
+  const error = new Error('Insufficient available inventory for shipment') as Error & {
+    code?: string;
+    status?: number;
+    details?: Record<string, unknown>;
+  };
+  error.code = 'INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE';
+  error.status = 409;
+  if (details) {
+    error.details = details;
+  }
+  return error;
+}
+
+/*
+ * Reservation Consumption Allowance Policy:
+ * This is the ONLY allowed deviation from strict canonical availability checks.
+ * Shipment posting may add the quantity consumed from the matched reservation
+ * because that shipment consumes the same commitment in the same transaction.
+ * No other code path may apply allowances to canonical availability.
+ */
+function canShipWithReservationAllowance(
+  available: number,
+  reserveConsume: number,
+  shipQty: number
+): boolean {
+  return available + reserveConsume >= shipQty;
 }
 
 async function lockReservationsForUpdate(
@@ -161,8 +190,8 @@ async function getCanonicalAvailability(
   uom: string
 ) {
   const res = await client.query(
-    `SELECT on_hand, reserved, allocated, available
-       FROM inventory_availability_location_v
+    `SELECT on_hand_qty, reserved_qty, allocated_qty, available_qty
+       FROM inventory_available_location_v
       WHERE tenant_id = $1
         AND warehouse_id = $2
         AND item_id = $3
@@ -173,10 +202,10 @@ async function getCanonicalAvailability(
   );
   const row = res.rows[0];
   return {
-    onHand: toNumber(row?.on_hand ?? 0),
-    reserved: toNumber(row?.reserved ?? 0),
-    allocated: toNumber(row?.allocated ?? 0),
-    available: toNumber(row?.available ?? 0)
+    onHand: toNumber(row?.on_hand_qty ?? 0),
+    reserved: toNumber(row?.reserved_qty ?? 0),
+    allocated: toNumber(row?.allocated_qty ?? 0),
+    available: toNumber(row?.available_qty ?? 0)
   };
 }
 export type ShipmentInput = z.infer<typeof shipmentSchema>;
@@ -235,7 +264,7 @@ async function computeDerivedBackorders(tenantId: string, orderRow: any, lines: 
     : null;
   const supplyMap = warehouseId
     ? await getSellableSupplyMap(tenantId, { warehouseId, itemIds, locationId })
-    : new Map<string, { onHand: number; reserved: number; allocated: number }>();
+    : new Map<string, { onHand: number; reserved: number; allocated: number; available: number }>();
 
   const shippedRows = await query(
     `SELECT sol.id AS line_id,
@@ -277,9 +306,8 @@ async function computeDerivedBackorders(tenantId: string, orderRow: any, lines: 
     const shipped = shippedByLine.get(line.id) ?? 0;
     const openDemand = roundQuantity(Math.max(0, ordered.quantity - shipped));
     const supplyKey = `${line.item_id}:${ordered.canonicalUom}`;
-    const supply = supplyMap.get(supplyKey) ?? { onHand: 0, reserved: 0, allocated: 0 };
-    const committed = roundQuantity(supply.reserved + supply.allocated);
-    const fulfillable = roundQuantity(Math.max(0, supply.onHand - committed));
+    const supply = supplyMap.get(supplyKey) ?? { onHand: 0, reserved: 0, allocated: 0, available: 0 };
+    const fulfillable = roundQuantity(Math.max(0, supply.available));
     const backorder = roundQuantity(Math.max(0, openDemand - fulfillable));
     derived.set(line.id, backorder);
   }
@@ -1145,66 +1173,14 @@ export async function postShipment(
       throw new Error('SHIPMENT_NO_LINES');
     }
 
-    const negativeLines = linesRes.rows.map((line) => ({
-      itemId: line.item_id,
-      locationId: shipment.ship_from_location_id,
-      uom: line.uom,
-      quantityToConsume: Math.abs(toNumber(line.quantity_shipped))
-    }));
-
-    const validation = await validateSufficientStock(
-      tenantId,
-      now,
-      negativeLines,
-      {
-        actorId: params.actor?.id ?? null,
-        actorRole: params.actor?.role ?? null,
-        overrideRequested: params.overrideRequested,
-        overrideReason: params.overrideReason ?? null,
-        overrideReference: `shipment:${shipmentId}`
-      }
-    );
-
-    const movement = await createInventoryMovement(client, {
-      tenantId,
-      movementType: 'issue',
-      status: 'posted',
-      externalRef: `shipment:${shipmentId}`,
-      idempotencyKey: params.idempotencyKey,
-      occurredAt: shipment.shipped_at ?? now,
-      postedAt: now,
-      notes: shipment.notes ?? null,
-      metadata: validation.overrideMetadata ?? null,
-      createdAt: now,
-      updatedAt: now
-    });
-
-    if (!movement.created) {
-      const lineCheck = await client.query(
-        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
-        [movement.id]
-      );
-      if (lineCheck.rowCount > 0) {
-        await client.query(
-          `UPDATE sales_order_shipments
-              SET inventory_movement_id = $1,
-                  status = 'posted',
-                  posted_at = COALESCE(posted_at, $2),
-                  posted_idempotency_key = COALESCE(posted_idempotency_key, $3)
-            WHERE id = $4 AND tenant_id = $5`,
-          [movement.id, now, params.idempotencyKey, shipmentId, tenantId]
-        );
-        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-        return getShipment(tenantId, shipmentId, client);
-      }
-    }
-
     const shipFromWarehouseId = await resolveWarehouseIdForLocation(tenantId, shipment.ship_from_location_id, client);
     type ShipmentLineContext = {
       line: any;
       canonicalOut: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
       issueQty: number;
       reservationId: string | null;
+      reservation: ReservationRow | null;
+      reserveConsume: number;
     };
     const shipmentLineContexts: ShipmentLineContext[] = [];
     const reservationIdsToLock = new Set<string>();
@@ -1246,7 +1222,14 @@ export async function postShipment(
       if (reservationId) {
         reservationIdsToLock.add(reservationId);
       }
-      shipmentLineContexts.push({ line, canonicalOut, issueQty, reservationId });
+      shipmentLineContexts.push({
+        line,
+        canonicalOut,
+        issueQty,
+        reservationId,
+        reservation: null,
+        reserveConsume: 0
+      });
     }
 
     const lockedReservations = await lockReservationsForUpdate(
@@ -1257,28 +1240,128 @@ export async function postShipment(
     );
     const lockedReservationsById = new Map(lockedReservations.map((row) => [row.id, row]));
 
+    const stockValidationLines: {
+      itemId: string;
+      locationId: string;
+      uom: string;
+      quantityToConsume: number;
+    }[] = [];
     for (const lineContext of shipmentLineContexts) {
-      const { line, canonicalOut, issueQty, reservationId } = lineContext;
-      const reservation = reservationId ? lockedReservationsById.get(reservationId) ?? null : null;
-      if (reservationId && !reservation) {
+      const reservation = lineContext.reservationId
+        ? lockedReservationsById.get(lineContext.reservationId) ?? null
+        : null;
+      if (lineContext.reservationId && !reservation) {
         throw reservationInvalidState();
       }
       const reservedRemaining = reservation
         && (reservation.status === 'RESERVED' || reservation.status === 'ALLOCATED')
         ? roundQuantity(Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0)))
         : 0;
-      const reserveConsume = Math.min(issueQty, reservedRemaining);
+      const reserveConsume = Math.min(lineContext.issueQty, reservedRemaining);
+      lineContext.reservation = reservation;
+      lineContext.reserveConsume = reserveConsume;
+      stockValidationLines.push({
+        itemId: lineContext.line.item_id,
+        locationId: shipment.ship_from_location_id,
+        uom: lineContext.canonicalOut.canonicalUom,
+        quantityToConsume: roundQuantity(Math.max(0, lineContext.issueQty - reserveConsume))
+      });
+    }
+    stockValidationLines.sort((a, b) => {
+      const item = a.itemId.localeCompare(b.itemId);
+      if (item !== 0) return item;
+      const location = a.locationId.localeCompare(b.locationId);
+      if (location !== 0) return location;
+      return a.uom.localeCompare(b.uom);
+    });
 
-      const balance = await getInventoryBalanceForUpdate(
+    let validation: StockValidationResult;
+    try {
+      validation = await validateSufficientStock(
+        tenantId,
+        now,
+        stockValidationLines,
+        {
+          actorId: params.actor?.id ?? null,
+          actorRole: params.actor?.role ?? null,
+          overrideRequested: params.overrideRequested,
+          overrideReason: params.overrideReason ?? null,
+          overrideReference: `shipment:${shipmentId}`
+        },
+        { client }
+      );
+    } catch (error: any) {
+      if (error?.code === 'INSUFFICIENT_STOCK' || error?.message === 'INSUFFICIENT_STOCK') {
+        throw insufficientAvailableWithAllowance({
+          shipmentId,
+          details: error?.details
+        });
+      }
+      throw error;
+    }
+
+    const movement = await createInventoryMovement(client, {
+      tenantId,
+      movementType: 'issue',
+      status: 'posted',
+      externalRef: `shipment:${shipmentId}`,
+      idempotencyKey: params.idempotencyKey,
+      occurredAt: shipment.shipped_at ?? now,
+      postedAt: now,
+      notes: shipment.notes ?? null,
+      metadata: validation.overrideMetadata ?? null,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    if (!movement.created) {
+      const lineCheck = await client.query(
+        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
+        [movement.id]
+      );
+      if (lineCheck.rowCount > 0) {
+        await client.query(
+          `UPDATE sales_order_shipments
+              SET inventory_movement_id = $1,
+                  status = 'posted',
+                  posted_at = COALESCE(posted_at, $2),
+                  posted_idempotency_key = COALESCE(posted_idempotency_key, $3)
+            WHERE id = $4 AND tenant_id = $5`,
+          [movement.id, now, params.idempotencyKey, shipmentId, tenantId]
+        );
+        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+        return getShipment(tenantId, shipmentId, client);
+      }
+    }
+
+    for (const lineContext of shipmentLineContexts) {
+      const { line, canonicalOut, issueQty, reservation, reserveConsume } = lineContext;
+
+      await getInventoryBalanceForUpdate(
         client,
         tenantId,
         line.item_id,
         shipment.ship_from_location_id,
         canonicalOut.canonicalUom
       );
-      const available = roundQuantity(balance.onHand - balance.reserved);
-      if (available + 1e-6 < issueQty && !validation.overrideMetadata) {
-        throw new Error('INSUFFICIENT_STOCK');
+      const canonicalAvailability = await getCanonicalAvailability(
+        client,
+        tenantId,
+        shipFromWarehouseId,
+        line.item_id,
+        shipment.ship_from_location_id,
+        canonicalOut.canonicalUom
+      );
+      const shipmentAvailable = roundQuantity(canonicalAvailability.available);
+      if (!canShipWithReservationAllowance(shipmentAvailable, reserveConsume, issueQty) && !validation.overrideMetadata) {
+        throw insufficientAvailableWithAllowance({
+          shipmentId,
+          shipmentLineId: line.id,
+          itemId: line.item_id,
+          available: shipmentAvailable,
+          reserveConsume,
+          shipQty: issueQty
+        });
       }
 
       const consumption = await consumeCostLayers({
