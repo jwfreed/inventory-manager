@@ -8,6 +8,8 @@ import { fetchBomById, resolveEffectiveBom, type BomVersionLine } from './boms.s
 import { getItem } from './masterData.service';
 import { recordAuditLog } from '../lib/audit';
 import { convertToCanonical } from './uomCanonical.service';
+import { expandBomWithCycleGuard, getCanonicalYieldQuantity } from './bomTraversal.service';
+import { getEffectiveBomLinesForParent } from './bomEdges.service';
 
 type WorkOrderCreateInput = z.infer<typeof workOrderCreateSchema>;
 type WorkOrderListQuery = z.infer<typeof workOrderListQuerySchema>;
@@ -261,61 +263,115 @@ export type WorkOrderRequirements = {
   lines: WorkOrderRequirementLine[];
 };
 
+type RequirementExpansionComponent = Pick<
+  BomVersionLine,
+  | 'id'
+  | 'lineNumber'
+  | 'componentItemId'
+  | 'quantityPer'
+  | 'uom'
+  | 'quantityPerCanonical'
+  | 'uomCanonical'
+  | 'uomDimension'
+  | 'scrapFactor'
+  | 'usesPackSize'
+  | 'variableUom'
+  | 'notes'
+> & {
+  componentIsPhantom?: boolean;
+};
+
 async function resolveRequirements(
   tenantId: string,
-  components: BomVersionLine[],
+  rootItemId: string,
+  components: RequirementExpansionComponent[],
   factor: number,
-  packSize?: number
+  packSize: number | undefined,
+  asOfIso: string
 ): Promise<WorkOrderRequirementLine[]> {
   const lines: WorkOrderRequirementLine[] = [];
+  const readOnlyQuery = { query };
+  const itemCache = new Map<string, Awaited<ReturnType<typeof getItem>>>();
+  const phantomBomCache = new Map<string, Awaited<ReturnType<typeof getEffectiveBomLinesForParent>>>();
+  const phantomYieldCache = new Map<string, number>();
 
-  for (const c of components) {
-    if (c.quantityPerCanonical == null || !c.uomCanonical) {
-      throw new Error('WO_BOM_LEGACY_UNSUPPORTED');
+  const getItemCached = async (itemId: string) => {
+    if (!itemCache.has(itemId)) {
+      itemCache.set(itemId, await getItem(tenantId, itemId));
     }
-    const item = await getItem(tenantId, c.componentItemId);
-    const componentScrap = c.scrapFactor ?? 0;
-    const baseQuantity = c.usesPackSize && packSize !== undefined
-      ? (await convertToCanonical(tenantId, c.componentItemId, packSize, c.uom)).quantity
-      : c.quantityPerCanonical;
-    const required = baseQuantity * factor * (1 + componentScrap);
+    return itemCache.get(itemId) ?? null;
+  };
 
-    if (item && item.isPhantom) {
-      const phantomBom = await resolveEffectiveBom(tenantId, item.id, new Date().toISOString());
-      if (phantomBom) {
-        const phantomVersion = phantomBom.version;
-        const phantomYield = await convertToCanonical(
-          tenantId,
-          item.id,
-          toNumber(phantomVersion.yieldQuantity),
-          phantomVersion.yieldUom
-        );
-        const phantomYieldFactor = phantomVersion.yieldFactor ?? 1.0;
-        if (phantomYield.quantity <= 0) {
-          throw new Error('WO_REQUIREMENTS_INVALID_YIELD');
-        }
-        const childFactor = required / (phantomYield.quantity * phantomYieldFactor);
-        const childLines = await resolveRequirements(
-          tenantId,
-          phantomVersion.components,
-          childFactor,
-          packSize
-        );
-        lines.push(...childLines);
-        continue;
+  const getPhantomBomCached = async (itemId: string) => {
+    if (!phantomBomCache.has(itemId)) {
+      phantomBomCache.set(itemId, await getEffectiveBomLinesForParent(readOnlyQuery, tenantId, itemId, asOfIso));
+    }
+    return phantomBomCache.get(itemId) ?? null;
+  };
+
+  const getPhantomYieldCached = async (
+    itemId: string,
+    phantomBom: NonNullable<Awaited<ReturnType<typeof getEffectiveBomLinesForParent>>>
+  ) => {
+    if (!phantomYieldCache.has(itemId)) {
+      const canonicalYield = await getCanonicalYieldQuantity(
+        tenantId,
+        phantomBom,
+        convertToCanonical,
+        itemId
+      );
+      phantomYieldCache.set(itemId, canonicalYield);
+    }
+    return phantomYieldCache.get(itemId)!;
+  };
+
+  await expandBomWithCycleGuard<{ factor: number }, RequirementExpansionComponent>({
+    root: {
+      itemId: rootItemId,
+      components,
+      state: { factor }
+    },
+    onComponent: async ({ node, component, descend }) => {
+      if (component.quantityPerCanonical == null || !component.uomCanonical) {
+        throw new Error('WO_BOM_LEGACY_UNSUPPORTED');
       }
-    }
+      const item = await getItemCached(component.componentItemId);
+      const isPhantom = typeof component.componentIsPhantom === 'boolean'
+        ? component.componentIsPhantom
+        : !!item?.isPhantom;
+      const componentScrap = component.scrapFactor ?? 0;
+      const baseQuantity = component.usesPackSize && packSize !== undefined
+        ? (await convertToCanonical(tenantId, component.componentItemId, packSize, component.uom)).quantity
+        : component.quantityPerCanonical;
+      const required = baseQuantity * node.state.factor * (1 + componentScrap);
 
-    lines.push({
-      lineNumber: c.lineNumber,
-      componentItemId: c.componentItemId,
-      uom: c.uomCanonical,
-      quantityRequired: required,
-      usesPackSize: c.usesPackSize,
-      variableUom: c.variableUom ?? null,
-      scrapFactor: c.scrapFactor
-    });
-  }
+      if (isPhantom) {
+        const phantomItemId = component.componentItemId;
+        const phantomBom = await getPhantomBomCached(phantomItemId);
+        if (phantomBom) {
+          const phantomYield = await getPhantomYieldCached(phantomItemId, phantomBom);
+          const childFactor = required / phantomYield;
+          await descend({
+            itemId: phantomItemId,
+            components: phantomBom.components,
+            state: { factor: childFactor }
+          });
+          return;
+        }
+      }
+
+      lines.push({
+        lineNumber: component.lineNumber,
+        componentItemId: component.componentItemId,
+        uom: component.uomCanonical,
+        quantityRequired: required,
+        usesPackSize: component.usesPackSize,
+        variableUom: component.variableUom ?? null,
+        scrapFactor: component.scrapFactor
+      });
+    }
+  });
+
   return lines;
 }
 
@@ -374,7 +430,15 @@ export async function getWorkOrderRequirements(
   const yieldFactor = version.yieldFactor ?? 1.0;
   const factor = normalizedRequested.quantity / (normalizedYield.quantity * yieldFactor);
 
-  const lines = await resolveRequirements(tenantId, version.components, factor, packSize);
+  const asOfIso = new Date().toISOString();
+  const lines = await resolveRequirements(
+    tenantId,
+    wo.output_item_id,
+    version.components as RequirementExpansionComponent[],
+    factor,
+    packSize,
+    asOfIso
+  );
 
   return {
     workOrderId: wo.id,

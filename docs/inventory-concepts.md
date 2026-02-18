@@ -30,6 +30,17 @@ This doc is the operational glossary for the inventory snapshot endpoint (`GET /
 - Hard constraint: this allowance is valid only in shipment posting for that reservation consumption path.
 - No other service may add allowances or recompute availability outside canonical `inventory_available_*` views.
 
+## Phantom BOM Expansion Guardrails
+
+- Phantom source of truth: `items.is_phantom` on the component item (item policy), not a BOM-line flag.
+- Phantom components are expanded recursively during work-order requirements explosion.
+- Recursion trigger: only components whose item has `is_phantom = true` are expanded to their effective BOM children.
+- Non-phantom components remain leaf requirements even if they have their own BOM.
+- Traversal is deterministic (components sorted by `componentItemId`, then line `id`) so error paths are reproducible.
+- Cycle detection is path-based: if expansion revisits an item already in the current recursion stack, it fails with `BOM_CYCLE_DETECTED` and `details.path` (for example `[A, B, C, A]`).
+- A max depth guard (`BOM_EXPANSION_MAX_DEPTH`, default `20`) fails closed with `BOM_MAX_DEPTH_EXCEEDED` and the current path.
+- These guardrails prevent infinite recursion only; they do not change ledger, FIFO, transfer costing, or availability semantics.
+
 ## Relationships
 
 - `available = onHand - reservedQty - allocatedQty`

@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 import { Pool } from 'pg';
+import { createRequire } from 'node:module';
+import { detectBomCyclesAtRest } from './lib/bomCycleDetector.mjs';
+
+const require = createRequire(import.meta.url);
+require('ts-node/register/transpile-only');
+const { getAllEffectiveBomEdges } = require('../src/services/bomEdges.service.ts');
 
 function getArg(name) {
   const prefix = `--${name}=`;
@@ -30,6 +36,8 @@ function printSection(title, count, rows) {
 const tenantId = getArg('tenant-id') ?? process.env.TENANT_ID;
 const warehouseId = getArg('warehouse-id') ?? process.env.WAREHOUSE_ID ?? null;
 const limit = parsePositiveInt(getArg('limit') ?? process.env.LIMIT, 200);
+const bomCycleLimit = parsePositiveInt(getArg('bom-cycle-limit') ?? process.env.BOM_CYCLE_LIMIT, 50);
+const bomCycleNodeLimit = parsePositiveInt(getArg('bom-cycle-node-limit') ?? process.env.BOM_CYCLE_NODE_LIMIT, 10000);
 
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is required');
@@ -300,6 +308,37 @@ try {
     availabilityReconciliationRowsRes.rows
   );
   if (availabilityReconciliationCount > 0) {
+    exitCode = 2;
+  }
+
+  const effectiveEdges = await getAllEffectiveBomEdges(pool, tenantId, new Date().toISOString());
+  const atRestCycle = detectBomCyclesAtRest(
+    effectiveEdges.map((edge) => ({
+      parent_item_id: edge.parentItemId,
+      component_item_id: edge.componentItemId
+    })),
+    {
+    cycleLimit: bomCycleLimit,
+    nodeLimit: bomCycleNodeLimit
+    }
+  );
+  printSection(
+    'bom_cycle_detected_at_rest',
+    atRestCycle.count,
+    atRestCycle.samplePaths.map((path) => ({ path }))
+  );
+  if (atRestCycle.truncatedByNodeLimit || atRestCycle.truncatedByCycleLimit) {
+    console.log(
+      `  ${JSON.stringify({
+        truncatedByNodeLimit: atRestCycle.truncatedByNodeLimit,
+        truncatedByCycleLimit: atRestCycle.truncatedByCycleLimit,
+        visitedNodes: atRestCycle.visitedNodes,
+        nodeLimit: bomCycleNodeLimit,
+        cycleLimit: bomCycleLimit
+      })}`
+    );
+  }
+  if (atRestCycle.count > 0) {
     exitCode = 2;
   }
 

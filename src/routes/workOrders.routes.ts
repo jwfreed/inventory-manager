@@ -152,6 +152,24 @@ router.get('/work-orders/:id/requirements', async (req: Request, res: Response) 
     if (error?.message === 'WO_REQUIREMENTS_INVALID_YIELD') {
       return res.status(400).json({ error: 'Invalid BOM yield quantity.' });
     }
+    if (error?.code === 'BOM_CYCLE_DETECTED' || error?.message === 'BOM_CYCLE_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'BOM_CYCLE_DETECTED',
+          message: 'BOM cycle detected during phantom expansion.',
+          details: error?.details ?? {}
+        }
+      });
+    }
+    if (error?.code === 'BOM_MAX_DEPTH_EXCEEDED' || error?.message === 'BOM_MAX_DEPTH_EXCEEDED') {
+      return res.status(409).json({
+        error: {
+          code: 'BOM_MAX_DEPTH_EXCEEDED',
+          message: 'BOM expansion exceeded max depth.',
+          details: error?.details ?? {}
+        }
+      });
+    }
     if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
       return res.status(400).json({ error: error.message });
     }
