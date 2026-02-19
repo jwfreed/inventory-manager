@@ -46,6 +46,15 @@ This doc is the operational glossary for the inventory snapshot endpoint (`GET /
 - `available = onHand - reservedQty - allocatedQty`
 - `inventoryPosition = onHand + onOrder + inTransit - reserved - backordered`
 
+## Warehouse Topology
+
+- Canonical warehouse/location provisioning is defined in `seeds/topology/*.tsv`.
+- `locations.code` is canonical (`UNIQUE (tenant_id, code)`); `locations.local_code` is warehouse-scoped bin label.
+- Seed runner (check-only): `npm run seed:warehouse-topology -- --tenant-id <TENANT_UUID>`.
+- Seed runner repair mode: `npm run seed:warehouse-topology -- --tenant-id <TENANT_UUID> --fix`.
+- Topology/default drift check: `warehouse_topology_defaults_invalid` section in `scripts/inventory_invariants_check.mjs`.
+- Full reference: `docs/warehouse-topology.md`.
+
 ## Approximations & limitations
 
 - `onOrder` only considers POs in `submitted` status; drafts are ignored.

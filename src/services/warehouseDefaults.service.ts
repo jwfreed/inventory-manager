@@ -227,6 +227,7 @@ async function ensureDefaultsForWarehouse(
             id,
             tenant_id,
             code,
+            local_code,
             name,
             type,
             role,
@@ -236,10 +237,10 @@ async function ensureDefaultsForWarehouse(
             warehouse_id,
             created_at,
             updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $10)
-         ON CONFLICT (code) DO NOTHING
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10, $11, $11)
+         ON CONFLICT (tenant_id, code) DO NOTHING
          RETURNING id`,
-        [id, tenantId, code, name, type, role, isSellable, warehouseId, warehouseId, now]
+        [id, tenantId, code, role, name, type, role, isSellable, warehouseId, warehouseId, now]
       );
       if (insertRes.rowCount && insertRes.rows[0]?.id) {
         locationId = insertRes.rows[0].id;

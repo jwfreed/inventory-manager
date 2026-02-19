@@ -1,0 +1,6 @@
+code	name	category	active
+FACTORY	Factory	factory	true
+STORE_FACTORY	Factory Store	store	true
+STORE_THAPAE	Tha Phae Store	store	true
+STORE_AIRPORT	Airport Store	store	true
+STORE_ONENIMMAN	One Nimman Store	store	true

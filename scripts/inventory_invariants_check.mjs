@@ -3,6 +3,8 @@ import 'dotenv/config';
 import { Pool } from 'pg';
 import { createRequire } from 'node:module';
 import { detectBomCyclesAtRest } from './lib/bomCycleDetector.mjs';
+import { checkWarehouseTopologyDefaults } from './lib/warehouseTopologyCheck.mjs';
+import { loadWarehouseTopology } from './lib/warehouseTopology.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -259,6 +261,8 @@ const availabilityReconciliationRowsSql = `
 let exitCode = 0;
 
 try {
+  const topology = await loadWarehouseTopology();
+
   const [negativeBalanceCountRes, negativeBalanceRowsRes] = await Promise.all([
     pool.query(negativeBalanceCountSql, params2),
     pool.query(negativeBalanceRowsSql, params3)
@@ -318,8 +322,8 @@ try {
       component_item_id: edge.componentItemId
     })),
     {
-    cycleLimit: bomCycleLimit,
-    nodeLimit: bomCycleNodeLimit
+      cycleLimit: bomCycleLimit,
+      nodeLimit: bomCycleNodeLimit
     }
   );
   printSection(
@@ -340,6 +344,24 @@ try {
   }
   if (atRestCycle.count > 0) {
     exitCode = 2;
+  }
+
+  const topologyCheck = await checkWarehouseTopologyDefaults(pool, tenantId, { topology });
+  printSection(
+    'warehouse_topology_defaults_invalid',
+    topologyCheck.count,
+    topologyCheck.issues.slice(0, limit)
+  );
+  if (topologyCheck.count > 0) {
+    exitCode = 2;
+  }
+  printSection(
+    'warehouse_topology_defaults_warning',
+    topologyCheck.warningCount ?? 0,
+    (topologyCheck.warnings ?? []).slice(0, limit)
+  );
+  if (topologyCheck.count > 0) {
+    console.log('  hint: run `npm run seed:warehouse-topology -- --tenant-id <TENANT_UUID> --fix`');
   }
 
   process.exit(exitCode);

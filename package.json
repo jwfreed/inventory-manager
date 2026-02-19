@@ -30,6 +30,7 @@
     "test:lint:api": "bash -lc \"if grep -R -n -E '\\\\b(db|pool|client)\\\\.query\\\\b|from\\\\s+[\\\"\\x27]pg[\\\"\\x27]|new\\\\s+Pool\\\\(' tests/api; then echo 'test:lint:api failed: SQL usage detected in tests/api'; exit 1; else echo 'test:lint:api ok'; fi\"",
     "lint:inventory-writes": "ts-node --transpile-only -r dotenv/config scripts/check-inventory-writes.ts",
     "inventory:health": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/inventory-health.ts",
+    "seed:warehouse-topology": "node scripts/seed_warehouse_topology.mjs",
     "backfill:movement-canonical": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/backfill-movement-canonical.ts",
     "backfill:inventory-balance": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/backfill-inventory-balance.ts",
     "worker": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/worker.ts",

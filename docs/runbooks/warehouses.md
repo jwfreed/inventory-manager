@@ -26,7 +26,39 @@ Each warehouse must have a default location for:
 
 Defaults are stored in `warehouse_default_location` and **must never cross warehouses**.
 
-## Standard Template
+## Canonical Topology (Phase 2.1)
+
+Canonical warehouse roots:
+
+- `FACTORY`
+- `STORE_FACTORY`
+- `STORE_THAPAE`
+- `STORE_AIRPORT`
+- `STORE_ONENIMMAN`
+
+Canonical topology definitions live in:
+
+- `seeds/topology/warehouses.tsv`
+- `seeds/topology/locations.tsv`
+- `seeds/topology/warehouse_defaults.tsv`
+
+Code scope:
+
+- `locations.code` is the canonical identifier (`UNIQUE (tenant_id, code)`), not global.
+- `locations.local_code` is the warehouse label (`UNIQUE (tenant_id, warehouse_id, local_code)` when non-null).
+- Example: `code=STORE_THAPAE_SELLABLE`, `local_code=SELLABLE`.
+
+Provisioning is deterministic and idempotent:
+
+```bash
+npm run seed:warehouse-topology -- --tenant-id <TENANT_UUID>
+npm run seed:warehouse-topology -- --tenant-id <TENANT_UUID> --fix
+```
+
+- Default mode is check-only (no writes).
+- `--fix` is conservative repair (create-only + invalid-default repair).
+
+## Standard Template (API)
 
 Always provision warehouses using the standard template endpoint:
 
@@ -59,3 +91,4 @@ This endpoint is idempotent and creates:
 
 - Invariants: `docs/runbooks/invariants.md`
 - Debugging tests: `docs/runbooks/debugging_tests.md`
+- Topology reference: `docs/warehouse-topology.md`
