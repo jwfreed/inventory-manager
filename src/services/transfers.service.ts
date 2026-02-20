@@ -1,9 +1,11 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
 import { withTransactionRetry } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { validateSufficientStock } from './stockValidation.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
+import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
   createInventoryMovement,
   createInventoryMovementLine,
@@ -35,6 +37,7 @@ export type TransferInventoryInput = {
   actorId?: string | null;
   overrideNegative?: boolean;
   overrideReason?: string | null;
+  idempotencyKey?: string | null;
   lotId?: string | null;
   serialNumbers?: string[] | null;
 };
@@ -44,10 +47,99 @@ export type TransferInventoryResult = {
   created: boolean;
 };
 
+export type TransferPostInput = {
+  tenantId: string;
+  sourceLocationId: string;
+  destinationLocationId: string;
+  itemId: string;
+  quantity: number;
+  uom: string;
+  occurredAt?: Date;
+  reasonCode?: string;
+  notes?: string;
+  actorId?: string | null;
+  overrideNegative?: boolean;
+  overrideReason?: string | null;
+  idempotencyKey?: string | null;
+};
+
+export type TransferPostResult = {
+  movementId: string;
+  created: boolean;
+  sourceWarehouseId: string;
+  destinationWarehouseId: string;
+};
+
 export type TransferVoidActor = {
   type: 'user' | 'system';
   id?: string | null;
 };
+
+type DomainError = Error & {
+  code?: string;
+  details?: Record<string, unknown>;
+};
+
+function domainError(code: string, details?: Record<string, unknown>): DomainError {
+  const error = new Error(code) as DomainError;
+  error.code = code;
+  if (details !== undefined) {
+    error.details = details;
+  }
+  return error;
+}
+
+function normalizeTransferPostingPayload(params: {
+  tenantId: string;
+  occurredAt: string | null;
+  reasonCode: string | null;
+  notes: string | null;
+  lines: Array<{
+    sourceWarehouseId: string;
+    sourceLocationId: string;
+    destinationWarehouseId: string;
+    destinationLocationId: string;
+    itemId: string;
+    uom: string;
+    quantity: number;
+  }>;
+}) {
+  const lines = [...params.lines]
+    .map((line) => ({
+      sourceWarehouseId: line.sourceWarehouseId,
+      sourceLocationId: line.sourceLocationId,
+      destinationWarehouseId: line.destinationWarehouseId,
+      destinationLocationId: line.destinationLocationId,
+      itemId: line.itemId,
+      uom: line.uom,
+      quantity: roundQuantity(line.quantity)
+    }))
+    .sort((left, right) => {
+      const sourceWarehouse = left.sourceWarehouseId.localeCompare(right.sourceWarehouseId);
+      if (sourceWarehouse !== 0) return sourceWarehouse;
+      const sourceLocation = left.sourceLocationId.localeCompare(right.sourceLocationId);
+      if (sourceLocation !== 0) return sourceLocation;
+      const destinationWarehouse = left.destinationWarehouseId.localeCompare(right.destinationWarehouseId);
+      if (destinationWarehouse !== 0) return destinationWarehouse;
+      const destinationLocation = left.destinationLocationId.localeCompare(right.destinationLocationId);
+      if (destinationLocation !== 0) return destinationLocation;
+      const item = left.itemId.localeCompare(right.itemId);
+      if (item !== 0) return item;
+      const uom = left.uom.localeCompare(right.uom);
+      if (uom !== 0) return uom;
+      return left.quantity - right.quantity;
+    });
+
+  const normalized = {
+    tenantId: params.tenantId,
+    occurredAt: params.occurredAt,
+    reasonCode: params.reasonCode,
+    notes: params.notes,
+    lines
+  };
+  const hash = createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+  return { normalized, hash };
+}
 
 function negateNullable(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -79,6 +171,174 @@ type MovementLineRow = {
   line_notes: string | null;
 };
 
+export async function postInventoryTransfer(input: TransferPostInput): Promise<TransferPostResult> {
+  const idempotencyKey = input.idempotencyKey?.trim() ? input.idempotencyKey.trim() : null;
+  const occurredAt = input.occurredAt ?? new Date();
+
+  return withTransactionRetry(async (client) => {
+    const sourceWarehouseId = await resolveWarehouseIdForLocation(input.tenantId, input.sourceLocationId, client);
+    const destinationWarehouseId = await resolveWarehouseIdForLocation(input.tenantId, input.destinationLocationId, client);
+    const { normalized: normalizedRequestSummary, hash: requestHash } = normalizeTransferPostingPayload({
+      tenantId: input.tenantId,
+      occurredAt: input.occurredAt ? input.occurredAt.toISOString() : null,
+      reasonCode: input.reasonCode ?? null,
+      notes: input.notes ?? null,
+      lines: [
+        {
+          sourceWarehouseId,
+          sourceLocationId: input.sourceLocationId,
+          destinationWarehouseId,
+          destinationLocationId: input.destinationLocationId,
+          itemId: input.itemId,
+          uom: input.uom,
+          quantity: input.quantity
+        }
+      ]
+    });
+
+    if (!idempotencyKey) {
+      const transfer = await transferInventory(
+        {
+          tenantId: input.tenantId,
+          sourceLocationId: input.sourceLocationId,
+          destinationLocationId: input.destinationLocationId,
+          itemId: input.itemId,
+          quantity: input.quantity,
+          uom: input.uom,
+          sourceType: 'inventory_transfer',
+          sourceId: uuidv4(),
+          movementType: 'transfer',
+          reasonCode: input.reasonCode ?? 'transfer',
+          notes: input.notes ?? 'Inventory transfer',
+          occurredAt,
+          actorId: input.actorId ?? null,
+          overrideNegative: input.overrideNegative ?? false,
+          overrideReason: input.overrideReason ?? null,
+          idempotencyKey: null
+        },
+        client
+      );
+      return {
+        movementId: transfer.movementId,
+        created: transfer.created,
+        sourceWarehouseId,
+        destinationWarehouseId
+      };
+    }
+
+    const now = new Date();
+    const executionInsert = await client.query<{ id: string }>(
+      `INSERT INTO transfer_post_executions (
+          id, tenant_id, idempotency_key, request_hash, request_summary, status, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5::jsonb, 'IN_PROGRESS', $6, $6)
+       ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+       RETURNING id`,
+      [uuidv4(), input.tenantId, idempotencyKey, requestHash, JSON.stringify(normalizedRequestSummary), now]
+    );
+    const executionResult = await client.query<{
+      id: string;
+      request_hash: string;
+      status: string;
+      inventory_movement_id: string | null;
+    }>(
+      `SELECT id, request_hash, status, inventory_movement_id
+         FROM transfer_post_executions
+        WHERE tenant_id = $1
+          AND idempotency_key = $2
+        FOR UPDATE`,
+      [input.tenantId, idempotencyKey]
+    );
+    if (executionResult.rowCount === 0) {
+      throw domainError('INV_TRANSFER_IDEMPOTENCY_INCOMPLETE', {
+        missingMovementId: true,
+        hint: 'Retry with the same Idempotency-Key or contact admin'
+      });
+    }
+    const execution = executionResult.rows[0];
+    const executionCreated = executionInsert.rowCount > 0;
+
+    if (execution.request_hash !== requestHash) {
+      throw domainError('INV_TRANSFER_IDEMPOTENCY_CONFLICT', {
+        expectedHash: execution.request_hash
+      });
+    }
+    if (execution.status === 'SUCCEEDED' && execution.inventory_movement_id) {
+      return {
+        movementId: execution.inventory_movement_id,
+        created: false,
+        sourceWarehouseId,
+        destinationWarehouseId
+      };
+    }
+    if (execution.status === 'SUCCEEDED' && !execution.inventory_movement_id) {
+      throw domainError('INV_TRANSFER_IDEMPOTENCY_INCOMPLETE', {
+        missingMovementId: true,
+        hint: 'Retry with the same Idempotency-Key or contact admin'
+      });
+    }
+    if (!executionCreated && execution.status === 'IN_PROGRESS') {
+      throw domainError('INV_TRANSFER_IDEMPOTENCY_INCOMPLETE', {
+        missingMovementId: true,
+        hint: 'Retry with the same Idempotency-Key or contact admin'
+      });
+    }
+
+    const transfer = await transferInventory(
+      {
+        tenantId: input.tenantId,
+        sourceLocationId: input.sourceLocationId,
+        destinationLocationId: input.destinationLocationId,
+        itemId: input.itemId,
+        quantity: input.quantity,
+        uom: input.uom,
+        sourceType: 'inventory_transfer',
+        sourceId: `idempotency:${idempotencyKey}`,
+        movementType: 'transfer',
+        reasonCode: input.reasonCode ?? 'transfer',
+        notes: input.notes ?? 'Inventory transfer',
+        occurredAt,
+        actorId: input.actorId ?? null,
+        overrideNegative: input.overrideNegative ?? false,
+        overrideReason: input.overrideReason ?? null,
+        idempotencyKey
+      },
+      client
+    );
+
+    if (!transfer.created) {
+      const lineCheck = await client.query(
+        `SELECT 1
+           FROM inventory_movement_lines
+          WHERE movement_id = $1
+          LIMIT 1`,
+        [transfer.movementId]
+      );
+      if (lineCheck.rowCount === 0) {
+        throw domainError('INV_TRANSFER_IDEMPOTENCY_INCOMPLETE', {
+          missingMovementId: true,
+          hint: 'Retry with the same Idempotency-Key or contact admin'
+        });
+      }
+    }
+
+    await client.query(
+      `UPDATE transfer_post_executions
+          SET status = 'SUCCEEDED',
+              inventory_movement_id = $1,
+              updated_at = $2
+        WHERE id = $3`,
+      [transfer.movementId, now, execution.id]
+    );
+
+    return {
+      movementId: transfer.movementId,
+      created: transfer.created,
+      sourceWarehouseId,
+      destinationWarehouseId
+    };
+  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+}
+
 export async function transferInventory(
   input: TransferInventoryInput,
   client: PoolClient
@@ -99,7 +359,8 @@ export async function transferInventory(
     occurredAt = new Date(),
     actorId = null,
     overrideNegative = false,
-    overrideReason = null
+    overrideReason = null,
+    idempotencyKey = null
   } = input;
 
   if (sourceLocationId === destinationLocationId) {
@@ -191,6 +452,7 @@ export async function transferInventory(
     externalRef,
     sourceType,
     sourceId,
+    idempotencyKey,
     occurredAt,
     postedAt: occurredAt,
     notes,

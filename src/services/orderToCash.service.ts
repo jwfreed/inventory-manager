@@ -31,7 +31,8 @@ import {
 } from '../domains/inventory';
 import { consumeCostLayers } from './costLayers.service';
 import { recordAuditLog } from '../lib/audit';
-import { atpCache, cacheKey } from '../lib/cache';
+import { invalidateAtpCacheForWarehouse } from './atpCache.service';
+import { assertSellableLocationOrThrow } from '../domains/inventory';
 
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
 export type ReservationInput = z.infer<typeof reservationSchema>;
@@ -161,23 +162,34 @@ async function insertReservationEvent(
   );
 }
 
-async function assertLocationSellable(
+async function assertReservationSalesOrderWarehouseScope(
   client: PoolClient,
   tenantId: string,
-  locationId: string
+  reservation: ReservationCreateLine
 ) {
-  const res = await client.query<{ is_sellable: boolean }>(
-    `SELECT is_sellable
-       FROM locations
-      WHERE tenant_id = $1
-        AND id = $2`,
-    [tenantId, locationId]
+  if (reservation.demandType !== 'sales_order_line') {
+    return;
+  }
+  const res = await client.query<{ warehouse_id: string | null }>(
+    `SELECT so.warehouse_id
+       FROM sales_order_lines sol
+       JOIN sales_orders so
+         ON so.id = sol.sales_order_id
+        AND so.tenant_id = sol.tenant_id
+      WHERE sol.tenant_id = $1
+        AND sol.id = $2
+      LIMIT 1`,
+    [tenantId, reservation.demandId]
   );
   if (res.rowCount === 0) {
-    throw new Error('RESERVATION_LOCATION_NOT_FOUND');
+    return;
   }
-  if (!res.rows[0]?.is_sellable) {
-    throw new Error('RESERVATION_LOCATION_NOT_SELLABLE');
+  const salesOrderWarehouseId = res.rows[0]?.warehouse_id;
+  if (!salesOrderWarehouseId) {
+    throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+  }
+  if (salesOrderWarehouseId !== reservation.warehouseId) {
+    throw new Error('WAREHOUSE_SCOPE_MISMATCH');
   }
 }
 
@@ -228,6 +240,7 @@ export function mapSalesOrder(row: any, lines: any[], derivedBackorders?: Map<st
     id: row.id,
     soNumber: row.so_number,
     customerId: row.customer_id,
+    warehouseId: row.warehouse_id ?? null,
     status: row.status,
     orderDate: row.order_date,
     requestedShipDate: row.requested_ship_date,
@@ -259,9 +272,11 @@ async function computeDerivedBackorders(tenantId: string, orderRow: any, lines: 
   if (!lines.length) return new Map<string, number>();
   const itemIds = Array.from(new Set(lines.map((line) => line.item_id)));
   const locationId = orderRow.ship_from_location_id ?? undefined;
-  const warehouseId = locationId
-    ? await resolveWarehouseIdForLocation(tenantId, locationId)
-    : null;
+  const warehouseId = orderRow.warehouse_id
+    ? orderRow.warehouse_id
+    : locationId
+      ? await resolveWarehouseIdForLocation(tenantId, locationId)
+      : null;
   const supplyMap = warehouseId
     ? await getSellableSupplyMap(tenantId, { warehouseId, itemIds, locationId })
     : new Map<string, { onHand: number; reserved: number; allocated: number; available: number }>();
@@ -319,13 +334,23 @@ export async function createSalesOrder(tenantId: string, data: SalesOrderInput) 
   const id = uuidv4();
   const status = data.status ?? 'draft';
   const normalizedLines = normalizeLineNumbers(data.lines);
+  if (!data.warehouseId) {
+    throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+  }
 
   const result = await withTransaction(async (client) => {
+    if (data.shipFromLocationId) {
+      const resolvedWarehouseId = await resolveWarehouseIdForLocation(tenantId, data.shipFromLocationId, client);
+      if (!resolvedWarehouseId || resolvedWarehouseId !== data.warehouseId) {
+        throw new Error('WAREHOUSE_SCOPE_MISMATCH');
+      }
+    }
+
     const orderResult = await client.query(
       `INSERT INTO sales_orders (
         id, tenant_id, so_number, customer_id, status, order_date, requested_ship_date,
-        ship_from_location_id, customer_reference, notes, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+        ship_from_location_id, warehouse_id, customer_reference, notes, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
       RETURNING *`,
       [
         id,
@@ -336,6 +361,7 @@ export async function createSalesOrder(tenantId: string, data: SalesOrderInput) 
         data.orderDate ?? null,
         data.requestedShipDate ?? null,
         data.shipFromLocationId ?? null,
+        data.warehouseId,
         data.customerReference ?? null,
         data.notes ?? null,
         now,
@@ -396,7 +422,7 @@ export async function listSalesOrders(
   tenantId: string,
   limit: number,
   offset: number,
-  filters: { status?: string; customerId?: string }
+  filters: { status?: string; customerId?: string; warehouseId?: string }
 ) {
   const params: any[] = [tenantId];
   const conditions: string[] = ['tenant_id = $1'];
@@ -408,10 +434,14 @@ export async function listSalesOrders(
     params.push(filters.customerId);
     conditions.push(`customer_id = $${params.length}`);
   }
+  if (filters.warehouseId) {
+    params.push(filters.warehouseId);
+    conditions.push(`warehouse_id = $${params.length}`);
+  }
   params.push(limit, offset);
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(
-    `SELECT id, so_number, customer_id, status, order_date, requested_ship_date, ship_from_location_id,
+    `SELECT id, so_number, customer_id, status, order_date, requested_ship_date, ship_from_location_id, warehouse_id,
             customer_reference, notes, created_at, updated_at
        FROM sales_orders
        ${where}
@@ -492,14 +522,11 @@ export async function createReservations(
         }
       }
 
-      await assertLocationSellable(client, tenantId, reservation.locationId);
-      const warehouseId = await resolveWarehouseIdForLocation(tenantId, reservation.locationId, client);
-      if (!warehouseId) {
-        throw new Error('RESERVATION_WAREHOUSE_REQUIRED');
-      }
-      if (warehouseId !== reservation.warehouseId) {
-        throw new Error('RESERVATION_WAREHOUSE_MISMATCH');
-      }
+      const location = await assertSellableLocationOrThrow(client, tenantId, reservation.locationId, {
+        expectedWarehouseId: reservation.warehouseId
+      });
+      const warehouseId = location.warehouseId;
+      await assertReservationSalesOrderWarehouseScope(client, tenantId, reservation);
 
       const allowBackorder =
         reservation.allowBackorder !== undefined ? reservation.allowBackorder : BACKORDERS_ENABLED;
@@ -658,7 +685,15 @@ export async function createReservations(
     }
     return rows;
   }, { isolationLevel: 'SERIALIZABLE', retries: 6 });
-  atpCache.invalidate(cacheKey('atp', tenantId));
+  const affectedWarehouses = new Set<string>();
+  for (const row of results as any[]) {
+    if (typeof row?.warehouse_id === 'string') {
+      affectedWarehouses.add(row.warehouse_id);
+    }
+  }
+  for (const warehouseId of affectedWarehouses) {
+    invalidateAtpCacheForWarehouse(tenantId, warehouseId);
+  }
   return results.map(mapReservation);
 }
 
@@ -711,6 +746,9 @@ export async function allocateReservation(
     }
 
     const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
+    await assertSellableLocationOrThrow(client, tenantId, reservation.location_id, {
+      expectedWarehouseId: reservation.warehouse_id
+    });
     if (reservation.status !== 'RESERVED') {
       throw reservationInvalidState();
     }
@@ -773,7 +811,7 @@ export async function allocateReservation(
     }
     return updated.rowCount ? mapReservation(updated.rows[0]) : null;
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
-  atpCache.invalidate(cacheKey('atp', tenantId));
+  invalidateAtpCacheForWarehouse(tenantId, warehouseId);
   return result;
 }
 
@@ -871,7 +909,7 @@ export async function cancelReservation(
     }
     return updated.rowCount ? mapReservation(updated.rows[0]) : null;
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
-  atpCache.invalidate(cacheKey('atp', tenantId));
+  invalidateAtpCacheForWarehouse(tenantId, warehouseId);
   return result;
 }
 
@@ -903,6 +941,9 @@ export async function fulfillReservation(
     }
 
     const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
+    await assertSellableLocationOrThrow(client, tenantId, reservation.location_id, {
+      expectedWarehouseId: reservation.warehouse_id
+    });
     if (reservation.status !== 'ALLOCATED') {
       throw reservationInvalidState();
     }
@@ -985,17 +1026,17 @@ export async function fulfillReservation(
     }
     return updated.rowCount ? mapReservation(updated.rows[0]) : null;
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
-  atpCache.invalidate(cacheKey('atp', tenantId));
+  invalidateAtpCacheForWarehouse(tenantId, warehouseId);
   return result;
 }
 
 export async function expireReservationsJob() {
   const now = new Date();
-  const affectedTenants = new Set<string>();
+  const affectedTenantWarehouses = new Map<string, Set<string>>();
   await withTransactionRetry(async (client) => {
     // Lock order invariant: reservation rows -> inventory_balance rows.
     const res = await client.query(
-      `SELECT id, tenant_id, item_id, location_id, uom, quantity_reserved, quantity_fulfilled
+      `SELECT id, tenant_id, warehouse_id, item_id, location_id, uom, quantity_reserved, quantity_fulfilled
          FROM inventory_reservations
         WHERE status = 'RESERVED'
           AND expires_at IS NOT NULL
@@ -1003,7 +1044,11 @@ export async function expireReservationsJob() {
         FOR UPDATE SKIP LOCKED`
     );
     for (const row of res.rows) {
-      affectedTenants.add(row.tenant_id);
+      const warehousesForTenant = affectedTenantWarehouses.get(row.tenant_id) ?? new Set<string>();
+      if (typeof row.warehouse_id === 'string') {
+        warehousesForTenant.add(row.warehouse_id);
+      }
+      affectedTenantWarehouses.set(row.tenant_id, warehousesForTenant);
       const remaining = roundQuantity(
         Math.max(0, toNumber(row.quantity_reserved) - toNumber(row.quantity_fulfilled ?? 0))
       );
@@ -1032,8 +1077,10 @@ export async function expireReservationsJob() {
       await insertReservationEvent(client, row.tenant_id, row.id, 'EXPIRED', -remaining, 0);
     }
   }, { isolationLevel: 'SERIALIZABLE', retries: 1 });
-  for (const tenantId of affectedTenants) {
-    atpCache.invalidate(cacheKey('atp', tenantId));
+  for (const [tenantId, warehouseIds] of affectedTenantWarehouses.entries()) {
+    for (const warehouseId of warehouseIds.values()) {
+      invalidateAtpCacheForWarehouse(tenantId, warehouseId);
+    }
   }
 }
 
@@ -1064,6 +1111,25 @@ export async function createShipment(tenantId: string, data: ShipmentInput) {
   const now = new Date();
   const id = uuidv4();
   return withTransaction(async (client) => {
+    if (data.shipFromLocationId) {
+      const orderRes = await client.query<{ warehouse_id: string | null }>(
+        `SELECT warehouse_id
+           FROM sales_orders
+          WHERE tenant_id = $1
+            AND id = $2
+          LIMIT 1`,
+        [tenantId, data.salesOrderId]
+      );
+      const orderWarehouseId = orderRes.rows[0]?.warehouse_id ?? null;
+      const shipFromWarehouseId = await resolveWarehouseIdForLocation(tenantId, data.shipFromLocationId, client);
+      if (!orderWarehouseId || !shipFromWarehouseId) {
+        throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+      }
+      if (orderWarehouseId !== shipFromWarehouseId) {
+        throw new Error('WAREHOUSE_SCOPE_MISMATCH');
+      }
+    }
+
     const shipment = await client.query(
       `INSERT INTO sales_order_shipments (
         id, tenant_id, sales_order_id, shipped_at, ship_from_location_id, inventory_movement_id, external_ref, notes, created_at
@@ -1174,6 +1240,25 @@ export async function postShipment(
     }
 
     const shipFromWarehouseId = await resolveWarehouseIdForLocation(tenantId, shipment.ship_from_location_id, client);
+    if (!shipFromWarehouseId) {
+      throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+    }
+    await assertSellableLocationOrThrow(client, tenantId, shipment.ship_from_location_id);
+    const salesOrderWarehouseRes = await client.query<{ warehouse_id: string | null }>(
+      `SELECT warehouse_id
+         FROM sales_orders
+        WHERE id = $1
+          AND tenant_id = $2
+        LIMIT 1`,
+      [shipment.sales_order_id, tenantId]
+    );
+    const salesOrderWarehouseId = salesOrderWarehouseRes.rows[0]?.warehouse_id ?? null;
+    if (!salesOrderWarehouseId) {
+      throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+    }
+    if (salesOrderWarehouseId !== shipFromWarehouseId) {
+      throw new Error('CROSS_WAREHOUSE_LEAKAGE_BLOCKED');
+    }
     type ShipmentLineContext = {
       line: any;
       canonicalOut: Awaited<ReturnType<typeof getCanonicalMovementFields>>;

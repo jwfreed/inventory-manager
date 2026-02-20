@@ -175,6 +175,119 @@ test('local_code SELLABLE can repeat across warehouses but not inside one wareho
   await assert.rejects(async () => duplicateInsert, (error) => error?.code === '23505');
 });
 
+test('ambiguous SELLABLE candidates fail check-only and --fix', async () => {
+  const session = await ensureTopologySession();
+  const tenantId = session.tenant?.id;
+  assert.ok(tenantId, 'tenantId is required');
+
+  await runTopologyWorkflow(session.pool, tenantId, { fix: true });
+
+  const warehouseRes = await session.pool.query(
+    `SELECT id
+       FROM locations
+      WHERE tenant_id = $1
+        AND code = 'STORE_THAPAE'
+      LIMIT 1`,
+    [tenantId]
+  );
+  const warehouseId = warehouseRes.rows[0]?.id;
+  assert.ok(warehouseId, 'expected STORE_THAPAE warehouse');
+
+  await session.pool.query(
+    `INSERT INTO locations (
+        id, tenant_id, code, local_code, name, type, role, is_sellable, active, parent_location_id, warehouse_id, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, 'bin', 'SELLABLE', true, true, $6, $6, now(), now())`,
+    [
+      randomUUID(),
+      tenantId,
+      `STORE_THAPAE_SELLABLE_AMBIG_${randomUUID().slice(0, 8)}`,
+      `SELLABLE_AMBIG_${randomUUID().slice(0, 4)}`,
+      'Ambiguous Sellable',
+      warehouseId
+    ]
+  );
+
+  const check = await checkWarehouseTopologyDefaults(session.pool, tenantId);
+  assert.ok(
+    check.issues.some((issue) => issue.issue === 'WAREHOUSE_ROLE_AMBIGUOUS'),
+    JSON.stringify(check.issues.slice(0, 10))
+  );
+
+  await assert.rejects(
+    runTopologyWorkflow(session.pool, tenantId, { fix: false }),
+    /WAREHOUSE_ROLE_AMBIGUOUS/
+  );
+  await assert.rejects(
+    runTopologyWorkflow(session.pool, tenantId, { fix: true }),
+    /WAREHOUSE_ROLE_AMBIGUOUS/
+  );
+
+  let stdout = '';
+  await assert.rejects(
+    async () => {
+      await execFileAsync(
+        process.execPath,
+        ['scripts/inventory_invariants_check.mjs', '--tenant-id', tenantId, '--limit', '25'],
+        {
+          cwd: process.cwd(),
+          env: process.env,
+          maxBuffer: 1024 * 1024
+        }
+      );
+    },
+    (error) => {
+      stdout = String(error?.stdout ?? '');
+      return error?.code === 2;
+    }
+  );
+  assert.match(stdout, /\[warehouse_topology_defaults_invalid\] count=/);
+  assert.match(stdout, /WAREHOUSE_ROLE_AMBIGUOUS/);
+  assert.match(stdout, /manual cleanup required/);
+});
+
+test('single candidate default remains stable under --fix', async () => {
+  const session = await ensureTopologySession();
+  const tenantId = session.tenant?.id;
+  assert.ok(tenantId, 'tenantId is required');
+
+  await runTopologyWorkflow(session.pool, tenantId, { fix: true });
+
+  const warehouseRes = await session.pool.query(
+    `SELECT id
+       FROM locations
+      WHERE tenant_id = $1
+        AND code = 'STORE_THAPAE'
+      LIMIT 1`,
+    [tenantId]
+  );
+  const warehouseId = warehouseRes.rows[0]?.id;
+  assert.ok(warehouseId, 'expected STORE_THAPAE warehouse');
+
+  const beforeRes = await session.pool.query(
+    `SELECT location_id
+       FROM warehouse_default_location
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND role = 'SELLABLE'`,
+    [tenantId, warehouseId]
+  );
+  const beforeId = beforeRes.rows[0]?.location_id;
+  assert.ok(beforeId, 'expected SELLABLE default');
+
+  const summary = await runTopologyWorkflow(session.pool, tenantId, { fix: true });
+  assert.equal(summary.defaults_set_count, 0, 'valid defaults should not be overridden');
+
+  const afterRes = await session.pool.query(
+    `SELECT location_id
+       FROM warehouse_default_location
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND role = 'SELLABLE'`,
+    [tenantId, warehouseId]
+  );
+  assert.equal(afterRes.rows[0]?.location_id, beforeId);
+});
+
 test('fix does not override existing valid defaults', async () => {
   const session = await ensureTopologySession();
   const tenantId = session.tenant?.id;
@@ -193,20 +306,27 @@ test('fix does not override existing valid defaults', async () => {
   const warehouseId = warehouseRes.rows[0]?.id;
   assert.ok(warehouseId, 'expected STORE_THAPAE warehouse');
 
-  const altLocationId = randomUUID();
-  await session.pool.query(
-    `INSERT INTO locations (
-        id, tenant_id, code, local_code, name, type, role, is_sellable, active, parent_location_id, warehouse_id, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, 'bin', 'SELLABLE', true, true, $6, $6, now(), now())`,
-    [altLocationId, tenantId, `STORE_THAPAE_SELLABLE_ALT_${randomUUID().slice(0, 8)}`, 'SELLABLE_ALT', 'Alt Sellable', warehouseId]
+  const canonicalRes = await session.pool.query(
+    `SELECT id
+       FROM locations
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND role = 'SELLABLE'
+        AND is_sellable = true
+      ORDER BY created_at ASC, id ASC
+      LIMIT 1`,
+    [tenantId, warehouseId]
   );
+  const canonicalId = canonicalRes.rows[0]?.id;
+  assert.ok(canonicalId, 'expected canonical SELLABLE location');
+
   await session.pool.query(
     `UPDATE warehouse_default_location
         SET location_id = $4
       WHERE tenant_id = $1
         AND warehouse_id = $2
         AND role = $3`,
-    [tenantId, warehouseId, 'SELLABLE', altLocationId]
+    [tenantId, warehouseId, 'SELLABLE', canonicalId]
   );
 
   const summary = await runTopologyWorkflow(session.pool, tenantId, { fix: true });
@@ -214,13 +334,13 @@ test('fix does not override existing valid defaults', async () => {
 
   const defaultRes = await session.pool.query(
     `SELECT location_id
-       FROM warehouse_default_location
+      FROM warehouse_default_location
       WHERE tenant_id = $1
         AND warehouse_id = $2
         AND role = 'SELLABLE'`,
     [tenantId, warehouseId]
   );
-  assert.equal(defaultRes.rows[0]?.location_id, altLocationId);
+  assert.equal(defaultRes.rows[0]?.location_id, canonicalId);
 });
 
 test('inventory invariants script reports clean topology after --fix', async () => {

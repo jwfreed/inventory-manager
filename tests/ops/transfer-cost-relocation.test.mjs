@@ -131,13 +131,14 @@ async function createCustomer(tenantId, db) {
   return id;
 }
 
-async function createSalesOrder(token, { customerId, itemId, quantityOrdered, shipFromLocationId }) {
+async function createSalesOrder(token, { customerId, itemId, quantityOrdered, shipFromLocationId, warehouseId }) {
   const res = await apiRequest('POST', '/sales-orders', {
     token,
     body: {
       soNumber: `SO-${randomUUID().slice(0, 8)}`,
       customerId,
       status: 'submitted',
+      warehouseId,
       shipFromLocationId,
       lines: [{ itemId, uom: 'each', quantityOrdered }]
     }
@@ -166,7 +167,7 @@ test('transfer relocation splits FIFO layers and conserves line costs', async ()
   const tenantId = session.tenant.id;
   const db = session.pool;
   const actorId = session.user?.id ?? null;
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url });
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url });
   const qa = defaults.QA;
   const sellable = defaults.SELLABLE;
 
@@ -296,7 +297,8 @@ test('transferred FIFO layers drive downstream shipment COGS at destination', as
     customerId,
     itemId,
     quantityOrdered: 6,
-    shipFromLocationId: sellable.id
+    shipFromLocationId: sellable.id,
+    warehouseId: warehouse.id
   });
   const shipment = await createShipment(token, {
     salesOrderId: order.id,
@@ -335,7 +337,7 @@ test('concurrent shipment posting cannot over-consume a single FIFO layer', asyn
   const token = session.accessToken;
   const tenantId = session.tenant.id;
   const db = session.pool;
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:concurrency` });
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:concurrency` });
   const sellable = defaults.SELLABLE;
 
   const vendorId = await createVendor(token);
@@ -354,13 +356,15 @@ test('concurrent shipment posting cannot over-consume a single FIFO layer', asyn
     customerId,
     itemId,
     quantityOrdered: 4,
-    shipFromLocationId: sellable.id
+    shipFromLocationId: sellable.id,
+    warehouseId: warehouse.id
   });
   const orderB = await createSalesOrder(token, {
     customerId,
     itemId,
     quantityOrdered: 4,
-    shipFromLocationId: sellable.id
+    shipFromLocationId: sellable.id,
+    warehouseId: warehouse.id
   });
 
   const shipmentA = await createShipment(token, {

@@ -19,9 +19,25 @@ import {
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
+import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
+
+function parseConservationDetails(detail: unknown) {
+  if (typeof detail !== 'string' || detail.length === 0) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(detail);
+    if (parsed && typeof parsed === 'object') {
+      return parsed;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
 
 router.post('/work-orders/:id/issues', async (req: Request, res: Response) => {
   const workOrderId = req.params.id;
@@ -122,6 +138,9 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
     });
     return res.json(issue);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({
         error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
@@ -180,6 +199,13 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
     }
     if (error?.message === 'WO_WIP_COST_LAYERS_MISSING') {
       return res.status(409).json({ error: 'FIFO cost layers required to post work order issues.' });
+    }
+    if (
+      error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
+      error?.message === 'WO_POSTING_IDEMPOTENCY_CONFLICT' ||
+      error?.message === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE'
+    ) {
+      return res.status(409).json({ error: 'Posting idempotency conflict detected. Retry safely.' });
     }
     if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
       return res.status(400).json({ error: error.message });
@@ -274,6 +300,9 @@ router.post('/work-orders/:id/completions/:completionId/post', async (req: Reque
     });
     return res.json(completion);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.message === 'WO_NOT_FOUND') {
       return res.status(404).json({ error: 'Work order not found.' });
     }
@@ -309,6 +338,22 @@ router.post('/work-orders/:id/completions/:completionId/post', async (req: Reque
     }
     if (error?.message === 'WO_WIP_COST_INVALID_OUTPUT_QTY') {
       return res.status(400).json({ error: 'Completion quantities could not be canonicalized for WIP valuation.' });
+    }
+    if (
+      error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
+      error?.message === 'WO_POSTING_IDEMPOTENCY_CONFLICT' ||
+      error?.message === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE'
+    ) {
+      return res.status(409).json({ error: 'Posting idempotency conflict detected. Retry safely.' });
+    }
+    if (error?.message === 'WORK_ORDER_COST_CONSERVATION_FAILED') {
+      return res.status(409).json({
+        error: {
+          code: 'WORK_ORDER_COST_CONSERVATION_FAILED',
+          message: 'Work order posting failed cost conservation checks.',
+          details: parseConservationDetails(error?.detail)
+        }
+      });
     }
     if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
       return res.status(400).json({ error: error.message });
@@ -346,6 +391,8 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
       actor: { type: 'user', id: req.auth!.userId, role: req.auth!.role },
       overrideRequested: parsed.data.overrideNegative,
       overrideReason: parsed.data.overrideReason
+    }, {
+      idempotencyKey: getIdempotencyKey(req)
     });
     const itemIds = Array.from(
       new Set([
@@ -377,6 +424,9 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
     });
     return res.status(201).json(result);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({
         error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
@@ -441,6 +491,37 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
     if (error?.message === 'WO_WIP_COST_INVALID_OUTPUT_QTY') {
       return res.status(400).json({ error: 'Produced quantities could not be canonicalized for WIP valuation.' });
     }
+    if (
+      error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
+      error?.message === 'WO_POSTING_IDEMPOTENCY_CONFLICT' ||
+      error?.message === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE' ||
+      error?.code === 'WO_POSTING_IDEMPOTENCY_CONFLICT' ||
+      error?.code === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE'
+    ) {
+      const code =
+        error?.code === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE' || error?.message === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE'
+          ? 'WO_POSTING_IDEMPOTENCY_INCOMPLETE'
+          : 'WO_POSTING_IDEMPOTENCY_CONFLICT';
+      return res.status(409).json({
+        error: {
+          code,
+          message:
+            code === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE'
+              ? 'Work-order batch posting is incomplete for this idempotency key.'
+              : 'Idempotency key payload conflict detected for work-order batch posting.',
+          details: error?.details
+        }
+      });
+    }
+    if (error?.message === 'WORK_ORDER_COST_CONSERVATION_FAILED') {
+      return res.status(409).json({
+        error: {
+          code: 'WORK_ORDER_COST_CONSERVATION_FAILED',
+          message: 'Work order posting failed cost conservation checks.',
+          details: parseConservationDetails(error?.detail)
+        }
+      });
+    }
     if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
       return res.status(400).json({ error: error.message });
     }
@@ -478,6 +559,19 @@ router.get('/work-orders/:id/execution', async (req: Request, res: Response) => 
     console.error(error);
     return res.status(500).json({ error: 'Failed to load work order execution summary.' });
   }
+});
+
+router.post('/work-orders/:id/reverse', async (req: Request, res: Response) => {
+  const workOrderId = req.params.id;
+  if (!uuidSchema.safeParse(workOrderId).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+  return res.status(409).json({
+    error: {
+      code: 'WORK_ORDER_REVERSAL_NOT_SUPPORTED',
+      message: 'Work order reversal is not supported. Post compensating movements instead.'
+    }
+  });
 });
 
 export default router;

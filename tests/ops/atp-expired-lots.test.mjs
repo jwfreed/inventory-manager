@@ -176,13 +176,14 @@ async function getAtpDetail(token, itemId, locationId, { allowNotFound = false }
   return res.payload.data;
 }
 
-async function createSalesOrder(token, customerId, itemId, quantity, shipFromLocationId) {
+async function createSalesOrder(token, customerId, itemId, quantity, shipFromLocationId, warehouseId) {
   const soRes = await apiRequest('POST', '/sales-orders', {
     token,
     body: {
       soNumber: `SO-${randomUUID()}`,
       customerId,
       status: 'submitted',
+      warehouseId,
       shipFromLocationId,
       lines: [{ itemId, uom: 'each', quantityOrdered: quantity }]
     }
@@ -251,7 +252,7 @@ test('ATP excludes expired lots from sellable on-hand', async () => {
   const tenantId = session.tenant?.id;
   assert.ok(token && tenantId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const itemId = await createItem(token, sellable.id);
   const expiredAt = new Date(Date.now() - 86400000).toISOString();
@@ -337,7 +338,7 @@ test('Derived backorder ignores expired lots', async () => {
     { lotId: expiredLotId, uom: 'each', quantityDelta: '10' }
   ]);
 
-  const order = await createSalesOrder(token, customerId, itemId, 5, sellable.id);
+  const order = await createSalesOrder(token, customerId, itemId, 5, sellable.id, warehouse.id);
   const backorder = await getLineBackorder(token, order.id);
   assert.ok(Math.abs(backorder - 5) < 1e-6, `Expected backorder 5, got ${backorder}`);
 });

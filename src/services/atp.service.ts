@@ -1,6 +1,6 @@
 import { query } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
-import { atpCache, cacheKey } from '../lib/cache';
+import { getAtpCacheValue, setAtpCacheValue } from './atpCache.service';
 
 export type AtpResult = {
   itemId: string;
@@ -76,8 +76,12 @@ export async function getAvailableToPromise(
   tenantId: string,
   params: AtpQueryParams
 ): Promise<AtpResult[]> {
-  const key = cacheKey('atp', tenantId, params as Record<string, unknown>);
-  const cached = atpCache.get(key) as AtpResult[] | undefined;
+  const cached = getAtpCacheValue<AtpResult[]>(tenantId, params.warehouseId, {
+    itemId: params.itemId,
+    locationId: params.locationId,
+    limit: params.limit,
+    offset: params.offset
+  });
   if (cached) return cached;
 
   const sqlParams: any[] = [tenantId, params.warehouseId];
@@ -136,7 +140,17 @@ export async function getAvailableToPromise(
     availableToPromise: normalizeQuantity(row.available_to_promise)
   }));
 
-  atpCache.set(key, results);
+  setAtpCacheValue(
+    tenantId,
+    params.warehouseId,
+    {
+      itemId: params.itemId,
+      locationId: params.locationId,
+      limit: params.limit,
+      offset: params.offset
+    },
+    results
+  );
   return results;
 }
 

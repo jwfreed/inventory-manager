@@ -82,6 +82,7 @@ Behavior:
   - set missing defaults and repair invalid defaults
   - set `local_code` only when canonical location has `local_code IS NULL`
 - guardrails: never delete rows, never mutate canonical `code`, never override valid defaults
+- ambiguity guardrail: if a warehouse has multiple valid candidates for the same role (for example two SELLABLE bins), `--fix` fails with `WAREHOUSE_ROLE_AMBIGUOUS` and requires manual cleanup.
 
 ## Invariants Check
 

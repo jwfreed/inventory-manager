@@ -39,12 +39,20 @@ function normalizeUom(line: MovementLineRow): string {
 
 function isWorkOrderIssue(externalRef: string | null): boolean {
   if (!externalRef) return false;
-  return externalRef.startsWith('work_order_issue') || externalRef.startsWith('work_order_batch_issue');
+  return (
+    externalRef.startsWith('work_order_issue') ||
+    externalRef.startsWith('work_order_batch_issue') ||
+    externalRef.startsWith('work_order_disassembly_issue')
+  );
 }
 
 function isWorkOrderCompletion(externalRef: string | null): boolean {
   if (!externalRef) return false;
-  return externalRef.startsWith('work_order_completion') || externalRef.startsWith('work_order_disassembly_completion');
+  return (
+    externalRef.startsWith('work_order_completion') ||
+    externalRef.startsWith('work_order_disassembly_completion') ||
+    externalRef.startsWith('work_order_batch_completion')
+  );
 }
 
 function isShipment(externalRef: string | null, reasonCode: string | null): boolean {
@@ -135,8 +143,15 @@ export async function projectInventoryMovement(
   const locationIds = Array.from(new Set(lines.map((line) => line.location_id)));
 
   const hasCosts = await hasCostLayerActivity(client, tenantId, movementId);
+  const workOrderCostingHandledInPosting =
+    isWorkOrderIssue(movement.external_ref) || isWorkOrderCompletion(movement.external_ref);
   const transferCostingHandledInPosting =
     movement.movement_type === 'transfer' || movement.movement_type === 'transfer_reversal';
+  if (!hasCosts && workOrderCostingHandledInPosting) {
+    // Manufacturing postings must finish with cost-layer activity in the posting transaction.
+    // The projector is intentionally forbidden from creating production costs post-commit.
+    throw new Error('WORK_ORDER_PROJECTOR_COSTING_FORBIDDEN');
+  }
   if (!hasCosts && !transferCostingHandledInPosting) {
     const sourceType = sourceTypeForMovement(movement);
 

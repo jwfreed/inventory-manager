@@ -8,6 +8,7 @@ import { convertToCanonical } from './uomCanonical.service';
 import { createInventoryCount, postInventoryCount } from './counts.service';
 import { recordAuditLog } from '../lib/audit';
 import { ItemLifecycleStatus } from '../types/item';
+import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 
 export type ImportType = 'items' | 'locations' | 'on_hand';
 
@@ -663,17 +664,25 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
       }
 
       for (const [locationId, lines] of byLocation.entries()) {
+        const warehouseId = await resolveWarehouseIdForLocation(tenantId, locationId);
+        if (!warehouseId) {
+          throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+        }
         const count = await createInventoryCount(
           tenantId,
           {
             countedAt: job.counted_at ?? new Date().toISOString(),
+            warehouseId,
             locationId,
             notes: `Imported on-hand snapshot (${jobId})`,
-            lines
+            lines: lines.map((line) => ({
+              ...line,
+              locationId
+            }))
           },
           { idempotencyKey: `import:${jobId}:${locationId}` }
         );
-        await postInventoryCount(tenantId, count.id, {
+        await postInventoryCount(tenantId, count.id, `import-post:${jobId}:${locationId}`, {
           actor: { type: 'user', id: userId, role: 'admin' }
         });
       }

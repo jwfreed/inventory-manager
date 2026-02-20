@@ -101,13 +101,14 @@ async function createItem(token, sellableLocationId) {
   return res.payload.id;
 }
 
-async function createSalesOrder(token, customerId, itemId, quantity, shipFromLocationId) {
+async function createSalesOrder(token, customerId, itemId, quantity, shipFromLocationId, warehouseId) {
   const soRes = await apiRequest('POST', '/sales-orders', {
     token,
     body: {
       soNumber: `SO-${randomUUID()}`,
       customerId,
       status: 'submitted',
+      warehouseId,
       shipFromLocationId,
       lines: [{ itemId, uom: 'each', quantityOrdered: quantity }]
     }
@@ -223,7 +224,7 @@ test('Derived backorder tracks sellable supply and commitments', async () => {
   const vendorId = await createVendor(token);
   const customerId = await createCustomer(tenantId);
   const itemId = await createItem(token, sellable.id);
-  const { orderId, lineId } = await createSalesOrder(token, customerId, itemId, 10, sellable.id);
+  const { orderId, lineId } = await createSalesOrder(token, customerId, itemId, 10, sellable.id, warehouse.id);
 
   const initialBackorder = await getLineBackorder(token, orderId);
   assert.ok(Math.abs(initialBackorder - 10) < 1e-6);

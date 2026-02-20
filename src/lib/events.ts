@@ -1,8 +1,8 @@
 import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { atpCache, cacheKey } from './cache';
 import { cacheAdapter } from './redis';
 import { publishEvent, startEventSubscriber as startRedisEventSubscriber } from './eventBus';
+import { invalidateAtpCacheForWarehouse } from '../services/atpCache.service';
 
 export type ServerEvent = {
   id: string;
@@ -42,7 +42,21 @@ function emitLocalEvent(tenantId: string, event: ServerEvent) {
 
 function handleInboundEvent(tenantId: string, event: ServerEvent) {
   if (event.type.startsWith('inventory.')) {
-    atpCache.invalidate(cacheKey('atp', tenantId));
+    const warehouseIds = new Set<string>();
+    const data = event.data ?? {};
+    if (typeof data.warehouseId === 'string') {
+      warehouseIds.add(data.warehouseId);
+    }
+    if (Array.isArray(data.warehouseIds)) {
+      for (const warehouseId of data.warehouseIds) {
+        if (typeof warehouseId === 'string' && warehouseId) {
+          warehouseIds.add(warehouseId);
+        }
+      }
+    }
+    for (const warehouseId of warehouseIds.values()) {
+      invalidateAtpCacheForWarehouse(tenantId, warehouseId);
+    }
     cacheAdapter.invalidate(tenantId, '*').catch(() => undefined);
   }
 }

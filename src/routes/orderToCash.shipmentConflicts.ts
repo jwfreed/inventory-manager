@@ -117,5 +117,29 @@ export function handlePostShipmentConflict(error: any, res: Response): boolean {
     );
     return true;
   }
+  if (error?.message === 'NON_SELLABLE_LOCATION') {
+    jsonConflict(
+      res,
+      'NON_SELLABLE_LOCATION',
+      'Shipment source location must be sellable.'
+    );
+    return true;
+  }
+  if (error?.message === 'CROSS_WAREHOUSE_LEAKAGE_BLOCKED') {
+    jsonConflict(
+      res,
+      'CROSS_WAREHOUSE_LEAKAGE_BLOCKED',
+      'Shipment warehouse scope does not match the sales order warehouse.'
+    );
+    return true;
+  }
+  if (error?.message === 'WAREHOUSE_SCOPE_MISMATCH') {
+    jsonConflict(
+      res,
+      'WAREHOUSE_SCOPE_MISMATCH',
+      'Shipment warehouse scope mismatch.'
+    );
+    return true;
+  }
   return false;
 }

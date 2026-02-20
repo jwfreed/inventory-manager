@@ -57,6 +57,7 @@ npm run seed:warehouse-topology -- --tenant-id <TENANT_UUID> --fix
 
 - Default mode is check-only (no writes).
 - `--fix` is conservative repair (create-only + invalid-default repair).
+- If multiple candidate bins exist for the same role in one warehouse, `--fix` fails with `WAREHOUSE_ROLE_AMBIGUOUS`; resolve manually before rerunning.
 
 ## Standard Template (API)
 

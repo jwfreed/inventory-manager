@@ -118,6 +118,160 @@ const reservationBoundsRowsSql = `
    LIMIT $3
 `;
 
+const nonSellableFlowRefsCte = `
+  WITH reservation_refs AS (
+    SELECT 'reservation'::text AS source_type,
+           r.id::text AS source_id,
+           r.tenant_id,
+           r.warehouse_id,
+           r.location_id,
+           r.status AS source_status,
+           r.demand_id::text AS demand_id
+      FROM inventory_reservations r
+     WHERE r.tenant_id = $1
+       AND ($2::uuid IS NULL OR r.warehouse_id = $2::uuid)
+       AND r.status IN ('RESERVED', 'ALLOCATED', 'FULFILLED')
+  ),
+  shipment_refs AS (
+    SELECT 'shipment'::text AS source_type,
+           s.id::text AS source_id,
+           s.tenant_id,
+           so.warehouse_id,
+           s.ship_from_location_id AS location_id,
+           COALESCE(s.status, 'draft') AS source_status,
+           s.sales_order_id::text AS demand_id
+      FROM sales_order_shipments s
+      JOIN sales_orders so
+        ON so.id = s.sales_order_id
+       AND so.tenant_id = s.tenant_id
+     WHERE s.tenant_id = $1
+       AND s.ship_from_location_id IS NOT NULL
+       AND COALESCE(s.status, 'draft') <> 'canceled'
+       AND ($2::uuid IS NULL OR so.warehouse_id = $2::uuid)
+  ),
+  combined AS (
+    SELECT * FROM reservation_refs
+    UNION ALL
+    SELECT * FROM shipment_refs
+  )
+`;
+
+const nonSellableFlowCountSql = `
+  ${nonSellableFlowRefsCte}
+  SELECT COUNT(*)::int AS count
+    FROM combined c
+    JOIN locations l
+      ON l.id = c.location_id
+     AND l.tenant_id = c.tenant_id
+   WHERE l.is_sellable = false
+`;
+
+const nonSellableFlowRowsSql = `
+  ${nonSellableFlowRefsCte}
+  SELECT c.source_type,
+         c.source_id,
+         c.source_status,
+         c.demand_id,
+         c.warehouse_id,
+         c.location_id,
+         l.code AS location_code,
+         l.local_code AS location_local_code,
+         l.role AS location_role,
+         l.is_sellable
+    FROM combined c
+    JOIN locations l
+      ON l.id = c.location_id
+     AND l.tenant_id = c.tenant_id
+   WHERE l.is_sellable = false
+   ORDER BY c.source_type, c.source_id
+   LIMIT $3
+`;
+
+const salesOrderScopeMismatchCte = `
+  WITH reservation_scope_mismatch AS (
+    SELECT 'reservation'::text AS source_type,
+           r.id::text AS source_id,
+           so.id::text AS sales_order_id,
+           so.warehouse_id AS sales_order_warehouse_id,
+           r.warehouse_id AS flow_warehouse_id,
+           l.warehouse_id AS location_warehouse_id,
+           r.location_id,
+           l.code AS location_code,
+           l.local_code AS location_local_code
+      FROM inventory_reservations r
+      JOIN sales_order_lines sol
+        ON sol.id = r.demand_id
+       AND sol.tenant_id = r.tenant_id
+      JOIN sales_orders so
+        ON so.id = sol.sales_order_id
+       AND so.tenant_id = sol.tenant_id
+      JOIN locations l
+        ON l.id = r.location_id
+       AND l.tenant_id = r.tenant_id
+     WHERE r.tenant_id = $1
+       AND r.demand_type = 'sales_order_line'
+       AND ($2::uuid IS NULL OR so.warehouse_id = $2::uuid)
+       AND (
+         so.warehouse_id IS DISTINCT FROM r.warehouse_id
+         OR so.warehouse_id IS DISTINCT FROM l.warehouse_id
+       )
+  ),
+  shipment_scope_mismatch AS (
+    SELECT 'shipment'::text AS source_type,
+           s.id::text AS source_id,
+           so.id::text AS sales_order_id,
+           so.warehouse_id AS sales_order_warehouse_id,
+           l.warehouse_id AS flow_warehouse_id,
+           l.warehouse_id AS location_warehouse_id,
+           s.ship_from_location_id AS location_id,
+           l.code AS location_code,
+           l.local_code AS location_local_code
+      FROM sales_order_shipments s
+      JOIN sales_orders so
+        ON so.id = s.sales_order_id
+       AND so.tenant_id = s.tenant_id
+      LEFT JOIN locations l
+        ON l.id = s.ship_from_location_id
+       AND l.tenant_id = s.tenant_id
+     WHERE s.tenant_id = $1
+       AND s.ship_from_location_id IS NOT NULL
+       AND COALESCE(s.status, 'draft') <> 'canceled'
+       AND ($2::uuid IS NULL OR so.warehouse_id = $2::uuid)
+       AND (
+         so.warehouse_id IS NULL
+         OR l.warehouse_id IS NULL
+         OR so.warehouse_id IS DISTINCT FROM l.warehouse_id
+       )
+  ),
+  combined AS (
+    SELECT * FROM reservation_scope_mismatch
+    UNION ALL
+    SELECT * FROM shipment_scope_mismatch
+  )
+`;
+
+const salesOrderScopeMismatchCountSql = `
+  ${salesOrderScopeMismatchCte}
+  SELECT COUNT(*)::int AS count
+    FROM combined
+`;
+
+const salesOrderScopeMismatchRowsSql = `
+  ${salesOrderScopeMismatchCte}
+  SELECT source_type,
+         source_id,
+         sales_order_id,
+         sales_order_warehouse_id,
+         flow_warehouse_id,
+         location_warehouse_id,
+         location_id,
+         location_code,
+         location_local_code
+    FROM combined
+   ORDER BY source_type, source_id
+   LIMIT $3
+`;
+
 const commitmentsDriftCte = `
   WITH commitments AS (
     SELECT r.tenant_id,
@@ -258,6 +412,120 @@ const availabilityReconciliationRowsSql = `
    LIMIT $3
 `;
 
+const workOrderCostConservationCte = `
+  WITH posted_executions AS (
+    SELECT e.id,
+           e.tenant_id,
+           e.work_order_id,
+           e.production_movement_id
+      FROM work_order_executions e
+     WHERE e.tenant_id = $1
+       AND e.status = 'posted'
+       AND e.production_movement_id IS NOT NULL
+       AND (
+         $2::uuid IS NULL
+         OR EXISTS (
+           SELECT 1
+             FROM inventory_movement_lines iml
+             JOIN locations l
+               ON l.id = iml.location_id
+              AND l.tenant_id = iml.tenant_id
+            WHERE iml.tenant_id = e.tenant_id
+              AND iml.movement_id = e.production_movement_id
+              AND l.warehouse_id = $2::uuid
+         )
+       )
+  ),
+  component_cost AS (
+    SELECT clc.wip_execution_id,
+           COALESCE(SUM(clc.extended_cost), 0)::numeric AS total_component_cost
+      FROM cost_layer_consumptions clc
+      JOIN posted_executions pe
+        ON pe.id = clc.wip_execution_id
+       AND pe.tenant_id = clc.tenant_id
+     WHERE clc.consumption_type = 'production_input'
+     GROUP BY clc.wip_execution_id
+  ),
+  movement_cost AS (
+    SELECT iml.movement_id,
+           COALESCE(
+             SUM(
+               CASE
+                 WHEN COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+                  AND lower(COALESCE(iml.reason_code, '')) NOT IN ('scrap', 'work_order_scrap', 'reject', 'work_order_reject')
+                 THEN COALESCE(
+                   iml.extended_cost,
+                   COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) * COALESCE(iml.unit_cost, 0)
+                 )
+                 ELSE 0
+               END
+             ),
+             0
+           )::numeric AS total_fg_cost,
+           COALESCE(
+             SUM(
+               CASE
+                 WHEN COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+                  AND lower(COALESCE(iml.reason_code, '')) IN ('scrap', 'work_order_scrap', 'reject', 'work_order_reject')
+                 THEN COALESCE(
+                   iml.extended_cost,
+                   COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) * COALESCE(iml.unit_cost, 0)
+                 )
+                 ELSE 0
+               END
+             ),
+             0
+           )::numeric AS scrap_cost
+      FROM inventory_movement_lines iml
+      JOIN posted_executions pe
+        ON pe.production_movement_id = iml.movement_id
+       AND pe.tenant_id = iml.tenant_id
+     GROUP BY iml.movement_id
+  ),
+  combined AS (
+    SELECT pe.tenant_id,
+           pe.work_order_id,
+           pe.id AS work_order_execution_id,
+           pe.production_movement_id,
+           COALESCE(cc.total_component_cost, 0)::numeric AS total_component_cost,
+           COALESCE(mc.total_fg_cost, 0)::numeric AS total_fg_cost,
+           COALESCE(mc.scrap_cost, 0)::numeric AS scrap_cost,
+           (
+             COALESCE(cc.total_component_cost, 0)
+             - COALESCE(mc.total_fg_cost, 0)
+             - COALESCE(mc.scrap_cost, 0)
+           )::numeric AS difference
+      FROM posted_executions pe
+      LEFT JOIN component_cost cc
+        ON cc.wip_execution_id = pe.id
+      LEFT JOIN movement_cost mc
+        ON mc.movement_id = pe.production_movement_id
+  )
+`;
+
+const workOrderCostConservationCountSql = `
+  ${workOrderCostConservationCte}
+  SELECT COUNT(*)::int AS count
+    FROM combined
+   WHERE ABS(difference) > 0.000001
+`;
+
+const workOrderCostConservationRowsSql = `
+  ${workOrderCostConservationCte}
+  SELECT tenant_id,
+         work_order_id,
+         work_order_execution_id,
+         production_movement_id,
+         total_component_cost,
+         total_fg_cost,
+         scrap_cost,
+         difference
+    FROM combined
+   WHERE ABS(difference) > 0.000001
+   ORDER BY ABS(difference) DESC, work_order_execution_id
+   LIMIT $3
+`;
+
 let exitCode = 0;
 
 try {
@@ -280,6 +548,26 @@ try {
   const reservationBoundsCount = Number(reservationBoundsCountRes.rows[0]?.count ?? 0);
   printSection('reservation_quantity_violations', reservationBoundsCount, reservationBoundsRowsRes.rows);
   if (reservationBoundsCount > 0) {
+    exitCode = 2;
+  }
+
+  const [nonSellableFlowCountRes, nonSellableFlowRowsRes] = await Promise.all([
+    pool.query(nonSellableFlowCountSql, params2),
+    pool.query(nonSellableFlowRowsSql, params3)
+  ]);
+  const nonSellableFlowCount = Number(nonSellableFlowCountRes.rows[0]?.count ?? 0);
+  printSection('non_sellable_flow_scope_invalid', nonSellableFlowCount, nonSellableFlowRowsRes.rows);
+  if (nonSellableFlowCount > 0) {
+    exitCode = 2;
+  }
+
+  const [salesOrderScopeMismatchCountRes, salesOrderScopeMismatchRowsRes] = await Promise.all([
+    pool.query(salesOrderScopeMismatchCountSql, params2),
+    pool.query(salesOrderScopeMismatchRowsSql, params3)
+  ]);
+  const salesOrderScopeMismatchCount = Number(salesOrderScopeMismatchCountRes.rows[0]?.count ?? 0);
+  printSection('sales_order_warehouse_scope_mismatch', salesOrderScopeMismatchCount, salesOrderScopeMismatchRowsRes.rows);
+  if (salesOrderScopeMismatchCount > 0) {
     exitCode = 2;
   }
 
@@ -312,6 +600,20 @@ try {
     availabilityReconciliationRowsRes.rows
   );
   if (availabilityReconciliationCount > 0) {
+    exitCode = 2;
+  }
+
+  const [workOrderCostCountRes, workOrderCostRowsRes] = await Promise.all([
+    pool.query(workOrderCostConservationCountSql, params2),
+    pool.query(workOrderCostConservationRowsSql, params3)
+  ]);
+  const workOrderCostDriftCount = Number(workOrderCostCountRes.rows[0]?.count ?? 0);
+  printSection(
+    'work_order_cost_conservation_drift',
+    workOrderCostDriftCount,
+    workOrderCostRowsRes.rows
+  );
+  if (workOrderCostDriftCount > 0) {
     exitCode = 2;
   }
 
@@ -360,6 +662,12 @@ try {
     topologyCheck.warningCount ?? 0,
     (topologyCheck.warnings ?? []).slice(0, limit)
   );
+  const hasAmbiguousWarehouseRole = (topologyCheck.issues ?? []).some(
+    (issue) => issue?.issue === 'WAREHOUSE_ROLE_AMBIGUOUS'
+  );
+  if (hasAmbiguousWarehouseRole) {
+    console.log('  action: manual cleanup required for ambiguous warehouse role candidates before rerunning --fix');
+  }
   if (topologyCheck.count > 0) {
     console.log('  hint: run `npm run seed:warehouse-topology -- --tenant-id <TENANT_UUID> --fix`');
   }

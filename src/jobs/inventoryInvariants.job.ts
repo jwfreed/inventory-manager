@@ -19,6 +19,8 @@ type InventoryInvariantSummary = {
   reservationBalanceMismatchCount: number;
   warehouseIdDriftCount: number;
   reservationWarehouseHistoricalMismatchCount: number;
+  nonSellableFlowScopeInvalidCount: number;
+  salesOrderWarehouseScopeMismatchCount: number;
 };
 
 async function getAllActiveTenants(): Promise<Tenant[]> {
@@ -276,6 +278,93 @@ export async function runInventoryInvariantCheck(
           );
         }
 
+        const nonSellableFlowScopeInvalid = await query<{ count: string }>(
+          `WITH reservation_refs AS (
+             SELECT r.tenant_id, r.location_id
+               FROM inventory_reservations r
+              WHERE r.tenant_id = $1
+                AND r.status IN ('RESERVED','ALLOCATED','FULFILLED')
+           ),
+           shipment_refs AS (
+             SELECT s.tenant_id, s.ship_from_location_id AS location_id
+               FROM sales_order_shipments s
+              WHERE s.tenant_id = $1
+                AND s.ship_from_location_id IS NOT NULL
+                AND COALESCE(s.status, 'draft') <> 'canceled'
+           ),
+           combined AS (
+             SELECT * FROM reservation_refs
+             UNION ALL
+             SELECT * FROM shipment_refs
+           )
+           SELECT COUNT(*) AS count
+             FROM combined c
+             JOIN locations l
+               ON l.id = c.location_id
+              AND l.tenant_id = c.tenant_id
+            WHERE l.is_sellable = false`,
+          [tenant.id]
+        );
+        const nonSellableFlowScopeInvalidCount = Number(nonSellableFlowScopeInvalid.rows[0]?.count ?? 0);
+        if (nonSellableFlowScopeInvalidCount > 0) {
+          console.warn(
+            `Invariant violation for tenant ${tenant.slug}: ${nonSellableFlowScopeInvalidCount} non-sellable reservation/fulfillment flow reference(s)`
+          );
+        }
+
+        const salesOrderWarehouseScopeMismatch = await query<{ count: string }>(
+          `WITH reservation_scope_mismatch AS (
+             SELECT r.id
+               FROM inventory_reservations r
+               JOIN sales_order_lines sol
+                 ON sol.id = r.demand_id
+                AND sol.tenant_id = r.tenant_id
+               JOIN sales_orders so
+                 ON so.id = sol.sales_order_id
+                AND so.tenant_id = sol.tenant_id
+               JOIN locations l
+                 ON l.id = r.location_id
+                AND l.tenant_id = r.tenant_id
+              WHERE r.tenant_id = $1
+                AND r.demand_type = 'sales_order_line'
+                AND (
+                  so.warehouse_id IS DISTINCT FROM r.warehouse_id
+                  OR so.warehouse_id IS DISTINCT FROM l.warehouse_id
+                )
+           ),
+           shipment_scope_mismatch AS (
+             SELECT s.id
+               FROM sales_order_shipments s
+               JOIN sales_orders so
+                 ON so.id = s.sales_order_id
+                AND so.tenant_id = s.tenant_id
+               LEFT JOIN locations l
+                 ON l.id = s.ship_from_location_id
+                AND l.tenant_id = s.tenant_id
+              WHERE s.tenant_id = $1
+                AND s.ship_from_location_id IS NOT NULL
+                AND COALESCE(s.status, 'draft') <> 'canceled'
+                AND (
+                  so.warehouse_id IS NULL
+                  OR l.warehouse_id IS NULL
+                  OR so.warehouse_id IS DISTINCT FROM l.warehouse_id
+                )
+           )
+           SELECT (
+             (SELECT COUNT(*) FROM reservation_scope_mismatch)
+             + (SELECT COUNT(*) FROM shipment_scope_mismatch)
+           )::text AS count`,
+          [tenant.id]
+        );
+        const salesOrderWarehouseScopeMismatchCount = Number(
+          salesOrderWarehouseScopeMismatch.rows[0]?.count ?? 0
+        );
+        if (salesOrderWarehouseScopeMismatchCount > 0) {
+          console.warn(
+            `Invariant violation for tenant ${tenant.slug}: ${salesOrderWarehouseScopeMismatchCount} sales-order warehouse scope mismatch(es)`
+          );
+        }
+
         if (mismatchCount > 0) {
           const samples = await query(
             `WITH reservation_committed AS (
@@ -384,7 +473,9 @@ export async function runInventoryInvariantCheck(
           negativeCount,
           reservationBalanceMismatchCount: mismatchCount,
           warehouseIdDriftCount,
-          reservationWarehouseHistoricalMismatchCount
+          reservationWarehouseHistoricalMismatchCount,
+          nonSellableFlowScopeInvalidCount,
+          salesOrderWarehouseScopeMismatchCount
         });
       } catch (error) {
         console.error(`Inventory invariant check failed for tenant ${tenant.slug}:`, error);

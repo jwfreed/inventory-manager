@@ -15,4 +15,6 @@ export {
   type InventoryBalanceRow
 } from './internal/inventoryBalance';
 
+export { assertSellableLocationOrThrow } from './internal/locationGuards';
+
 export { enqueueInventoryMovementPosted, enqueueInventoryReservationChanged } from './outbox';

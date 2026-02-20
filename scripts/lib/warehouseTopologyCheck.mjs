@@ -19,6 +19,58 @@ function expectedTypeForRole(role) {
   return role === 'SCRAP' ? 'scrap' : 'bin';
 }
 
+function isRoleCandidate(location, warehouseId, role) {
+  if (!location) return false;
+  if (location.warehouse_id !== warehouseId) return false;
+  if (location.parent_location_id !== warehouseId) return false;
+  if (location.active !== true) return false;
+
+  if (role === 'SELLABLE') {
+    return location.type === 'bin' && location.is_sellable === true;
+  }
+  if (role === 'SCRAP') {
+    return location.type === 'scrap' && location.role === 'SCRAP';
+  }
+  return location.type === 'bin' && location.role === role;
+}
+
+function formatCandidate(location) {
+  return {
+    id: location.id,
+    code: location.code,
+    localCode: location.local_code ?? null
+  };
+}
+
+function pushAmbiguityIssues(issues, topology, warehouseByCode, locationsByWarehouseId) {
+  const rolesByWarehouse = new Map();
+  for (const entry of topology.defaults) {
+    if (!rolesByWarehouse.has(entry.warehouseCode)) {
+      rolesByWarehouse.set(entry.warehouseCode, new Set());
+    }
+    rolesByWarehouse.get(entry.warehouseCode).add(entry.role);
+  }
+
+  for (const [warehouseCode, roles] of rolesByWarehouse.entries()) {
+    const warehouse = warehouseByCode.get(warehouseCode);
+    if (!warehouse) continue;
+    const locations = locationsByWarehouseId.get(warehouse.id) ?? [];
+    for (const role of roles) {
+      const candidates = locations.filter((location) => isRoleCandidate(location, warehouse.id, role));
+      if (candidates.length > 1) {
+        addIssue(issues, {
+          issue: 'WAREHOUSE_ROLE_AMBIGUOUS',
+          warehouseCode,
+          warehouseId: warehouse.id,
+          role,
+          candidateCount: candidates.length,
+          candidates: candidates.map(formatCandidate)
+        });
+      }
+    }
+  }
+}
+
 function isDefaultLocationValid(location, warehouseId, role) {
   if (!location) {
     return { valid: false, reason: 'missing' };
@@ -106,7 +158,7 @@ async function loadTopologyState(client, tenantId, topology) {
   const expectedWarehouseCodes = topology.warehouses.map((warehouse) => warehouse.code);
   const expectedLocationCodes = topology.locations.map((location) => location.code);
 
-  const [warehouseRes, locationRes, defaultsRes, duplicateTenantCodeRes, duplicateLocalCodeRes] =
+  const [warehouseRes, locationRes, defaultsRes, duplicateTenantCodeRes, duplicateLocalCodeRes, allWarehouseLocationsRes] =
     await Promise.all([
       client.query(
         `SELECT id, code, name, type, role, is_sellable, active, parent_location_id, warehouse_id, local_code
@@ -148,6 +200,19 @@ async function loadTopologyState(client, tenantId, topology) {
           ORDER BY duplicate_count DESC, warehouse_id, local_code
           LIMIT 25`,
         [tenantId]
+      ),
+      client.query(
+        `SELECT id, code, local_code, warehouse_id, parent_location_id, type, role, is_sellable, active
+           FROM locations
+          WHERE tenant_id = $1
+            AND warehouse_id IN (
+              SELECT id
+                FROM locations
+               WHERE tenant_id = $1
+                 AND code = ANY($2::text[])
+                 AND type = 'warehouse'
+            )`,
+        [tenantId, expectedWarehouseCodes]
       )
     ]);
 
@@ -170,6 +235,14 @@ async function loadTopologyState(client, tenantId, topology) {
     defaultLocationById = new Map(defaultLocationsRes.rows.map((row) => [row.id, row]));
   }
 
+  const locationsByWarehouseId = new Map();
+  for (const row of allWarehouseLocationsRes.rows) {
+    if (!locationsByWarehouseId.has(row.warehouse_id)) {
+      locationsByWarehouseId.set(row.warehouse_id, []);
+    }
+    locationsByWarehouseId.get(row.warehouse_id).push(row);
+  }
+
   return {
     expectedWarehouseCodes,
     expectedLocationCodes,
@@ -177,6 +250,7 @@ async function loadTopologyState(client, tenantId, topology) {
     locationByCode,
     defaultsByWarehouseRole,
     defaultLocationById,
+    locationsByWarehouseId,
     duplicateTenantCodeRows: duplicateTenantCodeRes.rows,
     duplicateLocalCodeRows: duplicateLocalCodeRes.rows
   };
@@ -225,6 +299,13 @@ async function evaluateTopologyState(client, tenantId, topology) {
       duplicateCount: Number(row.duplicate_count)
     });
   }
+
+  pushAmbiguityIssues(
+    issues,
+    topology,
+    topologyState.warehouseByCode,
+    topologyState.locationsByWarehouseId
+  );
 
   const expectedLocationByWarehouseAndLocalCode = new Map();
   for (const expectedWarehouse of topology.warehouses) {
@@ -631,6 +712,18 @@ export async function fix(client, tenantId, options = {}) {
     const row = duplicateLocalCodeRes.rows[0];
     throw new Error(
       `TOPOLOGY_NON_REPAIRABLE_LOCAL_CODE_DUPLICATE warehouseId=${row.warehouse_id} localCode=${row.local_code}`
+    );
+  }
+
+  const latestState = await loadTopologyState(client, tenantId, topology);
+  const ambiguityIssues = [];
+  pushAmbiguityIssues(ambiguityIssues, topology, latestState.warehouseByCode, latestState.locationsByWarehouseId);
+  if (ambiguityIssues.length > 0) {
+    const first = ambiguityIssues[0];
+    throw new Error(
+      `WAREHOUSE_ROLE_AMBIGUOUS warehouse=${first.warehouseCode} role=${first.role} candidates=${JSON.stringify(
+        first.candidates
+      )}`
     );
   }
 

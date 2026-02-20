@@ -41,6 +41,30 @@ This doc is the operational glossary for the inventory snapshot endpoint (`GET /
 - A max depth guard (`BOM_EXPANSION_MAX_DEPTH`, default `20`) fails closed with `BOM_MAX_DEPTH_EXCEEDED` and the current path.
 - These guardrails prevent infinite recursion only; they do not change ledger, FIFO, transfer costing, or availability semantics.
 
+## Manufacturing Cost Integrity
+
+- Work-order posting is ledger-authoritative and in-transaction: component issue consumption (`production_input`) and FG receipt layer creation happen in the same DB transaction.
+- Canonical production valuation is FIFO layer-based. FG layers are created with unit cost derived from allocated component consumption value (not projector post-processing).
+- Posting idempotency:
+  - issue/completion posting uses deterministic movement source/idempotency keys scoped to the execution/issue id
+  - batch posting supports request idempotency via `Idempotency-Key`; retries return the same movement ids and do not re-consume FIFO
+  - `(tenant_id, Idempotency-Key)` is bound to a normalized batch payload hash (work order, occurredAt, consume/produce lines, override flags). Reusing a key with different payload fails with `WO_POSTING_IDEMPOTENCY_CONFLICT`.
+  - replay completeness is explicit: if an idempotency record exists but execution/movement posting is incomplete, API returns `WO_POSTING_IDEMPOTENCY_INCOMPLETE` with missing execution ids.
+- Conservation unit (DB check): deferred trigger compares execution-linked `cost_layer_consumptions` value (`consumption_type='production_input'`) against posted production `inventory_movement_lines` value for that execution’s production movement.
+- Deferred DB conservation check (`WORK_ORDER_COST_CONSERVATION_FAILED`) enforces:
+  - `total_component_cost = total_fg_cost + scrap_cost`
+  - `fg_cost`/`scrap_cost` are split from positive production movement lines by `reason_code`
+  - tolerance: absolute difference `<= 1e-6` (epsilon)
+- Ops drift monitor: `scripts/inventory_invariants_check.mjs` section `work_order_cost_conservation_drift`.
+- Scrap/reject accounting in conservation uses production movement line `reason_code` in:
+  - `scrap`, `work_order_scrap`, `reject`, `work_order_reject`
+  - these lines are counted as `scrap_cost`; other positive production lines are `fg_cost`
+- Precision expectations: cost-layer and movement value fields are persisted as PostgreSQL `numeric` (scale-constrained columns), and conservation is validated with epsilon (`1e-6`) to avoid false failures on fractional allocations.
+- Yield semantics: implicit yield transformations are allowed; if no explicit scrap/reject line is posted, any yield loss is reflected as higher FG unit cost while preserving total component value.
+- WIP model: virtual linkage, not physical WIP stock. WIP value is represented by `cost_layer_consumptions.wip_execution_id` and execution/work-order WIP fields; value is allocated directly from issue consumptions to FG receipt in the same posting transaction.
+- Projector guardrail: work-order movements must already have cost-layer activity when posted; projector is forbidden from creating manufacturing costs after commit.
+- Reversal policy: work-order reversal is not supported in this phase. Corrective action must be posted as new ledger movements (never mutation of posted movements/lines).
+
 ## Relationships
 
 - `available = onHand - reservedQty - allocatedQty`

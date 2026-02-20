@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import type { z } from 'zod';
-import { query, withTransaction } from '../db';
+import { createHash } from 'crypto';
+import { query, withTransaction, withTransactionRetry } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { fetchBomById } from './boms.service';
 import { recordAuditLog } from '../lib/audit';
@@ -28,6 +29,174 @@ type WorkOrderCompletionCreateInput = z.infer<typeof workOrderCompletionCreateSc
 type WorkOrderBatchInput = z.infer<typeof workOrderBatchSchema>;
 
 const WIP_COST_METHOD = 'fifo';
+const WORK_ORDER_POST_RETRY_OPTIONS = { isolationLevel: 'SERIALIZABLE' as const, retries: 2 };
+
+type DomainError = Error & {
+  code?: string;
+  details?: Record<string, unknown>;
+};
+
+function domainError(code: string, details?: Record<string, unknown>): DomainError {
+  const error = new Error(code) as DomainError;
+  error.code = code;
+  if (details !== undefined) {
+    error.details = details;
+  }
+  return error;
+}
+
+function compareNullableText(a: string | null | undefined, b: string | null | undefined) {
+  const left = a ?? '';
+  const right = b ?? '';
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function compareIssueLineLockKey(a: WorkOrderMaterialIssueLineRow, b: WorkOrderMaterialIssueLineRow) {
+  return (
+    compareNullableText(a.component_item_id, b.component_item_id) ||
+    compareNullableText(a.from_location_id, b.from_location_id) ||
+    compareNullableText(a.uom, b.uom) ||
+    a.line_number - b.line_number ||
+    compareNullableText(a.id, b.id)
+  );
+}
+
+function compareProduceLineLockKey(a: WorkOrderExecutionLineRow, b: WorkOrderExecutionLineRow) {
+  return (
+    compareNullableText(a.item_id, b.item_id) ||
+    compareNullableText(a.to_location_id, b.to_location_id) ||
+    compareNullableText(a.uom, b.uom) ||
+    compareNullableText(a.id, b.id)
+  );
+}
+
+function compareBatchConsumeKey(
+  a: {
+    componentItemId: string;
+    fromLocationId: string;
+    uom: string;
+  },
+  b: {
+    componentItemId: string;
+    fromLocationId: string;
+    uom: string;
+  }
+) {
+  return (
+    compareNullableText(a.componentItemId, b.componentItemId) ||
+    compareNullableText(a.fromLocationId, b.fromLocationId) ||
+    compareNullableText(a.uom, b.uom)
+  );
+}
+
+function compareBatchProduceKey(
+  a: {
+    outputItemId: string;
+    toLocationId: string;
+    uom: string;
+  },
+  b: {
+    outputItemId: string;
+    toLocationId: string;
+    uom: string;
+  }
+) {
+  return (
+    compareNullableText(a.outputItemId, b.outputItemId) ||
+    compareNullableText(a.toLocationId, b.toLocationId) ||
+    compareNullableText(a.uom, b.uom)
+  );
+}
+
+type NormalizedBatchConsumeLine = {
+  componentItemId: string;
+  fromLocationId: string;
+  uom: string;
+  quantity: number;
+  reasonCode: string | null;
+  notes: string | null;
+};
+
+type NormalizedBatchProduceLine = {
+  outputItemId: string;
+  toLocationId: string;
+  uom: string;
+  quantity: number;
+  packSize: number | null;
+  reasonCode: string | null;
+  notes: string | null;
+};
+
+function normalizedBatchConsumeSortKey(line: NormalizedBatchConsumeLine) {
+  return [
+    line.componentItemId,
+    line.fromLocationId,
+    line.uom,
+    line.quantity.toString(),
+    line.reasonCode ?? '',
+    line.notes ?? ''
+  ].join('|');
+}
+
+function normalizedBatchProduceSortKey(line: NormalizedBatchProduceLine) {
+  return [
+    line.outputItemId,
+    line.toLocationId,
+    line.uom,
+    line.quantity.toString(),
+    line.packSize?.toString() ?? '',
+    line.reasonCode ?? '',
+    line.notes ?? ''
+  ].join('|');
+}
+
+function normalizeBatchRequestPayload(params: {
+  workOrderId: string;
+  occurredAt: Date;
+  notes?: string | null;
+  overrideNegative?: boolean;
+  overrideReason?: string | null;
+  consumeLines: NormalizedBatchConsumeLine[];
+  produceLines: NormalizedBatchProduceLine[];
+}) {
+  const normalizedConsumeLines = [...params.consumeLines]
+    .map((line) => ({
+      componentItemId: line.componentItemId,
+      fromLocationId: line.fromLocationId,
+      uom: line.uom,
+      quantity: roundQuantity(line.quantity),
+      reasonCode: line.reasonCode ?? null,
+      notes: line.notes ?? null
+    }))
+    .sort((a, b) => normalizedBatchConsumeSortKey(a).localeCompare(normalizedBatchConsumeSortKey(b)));
+  const normalizedProduceLines = [...params.produceLines]
+    .map((line) => ({
+      outputItemId: line.outputItemId,
+      toLocationId: line.toLocationId,
+      uom: line.uom,
+      quantity: roundQuantity(line.quantity),
+      packSize: line.packSize !== null ? roundQuantity(line.packSize) : null,
+      reasonCode: line.reasonCode ?? null,
+      notes: line.notes ?? null
+    }))
+    .sort((a, b) => normalizedBatchProduceSortKey(a).localeCompare(normalizedBatchProduceSortKey(b)));
+
+  return {
+    workOrderId: params.workOrderId,
+    occurredAt: params.occurredAt.toISOString(),
+    notes: params.notes ?? null,
+    overrideNegative: params.overrideNegative ?? false,
+    overrideReason: params.overrideReason ?? null,
+    consumeLines: normalizedConsumeLines,
+    produceLines: normalizedProduceLines
+  };
+}
+
+function hashNormalizedBatchRequest(payload: Record<string, unknown>) {
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
 
 type NegativeOverrideContext = {
   actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
@@ -158,6 +327,126 @@ function mapExecution(row: WorkOrderExecutionRow, lines: WorkOrderExecutionLineR
       notes: line.notes,
       createdAt: line.created_at
     }))
+  };
+}
+
+async function ensurePostedMovementReady(
+  client: PoolClient,
+  tenantId: string,
+  movementId: string
+) {
+  const movementRes = await client.query<{ status: string }>(
+    `SELECT status
+       FROM inventory_movements
+      WHERE id = $1
+        AND tenant_id = $2
+      FOR UPDATE`,
+    [movementId, tenantId]
+  );
+  if (movementRes.rowCount === 0) {
+    throw new Error('WO_POSTING_MOVEMENT_MISSING');
+  }
+  if (movementRes.rows[0].status !== 'posted') {
+    throw new Error('WO_POSTING_IDEMPOTENCY_CONFLICT');
+  }
+  const lineRes = await client.query(
+    `SELECT 1
+       FROM inventory_movement_lines
+      WHERE movement_id = $1
+      LIMIT 1`,
+    [movementId]
+  );
+  if (lineRes.rowCount === 0) {
+    throw new Error('WO_POSTING_IDEMPOTENCY_INCOMPLETE');
+  }
+}
+
+async function findPostedBatchByIdempotencyKey(
+  client: PoolClient,
+  tenantId: string,
+  idempotencyKey: string,
+  expectedRequestHash: string
+) {
+  const existing = await client.query<{
+    id: string;
+    work_order_id: string;
+    status: string;
+    consumption_movement_id: string | null;
+    production_movement_id: string | null;
+    quantity_completed: string | number | null;
+    work_order_status: string;
+    idempotency_request_hash: string | null;
+  }>(
+    `SELECT e.id,
+            e.work_order_id,
+            e.status,
+            e.consumption_movement_id,
+            e.production_movement_id,
+            w.quantity_completed,
+            w.status AS work_order_status,
+            e.idempotency_request_hash
+       FROM work_order_executions e
+       JOIN work_orders w
+         ON w.id = e.work_order_id
+        AND w.tenant_id = e.tenant_id
+      WHERE e.tenant_id = $1
+        AND e.idempotency_key = $2
+      FOR UPDATE OF e`,
+    [tenantId, idempotencyKey]
+  );
+  if (existing.rowCount === 0) {
+    return null;
+  }
+  const row = existing.rows[0];
+  if (!row.idempotency_request_hash) {
+    throw domainError('WO_POSTING_IDEMPOTENCY_CONFLICT', {
+      reason: 'missing_request_hash',
+      executionId: row.id
+    });
+  }
+  if (row.idempotency_request_hash !== expectedRequestHash) {
+    throw domainError('WO_POSTING_IDEMPOTENCY_CONFLICT', {
+      reason: 'request_hash_mismatch',
+      executionId: row.id
+    });
+  }
+  if (row.status !== 'posted') {
+    throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+      reason: 'execution_not_posted',
+      missingExecutionIds: [row.id],
+      hint: 'Retry with the same Idempotency-Key or contact admin'
+    });
+  }
+  if (!row.consumption_movement_id || !row.production_movement_id) {
+    throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+      reason: 'missing_execution_movements',
+      missingExecutionIds: [row.id],
+      hint: 'Retry with the same Idempotency-Key or contact admin'
+    });
+  }
+  try {
+    await ensurePostedMovementReady(client, tenantId, row.consumption_movement_id);
+    await ensurePostedMovementReady(client, tenantId, row.production_movement_id);
+  } catch (error: any) {
+    if (
+      error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
+      error?.message === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE'
+    ) {
+      throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+        reason: 'movement_not_ready',
+        missingExecutionIds: [row.id],
+        hint: 'Retry with the same Idempotency-Key or contact admin'
+      });
+    }
+    throw error;
+  }
+  return {
+    executionId: row.id,
+    workOrderId: row.work_order_id,
+    issueMovementId: row.consumption_movement_id,
+    receiveMovementId: row.production_movement_id,
+    quantityCompleted: roundQuantity(toNumber(row.quantity_completed ?? 0)),
+    workOrderStatus: row.work_order_status
   };
 }
 
@@ -362,7 +651,7 @@ export async function postWorkOrderIssue(
   issueId: string,
   context: NegativeOverrideContext = {}
 ) {
-  return withTransaction(async (client) => {
+  return withTransactionRetry(async (client) => {
     const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
@@ -394,13 +683,14 @@ export async function postWorkOrderIssue(
     if (linesResult.rowCount === 0) {
       throw new Error('WO_ISSUE_NO_LINES');
     }
+    const linesForPosting = [...linesResult.rows].sort(compareIssueLineLockKey);
 
     const now = new Date();
     const occurredAt = new Date(issue.occurred_at);
     const validation = await validateSufficientStock(
       tenantId,
       occurredAt,
-      linesResult.rows.map((line) => ({
+      linesForPosting.map((line) => ({
         itemId: line.component_item_id,
         locationId: line.from_location_id,
         uom: line.uom,
@@ -430,6 +720,9 @@ export async function postWorkOrderIssue(
       externalRef: isDisassembly
         ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
         : `work_order_issue:${issueId}:${workOrderId}`,
+      sourceType: 'work_order_issue_post',
+      sourceId: issueId,
+      idempotencyKey: `wo-issue-post:${issueId}`,
       occurredAt,
       postedAt: now,
       notes: issue.notes ?? null,
@@ -439,30 +732,25 @@ export async function postWorkOrderIssue(
     });
 
     if (!movement.created) {
-      const lineCheck = await client.query(
-        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
-        [movement.id]
+      await ensurePostedMovementReady(client, tenantId, movement.id);
+      await client.query(
+        `UPDATE work_order_material_issues
+            SET status = 'posted',
+                inventory_movement_id = $1,
+                updated_at = $2
+          WHERE id = $3 AND tenant_id = $4`,
+        [movement.id, now, issueId, tenantId]
       );
-      if (lineCheck.rowCount > 0) {
-        await client.query(
-          `UPDATE work_order_material_issues
-              SET status = 'posted',
-                  inventory_movement_id = $1,
-                  updated_at = $2
-            WHERE id = $3 AND tenant_id = $4`,
-          [movement.id, now, issueId, tenantId]
-        );
-        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-        return fetchWorkOrderIssue(tenantId, workOrderId, issueId, client);
-      }
+      await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+      return fetchWorkOrderIssue(tenantId, workOrderId, issueId, client);
     }
 
-    const issuedTotal = linesResult.rows.reduce((sum, line) => {
+    const issuedTotal = linesForPosting.reduce((sum, line) => {
       const qty = toNumber(line.quantity_issued);
       return sum + qty;
     }, 0);
 
-    for (const line of linesResult.rows) {
+    for (const line of linesForPosting) {
       if (isDisassembly && line.component_item_id !== workOrder.output_item_id) {
         throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
       }
@@ -578,7 +866,7 @@ export async function postWorkOrderIssue(
             workOrderId,
             issueId,
             reference: validation.overrideMetadata.override_reference ?? null,
-            lines: linesResult.rows.map((line) => ({
+            lines: linesForPosting.map((line) => ({
               itemId: line.component_item_id,
               locationId: line.from_location_id,
               uom: line.uom,
@@ -595,7 +883,7 @@ export async function postWorkOrderIssue(
       throw new Error('WO_ISSUE_NOT_FOUND_AFTER_POST');
     }
     return posted;
-  });
+  }, WORK_ORDER_POST_RETRY_OPTIONS);
 }
 
 export async function createWorkOrderCompletion(
@@ -693,7 +981,7 @@ export async function postWorkOrderCompletion(
   workOrderId: string,
   completionId: string
 ) {
-  return withTransaction(async (client) => {
+  return withTransactionRetry(async (client) => {
     const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
@@ -725,8 +1013,9 @@ export async function postWorkOrderCompletion(
     if (linesResult.rowCount === 0) {
       throw new Error('WO_COMPLETION_NO_LINES');
     }
+    const linesForPosting = [...linesResult.rows].sort(compareProduceLineLockKey);
 
-    for (const line of linesResult.rows) {
+    for (const line of linesForPosting) {
       if (line.line_type !== 'produce') {
         throw new Error('WO_COMPLETION_INVALID_LINE_TYPE');
       }
@@ -753,6 +1042,9 @@ export async function postWorkOrderCompletion(
       externalRef: isDisassembly
         ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
         : `work_order_completion:${completionId}:${workOrderId}`,
+      sourceType: 'work_order_completion_post',
+      sourceId: completionId,
+      idempotencyKey: `wo-completion-post:${completionId}`,
       occurredAt: execution.occurred_at,
       postedAt: now,
       notes: execution.notes ?? null,
@@ -762,21 +1054,16 @@ export async function postWorkOrderCompletion(
     });
 
     if (!movement.created) {
-      const lineCheck = await client.query(
-        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
-        [movement.id]
+      await ensurePostedMovementReady(client, tenantId, movement.id);
+      await client.query(
+        `UPDATE work_order_executions
+            SET status = 'posted',
+                production_movement_id = $1
+          WHERE id = $2 AND tenant_id = $3`,
+        [movement.id, completionId, tenantId]
       );
-      if (lineCheck.rowCount > 0) {
-        await client.query(
-          `UPDATE work_order_executions
-              SET status = 'posted',
-                  production_movement_id = $1
-            WHERE id = $2 AND tenant_id = $3`,
-          [movement.id, completionId, tenantId]
-        );
-        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-        return fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client);
-      }
+      await enqueueInventoryMovementPosted(client, tenantId, movement.id);
+      return fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client);
     }
 
     const preparedLines: Array<{
@@ -787,7 +1074,7 @@ export async function postWorkOrderCompletion(
     let totalProduced = 0;
     let totalProducedCanonical = 0;
 
-    for (const line of linesResult.rows) {
+    for (const line of linesForPosting) {
       const qty = toNumber(line.quantity);
       const canonicalFields = await getCanonicalMovementFields(
         tenantId,
@@ -984,7 +1271,7 @@ export async function postWorkOrderCompletion(
       throw new Error('WO_COMPLETION_NOT_FOUND_AFTER_POST');
     }
     return posted;
-  });
+  }, WORK_ORDER_POST_RETRY_OPTIONS);
 }
 
 export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId: string) {
@@ -1073,24 +1360,56 @@ export async function recordWorkOrderBatch(
   tenantId: string,
   workOrderId: string,
   data: WorkOrderBatchInput,
-  context: NegativeOverrideContext = {}
+  context: NegativeOverrideContext = {},
+  options?: { idempotencyKey?: string | null }
 ) {
-  const normalizedConsumes = data.consumeLines.map((line) => {
+  const batchIdempotencyKey = options?.idempotencyKey?.trim() ? options.idempotencyKey.trim() : null;
+  const normalizedConsumes: NormalizedBatchConsumeLine[] = data.consumeLines.map((line) => {
     const quantity = toNumber(line.quantity);
     if (quantity <= 0) {
       throw new Error('WO_BATCH_INVALID_CONSUME_QTY');
     }
     return { ...line, quantity, uom: line.uom, reasonCode: line.reasonCode ?? null };
   });
-  const normalizedProduces = data.produceLines.map((line) => {
+  const normalizedProduces: NormalizedBatchProduceLine[] = data.produceLines.map((line) => {
     const quantity = toNumber(line.quantity);
     if (quantity <= 0) {
       throw new Error('WO_BATCH_INVALID_PRODUCE_QTY');
     }
-    return { ...line, quantity, uom: line.uom, reasonCode: line.reasonCode ?? null };
+    return { ...line, quantity, uom: line.uom, reasonCode: line.reasonCode ?? null, packSize: line.packSize ?? null };
   });
+  const occurredAt = new Date(data.occurredAt);
+  const normalizedRequestPayload = normalizeBatchRequestPayload({
+    workOrderId,
+    occurredAt,
+    notes: data.notes ?? null,
+    overrideNegative: data.overrideNegative,
+    overrideReason: data.overrideReason ?? null,
+    consumeLines: normalizedConsumes,
+    produceLines: normalizedProduces
+  });
+  const requestHash = hashNormalizedBatchRequest(normalizedRequestPayload);
 
-  return withTransaction(async (client) => {
+  return withTransactionRetry(async (client) => {
+    if (batchIdempotencyKey) {
+      const existingBatch = await findPostedBatchByIdempotencyKey(
+        client,
+        tenantId,
+        batchIdempotencyKey,
+        requestHash
+      );
+      if (existingBatch) {
+        const { executionId, ...replayPayload } = existingBatch;
+        if (existingBatch.workOrderId !== workOrderId) {
+          throw domainError('WO_POSTING_IDEMPOTENCY_CONFLICT', {
+            reason: 'work_order_mismatch',
+            executionId
+          });
+        }
+        return replayPayload;
+      }
+    }
+
     const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
@@ -1099,14 +1418,17 @@ export async function recordWorkOrderBatch(
     if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
       throw new Error('WO_INVALID_STATE');
     }
+    const consumeLinesOrdered = [...normalizedConsumes].sort(compareBatchConsumeKey);
+    const produceLinesOrdered = [...normalizedProduces].sort(compareBatchProduceKey);
+
     if (!isDisassembly) {
-      for (const line of normalizedProduces) {
+      for (const line of produceLinesOrdered) {
         if (line.outputItemId !== workOrder.output_item_id) {
           throw new Error('WO_BATCH_ITEM_MISMATCH');
         }
       }
     } else {
-      for (const line of normalizedConsumes) {
+      for (const line of consumeLinesOrdered) {
         if (line.componentItemId !== workOrder.output_item_id) {
           throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
         }
@@ -1116,14 +1438,14 @@ export async function recordWorkOrderBatch(
     // Pre-validate items and locations to avoid foreign key failures
     const itemIds = Array.from(
       new Set([
-        ...normalizedConsumes.map((l) => l.componentItemId),
-        ...normalizedProduces.map((l) => l.outputItemId)
+        ...consumeLinesOrdered.map((l) => l.componentItemId),
+        ...produceLinesOrdered.map((l) => l.outputItemId)
       ])
     );
     const locationIds = Array.from(
       new Set([
-        ...normalizedConsumes.map((l) => l.fromLocationId),
-        ...normalizedProduces.map((l) => l.toLocationId)
+        ...consumeLinesOrdered.map((l) => l.fromLocationId),
+        ...produceLinesOrdered.map((l) => l.toLocationId)
       ])
     );
 
@@ -1153,15 +1475,14 @@ export async function recordWorkOrderBatch(
 
     const issueId = uuidv4();
     const executionId = uuidv4();
-    const issueMovementId = uuidv4();
-    const receiveMovementId = uuidv4();
+    const issueMovementCandidateId = uuidv4();
+    const receiveMovementCandidateId = uuidv4();
     const now = new Date();
-    const occurredAt = new Date(data.occurredAt);
     const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
     const validation = await validateSufficientStock(
       tenantId,
       occurredAt,
-      normalizedConsumes.map((line) => ({
+      consumeLinesOrdered.map((line) => ({
         itemId: line.componentItemId,
         locationId: line.fromLocationId,
         uom: line.uom,
@@ -1178,14 +1499,17 @@ export async function recordWorkOrderBatch(
     );
 
     // Create movements first to satisfy FKs
-    await createInventoryMovement(client, {
-      id: issueMovementId,
+    const issueMovement = await createInventoryMovement(client, {
+      id: issueMovementCandidateId,
       tenantId,
       movementType: 'issue',
       status: 'posted',
       externalRef: isDisassembly
         ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
         : `work_order_batch_issue:${issueId}:${workOrderId}`,
+      sourceType: 'work_order_batch_post_issue',
+      sourceId: executionId,
+      idempotencyKey: batchIdempotencyKey ? `${batchIdempotencyKey}:issue` : `wo-batch-issue-post:${executionId}`,
       occurredAt,
       postedAt: now,
       notes: data.notes ?? null,
@@ -1197,14 +1521,33 @@ export async function recordWorkOrderBatch(
       createdAt: now,
       updatedAt: now
     });
-    await createInventoryMovement(client, {
-      id: receiveMovementId,
+    if (!issueMovement.created) {
+      await ensurePostedMovementReady(client, tenantId, issueMovement.id);
+      if (batchIdempotencyKey) {
+        const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
+        if (replay) {
+          const { executionId: _executionId, ...replayPayload } = replay;
+          return replayPayload;
+        }
+      }
+      throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+        reason: 'issue_movement_already_exists_without_replayable_execution',
+        missingExecutionIds: [],
+        hint: 'Retry with the same Idempotency-Key or contact admin'
+      });
+    }
+    const issueMovementId = issueMovement.id;
+    const receiveMovement = await createInventoryMovement(client, {
+      id: receiveMovementCandidateId,
       tenantId,
       movementType: 'receive',
       status: 'posted',
       externalRef: isDisassembly
         ? `work_order_disassembly_completion:${executionId}:${workOrderId}`
         : `work_order_batch_completion:${executionId}:${workOrderId}`,
+      sourceType: 'work_order_batch_post_completion',
+      sourceId: executionId,
+      idempotencyKey: batchIdempotencyKey ? `${batchIdempotencyKey}:completion` : `wo-batch-completion-post:${executionId}`,
       occurredAt,
       postedAt: now,
       notes: data.notes ?? null,
@@ -1212,16 +1555,41 @@ export async function recordWorkOrderBatch(
       createdAt: now,
       updatedAt: now
     });
+    if (!receiveMovement.created) {
+      await ensurePostedMovementReady(client, tenantId, receiveMovement.id);
+      if (batchIdempotencyKey) {
+        const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
+        if (replay) {
+          const { executionId: _executionId, ...replayPayload } = replay;
+          return replayPayload;
+        }
+      }
+      throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+        reason: 'completion_movement_already_exists_without_replayable_execution',
+        missingExecutionIds: [],
+        hint: 'Retry with the same Idempotency-Key or contact admin'
+      });
+    }
+    const receiveMovementId = receiveMovement.id;
 
     // Material issue header + lines
     await client.query(
       `INSERT INTO work_order_material_issues (
-          id, tenant_id, work_order_id, status, occurred_at, inventory_movement_id, notes, created_at, updated_at
-       ) VALUES ($1, $2, $3, 'posted', $4, $5, $6, $7, $7)`,
-      [issueId, tenantId, workOrderId, occurredAt, issueMovementId, data.notes ?? null, now]
+          id, tenant_id, work_order_id, status, occurred_at, inventory_movement_id, notes, idempotency_key, created_at, updated_at
+       ) VALUES ($1, $2, $3, 'posted', $4, $5, $6, $7, $8, $8)`,
+      [
+        issueId,
+        tenantId,
+        workOrderId,
+        occurredAt,
+        issueMovementId,
+        data.notes ?? null,
+        batchIdempotencyKey ? `${batchIdempotencyKey}:issue-doc` : null,
+        now
+      ]
     );
-    for (let i = 0; i < normalizedConsumes.length; i++) {
-      const line = normalizedConsumes[i];
+    for (let i = 0; i < consumeLinesOrdered.length; i++) {
+      const line = consumeLinesOrdered[i];
       await client.query(
         `INSERT INTO work_order_material_issue_lines (
             id, tenant_id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, reason_code, notes, created_at
@@ -1241,7 +1609,7 @@ export async function recordWorkOrderBatch(
         ]
       );
     }
-    for (const line of normalizedConsumes) {
+    for (const line of consumeLinesOrdered) {
       const reasonCode = line.reasonCode ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue');
       
       const canonicalFields = await getCanonicalMovementFields(
@@ -1301,14 +1669,50 @@ export async function recordWorkOrderBatch(
     }
 
     // Execution header + produce lines
-    await client.query(
-      `INSERT INTO work_order_executions (
-          id, tenant_id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id, notes, created_at
-       ) VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $8)`,
-      [executionId, tenantId, workOrderId, occurredAt, issueMovementId, receiveMovementId, data.notes ?? null, now]
-    );
-    for (let i = 0; i < normalizedProduces.length; i++) {
-      const line = normalizedProduces[i];
+    try {
+      await client.query(
+        `INSERT INTO work_order_executions (
+            id, tenant_id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id,
+            notes, idempotency_key, idempotency_request_hash, idempotency_request_summary, created_at
+         ) VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $8, $9, $10::jsonb, $11)`,
+        [
+          executionId,
+          tenantId,
+          workOrderId,
+          occurredAt,
+          issueMovementId,
+          receiveMovementId,
+          data.notes ?? null,
+          batchIdempotencyKey,
+          batchIdempotencyKey ? requestHash : null,
+          batchIdempotencyKey
+            ? JSON.stringify({
+                workOrderId,
+                consumeLineCount: normalizedConsumes.length,
+                produceLineCount: normalizedProduces.length,
+                executionIds: [executionId]
+              })
+            : null,
+          now
+        ]
+      );
+    } catch (error: any) {
+      if (batchIdempotencyKey && error?.code === '23505') {
+        const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
+        if (replay) {
+          const { executionId: _executionId, ...replayPayload } = replay;
+          return replayPayload;
+        }
+        throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+          reason: 'execution_insert_conflict_before_batch_finalization',
+          missingExecutionIds: [],
+          hint: 'Retry with the same Idempotency-Key or contact admin'
+        });
+      }
+      throw error;
+    }
+    for (let i = 0; i < produceLinesOrdered.length; i++) {
+      const line = produceLinesOrdered[i];
       await client.query(
         `INSERT INTO work_order_execution_lines (
             id, tenant_id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, reason_code, notes, created_at
@@ -1335,7 +1739,7 @@ export async function recordWorkOrderBatch(
     let producedTotal = 0;
     let producedCanonicalTotal = 0;
 
-    for (const line of normalizedProduces) {
+    for (const line of produceLinesOrdered) {
       const canonicalFields = await getCanonicalMovementFields(
         tenantId,
         line.outputItemId,
@@ -1433,7 +1837,7 @@ export async function recordWorkOrderBatch(
     );
 
     // Update work order progress
-    const consumedTotal = normalizedConsumes.reduce((sum, line) => sum + line.quantity, 0);
+    const consumedTotal = consumeLinesOrdered.reduce((sum, line) => sum + line.quantity, 0);
     const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
     const progressQty = isDisassembly ? consumedTotal : producedTotal;
     const newCompleted = currentCompleted + progressQty;
@@ -1489,7 +1893,7 @@ export async function recordWorkOrderBatch(
             workOrderId,
             executionId,
             reference: validation.overrideMetadata.override_reference ?? null,
-            lines: normalizedConsumes.map((line) => ({
+            lines: consumeLinesOrdered.map((line) => ({
               itemId: line.componentItemId,
               locationId: line.fromLocationId,
               uom: line.uom,
@@ -1508,5 +1912,5 @@ export async function recordWorkOrderBatch(
       quantityCompleted: newCompleted,
       workOrderStatus: newStatus
     };
-  });
+  }, WORK_ORDER_POST_RETRY_OPTIONS);
 }

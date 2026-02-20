@@ -58,6 +58,14 @@ function requireWarehouseId(
 }
 
 router.post('/sales-orders', async (req: Request, res: Response) => {
+  if (!req.body?.warehouseId) {
+    return res.status(400).json({
+      error: {
+        code: 'WAREHOUSE_SCOPE_REQUIRED',
+        message: 'warehouseId is required for sales orders.'
+      }
+    });
+  }
   const parsed = salesOrderSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -68,6 +76,22 @@ router.post('/sales-orders', async (req: Request, res: Response) => {
   } catch (error: any) {
     if (error?.message === 'DUPLICATE_LINE_NUMBER') {
       return res.status(400).json({ error: 'Line numbers must be unique within a sales order.' });
+    }
+    if (error?.message === 'WAREHOUSE_SCOPE_REQUIRED') {
+      return res.status(400).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_REQUIRED',
+          message: 'warehouseId is required for sales orders.'
+        }
+      });
+    }
+    if (error?.message === 'WAREHOUSE_SCOPE_MISMATCH') {
+      return res.status(409).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_MISMATCH',
+          message: 'Sales order warehouse scope does not match ship-from location.'
+        }
+      });
     }
     const mapped = mapPgErrorToHttp(error, {
       unique: () => ({ status: 409, body: { error: 'so_number must be unique.' } }),
@@ -86,12 +110,16 @@ router.get('/sales-orders', async (req: Request, res: Response) => {
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  const warehouseId =
+    typeof req.query.warehouseId === 'string' && uuidSchema.safeParse(req.query.warehouseId).success
+      ? (req.query.warehouseId as string)
+      : undefined;
   const customerId =
     typeof req.query.customerId === 'string' && uuidSchema.safeParse(req.query.customerId).success
       ? (req.query.customerId as string)
       : undefined;
   try {
-    const rows = await listSalesOrders(req.auth!.tenantId, limit, offset, { status, customerId });
+    const rows = await listSalesOrders(req.auth!.tenantId, limit, offset, { status, customerId, warehouseId });
     return res.json({ data: rows, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -154,17 +182,35 @@ router.post('/reservations', async (req: Request, res: Response) => {
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
     }
-    if ((error as Error)?.message === 'RESERVATION_LOCATION_NOT_SELLABLE') {
-      return res.status(409).json({ error: 'Reservation location must be sellable.' });
+    if ((error as Error)?.message === 'NON_SELLABLE_LOCATION') {
+      return res.status(409).json({
+        error: {
+          code: 'NON_SELLABLE_LOCATION',
+          message: 'Reservation location must be sellable.'
+        }
+      });
     }
-    if ((error as Error)?.message === 'RESERVATION_LOCATION_NOT_FOUND') {
+    if ((error as Error)?.message === 'LOCATION_NOT_FOUND') {
       return res.status(400).json({ error: 'Reservation location not found.' });
     }
     if ((error as Error)?.message === 'RESERVATION_INSUFFICIENT_AVAILABLE') {
       return res.status(409).json({ error: 'Insufficient sellable inventory for reservation.' });
     }
-    if ((error as Error)?.message === 'RESERVATION_WAREHOUSE_MISMATCH') {
-      return res.status(409).json({ error: 'Reservation warehouse does not match reservation location.' });
+    if ((error as Error)?.message === 'WAREHOUSE_SCOPE_REQUIRED') {
+      return res.status(400).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_REQUIRED',
+          message: 'warehouseId is required for this operation.'
+        }
+      });
+    }
+    if ((error as Error)?.message === 'WAREHOUSE_SCOPE_MISMATCH') {
+      return res.status(409).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_MISMATCH',
+          message: 'Reservation warehouse scope does not match location or sales order scope.'
+        }
+      });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create reservation.' });
@@ -200,6 +246,14 @@ router.post('/reservations/:id/allocate', async (req: Request, res: Response) =>
     }
     if (error?.message === 'RESERVATION_INVALID_TRANSITION' || error?.message === 'RESERVATION_INVALID_STATE') {
       return res.status(409).json({ error: 'Reservation cannot be allocated from current state.' });
+    }
+    if (error?.message === 'NON_SELLABLE_LOCATION') {
+      return res.status(409).json({
+        error: {
+          code: 'NON_SELLABLE_LOCATION',
+          message: 'Reservation location must be sellable.'
+        }
+      });
     }
     if (error?.message === 'RESERVATION_ALLOCATE_IN_PROGRESS') {
       return res.status(409).json({ error: 'Reservation allocation already in progress.' });
@@ -291,6 +345,14 @@ router.post('/reservations/:id/fulfill', async (req: Request, res: Response) => 
     }
     if (error?.message === 'RESERVATION_INVALID_TRANSITION' || error?.message === 'RESERVATION_INVALID_STATE') {
       return res.status(409).json({ error: 'Reservation cannot be fulfilled from current state.' });
+    }
+    if (error?.message === 'NON_SELLABLE_LOCATION') {
+      return res.status(409).json({
+        error: {
+          code: 'NON_SELLABLE_LOCATION',
+          message: 'Reservation location must be sellable.'
+        }
+      });
     }
     if (error?.message === 'RESERVATION_FULFILL_IN_PROGRESS') {
       return res.status(409).json({ error: 'Reservation fulfill already in progress.' });
@@ -399,7 +461,23 @@ router.post('/shipments', async (req: Request, res: Response) => {
   try {
     const shipment = await createShipment(req.auth!.tenantId, parsed.data);
     return res.status(201).json(shipment);
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message === 'WAREHOUSE_SCOPE_REQUIRED') {
+      return res.status(400).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_REQUIRED',
+          message: 'Sales order and shipment must include warehouse scope.'
+        }
+      });
+    }
+    if (error?.message === 'WAREHOUSE_SCOPE_MISMATCH') {
+      return res.status(409).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_MISMATCH',
+          message: 'Shipment ship-from location must be in the sales order warehouse.'
+        }
+      });
+    }
     const mapped = mapPgErrorToHttp(error, {
       foreignKey: () => ({
         status: 400,

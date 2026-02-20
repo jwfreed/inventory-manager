@@ -80,13 +80,14 @@ async function createItem(token, defaultLocationId) {
   return res.payload.id;
 }
 
-async function createSalesOrder(token, customerId, itemId, shipFromLocationId, quantity) {
+async function createSalesOrder(token, customerId, itemId, shipFromLocationId, warehouseId, quantity) {
   const res = await apiRequest('POST', '/sales-orders', {
     token,
     body: {
       soNumber: `SO-${randomUUID()}`,
       customerId,
       status: 'submitted',
+      warehouseId,
       shipFromLocationId,
       lines: [{ itemId, uom: 'each', quantityOrdered: quantity }]
     }
@@ -165,7 +166,7 @@ test('late QC updates ATP/backorder after commitments', async () => {
   const itemId = await createItem(token, sellableLocation.id);
 
   const customerId = await createCustomer(tenantId, session.pool);
-  const { orderId, lineId } = await createSalesOrder(token, customerId, itemId, sellableLocation.id, 5);
+  const { orderId, lineId } = await createSalesOrder(token, customerId, itemId, sellableLocation.id, warehouse.id, 5);
 
   const po = await createPurchaseOrder(token, vendorId, sellableLocation.id, itemId, 5);
   const receiptLineId = await createReceipt(token, po.id, po.lines[0].id, 5);

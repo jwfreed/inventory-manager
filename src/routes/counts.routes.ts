@@ -1,13 +1,52 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { createInventoryCount, getInventoryCount, postInventoryCount } from '../services/counts.service';
-import { inventoryCountSchema } from '../schemas/counts.schema';
+import {
+  createInventoryCount,
+  getInventoryCount,
+  listInventoryCounts,
+  postInventoryCount,
+  updateInventoryCount
+} from '../services/counts.service';
+import { inventoryCountSchema, inventoryCountUpdateSchema } from '../schemas/counts.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
+import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
+
+router.get('/inventory-counts', async (req: Request, res: Response) => {
+  const warehouseId =
+    typeof req.query.warehouse_id === 'string'
+      ? req.query.warehouse_id
+      : typeof req.query.warehouseId === 'string'
+        ? req.query.warehouseId
+        : null;
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  const role = req.auth?.role ?? null;
+  if (!warehouseId && !(role === 'supervisor' && status === 'draft')) {
+    return res.status(400).json({
+      error: {
+        code: 'WAREHOUSE_SCOPE_REQUIRED',
+        message: 'warehouseId is required.'
+      }
+    });
+  }
+  if (warehouseId && !uuidSchema.safeParse(warehouseId).success) {
+    return res.status(400).json({ error: 'Invalid warehouse id.' });
+  }
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+
+  try {
+    const rows = await listInventoryCounts(req.auth!.tenantId, warehouseId, status, limit, offset);
+    return res.json({ data: rows, paging: { limit, offset } });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to list inventory counts.' });
+  }
+});
 
 router.post('/inventory-counts', async (req: Request, res: Response) => {
   const parsed = inventoryCountSchema.safeParse(req.body);
@@ -21,6 +60,25 @@ router.post('/inventory-counts', async (req: Request, res: Response) => {
     });
     return res.status(201).json(count);
   } catch (error: any) {
+    if (error?.message === 'WAREHOUSE_SCOPE_REQUIRED') {
+      return res.status(400).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_REQUIRED',
+          message: 'warehouseId is required for inventory counts.'
+        }
+      });
+    }
+    if (error?.message === 'WAREHOUSE_SCOPE_MISMATCH') {
+      return res.status(409).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_MISMATCH',
+          message: 'Count line location is outside the selected warehouse scope.'
+        }
+      });
+    }
+    if (error?.message === 'COUNT_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Each count line requires a locationId.' });
+    }
     if (error?.message === 'COUNT_DUPLICATE_LINE') {
       return res.status(400).json({ error: 'Line numbers must be unique within a cycle count.' });
     }
@@ -38,6 +96,41 @@ router.post('/inventory-counts', async (req: Request, res: Response) => {
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create inventory count.' });
+  }
+});
+
+router.patch('/inventory-counts/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid inventory count id.' });
+  }
+  const parsed = inventoryCountUpdateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const count = await updateInventoryCount(req.auth!.tenantId, id, parsed.data);
+    return res.json(count);
+  } catch (error: any) {
+    if (error?.message === 'COUNT_NOT_FOUND') {
+      return res.status(404).json({ error: 'Inventory count not found.' });
+    }
+    if (error?.message === 'COUNT_NOT_DRAFT') {
+      return res.status(409).json({ error: 'Only draft counts can be edited.' });
+    }
+    if (error?.message === 'WAREHOUSE_SCOPE_MISMATCH') {
+      return res.status(409).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_MISMATCH',
+          message: 'Count line location is outside the selected warehouse scope.'
+        }
+      });
+    }
+    if (error?.message === 'COUNT_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Each count line requires a locationId.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update inventory count.' });
   }
 });
 
@@ -76,7 +169,11 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
 
   try {
     const tenantId = req.auth!.tenantId;
-    const count = await postInventoryCount(tenantId, id, {
+    const idempotencyKey = getIdempotencyKey(req);
+    if (!idempotencyKey) {
+      return res.status(400).json({ error: 'Idempotency-Key header is required.' });
+    }
+    const count = await postInventoryCount(tenantId, id, idempotencyKey, {
       actor: { type: 'user', id: req.auth!.userId, role: req.auth!.role },
       overrideRequested: overrideSchema.data.overrideNegative,
       overrideReason: overrideSchema.data.overrideReason
@@ -96,6 +193,9 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
     });
     return res.json(count);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({
         error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
@@ -143,6 +243,40 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
     if (error?.message === 'COUNT_REASON_REQUIRED') {
       return res.status(409).json({
         error: 'Reason code required for any line with a non-zero variance.'
+      });
+    }
+    if (error?.message === 'CYCLE_COUNT_UNIT_COST_REQUIRED') {
+      return res.status(409).json({
+        error: {
+          code: 'CYCLE_COUNT_UNIT_COST_REQUIRED',
+          message: 'Positive cycle count variances require unitCostForPositiveAdjustment.'
+        }
+      });
+    }
+    if (error?.message === 'CYCLE_COUNT_RECONCILIATION_FAILED') {
+      return res.status(409).json({
+        error: {
+          code: 'CYCLE_COUNT_RECONCILIATION_FAILED',
+          message: 'Cycle count posting failed reconciliation against current on-hand.'
+        }
+      });
+    }
+    if (error?.code === 'INV_COUNT_POST_IDEMPOTENCY_CONFLICT' || error?.message === 'INV_COUNT_POST_IDEMPOTENCY_CONFLICT') {
+      return res.status(409).json({
+        error: {
+          code: 'INV_COUNT_POST_IDEMPOTENCY_CONFLICT',
+          message: 'Idempotency key payload conflict detected for inventory count posting.',
+          details: error?.details
+        }
+      });
+    }
+    if (error?.code === 'INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE' || error?.message === 'INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE') {
+      return res.status(409).json({
+        error: {
+          code: 'INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE',
+          message: 'Inventory count posting is incomplete for this idempotency key.',
+          details: error?.details
+        }
       });
     }
     console.error(error);

@@ -45,6 +45,7 @@ export const salesOrderLineSchema = z.object({
 export const salesOrderSchema = z.object({
   soNumber: z.string().min(1).max(64),
   customerId: uuid(),
+  warehouseId: uuid().optional(),
   status: z
     .enum(['draft', 'submitted', 'partially_shipped', 'shipped', 'closed', 'canceled'])
     .optional(),

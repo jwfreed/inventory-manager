@@ -148,13 +148,14 @@ async function createReservationForDemand(
   return reservationRes.payload.data[0];
 }
 
-async function createSalesOrder(token, { customerId, itemId, quantityOrdered, shipFromLocationId }) {
+async function createSalesOrder(token, { customerId, itemId, quantityOrdered, shipFromLocationId, warehouseId }) {
   const soRes = await apiRequest('POST', '/sales-orders', {
     token,
     body: {
       soNumber: `SO-${randomUUID().slice(0, 8)}`,
       customerId,
       status: 'submitted',
+      warehouseId,
       shipFromLocationId,
       lines: [{ itemId, uom: 'each', quantityOrdered }]
     }
@@ -461,7 +462,8 @@ test('cancel vs shipment post race does not deadlock and keeps reservation/balan
     customerId,
     itemId,
     quantityOrdered: 4,
-    shipFromLocationId: sellable.id
+    shipFromLocationId: sellable.id,
+    warehouseId: warehouse.id
   });
   const lineId = order.lines[0]?.id;
   assert.ok(lineId, 'sales order line id missing');
@@ -551,7 +553,8 @@ test('shipment allows reservation-consumption allowance when available + reserve
     customerId,
     itemId,
     quantityOrdered: 5,
-    shipFromLocationId: sellable.id
+    shipFromLocationId: sellable.id,
+    warehouseId: warehouse.id
   });
   const lineId = order.lines[0]?.id;
   assert.ok(lineId, 'sales order line id missing');
@@ -600,7 +603,8 @@ test('shipment blocks when ship qty exceeds available + reserveConsume allowance
     customerId,
     itemId,
     quantityOrdered: 11,
-    shipFromLocationId: sellable.id
+    shipFromLocationId: sellable.id,
+    warehouseId: warehouse.id
   });
   const lineId = order.lines[0]?.id;
   assert.ok(lineId, 'sales order line id missing');
