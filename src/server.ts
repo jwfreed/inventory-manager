@@ -65,15 +65,16 @@ import {
   logStructuredStartupFailure,
   resolveWarehouseDefaultsStartupMode
 } from './config/warehouseDefaultsStartup';
+import { resolveSchedulerStartupMode } from './config/schedulerStartup';
 
 const PORT = Number(process.env.PORT) || 3000;
-const RUN_INPROCESS_JOBS = process.env.RUN_INPROCESS_JOBS === 'true';
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
 
 const startupMode = resolveWarehouseDefaultsStartupMode();
+const schedulerMode = resolveSchedulerStartupMode();
 
 const app = express();
 
@@ -177,7 +178,7 @@ pool.on('error', (err) => {
   console.error('Unexpected DB pool error', err);
 });
 
-if (RUN_INPROCESS_JOBS) {
+if (schedulerMode.schedulerEnabled) {
   // Register scheduled jobs
   console.log('\n📅 Registering scheduled jobs (in-process)...');
   registerJob(
@@ -241,12 +242,14 @@ if (RUN_INPROCESS_JOBS) {
 
   // Start the scheduler
   startScheduler();
+} else if (schedulerMode.runInProcessJobs && (process.env.NODE_ENV ?? 'development') === 'development') {
+  console.log('\n📅 Scheduler disabled for development (set ENABLE_SCHEDULER=true to enable)');
 }
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('\n🛑 SIGTERM received, shutting down gracefully...');
-  if (RUN_INPROCESS_JOBS) {
+  if (schedulerMode.schedulerEnabled) {
     stopScheduler();
   }
   process.exit(0);
@@ -254,7 +257,7 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   console.log('\n🛑 SIGINT received, shutting down gracefully...');
-  if (RUN_INPROCESS_JOBS) {
+  if (schedulerMode.schedulerEnabled) {
     stopScheduler();
   }
   process.exit(0);

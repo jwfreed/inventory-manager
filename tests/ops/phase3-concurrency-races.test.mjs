@@ -266,8 +266,16 @@ test('cycle count post vs fulfillment race remains deterministic and drift-safe'
     })
   ]);
 
-  assertRaceResult(countPost, new Set([200, 409]), new Set(['CYCLE_COUNT_RECONCILIATION_FAILED', 'TX_RETRY_EXHAUSTED']));
-  assertRaceResult(shipmentPost, new Set([200, 409]), new Set(['INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE', 'TX_RETRY_EXHAUSTED']));
+  assertRaceResult(
+    countPost,
+    new Set([200, 409]),
+    new Set(['CYCLE_COUNT_RECONCILIATION_FAILED', 'INSUFFICIENT_STOCK', 'TX_RETRY_EXHAUSTED'])
+  );
+  assertRaceResult(
+    shipmentPost,
+    new Set([200, 409]),
+    new Set(['INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE', 'INSUFFICIENT_STOCK', 'TX_RETRY_EXHAUSTED'])
+  );
 
   const snapshot = await db.query(
     `SELECT on_hand_qty

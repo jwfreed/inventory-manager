@@ -70,7 +70,40 @@ export function mapTxRetryExhausted(error: any, res: Response): boolean {
   return true;
 }
 
+export function mapAtpConcurrencyExhausted(error: any, res: Response): boolean {
+  if (error?.code !== 'ATP_CONCURRENCY_EXHAUSTED') {
+    return false;
+  }
+  jsonConflict(
+    res,
+    'ATP_CONCURRENCY_EXHAUSTED',
+    'High ATP write contention detected. Please retry.',
+    error?.details ?? {
+      resource: 'inventory',
+      retryable: true,
+      hint: 'Please retry the request'
+    }
+  );
+  return true;
+}
+
+export function mapAtpInsufficientAvailable(error: any, res: Response): boolean {
+  if (error?.code !== 'ATP_INSUFFICIENT_AVAILABLE') {
+    return false;
+  }
+  jsonConflict(
+    res,
+    'ATP_INSUFFICIENT_AVAILABLE',
+    'Insufficient sellable inventory for reservation.',
+    error?.details
+  );
+  return true;
+}
+
 export function handlePostShipmentConflict(error: any, res: Response): boolean {
+  if (mapAtpConcurrencyExhausted(error, res)) {
+    return true;
+  }
   if (mapTxRetryExhausted(error, res)) {
     return true;
   }

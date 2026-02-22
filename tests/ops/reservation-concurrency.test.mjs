@@ -148,6 +148,23 @@ async function sumBackordered(db, tenantId, itemId, locationId, uom = 'each') {
   return Number(res.rows[0]?.backordered_total ?? 0);
 }
 
+async function fetchBalance(db, tenantId, itemId, locationId, uom = 'each') {
+  const res = await db.query(
+    `SELECT on_hand, reserved, allocated
+       FROM inventory_balance
+      WHERE tenant_id = $1
+        AND item_id = $2
+        AND location_id = $3
+        AND uom = $4`,
+    [tenantId, itemId, locationId, uom]
+  );
+  return {
+    onHand: Number(res.rows[0]?.on_hand ?? 0),
+    reserved: Number(res.rows[0]?.reserved ?? 0),
+    allocated: Number(res.rows[0]?.allocated ?? 0)
+  };
+}
+
 test('No oversell under concurrency when balance row is initially missing (no backorder)', async () => {
   const session = await getSession();
   const token = session.accessToken;
@@ -163,7 +180,7 @@ test('No oversell under concurrency when balance row is initially missing (no ba
 
   await deleteBalanceRow(db, tenantId, itemId, sellable.id, 'each');
 
-  const attempts = 10;
+  const attempts = 30;
   const requests = Array.from({ length: attempts }, () =>
     createReservationRequest(
       token,
@@ -187,6 +204,16 @@ test('No oversell under concurrency when balance row is initially missing (no ba
   const conflictCount = statuses.filter((status) => status === 409).length;
   const unexpectedStatuses = statuses.filter((status) => status !== 201 && status !== 409);
   assert.equal(unexpectedStatuses.length, 0, `Unexpected statuses: ${statuses.join(',')}`);
+  const conflictCodes = new Set(
+    responses
+      .filter((resp) => resp.res.status === 409)
+      .map((resp) => resp.payload?.error?.code)
+      .filter(Boolean)
+  );
+  const allowedConflictCodes = new Set(['ATP_INSUFFICIENT_AVAILABLE', 'ATP_CONCURRENCY_EXHAUSTED']);
+  for (const code of conflictCodes) {
+    assert.ok(allowedConflictCodes.has(code), `unexpected conflict code ${code}`);
+  }
   assert.ok(successCount <= 5, `Successful reservations exceeded stock: success=${successCount}`);
   assert.ok(conflictCount >= 1, 'Expected at least one insufficient-availability conflict');
 
@@ -318,4 +345,106 @@ test('Opposite-order multi-line reservation requests complete without deadlocks'
   const reservedB = await sumReserved(db, tenantId, itemB, sellable.id, 'each');
   assert.ok(Math.abs(reservedA - 4) < 1e-6, `Expected itemA reserved=4, got ${reservedA}`);
   assert.ok(Math.abs(reservedB - 4) < 1e-6, `Expected itemB reserved=4, got ${reservedB}`);
+});
+
+test('concurrent reserve/allocate/fulfill is bounded and deterministic for one SKU+warehouse', async () => {
+  const session = await getSession();
+  const token = session.accessToken;
+  const tenantId = session.tenant?.id;
+  const db = session.pool;
+  assert.ok(token);
+  assert.ok(tenantId);
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({
+    token,
+    apiRequest,
+    scope: `${import.meta.url}:reserve-allocate-fulfill`
+  });
+  const sellable = defaults.SELLABLE;
+  const itemId = await createItem(token, sellable.id, 'RACE');
+  await seedStock(token, itemId, sellable.id, 12);
+  await deleteBalanceRow(db, tenantId, itemId, sellable.id, 'each');
+
+  const attempts = 20;
+  const workflows = Array.from({ length: attempts }, async () => {
+    const reserve = await createReservationRequest(
+      token,
+      {
+        demandType: 'sales_order_line',
+        demandId: randomUUID(),
+        itemId,
+        warehouseId: warehouse.id,
+        locationId: sellable.id,
+        uom: 'each',
+        quantityReserved: 1,
+        allowBackorder: false
+      },
+      `reserve-${randomUUID()}`
+    );
+    if (reserve.res.status !== 201) {
+      return { reserveStatus: reserve.res.status, reservePayload: reserve.payload };
+    }
+
+    const reservationId = reserve.payload?.data?.[0]?.id;
+    const allocate = await apiRequest('POST', `/reservations/${reservationId}/allocate`, {
+      token,
+      headers: { 'Idempotency-Key': `allocate-${randomUUID()}` },
+      body: { warehouseId: warehouse.id }
+    });
+    if (allocate.res.status !== 200) {
+      return {
+        reserveStatus: reserve.res.status,
+        allocateStatus: allocate.res.status,
+        allocatePayload: allocate.payload
+      };
+    }
+
+    const fulfill = await apiRequest('POST', `/reservations/${reservationId}/fulfill`, {
+      token,
+      headers: { 'Idempotency-Key': `fulfill-${randomUUID()}` },
+      body: { warehouseId: warehouse.id, quantity: 1 }
+    });
+    return {
+      reserveStatus: reserve.res.status,
+      allocateStatus: allocate.res.status,
+      fulfillStatus: fulfill.res.status,
+      fulfillPayload: fulfill.payload
+    };
+  });
+
+  const outcomes = await Promise.all(workflows);
+  const allowedConflictCodes = new Set(['ATP_INSUFFICIENT_AVAILABLE', 'ATP_CONCURRENCY_EXHAUSTED', 'RESERVATION_INVALID_STATE']);
+  for (const outcome of outcomes) {
+    if (outcome.reserveStatus === 409) {
+      const code = outcome.reservePayload?.error?.code ?? null;
+      if (code) {
+        assert.ok(allowedConflictCodes.has(code), `unexpected reserve code=${code}`);
+      }
+    }
+    if (outcome.allocateStatus === 409) {
+      const code = outcome.allocatePayload?.error?.code ?? null;
+      if (code) {
+        assert.ok(allowedConflictCodes.has(code), `unexpected allocate code=${code}`);
+      }
+    }
+    if (outcome.fulfillStatus === 409) {
+      const code = outcome.fulfillPayload?.error?.code ?? null;
+      if (code) {
+        assert.ok(allowedConflictCodes.has(code), `unexpected fulfill code=${code}`);
+      }
+    }
+    const statuses = [outcome.reserveStatus, outcome.allocateStatus, outcome.fulfillStatus].filter(Boolean);
+    for (const status of statuses) {
+      assert.ok([200, 201, 409].includes(status), `unexpected status ${status}`);
+    }
+  }
+
+  const balance = await fetchBalance(db, tenantId, itemId, sellable.id, 'each');
+  assert.ok(balance.onHand >= -1e-6, `on_hand must be non-negative, got ${balance.onHand}`);
+  assert.ok(balance.reserved >= -1e-6, `reserved must be non-negative, got ${balance.reserved}`);
+  assert.ok(balance.allocated >= -1e-6, `allocated must be non-negative, got ${balance.allocated}`);
+  assert.ok(
+    balance.reserved + balance.allocated <= balance.onHand + 1e-6,
+    `committed exceeded on_hand: committed=${balance.reserved + balance.allocated}, on_hand=${balance.onHand}`
+  );
 });

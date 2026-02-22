@@ -21,12 +21,27 @@ type InventoryInvariantSummary = {
   reservationWarehouseHistoricalMismatchCount: number;
   nonSellableFlowScopeInvalidCount: number;
   salesOrderWarehouseScopeMismatchCount: number;
+  atpOversellDetectedCount: number;
 };
 type InventoryInvariantStrictViolation = {
   tenantId: string;
   tenantSlug: string;
   violations: Record<string, number>;
 };
+
+function parseTenantScopeCsv(value: string | undefined): string[] {
+  const normalized = String(value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return Array.from(new Set(normalized));
+}
+
+export function resolveInvariantTenantScopeEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+  const scoped = parseTenantScopeCsv(env.INVARIANTS_TENANT_IDS);
+  if (scoped.length > 0) return scoped;
+  return parseTenantScopeCsv(env.INVARIANTS_TENANT_ID);
+}
 
 function isStrictModeEnabled(strict?: boolean): boolean {
   if (typeof strict === 'boolean') {
@@ -48,7 +63,8 @@ function summarizeStrictViolations(summary: InventoryInvariantSummary): Record<s
     ['warehouse_id_drift', summary.warehouseIdDriftCount],
     ['reservation_warehouse_historical_mismatch', summary.reservationWarehouseHistoricalMismatchCount],
     ['non_sellable_flow_scope_invalid', summary.nonSellableFlowScopeInvalidCount],
-    ['sales_order_warehouse_scope_mismatch', summary.salesOrderWarehouseScopeMismatchCount]
+    ['sales_order_warehouse_scope_mismatch', summary.salesOrderWarehouseScopeMismatchCount],
+    ['atp_oversell_detected_count', summary.atpOversellDetectedCount]
   ];
   return Object.fromEntries(
     entries.filter(([, count]) => count > 0)
@@ -84,11 +100,14 @@ export async function runInventoryInvariantCheck(
   const strictViolations: InventoryInvariantStrictViolation[] = [];
 
   try {
-    const tenants = options.tenantIds?.length
+    const scopedTenantIds = options.tenantIds?.length
+      ? Array.from(new Set(options.tenantIds.map((id) => String(id).trim()).filter(Boolean)))
+      : resolveInvariantTenantScopeEnv();
+    const tenants = scopedTenantIds.length
       ? (
           await query<Tenant>(
             'SELECT id, name, slug FROM tenants WHERE id = ANY($1) ORDER BY name',
-            [options.tenantIds]
+            [scopedTenantIds]
           )
         ).rows
       : await getAllActiveTenants();
@@ -399,6 +418,72 @@ export async function runInventoryInvariantCheck(
           );
         }
 
+        const atpOversellDetected = await query<{ count: string }>(
+          `WITH sellable_totals AS (
+             SELECT b.tenant_id,
+                    l.warehouse_id,
+                    b.item_id,
+                    b.uom,
+                    COALESCE(SUM(b.on_hand), 0)::numeric AS on_hand_qty,
+                    COALESCE(SUM(b.reserved), 0)::numeric AS reserved_qty,
+                    COALESCE(SUM(b.allocated), 0)::numeric AS allocated_qty
+               FROM inventory_balance b
+               JOIN locations l
+                 ON l.id = b.location_id
+                AND l.tenant_id = b.tenant_id
+              WHERE b.tenant_id = $1
+                AND l.type = 'bin'
+                AND l.is_sellable = true
+              GROUP BY b.tenant_id, l.warehouse_id, b.item_id, b.uom
+           )
+           SELECT COUNT(*) AS count
+             FROM sellable_totals
+            WHERE (reserved_qty + allocated_qty) - on_hand_qty > 0.000001`,
+          [tenant.id]
+        );
+        const atpOversellDetectedCount = Number(atpOversellDetected.rows[0]?.count ?? 0);
+        if (atpOversellDetectedCount > 0) {
+          const samples = await query(
+            `WITH sellable_totals AS (
+               SELECT b.tenant_id,
+                      l.warehouse_id,
+                      b.item_id,
+                      b.uom,
+                      COALESCE(SUM(b.on_hand), 0)::numeric AS on_hand_qty,
+                      COALESCE(SUM(b.reserved), 0)::numeric AS reserved_qty,
+                      COALESCE(SUM(b.allocated), 0)::numeric AS allocated_qty
+                 FROM inventory_balance b
+                 JOIN locations l
+                   ON l.id = b.location_id
+                  AND l.tenant_id = b.tenant_id
+                WHERE b.tenant_id = $1
+                  AND l.type = 'bin'
+                  AND l.is_sellable = true
+                GROUP BY b.tenant_id, l.warehouse_id, b.item_id, b.uom
+             )
+             SELECT warehouse_id,
+                    item_id,
+                    uom,
+                    on_hand_qty,
+                    reserved_qty,
+                    allocated_qty,
+                    (reserved_qty + allocated_qty)::numeric AS committed_qty,
+                    ((reserved_qty + allocated_qty) - on_hand_qty)::numeric AS oversell_qty
+               FROM sellable_totals
+              WHERE (reserved_qty + allocated_qty) - on_hand_qty > 0.000001
+              ORDER BY ((reserved_qty + allocated_qty) - on_hand_qty) DESC,
+                       warehouse_id,
+                       item_id,
+                       uom
+              LIMIT 25`,
+            [tenant.id]
+          );
+          console.error(
+            `Invariant violation for tenant ${tenant.slug}: ${atpOversellDetectedCount} ATP oversell condition(s)`,
+            { examples: samples.rows }
+          );
+        }
+
         if (mismatchCount > 0) {
           const samples = await query(
             `WITH reservation_committed AS (
@@ -509,7 +594,8 @@ export async function runInventoryInvariantCheck(
           warehouseIdDriftCount,
           reservationWarehouseHistoricalMismatchCount,
           nonSellableFlowScopeInvalidCount,
-          salesOrderWarehouseScopeMismatchCount
+          salesOrderWarehouseScopeMismatchCount,
+          atpOversellDetectedCount
         };
         results.push(summary);
         if (strictMode) {

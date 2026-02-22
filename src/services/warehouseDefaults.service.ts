@@ -21,6 +21,9 @@ const DEFAULT_ROLES: LocationRole[] = ['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRA
 
 type WarehouseDefaultRepairOptions = {
   repair?: boolean;
+  orphanIssueDetector?: OrphanIssueDetector;
+  // Test-only hook used to verify guardrails against role-unsafe derived defaults.
+  debugDerivedDefaultByRole?: Partial<Record<LocationRole, string | null>>;
 };
 
 type WarehouseDefaultInvalidReason =
@@ -42,6 +45,8 @@ type OrphanWarehouseRootIssue = {
   warehouse_type: string | null;
   derived_parent_warehouse_id: string | null;
 };
+
+type OrphanIssueDetector = (tenantId?: string) => Promise<OrphanWarehouseRootIssue[]>;
 
 const orphanWarehouseRootsWarningLoggedByScope = new Set<string>();
 
@@ -121,6 +126,21 @@ function warehouseDefaultInvalidError(details: {
   return error;
 }
 
+function warehouseDefaultInternalDerivedIdWithoutMappingError(details: {
+  tenantId: string;
+  warehouseId: string;
+  role: LocationRole;
+  derivedId: string;
+}) {
+  const error = new Error('WAREHOUSE_DEFAULT_INTERNAL_DERIVED_ID_WITHOUT_MAPPING') as Error & {
+    code?: string;
+    details?: Record<string, unknown>;
+  };
+  error.code = 'WAREHOUSE_DEFAULT_INTERNAL_DERIVED_ID_WITHOUT_MAPPING';
+  error.details = details;
+  return error;
+}
+
 function detectWarehouseDefaultInvalidReason(params: {
   tenantId: string;
   warehouseId: string;
@@ -149,7 +169,9 @@ function detectWarehouseDefaultInvalidReason(params: {
   return null;
 }
 
-async function findOrphanWarehouseRootIssues(tenantId?: string): Promise<OrphanWarehouseRootIssue[]> {
+export async function findOrphanWarehouseRootIssues(tenantId?: string): Promise<OrphanWarehouseRootIssue[]> {
+  const tenantClause = tenantId ? 'AND l.tenant_id = $1' : '';
+  const params = tenantId ? [tenantId] : [];
   const issuesRes = await query<OrphanWarehouseRootIssue>(
     `SELECT l.id AS location_id,
             l.tenant_id,
@@ -157,12 +179,15 @@ async function findOrphanWarehouseRootIssues(tenantId?: string): Promise<OrphanW
             l.parent_location_id,
             wh.tenant_id AS warehouse_tenant_id,
             wh.type AS warehouse_type,
-            resolve_warehouse_for_location(l.tenant_id, l.parent_location_id) AS derived_parent_warehouse_id
+            CASE
+              WHEN l.parent_location_id IS NULL THEN NULL
+              ELSE resolve_warehouse_for_location(l.tenant_id, l.parent_location_id)
+            END AS derived_parent_warehouse_id
        FROM locations l
        LEFT JOIN locations wh
          ON wh.id = l.warehouse_id
       WHERE l.type <> 'warehouse'
-        AND ($1::uuid IS NULL OR l.tenant_id = $1)
+        ${tenantClause}
         AND (
           l.warehouse_id IS NULL
           OR wh.id IS NULL
@@ -170,13 +195,66 @@ async function findOrphanWarehouseRootIssues(tenantId?: string): Promise<OrphanW
           OR wh.tenant_id IS DISTINCT FROM l.tenant_id
         )
       ORDER BY l.created_at ASC, l.id ASC`,
-    [tenantId ?? null]
+    params
   );
   return issuesRes.rows;
 }
 
+function buildOrphanDetectionFailurePayload(tenantId: string | undefined, error: unknown) {
+  const candidate = (error ?? {}) as {
+    code?: unknown;
+    sqlstate?: unknown;
+    sqlState?: unknown;
+    message?: unknown;
+    detail?: unknown;
+    schema?: unknown;
+    table?: unknown;
+    constraint?: unknown;
+    routine?: unknown;
+  };
+  const normalizeNullableString = (value: unknown, maxLength = 500): string | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    return trimmed.slice(0, maxLength);
+  };
+  const code =
+    normalizeNullableString(candidate.code, 64)
+    ?? normalizeNullableString(candidate.sqlstate, 64)
+    ?? normalizeNullableString(candidate.sqlState, 64);
+  const message = normalizeNullableString(candidate.message, 500) ?? 'ORPHAN_ROOTS_DETECTION_FAILED';
+  return {
+    tenantId: tenantId ?? null,
+    error: {
+      code,
+      message,
+      detail: normalizeNullableString(candidate.detail, 500),
+      schema: normalizeNullableString(candidate.schema, 128),
+      table: normalizeNullableString(candidate.table, 128),
+      constraint: normalizeNullableString(candidate.constraint, 128),
+      routine: normalizeNullableString(candidate.routine, 128)
+    }
+  };
+}
+
+async function findOrphanWarehouseRootIssuesBestEffort(
+  tenantId?: string,
+  options?: WarehouseDefaultRepairOptions
+): Promise<OrphanWarehouseRootIssue[]> {
+  const detector = options?.orphanIssueDetector ?? findOrphanWarehouseRootIssues;
+  try {
+    return await detector(tenantId);
+  } catch (error) {
+    emitWarehouseDefaultsEvent(
+      WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTION_FAILED,
+      buildOrphanDetectionFailurePayload(tenantId, error)
+    );
+    return [];
+  }
+}
+
 async function ensureOrphanWarehouseRoots(tenantId?: string, options?: WarehouseDefaultRepairOptions): Promise<void> {
-  const issues = await findOrphanWarehouseRootIssues(tenantId);
+  const issues = await findOrphanWarehouseRootIssuesBestEffort(tenantId, options);
   if (issues.length === 0) return;
   const summary = summarizeOrphanWarehouseRootIssues(issues, tenantId);
   const repairMode = resolveWarehouseDefaultsRepairMode(options);
@@ -305,7 +383,7 @@ async function ensureOrphanWarehouseRoots(tenantId?: string, options?: Warehouse
     [tenantId ?? null]
   );
 
-  const remaining = await findOrphanWarehouseRootIssues(tenantId);
+  const remaining = await findOrphanWarehouseRootIssuesBestEffort(tenantId, options);
   const remainingSummary = summarizeOrphanWarehouseRootIssues(remaining, tenantId);
   emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRED, {
     ...summary,
@@ -568,7 +646,27 @@ async function ensureDefaultsForWarehouse(
   }
   for (const role of DEFAULT_ROLES) {
     const existingDefaultMapping = defaults.get(role) ?? null;
+    const derivedDefaultIdWithoutMapping =
+      existingDefaultMapping == null
+        ? (options?.debugDerivedDefaultByRole?.[role] ?? null)
+        : null;
+    if (existingDefaultMapping == null && derivedDefaultIdWithoutMapping != null) {
+      throw warehouseDefaultInternalDerivedIdWithoutMappingError({
+        tenantId,
+        warehouseId,
+        role,
+        derivedId: derivedDefaultIdWithoutMapping
+      });
+    }
     const existingDefaultId = existingDefaultMapping?.locationId ?? null;
+    if (existingDefaultMapping == null && existingDefaultId != null) {
+      throw warehouseDefaultInternalDerivedIdWithoutMappingError({
+        tenantId,
+        warehouseId,
+        role,
+        derivedId: existingDefaultId
+      });
+    }
     const existingDefault = existingDefaultId ? defaultLocationById.get(existingDefaultId) : null;
     const invalidReason = detectWarehouseDefaultInvalidReason({
       tenantId,
@@ -630,6 +728,12 @@ async function ensureDefaultsForWarehouse(
     );
     let locationId = candidateRes.rows[0]?.id ?? null;
     if (!locationId) {
+      if (!repairInvalidDefaults) {
+        if (REQUIRED_DEFAULT_ROLES.includes(role)) {
+          throw warehouseDefaultInvalidError(invalidDetails!, { repairEnabled: repairInvalidDefaults });
+        }
+        continue;
+      }
       const id = uuidv4();
       const code = `${role}-${warehouseId}`;
       const name = `${role} Default`;

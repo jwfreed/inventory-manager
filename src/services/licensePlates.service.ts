@@ -433,6 +433,8 @@ export async function moveLicensePlate(
       status: 'posted',
       externalRef: `lpn_move:${lpn.lpn}:${data.idempotencyKey}`,
       idempotencyKey: data.idempotencyKey ?? null,
+      sourceType: 'lpn_move',
+      sourceId: data.idempotencyKey ?? movementId,
       occurredAt: now,
       postedAt: now,
       notes: data.notes ?? `LPN ${lpn.lpn} moved from ${lpn.locationCode} to new location`,

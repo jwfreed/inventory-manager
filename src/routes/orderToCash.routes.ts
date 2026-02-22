@@ -27,7 +27,12 @@ import {
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
-import { handlePostShipmentConflict, mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
+import {
+  handlePostShipmentConflict,
+  mapAtpConcurrencyExhausted,
+  mapAtpInsufficientAvailable,
+  mapTxRetryExhausted
+} from './orderToCash.shipmentConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -161,7 +166,13 @@ router.post('/reservations', async (req: Request, res: Response) => {
     });
     return res.status(201).json({ data: results });
   } catch (error) {
+    if (mapAtpConcurrencyExhausted(error, res)) {
+      return;
+    }
     if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
+    if (mapAtpInsufficientAvailable(error, res)) {
       return;
     }
     const mapped = mapPgErrorToHttp(error, {
@@ -182,9 +193,6 @@ router.post('/reservations', async (req: Request, res: Response) => {
     }
     if ((error as Error)?.message === 'LOCATION_NOT_FOUND') {
       return res.status(400).json({ error: 'Reservation location not found.' });
-    }
-    if ((error as Error)?.message === 'RESERVATION_INSUFFICIENT_AVAILABLE') {
-      return res.status(409).json({ error: 'Insufficient sellable inventory for reservation.' });
     }
     if ((error as Error)?.message === 'WAREHOUSE_SCOPE_REQUIRED') {
       return res.status(400).json({
@@ -228,6 +236,9 @@ router.post('/reservations/:id/allocate', async (req: Request, res: Response) =>
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error: any) {
+    if (mapAtpConcurrencyExhausted(error, res)) {
+      return;
+    }
     if (mapTxRetryExhausted(error, res)) {
       return;
     }
@@ -319,6 +330,9 @@ router.post('/reservations/:id/fulfill', async (req: Request, res: Response) => 
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error: any) {
+    if (mapAtpConcurrencyExhausted(error, res)) {
+      return;
+    }
     if (mapTxRetryExhausted(error, res)) {
       return;
     }

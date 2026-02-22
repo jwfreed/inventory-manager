@@ -81,6 +81,8 @@ export async function postInventoryAdjustment(
       movementType: 'adjustment',
       status: 'posted',
       externalRef: `inventory_adjustment:${id}`,
+      sourceType: 'inventory_adjustment_post',
+      sourceId: id,
       occurredAt: adjustmentRow.occurred_at,
       postedAt: now,
       notes: adjustmentRow.notes ?? null,

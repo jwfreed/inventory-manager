@@ -2,6 +2,7 @@ export const WAREHOUSE_DEFAULTS_EVENT = {
   ORPHAN_ROOTS_DETECTED: 'WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED',
   ORPHAN_ROOTS_REPAIRING: 'WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING',
   ORPHAN_ROOTS_REPAIRED: 'WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED',
+  ORPHAN_ROOTS_DETECTION_FAILED: 'WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED',
   DEFAULT_REPAIRING: 'WAREHOUSE_DEFAULT_REPAIRING',
   DEFAULT_REPAIRED: 'WAREHOUSE_DEFAULT_REPAIRED'
 } as const;
@@ -61,12 +62,26 @@ export type WarehouseOrphanRepairEndPayload = WarehouseOrphanSummaryPayload & {
   remainingSampleTenantIds: string[];
 };
 
+export type WarehouseOrphanDetectionFailedPayload = {
+  tenantId: string | null;
+  error: {
+    code: string | null;
+    message: string;
+    detail: string | null;
+    schema: string | null;
+    table: string | null;
+    constraint: string | null;
+    routine: string | null;
+  };
+};
+
 export type WarehouseDefaultsEventPayloadMap = {
   [WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING]: WarehouseDefaultRepairStartPayload;
   [WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRED]: WarehouseDefaultRepairEndPayload;
   [WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTED]: WarehouseOrphanSummaryPayload;
   [WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRING]: WarehouseOrphanRepairStartPayload;
   [WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRED]: WarehouseOrphanRepairEndPayload;
+  [WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTION_FAILED]: WarehouseOrphanDetectionFailedPayload;
 };
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -153,6 +168,20 @@ export function isWarehouseOrphanRepairEndPayload(payload: unknown): payload is 
   );
 }
 
+export function isWarehouseOrphanDetectionFailedPayload(payload: unknown): payload is WarehouseOrphanDetectionFailedPayload {
+  if (!isObject(payload) || !isObject(payload.error)) return false;
+  return (
+    (payload.tenantId === null || typeof payload.tenantId === 'string')
+    && hasNullableString(payload.error, 'code')
+    && hasString(payload.error, 'message')
+    && hasNullableString(payload.error, 'detail')
+    && hasNullableString(payload.error, 'schema')
+    && hasNullableString(payload.error, 'table')
+    && hasNullableString(payload.error, 'constraint')
+    && hasNullableString(payload.error, 'routine')
+  );
+}
+
 export function isWarehouseDefaultsEventPayload<T extends WarehouseDefaultsEventName>(
   event: T,
   payload: unknown
@@ -165,6 +194,9 @@ export function isWarehouseDefaultsEventPayload<T extends WarehouseDefaultsEvent
   }
   if (event === WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRED) {
     return isWarehouseOrphanRepairEndPayload(payload);
+  }
+  if (event === WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTION_FAILED) {
+    return isWarehouseOrphanDetectionFailedPayload(payload);
   }
   return isWarehouseOrphanSummaryPayload(payload);
 }

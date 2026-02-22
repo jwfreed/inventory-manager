@@ -479,6 +479,8 @@ export async function postPutaway(
       movementType: 'transfer',
       status: 'posted',
       externalRef: `putaway:${id}`,
+      sourceType: 'putaway',
+      sourceId: id,
       occurredAt: now,
       postedAt: now,
       notes: `Putaway ${id}`,

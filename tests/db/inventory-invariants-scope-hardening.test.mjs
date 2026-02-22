@@ -49,6 +49,16 @@ async function getSession() {
   });
 }
 
+async function getSessionForScope(label) {
+  return ensureDbSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug: `inv-scope-${label}-${randomUUID().slice(0, 8)}`,
+    tenantName: `Invariant Scope ${label}`
+  });
+}
+
 async function createWarehouseWithSellable(token, codePrefix) {
   const warehouseRes = await apiRequest('POST', '/locations', {
     token,
@@ -210,6 +220,45 @@ test('inventory invariants detect non-sellable flow refs and sales-order warehou
       delete process.env.INVARIANTS_STRICT;
     } else {
       process.env.INVARIANTS_STRICT = previousStrict;
+    }
+  }
+});
+
+test('inventory invariants job honors INVARIANTS_TENANT_ID scoping when tenantIds option is omitted', async () => {
+  const sessionA = await getSessionForScope('env-a');
+  const sessionB = await getSessionForScope('env-b');
+  const tenantA = sessionA.tenant?.id;
+  const tenantB = sessionB.tenant?.id;
+  assert.ok(tenantA, 'tenantA is required');
+  assert.ok(tenantB, 'tenantB is required');
+  assert.notEqual(tenantA, tenantB);
+
+  const previousTenantIdScope = process.env.INVARIANTS_TENANT_ID;
+  const previousTenantIdsScope = process.env.INVARIANTS_TENANT_IDS;
+  process.env.INVARIANTS_TENANT_ID = tenantA;
+  delete process.env.INVARIANTS_TENANT_IDS;
+
+  try {
+    const scopedResults = await runInventoryInvariantCheck();
+    assert.ok(scopedResults.length > 0, 'expected at least one scoped tenant result');
+    assert.ok(
+      scopedResults.every((row) => row.tenantId === tenantA),
+      `expected all rows scoped to ${tenantA}, got ${JSON.stringify(scopedResults.map((row) => row.tenantId))}`
+    );
+    assert.ok(
+      !scopedResults.some((row) => row.tenantId === tenantB),
+      'unexpected result for out-of-scope tenant'
+    );
+  } finally {
+    if (previousTenantIdScope === undefined) {
+      delete process.env.INVARIANTS_TENANT_ID;
+    } else {
+      process.env.INVARIANTS_TENANT_ID = previousTenantIdScope;
+    }
+    if (previousTenantIdsScope === undefined) {
+      delete process.env.INVARIANTS_TENANT_IDS;
+    } else {
+      process.env.INVARIANTS_TENANT_IDS = previousTenantIdsScope;
     }
   }
 });

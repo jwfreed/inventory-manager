@@ -42,6 +42,7 @@ type PreparedReservationCreateLine = {
   reservation: ReservationCreateLine;
   canonicalQuantity: number;
   canonicalUom: string;
+  derivedWarehouseId: string;
 };
 type ReservationRow = {
   id: string;
@@ -58,11 +59,34 @@ type ReservationRow = {
 };
 
 const BACKORDERS_ENABLED = process.env.BACKORDERS_ENABLED !== 'false';
+const ATP_SERIALIZABLE_RETRIES = 2;
+const ATP_RESERVATION_CREATE_RETRIES = 6;
+
+type AtpGuardKey = {
+  tenantId: string;
+  warehouseId: string;
+  itemId: string;
+};
+
+type StructuredServiceError = Error & {
+  code?: string;
+  status?: number;
+  details?: Record<string, unknown>;
+};
+
+type AtpErrorContext = {
+  operation: 'reserve' | 'allocate' | 'fulfill' | 'shipment_post';
+  tenantId: string;
+  warehouseIds?: string[];
+  itemIds?: string[];
+};
 
 function compareReservationLockKey(
   left: PreparedReservationCreateLine,
   right: PreparedReservationCreateLine
 ): number {
+  const warehouseCompare = left.derivedWarehouseId.localeCompare(right.derivedWarehouseId);
+  if (warehouseCompare !== 0) return warehouseCompare;
   const itemCompare = left.reservation.itemId.localeCompare(right.reservation.itemId);
   if (itemCompare !== 0) return itemCompare;
   const locationCompare = left.reservation.locationId.localeCompare(right.reservation.locationId);
@@ -94,6 +118,118 @@ function insufficientAvailableWithAllowance(details?: Record<string, unknown>) {
     error.details = details;
   }
   return error;
+}
+
+function mapUniqueValues(values: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter((value) => value.length > 0)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+}
+
+function compareAtpGuardKey(left: AtpGuardKey, right: AtpGuardKey): number {
+  const tenant = left.tenantId.localeCompare(right.tenantId);
+  if (tenant !== 0) return tenant;
+  const warehouse = left.warehouseId.localeCompare(right.warehouseId);
+  if (warehouse !== 0) return warehouse;
+  return left.itemId.localeCompare(right.itemId);
+}
+
+function uniqueSortedAtpGuardKeys(keys: AtpGuardKey[]): AtpGuardKey[] {
+  const byComposite = new Map<string, AtpGuardKey>();
+  for (const key of keys) {
+    const composite = `${key.tenantId}:${key.warehouseId}:${key.itemId}`;
+    if (!byComposite.has(composite)) {
+      byComposite.set(composite, key);
+    }
+  }
+  return Array.from(byComposite.values()).sort(compareAtpGuardKey);
+}
+
+function emitAtpMetric(event: string, payload: Record<string, unknown>) {
+  console.info(`[${event}] ${JSON.stringify(payload)}`);
+}
+
+async function acquireAtpAdvisoryLocks(
+  client: PoolClient,
+  keys: AtpGuardKey[],
+  context: AtpErrorContext
+) {
+  const sortedKeys = uniqueSortedAtpGuardKeys(keys);
+  if (sortedKeys.length === 0) {
+    return;
+  }
+  const lockStart = Date.now();
+  for (const key of sortedKeys) {
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`,
+      [
+        `atp:${key.tenantId}`,
+        `${key.warehouseId}:${key.itemId}`
+      ]
+    );
+  }
+  const waitMs = Date.now() - lockStart;
+  emitAtpMetric('atp_lock_wait_ms', {
+    operation: context.operation,
+    tenantId: context.tenantId,
+    warehouseIds: mapUniqueValues(context.warehouseIds ?? sortedKeys.map((key) => key.warehouseId)),
+    itemIds: mapUniqueValues(context.itemIds ?? sortedKeys.map((key) => key.itemId)),
+    lockKeyCount: sortedKeys.length,
+    atp_lock_wait_ms: waitMs
+  });
+}
+
+function atpInsufficientAvailable(details: Record<string, unknown>): StructuredServiceError {
+  const error = new Error('ATP_INSUFFICIENT_AVAILABLE') as StructuredServiceError;
+  error.code = 'ATP_INSUFFICIENT_AVAILABLE';
+  error.status = 409;
+  error.details = details;
+  emitAtpMetric('atp_insufficient_available_count', {
+    count: 1,
+    ...details
+  });
+  return error;
+}
+
+function atpConcurrencyExhausted(
+  details: Record<string, unknown>,
+  cause?: unknown
+): StructuredServiceError {
+  const error = new Error('ATP_CONCURRENCY_EXHAUSTED') as StructuredServiceError & { cause?: unknown };
+  error.code = 'ATP_CONCURRENCY_EXHAUSTED';
+  error.status = 409;
+  error.details = details;
+  if (cause !== undefined) {
+    error.cause = cause;
+  }
+  return error;
+}
+
+function withAtpRetryHandling(error: any, context: AtpErrorContext): never {
+  if (error?.code === 'TX_RETRY_EXHAUSTED') {
+    const retryAttempts = Number(error?.retryAttempts ?? ATP_SERIALIZABLE_RETRIES + 1);
+    const retrySqlState = typeof error?.retrySqlState === 'string' ? error.retrySqlState : null;
+    const details = {
+      operation: context.operation,
+      tenantId: context.tenantId,
+      warehouseIds: mapUniqueValues(context.warehouseIds ?? []),
+      itemIds: mapUniqueValues(context.itemIds ?? []),
+      retryable: true,
+      retryAttempts,
+      atp_retry_count: Math.max(0, retryAttempts - 1),
+      retrySqlState
+    };
+    emitAtpMetric('atp_concurrency_exhausted_count', {
+      count: 1,
+      ...details
+    });
+    throw atpConcurrencyExhausted(details, error);
+  }
+  throw error;
 }
 
 /*
@@ -495,141 +631,51 @@ export async function createReservations(
 ) {
   const now = new Date();
   const baseIdempotency = options?.idempotencyKey ?? null;
-  const results = await withTransactionRetry(async (client) => {
-    const rows: any[] = [];
-    const preparedLines: PreparedReservationCreateLine[] = [];
-    for (const reservation of data.reservations) {
-      const canonical = await convertToCanonical(
-        tenantId,
-        reservation.itemId,
-        reservation.quantityReserved,
-        reservation.uom,
-        client
-      );
-      preparedLines.push({
-        reservation,
-        canonicalQuantity: roundQuantity(canonical.quantity),
-        canonicalUom: canonical.canonicalUom
-      });
-    }
-    preparedLines.sort(compareReservationLockKey);
-
-    for (const line of preparedLines) {
-      const { reservation, canonicalQuantity, canonicalUom } = line;
-      const derivedWarehouseId = await resolveReservationDerivedWarehouseScope(client, tenantId, reservation);
-      await assertSellableLocationOrThrow(client, tenantId, reservation.locationId, {
-        expectedWarehouseId: derivedWarehouseId
-      });
-      const idempotencyKey = baseIdempotency
-        ? `${baseIdempotency}:${reservation.demandId}:${reservation.itemId}:${reservation.locationId}:${derivedWarehouseId}:${canonicalUom}`
-        : null;
-      if (idempotencyKey) {
-        const existing = await client.query(
-          `SELECT * FROM inventory_reservations
-            WHERE client_id = $1 AND idempotency_key = $2`,
-          [tenantId, idempotencyKey]
-        );
-        if (existing.rowCount > 0) {
-          rows.push(existing.rows[0]);
-          continue;
-        }
-      }
-      const warehouseId = derivedWarehouseId;
-
-      const allowBackorder =
-        reservation.allowBackorder !== undefined ? reservation.allowBackorder : BACKORDERS_ENABLED;
-      await ensureInventoryBalanceRowAndLock(
-        client,
-        tenantId,
-        reservation.itemId,
-        reservation.locationId,
-        canonicalUom
-      );
-
-      let reserveQty = canonicalQuantity;
-      let backorderQty = 0;
-      if (allowBackorder) {
-        const availability = await getCanonicalAvailability(
-          client,
+  let results: any[];
+  try {
+    results = await withTransactionRetry(async (client) => {
+      const rows: any[] = [];
+      const preparedLines: PreparedReservationCreateLine[] = [];
+      for (const reservation of data.reservations) {
+        const canonical = await convertToCanonical(
           tenantId,
-          warehouseId,
           reservation.itemId,
-          reservation.locationId,
-          canonicalUom
-        );
-        const available = roundQuantity(availability.available);
-        reserveQty = roundQuantity(Math.max(0, Math.min(canonicalQuantity, available)));
-        backorderQty = roundQuantity(Math.max(0, canonicalQuantity - reserveQty));
-      }
-      // Tolerate tiny rounding drift so we don't reject valid reservations.
-      if (backorderQty > 0 && backorderQty <= 1e-6) {
-        backorderQty = 0;
-        reserveQty = canonicalQuantity;
-      }
-      if (backorderQty > 0) {
-        await upsertBackorder(
-          tenantId,
-          {
-            demandType: reservation.demandType,
-            demandId: reservation.demandId,
-            itemId: reservation.itemId,
-            locationId: reservation.locationId,
-            uom: canonicalUom,
-            quantity: backorderQty,
-            notes: reservation.notes ?? null
-          },
+          reservation.quantityReserved,
+          reservation.uom,
           client
         );
+        const derivedWarehouseId = await resolveReservationDerivedWarehouseScope(client, tenantId, reservation);
+        preparedLines.push({
+          reservation,
+          canonicalQuantity: roundQuantity(canonical.quantity),
+          canonicalUom: canonical.canonicalUom,
+          derivedWarehouseId
+        });
       }
-      if (reserveQty <= 0) {
-        continue;
-      }
-      if (!allowBackorder) {
-        const availability = await getCanonicalAvailability(
-          client,
+      preparedLines.sort(compareReservationLockKey);
+      await acquireAtpAdvisoryLocks(
+        client,
+        preparedLines.map((line) => ({
           tenantId,
-          warehouseId,
-          reservation.itemId,
-          reservation.locationId,
-          canonicalUom
-        );
-        const available = roundQuantity(availability.available);
-        if (available + 1e-6 < reserveQty) {
-          const err: any = new Error('RESERVATION_INSUFFICIENT_AVAILABLE');
-          err.code = 'RESERVATION_INSUFFICIENT_AVAILABLE';
-          throw err;
+          warehouseId: line.derivedWarehouseId,
+          itemId: line.reservation.itemId
+        })),
+        {
+          operation: 'reserve',
+          tenantId,
+          warehouseIds: preparedLines.map((line) => line.derivedWarehouseId),
+          itemIds: preparedLines.map((line) => line.reservation.itemId)
         }
-      }
-      const fulfilledQty =
-        reservation.quantityFulfilled != null ? Math.min(reservation.quantityFulfilled, reserveQty) : 0;
-      const res = await client.query(
-        `INSERT INTO inventory_reservations (
-          id, tenant_id, client_id, status, demand_type, demand_id, item_id, location_id, warehouse_id, uom,
-          quantity_reserved, quantity_fulfilled, reserved_at, expires_at, notes, idempotency_key, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
-        ON CONFLICT DO NOTHING
-        RETURNING *`,
-        [
-          uuidv4(),
-          tenantId,
-          tenantId,
-          'RESERVED',
-          reservation.demandType,
-          reservation.demandId,
-          reservation.itemId,
-          reservation.locationId,
-          warehouseId,
-          canonicalUom,
-          reserveQty,
-          fulfilledQty,
-          now,
-          reservation.expiresAt ? new Date(reservation.expiresAt) : null,
-          reservation.notes ?? null,
-          idempotencyKey,
-          now,
-        ],
       );
-      if (res.rowCount === 0) {
+
+      for (const line of preparedLines) {
+        const { reservation, canonicalQuantity, canonicalUom, derivedWarehouseId } = line;
+        await assertSellableLocationOrThrow(client, tenantId, reservation.locationId, {
+          expectedWarehouseId: derivedWarehouseId
+        });
+        const idempotencyKey = baseIdempotency
+          ? `${baseIdempotency}:${reservation.demandId}:${reservation.itemId}:${reservation.locationId}:${derivedWarehouseId}:${canonicalUom}`
+          : null;
         if (idempotencyKey) {
           const existing = await client.query(
             `SELECT * FROM inventory_reservations
@@ -641,60 +687,182 @@ export async function createReservations(
             continue;
           }
         }
-        const existing = await client.query(
-          `SELECT * FROM inventory_reservations
-            WHERE tenant_id = $1
-              AND demand_type = $2
-              AND demand_id = $3
-              AND item_id = $4
-              AND location_id = $5
-              AND uom = $6`,
-          [
+        const warehouseId = derivedWarehouseId;
+
+        const allowBackorder =
+          reservation.allowBackorder !== undefined ? reservation.allowBackorder : BACKORDERS_ENABLED;
+        await ensureInventoryBalanceRowAndLock(
+          client,
+          tenantId,
+          reservation.itemId,
+          reservation.locationId,
+          canonicalUom
+        );
+
+        let reserveQty = canonicalQuantity;
+        let backorderQty = 0;
+        if (allowBackorder) {
+          const availability = await getCanonicalAvailability(
+            client,
             tenantId,
+            warehouseId,
+            reservation.itemId,
+            reservation.locationId,
+            canonicalUom
+          );
+          const available = roundQuantity(availability.available);
+          reserveQty = roundQuantity(Math.max(0, Math.min(canonicalQuantity, available)));
+          backorderQty = roundQuantity(Math.max(0, canonicalQuantity - reserveQty));
+        }
+        // Tolerate tiny rounding drift so we don't reject valid reservations.
+        if (backorderQty > 0 && backorderQty <= 1e-6) {
+          backorderQty = 0;
+          reserveQty = canonicalQuantity;
+        }
+        if (backorderQty > 0) {
+          await upsertBackorder(
+            tenantId,
+            {
+              demandType: reservation.demandType,
+              demandId: reservation.demandId,
+              itemId: reservation.itemId,
+              locationId: reservation.locationId,
+              uom: canonicalUom,
+              quantity: backorderQty,
+              notes: reservation.notes ?? null
+            },
+            client
+          );
+        }
+        if (reserveQty <= 0) {
+          continue;
+        }
+        if (!allowBackorder) {
+          const availability = await getCanonicalAvailability(
+            client,
+            tenantId,
+            warehouseId,
+            reservation.itemId,
+            reservation.locationId,
+            canonicalUom
+          );
+          const available = roundQuantity(availability.available);
+          if (available + 1e-6 < reserveQty) {
+            throw atpInsufficientAvailable({
+              operation: 'reserve',
+              tenantId,
+              warehouseId,
+              itemId: reservation.itemId,
+              locationId: reservation.locationId,
+              uom: canonicalUom,
+              available,
+              requestedQty: reserveQty
+            });
+          }
+        }
+        const fulfilledQty =
+          reservation.quantityFulfilled != null ? Math.min(reservation.quantityFulfilled, reserveQty) : 0;
+        const res = await client.query(
+          `INSERT INTO inventory_reservations (
+            id, tenant_id, client_id, status, demand_type, demand_id, item_id, location_id, warehouse_id, uom,
+            quantity_reserved, quantity_fulfilled, reserved_at, expires_at, notes, idempotency_key, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
+          ON CONFLICT DO NOTHING
+          RETURNING *`,
+          [
+            uuidv4(),
+            tenantId,
+            tenantId,
+            'RESERVED',
             reservation.demandType,
             reservation.demandId,
+            reservation.itemId,
+            reservation.locationId,
+            warehouseId,
+            canonicalUom,
+            reserveQty,
+            fulfilledQty,
+            now,
+            reservation.expiresAt ? new Date(reservation.expiresAt) : null,
+            reservation.notes ?? null,
+            idempotencyKey,
+            now,
+          ],
+        );
+        if (res.rowCount === 0) {
+          if (idempotencyKey) {
+            const existing = await client.query(
+              `SELECT * FROM inventory_reservations
+                WHERE client_id = $1 AND idempotency_key = $2`,
+              [tenantId, idempotencyKey]
+            );
+            if (existing.rowCount > 0) {
+              rows.push(existing.rows[0]);
+              continue;
+            }
+          }
+          const existing = await client.query(
+            `SELECT * FROM inventory_reservations
+              WHERE tenant_id = $1
+                AND demand_type = $2
+                AND demand_id = $3
+                AND item_id = $4
+                AND location_id = $5
+                AND uom = $6`,
+            [
+              tenantId,
+              reservation.demandType,
+              reservation.demandId,
+              reservation.itemId,
+              reservation.locationId,
+              canonicalUom
+            ]
+          );
+          if (existing.rowCount > 0) {
+            rows.push(existing.rows[0]);
+            continue;
+          }
+          throw new Error('RESERVATION_CONFLICT');
+        }
+        rows.push(res.rows[0]);
+        await client.query(
+          `UPDATE inventory_balance
+              SET reserved = reserved + $1,
+                  updated_at = now()
+            WHERE tenant_id = $2
+              AND item_id = $3
+              AND location_id = $4
+              AND uom = $5`,
+          [
+            reserveQty,
+            tenantId,
             reservation.itemId,
             reservation.locationId,
             canonicalUom
           ]
         );
-        if (existing.rowCount > 0) {
-          rows.push(existing.rows[0]);
-          continue;
-        }
-        throw new Error('RESERVATION_CONFLICT');
+
+        await insertReservationEvent(client, tenantId, res.rows[0].id, 'RESERVED', reserveQty, 0);
+
+        await enqueueInventoryReservationChanged(client, tenantId, res.rows[0].id, {
+          itemId: reservation.itemId,
+          locationId: reservation.locationId,
+          demandId: reservation.demandId,
+          demandType: reservation.demandType
+        });
       }
-      rows.push(res.rows[0]);
-      await client.query(
-        `UPDATE inventory_balance
-            SET reserved = reserved + $1,
-                updated_at = now()
-          WHERE tenant_id = $2
-            AND item_id = $3
-            AND location_id = $4
-            AND uom = $5`,
-        [
-          reserveQty,
-          tenantId,
-          reservation.itemId,
-          reservation.locationId,
-          canonicalUom
-        ]
-      );
-
-      await insertReservationEvent(client, tenantId, res.rows[0].id, 'RESERVED', reserveQty, 0);
-
-      await enqueueInventoryReservationChanged(client, tenantId, res.rows[0].id, {
-        itemId: reservation.itemId,
-        locationId: reservation.locationId,
-        demandId: reservation.demandId,
-        demandType: reservation.demandType
-      });
-    }
-    return rows;
-  }, { isolationLevel: 'SERIALIZABLE', retries: 6 });
+      return rows;
+    }, { isolationLevel: 'SERIALIZABLE', retries: ATP_RESERVATION_CREATE_RETRIES });
+  } catch (error) {
+    withAtpRetryHandling(error, {
+      operation: 'reserve',
+      tenantId,
+      warehouseIds: data.reservations.map((reservation) => reservation.warehouseId),
+      itemIds: data.reservations.map((reservation) => reservation.itemId)
+    });
+  }
   const affectedWarehouses = new Set<string>();
-  for (const row of results as any[]) {
+  for (const row of results) {
     if (typeof row?.warehouse_id === 'string') {
       affectedWarehouses.add(row.warehouse_id);
     }
@@ -733,92 +901,115 @@ export async function allocateReservation(
   options?: { idempotencyKey?: string | null }
 ) {
   const now = new Date();
-  const result = await withTransactionRetry(async (client) => {
-    const idempotencyKey = options?.idempotencyKey ?? null;
-    if (idempotencyKey) {
-      const record = await beginIdempotency(`reservation:${id}:allocate:${idempotencyKey}`, hashRequestBody({ id }), client);
-      if (record.status === 'SUCCEEDED') {
-        const res = await client.query(
-          'SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3',
-          [
-            id,
-            tenantId,
-            warehouseId
-          ]
-        );
-        return res.rowCount ? mapReservation(res.rows[0]) : null;
+  let result: any;
+  try {
+    result = await withTransactionRetry(async (client) => {
+      const idempotencyKey = options?.idempotencyKey ?? null;
+      if (idempotencyKey) {
+        const record = await beginIdempotency(`reservation:${id}:allocate:${idempotencyKey}`, hashRequestBody({ id }), client);
+        if (record.status === 'SUCCEEDED') {
+          const res = await client.query(
+            'SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3',
+            [
+              id,
+              tenantId,
+              warehouseId
+            ]
+          );
+          return res.rowCount ? mapReservation(res.rows[0]) : null;
+        }
+        if (record.status === 'IN_PROGRESS' && !record.isNew) {
+          throw new Error('RESERVATION_ALLOCATE_IN_PROGRESS');
+        }
       }
-      if (record.status === 'IN_PROGRESS' && !record.isNew) {
-        throw new Error('RESERVATION_ALLOCATE_IN_PROGRESS');
-      }
-    }
 
-    const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
-    await assertSellableLocationOrThrow(client, tenantId, reservation.location_id, {
-      expectedWarehouseId: reservation.warehouse_id
+      const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
+      await acquireAtpAdvisoryLocks(
+        client,
+        [{
+          tenantId,
+          warehouseId: reservation.warehouse_id,
+          itemId: reservation.item_id
+        }],
+        {
+          operation: 'allocate',
+          tenantId,
+          warehouseIds: [reservation.warehouse_id],
+          itemIds: [reservation.item_id]
+        }
+      );
+      await assertSellableLocationOrThrow(client, tenantId, reservation.location_id, {
+        expectedWarehouseId: reservation.warehouse_id
+      });
+      if (reservation.status !== 'RESERVED') {
+        throw reservationInvalidState();
+      }
+
+      const openQty = roundQuantity(
+        Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0))
+      );
+      if (openQty <= 1e-6) {
+        throw reservationInvalidState();
+      }
+
+      const transition = await client.query(
+        `UPDATE inventory_reservations
+            SET status = 'ALLOCATED',
+                allocated_at = COALESCE(allocated_at, $1),
+                updated_at = $1
+          WHERE id = $2
+            AND tenant_id = $3
+            AND warehouse_id = $4
+            AND status = 'RESERVED'`,
+        [now, id, tenantId, warehouseId]
+      );
+      if (transition.rowCount === 0) {
+        throw reservationInvalidState();
+      }
+
+      if (openQty > 0) {
+        await applyInventoryBalanceDelta(client, {
+          tenantId,
+          itemId: reservation.item_id,
+          locationId: reservation.location_id,
+          uom: reservation.uom,
+          deltaReserved: -openQty,
+          deltaAllocated: openQty
+        });
+      }
+
+      if (openQty > 0) {
+        await insertReservationEvent(client, tenantId, id, 'ALLOCATED', -openQty, openQty);
+      }
+
+      if (idempotencyKey) {
+        await completeIdempotency(`reservation:${id}:allocate:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
+      }
+
+      const updated = await client.query(
+        `SELECT * FROM inventory_reservations
+          WHERE id = $1
+            AND tenant_id = $2
+            AND warehouse_id = $3`,
+        [id, tenantId, warehouseId]
+      );
+      if (updated.rowCount > 0) {
+        await enqueueInventoryReservationChanged(client, tenantId, updated.rows[0].id, {
+          itemId: updated.rows[0].item_id,
+          locationId: updated.rows[0].location_id,
+          demandId: updated.rows[0].demand_id,
+          demandType: updated.rows[0].demand_type
+        });
+      }
+      return updated.rowCount ? mapReservation(updated.rows[0]) : null;
+    }, { isolationLevel: 'SERIALIZABLE', retries: ATP_SERIALIZABLE_RETRIES });
+  } catch (error) {
+    withAtpRetryHandling(error, {
+      operation: 'allocate',
+      tenantId,
+      warehouseIds: [warehouseId]
     });
-    if (reservation.status !== 'RESERVED') {
-      throw reservationInvalidState();
-    }
-
-    const openQty = roundQuantity(
-      Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0))
-    );
-    if (openQty <= 1e-6) {
-      throw reservationInvalidState();
-    }
-
-    const transition = await client.query(
-      `UPDATE inventory_reservations
-          SET status = 'ALLOCATED',
-              allocated_at = COALESCE(allocated_at, $1),
-              updated_at = $1
-        WHERE id = $2
-          AND tenant_id = $3
-          AND warehouse_id = $4
-          AND status = 'RESERVED'`,
-      [now, id, tenantId, warehouseId]
-    );
-    if (transition.rowCount === 0) {
-      throw reservationInvalidState();
-    }
-
-    if (openQty > 0) {
-      await applyInventoryBalanceDelta(client, {
-        tenantId,
-        itemId: reservation.item_id,
-        locationId: reservation.location_id,
-        uom: reservation.uom,
-        deltaReserved: -openQty,
-        deltaAllocated: openQty
-      });
-    }
-
-    if (openQty > 0) {
-      await insertReservationEvent(client, tenantId, id, 'ALLOCATED', -openQty, openQty);
-    }
-
-    if (idempotencyKey) {
-      await completeIdempotency(`reservation:${id}:allocate:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
-    }
-
-    const updated = await client.query(
-      `SELECT * FROM inventory_reservations
-        WHERE id = $1
-          AND tenant_id = $2
-          AND warehouse_id = $3`,
-      [id, tenantId, warehouseId]
-    );
-    if (updated.rowCount > 0) {
-      await enqueueInventoryReservationChanged(client, tenantId, updated.rows[0].id, {
-        itemId: updated.rows[0].item_id,
-        locationId: updated.rows[0].location_id,
-        demandId: updated.rows[0].demand_id,
-        demandType: updated.rows[0].demand_type
-      });
-    }
-    return updated.rowCount ? mapReservation(updated.rows[0]) : null;
-  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+  }
   invalidateAtpCacheForWarehouse(tenantId, warehouseId);
   return result;
 }
@@ -928,112 +1119,135 @@ export async function fulfillReservation(
   params?: { quantity?: number; idempotencyKey?: string | null }
 ) {
   const now = new Date();
-  const result = await withTransactionRetry(async (client) => {
-    const idempotencyKey = params?.idempotencyKey ?? null;
-    if (idempotencyKey) {
-      const record = await beginIdempotency(
-        `reservation:${id}:fulfill:${idempotencyKey}`,
-        hashRequestBody({ id, quantity: params?.quantity ?? null }),
-        client
-      );
-      if (record.status === 'SUCCEEDED') {
-        const res = await client.query(
-          'SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3',
-          [id, tenantId, warehouseId]
+  let result: any;
+  try {
+    result = await withTransactionRetry(async (client) => {
+      const idempotencyKey = params?.idempotencyKey ?? null;
+      if (idempotencyKey) {
+        const record = await beginIdempotency(
+          `reservation:${id}:fulfill:${idempotencyKey}`,
+          hashRequestBody({ id, quantity: params?.quantity ?? null }),
+          client
         );
-        return res.rowCount ? mapReservation(res.rows[0]) : null;
+        if (record.status === 'SUCCEEDED') {
+          const res = await client.query(
+            'SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3',
+            [id, tenantId, warehouseId]
+          );
+          return res.rowCount ? mapReservation(res.rows[0]) : null;
+        }
+        if (record.status === 'IN_PROGRESS' && !record.isNew) {
+          throw new Error('RESERVATION_FULFILL_IN_PROGRESS');
+        }
       }
-      if (record.status === 'IN_PROGRESS' && !record.isNew) {
-        throw new Error('RESERVATION_FULFILL_IN_PROGRESS');
-      }
-    }
 
-    const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
-    await assertSellableLocationOrThrow(client, tenantId, reservation.location_id, {
-      expectedWarehouseId: reservation.warehouse_id
+      const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
+      await acquireAtpAdvisoryLocks(
+        client,
+        [{
+          tenantId,
+          warehouseId: reservation.warehouse_id,
+          itemId: reservation.item_id
+        }],
+        {
+          operation: 'fulfill',
+          tenantId,
+          warehouseIds: [reservation.warehouse_id],
+          itemIds: [reservation.item_id]
+        }
+      );
+      await assertSellableLocationOrThrow(client, tenantId, reservation.location_id, {
+        expectedWarehouseId: reservation.warehouse_id
+      });
+      if (reservation.status !== 'ALLOCATED') {
+        throw reservationInvalidState();
+      }
+
+      const quantityReserved = toNumber(reservation.quantity_reserved);
+      const quantityFulfilled = toNumber(reservation.quantity_fulfilled ?? 0);
+      if (quantityFulfilled - quantityReserved > 1e-6) {
+        throw reservationInvalidState();
+      }
+      const remaining = roundQuantity(
+        Math.max(0, quantityReserved - quantityFulfilled)
+      );
+      if (remaining <= 1e-6) {
+        throw reservationInvalidState();
+      }
+      // Fulfill is incremental: quantity is "consume now", never an absolute fulfilled total.
+      const requestedInput = params?.quantity;
+      if (typeof requestedInput !== 'number' || !Number.isFinite(requestedInput)) {
+        throw reservationInvalidQuantity();
+      }
+      const requestedQty = roundQuantity(requestedInput);
+      if (requestedQty <= 1e-6) {
+        throw reservationInvalidQuantity();
+      }
+      const fulfillQty = roundQuantity(Math.max(0, Math.min(requestedQty, remaining)));
+      const fulfilledTotal = roundQuantity(quantityFulfilled + fulfillQty);
+      if (fulfilledTotal + 1e-6 < quantityFulfilled || fulfilledTotal - quantityReserved > 1e-6) {
+        throw reservationInvalidState();
+      }
+      const newStatus = fulfilledTotal + 1e-6 >= quantityReserved ? 'FULFILLED' : 'ALLOCATED';
+
+      const transition = await client.query(
+        `UPDATE inventory_reservations
+            SET quantity_fulfilled = $1,
+                status = $2,
+                fulfilled_at = CASE WHEN $2 = 'FULFILLED' THEN COALESCE(fulfilled_at, $3) ELSE fulfilled_at END,
+                updated_at = $3
+          WHERE id = $4
+            AND tenant_id = $5
+            AND warehouse_id = $6
+            AND status = 'ALLOCATED'`,
+        [fulfilledTotal, newStatus, now, id, tenantId, warehouseId]
+      );
+      if (transition.rowCount === 0) {
+        throw reservationInvalidState();
+      }
+
+      if (fulfillQty > 0) {
+        await applyInventoryBalanceDelta(client, {
+          tenantId,
+          itemId: reservation.item_id,
+          locationId: reservation.location_id,
+          uom: reservation.uom,
+          deltaAllocated: -fulfillQty
+        });
+      }
+
+      if (fulfillQty > 0) {
+        await insertReservationEvent(client, tenantId, id, 'FULFILLED', 0, -fulfillQty);
+      }
+
+      if (idempotencyKey) {
+        await completeIdempotency(`reservation:${id}:fulfill:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
+      }
+
+      const updated = await client.query(
+        `SELECT * FROM inventory_reservations
+          WHERE id = $1
+            AND tenant_id = $2
+            AND warehouse_id = $3`,
+        [id, tenantId, warehouseId]
+      );
+      if (updated.rowCount > 0) {
+        await enqueueInventoryReservationChanged(client, tenantId, updated.rows[0].id, {
+          itemId: updated.rows[0].item_id,
+          locationId: updated.rows[0].location_id,
+          demandId: updated.rows[0].demand_id,
+          demandType: updated.rows[0].demand_type
+        });
+      }
+      return updated.rowCount ? mapReservation(updated.rows[0]) : null;
+    }, { isolationLevel: 'SERIALIZABLE', retries: ATP_SERIALIZABLE_RETRIES });
+  } catch (error) {
+    withAtpRetryHandling(error, {
+      operation: 'fulfill',
+      tenantId,
+      warehouseIds: [warehouseId]
     });
-    if (reservation.status !== 'ALLOCATED') {
-      throw reservationInvalidState();
-    }
-
-    const quantityReserved = toNumber(reservation.quantity_reserved);
-    const quantityFulfilled = toNumber(reservation.quantity_fulfilled ?? 0);
-    if (quantityFulfilled - quantityReserved > 1e-6) {
-      throw reservationInvalidState();
-    }
-    const remaining = roundQuantity(
-      Math.max(0, quantityReserved - quantityFulfilled)
-    );
-    if (remaining <= 1e-6) {
-      throw reservationInvalidState();
-    }
-    // Fulfill is incremental: quantity is "consume now", never an absolute fulfilled total.
-    const requestedInput = params?.quantity;
-    if (typeof requestedInput !== 'number' || !Number.isFinite(requestedInput)) {
-      throw reservationInvalidQuantity();
-    }
-    const requestedQty = roundQuantity(requestedInput);
-    if (requestedQty <= 1e-6) {
-      throw reservationInvalidQuantity();
-    }
-    const fulfillQty = roundQuantity(Math.max(0, Math.min(requestedQty, remaining)));
-    const fulfilledTotal = roundQuantity(quantityFulfilled + fulfillQty);
-    if (fulfilledTotal + 1e-6 < quantityFulfilled || fulfilledTotal - quantityReserved > 1e-6) {
-      throw reservationInvalidState();
-    }
-    const newStatus = fulfilledTotal + 1e-6 >= quantityReserved ? 'FULFILLED' : 'ALLOCATED';
-
-    const transition = await client.query(
-      `UPDATE inventory_reservations
-          SET quantity_fulfilled = $1,
-              status = $2,
-              fulfilled_at = CASE WHEN $2 = 'FULFILLED' THEN COALESCE(fulfilled_at, $3) ELSE fulfilled_at END,
-              updated_at = $3
-        WHERE id = $4
-          AND tenant_id = $5
-          AND warehouse_id = $6
-          AND status = 'ALLOCATED'`,
-      [fulfilledTotal, newStatus, now, id, tenantId, warehouseId]
-    );
-    if (transition.rowCount === 0) {
-      throw reservationInvalidState();
-    }
-
-    if (fulfillQty > 0) {
-      await applyInventoryBalanceDelta(client, {
-        tenantId,
-        itemId: reservation.item_id,
-        locationId: reservation.location_id,
-        uom: reservation.uom,
-        deltaAllocated: -fulfillQty
-      });
-    }
-
-    if (fulfillQty > 0) {
-      await insertReservationEvent(client, tenantId, id, 'FULFILLED', 0, -fulfillQty);
-    }
-
-    if (idempotencyKey) {
-      await completeIdempotency(`reservation:${id}:fulfill:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
-    }
-
-    const updated = await client.query(
-      `SELECT * FROM inventory_reservations
-        WHERE id = $1
-          AND tenant_id = $2
-          AND warehouse_id = $3`,
-      [id, tenantId, warehouseId]
-    );
-    if (updated.rowCount > 0) {
-      await enqueueInventoryReservationChanged(client, tenantId, updated.rows[0].id, {
-        itemId: updated.rows[0].item_id,
-        locationId: updated.rows[0].location_id,
-        demandId: updated.rows[0].demand_id,
-        demandType: updated.rows[0].demand_type
-      });
-    }
-    return updated.rowCount ? mapReservation(updated.rows[0]) : null;
-  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+  }
   invalidateAtpCacheForWarehouse(tenantId, warehouseId);
   return result;
 }
@@ -1324,6 +1538,27 @@ export async function postShipment(
         reserveConsume: 0
       });
     }
+    shipmentLineContexts.sort((left, right) => {
+      const item = left.line.item_id.localeCompare(right.line.item_id);
+      if (item !== 0) return item;
+      const uom = left.canonicalOut.canonicalUom.localeCompare(right.canonicalOut.canonicalUom);
+      if (uom !== 0) return uom;
+      return String(left.line.id).localeCompare(String(right.line.id));
+    });
+    await acquireAtpAdvisoryLocks(
+      client,
+      shipmentLineContexts.map((lineContext) => ({
+        tenantId,
+        warehouseId: shipFromWarehouseId,
+        itemId: lineContext.line.item_id
+      })),
+      {
+        operation: 'shipment_post',
+        tenantId,
+        warehouseIds: [shipFromWarehouseId],
+        itemIds: shipmentLineContexts.map((lineContext) => lineContext.line.item_id)
+      }
+    );
 
     const lockedReservations = await lockReservationsForUpdate(
       client,
@@ -1398,6 +1633,8 @@ export async function postShipment(
       movementType: 'issue',
       status: 'posted',
       externalRef: `shipment:${shipmentId}`,
+      sourceType: 'shipment_post',
+      sourceId: shipmentId,
       idempotencyKey: params.idempotencyKey,
       occurredAt: shipment.shipped_at ?? now,
       postedAt: now,

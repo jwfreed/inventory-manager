@@ -41,7 +41,7 @@ function printSection(title, count, rows) {
   }
 }
 
-const tenantId = getArg('tenant-id') ?? process.env.TENANT_ID;
+const tenantId = getArg('tenant-id') ?? process.env.INVARIANTS_TENANT_ID ?? process.env.TENANT_ID;
 const warehouseId = getArg('warehouse-id') ?? process.env.WAREHOUSE_ID ?? null;
 const limit = parsePositiveInt(getArg('limit') ?? process.env.LIMIT, 200);
 const bomCycleLimit = parsePositiveInt(getArg('bom-cycle-limit') ?? process.env.BOM_CYCLE_LIMIT, 50);
@@ -276,6 +276,51 @@ const salesOrderScopeMismatchRowsSql = `
          location_local_code
     FROM combined
    ORDER BY source_type, source_id
+   LIMIT $3
+`;
+
+const atpOversellSellableCte = `
+  WITH sellable_totals AS (
+    SELECT b.tenant_id,
+           l.warehouse_id,
+           b.item_id,
+           b.uom,
+           COALESCE(SUM(b.on_hand), 0)::numeric AS on_hand_qty,
+           COALESCE(SUM(b.reserved), 0)::numeric AS reserved_qty,
+           COALESCE(SUM(b.allocated), 0)::numeric AS allocated_qty
+      FROM inventory_balance b
+      JOIN locations l
+        ON l.id = b.location_id
+       AND l.tenant_id = b.tenant_id
+     WHERE b.tenant_id = $1
+       AND l.type = 'bin'
+       AND l.is_sellable = true
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+     GROUP BY b.tenant_id, l.warehouse_id, b.item_id, b.uom
+  )
+`;
+
+const atpOversellCountSql = `
+  ${atpOversellSellableCte}
+  SELECT COUNT(*)::int AS count
+    FROM sellable_totals
+   WHERE (reserved_qty + allocated_qty) - on_hand_qty > 0.000001
+`;
+
+const atpOversellRowsSql = `
+  ${atpOversellSellableCte}
+  SELECT tenant_id,
+         warehouse_id,
+         item_id,
+         uom,
+         on_hand_qty,
+         reserved_qty,
+         allocated_qty,
+         (reserved_qty + allocated_qty)::numeric AS committed_qty,
+         ((reserved_qty + allocated_qty) - on_hand_qty)::numeric AS oversell_qty
+    FROM sellable_totals
+   WHERE (reserved_qty + allocated_qty) - on_hand_qty > 0.000001
+   ORDER BY ((reserved_qty + allocated_qty) - on_hand_qty) DESC, warehouse_id, item_id, uom
    LIMIT $3
 `;
 
@@ -580,6 +625,17 @@ try {
   invariantCounts.sales_order_warehouse_scope_mismatch = salesOrderScopeMismatchCount;
   printSection('sales_order_warehouse_scope_mismatch', salesOrderScopeMismatchCount, salesOrderScopeMismatchRowsRes.rows);
   if (strictMode && salesOrderScopeMismatchCount > 0) {
+    exitCode = 2;
+  }
+
+  const [atpOversellCountRes, atpOversellRowsRes] = await Promise.all([
+    pool.query(atpOversellCountSql, params2),
+    pool.query(atpOversellRowsSql, params3)
+  ]);
+  const atpOversellCount = Number(atpOversellCountRes.rows[0]?.count ?? 0);
+  invariantCounts.atp_oversell_detected_count = atpOversellCount;
+  printSection('atp_oversell_detected', atpOversellCount, atpOversellRowsRes.rows);
+  if (strictMode && atpOversellCount > 0) {
     exitCode = 2;
   }
 

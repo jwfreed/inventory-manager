@@ -52,6 +52,13 @@ export async function createInventoryMovement(
   client: PoolClient,
   input: InventoryMovementInput
 ): Promise<InventoryMovementResult> {
+  if (
+    (input.movementType === 'receive' || input.movementType === 'transfer')
+    && (!input.sourceType || !input.sourceId)
+  ) {
+    throw new Error('INVENTORY_MOVEMENT_SOURCE_REQUIRED');
+  }
+
   if (!input.externalRef && ENFORCE_EXTERNAL_REF) {
     throw new Error('INVENTORY_MOVEMENT_EXTERNAL_REF_REQUIRED');
   }

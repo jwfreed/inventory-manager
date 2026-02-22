@@ -11,7 +11,8 @@ require('tsconfig-paths/register');
 
 const {
   ensureWarehouseDefaults,
-  ensureWarehouseDefaultsForWarehouse
+  ensureWarehouseDefaultsForWarehouse,
+  findOrphanWarehouseRootIssues
 } = require('../../src/services/warehouseDefaults.service.ts');
 const {
   WAREHOUSE_DEFAULTS_EVENT,
@@ -121,6 +122,17 @@ async function fetchDefaultWithLocation(tenantId, warehouseId, role) {
   return res.rows[0] ?? null;
 }
 
+async function countWarehouseDefaults(tenantId, warehouseId) {
+  const res = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM warehouse_default_location
+      WHERE tenant_id = $1
+        AND warehouse_id = $2`,
+    [tenantId, warehouseId]
+  );
+  return Number(res.rows[0]?.count ?? 0);
+}
+
 async function fetchLocation(tenantId, locationId) {
   const res = await db.query(
     `SELECT id, tenant_id, role, warehouse_id, parent_location_id, type, is_sellable
@@ -140,6 +152,18 @@ async function updateLocationWarehouseId(tenantId, locationId, warehouseId) {
       WHERE tenant_id = $1
         AND id = $2`,
     [tenantId, locationId, warehouseId]
+  );
+}
+
+async function updateLocationWarehouseAndLocalCode(tenantId, locationId, warehouseId, localCode) {
+  await db.query(
+    `UPDATE locations
+        SET warehouse_id = $3,
+            local_code = $4,
+            updated_at = now()
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, locationId, warehouseId, localCode]
   );
 }
 
@@ -379,11 +403,48 @@ test('warehouse defaults repair mode repairs SELLABLE role/sellable drift and le
   }
 });
 
-test('missing SELLABLE mapping with only QA candidate creates a SELLABLE default location', async () => {
+test('missing SELLABLE mapping with only QA bin fails as missing default in non-repair mode (not role_mismatch)', async () => {
   const tenantId = await createTenant('missing-sellable');
   const warehouseId = await createWarehouseRoot(tenantId, 'MISSING-SELLABLE');
   const qaLocationId = await createChildLocation(tenantId, warehouseId, 'QA', false);
 
+  const previousRepair = process.env.WAREHOUSE_DEFAULTS_REPAIR;
+  delete process.env.WAREHOUSE_DEFAULTS_REPAIR;
+  try {
+    await assert.rejects(
+      ensureWarehouseDefaultsForWarehouse(tenantId, warehouseId),
+      (error) => {
+        assert.equal(error?.code, 'WAREHOUSE_DEFAULT_INVALID');
+        assert.equal(error?.details?.tenantId, tenantId);
+        assert.equal(error?.details?.warehouseId, warehouseId);
+        assert.equal(error?.details?.role, 'SELLABLE');
+        assert.equal(error?.details?.reason, 'missing_location');
+        assert.notEqual(error?.details?.reason, 'role_mismatch');
+        assert.equal(error?.details?.defaultLocationId, null);
+        return true;
+      }
+    );
+
+    const sellableDefault = await fetchDefaultWithLocation(tenantId, warehouseId, 'SELLABLE');
+    assert.equal(sellableDefault, null);
+    assert.ok(qaLocationId);
+  } finally {
+    if (previousRepair === undefined) {
+      delete process.env.WAREHOUSE_DEFAULTS_REPAIR;
+    } else {
+      process.env.WAREHOUSE_DEFAULTS_REPAIR = previousRepair;
+    }
+    await cleanupTenant(tenantId);
+  }
+});
+
+test('missing SELLABLE mapping with only QA bin repairs by creating SELLABLE location + mapping in repair mode', async () => {
+  const tenantId = await createTenant('missing-sellable-repair');
+  const warehouseId = await createWarehouseRoot(tenantId, 'MISSING-SELLABLE-REPAIR');
+  const qaLocationId = await createChildLocation(tenantId, warehouseId, 'QA', false);
+
+  const previousRepair = process.env.WAREHOUSE_DEFAULTS_REPAIR;
+  process.env.WAREHOUSE_DEFAULTS_REPAIR = 'true';
   try {
     await ensureWarehouseDefaultsForWarehouse(tenantId, warehouseId);
 
@@ -396,6 +457,113 @@ test('missing SELLABLE mapping with only QA candidate creates a SELLABLE default
     assert.equal(sellableDefault.type, 'bin');
     assert.equal(sellableDefault.is_sellable, true);
   } finally {
+    if (previousRepair === undefined) {
+      delete process.env.WAREHOUSE_DEFAULTS_REPAIR;
+    } else {
+      process.env.WAREHOUSE_DEFAULTS_REPAIR = previousRepair;
+    }
+    await cleanupTenant(tenantId);
+  }
+});
+
+test('internal guard throws when derived default id exists without mapping row', async () => {
+  const tenantId = await createTenant('derived-id-no-mapping');
+  const warehouseId = await createWarehouseRoot(tenantId, 'DERIVED-ID-NO-MAPPING');
+  const qaLocationId = await createChildLocation(tenantId, warehouseId, 'QA', false, 'QA_DERIVED');
+
+  try {
+    await assert.rejects(
+      ensureWarehouseDefaultsForWarehouse(tenantId, warehouseId, {
+        repair: false,
+        debugDerivedDefaultByRole: { SELLABLE: qaLocationId }
+      }),
+      (error) => {
+        assert.equal(error?.code, 'WAREHOUSE_DEFAULT_INTERNAL_DERIVED_ID_WITHOUT_MAPPING');
+        assert.equal(error?.details?.tenantId, tenantId);
+        assert.equal(error?.details?.warehouseId, warehouseId);
+        assert.equal(error?.details?.role, 'SELLABLE');
+        assert.equal(error?.details?.derivedId, qaLocationId);
+        return true;
+      }
+    );
+  } finally {
+    await cleanupTenant(tenantId);
+  }
+});
+
+test('orphan detection returns derived parent warehouse id for relink candidates', async () => {
+  const tenantId = await createTenant('orphan-derived-parent');
+  const warehouseId = await createWarehouseRoot(tenantId, 'ORPHAN-DERIVED-PARENT');
+  const qaLocationId = await createChildLocation(tenantId, warehouseId, 'QA', false, 'QA_DERIVED_PARENT');
+  const orphanLocationId = await createChildLocation(tenantId, warehouseId, 'HOLD', false, 'HOLD_DERIVED_PARENT');
+  await updateLocationWarehouseId(tenantId, orphanLocationId, qaLocationId);
+
+  try {
+    const issues = await findOrphanWarehouseRootIssues(tenantId);
+    const issue = issues.find((row) => String(row.location_id) === String(orphanLocationId));
+    assert.ok(issue, 'expected orphan detection to include orphan row');
+    assert.equal(issue.parent_location_id, warehouseId);
+    assert.equal(issue.warehouse_id, qaLocationId);
+    assert.equal(issue.warehouse_type, 'bin');
+    assert.equal(issue.derived_parent_warehouse_id, warehouseId);
+  } finally {
+    await cleanupTenant(tenantId);
+  }
+});
+
+test('orphan detection failure is best-effort and does not crash defaults startup flow', async () => {
+  const tenantId = await createTenant('orphan-detection-fail');
+  const warehouseId = await createWarehouseRoot(tenantId, 'ORPHAN-DETECTION-FAIL');
+  await createChildLocation(tenantId, warehouseId, 'SELLABLE', true, 'SELLABLE_DETECTION_FAIL');
+  await createChildLocation(tenantId, warehouseId, 'QA', false, 'QA_DETECTION_FAIL');
+  await createChildLocation(tenantId, warehouseId, 'HOLD', false, 'HOLD_DETECTION_FAIL');
+  await createChildLocation(tenantId, warehouseId, 'REJECT', false, 'REJECT_DETECTION_FAIL');
+
+  const warningLogs = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    if (String(args?.[0] ?? '') === WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTION_FAILED) {
+      warningLogs.push(args);
+    }
+    originalWarn(...args);
+  };
+
+  try {
+    await ensureWarehouseDefaults(tenantId, {
+      repair: false,
+      orphanIssueDetector: async () => {
+        const error = new Error('forced orphan detection failure');
+        error.code = 'XX000';
+        error.detail = 'forced detail';
+        error.schema = 'public';
+        error.table = 'locations';
+        error.constraint = 'uq_locations_tenant_warehouse_local_code';
+        error.routine = 'resolve_warehouse_for_location';
+        throw error;
+      }
+    });
+
+    const defaultsCount = await countWarehouseDefaults(tenantId, warehouseId);
+    assert.equal(defaultsCount, 4, 'defaults pipeline should continue after detection failure');
+
+    assert.ok(
+      warningLogs.some(
+        (args) =>
+          String(args?.[0] ?? '') === WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTION_FAILED
+          && String(args?.[1]?.tenantId ?? '') === tenantId
+          && String(args?.[1]?.error?.code ?? '') === 'XX000'
+          && String(args?.[1]?.error?.message ?? '').includes('forced orphan detection failure')
+          && String(args?.[1]?.error?.detail ?? '') === 'forced detail'
+          && String(args?.[1]?.error?.schema ?? '') === 'public'
+          && String(args?.[1]?.error?.table ?? '') === 'locations'
+          && String(args?.[1]?.error?.constraint ?? '') === 'uq_locations_tenant_warehouse_local_code'
+          && String(args?.[1]?.error?.routine ?? '') === 'resolve_warehouse_for_location'
+          && isWarehouseDefaultsEventPayload(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTION_FAILED, args?.[1])
+      ),
+      'expected orphan detection failure to be emitted as best-effort event'
+    );
+  } finally {
+    console.warn = originalWarn;
     await cleanupTenant(tenantId);
   }
 });
@@ -403,7 +571,8 @@ test('missing SELLABLE mapping with only QA candidate creates a SELLABLE default
 test('orphan warehouse root drift warning is tenant-scoped and repair mode relinks warehouse_id', async () => {
   const tenantId = await createTenant('orphan-root');
   const warehouseId = await createWarehouseRoot(tenantId, 'ORPHAN-ROOT');
-  const qaLocationId = await createChildLocation(tenantId, warehouseId, 'QA', false);
+  await ensureWarehouseDefaultsForWarehouse(tenantId, warehouseId, { repair: true });
+  const qaLocationId = await createChildLocation(tenantId, warehouseId, 'QA', false, 'QA_ORPHAN_ROOT');
   const driftedLocationId = await createChildLocation(tenantId, warehouseId, 'HOLD', false, 'HOLD_ORPHAN');
   await updateLocationWarehouseId(tenantId, driftedLocationId, qaLocationId);
 
@@ -478,9 +647,10 @@ test('orphan warehouse root drift warning is tenant-scoped and repair mode relin
 test('orphan repair mode skips conflicting relink instead of failing startup', async () => {
   const tenantId = await createTenant('orphan-conflict');
   const warehouseId = await createWarehouseRoot(tenantId, 'ORPHAN-CONFLICT');
-  const qaLocationId = await createChildLocation(tenantId, warehouseId, 'QA', false);
-  const conflictingHoldLocationId = await createChildLocation(tenantId, warehouseId, 'HOLD', false);
-  await updateLocationWarehouseId(tenantId, conflictingHoldLocationId, qaLocationId);
+  await ensureWarehouseDefaultsForWarehouse(tenantId, warehouseId, { repair: true });
+  const qaLocationId = await createChildLocation(tenantId, warehouseId, 'QA', false, 'QA_ORPHAN_CONFLICT');
+  const conflictingHoldLocationId = await createChildLocation(tenantId, warehouseId, 'HOLD', false, 'HOLD_CONFLICT');
+  await updateLocationWarehouseAndLocalCode(tenantId, conflictingHoldLocationId, qaLocationId, 'HOLD');
 
   const previousRepair = process.env.WAREHOUSE_DEFAULTS_REPAIR;
   const repairLogs = [];
