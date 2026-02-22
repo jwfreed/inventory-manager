@@ -188,6 +188,11 @@ test('inventory transfer idempotency: replay, conflict, incomplete detection', a
   assert.equal(first.res.status, 201, JSON.stringify(first.payload));
   const firstMovementId = first.payload.movementId;
   assert.ok(firstMovementId);
+  assert.equal(first.payload.transferId, firstMovementId);
+  assert.equal(first.payload.transfer_id, firstMovementId);
+  assert.equal(first.payload.idempotencyKey, idempotencyKey);
+  assert.equal(first.payload.idempotency_key, idempotencyKey);
+  assert.equal(first.payload.replayed, false);
 
   const replay = await apiRequest('POST', '/inventory-transfers', {
     token,
@@ -196,6 +201,11 @@ test('inventory transfer idempotency: replay, conflict, incomplete detection', a
   });
   assert.equal(replay.res.status, 200, JSON.stringify(replay.payload));
   assert.equal(replay.payload.movementId, firstMovementId);
+  assert.equal(replay.payload.transferId, firstMovementId);
+  assert.equal(replay.payload.transfer_id, firstMovementId);
+  assert.equal(replay.payload.idempotencyKey, idempotencyKey);
+  assert.equal(replay.payload.idempotency_key, idempotencyKey);
+  assert.equal(replay.payload.replayed, true);
 
   const movementCount = await db.query(
     `SELECT COUNT(*)::int AS count
@@ -206,6 +216,17 @@ test('inventory transfer idempotency: replay, conflict, incomplete detection', a
     [tenantId, `idempotency:${idempotencyKey}`]
   );
   assert.equal(Number(movementCount.rows[0]?.count ?? 0), 1);
+
+  const mismatchWarehouse = await apiRequest('POST', '/inventory-transfers', {
+    token,
+    headers: { 'Idempotency-Key': `transfer-idem-mismatch-${randomUUID()}` },
+    body: {
+      ...payload,
+      warehouseId: factory.warehouse.id
+    }
+  });
+  assert.equal(mismatchWarehouse.res.status, 409, JSON.stringify(mismatchWarehouse.payload));
+  assert.equal(mismatchWarehouse.payload?.error?.code, 'WAREHOUSE_SCOPE_MISMATCH');
 
   const conflict = await apiRequest('POST', '/inventory-transfers', {
     token,

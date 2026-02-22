@@ -10,6 +10,7 @@ const isoDateTimeString = z
 export const inventoryTransferCreateSchema = z.object({
   sourceLocationId: z.string().uuid(),
   destinationLocationId: z.string().uuid(),
+  warehouseId: z.string().uuid().optional(),
   itemId: z.string().uuid(),
   quantity: z.number().positive(),
   uom: z.string().min(1).max(32),

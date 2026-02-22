@@ -159,6 +159,7 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
   }
   const overrideSchema = z
     .object({
+      warehouseId: z.string().uuid().optional(),
       overrideNegative: z.boolean().optional(),
       overrideReason: z.string().max(2000).optional()
     })
@@ -174,6 +175,7 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
       return res.status(400).json({ error: 'Idempotency-Key header is required.' });
     }
     const count = await postInventoryCount(tenantId, id, idempotencyKey, {
+      expectedWarehouseId: overrideSchema.data.warehouseId ?? null,
       actor: { type: 'user', id: req.auth!.userId, role: req.auth!.role },
       overrideRequested: overrideSchema.data.overrideNegative,
       overrideReason: overrideSchema.data.overrideReason
@@ -258,6 +260,15 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
         error: {
           code: 'CYCLE_COUNT_RECONCILIATION_FAILED',
           message: 'Cycle count posting failed reconciliation against current on-hand.'
+        }
+      });
+    }
+    if (error?.message === 'WAREHOUSE_SCOPE_MISMATCH' || error?.code === 'WAREHOUSE_SCOPE_MISMATCH') {
+      return res.status(409).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_MISMATCH',
+          message: 'Cycle count warehouse scope does not match count header.',
+          details: error?.details
         }
       });
     }

@@ -61,6 +61,10 @@ import { runReservationExpiry } from './jobs/reservationExpiry.job';
 import inventoryHealthRouter from './routes/inventoryHealth.routes';
 import outboxAdminRouter from './routes/outboxAdmin.routes';
 import { startEventBridge } from './lib/events';
+import {
+  logStructuredStartupFailure,
+  resolveWarehouseDefaultsStartupMode
+} from './config/warehouseDefaultsStartup';
 
 const PORT = Number(process.env.PORT) || 3000;
 const RUN_INPROCESS_JOBS = process.env.RUN_INPROCESS_JOBS === 'true';
@@ -68,6 +72,8 @@ const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
+
+const startupMode = resolveWarehouseDefaultsStartupMode();
 
 const app = express();
 
@@ -255,7 +261,8 @@ process.on('SIGINT', () => {
 });
 
 async function start() {
-  await ensureWarehouseDefaults();
+  const startupTenantId = process.env.WAREHOUSE_DEFAULTS_TENANT_ID?.trim() || undefined;
+  await ensureWarehouseDefaults(startupTenantId, { repair: startupMode.startupRepairMode });
   app.listen(PORT, () => {
     console.log(`\n🚀 Inventory Manager API listening on port ${PORT}`);
     console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -264,6 +271,7 @@ async function start() {
 }
 
 start().catch((error) => {
+  logStructuredStartupFailure(error);
   console.error('Startup failed:', error);
   process.exit(1);
 });

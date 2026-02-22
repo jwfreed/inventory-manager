@@ -562,6 +562,7 @@ export async function postInventoryCount(
   id: string,
   idempotencyKey: string,
   context?: {
+    expectedWarehouseId?: string | null;
     actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
     overrideRequested?: boolean;
     overrideReason?: string | null;
@@ -580,6 +581,21 @@ export async function postInventoryCount(
       throw new Error('COUNT_NOT_FOUND');
     }
     const cycleCount = countResult.rows[0];
+    if (
+      context?.expectedWarehouseId
+      && context.expectedWarehouseId !== cycleCount.warehouse_id
+    ) {
+      const error = new Error('WAREHOUSE_SCOPE_MISMATCH') as Error & {
+        code?: string;
+        details?: Record<string, unknown>;
+      };
+      error.code = 'WAREHOUSE_SCOPE_MISMATCH';
+      error.details = {
+        providedWarehouseId: context.expectedWarehouseId,
+        derivedWarehouseId: cycleCount.warehouse_id
+      };
+      throw error;
+    }
 
     const linesResult = await client.query<CycleCountLineRow>(
       `SELECT *

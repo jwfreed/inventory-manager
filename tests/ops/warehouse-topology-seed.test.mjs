@@ -222,7 +222,20 @@ test('ambiguous SELLABLE candidates fail check-only and --fix', async () => {
     /WAREHOUSE_ROLE_AMBIGUOUS/
   );
 
-  let stdout = '';
+  const defaultMode = await execFileAsync(
+    process.execPath,
+    ['scripts/inventory_invariants_check.mjs', '--tenant-id', tenantId, '--limit', '25'],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      maxBuffer: 1024 * 1024
+    }
+  );
+  assert.match(defaultMode.stdout, /\[warehouse_topology_defaults_invalid\] count=/);
+  assert.match(defaultMode.stdout, /WAREHOUSE_ROLE_AMBIGUOUS/);
+  assert.match(defaultMode.stdout, /manual cleanup required/);
+
+  let strictStdout = '';
   await assert.rejects(
     async () => {
       await execFileAsync(
@@ -230,19 +243,20 @@ test('ambiguous SELLABLE candidates fail check-only and --fix', async () => {
         ['scripts/inventory_invariants_check.mjs', '--tenant-id', tenantId, '--limit', '25'],
         {
           cwd: process.cwd(),
-          env: process.env,
+          env: {
+            ...process.env,
+            INVARIANTS_STRICT: 'true'
+          },
           maxBuffer: 1024 * 1024
         }
       );
     },
     (error) => {
-      stdout = String(error?.stdout ?? '');
+      strictStdout = String(error?.stdout ?? '');
       return error?.code === 2;
     }
   );
-  assert.match(stdout, /\[warehouse_topology_defaults_invalid\] count=/);
-  assert.match(stdout, /WAREHOUSE_ROLE_AMBIGUOUS/);
-  assert.match(stdout, /manual cleanup required/);
+  assert.match(strictStdout, /\[warehouse_topology_defaults_invalid\] count=/);
 });
 
 test('single candidate default remains stable under --fix', async () => {

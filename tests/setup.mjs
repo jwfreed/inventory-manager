@@ -1,6 +1,7 @@
 import { afterEach, after, beforeEach } from 'node:test';
 import { clearWaitForTimers } from './api/helpers/waitFor.mjs';
 import { snapshotActiveHandles, diffHandleSnapshots } from './api/helpers/activeHandles.mjs';
+import { stopTestServer } from './api/helpers/testServer.mjs';
 import { closeDbPool } from './helpers/dbPool.mjs';
 import {
   resetInvariantLogs,
@@ -87,5 +88,6 @@ after(async () => {
       console.error(`[handles] final active requests:`, finalSnapshot.requests);
     }
   }
+  await stopTestServer();
   await closeDbPool();
 });

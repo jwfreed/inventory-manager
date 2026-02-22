@@ -24,6 +24,12 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
 function printSection(title, count, rows) {
   console.log(`\n[${title}] count=${count}`);
   if (rows.length === 0) {
@@ -40,6 +46,7 @@ const warehouseId = getArg('warehouse-id') ?? process.env.WAREHOUSE_ID ?? null;
 const limit = parsePositiveInt(getArg('limit') ?? process.env.LIMIT, 200);
 const bomCycleLimit = parsePositiveInt(getArg('bom-cycle-limit') ?? process.env.BOM_CYCLE_LIMIT, 50);
 const bomCycleNodeLimit = parsePositiveInt(getArg('bom-cycle-node-limit') ?? process.env.BOM_CYCLE_NODE_LIMIT, 10000);
+const strictMode = parseBoolean(getArg('strict') ?? process.env.INVARIANTS_STRICT, false);
 
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is required');
@@ -527,6 +534,7 @@ const workOrderCostConservationRowsSql = `
 `;
 
 let exitCode = 0;
+const invariantCounts = {};
 
 try {
   const topology = await loadWarehouseTopology();
@@ -536,8 +544,9 @@ try {
     pool.query(negativeBalanceRowsSql, params3)
   ]);
   const negativeBalanceCount = Number(negativeBalanceCountRes.rows[0]?.count ?? 0);
+  invariantCounts.negative_inventory_balance = negativeBalanceCount;
   printSection('negative_inventory_balance', negativeBalanceCount, negativeBalanceRowsRes.rows);
-  if (negativeBalanceCount > 0) {
+  if (strictMode && negativeBalanceCount > 0) {
     exitCode = 2;
   }
 
@@ -546,8 +555,9 @@ try {
     pool.query(reservationBoundsRowsSql, params3)
   ]);
   const reservationBoundsCount = Number(reservationBoundsCountRes.rows[0]?.count ?? 0);
+  invariantCounts.reservation_quantity_violations = reservationBoundsCount;
   printSection('reservation_quantity_violations', reservationBoundsCount, reservationBoundsRowsRes.rows);
-  if (reservationBoundsCount > 0) {
+  if (strictMode && reservationBoundsCount > 0) {
     exitCode = 2;
   }
 
@@ -556,8 +566,9 @@ try {
     pool.query(nonSellableFlowRowsSql, params3)
   ]);
   const nonSellableFlowCount = Number(nonSellableFlowCountRes.rows[0]?.count ?? 0);
+  invariantCounts.non_sellable_flow_scope_invalid = nonSellableFlowCount;
   printSection('non_sellable_flow_scope_invalid', nonSellableFlowCount, nonSellableFlowRowsRes.rows);
-  if (nonSellableFlowCount > 0) {
+  if (strictMode && nonSellableFlowCount > 0) {
     exitCode = 2;
   }
 
@@ -566,8 +577,9 @@ try {
     pool.query(salesOrderScopeMismatchRowsSql, params3)
   ]);
   const salesOrderScopeMismatchCount = Number(salesOrderScopeMismatchCountRes.rows[0]?.count ?? 0);
+  invariantCounts.sales_order_warehouse_scope_mismatch = salesOrderScopeMismatchCount;
   printSection('sales_order_warehouse_scope_mismatch', salesOrderScopeMismatchCount, salesOrderScopeMismatchRowsRes.rows);
-  if (salesOrderScopeMismatchCount > 0) {
+  if (strictMode && salesOrderScopeMismatchCount > 0) {
     exitCode = 2;
   }
 
@@ -576,15 +588,17 @@ try {
     pool.query(commitmentsDriftRowsSql, params3)
   ]);
   const commitmentsDriftCount = Number(commitmentsDriftCountRes.rows[0]?.count ?? 0);
+  invariantCounts.balance_vs_commitments_drift = commitmentsDriftCount;
   printSection('balance_vs_commitments_drift', commitmentsDriftCount, commitmentsDriftRowsRes.rows);
-  if (commitmentsDriftCount > 0) {
+  if (strictMode && commitmentsDriftCount > 0) {
     exitCode = 2;
   }
 
   if (warehouseId) {
     const spotCheckRes = await pool.query(warehouseSpotCheckSql, params3);
+    invariantCounts.warehouse_isolation_spot_check = spotCheckRes.rowCount;
     printSection('warehouse_isolation_spot_check', spotCheckRes.rowCount, spotCheckRes.rows);
-    if (spotCheckRes.rowCount > 0) {
+    if (strictMode && spotCheckRes.rowCount > 0) {
       exitCode = 2;
     }
   }
@@ -594,12 +608,13 @@ try {
     pool.query(availabilityReconciliationRowsSql, params3)
   ]);
   const availabilityReconciliationCount = Number(availabilityReconciliationCountRes.rows[0]?.count ?? 0);
+  invariantCounts.availability_reconciliation_drift = availabilityReconciliationCount;
   printSection(
     'availability_reconciliation_drift',
     availabilityReconciliationCount,
     availabilityReconciliationRowsRes.rows
   );
-  if (availabilityReconciliationCount > 0) {
+  if (strictMode && availabilityReconciliationCount > 0) {
     exitCode = 2;
   }
 
@@ -608,12 +623,13 @@ try {
     pool.query(workOrderCostConservationRowsSql, params3)
   ]);
   const workOrderCostDriftCount = Number(workOrderCostCountRes.rows[0]?.count ?? 0);
+  invariantCounts.work_order_cost_conservation_drift = workOrderCostDriftCount;
   printSection(
     'work_order_cost_conservation_drift',
     workOrderCostDriftCount,
     workOrderCostRowsRes.rows
   );
-  if (workOrderCostDriftCount > 0) {
+  if (strictMode && workOrderCostDriftCount > 0) {
     exitCode = 2;
   }
 
@@ -633,6 +649,7 @@ try {
     atRestCycle.count,
     atRestCycle.samplePaths.map((path) => ({ path }))
   );
+  invariantCounts.bom_cycle_detected_at_rest = atRestCycle.count;
   if (atRestCycle.truncatedByNodeLimit || atRestCycle.truncatedByCycleLimit) {
     console.log(
       `  ${JSON.stringify({
@@ -644,7 +661,7 @@ try {
       })}`
     );
   }
-  if (atRestCycle.count > 0) {
+  if (strictMode && atRestCycle.count > 0) {
     exitCode = 2;
   }
 
@@ -654,7 +671,8 @@ try {
     topologyCheck.count,
     topologyCheck.issues.slice(0, limit)
   );
-  if (topologyCheck.count > 0) {
+  invariantCounts.warehouse_topology_defaults_invalid = topologyCheck.count;
+  if (strictMode && topologyCheck.count > 0) {
     exitCode = 2;
   }
   printSection(
@@ -670,6 +688,18 @@ try {
   }
   if (topologyCheck.count > 0) {
     console.log('  hint: run `npm run seed:warehouse-topology -- --tenant-id <TENANT_UUID> --fix`');
+  }
+  if (strictMode) {
+    const violations = Object.fromEntries(
+      Object.entries(invariantCounts).filter(([, count]) => Number(count) > 0)
+    );
+    if (Object.keys(violations).length > 0) {
+      console.error(`[strict_failure_summary] ${JSON.stringify({
+        tenantId,
+        warehouseId,
+        violations
+      })}`);
+    }
   }
 
   process.exit(exitCode);

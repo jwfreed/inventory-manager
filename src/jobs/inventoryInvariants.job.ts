@@ -22,6 +22,38 @@ type InventoryInvariantSummary = {
   nonSellableFlowScopeInvalidCount: number;
   salesOrderWarehouseScopeMismatchCount: number;
 };
+type InventoryInvariantStrictViolation = {
+  tenantId: string;
+  tenantSlug: string;
+  violations: Record<string, number>;
+};
+
+function isStrictModeEnabled(strict?: boolean): boolean {
+  if (typeof strict === 'boolean') {
+    return strict;
+  }
+  const value = String(process.env.INVARIANTS_STRICT ?? '').trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
+function summarizeStrictViolations(summary: InventoryInvariantSummary): Record<string, number> {
+  const entries: Array<[string, number]> = [
+    ['receipt_line_vs_movement_mismatch', Math.abs(summary.receiptLineCount - summary.receiptMovementLineCount)],
+    ['qc_event_vs_transfer_mismatch', Math.abs(summary.qcEventCount - summary.qcTransferCount)],
+    ['receipt_legacy_source_type_missing', summary.receiptLegacyMovementCount],
+    ['qc_legacy_source_type_missing', summary.qcLegacyMovementCount],
+    ['qc_accept_non_sellable_flow_scope_invalid', summary.sellableMismatchCount],
+    ['negative_inventory_balance', summary.negativeCount],
+    ['reservation_balance_mismatch', summary.reservationBalanceMismatchCount],
+    ['warehouse_id_drift', summary.warehouseIdDriftCount],
+    ['reservation_warehouse_historical_mismatch', summary.reservationWarehouseHistoricalMismatchCount],
+    ['non_sellable_flow_scope_invalid', summary.nonSellableFlowScopeInvalidCount],
+    ['sales_order_warehouse_scope_mismatch', summary.salesOrderWarehouseScopeMismatchCount]
+  ];
+  return Object.fromEntries(
+    entries.filter(([, count]) => count > 0)
+  );
+}
 
 async function getAllActiveTenants(): Promise<Tenant[]> {
   const result = await query<{ id: string; name: string; slug: string }>(
@@ -35,7 +67,7 @@ async function getAllActiveTenants(): Promise<Tenant[]> {
 }
 
 export async function runInventoryInvariantCheck(
-  options: { tenantIds?: string[] } = {}
+  options: { tenantIds?: string[]; strict?: boolean } = {}
 ): Promise<InventoryInvariantSummary[]> {
   if (isRunning) {
     console.warn('⚠️  Inventory invariant check already running, skipping');
@@ -47,7 +79,9 @@ export async function runInventoryInvariantCheck(
   const windowDays = Number(process.env.INVENTORY_INVARIANT_WINDOW_DAYS ?? 7);
   const reconTolerance = Number(process.env.RESERVATION_BALANCE_RECON_TOLERANCE ?? 1e-6);
   const reconLimit = Number(process.env.RESERVATION_BALANCE_RECON_LIMIT ?? 5);
+  const strictMode = isStrictModeEnabled(options.strict);
   const results: InventoryInvariantSummary[] = [];
+  const strictViolations: InventoryInvariantStrictViolation[] = [];
 
   try {
     const tenants = options.tenantIds?.length
@@ -218,7 +252,7 @@ export async function runInventoryInvariantCheck(
               AND l.warehouse_id IS DISTINCT FROM resolve_warehouse_for_location(l.tenant_id, l.id)`,
           [tenant.id]
         );
-        const warehouseIdDriftCount = warehouseIdDrift.rowCount;
+        const warehouseIdDriftCount = Number(warehouseIdDrift.rowCount ?? 0);
         if (warehouseIdDriftCount > 0) {
           const samples = warehouseIdDrift.rows.slice(0, 5);
           console.error(
@@ -460,7 +494,7 @@ export async function runInventoryInvariantCheck(
           );
         }
 
-        results.push({
+        const summary: InventoryInvariantSummary = {
           tenantId: tenant.id,
           tenantSlug: tenant.slug,
           receiptLineCount,
@@ -476,14 +510,41 @@ export async function runInventoryInvariantCheck(
           reservationWarehouseHistoricalMismatchCount,
           nonSellableFlowScopeInvalidCount,
           salesOrderWarehouseScopeMismatchCount
-        });
+        };
+        results.push(summary);
+        if (strictMode) {
+          const violations = summarizeStrictViolations(summary);
+          if (Object.keys(violations).length > 0) {
+            strictViolations.push({
+              tenantId: tenant.id,
+              tenantSlug: tenant.slug,
+              violations
+            });
+          }
+        }
       } catch (error) {
+        if (strictMode) {
+          throw error;
+        }
         console.error(`Inventory invariant check failed for tenant ${tenant.slug}:`, error);
       }
     }
 
     lastRunTime = new Date();
     lastRunDuration = Date.now() - start;
+    if (strictMode && strictViolations.length > 0) {
+      const strictError = new Error('INVENTORY_INVARIANTS_STRICT_FAILED') as Error & {
+        code?: string;
+        details?: Record<string, unknown>;
+      };
+      strictError.code = 'INVENTORY_INVARIANTS_STRICT_FAILED';
+      strictError.details = {
+        mode: 'strict',
+        violationCount: strictViolations.length,
+        violations: strictViolations
+      };
+      throw strictError;
+    }
   } finally {
     isRunning = false;
   }

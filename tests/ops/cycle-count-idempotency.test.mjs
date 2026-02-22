@@ -149,6 +149,14 @@ test('cycle count post idempotency: same key+payload replays; different payload 
   assert.equal(createRes.res.status, 201, JSON.stringify(createRes.payload));
   const countId = createRes.payload.id;
 
+  const mismatchPost = await apiRequest('POST', `/inventory-counts/${countId}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `count-post-wh-mismatch-${randomUUID()}` },
+    body: { warehouseId: randomUUID() }
+  });
+  assert.equal(mismatchPost.res.status, 409, JSON.stringify(mismatchPost.payload));
+  assert.equal(mismatchPost.payload?.error?.code, 'WAREHOUSE_SCOPE_MISMATCH');
+
   const idemKey = `count-post-${randomUUID()}`;
   const firstPost = await apiRequest('POST', `/inventory-counts/${countId}/post`, {
     token,

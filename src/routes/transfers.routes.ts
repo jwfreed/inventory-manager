@@ -20,6 +20,7 @@ router.post('/inventory-transfers', async (req: Request, res: Response) => {
       tenantId: req.auth!.tenantId,
       sourceLocationId: parsed.data.sourceLocationId,
       destinationLocationId: parsed.data.destinationLocationId,
+      warehouseId: parsed.data.warehouseId ?? null,
       itemId: parsed.data.itemId,
       quantity: parsed.data.quantity,
       uom: parsed.data.uom,
@@ -33,9 +34,24 @@ router.post('/inventory-transfers', async (req: Request, res: Response) => {
     });
     invalidateAtpCacheForWarehouse(req.auth!.tenantId, result.sourceWarehouseId);
     invalidateAtpCacheForWarehouse(req.auth!.tenantId, result.destinationWarehouseId);
+    console.info('inventory.transfer.posted', {
+      tenantId: req.auth!.tenantId,
+      transferId: result.transferId,
+      movementId: result.movementId,
+      idempotencyKey: result.idempotencyKey,
+      replayed: result.replayed,
+      sourceWarehouseId: result.sourceWarehouseId,
+      destinationWarehouseId: result.destinationWarehouseId
+    });
 
     return res.status(result.created ? 201 : 200).json({
-      movementId: result.movementId
+      transferId: result.transferId,
+      transfer_id: result.transferId,
+      movementId: result.movementId,
+      movement_id: result.movementId,
+      idempotencyKey: result.idempotencyKey,
+      idempotency_key: result.idempotencyKey,
+      replayed: result.replayed
     });
   } catch (error: any) {
     if (mapTxRetryExhausted(error, res)) {
@@ -78,6 +94,15 @@ router.post('/inventory-transfers', async (req: Request, res: Response) => {
         error: {
           code: 'INV_TRANSFER_IDEMPOTENCY_INCOMPLETE',
           message: 'Inventory transfer posting is incomplete for this idempotency key.',
+          details: error?.details
+        }
+      });
+    }
+    if (error?.code === 'WAREHOUSE_SCOPE_MISMATCH' || error?.message === 'WAREHOUSE_SCOPE_MISMATCH') {
+      return res.status(409).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_MISMATCH',
+          message: 'Transfer warehouse scope does not match source/destination locations.',
           details: error?.details
         }
       });

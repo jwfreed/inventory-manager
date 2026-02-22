@@ -150,7 +150,7 @@ async function createReservation(token, { warehouseId, itemId, locationId, quant
   return res.payload.data[0].id;
 }
 
-test('mandatory warehouseId validation returns 400 WAREHOUSE_ID_REQUIRED', async () => {
+test('mandatory warehouseId validation remains enforced on warehouse-scoped read endpoints', async () => {
   const session = await getSession();
   const token = session.accessToken;
   assert.ok(token);
@@ -169,23 +169,6 @@ test('mandatory warehouseId validation returns 400 WAREHOUSE_ID_REQUIRED', async
   assert.equal(snapshotRes.res.status, 400);
   assert.equal(snapshotRes.payload?.error?.code, 'WAREHOUSE_ID_REQUIRED');
 
-  const reservationRes = await apiRequest('POST', '/reservations', {
-    token,
-    body: {
-      reservations: [
-        {
-          demandType: 'sales_order_line',
-          demandId: randomUUID(),
-          itemId: randomUUID(),
-          locationId: randomUUID(),
-          uom: 'each',
-          quantityReserved: 1
-        }
-      ]
-    }
-  });
-  assert.equal(reservationRes.res.status, 400);
-  assert.equal(reservationRes.payload?.error?.code, 'WAREHOUSE_ID_REQUIRED');
 });
 
 test('canonical availability is exact on_hand - reserved - allocated', async () => {

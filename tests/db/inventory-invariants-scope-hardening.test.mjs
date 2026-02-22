@@ -194,4 +194,22 @@ test('inventory invariants detect non-sellable flow refs and sales-order warehou
   assert.ok(summary);
   assert.ok((summary.nonSellableFlowScopeInvalidCount ?? 0) > 0);
   assert.ok((summary.salesOrderWarehouseScopeMismatchCount ?? 0) > 0);
+
+  const previousStrict = process.env.INVARIANTS_STRICT;
+  process.env.INVARIANTS_STRICT = 'true';
+  try {
+    await assert.rejects(
+      runInventoryInvariantCheck({ tenantIds: [tenantId] }),
+      (error) =>
+        error?.code === 'INVENTORY_INVARIANTS_STRICT_FAILED'
+        && Array.isArray(error?.details?.violations)
+        && error.details.violations.some((entry) => entry.tenantId === tenantId)
+    );
+  } finally {
+    if (previousStrict === undefined) {
+      delete process.env.INVARIANTS_STRICT;
+    } else {
+      process.env.INVARIANTS_STRICT = previousStrict;
+    }
+  }
 });

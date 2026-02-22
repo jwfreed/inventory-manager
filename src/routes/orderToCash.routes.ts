@@ -143,16 +143,6 @@ router.get('/sales-orders/:id', async (req: Request, res: Response) => {
 });
 
 router.post('/reservations', async (req: Request, res: Response) => {
-  const reservations = Array.isArray(req.body?.reservations) ? req.body.reservations : [];
-  if (!reservations.length || reservations.some((entry: any) => !entry?.warehouseId)) {
-    return res.status(400).json({
-      error: {
-        code: 'WAREHOUSE_ID_REQUIRED',
-        message: 'warehouseId is required for each reservation.'
-      }
-    });
-  }
-
   const parsed = reservationsCreateSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -200,7 +190,7 @@ router.post('/reservations', async (req: Request, res: Response) => {
       return res.status(400).json({
         error: {
           code: 'WAREHOUSE_SCOPE_REQUIRED',
-          message: 'warehouseId is required for this operation.'
+          message: 'Warehouse scope must be derivable from authoritative order and location records.'
         }
       });
     }

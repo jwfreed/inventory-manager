@@ -62,7 +62,7 @@ export const reservationSchema = z.object({
   demandId: uuid(),
   itemId: uuid(),
   locationId: uuid(),
-  warehouseId: uuid(),
+  warehouseId: uuid().optional(),
   uom: z.string().min(1).max(32),
   quantityReserved: z.number().positive(),
   quantityFulfilled: z.number().nonnegative().optional(),

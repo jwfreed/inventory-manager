@@ -162,14 +162,12 @@ async function insertReservationEvent(
   );
 }
 
-async function assertReservationSalesOrderWarehouseScope(
+async function resolveReservationDerivedWarehouseScope(
   client: PoolClient,
   tenantId: string,
   reservation: ReservationCreateLine
 ) {
-  if (reservation.demandType !== 'sales_order_line') {
-    return;
-  }
+  let salesOrderWarehouseId: string | null = null;
   const res = await client.query<{ warehouse_id: string | null }>(
     `SELECT so.warehouse_id
        FROM sales_order_lines sol
@@ -181,16 +179,27 @@ async function assertReservationSalesOrderWarehouseScope(
       LIMIT 1`,
     [tenantId, reservation.demandId]
   );
-  if (res.rowCount === 0) {
-    return;
+  if (res.rowCount > 0) {
+    salesOrderWarehouseId = res.rows[0]?.warehouse_id ?? null;
+    if (!salesOrderWarehouseId) {
+      throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+    }
   }
-  const salesOrderWarehouseId = res.rows[0]?.warehouse_id;
-  if (!salesOrderWarehouseId) {
+
+  const locationWarehouseId = await resolveWarehouseIdForLocation(tenantId, reservation.locationId, client);
+  if (!locationWarehouseId) {
     throw new Error('WAREHOUSE_SCOPE_REQUIRED');
   }
-  if (salesOrderWarehouseId !== reservation.warehouseId) {
+
+  const derivedWarehouseId = salesOrderWarehouseId ?? locationWarehouseId;
+  if (salesOrderWarehouseId && salesOrderWarehouseId !== locationWarehouseId) {
     throw new Error('WAREHOUSE_SCOPE_MISMATCH');
   }
+  if (reservation.warehouseId && reservation.warehouseId !== derivedWarehouseId) {
+    throw new Error('WAREHOUSE_SCOPE_MISMATCH');
+  }
+
+  return derivedWarehouseId;
 }
 
 async function getCanonicalAvailability(
@@ -507,8 +516,12 @@ export async function createReservations(
 
     for (const line of preparedLines) {
       const { reservation, canonicalQuantity, canonicalUom } = line;
+      const derivedWarehouseId = await resolveReservationDerivedWarehouseScope(client, tenantId, reservation);
+      await assertSellableLocationOrThrow(client, tenantId, reservation.locationId, {
+        expectedWarehouseId: derivedWarehouseId
+      });
       const idempotencyKey = baseIdempotency
-        ? `${baseIdempotency}:${reservation.demandId}:${reservation.itemId}:${reservation.locationId}:${reservation.warehouseId}:${canonicalUom}`
+        ? `${baseIdempotency}:${reservation.demandId}:${reservation.itemId}:${reservation.locationId}:${derivedWarehouseId}:${canonicalUom}`
         : null;
       if (idempotencyKey) {
         const existing = await client.query(
@@ -521,12 +534,7 @@ export async function createReservations(
           continue;
         }
       }
-
-      const location = await assertSellableLocationOrThrow(client, tenantId, reservation.locationId, {
-        expectedWarehouseId: reservation.warehouseId
-      });
-      const warehouseId = location.warehouseId;
-      await assertReservationSalesOrderWarehouseScope(client, tenantId, reservation);
+      const warehouseId = derivedWarehouseId;
 
       const allowBackorder =
         reservation.allowBackorder !== undefined ? reservation.allowBackorder : BACKORDERS_ENABLED;

@@ -51,6 +51,7 @@ export type TransferPostInput = {
   tenantId: string;
   sourceLocationId: string;
   destinationLocationId: string;
+  warehouseId?: string | null;
   itemId: string;
   quantity: number;
   uom: string;
@@ -65,7 +66,10 @@ export type TransferPostInput = {
 
 export type TransferPostResult = {
   movementId: string;
+  transferId: string;
   created: boolean;
+  replayed: boolean;
+  idempotencyKey: string | null;
   sourceWarehouseId: string;
   destinationWarehouseId: string;
 };
@@ -173,11 +177,21 @@ type MovementLineRow = {
 
 export async function postInventoryTransfer(input: TransferPostInput): Promise<TransferPostResult> {
   const idempotencyKey = input.idempotencyKey?.trim() ? input.idempotencyKey.trim() : null;
+  const requestedWarehouseId = input.warehouseId?.trim() ? input.warehouseId.trim() : null;
   const occurredAt = input.occurredAt ?? new Date();
 
   return withTransactionRetry(async (client) => {
     const sourceWarehouseId = await resolveWarehouseIdForLocation(input.tenantId, input.sourceLocationId, client);
     const destinationWarehouseId = await resolveWarehouseIdForLocation(input.tenantId, input.destinationLocationId, client);
+    if (requestedWarehouseId) {
+      if (sourceWarehouseId !== destinationWarehouseId || requestedWarehouseId !== sourceWarehouseId) {
+        throw domainError('WAREHOUSE_SCOPE_MISMATCH', {
+          providedWarehouseId: requestedWarehouseId,
+          sourceWarehouseId,
+          destinationWarehouseId
+        });
+      }
+    }
     const { normalized: normalizedRequestSummary, hash: requestHash } = normalizeTransferPostingPayload({
       tenantId: input.tenantId,
       occurredAt: input.occurredAt ? input.occurredAt.toISOString() : null,
@@ -220,7 +234,10 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
       );
       return {
         movementId: transfer.movementId,
+        transferId: transfer.movementId,
         created: transfer.created,
+        replayed: false,
+        idempotencyKey: null,
         sourceWarehouseId,
         destinationWarehouseId
       };
@@ -265,7 +282,10 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
     if (execution.status === 'SUCCEEDED' && execution.inventory_movement_id) {
       return {
         movementId: execution.inventory_movement_id,
+        transferId: execution.inventory_movement_id,
         created: false,
+        replayed: true,
+        idempotencyKey,
         sourceWarehouseId,
         destinationWarehouseId
       };
@@ -332,7 +352,10 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
 
     return {
       movementId: transfer.movementId,
+      transferId: transfer.movementId,
       created: transfer.created,
+      replayed: !transfer.created,
+      idempotencyKey,
       sourceWarehouseId,
       destinationWarehouseId
     };
