@@ -41,6 +41,46 @@ function printSection(title, count, rows) {
   }
 }
 
+function summarizeTopologyMissingIssues(issues, rowLimit = 50) {
+  const missingWarehouseCodes = new Set();
+  const missingLocationCodes = new Set();
+  const missingDefaults = new Map();
+
+  for (const issue of issues ?? []) {
+    if (!issue || typeof issue !== 'object') continue;
+    if (issue.issue === 'MISSING_WAREHOUSE' && issue.warehouseCode) {
+      missingWarehouseCodes.add(String(issue.warehouseCode));
+    }
+    if (issue.issue === 'MISSING_LOCATION' && issue.locationCode) {
+      missingLocationCodes.add(String(issue.locationCode));
+    }
+    if (issue.issue === 'MISSING_DEFAULT' || issue.issue === 'DEFAULT_TARGET_LOCATION_MISSING') {
+      const warehouseCode = issue.warehouseCode ? String(issue.warehouseCode) : null;
+      const role = issue.role ? String(issue.role) : null;
+      const localCode = issue.localCode ? String(issue.localCode) : null;
+      if (!warehouseCode || !role) continue;
+      const key = `${warehouseCode}:${role}:${localCode ?? ''}`;
+      if (!missingDefaults.has(key)) {
+        missingDefaults.set(key, { warehouseCode, role, localCode });
+      }
+    }
+  }
+
+  return {
+    missingWarehouseCodes: Array.from(missingWarehouseCodes).sort().slice(0, rowLimit),
+    missingLocationCodes: Array.from(missingLocationCodes).sort().slice(0, rowLimit),
+    missingDefaults: Array.from(missingDefaults.values())
+      .sort((left, right) => {
+        const warehouseCompare = left.warehouseCode.localeCompare(right.warehouseCode);
+        if (warehouseCompare !== 0) return warehouseCompare;
+        const roleCompare = left.role.localeCompare(right.role);
+        if (roleCompare !== 0) return roleCompare;
+        return String(left.localCode ?? '').localeCompare(String(right.localCode ?? ''));
+      })
+      .slice(0, rowLimit)
+  };
+}
+
 const tenantId = getArg('tenant-id') ?? process.env.INVARIANTS_TENANT_ID ?? process.env.TENANT_ID;
 const warehouseId = getArg('warehouse-id') ?? process.env.WAREHOUSE_ID ?? null;
 const limit = parsePositiveInt(getArg('limit') ?? process.env.LIMIT, 200);
@@ -743,6 +783,17 @@ try {
     console.log('  action: manual cleanup required for ambiguous warehouse role candidates before rerunning --fix');
   }
   if (topologyCheck.count > 0) {
+    const topologyMissingSummary = summarizeTopologyMissingIssues(topologyCheck.issues, limit);
+    if (
+      topologyMissingSummary.missingWarehouseCodes.length > 0
+      || topologyMissingSummary.missingLocationCodes.length > 0
+      || topologyMissingSummary.missingDefaults.length > 0
+    ) {
+      console.log(`  [warehouse_topology_missing_summary] ${JSON.stringify({
+        tenantId,
+        ...topologyMissingSummary
+      })}`);
+    }
     console.log('  hint: run `npm run seed:warehouse-topology -- --tenant-id <TENANT_UUID> --fix`');
   }
   if (strictMode) {

@@ -91,10 +91,14 @@ export function mapAtpInsufficientAvailable(error: any, res: Response): boolean 
   if (error?.code !== 'ATP_INSUFFICIENT_AVAILABLE') {
     return false;
   }
+  const operation = typeof error?.details?.operation === 'string' ? error.details.operation : null;
+  const message = operation === 'shipment_post'
+    ? 'Insufficient sellable inventory for shipment.'
+    : 'Insufficient sellable inventory for reservation.';
   jsonConflict(
     res,
     'ATP_INSUFFICIENT_AVAILABLE',
-    'Insufficient sellable inventory for reservation.',
+    message,
     error?.details
   );
   return true;
@@ -110,8 +114,8 @@ export function handlePostShipmentConflict(error: any, res: Response): boolean {
   if (error?.code === 'INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE') {
     jsonConflict(
       res,
-      'INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE',
-      error?.message ?? 'Insufficient available inventory for shipment',
+      'ATP_INSUFFICIENT_AVAILABLE',
+      'Insufficient sellable inventory for shipment.',
       error?.details
     );
     return true;
@@ -119,8 +123,8 @@ export function handlePostShipmentConflict(error: any, res: Response): boolean {
   if (error?.code === 'INSUFFICIENT_STOCK' || error?.message === 'INSUFFICIENT_STOCK') {
     jsonConflict(
       res,
-      'INSUFFICIENT_STOCK',
-      'Insufficient stock to post shipment.',
+      'ATP_INSUFFICIENT_AVAILABLE',
+      'Insufficient sellable inventory for shipment.',
       error?.details
     );
     return true;

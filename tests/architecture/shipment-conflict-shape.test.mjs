@@ -46,7 +46,7 @@ function assertNoSensitiveKeys(value, path = 'error.details') {
   }
 }
 
-test('INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE conflict serializes stable 409 shape', () => {
+test('INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE conflict maps to stable ATP 409 shape', () => {
   const { res, state } = createMockResponse();
   const handled = handlePostShipmentConflict(
     {
@@ -66,7 +66,7 @@ test('INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE conflict serializes stable 409 shape
   );
 
   assert.equal(handled, true);
-  assertConflictShape(state, 'INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE');
+  assertConflictShape(state, 'ATP_INSUFFICIENT_AVAILABLE');
   assertNoSensitiveKeys(state.body.error.details);
 });
 
@@ -91,7 +91,7 @@ test('TX_RETRY_EXHAUSTED conflict serializes stable 409 shape with safe retry de
 
 test('all known shipment conflict codes return 409 object-form error payload', () => {
   const scenarios = [
-    { error: { code: 'INSUFFICIENT_STOCK' }, code: 'INSUFFICIENT_STOCK' },
+    { error: { code: 'INSUFFICIENT_STOCK' }, code: 'ATP_INSUFFICIENT_AVAILABLE' },
     { error: { code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON', details: { message: 'reason required' } }, code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON' },
     { error: { message: 'SHIPMENT_CANCELED' }, code: 'SHIPMENT_CANCELED' },
     { error: { message: 'RESERVATION_INVALID_STATE' }, code: 'RESERVATION_INVALID_STATE' }

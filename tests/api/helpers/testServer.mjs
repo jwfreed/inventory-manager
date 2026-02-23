@@ -21,9 +21,54 @@ let startPromise;
 let startedByUs = false;
 let child;
 let logStream;
+let processHooksInstalled = false;
 
 function getBaseUrl() {
   return baseUrl;
+}
+
+function handleProcessExit() {
+  if (startedByUs && child) {
+    child.kill('SIGTERM');
+  }
+}
+
+async function handleProcessSigint() {
+  await stopTestServer();
+  process.exit(1);
+}
+
+function installProcessHooks() {
+  if (processHooksInstalled) return;
+  process.on('exit', handleProcessExit);
+  process.on('SIGINT', handleProcessSigint);
+  processHooksInstalled = true;
+}
+
+function uninstallProcessHooks() {
+  if (!processHooksInstalled) return;
+  process.off('exit', handleProcessExit);
+  process.off('SIGINT', handleProcessSigint);
+  processHooksInstalled = false;
+}
+
+function destroyChildStream(stream, destination) {
+  if (!stream) return;
+  try {
+    if (typeof stream.unpipe === 'function') {
+      stream.unpipe(destination);
+    }
+  } catch {
+    // no-op
+  }
+  try {
+    stream.removeAllListeners();
+  } catch {
+    // no-op
+  }
+  if (typeof stream.destroy === 'function' && stream.destroyed !== true) {
+    stream.destroy();
+  }
 }
 
 async function fetchWithTimeout(url, timeoutMs) {
@@ -62,6 +107,7 @@ async function ensureTestServer() {
       return;
     }
     startedByUs = true;
+    installProcessHooks();
     const logPath = path.resolve(process.cwd(), 'server.log');
     logStream = fs.createWriteStream(logPath, { flags: 'a' });
     const testTenantScope =
@@ -84,6 +130,15 @@ async function ensureTestServer() {
         shell: process.platform === 'win32'
       }
     );
+    if (typeof child.unref === 'function') {
+      child.unref();
+    }
+    if (typeof child.stdout?.unref === 'function') {
+      child.stdout.unref();
+    }
+    if (typeof child.stderr?.unref === 'function') {
+      child.stderr.unref();
+    }
     child.stdout?.pipe(logStream);
     child.stderr?.pipe(logStream);
 
@@ -101,26 +156,53 @@ async function ensureTestServer() {
 
 async function stopTestServer() {
   startPromise = undefined;
-  if (!startedByUs) return;
+  const activeChild = child;
+  child = undefined;
   startedByUs = false;
-  if (child) {
-    child.kill('SIGTERM');
-    child = undefined;
+  if (activeChild) {
+    const waitForClose = new Promise((resolve) => {
+      let settled = false;
+      const finalize = () => {
+        if (settled) return;
+        settled = true;
+        resolve(undefined);
+      };
+      activeChild.once('close', finalize);
+      activeChild.once('error', finalize);
+    });
+
+    activeChild.kill('SIGTERM');
+    let gracefulTimer;
+    const gracefulTimeout = new Promise((resolve) => {
+      gracefulTimer = setTimeout(() => resolve(false), 4000);
+    });
+    const graceful = await Promise.race([
+      waitForClose.then(() => true),
+      gracefulTimeout
+    ]);
+    clearTimeout(gracefulTimer);
+    if (!graceful) {
+      activeChild.kill('SIGKILL');
+      let forcedTimer;
+      const forcedTimeout = new Promise((resolve) => {
+        forcedTimer = setTimeout(resolve, 2000);
+      });
+      await Promise.race([
+        waitForClose,
+        forcedTimeout
+      ]);
+      clearTimeout(forcedTimer);
+    }
+    destroyChildStream(activeChild.stdout, logStream);
+    destroyChildStream(activeChild.stderr, logStream);
+    destroyChildStream(activeChild.stdin, null);
+    activeChild.removeAllListeners();
   }
   if (logStream) {
-    logStream.end();
+    await new Promise((resolve) => logStream.end(resolve));
     logStream = undefined;
   }
+  uninstallProcessHooks();
 }
-
-process.on('exit', () => {
-  if (startedByUs && child) {
-    child.kill('SIGTERM');
-  }
-});
-process.on('SIGINT', async () => {
-  await stopTestServer();
-  process.exit(1);
-});
 
 export { ensureTestServer, stopTestServer, getBaseUrl };

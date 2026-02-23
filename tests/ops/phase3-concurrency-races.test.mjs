@@ -274,7 +274,7 @@ test('cycle count post vs fulfillment race remains deterministic and drift-safe'
   assertRaceResult(
     shipmentPost,
     new Set([200, 409]),
-    new Set(['INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE', 'INSUFFICIENT_STOCK', 'TX_RETRY_EXHAUSTED'])
+    new Set(['ATP_INSUFFICIENT_AVAILABLE', 'INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE', 'INSUFFICIENT_STOCK', 'TX_RETRY_EXHAUSTED'])
   );
 
   const snapshot = await db.query(

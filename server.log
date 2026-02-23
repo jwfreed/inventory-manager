@@ -2090,3 +2090,3287 @@ WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
    Environment: test
    Timezone: UTC (for scheduled jobs)
 
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 10,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '549fc5da-df3e-42a0-9ca9-c25449e86f2d',
+    '1f3abbc2-cb93-4f6d-9af9-445fa2d15a03',
+    '7f9d2ad7-816b-4323-96fd-bcb997d2cc57',
+    'd9cc991a-06d7-4675-81cf-bae8b4712d38',
+    '99f77697-1334-4d7b-ba83-65caeca32f6b'
+  ],
+  sampleTenantIds: [
+    '278c558c-7617-4129-9c1b-dca0d3f2d3fc',
+    'e71c0b2c-b91d-463b-9bce-e37e5554f842',
+    '52665b6c-def2-431b-b4d6-0666692508c4',
+    'fb477b4c-62d7-4e1a-8c70-067c40c42bcb',
+    'b09f13db-fac4-4573-b111-a154b0ddbcee'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 10,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '549fc5da-df3e-42a0-9ca9-c25449e86f2d',
+    '1f3abbc2-cb93-4f6d-9af9-445fa2d15a03',
+    '7f9d2ad7-816b-4323-96fd-bcb997d2cc57',
+    'd9cc991a-06d7-4675-81cf-bae8b4712d38',
+    '99f77697-1334-4d7b-ba83-65caeca32f6b'
+  ],
+  sampleTenantIds: [
+    '278c558c-7617-4129-9c1b-dca0d3f2d3fc',
+    'e71c0b2c-b91d-463b-9bce-e37e5554f842',
+    '52665b6c-def2-431b-b4d6-0666692508c4',
+    'fb477b4c-62d7-4e1a-8c70-067c40c42bcb',
+    'b09f13db-fac4-4573-b111-a154b0ddbcee'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 7,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":2}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":2}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":8}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":31}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":30}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":30}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":31}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":32}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":34}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":36}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":37}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":38}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":41}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":43}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":43}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":43}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":46}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":48}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":50}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":53}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":48}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":53}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":51}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":50}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":48}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":46}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":44}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":44}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":42}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":42}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":41}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":39}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":37}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":37}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":35}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":34}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":32}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":31}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":30}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":28}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":28}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":30}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":29}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":28}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":27}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":24}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":27}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":27}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":27}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":31}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":36}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":42}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":49}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":54}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":59}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":65}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":70}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":76}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":83}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":88}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":94}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":100}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":105}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":111}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":117}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":124}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":127}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":127}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":124}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":120}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["54be6d05-24bb-4717-85aa-e0187ba346b9"],"lockKeyCount":1,"atp_lock_wait_ms":116}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"54be6d05-24bb-4717-85aa-e0187ba346b9","locationId":"b4749855-f109-4585-9b66-dfe9b45bc916","uom":"each","available":0,"requested":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":8}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":8}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":9}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":10}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":10}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":13}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":14}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":17}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":9}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":16}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":17}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":16}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":16}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":15}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":15}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":15}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":15}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":6}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":11}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":11}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":11}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":5}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":13}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":13}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":4}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":7}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":6}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":6}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":6}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":7}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":3}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":6}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":10}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":14}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["be2097c7-90b0-45b9-bf7b-3b933fb87d56"],"lockKeyCount":1,"atp_lock_wait_ms":18}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["0f0b9508-aaf2-4415-be33-3ec6b1df42bf","d6915630-b003-44bb-a66a-00806c01ed0b"],"lockKeyCount":2,"atp_lock_wait_ms":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["0f0b9508-aaf2-4415-be33-3ec6b1df42bf","d6915630-b003-44bb-a66a-00806c01ed0b"],"lockKeyCount":2,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["0f0b9508-aaf2-4415-be33-3ec6b1df42bf","d6915630-b003-44bb-a66a-00806c01ed0b"],"lockKeyCount":2,"atp_lock_wait_ms":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":7}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":9}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":10}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":12}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":14}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":15}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":17}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":18}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":18}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":18}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":19}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":24}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_lock_wait_ms] {"operation":"allocate","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"fulfill","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":17}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":19}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":17}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"allocate","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":15}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":18}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":18}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":19}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":19}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":19}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":24}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":24}
+[atp_lock_wait_ms] {"operation":"fulfill","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":20}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":23}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":21}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":22}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":18}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":24}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":24}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":25}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":24}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":26}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"allocate","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":16}
+[atp_retry_count] {"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"attempts":7,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_concurrency_exhausted_count] {"count":1,"operation":"reserve","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"warehouseId":"fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc","itemId":"9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b","lockKeysCount":1,"reason":"tx_retry_exhausted","attempts":7,"retryable":true,"atp_retry_count":6,"retrySqlState":"40001"}
+[atp_lock_wait_ms] {"operation":"fulfill","tenantId":"5cfc1532-fdc8-41a0-bd80-93e881272799","warehouseIds":["fb26db3d-4ee3-4da5-8f91-cf6b78d3d4bc"],"itemIds":["9ff25ddd-0a77-4f96-82ab-3cc32eb1b58b"],"lockKeyCount":1,"atp_lock_wait_ms":0}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"3368162b-663a-4bbf-8b48-40bca599ade9","warehouseIds":["010815b2-4588-4a7c-833f-1fdba5d19fb9"],"itemIds":["da3ce41c-2a30-4cee-bde8-027e2f8ce1aa"],"lockKeyCount":1,"atp_lock_wait_ms":0}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"3368162b-663a-4bbf-8b48-40bca599ade9","warehouseIds":["6fa644c0-cc37-4c7f-bd64-14162c9fe53f"],"itemIds":["ce2dd609-a7aa-412e-ad51-d7a441eec438"],"lockKeyCount":1,"atp_lock_wait_ms":0}
+[atp_lock_wait_ms] {"operation":"allocate","tenantId":"3368162b-663a-4bbf-8b48-40bca599ade9","warehouseIds":["6fa644c0-cc37-4c7f-bd64-14162c9fe53f"],"itemIds":["ce2dd609-a7aa-412e-ad51-d7a441eec438"],"lockKeyCount":1,"atp_lock_wait_ms":0}
+[atp_lock_wait_ms] {"operation":"shipment_post","tenantId":"3368162b-663a-4bbf-8b48-40bca599ade9","warehouseIds":["6fa644c0-cc37-4c7f-bd64-14162c9fe53f"],"itemIds":["ce2dd609-a7aa-412e-ad51-d7a441eec438"],"lockKeyCount":1,"atp_lock_wait_ms":0}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"3368162b-663a-4bbf-8b48-40bca599ade9","warehouseIds":["6fa644c0-cc37-4c7f-bd64-14162c9fe53f"],"itemIds":["ce2dd609-a7aa-412e-ad51-d7a441eec438"],"lockKeyCount":1,"atp_lock_wait_ms":10}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"3368162b-663a-4bbf-8b48-40bca599ade9","warehouseIds":["6fa644c0-cc37-4c7f-bd64-14162c9fe53f"],"itemIds":["ce2dd609-a7aa-412e-ad51-d7a441eec438"],"lockKeyCount":1,"atp_lock_wait_ms":0}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"3368162b-663a-4bbf-8b48-40bca599ade9","warehouseId":"6fa644c0-cc37-4c7f-bd64-14162c9fe53f","itemId":"ce2dd609-a7aa-412e-ad51-d7a441eec438","locationId":"75586669-b916-4468-b326-0fc123d63af2","uom":"each","available":1,"requested":2}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"b91c746d-0b3e-459c-8a30-d5ca4bbe0847","warehouseIds":["4e3e5046-4edd-4dfe-8622-69fdb250d635"],"itemIds":["e93c89a1-fc33-4e1c-af54-cfa91ed176c3"],"lockKeyCount":1,"atp_lock_wait_ms":0}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"b91c746d-0b3e-459c-8a30-d5ca4bbe0847","warehouseIds":["94c8c24d-9229-4847-a11d-c5ca11a4f619","fe17aad3-4251-45c4-be1b-f69140d62441"],"itemIds":["ea278db6-1f18-4a30-aaef-76f9b0d5d7e8","fd2ef67b-b9c1-4786-a249-d582583fafbd"],"lockKeyCount":2,"atp_lock_wait_ms":0}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"b91c746d-0b3e-459c-8a30-d5ca4bbe0847","warehouseIds":["94c8c24d-9229-4847-a11d-c5ca11a4f619","fe17aad3-4251-45c4-be1b-f69140d62441"],"itemIds":["ea278db6-1f18-4a30-aaef-76f9b0d5d7e8","fd2ef67b-b9c1-4786-a249-d582583fafbd"],"lockKeyCount":2,"atp_lock_wait_ms":1}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"b91c746d-0b3e-459c-8a30-d5ca4bbe0847","warehouseIds":["94c8c24d-9229-4847-a11d-c5ca11a4f619"],"itemIds":["f1ff4447-85e8-4939-a2dd-a5269f3a79c7"],"lockKeyCount":1,"atp_lock_wait_ms":0}
+[atp_lock_wait_ms] {"operation":"allocate","tenantId":"b91c746d-0b3e-459c-8a30-d5ca4bbe0847","warehouseIds":["94c8c24d-9229-4847-a11d-c5ca11a4f619"],"itemIds":["f1ff4447-85e8-4939-a2dd-a5269f3a79c7"],"lockKeyCount":1,"atp_lock_wait_ms":0}
+[atp_lock_wait_ms] {"operation":"reserve","tenantId":"b91c746d-0b3e-459c-8a30-d5ca4bbe0847","warehouseIds":["94c8c24d-9229-4847-a11d-c5ca11a4f619"],"itemIds":["f1ff4447-85e8-4939-a2dd-a5269f3a79c7"],"lockKeyCount":1,"atp_lock_wait_ms":0}
+[atp_insufficient_available_count] {"count":1,"operation":"reserve","tenantId":"b91c746d-0b3e-459c-8a30-d5ca4bbe0847","warehouseId":"94c8c24d-9229-4847-a11d-c5ca11a4f619","itemId":"f1ff4447-85e8-4939-a2dd-a5269f3a79c7","locationId":"5a39c1ac-71ff-47f7-8951-fff5a92ff0de","uom":"each","available":1,"requested":2}
+[atp_lock_wait_ms] {"operation":"shipment_post","tenantId":"b91c746d-0b3e-459c-8a30-d5ca4bbe0847","warehouseIds":["94c8c24d-9229-4847-a11d-c5ca11a4f619"],"itemIds":["f1ff4447-85e8-4939-a2dd-a5269f3a79c7"],"lockKeyCount":1,"atp_lock_wait_ms":3}
+/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8
+  throw new Error('DATABASE_URL must be set before starting the API');
+        ^
+Error: DATABASE_URL must be set before starting the API
+    at Object.<anonymous> (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8:9)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module.m._compile (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1618:23)
+    at node:internal/modules/cjs/loader:1839:10
+    at Object.require.extensions.<computed> [as .ts] (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8
+  throw new Error('DATABASE_URL must be set before starting the API');
+        ^
+Error: DATABASE_URL must be set before starting the API
+    at Object.<anonymous> (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:8:9)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module.m._compile (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1618:23)
+    at node:internal/modules/cjs/loader:1839:10
+    at Object.require.extensions.<computed> [as .ts] (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_DETECTION_FAILED {
+  tenantId: null,
+  error: {
+    code: 'EPERM',
+    message: 'ORPHAN_ROOTS_DETECTION_FAILED',
+    detail: null,
+    schema: null,
+    table: null,
+    constraint: null,
+    routine: null
+  }
+}
+Startup failed structured: {"code":"EPERM","details":null}
+Startup failed: AggregateError
+    at /Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async query (/Users/jonathanfreed/Documents/Development/inventory-manager/src/db.ts:45:14)
+    at async ensureWarehouseDefaults (/Users/jonathanfreed/Documents/Development/inventory-manager/src/services/warehouseDefaults.service.ts:831:25)
+    at async start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:268:3) {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1206:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1206:16)
+        at internalConnectMultiple (node:net:1210:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:472:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1552:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+🛑 SIGTERM received, shutting down gracefully...
+
+🛑 Stopping job scheduler
+   Stopped: metrics-recalculation
+   Stopped: exchange-rate-sync
+   Stopped: inventory-health-check
+   Stopped: inventory-invariant-check
+   Stopped: inventory-ledger-reconcile
+   Stopped: outbox-retention
+   Stopped: reservation-expiry
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+⚠️  REDIS_URL not configured - using in-memory cache (not shared across instances)
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+
+🚀 Inventory Manager API listening on port 3000
+   Environment: test
+   Timezone: UTC (for scheduled jobs)
+
+
+📅 Registering scheduled jobs (in-process)...
+📅 Job "metrics-recalculation" scheduled: 0 2 * * * (UTC)
+📅 Job "exchange-rate-sync" scheduled: 0 6 * * * (UTC)
+📅 Job "inventory-health-check" scheduled: 0 * * * * (UTC)
+📅 Job "inventory-invariant-check" scheduled: 30 * * * * (UTC)
+📅 Job "inventory-ledger-reconcile" scheduled: 15 3 * * * (UTC)
+📅 Job "outbox-retention" scheduled: 0 3 * * * (UTC)
+📅 Job "reservation-expiry" scheduled: */15 * * * * (UTC)
+
+🕐 Starting job scheduler (7 jobs)
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRING {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_ROOTS_REPAIRED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ],
+  createdWarehouseRootsCount: 0,
+  createdWarehouseRootIds: [],
+  reparentedCount: 0,
+  relinkedWarehouseCount: 0,
+  skippedRelinkLocalCodeConflictCount: 3,
+  remainingCount: 3,
+  remainingSampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  remainingSampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+WAREHOUSE_DEFAULT_ORPHAN_WAREHOUSE_ROOTS_DETECTED {
+  orphanCount: 3,
+  tenantId: null,
+  sampleWarehouseIds: [
+    '07f8d67f-7bf3-4b55-ad00-9f0d6a3c5873',
+    'd2d8c4e0-290d-442d-afb6-5d121e029009',
+    'a2f752e5-9f57-4cee-90af-90d12b756ed3'
+  ],
+  sampleTenantIds: [
+    '411690d4-b5eb-4eeb-abc4-bf5000a530a7',
+    'ef2c7b81-474a-48fc-8bd4-3a10599268c2',
+    '38e6a64a-1732-4763-9059-f3e010f51512'
+  ]
+}
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/jonathanfreed/Documents/Development/inventory-manager/node_modules/express/lib/application.js:635:24)
+    at start (/Users/jonathanfreed/Documents/Development/inventory-manager/src/server.ts:269:7)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}

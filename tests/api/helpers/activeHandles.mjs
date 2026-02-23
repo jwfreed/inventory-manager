@@ -10,6 +10,10 @@ function isStdio(handle) {
   return handle === process.stdout || handle === process.stderr || handle === process.stdin;
 }
 
+function normalizeText(value) {
+  return String(value ?? '').trim();
+}
+
 function describeHandle(handle) {
   const name = handle?.constructor?.name ?? typeof handle;
   let details = '';
@@ -19,6 +23,15 @@ function describeHandle(handle) {
         local: `${handle.localAddress ?? ''}:${handle.localPort ?? ''}`,
         remote: `${handle.remoteAddress ?? ''}:${handle.remotePort ?? ''}`,
         destroyed: handle.destroyed
+      });
+    } else if (name === 'ChildProcess') {
+      details = JSON.stringify({
+        pid: handle.pid ?? null,
+        killed: handle.killed ?? null,
+        exitCode: handle.exitCode ?? null,
+        signalCode: handle.signalCode ?? null,
+        spawnfile: handle.spawnfile ?? null,
+        spawnargs: Array.isArray(handle.spawnargs) ? handle.spawnargs.slice(0, 6) : null
       });
     } else if (name === 'Timeout') {
       details = JSON.stringify({ timeout: handle._idleTimeout });
@@ -51,6 +64,34 @@ export function snapshotActiveHandles() {
     .map(describeHandle);
   const requests = process._getActiveRequests().map(describeRequest);
   return { handles, requests };
+}
+
+export function snapshotActiveResourcesInfo() {
+  if (typeof process.getActiveResourcesInfo !== 'function') {
+    return [];
+  }
+  try {
+    return process
+      .getActiveResourcesInfo()
+      .map((entry) => normalizeText(entry))
+      .filter(Boolean)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+export function logActiveResources(label = '[handles]') {
+  if (process.env.TEST_DEBUG_HANDLES !== '1') return;
+  const snapshot = snapshotActiveHandles();
+  const resources = snapshotActiveResourcesInfo();
+  console.error(`${label} active handles:`, snapshot.handles);
+  if (snapshot.requests.length > 0) {
+    console.error(`${label} active requests:`, snapshot.requests);
+  }
+  if (resources.length > 0) {
+    console.error(`${label} active resources:`, resources);
+  }
 }
 
 function keyFor(item) {

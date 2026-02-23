@@ -288,6 +288,9 @@ router.post('/reservations/:id/cancel', async (req: Request, res: Response) => {
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error: any) {
+    if (mapAtpConcurrencyExhausted(error, res)) {
+      return;
+    }
     if (mapTxRetryExhausted(error, res)) {
       return;
     }

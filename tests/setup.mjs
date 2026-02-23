@@ -1,6 +1,6 @@
 import { afterEach, after, beforeEach } from 'node:test';
 import { clearWaitForTimers } from './api/helpers/waitFor.mjs';
-import { snapshotActiveHandles, diffHandleSnapshots } from './api/helpers/activeHandles.mjs';
+import { snapshotActiveHandles, diffHandleSnapshots, logActiveResources } from './api/helpers/activeHandles.mjs';
 import { stopTestServer } from './api/helpers/testServer.mjs';
 import { closeDbPool } from './helpers/dbPool.mjs';
 import {
@@ -81,13 +81,7 @@ if (delayMs > 0) {
 }
 
 after(async () => {
-  if (debugHandles) {
-    const finalSnapshot = snapshotActiveHandles();
-    console.error(`[handles] final active handles:`, finalSnapshot.handles);
-    if (finalSnapshot.requests.length > 0) {
-      console.error(`[handles] final active requests:`, finalSnapshot.requests);
-    }
-  }
+  logActiveResources('[handles] final');
   await stopTestServer();
   await closeDbPool();
 });

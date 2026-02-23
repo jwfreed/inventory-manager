@@ -91,10 +91,19 @@ export async function withTransaction<T>(handler: (client: PoolClient) => Promis
 
 export async function withTransactionRetry<T>(
   handler: (client: PoolClient) => Promise<T>,
-  options?: { retries?: number; isolationLevel?: 'SERIALIZABLE' | 'REPEATABLE READ' | 'READ COMMITTED' }
+  options?: {
+    retries?: number;
+    isolationLevel?: 'SERIALIZABLE' | 'REPEATABLE READ' | 'READ COMMITTED';
+    retryDelayMs?: (args: { attempt: number; sqlState: string }) => number;
+    onRetry?: (args: { attempt: number; sqlState: string; delayMs: number }) => void;
+    sleep?: (delayMs: number) => Promise<void>;
+  }
 ): Promise<T> {
   const retries = options?.retries ?? 2;
   const isolationLevel = options?.isolationLevel;
+  const sleep =
+    options?.sleep
+    ?? ((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
   let attempt = 0;
   while (true) {
     const client = await pool.connect();
@@ -117,7 +126,17 @@ export async function withTransactionRetry<T>(
       const code = err?.code;
       if (code === '40001' || code === '40P01') {
         if (attempt < retries) {
-          attempt += 1;
+          const nextAttempt = attempt + 1;
+          const requestedDelayMs = options?.retryDelayMs?.({ attempt: nextAttempt, sqlState: code }) ?? 0;
+          const delayMs = Math.max(
+            0,
+            Number.isFinite(Number(requestedDelayMs)) ? Math.floor(Number(requestedDelayMs)) : 0
+          );
+          options?.onRetry?.({ attempt: nextAttempt, sqlState: code, delayMs });
+          if (delayMs > 0) {
+            await sleep(delayMs);
+          }
+          attempt = nextAttempt;
           continue;
         }
         const exhausted: any = new Error('TX_RETRY_EXHAUSTED');

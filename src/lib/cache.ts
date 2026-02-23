@@ -20,6 +20,12 @@ export class QueryCache<T> {
   ) {
     // Periodic cleanup of expired entries
     this.cleanupInterval = setInterval(() => this.cleanup(), Math.max(ttlMs, 60_000));
+    // This is a benign maintenance timer for cache cleanup only.
+    // Do not apply unref to correctness-critical timers (posting, invariants, reservation expiry, etc.).
+    // Safe here because missing a cleanup tick only affects cache hit rate/performance, not correctness.
+    if (typeof this.cleanupInterval.unref === 'function') {
+      this.cleanupInterval.unref();
+    }
   }
 
   get(key: string): T | undefined {

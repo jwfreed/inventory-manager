@@ -33,6 +33,14 @@ import { consumeCostLayers } from './costLayers.service';
 import { recordAuditLog } from '../lib/audit';
 import { invalidateAtpCacheForWarehouse } from './atpCache.service';
 import { assertSellableLocationOrThrow } from '../domains/inventory';
+import {
+  acquireAtpLocks,
+  assertAtpLockHeldOrThrow,
+  buildAtpLockKeys,
+  createAtpLockContext,
+  type AtpLockContext,
+  type AtpLockTarget
+} from '../domains/inventory/internal/atpLocks';
 
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
 export type ReservationInput = z.infer<typeof reservationSchema>;
@@ -61,12 +69,12 @@ type ReservationRow = {
 const BACKORDERS_ENABLED = process.env.BACKORDERS_ENABLED !== 'false';
 const ATP_SERIALIZABLE_RETRIES = 2;
 const ATP_RESERVATION_CREATE_RETRIES = 6;
+const ATP_RETRY_BASE_DELAY_MS = 5;
+const ATP_RETRY_JITTER_MS = 5;
 
-type AtpGuardKey = {
-  tenantId: string;
-  warehouseId: string;
-  itemId: string;
-};
+let atpRetryRandom = () => Math.random();
+let atpRetrySleep = (delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+let atpMetricsSink: ((event: string, payload: Record<string, unknown>) => void) | null = null;
 
 type StructuredServiceError = Error & {
   code?: string;
@@ -75,10 +83,11 @@ type StructuredServiceError = Error & {
 };
 
 type AtpErrorContext = {
-  operation: 'reserve' | 'allocate' | 'fulfill' | 'shipment_post';
+  operation: 'reserve' | 'allocate' | 'cancel' | 'fulfill' | 'shipment_post' | 'expire';
   tenantId: string;
   warehouseIds?: string[];
   itemIds?: string[];
+  lockKeysCount?: number;
 };
 
 function compareReservationLockKey(
@@ -106,20 +115,6 @@ function reservationInvalidQuantity() {
   return new Error('RESERVATION_INVALID_QUANTITY');
 }
 
-function insufficientAvailableWithAllowance(details?: Record<string, unknown>) {
-  const error = new Error('Insufficient available inventory for shipment') as Error & {
-    code?: string;
-    status?: number;
-    details?: Record<string, unknown>;
-  };
-  error.code = 'INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE';
-  error.status = 409;
-  if (details) {
-    error.details = details;
-  }
-  return error;
-}
-
 function mapUniqueValues(values: Array<string | null | undefined>): string[] {
   return Array.from(
     new Set(
@@ -130,57 +125,87 @@ function mapUniqueValues(values: Array<string | null | undefined>): string[] {
   ).sort((left, right) => left.localeCompare(right));
 }
 
-function compareAtpGuardKey(left: AtpGuardKey, right: AtpGuardKey): number {
-  const tenant = left.tenantId.localeCompare(right.tenantId);
-  if (tenant !== 0) return tenant;
-  const warehouse = left.warehouseId.localeCompare(right.warehouseId);
-  if (warehouse !== 0) return warehouse;
-  return left.itemId.localeCompare(right.itemId);
-}
-
-function uniqueSortedAtpGuardKeys(keys: AtpGuardKey[]): AtpGuardKey[] {
-  const byComposite = new Map<string, AtpGuardKey>();
-  for (const key of keys) {
-    const composite = `${key.tenantId}:${key.warehouseId}:${key.itemId}`;
-    if (!byComposite.has(composite)) {
-      byComposite.set(composite, key);
-    }
-  }
-  return Array.from(byComposite.values()).sort(compareAtpGuardKey);
-}
-
 function emitAtpMetric(event: string, payload: Record<string, unknown>) {
-  console.info(`[${event}] ${JSON.stringify(payload)}`);
+  atpMetricsSink?.(event, payload);
+}
+
+export function __setAtpRetryHooksForTests(
+  hooks?: Partial<{ random: () => number; sleep: (delayMs: number) => Promise<void> }>
+) {
+  atpRetryRandom = hooks?.random ?? (() => Math.random());
+  atpRetrySleep = hooks?.sleep ?? ((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+}
+
+export function __setAtpMetricsSinkForTests(
+  sink?: ((event: string, payload: Record<string, unknown>) => void) | null
+) {
+  atpMetricsSink = sink ?? null;
+}
+
+export type AtpRetryContextForTests = AtpErrorContext;
+
+export function __buildAtpRetryOptionsForTests(context: AtpErrorContext, retries: number) {
+  return buildAtpRetryOptions(context, retries);
+}
+
+export function __mapAtpRetryErrorForTests(error: unknown, context: AtpErrorContext) {
+  try {
+    withAtpRetryHandling(error, context);
+  } catch (mappedError) {
+    return mappedError as StructuredServiceError;
+  }
+  throw new Error('ATP_RETRY_ERROR_EXPECTED_TO_THROW');
+}
+
+function computeAtpRetryDelayMs(attempt: number): number {
+  const normalizedAttempt = Math.max(1, Math.floor(Number(attempt) || 1));
+  const rawRandom = Number(atpRetryRandom());
+  const normalizedRandom = Number.isFinite(rawRandom)
+    ? Math.min(0.999999, Math.max(0, rawRandom))
+    : 0;
+  const jitterMs = Math.floor(normalizedRandom * (ATP_RETRY_JITTER_MS + 1));
+  return ATP_RETRY_BASE_DELAY_MS * normalizedAttempt + jitterMs;
+}
+
+function buildAtpRetryOptions(context: AtpErrorContext, retries: number) {
+  return {
+    isolationLevel: 'SERIALIZABLE' as const,
+    retries,
+    retryDelayMs: ({ attempt }: { attempt: number; sqlState: string }) => computeAtpRetryDelayMs(attempt),
+    onRetry: ({ attempt, sqlState, delayMs }: { attempt: number; sqlState: string; delayMs: number }) => {
+      emitAtpMetric('atp_tx_retry_attempts', {
+        operation: context.operation,
+        tenantId: context.tenantId,
+        warehouseIds: mapUniqueValues(context.warehouseIds ?? []),
+        itemIds: mapUniqueValues(context.itemIds ?? []),
+        attempt,
+        sqlState,
+        delayMs
+      });
+    },
+    sleep: atpRetrySleep
+  };
 }
 
 async function acquireAtpAdvisoryLocks(
   client: PoolClient,
-  keys: AtpGuardKey[],
-  context: AtpErrorContext
+  keys: AtpLockTarget[],
+  context: AtpErrorContext,
+  lockContext?: AtpLockContext
 ) {
-  const sortedKeys = uniqueSortedAtpGuardKeys(keys);
-  if (sortedKeys.length === 0) {
-    return;
+  const { lockKeys, lockWaitMs } = await acquireAtpLocks(client, keys, { lockContext });
+  if (lockKeys.length === 0) {
+    return 0;
   }
-  const lockStart = Date.now();
-  for (const key of sortedKeys) {
-    await client.query(
-      `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`,
-      [
-        `atp:${key.tenantId}`,
-        `${key.warehouseId}:${key.itemId}`
-      ]
-    );
-  }
-  const waitMs = Date.now() - lockStart;
   emitAtpMetric('atp_lock_wait_ms', {
     operation: context.operation,
     tenantId: context.tenantId,
-    warehouseIds: mapUniqueValues(context.warehouseIds ?? sortedKeys.map((key) => key.warehouseId)),
-    itemIds: mapUniqueValues(context.itemIds ?? sortedKeys.map((key) => key.itemId)),
-    lockKeyCount: sortedKeys.length,
-    atp_lock_wait_ms: waitMs
+    warehouseIds: mapUniqueValues(context.warehouseIds ?? lockKeys.map((key) => key.warehouseId)),
+    itemIds: mapUniqueValues(context.itemIds ?? lockKeys.map((key) => key.itemId)),
+    lockKeyCount: lockKeys.length,
+    atp_lock_wait_ms: lockWaitMs
   });
+  return lockKeys.length;
 }
 
 function atpInsufficientAvailable(details: Record<string, unknown>): StructuredServiceError {
@@ -211,18 +236,40 @@ function atpConcurrencyExhausted(
 
 function withAtpRetryHandling(error: any, context: AtpErrorContext): never {
   if (error?.code === 'TX_RETRY_EXHAUSTED') {
-    const retryAttempts = Number(error?.retryAttempts ?? ATP_SERIALIZABLE_RETRIES + 1);
+    const attempts = Number(error?.retryAttempts ?? ATP_SERIALIZABLE_RETRIES + 1);
     const retrySqlState = typeof error?.retrySqlState === 'string' ? error.retrySqlState : null;
+    const warehouseIds = mapUniqueValues(context.warehouseIds ?? []);
+    const itemIds = mapUniqueValues(context.itemIds ?? []);
+    const lockKeysCount = Number.isFinite(context.lockKeysCount)
+      ? Math.max(0, Number(context.lockKeysCount))
+      : buildAtpLockKeys(
+        itemIds.flatMap((itemId) =>
+          warehouseIds.map((warehouseId) => ({ tenantId: context.tenantId, warehouseId, itemId }))
+        )
+      ).length;
     const details = {
       operation: context.operation,
       tenantId: context.tenantId,
-      warehouseIds: mapUniqueValues(context.warehouseIds ?? []),
-      itemIds: mapUniqueValues(context.itemIds ?? []),
+      warehouseIds,
+      itemIds,
+      warehouseId: warehouseIds.length === 1 ? warehouseIds[0] : null,
+      itemId: itemIds.length === 1 ? itemIds[0] : null,
+      lockKeysCount,
+      reason: 'tx_retry_exhausted',
+      attempts,
       retryable: true,
-      retryAttempts,
-      atp_retry_count: Math.max(0, retryAttempts - 1),
+      atp_retry_count: Math.max(0, attempts - 1),
       retrySqlState
     };
+    emitAtpMetric('atp_retry_count', {
+      operation: context.operation,
+      tenantId: context.tenantId,
+      warehouseIds,
+      itemIds,
+      attempts,
+      atp_retry_count: Math.max(0, attempts - 1),
+      retrySqlState
+    });
     emitAtpMetric('atp_concurrency_exhausted_count', {
       count: 1,
       ...details
@@ -344,8 +391,17 @@ async function getCanonicalAvailability(
   warehouseId: string,
   itemId: string,
   locationId: string,
-  uom: string
+  uom: string,
+  lockContext: AtpLockContext
 ) {
+  assertAtpLockHeldOrThrow(lockContext, {
+    operation: lockContext.operation,
+    tenantId,
+    warehouseId,
+    itemId,
+    locationId,
+    uom
+  });
   const res = await client.query(
     `SELECT on_hand_qty, reserved_qty, allocated_qty, available_qty
        FROM inventory_available_location_v
@@ -631,6 +687,13 @@ export async function createReservations(
 ) {
   const now = new Date();
   const baseIdempotency = options?.idempotencyKey ?? null;
+  let reserveRetryContext: AtpErrorContext = {
+    operation: 'reserve',
+    tenantId,
+    warehouseIds: mapUniqueValues(data.reservations.map((reservation) => reservation.warehouseId)),
+    itemIds: mapUniqueValues(data.reservations.map((reservation) => reservation.itemId)),
+    lockKeysCount: 0
+  };
   let results: any[];
   try {
     results = await withTransactionRetry(async (client) => {
@@ -653,19 +716,32 @@ export async function createReservations(
         });
       }
       preparedLines.sort(compareReservationLockKey);
+      const atpLockContext = createAtpLockContext({
+        operation: 'reserve',
+        tenantId
+      });
+      const advisoryTargets: AtpLockTarget[] = preparedLines.map((line) => ({
+        tenantId,
+        warehouseId: line.derivedWarehouseId,
+        itemId: line.reservation.itemId
+      }));
+      reserveRetryContext = {
+        operation: 'reserve',
+        tenantId,
+        warehouseIds: mapUniqueValues(preparedLines.map((line) => line.derivedWarehouseId)),
+        itemIds: mapUniqueValues(preparedLines.map((line) => line.reservation.itemId)),
+        lockKeysCount: buildAtpLockKeys(advisoryTargets).length
+      };
       await acquireAtpAdvisoryLocks(
         client,
-        preparedLines.map((line) => ({
-          tenantId,
-          warehouseId: line.derivedWarehouseId,
-          itemId: line.reservation.itemId
-        })),
+        advisoryTargets,
         {
           operation: 'reserve',
           tenantId,
           warehouseIds: preparedLines.map((line) => line.derivedWarehouseId),
           itemIds: preparedLines.map((line) => line.reservation.itemId)
-        }
+        },
+        atpLockContext
       );
 
       for (const line of preparedLines) {
@@ -708,7 +784,8 @@ export async function createReservations(
             warehouseId,
             reservation.itemId,
             reservation.locationId,
-            canonicalUom
+            canonicalUom,
+            atpLockContext
           );
           const available = roundQuantity(availability.available);
           reserveQty = roundQuantity(Math.max(0, Math.min(canonicalQuantity, available)));
@@ -744,7 +821,8 @@ export async function createReservations(
             warehouseId,
             reservation.itemId,
             reservation.locationId,
-            canonicalUom
+            canonicalUom,
+            atpLockContext
           );
           const available = roundQuantity(availability.available);
           if (available + 1e-6 < reserveQty) {
@@ -756,7 +834,7 @@ export async function createReservations(
               locationId: reservation.locationId,
               uom: canonicalUom,
               available,
-              requestedQty: reserveQty
+              requested: reserveQty
             });
           }
         }
@@ -852,14 +930,9 @@ export async function createReservations(
         });
       }
       return rows;
-    }, { isolationLevel: 'SERIALIZABLE', retries: ATP_RESERVATION_CREATE_RETRIES });
+    }, buildAtpRetryOptions(reserveRetryContext, ATP_RESERVATION_CREATE_RETRIES));
   } catch (error) {
-    withAtpRetryHandling(error, {
-      operation: 'reserve',
-      tenantId,
-      warehouseIds: data.reservations.map((reservation) => reservation.warehouseId),
-      itemIds: data.reservations.map((reservation) => reservation.itemId)
-    });
+    withAtpRetryHandling(error, reserveRetryContext);
   }
   const affectedWarehouses = new Set<string>();
   for (const row of results) {
@@ -901,6 +974,13 @@ export async function allocateReservation(
   options?: { idempotencyKey?: string | null }
 ) {
   const now = new Date();
+  let allocateRetryContext: AtpErrorContext = {
+    operation: 'allocate',
+    tenantId,
+    warehouseIds: [warehouseId],
+    itemIds: [],
+    lockKeysCount: 0
+  };
   let result: any;
   try {
     result = await withTransactionRetry(async (client) => {
@@ -924,13 +1004,21 @@ export async function allocateReservation(
       }
 
       const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
+      const advisoryTargets: AtpLockTarget[] = [{
+        tenantId,
+        warehouseId: reservation.warehouse_id,
+        itemId: reservation.item_id
+      }];
+      allocateRetryContext = {
+        operation: 'allocate',
+        tenantId,
+        warehouseIds: [reservation.warehouse_id],
+        itemIds: [reservation.item_id],
+        lockKeysCount: buildAtpLockKeys(advisoryTargets).length
+      };
       await acquireAtpAdvisoryLocks(
         client,
-        [{
-          tenantId,
-          warehouseId: reservation.warehouse_id,
-          itemId: reservation.item_id
-        }],
+        advisoryTargets,
         {
           operation: 'allocate',
           tenantId,
@@ -1002,13 +1090,9 @@ export async function allocateReservation(
         });
       }
       return updated.rowCount ? mapReservation(updated.rows[0]) : null;
-    }, { isolationLevel: 'SERIALIZABLE', retries: ATP_SERIALIZABLE_RETRIES });
+    }, buildAtpRetryOptions(allocateRetryContext, ATP_SERIALIZABLE_RETRIES));
   } catch (error) {
-    withAtpRetryHandling(error, {
-      operation: 'allocate',
-      tenantId,
-      warehouseIds: [warehouseId]
-    });
+    withAtpRetryHandling(error, allocateRetryContext);
   }
   invalidateAtpCacheForWarehouse(tenantId, warehouseId);
   return result;
@@ -1022,92 +1106,126 @@ export async function cancelReservation(
 ) {
   const now = new Date();
   const allowAllocatedCancel = true;
-  const result = await withTransactionRetry(async (client) => {
-    const idempotencyKey = params?.idempotencyKey ?? null;
-    if (idempotencyKey) {
-      const record = await beginIdempotency(`reservation:${id}:cancel:${idempotencyKey}`, hashRequestBody({ id, reason: params?.reason ?? null }), client);
-      if (record.status === 'SUCCEEDED') {
-        const res = await client.query(
-          'SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3',
-          [id, tenantId, warehouseId]
-        );
-        return res.rowCount ? mapReservation(res.rows[0]) : null;
+  let cancelRetryContext: AtpErrorContext = {
+    operation: 'cancel',
+    tenantId,
+    warehouseIds: [warehouseId],
+    itemIds: [],
+    lockKeysCount: 0
+  };
+  let result: any;
+  try {
+    result = await withTransactionRetry(async (client) => {
+      const idempotencyKey = params?.idempotencyKey ?? null;
+      if (idempotencyKey) {
+        const record = await beginIdempotency(`reservation:${id}:cancel:${idempotencyKey}`, hashRequestBody({ id, reason: params?.reason ?? null }), client);
+        if (record.status === 'SUCCEEDED') {
+          const res = await client.query(
+            'SELECT * FROM inventory_reservations WHERE id = $1 AND tenant_id = $2 AND warehouse_id = $3',
+            [id, tenantId, warehouseId]
+          );
+          return res.rowCount ? mapReservation(res.rows[0]) : null;
+        }
+        if (record.status === 'IN_PROGRESS' && !record.isNew) {
+          throw new Error('RESERVATION_CANCEL_IN_PROGRESS');
+        }
       }
-      if (record.status === 'IN_PROGRESS' && !record.isNew) {
-        throw new Error('RESERVATION_CANCEL_IN_PROGRESS');
-      }
-    }
 
-    const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
-    const cancellableStatuses = allowAllocatedCancel ? ['RESERVED', 'ALLOCATED'] : ['RESERVED'];
-    if (!cancellableStatuses.includes(reservation.status)) {
-      throw reservationInvalidState();
-    }
-
-    const remaining = roundQuantity(
-      Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0))
-    );
-    const transition = await client.query(
-      `UPDATE inventory_reservations
-          SET status = 'CANCELLED',
-              cancel_reason = $1,
-              canceled_at = $2,
-              updated_at = $2
-        WHERE id = $3
-          AND tenant_id = $4
-          AND warehouse_id = $5
-          AND status = ANY($6::text[])`,
-      [params?.reason ?? null, now, id, tenantId, warehouseId, cancellableStatuses]
-    );
-    if (transition.rowCount === 0) {
-      throw reservationInvalidState();
-    }
-
-    if (reservation.status === 'RESERVED') {
-      if (remaining > 0) {
-        await applyInventoryBalanceDelta(client, {
+      const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
+      const advisoryTargets: AtpLockTarget[] = [{
+        tenantId,
+        warehouseId: reservation.warehouse_id,
+        itemId: reservation.item_id
+      }];
+      cancelRetryContext = {
+        operation: 'cancel',
+        tenantId,
+        warehouseIds: [reservation.warehouse_id],
+        itemIds: [reservation.item_id],
+        lockKeysCount: buildAtpLockKeys(advisoryTargets).length
+      };
+      await acquireAtpAdvisoryLocks(
+        client,
+        advisoryTargets,
+        {
+          operation: 'cancel',
           tenantId,
-          itemId: reservation.item_id,
-          locationId: reservation.location_id,
-          uom: reservation.uom,
-          deltaReserved: -remaining
+          warehouseIds: [reservation.warehouse_id],
+          itemIds: [reservation.item_id]
+        }
+      );
+      const cancellableStatuses = allowAllocatedCancel ? ['RESERVED', 'ALLOCATED'] : ['RESERVED'];
+      if (!cancellableStatuses.includes(reservation.status)) {
+        throw reservationInvalidState();
+      }
+
+      const remaining = roundQuantity(
+        Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0))
+      );
+      const transition = await client.query(
+        `UPDATE inventory_reservations
+            SET status = 'CANCELLED',
+                cancel_reason = $1,
+                canceled_at = $2,
+                updated_at = $2
+          WHERE id = $3
+            AND tenant_id = $4
+            AND warehouse_id = $5
+            AND status = ANY($6::text[])`,
+        [params?.reason ?? null, now, id, tenantId, warehouseId, cancellableStatuses]
+      );
+      if (transition.rowCount === 0) {
+        throw reservationInvalidState();
+      }
+
+      if (reservation.status === 'RESERVED') {
+        if (remaining > 0) {
+          await applyInventoryBalanceDelta(client, {
+            tenantId,
+            itemId: reservation.item_id,
+            locationId: reservation.location_id,
+            uom: reservation.uom,
+            deltaReserved: -remaining
+          });
+        }
+        await insertReservationEvent(client, tenantId, id, 'CANCELLED', -remaining, 0);
+      } else if (reservation.status === 'ALLOCATED') {
+        if (remaining > 0) {
+          await applyInventoryBalanceDelta(client, {
+            tenantId,
+            itemId: reservation.item_id,
+            locationId: reservation.location_id,
+            uom: reservation.uom,
+            deltaAllocated: -remaining
+          });
+        }
+        await insertReservationEvent(client, tenantId, id, 'CANCELLED', 0, -remaining);
+      }
+
+      if (idempotencyKey) {
+        await completeIdempotency(`reservation:${id}:cancel:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
+      }
+
+      const updated = await client.query(
+        `SELECT * FROM inventory_reservations
+          WHERE id = $1
+            AND tenant_id = $2
+            AND warehouse_id = $3`,
+        [id, tenantId, warehouseId]
+      );
+      if (updated.rowCount > 0) {
+        await enqueueInventoryReservationChanged(client, tenantId, updated.rows[0].id, {
+          itemId: updated.rows[0].item_id,
+          locationId: updated.rows[0].location_id,
+          demandId: updated.rows[0].demand_id,
+          demandType: updated.rows[0].demand_type
         });
       }
-      await insertReservationEvent(client, tenantId, id, 'CANCELLED', -remaining, 0);
-    } else if (reservation.status === 'ALLOCATED') {
-      if (remaining > 0) {
-        await applyInventoryBalanceDelta(client, {
-          tenantId,
-          itemId: reservation.item_id,
-          locationId: reservation.location_id,
-          uom: reservation.uom,
-          deltaAllocated: -remaining
-        });
-      }
-      await insertReservationEvent(client, tenantId, id, 'CANCELLED', 0, -remaining);
-    }
-
-    if (idempotencyKey) {
-      await completeIdempotency(`reservation:${id}:cancel:${idempotencyKey}`, 'SUCCEEDED', `reservation:${id}`, client);
-    }
-
-    const updated = await client.query(
-      `SELECT * FROM inventory_reservations
-        WHERE id = $1
-          AND tenant_id = $2
-          AND warehouse_id = $3`,
-      [id, tenantId, warehouseId]
-    );
-    if (updated.rowCount > 0) {
-      await enqueueInventoryReservationChanged(client, tenantId, updated.rows[0].id, {
-        itemId: updated.rows[0].item_id,
-        locationId: updated.rows[0].location_id,
-        demandId: updated.rows[0].demand_id,
-        demandType: updated.rows[0].demand_type
-      });
-    }
-    return updated.rowCount ? mapReservation(updated.rows[0]) : null;
-  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+      return updated.rowCount ? mapReservation(updated.rows[0]) : null;
+    }, buildAtpRetryOptions(cancelRetryContext, ATP_SERIALIZABLE_RETRIES));
+  } catch (error) {
+    withAtpRetryHandling(error, cancelRetryContext);
+  }
   invalidateAtpCacheForWarehouse(tenantId, warehouseId);
   return result;
 }
@@ -1119,6 +1237,13 @@ export async function fulfillReservation(
   params?: { quantity?: number; idempotencyKey?: string | null }
 ) {
   const now = new Date();
+  let fulfillRetryContext: AtpErrorContext = {
+    operation: 'fulfill',
+    tenantId,
+    warehouseIds: [warehouseId],
+    itemIds: [],
+    lockKeysCount: 0
+  };
   let result: any;
   try {
     result = await withTransactionRetry(async (client) => {
@@ -1142,13 +1267,21 @@ export async function fulfillReservation(
       }
 
       const reservation = await lockReservationForUpdate(client, tenantId, id, warehouseId);
+      const advisoryTargets: AtpLockTarget[] = [{
+        tenantId,
+        warehouseId: reservation.warehouse_id,
+        itemId: reservation.item_id
+      }];
+      fulfillRetryContext = {
+        operation: 'fulfill',
+        tenantId,
+        warehouseIds: [reservation.warehouse_id],
+        itemIds: [reservation.item_id],
+        lockKeysCount: buildAtpLockKeys(advisoryTargets).length
+      };
       await acquireAtpAdvisoryLocks(
         client,
-        [{
-          tenantId,
-          warehouseId: reservation.warehouse_id,
-          itemId: reservation.item_id
-        }],
+        advisoryTargets,
         {
           operation: 'fulfill',
           tenantId,
@@ -1240,13 +1373,9 @@ export async function fulfillReservation(
         });
       }
       return updated.rowCount ? mapReservation(updated.rows[0]) : null;
-    }, { isolationLevel: 'SERIALIZABLE', retries: ATP_SERIALIZABLE_RETRIES });
+    }, buildAtpRetryOptions(fulfillRetryContext, ATP_SERIALIZABLE_RETRIES));
   } catch (error) {
-    withAtpRetryHandling(error, {
-      operation: 'fulfill',
-      tenantId,
-      warehouseIds: [warehouseId]
-    });
+    withAtpRetryHandling(error, fulfillRetryContext);
   }
   invalidateAtpCacheForWarehouse(tenantId, warehouseId);
   return result;
@@ -1255,50 +1384,80 @@ export async function fulfillReservation(
 export async function expireReservationsJob() {
   const now = new Date();
   const affectedTenantWarehouses = new Map<string, Set<string>>();
-  await withTransactionRetry(async (client) => {
-    // Lock order invariant: reservation rows -> inventory_balance rows.
-    const res = await client.query(
-      `SELECT id, tenant_id, warehouse_id, item_id, location_id, uom, quantity_reserved, quantity_fulfilled
-         FROM inventory_reservations
-        WHERE status = 'RESERVED'
-          AND expires_at IS NOT NULL
-          AND expires_at <= now()
-        FOR UPDATE SKIP LOCKED`
-    );
-    for (const row of res.rows) {
-      const warehousesForTenant = affectedTenantWarehouses.get(row.tenant_id) ?? new Set<string>();
-      if (typeof row.warehouse_id === 'string') {
-        warehousesForTenant.add(row.warehouse_id);
-      }
-      affectedTenantWarehouses.set(row.tenant_id, warehousesForTenant);
-      const remaining = roundQuantity(
-        Math.max(0, toNumber(row.quantity_reserved) - toNumber(row.quantity_fulfilled ?? 0))
+  let expireRetryContext: AtpErrorContext = {
+    operation: 'expire',
+    tenantId: 'system',
+    warehouseIds: [],
+    itemIds: [],
+    lockKeysCount: 0
+  };
+  try {
+    await withTransactionRetry(async (client) => {
+      // Lock order invariant: reservation rows -> advisory keys -> inventory_balance rows.
+      const res = await client.query(
+        `SELECT id, tenant_id, warehouse_id, item_id, location_id, uom, quantity_reserved, quantity_fulfilled
+           FROM inventory_reservations
+          WHERE status = 'RESERVED'
+            AND expires_at IS NOT NULL
+            AND expires_at <= now()
+          FOR UPDATE SKIP LOCKED`
       );
-      if (remaining > 0) {
-        await applyInventoryBalanceDelta(client, {
+      const advisoryTargets: AtpLockTarget[] = res.rows
+        .filter((row) => typeof row.warehouse_id === 'string')
+        .map((row) => ({
           tenantId: row.tenant_id,
-          itemId: row.item_id,
-          locationId: row.location_id,
-          uom: row.uom,
-          deltaReserved: -remaining
-        });
-      }
-      const transition = await client.query(
-        `UPDATE inventory_reservations
-            SET status = 'EXPIRED',
-                expired_at = $1,
-                updated_at = $1
-          WHERE id = $2
-            AND tenant_id = $3
-            AND status = 'RESERVED'`,
-        [now, row.id, row.tenant_id]
+          warehouseId: row.warehouse_id,
+          itemId: row.item_id
+        }));
+      expireRetryContext = {
+        operation: 'expire',
+        tenantId: advisoryTargets[0]?.tenantId ?? 'system',
+        warehouseIds: mapUniqueValues(advisoryTargets.map((target) => target.warehouseId)),
+        itemIds: mapUniqueValues(advisoryTargets.map((target) => target.itemId)),
+        lockKeysCount: buildAtpLockKeys(advisoryTargets).length
+      };
+      await acquireAtpAdvisoryLocks(
+        client,
+        advisoryTargets,
+        expireRetryContext
       );
-      if (transition.rowCount === 0) {
-        continue;
+      for (const row of res.rows) {
+        const warehousesForTenant = affectedTenantWarehouses.get(row.tenant_id) ?? new Set<string>();
+        if (typeof row.warehouse_id === 'string') {
+          warehousesForTenant.add(row.warehouse_id);
+        }
+        affectedTenantWarehouses.set(row.tenant_id, warehousesForTenant);
+        const remaining = roundQuantity(
+          Math.max(0, toNumber(row.quantity_reserved) - toNumber(row.quantity_fulfilled ?? 0))
+        );
+        if (remaining > 0) {
+          await applyInventoryBalanceDelta(client, {
+            tenantId: row.tenant_id,
+            itemId: row.item_id,
+            locationId: row.location_id,
+            uom: row.uom,
+            deltaReserved: -remaining
+          });
+        }
+        const transition = await client.query(
+          `UPDATE inventory_reservations
+              SET status = 'EXPIRED',
+                  expired_at = $1,
+                  updated_at = $1
+            WHERE id = $2
+              AND tenant_id = $3
+              AND status = 'RESERVED'`,
+          [now, row.id, row.tenant_id]
+        );
+        if (transition.rowCount === 0) {
+          continue;
+        }
+        await insertReservationEvent(client, row.tenant_id, row.id, 'EXPIRED', -remaining, 0);
       }
-      await insertReservationEvent(client, row.tenant_id, row.id, 'EXPIRED', -remaining, 0);
-    }
-  }, { isolationLevel: 'SERIALIZABLE', retries: 1 });
+    }, buildAtpRetryOptions(expireRetryContext, 1));
+  } catch (error) {
+    withAtpRetryHandling(error, expireRetryContext);
+  }
   for (const [tenantId, warehouseIds] of affectedTenantWarehouses.entries()) {
     for (const warehouseId of warehouseIds.values()) {
       invalidateAtpCacheForWarehouse(tenantId, warehouseId);
@@ -1425,224 +1584,253 @@ export async function postShipment(
     throw new Error('IDEMPOTENCY_KEY_REQUIRED');
   }
 
-  const result = await withTransactionRetry(async (client) => {
-    const now = new Date();
-    const shipmentRes = await client.query(
-      `SELECT * FROM sales_order_shipments WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
-      [shipmentId, tenantId]
-    );
-    if (shipmentRes.rowCount === 0) {
-      throw new Error('SHIPMENT_NOT_FOUND');
-    }
-    const shipment = shipmentRes.rows[0];
-    if (shipment.status === 'canceled') {
-      throw new Error('SHIPMENT_CANCELED');
-    }
-    if (shipment.inventory_movement_id || shipment.status === 'posted') {
-      return getShipment(tenantId, shipmentId, client);
-    }
-    if (!shipment.ship_from_location_id) {
-      throw new Error('SHIPMENT_LOCATION_REQUIRED');
-    }
-
-    const linesRes = await client.query(
-      `SELECT sosl.*, sol.item_id
-         FROM sales_order_shipment_lines sosl
-         JOIN sales_order_lines sol
-           ON sol.id = sosl.sales_order_line_id
-          AND sol.tenant_id = sosl.tenant_id
-        WHERE sosl.sales_order_shipment_id = $1
-          AND sosl.tenant_id = $2
-        ORDER BY sosl.created_at ASC
-        FOR UPDATE`,
-      [shipmentId, tenantId]
-    );
-    if (linesRes.rowCount === 0) {
-      throw new Error('SHIPMENT_NO_LINES');
-    }
-
-    const shipFromWarehouseId = await resolveWarehouseIdForLocation(tenantId, shipment.ship_from_location_id, client);
-    if (!shipFromWarehouseId) {
-      throw new Error('WAREHOUSE_SCOPE_REQUIRED');
-    }
-    await assertSellableLocationOrThrow(client, tenantId, shipment.ship_from_location_id);
-    const salesOrderWarehouseRes = await client.query<{ warehouse_id: string | null }>(
-      `SELECT warehouse_id
-         FROM sales_orders
-        WHERE id = $1
-          AND tenant_id = $2
-        LIMIT 1`,
-      [shipment.sales_order_id, tenantId]
-    );
-    const salesOrderWarehouseId = salesOrderWarehouseRes.rows[0]?.warehouse_id ?? null;
-    if (!salesOrderWarehouseId) {
-      throw new Error('WAREHOUSE_SCOPE_REQUIRED');
-    }
-    if (salesOrderWarehouseId !== shipFromWarehouseId) {
-      throw new Error('CROSS_WAREHOUSE_LEAKAGE_BLOCKED');
-    }
-    type ShipmentLineContext = {
-      line: any;
-      canonicalOut: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
-      issueQty: number;
-      reservationId: string | null;
-      reservation: ReservationRow | null;
-      reserveConsume: number;
-    };
-    const shipmentLineContexts: ShipmentLineContext[] = [];
-    const reservationIdsToLock = new Set<string>();
-    for (const line of linesRes.rows) {
-      const qtyShipped = toNumber(line.quantity_shipped);
-      if (qtyShipped <= 0) {
-        throw new Error('SHIPMENT_INVALID_QUANTITY');
-      }
-      const canonicalOut = await getCanonicalMovementFields(
-        tenantId,
-        line.item_id,
-        -qtyShipped,
-        line.uom,
-        client
+  let shipmentRetryContext: AtpErrorContext = {
+    operation: 'shipment_post',
+    tenantId,
+    warehouseIds: [],
+    itemIds: [],
+    lockKeysCount: 0
+  };
+  let result: any;
+  try {
+    result = await withTransactionRetry(async (client) => {
+      const now = new Date();
+      const shipmentRes = await client.query(
+        `SELECT * FROM sales_order_shipments WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+        [shipmentId, tenantId]
       );
-      const issueQty = Math.abs(canonicalOut.quantityDeltaCanonical);
-      const reservationIdRes = await client.query<{ id: string }>(
-        `SELECT id
-           FROM inventory_reservations
-          WHERE tenant_id = $1
-            AND warehouse_id = $2
-            AND demand_type = 'sales_order_line'
-            AND demand_id = $3
-            AND item_id = $4
-            AND location_id = $5
-            AND uom = $6
-            AND status IN ('RESERVED', 'ALLOCATED')
+      if (shipmentRes.rowCount === 0) {
+        throw new Error('SHIPMENT_NOT_FOUND');
+      }
+      const shipment = shipmentRes.rows[0];
+      if (shipment.status === 'canceled') {
+        throw new Error('SHIPMENT_CANCELED');
+      }
+      if (shipment.inventory_movement_id || shipment.status === 'posted') {
+        return getShipment(tenantId, shipmentId, client);
+      }
+      if (!shipment.ship_from_location_id) {
+        throw new Error('SHIPMENT_LOCATION_REQUIRED');
+      }
+
+      const linesRes = await client.query(
+        `SELECT sosl.*, sol.item_id
+           FROM sales_order_shipment_lines sosl
+           JOIN sales_order_lines sol
+             ON sol.id = sosl.sales_order_line_id
+            AND sol.tenant_id = sosl.tenant_id
+          WHERE sosl.sales_order_shipment_id = $1
+            AND sosl.tenant_id = $2
+          ORDER BY sosl.created_at ASC
+          FOR UPDATE`,
+        [shipmentId, tenantId]
+      );
+      if (linesRes.rowCount === 0) {
+        throw new Error('SHIPMENT_NO_LINES');
+      }
+
+      const shipFromWarehouseId = await resolveWarehouseIdForLocation(tenantId, shipment.ship_from_location_id, client);
+      if (!shipFromWarehouseId) {
+        throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+      }
+      await assertSellableLocationOrThrow(client, tenantId, shipment.ship_from_location_id);
+      const salesOrderWarehouseRes = await client.query<{ warehouse_id: string | null }>(
+        `SELECT warehouse_id
+           FROM sales_orders
+          WHERE id = $1
+            AND tenant_id = $2
           LIMIT 1`,
-        [
-          tenantId,
-          shipFromWarehouseId,
-          line.sales_order_line_id,
-          line.item_id,
-          shipment.ship_from_location_id,
-          canonicalOut.canonicalUom
-        ]
+        [shipment.sales_order_id, tenantId]
       );
-      const reservationId = reservationIdRes.rows[0]?.id ?? null;
-      if (reservationId) {
-        reservationIdsToLock.add(reservationId);
+      const salesOrderWarehouseId = salesOrderWarehouseRes.rows[0]?.warehouse_id ?? null;
+      if (!salesOrderWarehouseId) {
+        throw new Error('WAREHOUSE_SCOPE_REQUIRED');
       }
-      shipmentLineContexts.push({
-        line,
-        canonicalOut,
-        issueQty,
-        reservationId,
-        reservation: null,
-        reserveConsume: 0
+      if (salesOrderWarehouseId !== shipFromWarehouseId) {
+        throw new Error('CROSS_WAREHOUSE_LEAKAGE_BLOCKED');
+      }
+      type ShipmentLineContext = {
+        line: any;
+        canonicalOut: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
+        issueQty: number;
+        reservationId: string | null;
+        reservation: ReservationRow | null;
+        reserveConsume: number;
+      };
+      const shipmentLineContexts: ShipmentLineContext[] = [];
+      const reservationIdsToLock = new Set<string>();
+      for (const line of linesRes.rows) {
+        const qtyShipped = toNumber(line.quantity_shipped);
+        if (qtyShipped <= 0) {
+          throw new Error('SHIPMENT_INVALID_QUANTITY');
+        }
+        const canonicalOut = await getCanonicalMovementFields(
+          tenantId,
+          line.item_id,
+          -qtyShipped,
+          line.uom,
+          client
+        );
+        const issueQty = Math.abs(canonicalOut.quantityDeltaCanonical);
+        const reservationIdRes = await client.query<{ id: string }>(
+          `SELECT id
+             FROM inventory_reservations
+            WHERE tenant_id = $1
+              AND warehouse_id = $2
+              AND demand_type = 'sales_order_line'
+              AND demand_id = $3
+              AND item_id = $4
+              AND location_id = $5
+              AND uom = $6
+              AND status IN ('RESERVED', 'ALLOCATED')
+            LIMIT 1`,
+          [
+            tenantId,
+            shipFromWarehouseId,
+            line.sales_order_line_id,
+            line.item_id,
+            shipment.ship_from_location_id,
+            canonicalOut.canonicalUom
+          ]
+        );
+        const reservationId = reservationIdRes.rows[0]?.id ?? null;
+        if (reservationId) {
+          reservationIdsToLock.add(reservationId);
+        }
+        shipmentLineContexts.push({
+          line,
+          canonicalOut,
+          issueQty,
+          reservationId,
+          reservation: null,
+          reserveConsume: 0
+        });
+      }
+      shipmentLineContexts.sort((left, right) => {
+        const item = left.line.item_id.localeCompare(right.line.item_id);
+        if (item !== 0) return item;
+        const uom = left.canonicalOut.canonicalUom.localeCompare(right.canonicalOut.canonicalUom);
+        if (uom !== 0) return uom;
+        return String(left.line.id).localeCompare(String(right.line.id));
       });
-    }
-    shipmentLineContexts.sort((left, right) => {
-      const item = left.line.item_id.localeCompare(right.line.item_id);
-      if (item !== 0) return item;
-      const uom = left.canonicalOut.canonicalUom.localeCompare(right.canonicalOut.canonicalUom);
-      if (uom !== 0) return uom;
-      return String(left.line.id).localeCompare(String(right.line.id));
-    });
-    await acquireAtpAdvisoryLocks(
-      client,
-      shipmentLineContexts.map((lineContext) => ({
+      const advisoryTargets: AtpLockTarget[] = shipmentLineContexts.map((lineContext) => ({
         tenantId,
         warehouseId: shipFromWarehouseId,
         itemId: lineContext.line.item_id
-      })),
-      {
+      }));
+      shipmentRetryContext = {
         operation: 'shipment_post',
         tenantId,
         warehouseIds: [shipFromWarehouseId],
-        itemIds: shipmentLineContexts.map((lineContext) => lineContext.line.item_id)
-      }
-    );
-
-    const lockedReservations = await lockReservationsForUpdate(
-      client,
-      tenantId,
-      shipFromWarehouseId,
-      Array.from(reservationIdsToLock)
-    );
-    const lockedReservationsById = new Map(lockedReservations.map((row) => [row.id, row]));
-
-    const stockValidationLines: {
-      itemId: string;
-      locationId: string;
-      uom: string;
-      quantityToConsume: number;
-    }[] = [];
-    for (const lineContext of shipmentLineContexts) {
-      const reservation = lineContext.reservationId
-        ? lockedReservationsById.get(lineContext.reservationId) ?? null
-        : null;
-      if (lineContext.reservationId && !reservation) {
-        throw reservationInvalidState();
-      }
-      const reservedRemaining = reservation
-        && (reservation.status === 'RESERVED' || reservation.status === 'ALLOCATED')
-        ? roundQuantity(Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0)))
-        : 0;
-      const reserveConsume = Math.min(lineContext.issueQty, reservedRemaining);
-      lineContext.reservation = reservation;
-      lineContext.reserveConsume = reserveConsume;
-      stockValidationLines.push({
-        itemId: lineContext.line.item_id,
-        locationId: shipment.ship_from_location_id,
-        uom: lineContext.canonicalOut.canonicalUom,
-        quantityToConsume: roundQuantity(Math.max(0, lineContext.issueQty - reserveConsume))
+        itemIds: mapUniqueValues(shipmentLineContexts.map((lineContext) => lineContext.line.item_id)),
+        lockKeysCount: buildAtpLockKeys(advisoryTargets).length
+      };
+      const shipmentLockContext = createAtpLockContext({
+        operation: 'shipment_post',
+        tenantId
       });
-    }
-    stockValidationLines.sort((a, b) => {
-      const item = a.itemId.localeCompare(b.itemId);
-      if (item !== 0) return item;
-      const location = a.locationId.localeCompare(b.locationId);
-      if (location !== 0) return location;
-      return a.uom.localeCompare(b.uom);
-    });
-
-    let validation: StockValidationResult;
-    try {
-      validation = await validateSufficientStock(
-        tenantId,
-        now,
-        stockValidationLines,
+      await acquireAtpAdvisoryLocks(
+        client,
+        advisoryTargets,
         {
-          actorId: params.actor?.id ?? null,
-          actorRole: params.actor?.role ?? null,
-          overrideRequested: params.overrideRequested,
-          overrideReason: params.overrideReason ?? null,
-          overrideReference: `shipment:${shipmentId}`
+          operation: 'shipment_post',
+          tenantId,
+          warehouseIds: [shipFromWarehouseId],
+          itemIds: shipmentLineContexts.map((lineContext) => lineContext.line.item_id)
         },
-        { client }
+        shipmentLockContext
       );
-    } catch (error: any) {
-      if (error?.code === 'INSUFFICIENT_STOCK' || error?.message === 'INSUFFICIENT_STOCK') {
-        throw insufficientAvailableWithAllowance({
-          shipmentId,
-          details: error?.details
+
+      const lockedReservations = await lockReservationsForUpdate(
+        client,
+        tenantId,
+        shipFromWarehouseId,
+        Array.from(reservationIdsToLock)
+      );
+      const lockedReservationsById = new Map(lockedReservations.map((row) => [row.id, row]));
+
+      const stockValidationLines: {
+        itemId: string;
+        locationId: string;
+        uom: string;
+        quantityToConsume: number;
+      }[] = [];
+      for (const lineContext of shipmentLineContexts) {
+        const reservation = lineContext.reservationId
+          ? lockedReservationsById.get(lineContext.reservationId) ?? null
+          : null;
+        if (lineContext.reservationId && !reservation) {
+          throw reservationInvalidState();
+        }
+        const reservedRemaining = reservation
+          && (reservation.status === 'RESERVED' || reservation.status === 'ALLOCATED')
+          ? roundQuantity(Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0)))
+          : 0;
+        const reserveConsume = Math.min(lineContext.issueQty, reservedRemaining);
+        lineContext.reservation = reservation;
+        lineContext.reserveConsume = reserveConsume;
+        stockValidationLines.push({
+          itemId: lineContext.line.item_id,
+          locationId: shipment.ship_from_location_id,
+          uom: lineContext.canonicalOut.canonicalUom,
+          quantityToConsume: roundQuantity(Math.max(0, lineContext.issueQty - reserveConsume))
         });
       }
-      throw error;
-    }
+      stockValidationLines.sort((a, b) => {
+        const item = a.itemId.localeCompare(b.itemId);
+        if (item !== 0) return item;
+        const location = a.locationId.localeCompare(b.locationId);
+        if (location !== 0) return location;
+        return a.uom.localeCompare(b.uom);
+      });
 
-    const movement = await createInventoryMovement(client, {
-      tenantId,
-      movementType: 'issue',
-      status: 'posted',
-      externalRef: `shipment:${shipmentId}`,
-      sourceType: 'shipment_post',
-      sourceId: shipmentId,
-      idempotencyKey: params.idempotencyKey,
-      occurredAt: shipment.shipped_at ?? now,
-      postedAt: now,
-      notes: shipment.notes ?? null,
-      metadata: validation.overrideMetadata ?? null,
-      createdAt: now,
-      updatedAt: now
-    });
+      let validation: StockValidationResult;
+      try {
+        validation = await validateSufficientStock(
+          tenantId,
+          now,
+          stockValidationLines,
+          {
+            actorId: params.actor?.id ?? null,
+            actorRole: params.actor?.role ?? null,
+            overrideRequested: params.overrideRequested,
+            overrideReason: params.overrideReason ?? null,
+            overrideReference: `shipment:${shipmentId}`
+          },
+          { client }
+        );
+      } catch (error: any) {
+        if (error?.code === 'INSUFFICIENT_STOCK' || error?.message === 'INSUFFICIENT_STOCK') {
+          throw atpInsufficientAvailable({
+            operation: 'shipment_post',
+            tenantId,
+            warehouseId: shipFromWarehouseId,
+            itemId: stockValidationLines[0]?.itemId ?? null,
+            shipmentId,
+            available: null,
+            requested: stockValidationLines.reduce((sum, line) => sum + Number(line.quantityToConsume ?? 0), 0),
+            reason: 'stock_validation_failed',
+            details: error?.details ?? null
+          });
+        }
+        throw error;
+      }
+
+      const movement = await createInventoryMovement(client, {
+        tenantId,
+        movementType: 'issue',
+        status: 'posted',
+        externalRef: `shipment:${shipmentId}`,
+        sourceType: 'shipment_post',
+        sourceId: shipmentId,
+        idempotencyKey: params.idempotencyKey,
+        occurredAt: shipment.shipped_at ?? now,
+        postedAt: now,
+        notes: shipment.notes ?? null,
+        metadata: validation.overrideMetadata ?? null,
+        createdAt: now,
+        updatedAt: now
+      });
 
     if (!movement.created) {
       const lineCheck = await client.query(
@@ -1680,17 +1868,24 @@ export async function postShipment(
         shipFromWarehouseId,
         line.item_id,
         shipment.ship_from_location_id,
-        canonicalOut.canonicalUom
+        canonicalOut.canonicalUom,
+        shipmentLockContext
       );
       const shipmentAvailable = roundQuantity(canonicalAvailability.available);
       if (!canShipWithReservationAllowance(shipmentAvailable, reserveConsume, issueQty) && !validation.overrideMetadata) {
-        throw insufficientAvailableWithAllowance({
+        throw atpInsufficientAvailable({
+          operation: 'shipment_post',
+          tenantId,
+          warehouseId: shipFromWarehouseId,
+          itemId: line.item_id,
+          locationId: shipment.ship_from_location_id,
+          uom: canonicalOut.canonicalUom,
           shipmentId,
           shipmentLineId: line.id,
-          itemId: line.item_id,
           available: shipmentAvailable,
+          requested: issueQty,
           reserveConsume,
-          shipQty: issueQty
+          reason: 'shipment_allowance_exceeded'
         });
       }
 
@@ -1857,8 +2052,11 @@ export async function postShipment(
       );
     }
 
-    return getShipment(tenantId, shipmentId, client);
-  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+      return getShipment(tenantId, shipmentId, client);
+    }, buildAtpRetryOptions(shipmentRetryContext, ATP_SERIALIZABLE_RETRIES));
+  } catch (error) {
+    withAtpRetryHandling(error, shipmentRetryContext);
+  }
 
   if (!result) {
     throw new Error('SHIPMENT_POST_FAILED');

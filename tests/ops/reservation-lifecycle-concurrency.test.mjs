@@ -630,7 +630,7 @@ test('shipment blocks when ship qty exceeds available + reserveConsume allowance
     body: {}
   });
   assert.equal(postRes.res.status, 409, JSON.stringify(postRes.payload));
-  assert.equal(postRes.payload?.error?.code, 'INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE');
+  assert.equal(postRes.payload?.error?.code, 'ATP_INSUFFICIENT_AVAILABLE');
   assert.equal(typeof postRes.payload?.error?.message, 'string');
   assert.ok(
     postRes.payload?.error?.details === undefined
