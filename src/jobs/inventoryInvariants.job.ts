@@ -1,4 +1,5 @@
 import { query } from '../db';
+import { emitEvent } from '../lib/events';
 
 let isRunning = false;
 let lastRunTime: Date | null = null;
@@ -22,6 +23,10 @@ type InventoryInvariantSummary = {
   nonSellableFlowScopeInvalidCount: number;
   salesOrderWarehouseScopeMismatchCount: number;
   atpOversellDetectedCount: number;
+  warehouseDefaultsIncompleteCount: number;
+  negativeOnHandCount: number;
+  unmatchedCostLayersCount: number;
+  orphanedCostLayersCount: number;
 };
 type InventoryInvariantStrictViolation = {
   tenantId: string;
@@ -35,6 +40,17 @@ function parseTenantScopeCsv(value: string | undefined): string[] {
     .map((entry) => entry.trim())
     .filter(Boolean);
   return Array.from(new Set(normalized));
+}
+
+function parseBoolean(value: string | undefined, fallback = false): boolean {
+  if (value === undefined || value === null || value === '') return fallback;
+  const normalized = value.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export function resolveInvariantTenantScopeEnv(env: NodeJS.ProcessEnv = process.env): string[] {
@@ -64,11 +80,47 @@ function summarizeStrictViolations(summary: InventoryInvariantSummary): Record<s
     ['reservation_warehouse_historical_mismatch', summary.reservationWarehouseHistoricalMismatchCount],
     ['non_sellable_flow_scope_invalid', summary.nonSellableFlowScopeInvalidCount],
     ['sales_order_warehouse_scope_mismatch', summary.salesOrderWarehouseScopeMismatchCount],
-    ['atp_oversell_detected_count', summary.atpOversellDetectedCount]
+    ['atp_oversell_detected_count', summary.atpOversellDetectedCount],
+    ['warehouse_default_completeness_invalid', summary.warehouseDefaultsIncompleteCount],
+    ['negative_on_hand', summary.negativeOnHandCount],
+    ['unmatched_cost_layers', summary.unmatchedCostLayersCount],
+    ['orphaned_cost_layers', summary.orphanedCostLayersCount]
   ];
   return Object.fromEntries(
     entries.filter(([, count]) => count > 0)
   );
+}
+
+const REQUIRED_WAREHOUSE_DEFAULT_ROLES = ['SELLABLE', 'QA', 'HOLD', 'REJECT'];
+
+function pickInvariantSampleKey(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    warehouseId: typeof row.warehouse_id === 'string' ? row.warehouse_id : null,
+    locationId: typeof row.location_id === 'string' ? row.location_id : null,
+    itemId: typeof row.item_id === 'string' ? row.item_id : null,
+    layerId: typeof row.layer_id === 'string' ? row.layer_id : null,
+    role: typeof row.role === 'string' ? row.role : null,
+    issueCode: typeof row.issue_code === 'string' ? row.issue_code : null
+  };
+}
+
+function emitInvariantDiagnosticEvent(params: {
+  tenantId: string;
+  code: string;
+  count: number;
+  samples: Array<Record<string, unknown>>;
+  sampleLimit: number;
+}) {
+  if (params.count <= 0) return;
+  const topSampleKeys = params.samples.slice(0, params.sampleLimit).map((row) => pickInvariantSampleKey(row));
+  const payload = {
+    code: params.code,
+    tenantId: params.tenantId,
+    count: params.count,
+    topSampleKeys
+  };
+  emitEvent(params.tenantId, 'invariant.health', payload);
+  console.warn('[inventory_invariant_event]', payload);
 }
 
 async function getAllActiveTenants(): Promise<Tenant[]> {
@@ -95,6 +147,7 @@ export async function runInventoryInvariantCheck(
   const windowDays = Number(process.env.INVENTORY_INVARIANT_WINDOW_DAYS ?? 7);
   const reconTolerance = Number(process.env.RESERVATION_BALANCE_RECON_TOLERANCE ?? 1e-6);
   const reconLimit = Number(process.env.RESERVATION_BALANCE_RECON_LIMIT ?? 5);
+  const invariantSampleLimit = parsePositiveInt(process.env.INVENTORY_INVARIANT_SAMPLE_LIMIT, 10);
   const strictMode = isStrictModeEnabled(options.strict);
   const results: InventoryInvariantSummary[] = [];
   const strictViolations: InventoryInvariantStrictViolation[] = [];
@@ -103,6 +156,7 @@ export async function runInventoryInvariantCheck(
     const scopedTenantIds = options.tenantIds?.length
       ? Array.from(new Set(options.tenantIds.map((id) => String(id).trim()).filter(Boolean)))
       : resolveInvariantTenantScopeEnv();
+    const allowAllTenants = parseBoolean(process.env.INVARIANTS_ALLOW_ALL_TENANTS, false);
     const tenants = scopedTenantIds.length
       ? (
           await query<Tenant>(
@@ -110,7 +164,15 @@ export async function runInventoryInvariantCheck(
             [scopedTenantIds]
           )
         ).rows
-      : await getAllActiveTenants();
+      : allowAllTenants
+        ? await getAllActiveTenants()
+        : [];
+    if (tenants.length === 0 && scopedTenantIds.length === 0 && !allowAllTenants) {
+      console.info(
+        'Inventory invariant check skipped: configure INVARIANTS_TENANT_ID(S) or set INVARIANTS_ALLOW_ALL_TENANTS=true'
+      );
+      return [];
+    }
     for (const tenant of tenants) {
       try {
         const receiptLines = await query<{ count: string }>(
@@ -484,6 +546,392 @@ export async function runInventoryInvariantCheck(
           );
         }
 
+        const warehouseDefaultsIncomplete = await query<{ count: string }>(
+          `WITH warehouse_roots AS (
+             SELECT l.id AS warehouse_id,
+                    l.code AS warehouse_code
+               FROM locations l
+              WHERE l.tenant_id = $1
+                AND l.type = 'warehouse'
+                AND l.parent_location_id IS NULL
+                AND l.active = true
+           ),
+           required_roles AS (
+             SELECT role
+               FROM unnest($2::text[]) AS r(role)
+           ),
+           expected_defaults AS (
+             SELECT wr.warehouse_id,
+                    wr.warehouse_code,
+                    rr.role
+               FROM warehouse_roots wr
+               CROSS JOIN required_roles rr
+           ),
+           missing AS (
+             SELECT $1::uuid AS tenant_id,
+                    ed.warehouse_id,
+                    ed.warehouse_code,
+                    ed.role
+               FROM expected_defaults ed
+               LEFT JOIN warehouse_default_location wdl
+                 ON wdl.tenant_id = $1
+                AND wdl.warehouse_id = ed.warehouse_id
+                AND wdl.role = ed.role
+              WHERE wdl.location_id IS NULL
+           )
+           SELECT COUNT(*)::text AS count
+             FROM missing`,
+          [tenant.id, REQUIRED_WAREHOUSE_DEFAULT_ROLES]
+        );
+        const warehouseDefaultsIncompleteCount = Number(warehouseDefaultsIncomplete.rows[0]?.count ?? 0);
+        if (warehouseDefaultsIncompleteCount > 0) {
+          const samples = await query(
+            `WITH warehouse_roots AS (
+               SELECT l.id AS warehouse_id,
+                      l.code AS warehouse_code
+                 FROM locations l
+                WHERE l.tenant_id = $1
+                  AND l.type = 'warehouse'
+                  AND l.parent_location_id IS NULL
+                  AND l.active = true
+             ),
+             required_roles AS (
+               SELECT role
+                 FROM unnest($2::text[]) AS r(role)
+             ),
+             expected_defaults AS (
+               SELECT wr.warehouse_id,
+                      wr.warehouse_code,
+                      rr.role
+                 FROM warehouse_roots wr
+                 CROSS JOIN required_roles rr
+             ),
+             missing AS (
+               SELECT $1::uuid AS tenant_id,
+                      ed.warehouse_id,
+                      ed.warehouse_code,
+                      ed.role,
+                      'MISSING_DEFAULT_MAPPING'::text AS issue_code
+                 FROM expected_defaults ed
+                 LEFT JOIN warehouse_default_location wdl
+                   ON wdl.tenant_id = $1
+                  AND wdl.warehouse_id = ed.warehouse_id
+                  AND wdl.role = ed.role
+                WHERE wdl.location_id IS NULL
+             )
+             SELECT tenant_id,
+                    warehouse_id,
+                    warehouse_code,
+                    role,
+                    issue_code
+               FROM missing
+              ORDER BY warehouse_code, role
+              LIMIT $3`,
+            [tenant.id, REQUIRED_WAREHOUSE_DEFAULT_ROLES, invariantSampleLimit]
+          );
+          console.warn(
+            `Invariant violation for tenant ${tenant.slug}: ${warehouseDefaultsIncompleteCount} warehouse default gap(s)`,
+            { examples: samples.rows }
+          );
+          emitInvariantDiagnosticEvent({
+            tenantId: tenant.id,
+            code: 'INVARIANT_WAREHOUSE_DEFAULTS_INCOMPLETE',
+            count: warehouseDefaultsIncompleteCount,
+            samples: samples.rows as Array<Record<string, unknown>>,
+            sampleLimit: invariantSampleLimit
+          });
+        }
+
+        const negativeOnHandDetected = await query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+             FROM inventory_on_hand_location_v oh
+            WHERE oh.tenant_id = $1
+              AND oh.on_hand_qty < -0.000001`,
+          [tenant.id]
+        );
+        const negativeOnHandCount = Number(negativeOnHandDetected.rows[0]?.count ?? 0);
+        if (negativeOnHandCount > 0) {
+          const samples = await query(
+            `SELECT oh.tenant_id,
+                    oh.warehouse_id,
+                    oh.location_id,
+                    oh.item_id,
+                    oh.uom,
+                    oh.on_hand_qty
+               FROM inventory_on_hand_location_v oh
+              WHERE oh.tenant_id = $1
+                AND oh.on_hand_qty < -0.000001
+              ORDER BY oh.on_hand_qty ASC, oh.warehouse_id, oh.item_id, oh.location_id, oh.uom
+              LIMIT $2`,
+            [tenant.id, invariantSampleLimit]
+          );
+          console.warn(
+            `Invariant violation for tenant ${tenant.slug}: ${negativeOnHandCount} negative on_hand scope(s)`,
+            { examples: samples.rows }
+          );
+          emitInvariantDiagnosticEvent({
+            tenantId: tenant.id,
+            code: 'INVARIANT_NEGATIVE_ON_HAND',
+            count: negativeOnHandCount,
+            samples: samples.rows as Array<Record<string, unknown>>,
+            sampleLimit: invariantSampleLimit
+          });
+        }
+
+        const unmatchedCostLayers = await query<{ count: string }>(
+          `WITH active_layers AS (
+             SELECT cl.tenant_id,
+                    l.warehouse_id,
+                    cl.item_id,
+                    cl.location_id,
+                    cl.uom,
+                    COUNT(*)::int AS layer_count,
+                    COALESCE(SUM(cl.remaining_quantity), 0)::numeric AS remaining_qty
+               FROM inventory_cost_layers cl
+               JOIN locations l
+                 ON l.id = cl.location_id
+                AND l.tenant_id = cl.tenant_id
+              WHERE cl.tenant_id = $1
+                AND cl.voided_at IS NULL
+                AND cl.remaining_quantity > 0
+              GROUP BY cl.tenant_id, l.warehouse_id, cl.item_id, cl.location_id, cl.uom
+           ),
+           on_hand AS (
+             SELECT oh.tenant_id,
+                    oh.warehouse_id,
+                    oh.item_id,
+                    oh.location_id,
+                    oh.uom,
+                    COALESCE(SUM(oh.on_hand_qty), 0)::numeric AS on_hand_qty
+               FROM inventory_on_hand_location_v oh
+              WHERE oh.tenant_id = $1
+              GROUP BY oh.tenant_id, oh.warehouse_id, oh.item_id, oh.location_id, oh.uom
+           ),
+           unmatched AS (
+             SELECT a.tenant_id,
+                    a.warehouse_id,
+                    a.item_id,
+                    a.location_id,
+                    a.uom,
+                    a.layer_count,
+                    a.remaining_qty,
+                    COALESCE(o.on_hand_qty, 0)::numeric AS on_hand_qty
+               FROM active_layers a
+               LEFT JOIN on_hand o
+                 ON o.tenant_id = a.tenant_id
+                AND o.warehouse_id = a.warehouse_id
+                AND o.item_id = a.item_id
+                AND o.location_id = a.location_id
+                AND o.uom = a.uom
+              WHERE COALESCE(o.on_hand_qty, 0) <= 0.000001
+           )
+           SELECT COUNT(*)::text AS count
+             FROM unmatched`,
+          [tenant.id]
+        );
+        const unmatchedCostLayersCount = Number(unmatchedCostLayers.rows[0]?.count ?? 0);
+        if (unmatchedCostLayersCount > 0) {
+          const samples = await query(
+            `WITH active_layers AS (
+               SELECT cl.tenant_id,
+                      l.warehouse_id,
+                      cl.item_id,
+                      cl.location_id,
+                      cl.uom,
+                      COUNT(*)::int AS layer_count,
+                      COALESCE(SUM(cl.remaining_quantity), 0)::numeric AS remaining_qty
+                 FROM inventory_cost_layers cl
+                 JOIN locations l
+                   ON l.id = cl.location_id
+                  AND l.tenant_id = cl.tenant_id
+                WHERE cl.tenant_id = $1
+                  AND cl.voided_at IS NULL
+                  AND cl.remaining_quantity > 0
+                GROUP BY cl.tenant_id, l.warehouse_id, cl.item_id, cl.location_id, cl.uom
+             ),
+             on_hand AS (
+               SELECT oh.tenant_id,
+                      oh.warehouse_id,
+                      oh.item_id,
+                      oh.location_id,
+                      oh.uom,
+                      COALESCE(SUM(oh.on_hand_qty), 0)::numeric AS on_hand_qty
+                 FROM inventory_on_hand_location_v oh
+                WHERE oh.tenant_id = $1
+                GROUP BY oh.tenant_id, oh.warehouse_id, oh.item_id, oh.location_id, oh.uom
+             ),
+             unmatched AS (
+               SELECT a.tenant_id,
+                      a.warehouse_id,
+                      a.item_id,
+                      a.location_id,
+                      a.uom,
+                      a.layer_count,
+                      a.remaining_qty,
+                      COALESCE(o.on_hand_qty, 0)::numeric AS on_hand_qty
+                 FROM active_layers a
+                 LEFT JOIN on_hand o
+                   ON o.tenant_id = a.tenant_id
+                  AND o.warehouse_id = a.warehouse_id
+                  AND o.item_id = a.item_id
+                  AND o.location_id = a.location_id
+                  AND o.uom = a.uom
+                WHERE COALESCE(o.on_hand_qty, 0) <= 0.000001
+             )
+             SELECT tenant_id,
+                    warehouse_id,
+                    item_id,
+                    location_id,
+                    uom,
+                    layer_count,
+                    remaining_qty,
+                    on_hand_qty
+               FROM unmatched
+              ORDER BY remaining_qty DESC, warehouse_id, item_id, location_id, uom
+              LIMIT $2`,
+            [tenant.id, invariantSampleLimit]
+          );
+          console.warn(
+            `Invariant violation for tenant ${tenant.slug}: ${unmatchedCostLayersCount} unmatched cost layer scope(s)`,
+            { examples: samples.rows }
+          );
+          emitInvariantDiagnosticEvent({
+            tenantId: tenant.id,
+            code: 'INVARIANT_UNMATCHED_COST_LAYERS',
+            count: unmatchedCostLayersCount,
+            samples: samples.rows as Array<Record<string, unknown>>,
+            sampleLimit: invariantSampleLimit
+          });
+        }
+
+        const orphanedCostLayers = await query<{ count: string }>(
+          `WITH layer_scope AS (
+             SELECT cl.id AS layer_id,
+                    cl.tenant_id,
+                    cl.item_id,
+                    cl.location_id,
+                    cl.uom,
+                    cl.source_type,
+                    cl.movement_id,
+                    cl.remaining_quantity,
+                    i.id AS item_id_for_tenant,
+                    loc.id AS location_id_for_tenant,
+                    loc.warehouse_id AS warehouse_id_for_tenant,
+                    wh.id AS warehouse_root_id_for_tenant,
+                    mv.id AS movement_id_for_tenant
+               FROM inventory_cost_layers cl
+               LEFT JOIN items i
+                 ON i.id = cl.item_id
+                AND i.tenant_id = cl.tenant_id
+               LEFT JOIN locations loc
+                 ON loc.id = cl.location_id
+                AND loc.tenant_id = cl.tenant_id
+               LEFT JOIN locations wh
+                 ON wh.id = loc.warehouse_id
+                AND wh.tenant_id = cl.tenant_id
+                AND wh.type = 'warehouse'
+               LEFT JOIN inventory_movements mv
+                 ON mv.id = cl.movement_id
+                AND mv.tenant_id = cl.tenant_id
+              WHERE cl.tenant_id = $1
+                AND cl.voided_at IS NULL
+           ),
+           orphaned AS (
+             SELECT tenant_id,
+                    layer_id,
+                    warehouse_id_for_tenant AS warehouse_id,
+                    item_id,
+                    location_id,
+                    CASE
+                      WHEN item_id_for_tenant IS NULL THEN 'ITEM_TENANT_MISMATCH_OR_MISSING'
+                      WHEN location_id_for_tenant IS NULL THEN 'LOCATION_TENANT_MISMATCH_OR_MISSING'
+                      WHEN warehouse_id_for_tenant IS NULL THEN 'LOCATION_WAREHOUSE_MISSING'
+                      WHEN warehouse_root_id_for_tenant IS NULL THEN 'WAREHOUSE_ROOT_MISSING'
+                      WHEN movement_id IS NOT NULL AND movement_id_for_tenant IS NULL THEN 'MOVEMENT_TENANT_MISMATCH_OR_MISSING'
+                      ELSE NULL
+                    END AS issue_code
+               FROM layer_scope
+           )
+           SELECT COUNT(*)::text AS count
+             FROM orphaned
+            WHERE issue_code IS NOT NULL`,
+          [tenant.id]
+        );
+        const orphanedCostLayersCount = Number(orphanedCostLayers.rows[0]?.count ?? 0);
+        if (orphanedCostLayersCount > 0) {
+          const samples = await query(
+            `WITH layer_scope AS (
+               SELECT cl.id AS layer_id,
+                      cl.tenant_id,
+                      cl.item_id,
+                      cl.location_id,
+                      cl.uom,
+                      cl.source_type,
+                      cl.movement_id,
+                      cl.remaining_quantity,
+                      i.id AS item_id_for_tenant,
+                      loc.id AS location_id_for_tenant,
+                      loc.warehouse_id AS warehouse_id_for_tenant,
+                      wh.id AS warehouse_root_id_for_tenant,
+                      mv.id AS movement_id_for_tenant
+                 FROM inventory_cost_layers cl
+                 LEFT JOIN items i
+                   ON i.id = cl.item_id
+                  AND i.tenant_id = cl.tenant_id
+                 LEFT JOIN locations loc
+                   ON loc.id = cl.location_id
+                  AND loc.tenant_id = cl.tenant_id
+                 LEFT JOIN locations wh
+                   ON wh.id = loc.warehouse_id
+                  AND wh.tenant_id = cl.tenant_id
+                  AND wh.type = 'warehouse'
+                 LEFT JOIN inventory_movements mv
+                   ON mv.id = cl.movement_id
+                  AND mv.tenant_id = cl.tenant_id
+                WHERE cl.tenant_id = $1
+                  AND cl.voided_at IS NULL
+             ),
+             orphaned AS (
+               SELECT tenant_id,
+                      layer_id,
+                      warehouse_id_for_tenant AS warehouse_id,
+                      item_id,
+                      location_id,
+                      CASE
+                        WHEN item_id_for_tenant IS NULL THEN 'ITEM_TENANT_MISMATCH_OR_MISSING'
+                        WHEN location_id_for_tenant IS NULL THEN 'LOCATION_TENANT_MISMATCH_OR_MISSING'
+                        WHEN warehouse_id_for_tenant IS NULL THEN 'LOCATION_WAREHOUSE_MISSING'
+                        WHEN warehouse_root_id_for_tenant IS NULL THEN 'WAREHOUSE_ROOT_MISSING'
+                        WHEN movement_id IS NOT NULL AND movement_id_for_tenant IS NULL THEN 'MOVEMENT_TENANT_MISMATCH_OR_MISSING'
+                        ELSE NULL
+                      END AS issue_code
+                 FROM layer_scope
+             )
+             SELECT tenant_id,
+                    warehouse_id,
+                    layer_id,
+                    item_id,
+                    location_id,
+                    issue_code
+               FROM orphaned
+              WHERE issue_code IS NOT NULL
+              ORDER BY issue_code, layer_id
+              LIMIT $2`,
+            [tenant.id, invariantSampleLimit]
+          );
+          console.warn(
+            `Invariant violation for tenant ${tenant.slug}: ${orphanedCostLayersCount} orphaned cost layer(s)`,
+            { examples: samples.rows }
+          );
+          emitInvariantDiagnosticEvent({
+            tenantId: tenant.id,
+            code: 'INVARIANT_ORPHANED_COST_LAYERS',
+            count: orphanedCostLayersCount,
+            samples: samples.rows as Array<Record<string, unknown>>,
+            sampleLimit: invariantSampleLimit
+          });
+        }
+
         if (mismatchCount > 0) {
           const samples = await query(
             `WITH reservation_committed AS (
@@ -595,7 +1043,11 @@ export async function runInventoryInvariantCheck(
           reservationWarehouseHistoricalMismatchCount,
           nonSellableFlowScopeInvalidCount,
           salesOrderWarehouseScopeMismatchCount,
-          atpOversellDetectedCount
+          atpOversellDetectedCount,
+          warehouseDefaultsIncompleteCount,
+          negativeOnHandCount,
+          unmatchedCostLayersCount,
+          orphanedCostLayersCount
         };
         results.push(summary);
         if (strictMode) {

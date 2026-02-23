@@ -618,11 +618,310 @@ const workOrderCostConservationRowsSql = `
    LIMIT $3
 `;
 
+const warehouseDefaultCompletenessCte = `
+  WITH expected_warehouses AS (
+    SELECT DISTINCT expected.warehouse_code
+      FROM unnest($3::text[]) AS expected(warehouse_code)
+  ),
+  expected_defaults AS (
+    SELECT expected.warehouse_code,
+           expected.role,
+           expected.local_code
+      FROM unnest($4::text[], $5::text[], $6::text[]) AS expected(warehouse_code, role, local_code)
+  ),
+  warehouse_roots AS (
+    SELECT l.id AS warehouse_id,
+           l.code AS warehouse_code
+      FROM locations l
+     WHERE l.tenant_id = $1
+       AND l.type = 'warehouse'
+       AND l.parent_location_id IS NULL
+       AND l.active = true
+       AND ($2::uuid IS NULL OR l.id = $2::uuid)
+  ),
+  missing_warehouse_roots AS (
+    SELECT $1::uuid AS tenant_id,
+           NULL::uuid AS warehouse_id,
+           ew.warehouse_code,
+           NULL::text AS role,
+           NULL::text AS expected_local_code,
+           'MISSING_WAREHOUSE_ROOT'::text AS issue_code
+      FROM expected_warehouses ew
+      LEFT JOIN warehouse_roots wr
+        ON wr.warehouse_code = ew.warehouse_code
+     WHERE wr.warehouse_id IS NULL
+       AND $2::uuid IS NULL
+  ),
+  missing_default_mappings AS (
+    SELECT $1::uuid AS tenant_id,
+           wr.warehouse_id,
+           ed.warehouse_code,
+           ed.role,
+           ed.local_code AS expected_local_code,
+           'MISSING_DEFAULT_MAPPING'::text AS issue_code
+      FROM expected_defaults ed
+      JOIN warehouse_roots wr
+        ON wr.warehouse_code = ed.warehouse_code
+      LEFT JOIN warehouse_default_location wdl
+        ON wdl.tenant_id = $1
+       AND wdl.warehouse_id = wr.warehouse_id
+       AND wdl.role = ed.role
+     WHERE wdl.location_id IS NULL
+  ),
+  combined AS (
+    SELECT * FROM missing_warehouse_roots
+    UNION ALL
+    SELECT * FROM missing_default_mappings
+  )
+`;
+
+const warehouseDefaultCompletenessCountSql = `
+  ${warehouseDefaultCompletenessCte}
+  SELECT COUNT(*)::int AS count
+    FROM combined
+`;
+
+const warehouseDefaultCompletenessRowsSql = `
+  ${warehouseDefaultCompletenessCte}
+  SELECT tenant_id,
+         warehouse_id,
+         warehouse_code,
+         role,
+         expected_local_code,
+         issue_code
+    FROM combined
+   ORDER BY issue_code, warehouse_code, role
+   LIMIT $7
+`;
+
+const unmatchedCostLayersCte = `
+  WITH active_layers AS (
+    SELECT cl.tenant_id,
+           l.warehouse_id,
+           cl.item_id,
+           cl.location_id,
+           cl.uom,
+           COUNT(*)::int AS layer_count,
+           COALESCE(SUM(cl.remaining_quantity), 0)::numeric AS remaining_qty
+      FROM inventory_cost_layers cl
+      JOIN locations l
+        ON l.id = cl.location_id
+       AND l.tenant_id = cl.tenant_id
+     WHERE cl.tenant_id = $1
+       AND cl.voided_at IS NULL
+       AND cl.remaining_quantity > 0
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+     GROUP BY cl.tenant_id, l.warehouse_id, cl.item_id, cl.location_id, cl.uom
+  ),
+  on_hand AS (
+    SELECT oh.tenant_id,
+           oh.warehouse_id,
+           oh.item_id,
+           oh.location_id,
+           oh.uom,
+           COALESCE(SUM(oh.on_hand_qty), 0)::numeric AS on_hand_qty
+      FROM inventory_on_hand_location_v oh
+     WHERE oh.tenant_id = $1
+       AND ($2::uuid IS NULL OR oh.warehouse_id = $2::uuid)
+     GROUP BY oh.tenant_id, oh.warehouse_id, oh.item_id, oh.location_id, oh.uom
+  ),
+  unmatched AS (
+    SELECT a.tenant_id,
+           a.warehouse_id,
+           a.item_id,
+           a.location_id,
+           a.uom,
+           a.layer_count,
+           a.remaining_qty,
+           COALESCE(o.on_hand_qty, 0)::numeric AS on_hand_qty
+      FROM active_layers a
+      LEFT JOIN on_hand o
+        ON o.tenant_id = a.tenant_id
+       AND o.warehouse_id = a.warehouse_id
+       AND o.item_id = a.item_id
+       AND o.location_id = a.location_id
+       AND o.uom = a.uom
+     WHERE COALESCE(o.on_hand_qty, 0) <= 0.000001
+  )
+`;
+
+const unmatchedCostLayersCountSql = `
+  ${unmatchedCostLayersCte}
+  SELECT COUNT(*)::int AS count
+    FROM unmatched
+`;
+
+const unmatchedCostLayersRowsSql = `
+  ${unmatchedCostLayersCte}
+  SELECT u.tenant_id,
+         u.warehouse_id,
+         u.item_id,
+         i.sku AS item_sku,
+         u.location_id,
+         l.code AS location_code,
+         l.local_code AS location_local_code,
+         l.role AS location_role,
+         u.uom,
+         u.layer_count,
+         u.remaining_qty,
+         u.on_hand_qty
+    FROM unmatched u
+    LEFT JOIN items i
+      ON i.id = u.item_id
+     AND i.tenant_id = u.tenant_id
+    LEFT JOIN locations l
+      ON l.id = u.location_id
+     AND l.tenant_id = u.tenant_id
+   ORDER BY u.remaining_qty DESC, u.warehouse_id, u.item_id, u.location_id, u.uom
+   LIMIT $3
+`;
+
+const negativeOnHandCountSql = `
+  SELECT COUNT(*)::int AS count
+    FROM inventory_on_hand_location_v oh
+   WHERE oh.tenant_id = $1
+     AND ($2::uuid IS NULL OR oh.warehouse_id = $2::uuid)
+     AND oh.on_hand_qty < -0.000001
+`;
+
+const negativeOnHandRowsSql = `
+  SELECT oh.tenant_id,
+         oh.warehouse_id,
+         oh.location_id,
+         l.code AS location_code,
+         l.local_code AS location_local_code,
+         l.role AS location_role,
+         oh.item_id,
+         i.sku AS item_sku,
+         oh.uom,
+         oh.on_hand_qty,
+         ABS(oh.on_hand_qty)::numeric AS deficit_qty
+    FROM inventory_on_hand_location_v oh
+    LEFT JOIN locations l
+      ON l.id = oh.location_id
+     AND l.tenant_id = oh.tenant_id
+    LEFT JOIN items i
+      ON i.id = oh.item_id
+     AND i.tenant_id = oh.tenant_id
+   WHERE oh.tenant_id = $1
+     AND ($2::uuid IS NULL OR oh.warehouse_id = $2::uuid)
+     AND oh.on_hand_qty < -0.000001
+   ORDER BY oh.on_hand_qty ASC, oh.warehouse_id, oh.item_id, oh.location_id, oh.uom
+   LIMIT $3
+`;
+
+const orphanedCostLayersCte = `
+  WITH layer_scope AS (
+    SELECT cl.id AS layer_id,
+           cl.tenant_id,
+           cl.item_id,
+           cl.location_id,
+           cl.uom,
+           cl.source_type,
+           cl.movement_id,
+           cl.remaining_quantity,
+           i.id AS item_id_for_tenant,
+           i.sku AS item_sku_for_tenant,
+           loc.id AS location_id_for_tenant,
+           loc.code AS location_code_for_tenant,
+           loc.local_code AS location_local_code_for_tenant,
+           loc.role AS location_role_for_tenant,
+           loc.warehouse_id AS warehouse_id_for_tenant,
+           wh.id AS warehouse_root_id_for_tenant,
+           wh.code AS warehouse_code_for_tenant,
+           mv.id AS movement_id_for_tenant
+      FROM inventory_cost_layers cl
+      LEFT JOIN items i
+        ON i.id = cl.item_id
+       AND i.tenant_id = cl.tenant_id
+      LEFT JOIN locations loc
+        ON loc.id = cl.location_id
+       AND loc.tenant_id = cl.tenant_id
+      LEFT JOIN locations wh
+        ON wh.id = loc.warehouse_id
+       AND wh.tenant_id = cl.tenant_id
+       AND wh.type = 'warehouse'
+      LEFT JOIN inventory_movements mv
+        ON mv.id = cl.movement_id
+       AND mv.tenant_id = cl.tenant_id
+     WHERE cl.tenant_id = $1
+       AND cl.voided_at IS NULL
+       AND ($2::uuid IS NULL OR loc.warehouse_id = $2::uuid)
+  ),
+  orphaned AS (
+    SELECT tenant_id,
+           layer_id,
+           item_id,
+           location_id,
+           uom,
+           source_type,
+           movement_id,
+           remaining_quantity,
+           warehouse_id_for_tenant AS warehouse_id,
+           warehouse_code_for_tenant AS warehouse_code,
+           item_sku_for_tenant AS item_sku,
+           location_code_for_tenant AS location_code,
+           location_local_code_for_tenant AS location_local_code,
+           location_role_for_tenant AS location_role,
+           CASE
+             WHEN item_id_for_tenant IS NULL THEN 'ITEM_TENANT_MISMATCH_OR_MISSING'
+             WHEN location_id_for_tenant IS NULL THEN 'LOCATION_TENANT_MISMATCH_OR_MISSING'
+             WHEN warehouse_id_for_tenant IS NULL THEN 'LOCATION_WAREHOUSE_MISSING'
+             WHEN warehouse_root_id_for_tenant IS NULL THEN 'WAREHOUSE_ROOT_MISSING'
+             WHEN movement_id IS NOT NULL AND movement_id_for_tenant IS NULL THEN 'MOVEMENT_TENANT_MISMATCH_OR_MISSING'
+             ELSE NULL
+           END AS issue_code
+      FROM layer_scope
+  )
+`;
+
+const orphanedCostLayersCountSql = `
+  ${orphanedCostLayersCte}
+  SELECT COUNT(*)::int AS count
+    FROM orphaned
+   WHERE issue_code IS NOT NULL
+`;
+
+const orphanedCostLayersRowsSql = `
+  ${orphanedCostLayersCte}
+  SELECT tenant_id,
+         warehouse_id,
+         warehouse_code,
+         layer_id,
+         item_id,
+         item_sku,
+         location_id,
+         location_code,
+         location_local_code,
+         location_role,
+         uom,
+         source_type,
+         movement_id,
+         remaining_quantity,
+         issue_code
+    FROM orphaned
+   WHERE issue_code IS NOT NULL
+   ORDER BY issue_code, layer_id
+   LIMIT $3
+`;
+
 let exitCode = 0;
 const invariantCounts = {};
 
 try {
   const topology = await loadWarehouseTopology();
+  const topologyWarehouseCodes = topology.warehouses.map((warehouse) => warehouse.code);
+  const topologyDefaultWarehouseCodes = topology.defaults.map((entry) => entry.warehouseCode);
+  const topologyDefaultRoles = topology.defaults.map((entry) => entry.role);
+  const topologyDefaultLocalCodes = topology.defaults.map((entry) => entry.localCode);
+  const warehouseDefaultCompletenessParams = [
+    tenantId,
+    warehouseId,
+    topologyWarehouseCodes,
+    topologyDefaultWarehouseCodes,
+    topologyDefaultRoles,
+    topologyDefaultLocalCodes
+  ];
 
   const [negativeBalanceCountRes, negativeBalanceRowsRes] = await Promise.all([
     pool.query(negativeBalanceCountSql, params2),
@@ -796,6 +1095,55 @@ try {
     }
     console.log('  hint: run `npm run seed:warehouse-topology -- --tenant-id <TENANT_UUID> --fix`');
   }
+
+  const [warehouseDefaultCompletenessCountRes, warehouseDefaultCompletenessRowsRes] = await Promise.all([
+    pool.query(warehouseDefaultCompletenessCountSql, warehouseDefaultCompletenessParams),
+    pool.query(warehouseDefaultCompletenessRowsSql, [...warehouseDefaultCompletenessParams, limit])
+  ]);
+  const warehouseDefaultCompletenessCount = Number(warehouseDefaultCompletenessCountRes.rows[0]?.count ?? 0);
+  invariantCounts.warehouse_default_completeness_invalid = warehouseDefaultCompletenessCount;
+  printSection(
+    'warehouse_default_completeness_invalid',
+    warehouseDefaultCompletenessCount,
+    warehouseDefaultCompletenessRowsRes.rows
+  );
+  if (strictMode && warehouseDefaultCompletenessCount > 0) {
+    exitCode = 2;
+  }
+
+  const [negativeOnHandCountRes, negativeOnHandRowsRes] = await Promise.all([
+    pool.query(negativeOnHandCountSql, params2),
+    pool.query(negativeOnHandRowsSql, params3)
+  ]);
+  const negativeOnHandCount = Number(negativeOnHandCountRes.rows[0]?.count ?? 0);
+  invariantCounts.negative_on_hand = negativeOnHandCount;
+  printSection('negative_on_hand', negativeOnHandCount, negativeOnHandRowsRes.rows);
+  if (strictMode && negativeOnHandCount > 0) {
+    exitCode = 2;
+  }
+
+  const [unmatchedCostLayersCountRes, unmatchedCostLayersRowsRes] = await Promise.all([
+    pool.query(unmatchedCostLayersCountSql, params2),
+    pool.query(unmatchedCostLayersRowsSql, params3)
+  ]);
+  const unmatchedCostLayersCount = Number(unmatchedCostLayersCountRes.rows[0]?.count ?? 0);
+  invariantCounts.unmatched_cost_layers = unmatchedCostLayersCount;
+  printSection('unmatched_cost_layers', unmatchedCostLayersCount, unmatchedCostLayersRowsRes.rows);
+  if (strictMode && unmatchedCostLayersCount > 0) {
+    exitCode = 2;
+  }
+
+  const [orphanedCostLayersCountRes, orphanedCostLayersRowsRes] = await Promise.all([
+    pool.query(orphanedCostLayersCountSql, params2),
+    pool.query(orphanedCostLayersRowsSql, params3)
+  ]);
+  const orphanedCostLayersCount = Number(orphanedCostLayersCountRes.rows[0]?.count ?? 0);
+  invariantCounts.orphaned_cost_layers = orphanedCostLayersCount;
+  printSection('orphaned_cost_layers', orphanedCostLayersCount, orphanedCostLayersRowsRes.rows);
+  if (strictMode && orphanedCostLayersCount > 0) {
+    exitCode = 2;
+  }
+
   if (strictMode) {
     const violations = Object.fromEntries(
       Object.entries(invariantCounts).filter(([, count]) => Number(count) > 0)

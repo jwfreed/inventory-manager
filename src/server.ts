@@ -66,6 +66,7 @@ import {
   resolveWarehouseDefaultsStartupMode
 } from './config/warehouseDefaultsStartup';
 import { resolveSchedulerStartupMode } from './config/schedulerStartup';
+import { emitAtpRetryBudgetsEffectiveLogOnce, resolveAtpRetryBudgets } from './config/atpRetryBudgets';
 
 const PORT = Number(process.env.PORT) || 3000;
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
@@ -264,6 +265,9 @@ process.on('SIGINT', () => {
 });
 
 async function start() {
+  const atpRetryBudgets = resolveAtpRetryBudgets({ enforceProductionCaps: true });
+  emitAtpRetryBudgetsEffectiveLogOnce(atpRetryBudgets);
+
   const startupTenantId = process.env.WAREHOUSE_DEFAULTS_TENANT_ID?.trim() || undefined;
   await ensureWarehouseDefaults(startupTenantId, { repair: startupMode.startupRepairMode });
   app.listen(PORT, () => {

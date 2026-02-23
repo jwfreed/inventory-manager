@@ -1,0 +1,387 @@
+import 'dotenv/config';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { promisify } from 'node:util';
+import { execFile } from 'node:child_process';
+import { getTestTenantWithValidTopology } from '../helpers/topologyTenant.mjs';
+
+const execFileAsync = promisify(execFile);
+const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getSectionCount(stdout, sectionName) {
+  const match = new RegExp(`\\[${escapeRegex(sectionName)}\\] count=(\\d+)`).exec(stdout);
+  assert.ok(match, `Missing invariant section: ${sectionName}`);
+  return Number(match[1]);
+}
+
+async function apiRequest(method, path, { token, body, params, headers } = {}) {
+  const url = new URL(baseUrl + path);
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined) continue;
+      url.searchParams.set(key, String(value));
+    }
+  }
+  const mergedHeaders = { 'Content-Type': 'application/json', ...(headers ?? {}) };
+  if (token) mergedHeaders.Authorization = `Bearer ${token}`;
+  const res = await fetch(url.toString(), {
+    method,
+    headers: mergedHeaders,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
+  const payload = isJson ? await res.json().catch(() => null) : await res.text().catch(() => '');
+  return { res, payload };
+}
+
+async function createItem(token, defaultLocationId, prefix) {
+  const sku = `${prefix}-${randomUUID().slice(0, 8)}`;
+  const res = await apiRequest('POST', '/items', {
+    token,
+    body: {
+      sku,
+      name: `Item ${sku}`,
+      type: 'raw',
+      defaultUom: 'each',
+      uomDimension: 'count',
+      canonicalUom: 'each',
+      stockingUom: 'each',
+      defaultLocationId,
+      active: true
+    }
+  });
+  assert.equal(res.res.status, 201, JSON.stringify(res.payload));
+  return res.payload.id;
+}
+
+async function getSellableDefault(pool, tenantId) {
+  const res = await pool.query(
+    `SELECT wdl.warehouse_id,
+            wdl.location_id,
+            l.code AS location_code
+       FROM warehouse_default_location wdl
+       JOIN locations l
+         ON l.id = wdl.location_id
+        AND l.tenant_id = wdl.tenant_id
+      WHERE wdl.tenant_id = $1
+        AND wdl.role = 'SELLABLE'
+      ORDER BY l.code
+      LIMIT 1`,
+    [tenantId]
+  );
+  assert.equal(res.rowCount, 1, `SELLABLE default missing for tenant ${tenantId}`);
+  return {
+    warehouseId: res.rows[0].warehouse_id,
+    locationId: res.rows[0].location_id
+  };
+}
+
+async function runInvariantScript({ tenantId, strict = false, limit = 25 }) {
+  const args = ['scripts/inventory_invariants_check.mjs', '--tenant-id', tenantId, '--limit', String(limit)];
+  if (strict) args.push('--strict');
+  return execFileAsync(process.execPath, args, {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      INVARIANTS_STRICT: strict ? 'true' : 'false'
+    },
+    maxBuffer: 4 * 1024 * 1024
+  });
+}
+
+async function runInvariantStrictExpectFailure(tenantId) {
+  let stdout = '';
+  let stderr = '';
+  await assert.rejects(
+    async () => {
+      await runInvariantScript({ tenantId, strict: true, limit: 25 });
+    },
+    (error) => {
+      stdout = String(error?.stdout ?? '');
+      stderr = String(error?.stderr ?? '');
+      return error?.code === 2;
+    }
+  );
+  return { stdout, stderr };
+}
+
+async function insertNegativeOnHandFixture({ pool, tenantId, itemId, locationId }) {
+  const movementId = randomUUID();
+  const movementLineId = randomUUID();
+  await pool.query(
+    `INSERT INTO inventory_movements (
+        id,
+        tenant_id,
+        movement_type,
+        status,
+        external_ref,
+        source_type,
+        source_id,
+        idempotency_key,
+        occurred_at,
+        posted_at,
+        notes,
+        metadata,
+        reversal_of_movement_id,
+        reversed_by_movement_id,
+        reversal_reason,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1,
+        $2,
+        'adjustment',
+        'posted',
+        $3,
+        'test_fixture',
+        $4,
+        NULL,
+        now(),
+        now(),
+        'negative on_hand fixture',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        now(),
+        now()
+      )`,
+    [movementId, tenantId, `NEG-ON-HAND-${movementId}`, randomUUID()]
+  );
+  await pool.query(
+    `INSERT INTO inventory_movement_lines (
+        id,
+        tenant_id,
+        movement_id,
+        item_id,
+        location_id,
+        quantity_delta,
+        uom,
+        quantity_delta_entered,
+        uom_entered,
+        quantity_delta_canonical,
+        canonical_uom,
+        uom_dimension,
+        unit_cost,
+        extended_cost,
+        reason_code,
+        line_notes,
+        created_at
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        -5,
+        'each',
+        -5,
+        'each',
+        -5,
+        'each',
+        'count',
+        0,
+        0,
+        'phase42_negative_on_hand',
+        'negative on_hand fixture line',
+        now()
+      )`,
+    [movementLineId, tenantId, movementId, itemId, locationId]
+  );
+}
+
+async function insertCostLayerFixtures({
+  pool,
+  tenantId,
+  validItemId,
+  validLocationId,
+  foreignItemId,
+  foreignLocationId
+}) {
+  const now = new Date();
+  await pool.query(
+    `INSERT INTO inventory_cost_layers (
+        id,
+        tenant_id,
+        item_id,
+        location_id,
+        uom,
+        layer_date,
+        layer_sequence,
+        original_quantity,
+        remaining_quantity,
+        unit_cost,
+        extended_cost,
+        source_type,
+        source_document_id,
+        movement_id,
+        lot_id,
+        notes,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        'each',
+        $5,
+        1,
+        4,
+        4,
+        3,
+        12,
+        'adjustment',
+        $6,
+        NULL,
+        NULL,
+        'unmatched layer fixture',
+        $5,
+        $5
+      )`,
+    [randomUUID(), tenantId, validItemId, validLocationId, now, randomUUID()]
+  );
+
+  // TEST-ONLY fixture: intentionally cross-tenant references to validate orphan detection paths.
+  await pool.query(
+    `INSERT INTO inventory_cost_layers (
+        id,
+        tenant_id,
+        item_id,
+        location_id,
+        uom,
+        layer_date,
+        layer_sequence,
+        original_quantity,
+        remaining_quantity,
+        unit_cost,
+        extended_cost,
+        source_type,
+        source_document_id,
+        movement_id,
+        lot_id,
+        notes,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        'each',
+        $5,
+        2,
+        2,
+        2,
+        7,
+        14,
+        'adjustment',
+        $6,
+        NULL,
+        NULL,
+        'orphan layer fixture',
+        $5,
+        $5
+      )`,
+    [randomUUID(), tenantId, foreignItemId, foreignLocationId, now, randomUUID()]
+  );
+}
+
+test('strict expanded invariants pass on a clean tenant with canonical topology', { timeout: 120000 }, async () => {
+  const session = await getTestTenantWithValidTopology({
+    tenantName: 'Strict Expanded Invariants Clean Tenant'
+  });
+  const tenantId = session.tenant?.id;
+  assert.ok(tenantId, 'tenantId is required');
+
+  const { stdout, stderr } = await runInvariantScript({ tenantId, strict: true, limit: 25 });
+  assert.equal(stderr.trim(), '', stderr);
+  assert.equal(getSectionCount(stdout, 'warehouse_default_completeness_invalid'), 0);
+  assert.equal(getSectionCount(stdout, 'negative_on_hand'), 0);
+  assert.equal(getSectionCount(stdout, 'unmatched_cost_layers'), 0);
+  assert.equal(getSectionCount(stdout, 'orphaned_cost_layers'), 0);
+});
+
+test('negative_on_hand check detects negative ledger position and strict mode fails loudly', { timeout: 120000 }, async () => {
+  const session = await getTestTenantWithValidTopology({
+    tenantName: 'Strict Expanded Invariants Negative On Hand Tenant'
+  });
+  const tenantId = session.tenant?.id;
+  const token = session.accessToken;
+  assert.ok(tenantId, 'tenantId is required');
+  assert.ok(token, 'token is required');
+
+  const sellable = await getSellableDefault(session.pool, tenantId);
+  const itemId = await createItem(token, sellable.locationId, 'NEG-OH');
+  await insertNegativeOnHandFixture({
+    pool: session.pool,
+    tenantId,
+    itemId,
+    locationId: sellable.locationId
+  });
+
+  const nonStrictRun = await runInvariantScript({ tenantId, strict: false, limit: 25 });
+  const negativeCount = getSectionCount(nonStrictRun.stdout, 'negative_on_hand');
+  assert.ok(negativeCount > 0, nonStrictRun.stdout);
+  assert.match(nonStrictRun.stdout, new RegExp(`\"tenant_id\":\"${escapeRegex(tenantId)}\"`));
+  assert.match(nonStrictRun.stdout, new RegExp(`\"warehouse_id\":\"${escapeRegex(sellable.warehouseId)}\"`));
+  assert.match(nonStrictRun.stdout, new RegExp(`\"item_id\":\"${escapeRegex(itemId)}\"`));
+
+  const strictFailure = await runInvariantStrictExpectFailure(tenantId);
+  const strictCombined = `${strictFailure.stdout}\n${strictFailure.stderr}`;
+  assert.match(strictFailure.stdout, /\[negative_on_hand\] count=/);
+  assert.match(strictCombined, /"negative_on_hand":/);
+});
+
+test('unmatched_cost_layers and orphaned_cost_layers detect controlled fixture drift', { timeout: 120000 }, async () => {
+  const primary = await getTestTenantWithValidTopology({
+    tenantName: 'Strict Expanded Invariants Layer Drift Primary Tenant'
+  });
+  const primaryTenantId = primary.tenant?.id;
+  const primaryToken = primary.accessToken;
+  assert.ok(primaryTenantId, 'primary tenantId is required');
+  assert.ok(primaryToken, 'primary token is required');
+
+  const primarySellable = await getSellableDefault(primary.pool, primaryTenantId);
+  const primaryItemId = await createItem(primaryToken, primarySellable.locationId, 'UNMATCHED');
+
+  const foreign = await getTestTenantWithValidTopology({
+    tenantName: 'Strict Expanded Invariants Layer Drift Foreign Tenant'
+  });
+  const foreignTenantId = foreign.tenant?.id;
+  const foreignToken = foreign.accessToken;
+  assert.ok(foreignTenantId, 'foreign tenantId is required');
+  assert.ok(foreignToken, 'foreign token is required');
+
+  const foreignSellable = await getSellableDefault(foreign.pool, foreignTenantId);
+  const foreignItemId = await createItem(foreignToken, foreignSellable.locationId, 'ORPHAN');
+
+  await insertCostLayerFixtures({
+    pool: primary.pool,
+    tenantId: primaryTenantId,
+    validItemId: primaryItemId,
+    validLocationId: primarySellable.locationId,
+    foreignItemId,
+    foreignLocationId: foreignSellable.locationId
+  });
+
+  const nonStrictRun = await runInvariantScript({ tenantId: primaryTenantId, strict: false, limit: 25 });
+  const unmatchedCount = getSectionCount(nonStrictRun.stdout, 'unmatched_cost_layers');
+  const orphanedCount = getSectionCount(nonStrictRun.stdout, 'orphaned_cost_layers');
+  assert.ok(unmatchedCount > 0, nonStrictRun.stdout);
+  assert.ok(orphanedCount > 0, nonStrictRun.stdout);
+  assert.match(nonStrictRun.stdout, /"issue_code":"ITEM_TENANT_MISMATCH_OR_MISSING"/);
+
+  const strictFailure = await runInvariantStrictExpectFailure(primaryTenantId);
+  const strictCombined = `${strictFailure.stdout}\n${strictFailure.stderr}`;
+  assert.match(strictFailure.stdout, /\[unmatched_cost_layers\] count=/);
+  assert.match(strictFailure.stdout, /\[orphaned_cost_layers\] count=/);
+  assert.match(strictCombined, /"unmatched_cost_layers":/);
+  assert.match(strictCombined, /"orphaned_cost_layers":/);
+});

@@ -41,6 +41,7 @@ import {
   type AtpLockContext,
   type AtpLockTarget
 } from '../domains/inventory/internal/atpLocks';
+import { resolveAtpRetryBudgets } from '../config/atpRetryBudgets';
 
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
 export type ReservationInput = z.infer<typeof reservationSchema>;
@@ -67,8 +68,9 @@ type ReservationRow = {
 };
 
 const BACKORDERS_ENABLED = process.env.BACKORDERS_ENABLED !== 'false';
-const ATP_SERIALIZABLE_RETRIES = 2;
-const ATP_RESERVATION_CREATE_RETRIES = 6;
+const atpRetryBudgets = resolveAtpRetryBudgets();
+const ATP_SERIALIZABLE_RETRIES = atpRetryBudgets.serializableRetries;
+const ATP_RESERVATION_CREATE_RETRIES = atpRetryBudgets.reservationCreateRetries;
 const ATP_RETRY_BASE_DELAY_MS = 5;
 const ATP_RETRY_JITTER_MS = 5;
 
