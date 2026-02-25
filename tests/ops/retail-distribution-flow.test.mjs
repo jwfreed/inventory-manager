@@ -99,6 +99,39 @@ async function createItem(token, defaultLocationId, skuPrefix) {
   return res.payload.id;
 }
 
+async function createBom(token, outputItemId, componentItemId, quantityPer = 1) {
+  const bomRes = await apiRequest('POST', '/boms', {
+    token,
+    body: {
+      bomCode: `BOM-${randomUUID().slice(0, 8)}`,
+      outputItemId,
+      defaultUom: 'each',
+      version: {
+        versionNumber: 1,
+        yieldQuantity: 1,
+        yieldUom: 'each',
+        components: [
+          {
+            lineNumber: 1,
+            componentItemId,
+            uom: 'each',
+            quantityPer
+          }
+        ]
+      }
+    }
+  });
+  assert.equal(bomRes.res.status, 201, JSON.stringify(bomRes.payload));
+  const activateRes = await apiRequest('POST', `/boms/${bomRes.payload.versions[0].id}/activate`, {
+    token,
+    body: {
+      effectiveFrom: new Date(Date.now() - 60_000).toISOString()
+    }
+  });
+  assert.equal(activateRes.res.status, 200, JSON.stringify(activateRes.payload));
+  return bomRes.payload.id;
+}
+
 async function createReceipt({ token, vendorId, itemId, locationId, quantity, unitCost }) {
   const poRes = await apiRequest('POST', '/purchase-orders', {
     token,
@@ -183,40 +216,31 @@ test('retail distribution flow: WO->QA, QC accept, transfer to store, reserve+fu
     actorId
   });
 
+  const bomId = await createBom(token, fgItemId, componentItemId, 1);
+
   const woRes = await apiRequest('POST', '/work-orders', {
     token,
     body: {
-      kind: 'disassembly',
-      outputItemId: componentItemId,
+      kind: 'production',
+      outputItemId: fgItemId,
       outputUom: 'each',
       quantityPlanned: 10,
+      bomId,
       defaultConsumeLocationId: factory.defaults.SELLABLE.id,
       defaultProduceLocationId: factory.defaults.QA.id
     }
   });
   assert.equal(woRes.res.status, 201, JSON.stringify(woRes.payload));
 
-  const batchRes = await apiRequest('POST', `/work-orders/${woRes.payload.id}/record-batch`, {
+  const batchRes = await apiRequest('POST', `/work-orders/${woRes.payload.id}/report-production`, {
     token,
     headers: { 'Idempotency-Key': `retail-wo-${randomUUID()}` },
     body: {
+      warehouseId: factory.warehouse.id,
+      outputQty: 10,
+      outputUom: 'each',
       occurredAt: new Date().toISOString(),
-      consumeLines: [
-        {
-          componentItemId,
-          fromLocationId: factory.defaults.SELLABLE.id,
-          uom: 'each',
-          quantity: 10
-        }
-      ],
-      produceLines: [
-        {
-          outputItemId: fgItemId,
-          toLocationId: factory.defaults.QA.id,
-          uom: 'each',
-          quantity: 10
-        }
-      ]
+      notes: 'retail distribution production report'
     }
   });
   assert.equal(batchRes.res.status, 201, JSON.stringify(batchRes.payload));
@@ -252,7 +276,7 @@ test('retail distribution flow: WO->QA, QC accept, transfer to store, reserve+fu
         AND wel.item_id = $3
       ORDER BY wel.created_at ASC
       LIMIT 1`,
-    [tenantId, batchRes.payload.receiveMovementId, fgItemId]
+    [tenantId, batchRes.payload.productionReceiptMovementId, fgItemId]
   );
   assert.equal(executionLineRes.rowCount, 1);
   const executionLineId = executionLineRes.rows[0].id;

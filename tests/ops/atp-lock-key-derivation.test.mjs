@@ -169,3 +169,85 @@ test('acquireAtpLocks reports monotonic lockWaitMs for lock query duration', asy
   assert.ok(result.lockWaitMs <= 2_000, `lockWaitMs unexpectedly high: ${result.lockWaitMs}`);
   assert.equal(queryDurations.length, 1);
 });
+
+test('buildAtpLockKeys fails loud when any target is invalid (no silent drop)', () => {
+  let thrown = null;
+  try {
+    buildAtpLockKeys([
+      {
+        tenantId: '00000000-0000-0000-0000-000000000001',
+        warehouseId: '00000000-0000-0000-0000-000000000010',
+        itemId: '00000000-0000-0000-0000-000000000100'
+      },
+      {
+        tenantId: '00000000-0000-0000-0000-000000000001',
+        warehouseId: '',
+        itemId: '00000000-0000-0000-0000-000000000101'
+      }
+    ]);
+  } catch (error) {
+    thrown = error;
+  }
+
+  assert.ok(thrown, 'expected invalid target to throw');
+  assert.equal(thrown.code ?? thrown.message, 'INVALID_ATP_LOCK_TARGET');
+  assert.equal(thrown.details?.invalidCount, 1);
+  assert.equal(thrown.details?.totalCount, 2);
+  assert.ok(Array.isArray(thrown.details?.samples), 'expected bounded invalid target samples');
+  assert.ok(thrown.details.samples.length >= 1);
+  assert.equal(thrown.details.samples[0].warehouseId, '__missing__');
+});
+
+test('ATP lock target ordering and dedupe are deterministic regardless of input order', () => {
+  const baseTargets = [
+    {
+      tenantId: '00000000-0000-0000-0000-000000000001',
+      warehouseId: '00000000-0000-0000-0000-000000000010',
+      itemId: '00000000-0000-0000-0000-000000000100'
+    },
+    {
+      tenantId: '00000000-0000-0000-0000-000000000001',
+      warehouseId: '00000000-0000-0000-0000-000000000010',
+      itemId: '00000000-0000-0000-0000-000000000101'
+    },
+    {
+      tenantId: '00000000-0000-0000-0000-000000000001',
+      warehouseId: '00000000-0000-0000-0000-000000000011',
+      itemId: '00000000-0000-0000-0000-000000000099'
+    }
+  ];
+  const withDuplicates = [
+    baseTargets[1],
+    baseTargets[2],
+    baseTargets[0],
+    baseTargets[1],
+    baseTargets[0]
+  ];
+  const reversed = [...withDuplicates].reverse();
+
+  const forwardKeys = buildAtpLockKeys(withDuplicates).map((entry) => ({
+    tenantId: entry.tenantId,
+    warehouseId: entry.warehouseId,
+    itemId: entry.itemId,
+    key1: entry.key1,
+    key2: entry.key2
+  }));
+  const reversedKeys = buildAtpLockKeys(reversed).map((entry) => ({
+    tenantId: entry.tenantId,
+    warehouseId: entry.warehouseId,
+    itemId: entry.itemId,
+    key1: entry.key1,
+    key2: entry.key2
+  }));
+
+  assert.equal(forwardKeys.length, 3, 'duplicate lock targets should be deduped');
+  assert.deepEqual(forwardKeys, reversedKeys, 'lock key sequence must be stable across input order');
+  assert.deepEqual(
+    forwardKeys.map((entry) => `${entry.tenantId}:${entry.warehouseId}:${entry.itemId}`),
+    [
+      '00000000-0000-0000-0000-000000000001:00000000-0000-0000-0000-000000000010:00000000-0000-0000-0000-000000000100',
+      '00000000-0000-0000-0000-000000000001:00000000-0000-0000-0000-000000000010:00000000-0000-0000-0000-000000000101',
+      '00000000-0000-0000-0000-000000000001:00000000-0000-0000-0000-000000000011:00000000-0000-0000-0000-000000000099'
+    ]
+  );
+});

@@ -82,8 +82,11 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
         .status(400)
         .json({ error: 'All receipt lines must reference the provided purchase order.' });
     }
-    if (error?.message === 'RECEIPT_PO_ALREADY_RECEIVED') {
+    if (error?.message === 'RECEIPT_PO_CLOSED' || error?.message === 'RECEIPT_PO_ALREADY_RECEIVED') {
       return res.status(409).json({ error: 'Purchase order is already fully received/closed.' });
+    }
+    if (error?.message === 'RECEIPT_PO_LINE_CLOSED') {
+      return res.status(409).json({ error: 'Receipt is not allowed for closed/cancelled/completed purchase order lines.' });
     }
     if (error?.message === 'RECEIPT_PO_NOT_APPROVED') {
       return res.status(400).json({ error: 'Purchase order must be approved before receiving.' });
@@ -94,8 +97,14 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
     if (error?.message === 'RECEIPT_LINE_UOM_MISMATCH') {
       return res.status(400).json({ error: 'Receipt line UOM must match the purchase order line UOM.' });
     }
+    if (error?.message === 'RECEIPT_DUPLICATE_PO_LINE') {
+      return res.status(400).json({ error: 'Receipt payload cannot contain duplicate purchase order line ids.' });
+    }
     if (error?.message === 'RECEIPT_DISCREPANCY_REASON_REQUIRED') {
       return res.status(400).json({ error: 'Discrepancy reason is required when received quantity differs from expected.' });
+    }
+    if (error?.message === 'RECEIPT_OVERRECEIPT_REASON_REQUIRED') {
+      return res.status(400).json({ error: 'Discrepancy reason "over" is required when over-receipt is approved.' });
     }
     if (error?.message === 'RECEIPT_LINE_ITEM_REQUIRED') {
       return res.status(400).json({ error: 'Receipt line item is required.' });
@@ -124,8 +133,8 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
     if (error?.message === 'RECEIPT_SERIAL_DUPLICATE') {
       return res.status(400).json({ error: 'Duplicate serial numbers are not allowed.' });
     }
-    if (error?.message === 'RECEIPT_OVER_RECEIPT_NOT_APPROVED') {
-      return res.status(409).json({ error: 'Over-receipt exceeds tolerance and requires approval.' });
+    if (error?.message === 'RECEIPT_OVER_RECEIPT_NOT_APPROVED' || error?.message === 'RECEIPT_OVERRECEIPT_NOT_APPROVED') {
+      return res.status(409).json({ error: 'Over-receipt requires explicit approval.' });
     }
     if (error?.message === 'RECEIPT_NOT_FOUND_AFTER_CREATE') {
       return res

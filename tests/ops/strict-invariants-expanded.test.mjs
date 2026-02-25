@@ -306,6 +306,12 @@ test('strict expanded invariants pass on a clean tenant with canonical topology'
   assert.equal(getSectionCount(stdout, 'negative_on_hand'), 0);
   assert.equal(getSectionCount(stdout, 'unmatched_cost_layers'), 0);
   assert.equal(getSectionCount(stdout, 'orphaned_cost_layers'), 0);
+  assert.equal(getSectionCount(stdout, 'production_receipt_location_validity'), 0);
+  assert.equal(getSectionCount(stdout, 'wo_component_quantity_exact_match'), 0);
+  assert.equal(getSectionCount(stdout, 'production_fifo_layer_continuity'), 0);
+  assert.equal(getSectionCount(stdout, 'po_line_closed_blocks_receipts'), 0);
+  assert.equal(getSectionCount(stdout, 'po_status_consistency'), 0);
+  assert.equal(getSectionCount(stdout, 'po_received_qty_integrity_invalid'), 0);
 });
 
 test('negative_on_hand check detects negative ledger position and strict mode fails loudly', { timeout: 120000 }, async () => {

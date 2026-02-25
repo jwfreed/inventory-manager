@@ -1,7 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { qcEventSchema } from '../schemas/qc.schema';
+import { qcEventSchema, qcWarehouseDispositionSchema } from '../schemas/qc.schema';
 import { 
+  postQcWarehouseDisposition,
   createQcEvent, 
   getQcEventById, 
   listQcEventsForLine, 
@@ -14,6 +15,122 @@ import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/i
 
 const router = Router();
 const uuidSchema = z.string().uuid();
+
+function resolveRequestIdempotencyKey(req: Request, bodyKey?: string | null): string | null {
+  const headerKey = getIdempotencyKey(req);
+  const normalizedBody = bodyKey?.trim() ? bodyKey.trim() : null;
+  return normalizedBody ?? headerKey;
+}
+
+router.post('/qc/accept', async (req: Request, res: Response) => {
+  const parsed = qcWarehouseDispositionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const idempotencyKey = resolveRequestIdempotencyKey(req, parsed.data.idempotencyKey);
+
+  try {
+    const result = await postQcWarehouseDisposition(
+      req.auth!.tenantId,
+      'accept',
+      parsed.data,
+      { type: 'user', id: req.auth!.userId },
+      { idempotencyKey }
+    );
+    return res.status(result.replayed ? 200 : 201).json(result);
+  } catch (error: any) {
+    if (error?.message === 'QC_WAREHOUSE_NOT_FOUND') {
+      return res.status(404).json({ error: 'Warehouse not found.' });
+    }
+    if (error?.message === 'QC_QA_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'QA location is required for QC accept.' });
+    }
+    if (error?.message === 'QC_ACCEPT_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Sellable location is required for QC accept.' });
+    }
+    if (error?.message === 'QC_SOURCE_MUST_BE_QA') {
+      return res.status(400).json({ error: 'QC accept must source from QA.' });
+    }
+    if (error?.message === 'QC_ACCEPT_REQUIRES_SELLABLE_ROLE' || error?.message === 'QC_ACCEPT_REQUIRES_SELLABLE_FLAG') {
+      return res.status(400).json({ error: 'QC accept destination must be SELLABLE and sellable.' });
+    }
+    if (error?.code === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({
+        error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
+      return res.status(403).json({
+        error: { code: 'NEGATIVE_OVERRIDE_NOT_ALLOWED', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
+      return res.status(409).json({
+        error: { code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to post QC accept.' });
+  }
+});
+
+router.post('/qc/reject', async (req: Request, res: Response) => {
+  const parsed = qcWarehouseDispositionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const idempotencyKey = resolveRequestIdempotencyKey(req, parsed.data.idempotencyKey);
+
+  try {
+    const result = await postQcWarehouseDisposition(
+      req.auth!.tenantId,
+      'reject',
+      parsed.data,
+      { type: 'user', id: req.auth!.userId },
+      { idempotencyKey }
+    );
+    return res.status(result.replayed ? 200 : 201).json(result);
+  } catch (error: any) {
+    if (error?.message === 'QC_WAREHOUSE_NOT_FOUND') {
+      return res.status(404).json({ error: 'Warehouse not found.' });
+    }
+    if (error?.message === 'QC_QA_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'QA location is required for QC reject.' });
+    }
+    if (error?.message === 'QC_HOLD_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Hold location is required for QC reject.' });
+    }
+    if (error?.message === 'QC_SOURCE_MUST_BE_QA') {
+      return res.status(400).json({ error: 'QC reject must source from QA.' });
+    }
+    if (error?.message === 'QC_HOLD_REQUIRES_HOLD_ROLE' || error?.message === 'QC_HOLD_MUST_NOT_BE_SELLABLE') {
+      return res.status(400).json({ error: 'QC reject destination must be HOLD and non-sellable.' });
+    }
+    if (error?.code === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({
+        error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
+      return res.status(403).json({
+        error: { code: 'NEGATIVE_OVERRIDE_NOT_ALLOWED', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
+      return res.status(409).json({
+        error: { code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to post QC reject.' });
+  }
+});
 
 router.post('/qc-events', async (req: Request, res: Response) => {
   const parsed = qcEventSchema.safeParse(req.body);

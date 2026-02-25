@@ -3,14 +3,24 @@ import { z } from 'zod';
 import {
   approvePurchaseOrder,
   cancelPurchaseOrder,
+  closePurchaseOrderByAction,
+  closePurchaseOrderLine,
   createPurchaseOrder,
+  getPurchaseOrderByLineId,
   getPurchaseOrderById,
   listPurchaseOrders,
   updatePurchaseOrder
 } from '../services/purchaseOrders.service';
-import { purchaseOrderSchema, purchaseOrderUpdateSchema } from '../schemas/purchaseOrders.schema';
+import {
+  purchaseOrderCloseSchema,
+  purchaseOrderLineCloseSchema,
+  purchaseOrderSchema,
+  purchaseOrderUpdateSchema
+} from '../schemas/purchaseOrders.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
+import { getIdempotencyKey } from '../lib/idempotency';
+import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -174,6 +184,153 @@ router.post('/purchase-orders/:id/approve', async (req: Request, res: Response) 
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to approve purchase order.' });
+  }
+});
+
+router.post('/purchase-order-lines/:id/close', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid purchase order line id.' });
+  }
+
+  const parsed = purchaseOrderLineCloseSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const headerKey = getIdempotencyKey(req);
+  const idempotencyKey = parsed.data.idempotencyKey ?? headerKey;
+  if (!parsed.data.idempotencyKey && idempotencyKey) {
+    parsed.data.idempotencyKey = idempotencyKey;
+  }
+  let idempotencyStarted = false;
+
+  try {
+    if (idempotencyKey) {
+      const record = await beginIdempotency(idempotencyKey, hashRequestBody(req.body));
+      if (record.status === 'SUCCEEDED') {
+        const replayPo = await getPurchaseOrderByLineId(req.auth!.tenantId, id);
+        if (!replayPo) {
+          return res.status(404).json({ error: 'Purchase order line not found.' });
+        }
+        const replayLine = replayPo.lines.find((entry: any) => entry.id === id) ?? null;
+        return res.status(200).json({ purchaseOrder: replayPo, line: replayLine });
+      }
+      if (record.status === 'IN_PROGRESS' && !record.isNew) {
+        return res.status(409).json({ error: 'Purchase order line close already in progress for this key.' });
+      }
+      idempotencyStarted = true;
+    }
+
+    const result = await closePurchaseOrderLine(req.auth!.tenantId, id, parsed.data, {
+      type: 'user',
+      id: req.auth!.userId
+    });
+
+    if (idempotencyKey && idempotencyStarted) {
+      await completeIdempotency(idempotencyKey, 'SUCCEEDED', `purchase_order_line_close:${id}`);
+    }
+
+    emitEvent(req.auth!.tenantId, 'purchase_order.line.closed', {
+      purchaseOrderId: result.purchaseOrder?.id ?? null,
+      purchaseOrderLineId: id,
+      closeAs: parsed.data.closeAs,
+      reason: parsed.data.reason
+    });
+    return res.json(result);
+  } catch (error: any) {
+    if (idempotencyKey && idempotencyStarted) {
+      await completeIdempotency(idempotencyKey, 'FAILED', null);
+    }
+    if (error?.message === 'PO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Purchase order not found.' });
+    }
+    if (error?.message === 'PO_LINE_NOT_FOUND') {
+      return res.status(404).json({ error: 'Purchase order line not found.' });
+    }
+    if (error?.message === 'PO_LINE_ALREADY_CLOSED') {
+      return res.status(409).json({ error: 'PO line is already closed.' });
+    }
+    if (error?.message === 'PO_LINE_NOT_CLOSABLE') {
+      return res.status(409).json({ error: 'PO line cannot be closed in its current state.' });
+    }
+    if (error?.message === 'PO_NOT_ELIGIBLE') {
+      return res.status(409).json({ error: 'Purchase order cannot be closed in its current state.' });
+    }
+    if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
+      return res.status(409).json({ error: 'Idempotency key reused with a different request payload.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to close purchase order line.' });
+  }
+});
+
+router.post('/purchase-orders/:id/close', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid purchase order id.' });
+  }
+
+  const parsed = purchaseOrderCloseSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const headerKey = getIdempotencyKey(req);
+  const idempotencyKey = parsed.data.idempotencyKey ?? headerKey;
+  if (!parsed.data.idempotencyKey && idempotencyKey) {
+    parsed.data.idempotencyKey = idempotencyKey;
+  }
+  let idempotencyStarted = false;
+
+  try {
+    if (idempotencyKey) {
+      const record = await beginIdempotency(idempotencyKey, hashRequestBody(req.body));
+      if (record.status === 'SUCCEEDED') {
+        const replay = await closePurchaseOrderByAction(req.auth!.tenantId, id, parsed.data, {
+          type: 'user',
+          id: req.auth!.userId
+        });
+        return res.status(200).json(replay);
+      }
+      if (record.status === 'IN_PROGRESS' && !record.isNew) {
+        return res.status(409).json({ error: 'Purchase order close already in progress for this key.' });
+      }
+      idempotencyStarted = true;
+    }
+
+    const po = await closePurchaseOrderByAction(req.auth!.tenantId, id, parsed.data, {
+      type: 'user',
+      id: req.auth!.userId
+    });
+    if (idempotencyKey && idempotencyStarted) {
+      await completeIdempotency(idempotencyKey, 'SUCCEEDED', `purchase_order_close:${id}`);
+    }
+
+    emitEvent(req.auth!.tenantId, 'purchase_order.closed', {
+      purchaseOrderId: id,
+      closeAs: parsed.data.closeAs,
+      reason: parsed.data.reason
+    });
+    return res.json(po);
+  } catch (error: any) {
+    if (idempotencyKey && idempotencyStarted) {
+      await completeIdempotency(idempotencyKey, 'FAILED', null);
+    }
+    if (error?.message === 'PO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Purchase order not found.' });
+    }
+    if (error?.message === 'PO_NOT_ELIGIBLE') {
+      return res.status(409).json({ error: 'Purchase order cannot be closed in its current state.' });
+    }
+    if (error?.message === 'PO_CANCEL_WITH_RECEIPTS_FORBIDDEN') {
+      return res.status(409).json({ error: 'Purchase order with posted receipts cannot be cancelled.' });
+    }
+    if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
+      return res.status(409).json({ error: 'Idempotency key reused with a different request payload.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to close purchase order.' });
   }
 });
 

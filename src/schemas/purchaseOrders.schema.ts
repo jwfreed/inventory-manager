@@ -97,3 +97,17 @@ export const purchaseOrderUpdateSchema = purchaseOrderSchema
     vendorId: z.string().uuid().optional(),
     lines: z.array(purchaseOrderLineSchema).optional()
   });
+
+export const purchaseOrderLineCloseSchema = z.object({
+  closeAs: z.enum(['short', 'cancelled']),
+  reason: z.string().trim().min(1).max(255),
+  notes: z.string().max(2000).optional(),
+  idempotencyKey: z.string().max(255).optional()
+});
+
+export const purchaseOrderCloseSchema = z.object({
+  closeAs: z.enum(['closed', 'cancelled']),
+  reason: z.string().trim().min(1).max(255),
+  notes: z.string().max(2000).optional(),
+  idempotencyKey: z.string().max(255).optional()
+});

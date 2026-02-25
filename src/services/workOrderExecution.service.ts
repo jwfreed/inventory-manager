@@ -5,11 +5,16 @@ import { createHash } from 'crypto';
 import { query, withTransaction, withTransactionRetry } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { fetchBomById } from './boms.service';
+import { getWorkOrderById, getWorkOrderRequirements } from './workOrders.service';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
 import { consumeCostLayers, createCostLayer } from './costLayers.service';
 import { getCanonicalMovementFields, type CanonicalMovementFields } from './uomCanonical.service';
+import { getWarehouseDefaultLocationId, resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
+  acquireAtpLocks,
+  assertAtpLockHeldOrThrow,
+  createAtpLockContext,
   createInventoryMovement,
   createInventoryMovementLine,
   applyInventoryBalanceDelta,
@@ -18,7 +23,8 @@ import {
 import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
-  workOrderBatchSchema
+  workOrderBatchSchema,
+  workOrderReportProductionSchema
 } from '../schemas/workOrderExecution.schema';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
@@ -27,6 +33,7 @@ import {
 type WorkOrderIssueCreateInput = z.infer<typeof workOrderIssueCreateSchema>;
 type WorkOrderCompletionCreateInput = z.infer<typeof workOrderCompletionCreateSchema>;
 type WorkOrderBatchInput = z.infer<typeof workOrderBatchSchema>;
+type WorkOrderReportProductionInput = z.infer<typeof workOrderReportProductionSchema>;
 
 const WIP_COST_METHOD = 'fifo';
 const WORK_ORDER_POST_RETRY_OPTIONS = { isolationLevel: 'SERIALIZABLE' as const, retries: 2 };
@@ -108,6 +115,35 @@ function compareBatchProduceKey(
     compareNullableText(a.toLocationId, b.toLocationId) ||
     compareNullableText(a.uom, b.uom)
   );
+}
+
+function compareNormalizedOverrideKey(
+  left: { componentItemId: string },
+  right: { componentItemId: string }
+) {
+  return compareNullableText(left.componentItemId, right.componentItemId);
+}
+
+async function resolveWarehouseRootId(
+  client: PoolClient | undefined,
+  tenantId: string,
+  warehouseRef?: string | null
+): Promise<string | null> {
+  const executor = client ? client.query.bind(client) : query;
+  if (!warehouseRef) return null;
+  const ref = warehouseRef.trim();
+  if (!ref) return null;
+  const res = await executor<{ id: string }>(
+    `SELECT id
+       FROM locations
+      WHERE tenant_id = $1
+        AND type = 'warehouse'
+        AND (id::text = $2 OR code = $2)
+      ORDER BY id
+      LIMIT 1`,
+    [tenantId, ref]
+  );
+  return res.rows[0]?.id ?? null;
 }
 
 type NormalizedBatchConsumeLine = {
@@ -1356,27 +1392,192 @@ export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId
   };
 }
 
+export type WorkOrderProductionReportResult = {
+  workOrderId: string;
+  productionReportId: string;
+  componentIssueMovementId: string;
+  productionReceiptMovementId: string;
+  idempotencyKey: string | null;
+  replayed: boolean;
+};
+
+export async function reportWorkOrderProduction(
+  tenantId: string,
+  workOrderId: string,
+  data: WorkOrderReportProductionInput,
+  context: NegativeOverrideContext = {},
+  options?: { idempotencyKey?: string | null }
+): Promise<WorkOrderProductionReportResult> {
+  const outputQty = toNumber(data.outputQty);
+  if (!(outputQty > 0)) {
+    throw new Error('WO_REPORT_INVALID_OUTPUT_QTY');
+  }
+  if (Array.isArray(data.scrapOutputs) && data.scrapOutputs.length > 0) {
+    throw new Error('WO_REPORT_SCRAP_NOT_SUPPORTED');
+  }
+
+  const workOrder = await getWorkOrderById(tenantId, workOrderId);
+  if (!workOrder) {
+    throw new Error('WO_NOT_FOUND');
+  }
+  if (workOrder.kind !== 'production') {
+    throw new Error('WO_REPORT_KIND_UNSUPPORTED');
+  }
+
+  const outputUom = data.outputUom?.trim() || workOrder.outputUom;
+  if (outputUom !== workOrder.outputUom) {
+    throw new Error('WO_REPORT_OUTPUT_UOM_MISMATCH');
+  }
+
+  const occurredAt = data.occurredAt ? new Date(data.occurredAt) : new Date();
+  if (Number.isNaN(occurredAt.getTime())) {
+    throw new Error('WO_REPORT_INVALID_OCCURRED_AT');
+  }
+
+  const warehouseFromInput = await resolveWarehouseRootId(undefined, tenantId, data.warehouseId ?? null);
+  const warehouseFromProduceDefault = workOrder.defaultProduceLocationId
+    ? await resolveWarehouseIdForLocation(tenantId, workOrder.defaultProduceLocationId)
+    : null;
+  const warehouseFromConsumeDefault = workOrder.defaultConsumeLocationId
+    ? await resolveWarehouseIdForLocation(tenantId, workOrder.defaultConsumeLocationId)
+    : null;
+  const warehouseId = warehouseFromInput ?? warehouseFromProduceDefault ?? warehouseFromConsumeDefault;
+  if (!warehouseId) {
+    throw new Error('WO_REPORT_WAREHOUSE_REQUIRED');
+  }
+
+  const consumeLocationId = await getWarehouseDefaultLocationId(tenantId, warehouseId, 'SELLABLE');
+  const produceLocationId = await getWarehouseDefaultLocationId(tenantId, warehouseId, 'QA');
+  if (!consumeLocationId || !produceLocationId) {
+    throw new Error('WO_REPORT_DEFAULT_LOCATIONS_REQUIRED');
+  }
+
+  const requirements = await getWorkOrderRequirements(tenantId, workOrderId, outputQty);
+  if (!requirements) {
+    throw new Error('WO_NOT_FOUND');
+  }
+  if (!Array.isArray(requirements.lines) || requirements.lines.length === 0) {
+    throw new Error('WO_BOM_NO_LINES');
+  }
+
+  const overrides = new Map<
+    string,
+    {
+      componentItemId: string;
+      uom: string;
+      quantity: number;
+      reason: string | null;
+    }
+  >();
+  if (Array.isArray(data.consumptionOverrides)) {
+    for (const override of [...data.consumptionOverrides].sort(compareNormalizedOverrideKey)) {
+      if (overrides.has(override.componentItemId)) {
+        throw new Error('WO_REPORT_OVERRIDE_DUPLICATE_COMPONENT');
+      }
+      overrides.set(override.componentItemId, {
+        componentItemId: override.componentItemId,
+        uom: override.uom,
+        quantity: toNumber(override.quantity),
+        reason: override.reason?.trim() || null
+      });
+    }
+  }
+
+  const consumeLines = requirements.lines
+    .map((line) => {
+      const override = overrides.get(line.componentItemId);
+      const quantity = override ? override.quantity : roundQuantity(toNumber(line.quantityRequired));
+      if (quantity < 0) {
+        throw new Error('WO_REPORT_OVERRIDE_NEGATIVE_COMPONENT_QTY');
+      }
+      if (quantity === 0) {
+        return null;
+      }
+      return {
+        componentItemId: line.componentItemId,
+        fromLocationId: consumeLocationId,
+        uom: override?.uom ?? line.uom,
+        quantity,
+        reasonCode: override ? 'work_order_backflush_override' : 'work_order_backflush',
+        notes: override?.reason ?? undefined
+      };
+    })
+    .filter((line): line is NonNullable<typeof line> => line !== null);
+
+  if (consumeLines.length === 0) {
+    throw new Error('WO_REPORT_NO_COMPONENT_CONSUMPTION');
+  }
+
+  const produceLines: WorkOrderBatchInput['produceLines'] = [
+    {
+      outputItemId: workOrder.outputItemId,
+      toLocationId: produceLocationId,
+      uom: outputUom,
+      quantity: outputQty,
+      reasonCode: 'work_order_production_receipt'
+    }
+  ];
+
+  const batchResult = await recordWorkOrderBatch(
+    tenantId,
+    workOrderId,
+      {
+        occurredAt: occurredAt.toISOString(),
+        notes: data.notes ?? undefined,
+        consumeLines,
+        produceLines
+      },
+    context,
+    { idempotencyKey: options?.idempotencyKey ?? data.idempotencyKey ?? null }
+  );
+
+  return {
+    workOrderId,
+    productionReportId: batchResult.executionId,
+    componentIssueMovementId: batchResult.issueMovementId,
+    productionReceiptMovementId: batchResult.receiveMovementId,
+    idempotencyKey: batchResult.idempotencyKey ?? options?.idempotencyKey ?? data.idempotencyKey ?? null,
+    replayed: batchResult.replayed
+  };
+}
+
 export async function recordWorkOrderBatch(
   tenantId: string,
   workOrderId: string,
   data: WorkOrderBatchInput,
   context: NegativeOverrideContext = {},
   options?: { idempotencyKey?: string | null }
-) {
+): Promise<{
+  workOrderId: string;
+  executionId: string;
+  issueMovementId: string;
+  receiveMovementId: string;
+  quantityCompleted: number;
+  workOrderStatus: string;
+  idempotencyKey: string | null;
+  replayed: boolean;
+}> {
   const batchIdempotencyKey = options?.idempotencyKey?.trim() ? options.idempotencyKey.trim() : null;
   const normalizedConsumes: NormalizedBatchConsumeLine[] = data.consumeLines.map((line) => {
     const quantity = toNumber(line.quantity);
     if (quantity <= 0) {
       throw new Error('WO_BATCH_INVALID_CONSUME_QTY');
     }
-    return { ...line, quantity, uom: line.uom, reasonCode: line.reasonCode ?? null };
+    return { ...line, quantity, uom: line.uom, reasonCode: line.reasonCode ?? null, notes: line.notes ?? null };
   });
   const normalizedProduces: NormalizedBatchProduceLine[] = data.produceLines.map((line) => {
     const quantity = toNumber(line.quantity);
     if (quantity <= 0) {
       throw new Error('WO_BATCH_INVALID_PRODUCE_QTY');
     }
-    return { ...line, quantity, uom: line.uom, reasonCode: line.reasonCode ?? null, packSize: line.packSize ?? null };
+    return {
+      ...line,
+      quantity,
+      uom: line.uom,
+      reasonCode: line.reasonCode ?? null,
+      packSize: line.packSize ?? null,
+      notes: line.notes ?? null
+    };
   });
   const occurredAt = new Date(data.occurredAt);
   const normalizedRequestPayload = normalizeBatchRequestPayload({
@@ -1406,7 +1607,12 @@ export async function recordWorkOrderBatch(
             executionId
           });
         }
-        return replayPayload;
+        return {
+          ...replayPayload,
+          executionId,
+          idempotencyKey: batchIdempotencyKey,
+          replayed: true
+        };
       }
     }
 
@@ -1462,8 +1668,8 @@ export async function recordWorkOrderBatch(
     }
 
     if (locationIds.length > 0) {
-      const locRes = await client.query<{ id: string }>(
-        'SELECT id FROM locations WHERE id = ANY($1) AND tenant_id = $2',
+      const locRes = await client.query<{ id: string; warehouse_id: string | null }>(
+        'SELECT id, warehouse_id FROM locations WHERE id = ANY($1) AND tenant_id = $2',
         [locationIds, tenantId]
       );
       const found = new Set(locRes.rows.map((r) => r.id));
@@ -1471,6 +1677,38 @@ export async function recordWorkOrderBatch(
       if (missingLocs.length > 0) {
         throw new Error(`WO_BATCH_LOCATIONS_MISSING:${missingLocs.join(',')}`);
       }
+      const warehouseByLocationId = new Map(locRes.rows.map((row) => [row.id, row.warehouse_id]));
+      const advisoryTargets = [
+        ...consumeLinesOrdered.map((line) => ({
+          tenantId,
+          warehouseId: warehouseByLocationId.get(line.fromLocationId) ?? '',
+          itemId: line.componentItemId
+        })),
+        ...produceLinesOrdered.map((line) => ({
+          tenantId,
+          warehouseId: warehouseByLocationId.get(line.toLocationId) ?? '',
+          itemId: line.outputItemId
+        }))
+      ];
+      const missingWarehouseBindings = [
+        ...consumeLinesOrdered
+          .filter((line) => !warehouseByLocationId.get(line.fromLocationId))
+          .map((line) => line.fromLocationId),
+        ...produceLinesOrdered
+          .filter((line) => !warehouseByLocationId.get(line.toLocationId))
+          .map((line) => line.toLocationId)
+      ];
+      if (missingWarehouseBindings.length > 0) {
+        throw new Error(`WO_BATCH_LOCATION_WAREHOUSE_MISSING:${Array.from(new Set(missingWarehouseBindings)).join(',')}`);
+      }
+      // Manufacturing posting touches multiple item scopes; acquire warehouse/item advisory locks
+      // in deterministic order before stock validation and movement posting to prevent cross-item races.
+      const lockContext = createAtpLockContext({
+        operation: 'work_order_batch_post',
+        tenantId
+      });
+      await acquireAtpLocks(client, advisoryTargets, { lockContext });
+      assertAtpLockHeldOrThrow(lockContext, { workOrderId });
     }
 
     const issueId = uuidv4();
@@ -1526,8 +1764,11 @@ export async function recordWorkOrderBatch(
       if (batchIdempotencyKey) {
         const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
         if (replay) {
-          const { executionId: _executionId, ...replayPayload } = replay;
-          return replayPayload;
+          return {
+            ...replay,
+            idempotencyKey: batchIdempotencyKey,
+            replayed: true
+          };
         }
       }
       throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
@@ -1560,8 +1801,11 @@ export async function recordWorkOrderBatch(
       if (batchIdempotencyKey) {
         const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
         if (replay) {
-          const { executionId: _executionId, ...replayPayload } = replay;
-          return replayPayload;
+          return {
+            ...replay,
+            idempotencyKey: batchIdempotencyKey,
+            replayed: true
+          };
         }
       }
       throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
@@ -1700,8 +1944,11 @@ export async function recordWorkOrderBatch(
       if (batchIdempotencyKey && error?.code === '23505') {
         const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
         if (replay) {
-          const { executionId: _executionId, ...replayPayload } = replay;
-          return replayPayload;
+          return {
+            ...replay,
+            idempotencyKey: batchIdempotencyKey,
+            replayed: true
+          };
         }
         throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
           reason: 'execution_insert_conflict_before_batch_finalization',
@@ -1907,10 +2154,13 @@ export async function recordWorkOrderBatch(
 
     return {
       workOrderId,
+      executionId,
       issueMovementId,
       receiveMovementId,
       quantityCompleted: newCompleted,
-      workOrderStatus: newStatus
+      workOrderStatus: newStatus,
+      idempotencyKey: batchIdempotencyKey,
+      replayed: false
     };
   }, WORK_ORDER_POST_RETRY_OPTIONS);
 }

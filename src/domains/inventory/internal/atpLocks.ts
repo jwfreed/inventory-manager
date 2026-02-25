@@ -45,6 +45,24 @@ function normalizeLockTarget(target: AtpLockTarget): AtpLockTarget | null {
   return { tenantId, warehouseId, itemId };
 }
 
+function toLockTargetSampleValue(raw: unknown): string {
+  const trimmed = String(raw ?? '').trim();
+  return trimmed.length > 0 ? trimmed : '__missing__';
+}
+
+function toLockTargetSample(rawTarget: unknown): {
+  tenantId: string;
+  warehouseId: string;
+  itemId: string;
+} {
+  const target = (rawTarget ?? {}) as Partial<AtpLockTarget>;
+  return {
+    tenantId: toLockTargetSampleValue(target.tenantId),
+    warehouseId: toLockTargetSampleValue(target.warehouseId),
+    itemId: toLockTargetSampleValue(target.itemId)
+  };
+}
+
 function compareAtpLockTarget(left: AtpLockTarget, right: AtpLockTarget): number {
   const tenant = left.tenantId.localeCompare(right.tenantId);
   if (tenant !== 0) return tenant;
@@ -81,13 +99,36 @@ function pairKeyForTarget(target: AtpLockTarget): Pick<AtpLockKey, 'key1' | 'key
 
 export function buildAtpLockKeys(targets: AtpLockTarget[]): AtpLockKey[] {
   const deduped = new Map<string, AtpLockTarget>();
+  let invalidCount = 0;
+  const invalidSamples: Array<{ tenantId: string; warehouseId: string; itemId: string }> = [];
   for (const rawTarget of targets) {
     const target = normalizeLockTarget(rawTarget);
-    if (!target) continue;
+    if (!target) {
+      invalidCount += 1;
+      if (invalidSamples.length < 2) {
+        invalidSamples.push(toLockTargetSample(rawTarget));
+      }
+      continue;
+    }
     const composite = `${target.tenantId}:${target.warehouseId}:${target.itemId}`;
     if (!deduped.has(composite)) {
       deduped.set(composite, target);
     }
+  }
+  if (invalidCount > 0) {
+    const error = new Error('INVALID_ATP_LOCK_TARGET') as Error & {
+      code?: string;
+      status?: number;
+      details?: Record<string, unknown>;
+    };
+    error.code = 'INVALID_ATP_LOCK_TARGET';
+    error.status = 500;
+    error.details = {
+      invalidCount,
+      totalCount: targets.length,
+      samples: invalidSamples
+    };
+    throw error;
   }
   const sortedTargets = Array.from(deduped.values()).sort(compareAtpLockTarget);
   return sortedTargets.map((target) => ({

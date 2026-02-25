@@ -2,13 +2,22 @@ import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
-import type { purchaseOrderSchema, purchaseOrderLineSchema, purchaseOrderUpdateSchema } from '../schemas/purchaseOrders.schema';
+import type {
+  purchaseOrderSchema,
+  purchaseOrderCloseSchema,
+  purchaseOrderLineCloseSchema,
+  purchaseOrderLineSchema,
+  purchaseOrderUpdateSchema
+} from '../schemas/purchaseOrders.schema';
 import { toNumber } from '../lib/numbers';
 import { recordAuditLog } from '../lib/audit';
+import { updatePoStatusFromReceipts } from './status/purchaseOrdersStatus.service';
 
 export type PurchaseOrderInput = z.infer<typeof purchaseOrderSchema>;
 export type PurchaseOrderLineInput = z.infer<typeof purchaseOrderLineSchema>;
 export type PurchaseOrderUpdateInput = z.infer<typeof purchaseOrderUpdateSchema>;
+export type PurchaseOrderCloseInput = z.infer<typeof purchaseOrderCloseSchema>;
+export type PurchaseOrderLineCloseInput = z.infer<typeof purchaseOrderLineCloseSchema>;
 
 const shouldAutoApprove = () => process.env.NODE_ENV !== 'production';
 
@@ -20,6 +29,8 @@ type PurchaseOrderStatus =
   | 'received'
   | 'closed'
   | 'canceled';
+
+type PurchaseOrderLineStatus = 'open' | 'complete' | 'closed_short' | 'cancelled';
 
 function validateReadyForSubmit(input: {
   vendorId?: string | null;
@@ -44,6 +55,45 @@ function assertAllowedStatusTransition(current: PurchaseOrderStatus, requested: 
   throw new Error('PO_STATUS_INVALID_TRANSITION');
 }
 
+function mapPurchaseOrderLine(line: any) {
+  return {
+    id: line.id,
+    purchaseOrderId: line.purchase_order_id,
+    lineNumber: line.line_number,
+    itemId: line.item_id,
+    itemSku: line.item_sku ?? line.sku ?? null,
+    itemName: line.item_name ?? null,
+    uom: line.uom,
+    quantityOrdered: line.quantity_ordered,
+    quantityReceived: line.quantity_received != null ? Number(line.quantity_received) : 0,
+    status: (line.status ?? 'open') as PurchaseOrderLineStatus,
+    closedReason: line.closed_reason ?? null,
+    closedNotes: line.closed_notes ?? null,
+    closedAt: line.closed_at ?? null,
+    closedByUserId: line.closed_by_user_id ?? null,
+    unitCost: line.unit_cost != null ? Number(line.unit_cost) : null,
+    unitPrice: line.unit_price != null ? Number(line.unit_price) : null,
+    currencyCode: line.currency_code ?? null,
+    exchangeRateToBase: line.exchange_rate_to_base != null ? Number(line.exchange_rate_to_base) : null,
+    lineAmount: line.line_amount != null ? Number(line.line_amount) : null,
+    baseAmount: line.base_amount != null ? Number(line.base_amount) : null,
+    overReceiptTolerancePct: line.over_receipt_tolerance_pct != null ? Number(line.over_receipt_tolerance_pct) : 0,
+    requiresLot: !!line.requires_lot,
+    requiresSerial: !!line.requires_serial,
+    requiresQc: !!line.requires_qc,
+    notes: line.notes,
+    createdAt: line.created_at
+  };
+}
+
+function normalizeLineCloseAs(value: PurchaseOrderLineCloseInput['closeAs']): PurchaseOrderLineStatus {
+  return value === 'short' ? 'closed_short' : 'cancelled';
+}
+
+function normalizePoCloseAs(value: PurchaseOrderCloseInput['closeAs']): 'closed' | 'canceled' {
+  return value === 'cancelled' ? 'canceled' : 'closed';
+}
+
 export function mapPurchaseOrder(row: any, lines: any[]) {
   return {
     id: row.id,
@@ -62,30 +112,13 @@ export function mapPurchaseOrder(row: any, lines: any[]) {
     receivingLocationName: row.receiving_location_name ?? null,
     vendorReference: row.vendor_reference,
     notes: row.notes,
+    closeReason: row.close_reason ?? null,
+    closeNotes: row.close_notes ?? null,
+    closedAt: row.closed_at ?? null,
+    closedByUserId: row.closed_by_user_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    lines: lines.map((line) => ({
-      id: line.id,
-      purchaseOrderId: line.purchase_order_id,
-      lineNumber: line.line_number,
-      itemId: line.item_id,
-      itemSku: line.item_sku ?? line.sku ?? null,
-      itemName: line.item_name ?? null,
-      uom: line.uom,
-      quantityOrdered: line.quantity_ordered,
-      unitCost: line.unit_cost != null ? Number(line.unit_cost) : null,
-      unitPrice: line.unit_price != null ? Number(line.unit_price) : null,
-      currencyCode: line.currency_code ?? null,
-      exchangeRateToBase: line.exchange_rate_to_base != null ? Number(line.exchange_rate_to_base) : null,
-      lineAmount: line.line_amount != null ? Number(line.line_amount) : null,
-      baseAmount: line.base_amount != null ? Number(line.base_amount) : null,
-      overReceiptTolerancePct: line.over_receipt_tolerance_pct != null ? Number(line.over_receipt_tolerance_pct) : 0,
-      requiresLot: !!line.requires_lot,
-      requiresSerial: !!line.requires_serial,
-      requiresQc: !!line.requires_qc,
-      notes: line.notes,
-      createdAt: line.created_at
-    }))
+    lines: lines.map(mapPurchaseOrderLine)
   };
 }
 
@@ -103,6 +136,8 @@ function mapPurchaseOrderSummary(row: any) {
     shipToLocationCode: row.ship_to_location_code ?? null,
     vendorReference: row.vendor_reference,
     notes: row.notes,
+    closeReason: row.close_reason ?? null,
+    closedAt: row.closed_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -134,11 +169,25 @@ async function loadLinesWithItems(client: PoolClient, tenantId: string, poId: st
     `SELECT pol.id, pol.purchase_order_id, pol.line_number, pol.item_id, pol.uom,
             pol.quantity_ordered, pol.unit_cost, pol.unit_price, pol.currency_code,
             pol.exchange_rate_to_base, pol.line_amount, pol.base_amount, pol.notes,
-            pol.created_at, pol.over_receipt_tolerance_pct,
+            pol.created_at, pol.over_receipt_tolerance_pct, pol.status, pol.closed_reason,
+            pol.closed_notes, pol.closed_at, pol.closed_by_user_id,
+            COALESCE(SUM(
+              CASE
+                WHEN COALESCE(por.status, 'posted') <> 'voided' THEN porl.quantity_received
+                ELSE 0
+              END
+            ), 0) AS quantity_received,
             i.sku AS item_sku, i.name AS item_name, i.requires_lot, i.requires_serial, i.requires_qc
        FROM purchase_order_lines pol
        LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = pol.tenant_id
+       LEFT JOIN purchase_order_receipt_lines porl
+         ON porl.purchase_order_line_id = pol.id
+        AND porl.tenant_id = pol.tenant_id
+       LEFT JOIN purchase_order_receipts por
+         ON por.id = porl.purchase_order_receipt_id
+        AND por.tenant_id = porl.tenant_id
       WHERE pol.purchase_order_id = $1 AND pol.tenant_id = $2
+      GROUP BY pol.id, i.sku, i.name, i.requires_lot, i.requires_serial, i.requires_qc
       ORDER BY pol.line_number ASC`,
     [poId, tenantId]
   );
@@ -194,8 +243,8 @@ export async function createPurchaseOrder(
       await client.query(
         `INSERT INTO purchase_order_lines (
             id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered,
-            unit_cost, unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, over_receipt_tolerance_pct, notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            unit_cost, unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, over_receipt_tolerance_pct, notes, status
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'open')
          RETURNING id`,
         [
           uuidv4(),
@@ -334,8 +383,8 @@ export async function updatePurchaseOrder(
         await client.query(
           `INSERT INTO purchase_order_lines (
               id, tenant_id, purchase_order_id, line_number, item_id, uom, quantity_ordered,
-              unit_cost, unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, over_receipt_tolerance_pct, notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+              unit_cost, unit_price, currency_code, exchange_rate_to_base, line_amount, base_amount, over_receipt_tolerance_pct, notes, status
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'open')`,
           [
             uuidv4(),
             tenantId,
@@ -400,6 +449,7 @@ export async function cancelPurchaseOrder(
   actor: { type: 'user' | 'system'; id?: string | null }
 ) {
   return withTransaction(async (client) => {
+    const closedByUserId = actor.type === 'user' ? actor.id ?? null : null;
     const poResult = await client.query('SELECT id, status FROM purchase_orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE', [
       id,
       tenantId
@@ -423,13 +473,40 @@ export async function cancelPurchaseOrder(
       throw new Error('PO_HAS_RECEIPTS');
     }
 
+    const now = new Date();
     const updated = await client.query(
       `UPDATE purchase_orders
           SET status = 'canceled',
+              close_reason = COALESCE(close_reason, 'canceled'),
+              closed_at = COALESCE(closed_at, $1),
+              closed_by_user_id = COALESCE(closed_by_user_id, $4),
               updated_at = $1
         WHERE id = $2 AND tenant_id = $3
         RETURNING *`,
-      [new Date(), id, tenantId]
+      [now, id, tenantId, closedByUserId]
+    );
+
+    await client.query(
+      `UPDATE purchase_order_lines
+          SET status = CASE
+                WHEN status = 'complete' THEN status
+                ELSE 'cancelled'
+              END,
+              closed_reason = CASE
+                WHEN status = 'complete' THEN closed_reason
+                ELSE COALESCE(closed_reason, 'po_canceled')
+              END,
+              closed_at = CASE
+                WHEN status = 'complete' THEN closed_at
+                ELSE COALESCE(closed_at, $3)
+              END,
+              closed_by_user_id = CASE
+                WHEN status = 'complete' THEN closed_by_user_id
+                ELSE COALESCE(closed_by_user_id, $4)
+              END
+        WHERE purchase_order_id = $1
+          AND tenant_id = $2`,
+      [id, tenantId, now, closedByUserId]
     );
 
     await recordAuditLog(
@@ -504,6 +581,325 @@ export async function approvePurchaseOrder(
   });
 }
 
+async function loadPurchaseOrderWithClient(client: PoolClient, tenantId: string, id: string) {
+  const poResult = await client.query(
+    `SELECT po.*,
+            v.code AS vendor_code,
+            v.name AS vendor_name,
+            loc.code AS receiving_location_code,
+            loc.name AS receiving_location_name,
+            ship.code AS ship_to_location_code,
+            ship.name AS ship_to_location_name
+       FROM purchase_orders po
+       LEFT JOIN vendors v ON v.id = po.vendor_id AND v.tenant_id = po.tenant_id
+       LEFT JOIN locations loc ON loc.id = po.receiving_location_id AND loc.tenant_id = po.tenant_id
+       LEFT JOIN locations ship ON ship.id = po.ship_to_location_id AND ship.tenant_id = po.tenant_id
+      WHERE po.id = $1
+        AND po.tenant_id = $2`,
+    [id, tenantId]
+  );
+  if (poResult.rowCount === 0) {
+    return null;
+  }
+  const lines = await loadLinesWithItems(client, tenantId, id);
+  return mapPurchaseOrder(poResult.rows[0], lines);
+}
+
+export async function closePurchaseOrderLine(
+  tenantId: string,
+  lineId: string,
+  data: PurchaseOrderLineCloseInput,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
+  return withTransaction(async (client) => {
+    const now = new Date();
+    const closedByUserId = actor?.type === 'user' ? actor.id ?? null : null;
+    const lineLocatorResult = await client.query<{ purchase_order_id: string }>(
+      `SELECT purchase_order_id
+         FROM purchase_order_lines
+        WHERE id = $1
+          AND tenant_id = $2`,
+      [lineId, tenantId]
+    );
+    if (lineLocatorResult.rowCount === 0) {
+      throw new Error('PO_LINE_NOT_FOUND');
+    }
+    const poId = lineLocatorResult.rows[0].purchase_order_id;
+
+    const poResult = await client.query<{ status: string }>(
+      `SELECT status
+         FROM purchase_orders
+        WHERE id = $1
+          AND tenant_id = $2
+        FOR UPDATE`,
+      [poId, tenantId]
+    );
+    if (poResult.rowCount === 0) {
+      throw new Error('PO_NOT_FOUND');
+    }
+
+    const lineResult = await client.query<{ status: string }>(
+      `SELECT status
+         FROM purchase_order_lines
+        WHERE id = $1
+          AND tenant_id = $2
+          AND purchase_order_id = $3
+        FOR UPDATE`,
+      [lineId, tenantId, poId]
+    );
+    if (lineResult.rowCount === 0) {
+      throw new Error('PO_LINE_NOT_FOUND');
+    }
+
+    const poStatus = String(poResult.rows[0].status ?? '');
+    const currentStatus = String(lineResult.rows[0].status ?? 'open') as PurchaseOrderLineStatus;
+    const nextStatus = normalizeLineCloseAs(data.closeAs);
+
+    if (poStatus === 'canceled' || poStatus === 'closed') {
+      throw new Error('PO_NOT_ELIGIBLE');
+    }
+    if (poStatus === 'received') {
+      throw new Error('PO_LINE_NOT_CLOSABLE');
+    }
+
+    if (currentStatus === nextStatus) {
+      const purchaseOrder = await loadPurchaseOrderWithClient(client, tenantId, poId);
+      if (!purchaseOrder) throw new Error('PO_NOT_FOUND');
+      const line = purchaseOrder.lines.find((entry: any) => entry.id === lineId);
+      return { purchaseOrder, line };
+    }
+    if (currentStatus === 'complete') {
+      throw new Error('PO_LINE_NOT_CLOSABLE');
+    }
+    if (currentStatus === 'closed_short' || currentStatus === 'cancelled') {
+      throw new Error('PO_LINE_ALREADY_CLOSED');
+    }
+
+    await client.query(
+      `UPDATE purchase_order_lines
+          SET status = $1,
+              closed_reason = $2,
+              closed_notes = $3,
+              closed_at = $4,
+              closed_by_user_id = $5
+        WHERE id = $6
+          AND tenant_id = $7`,
+      [nextStatus, data.reason.trim(), data.notes ?? null, now, closedByUserId, lineId, tenantId]
+    );
+
+    await updatePoStatusFromReceipts(tenantId, poId, client);
+
+    await client.query(
+      `UPDATE purchase_orders
+          SET close_reason = CASE
+                WHEN status = 'closed' THEN COALESCE(close_reason, $1)
+                ELSE close_reason
+              END,
+              close_notes = CASE
+                WHEN status = 'closed' THEN COALESCE(close_notes, $2)
+                ELSE close_notes
+              END,
+              closed_at = CASE
+                WHEN status = 'closed' THEN COALESCE(closed_at, $3)
+                ELSE closed_at
+              END,
+              closed_by_user_id = CASE
+                WHEN status = 'closed' THEN COALESCE(closed_by_user_id, $4)
+                ELSE closed_by_user_id
+              END,
+              updated_at = now()
+        WHERE id = $5
+          AND tenant_id = $6`,
+      [data.reason.trim(), data.notes ?? null, now, closedByUserId, poId, tenantId]
+    );
+
+    if (actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'update',
+          entityType: 'purchase_order_line',
+          entityId: lineId,
+          occurredAt: now,
+          metadata: {
+            purchaseOrderId: poId,
+            statusTo: nextStatus,
+            reason: data.reason.trim()
+          }
+        },
+        client
+      );
+    }
+
+    const purchaseOrder = await loadPurchaseOrderWithClient(client, tenantId, poId);
+    if (!purchaseOrder) throw new Error('PO_NOT_FOUND');
+    const line = purchaseOrder.lines.find((entry: any) => entry.id === lineId);
+    return { purchaseOrder, line };
+  });
+}
+
+export async function closePurchaseOrderByAction(
+  tenantId: string,
+  id: string,
+  data: PurchaseOrderCloseInput,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
+  return withTransaction(async (client) => {
+    const now = new Date();
+    const closedByUserId = actor?.type === 'user' ? actor.id ?? null : null;
+    const normalizedCloseAs = normalizePoCloseAs(data.closeAs);
+    const poResult = await client.query<{ status: string }>(
+      `SELECT status
+         FROM purchase_orders
+        WHERE id = $1
+          AND tenant_id = $2
+        FOR UPDATE`,
+      [id, tenantId]
+    );
+    if (poResult.rowCount === 0) {
+      throw new Error('PO_NOT_FOUND');
+    }
+
+    const poStatus = poResult.rows[0].status;
+    if (poStatus === normalizedCloseAs) {
+      const purchaseOrder = await loadPurchaseOrderWithClient(client, tenantId, id);
+      if (!purchaseOrder) throw new Error('PO_NOT_FOUND');
+      return purchaseOrder;
+    }
+    if (poStatus === 'canceled' || poStatus === 'closed' || poStatus === 'received') {
+      throw new Error('PO_NOT_ELIGIBLE');
+    }
+
+    const receivedResult = await client.query<{ has_received: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1
+           FROM purchase_order_receipt_lines porl
+           JOIN purchase_order_receipts por
+             ON por.id = porl.purchase_order_receipt_id
+            AND por.tenant_id = porl.tenant_id
+          WHERE por.tenant_id = $1
+            AND por.purchase_order_id = $2
+            AND COALESCE(por.status, 'posted') <> 'voided'
+            AND porl.quantity_received > 0
+       ) AS has_received`,
+      [tenantId, id]
+    );
+    const hasReceived = Boolean(receivedResult.rows[0]?.has_received);
+
+    if (normalizedCloseAs === 'canceled' && hasReceived) {
+      throw new Error('PO_CANCEL_WITH_RECEIPTS_FORBIDDEN');
+    }
+    if (normalizedCloseAs === 'closed' && !['approved', 'partially_received'].includes(poStatus)) {
+      throw new Error('PO_NOT_ELIGIBLE');
+    }
+
+    if (normalizedCloseAs === 'closed') {
+      await client.query(
+        `UPDATE purchase_order_lines
+            SET status = CASE WHEN status = 'open' THEN 'closed_short' ELSE status END,
+                closed_reason = CASE
+                  WHEN status = 'open' THEN $1
+                  ELSE closed_reason
+                END,
+                closed_notes = CASE
+                  WHEN status = 'open' THEN $2
+                  ELSE closed_notes
+                END,
+                closed_at = CASE
+                  WHEN status = 'open' THEN $3
+                  ELSE closed_at
+                END,
+                closed_by_user_id = CASE
+                  WHEN status = 'open' THEN $4
+                  ELSE closed_by_user_id
+                END
+          WHERE purchase_order_id = $5
+            AND tenant_id = $6`,
+        [data.reason.trim(), data.notes ?? null, now, closedByUserId, id, tenantId]
+      );
+      await updatePoStatusFromReceipts(tenantId, id, client);
+      await client.query(
+        `UPDATE purchase_orders
+            SET status = 'closed',
+                close_reason = $1,
+                close_notes = $2,
+                closed_at = $3,
+                closed_by_user_id = $4,
+                updated_at = now()
+          WHERE id = $5
+            AND tenant_id = $6`,
+        [data.reason.trim(), data.notes ?? null, now, closedByUserId, id, tenantId]
+      );
+    } else {
+      await client.query(
+        `UPDATE purchase_order_lines
+            SET status = CASE
+                  WHEN status = 'complete' THEN status
+                  ELSE 'cancelled'
+                END,
+                closed_reason = CASE
+                  WHEN status = 'complete' THEN closed_reason
+                  ELSE $1
+                END,
+                closed_notes = CASE
+                  WHEN status = 'complete' THEN closed_notes
+                  ELSE $2
+                END,
+                closed_at = CASE
+                  WHEN status = 'complete' THEN closed_at
+                  ELSE $3
+                END,
+                closed_by_user_id = CASE
+                  WHEN status = 'complete' THEN closed_by_user_id
+                  ELSE $4
+                END
+          WHERE purchase_order_id = $5
+            AND tenant_id = $6`,
+        [data.reason.trim(), data.notes ?? null, now, closedByUserId, id, tenantId]
+      );
+      await client.query(
+        `UPDATE purchase_orders
+            SET status = 'canceled',
+                close_reason = $1,
+                close_notes = $2,
+                closed_at = $3,
+                closed_by_user_id = $4,
+                updated_at = now()
+          WHERE id = $5
+            AND tenant_id = $6`,
+        [data.reason.trim(), data.notes ?? null, now, closedByUserId, id, tenantId]
+      );
+    }
+
+    if (actor) {
+      await recordAuditLog(
+        {
+          tenantId,
+          actorType: actor.type,
+          actorId: actor.id ?? null,
+          action: 'update',
+          entityType: 'purchase_order',
+          entityId: id,
+          occurredAt: now,
+          metadata: {
+            statusTo: normalizedCloseAs,
+            reason: data.reason.trim()
+          }
+        },
+        client
+      );
+    }
+
+    const purchaseOrder = await loadPurchaseOrderWithClient(client, tenantId, id);
+    if (!purchaseOrder) {
+      throw new Error('PO_NOT_FOUND');
+    }
+    return purchaseOrder;
+  });
+}
+
 export async function getPurchaseOrderById(tenantId: string, id: string) {
   const poResult = await query(
     `SELECT po.*,
@@ -524,14 +920,41 @@ export async function getPurchaseOrderById(tenantId: string, id: string) {
     return null;
   }
   const lineResult = await query(
-    `SELECT pol.*, i.sku AS item_sku, i.name AS item_name
+    `SELECT pol.*, i.sku AS item_sku, i.name AS item_name,
+            COALESCE(SUM(
+              CASE
+                WHEN COALESCE(por.status, 'posted') <> 'voided' THEN porl.quantity_received
+                ELSE 0
+              END
+            ), 0) AS quantity_received
        FROM purchase_order_lines pol
        LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = pol.tenant_id
+       LEFT JOIN purchase_order_receipt_lines porl
+         ON porl.purchase_order_line_id = pol.id
+        AND porl.tenant_id = pol.tenant_id
+       LEFT JOIN purchase_order_receipts por
+         ON por.id = porl.purchase_order_receipt_id
+        AND por.tenant_id = porl.tenant_id
       WHERE pol.purchase_order_id = $1 AND pol.tenant_id = $2
+      GROUP BY pol.id, i.sku, i.name
       ORDER BY pol.line_number ASC`,
     [id, tenantId]
   );
   return mapPurchaseOrder(poResult.rows[0], lineResult.rows);
+}
+
+export async function getPurchaseOrderByLineId(tenantId: string, lineId: string) {
+  const line = await query<{ purchase_order_id: string }>(
+    `SELECT purchase_order_id
+       FROM purchase_order_lines
+      WHERE id = $1
+        AND tenant_id = $2`,
+    [lineId, tenantId]
+  );
+  if (line.rowCount === 0) {
+    return null;
+  }
+  return getPurchaseOrderById(tenantId, line.rows[0].purchase_order_id);
 }
 
 export async function listPurchaseOrders(tenantId: string, limit: number, offset: number) {
@@ -550,6 +973,8 @@ export async function listPurchaseOrders(tenantId: string, limit: number, offset
             recv.code AS receiving_location_code,
             po.vendor_reference,
             po.notes,
+            po.close_reason,
+            po.closed_at,
             po.created_at,
             po.updated_at
        FROM purchase_orders po

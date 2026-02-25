@@ -1,0 +1,52 @@
+[
+  {
+    "Finished Product": "Siamaya Dark 70",
+    "Output Qty": 1,
+    "Output UOM": "Units",
+    "Component Item": "Cocoa Mass",
+    "Component Qty": 700,
+    "Component UOM": "g",
+    "Workcenter": "Mixing"
+  },
+  {
+    "Finished Product": "Siamaya Dark 70",
+    "Output Qty": 1,
+    "Output UOM": "Units",
+    "Component Item": "Sugar",
+    "Component Qty": 250,
+    "Component UOM": "g"
+  },
+  {
+    "Finished Product": "Siamaya Dark 70",
+    "Output Qty": 1,
+    "Output UOM": "Units",
+    "Component Item": "Cocoa Butter",
+    "Component Qty": 50,
+    "Component UOM": "g"
+  },
+  {
+    "Finished Product": "Siamaya Milk 55",
+    "Output Qty": 1,
+    "Output UOM": "units",
+    "Component Item": "Cocoa Mass",
+    "Component Qty": 550,
+    "Component UOM": "g"
+  },
+  {
+    "Finished Product": "Siamaya Milk 55",
+    "Output Qty": 1,
+    "Output UOM": "units",
+    "Component Item": "Milk Powder",
+    "Component Qty": 200,
+    "Component UOM": "g"
+  },
+  {
+    "Finished Product": "Siamaya Milk 55",
+    "Output Qty": 1,
+    "Output UOM": "units",
+    "Component Item": "Sugar",
+    "Component Qty": 250,
+    "Component UOM": "g",
+    "Byproduct": "Trim Scrap"
+  }
+]

@@ -618,6 +618,582 @@ const workOrderCostConservationRowsSql = `
    LIMIT $3
 `;
 
+const workOrderProductionLinkIntegrityCountSql = `
+  WITH posted AS (
+    SELECT e.id AS work_order_execution_id,
+           e.work_order_id,
+           e.consumption_movement_id,
+           e.production_movement_id
+      FROM work_order_executions e
+     WHERE e.tenant_id = $1
+       AND e.status = 'posted'
+  ),
+  linked AS (
+    SELECT p.work_order_execution_id,
+           p.work_order_id,
+           p.consumption_movement_id,
+           p.production_movement_id,
+           issue.id AS issue_id,
+           issue.movement_type AS issue_type,
+           issue.status AS issue_status,
+           issue.source_type AS issue_source_type,
+           issue.source_id AS issue_source_id,
+           prod.id AS production_id,
+           prod.movement_type AS production_type,
+           prod.status AS production_status,
+           prod.source_type AS production_source_type,
+           prod.source_id AS production_source_id
+      FROM posted p
+      LEFT JOIN inventory_movements issue
+        ON issue.id = p.consumption_movement_id
+       AND issue.tenant_id = $1
+      LEFT JOIN inventory_movements prod
+        ON prod.id = p.production_movement_id
+       AND prod.tenant_id = $1
+  )
+  SELECT COUNT(*)::int AS count
+    FROM linked
+   WHERE consumption_movement_id IS NULL
+      OR production_movement_id IS NULL
+      OR issue_id IS NULL
+      OR production_id IS NULL
+      OR issue_status <> 'posted'
+      OR production_status <> 'posted'
+      OR issue_type <> 'issue'
+      OR production_type <> 'receive'
+      OR issue_source_type <> 'work_order_batch_post_issue'
+      OR production_source_type <> 'work_order_batch_post_completion'
+      OR issue_source_id IS DISTINCT FROM work_order_execution_id::text
+      OR production_source_id IS DISTINCT FROM work_order_execution_id::text
+`;
+
+const workOrderProductionLinkIntegrityRowsSql = `
+  WITH posted AS (
+    SELECT e.id AS work_order_execution_id,
+           e.work_order_id,
+           e.consumption_movement_id,
+           e.production_movement_id
+      FROM work_order_executions e
+     WHERE e.tenant_id = $1
+       AND e.status = 'posted'
+  ),
+  linked AS (
+    SELECT p.work_order_execution_id,
+           p.work_order_id,
+           p.consumption_movement_id,
+           p.production_movement_id,
+           issue.id AS issue_id,
+           issue.movement_type AS issue_type,
+           issue.status AS issue_status,
+           issue.source_type AS issue_source_type,
+           issue.source_id AS issue_source_id,
+           prod.id AS production_id,
+           prod.movement_type AS production_type,
+           prod.status AS production_status,
+           prod.source_type AS production_source_type,
+           prod.source_id AS production_source_id
+      FROM posted p
+      LEFT JOIN inventory_movements issue
+        ON issue.id = p.consumption_movement_id
+       AND issue.tenant_id = $1
+      LEFT JOIN inventory_movements prod
+        ON prod.id = p.production_movement_id
+       AND prod.tenant_id = $1
+  )
+  SELECT work_order_execution_id,
+         work_order_id,
+         consumption_movement_id,
+         production_movement_id,
+         issue_type,
+         issue_status,
+         issue_source_type,
+         issue_source_id,
+         production_type,
+         production_status,
+         production_source_type,
+         production_source_id
+    FROM linked
+   WHERE consumption_movement_id IS NULL
+      OR production_movement_id IS NULL
+      OR issue_id IS NULL
+      OR production_id IS NULL
+      OR issue_status <> 'posted'
+      OR production_status <> 'posted'
+      OR issue_type <> 'issue'
+      OR production_type <> 'receive'
+      OR issue_source_type <> 'work_order_batch_post_issue'
+      OR production_source_type <> 'work_order_batch_post_completion'
+      OR issue_source_id IS DISTINCT FROM work_order_execution_id::text
+      OR production_source_id IS DISTINCT FROM work_order_execution_id::text
+   ORDER BY work_order_execution_id
+   LIMIT $2
+`;
+
+const qcLocationIntegrityCountSql = `
+  WITH production_receipts AS (
+    SELECT iml.movement_id,
+           iml.location_id,
+           iml.quantity_delta_canonical,
+           l.role
+      FROM inventory_movement_lines iml
+      JOIN inventory_movements im
+        ON im.id = iml.movement_id
+       AND im.tenant_id = iml.tenant_id
+      JOIN locations l
+        ON l.id = iml.location_id
+       AND l.tenant_id = iml.tenant_id
+     WHERE iml.tenant_id = $1
+       AND im.source_type = 'work_order_batch_post_completion'
+       AND im.movement_type = 'receive'
+       AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+  ),
+  qc_transfer_outbound AS (
+    SELECT iml.movement_id,
+           iml.location_id,
+           iml.quantity_delta_canonical,
+           l.role
+      FROM inventory_movement_lines iml
+      JOIN inventory_movements im
+        ON im.id = iml.movement_id
+       AND im.tenant_id = iml.tenant_id
+      JOIN locations l
+        ON l.id = iml.location_id
+       AND l.tenant_id = iml.tenant_id
+     WHERE iml.tenant_id = $1
+       AND im.source_type = 'qc_event'
+       AND im.movement_type = 'transfer'
+       AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) < 0
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+  )
+  SELECT (
+    (SELECT COUNT(*) FROM production_receipts WHERE role IS DISTINCT FROM 'QA')
+    + (SELECT COUNT(*) FROM qc_transfer_outbound WHERE role IS DISTINCT FROM 'QA')
+  )::int AS count
+`;
+
+const qcLocationIntegrityRowsSql = `
+  WITH production_receipts AS (
+    SELECT 'production_receipt'::text AS scope,
+           im.id AS movement_id,
+           im.source_id,
+           iml.location_id,
+           l.warehouse_id,
+           l.role,
+           COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)::numeric AS quantity_delta
+      FROM inventory_movement_lines iml
+      JOIN inventory_movements im
+        ON im.id = iml.movement_id
+       AND im.tenant_id = iml.tenant_id
+      JOIN locations l
+        ON l.id = iml.location_id
+       AND l.tenant_id = iml.tenant_id
+     WHERE iml.tenant_id = $1
+       AND im.source_type = 'work_order_batch_post_completion'
+       AND im.movement_type = 'receive'
+       AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+       AND l.role IS DISTINCT FROM 'QA'
+  ),
+  qc_transfer_outbound AS (
+    SELECT 'qc_transfer_outbound'::text AS scope,
+           im.id AS movement_id,
+           im.source_id,
+           iml.location_id,
+           l.warehouse_id,
+           l.role,
+           COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)::numeric AS quantity_delta
+      FROM inventory_movement_lines iml
+      JOIN inventory_movements im
+        ON im.id = iml.movement_id
+       AND im.tenant_id = iml.tenant_id
+      JOIN locations l
+        ON l.id = iml.location_id
+       AND l.tenant_id = iml.tenant_id
+     WHERE iml.tenant_id = $1
+       AND im.source_type = 'qc_event'
+       AND im.movement_type = 'transfer'
+       AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) < 0
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+       AND l.role IS DISTINCT FROM 'QA'
+  ),
+  combined AS (
+    SELECT * FROM production_receipts
+    UNION ALL
+    SELECT * FROM qc_transfer_outbound
+  )
+  SELECT scope,
+         movement_id,
+         source_id,
+         location_id,
+         warehouse_id,
+         role,
+         quantity_delta
+    FROM combined
+   ORDER BY scope, movement_id
+   LIMIT $3
+`;
+
+const productionReceiptLocationValidityCountSql = `
+  WITH production_receipts AS (
+    SELECT iml.tenant_id,
+           e.work_order_id,
+           im.id AS movement_id,
+           iml.location_id AS to_location_id,
+           l.warehouse_id AS to_warehouse_id,
+           l.role
+      FROM inventory_movements im
+      JOIN inventory_movement_lines iml
+        ON iml.movement_id = im.id
+       AND iml.tenant_id = im.tenant_id
+      LEFT JOIN work_order_executions e
+        ON e.id::text = im.source_id
+       AND e.tenant_id = im.tenant_id
+      JOIN locations l
+        ON l.id = iml.location_id
+       AND l.tenant_id = iml.tenant_id
+     WHERE im.tenant_id = $1
+       AND im.source_type = 'work_order_batch_post_completion'
+       AND im.movement_type = 'receive'
+       AND im.status = 'posted'
+       AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+  )
+  SELECT COUNT(*)::int AS count
+    FROM production_receipts
+   WHERE role IS DISTINCT FROM 'QA'
+`;
+
+const productionReceiptLocationValidityRowsSql = `
+  WITH production_receipts AS (
+    SELECT iml.tenant_id,
+           e.work_order_id,
+           im.id AS movement_id,
+           iml.location_id AS to_location_id,
+           l.warehouse_id AS to_warehouse_id,
+           l.role
+      FROM inventory_movements im
+      JOIN inventory_movement_lines iml
+        ON iml.movement_id = im.id
+       AND iml.tenant_id = im.tenant_id
+      LEFT JOIN work_order_executions e
+        ON e.id::text = im.source_id
+       AND e.tenant_id = im.tenant_id
+      JOIN locations l
+        ON l.id = iml.location_id
+       AND l.tenant_id = iml.tenant_id
+     WHERE im.tenant_id = $1
+       AND im.source_type = 'work_order_batch_post_completion'
+       AND im.movement_type = 'receive'
+       AND im.status = 'posted'
+       AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+       AND l.role IS DISTINCT FROM 'QA'
+  )
+  SELECT tenant_id AS "tenantId",
+         work_order_id AS "workOrderId",
+         movement_id AS "movementId",
+         to_location_id AS "toLocationId",
+         to_warehouse_id AS "toWarehouseId",
+         role
+    FROM production_receipts
+   ORDER BY movement_id, to_location_id
+   LIMIT $3
+`;
+
+const workOrderComponentQtyExactMatchCte = `
+  WITH posted_executions AS (
+    SELECT e.id AS work_order_execution_id,
+           e.work_order_id,
+           e.consumption_movement_id,
+           e.production_movement_id,
+           w.output_item_id,
+           COALESCE(w.bom_version_id, active_version.id) AS bom_version_id
+      FROM work_order_executions e
+      JOIN work_orders w
+        ON w.id = e.work_order_id
+       AND w.tenant_id = e.tenant_id
+      LEFT JOIN LATERAL (
+        SELECT bv.id
+          FROM bom_versions bv
+         WHERE bv.tenant_id = e.tenant_id
+           AND bv.bom_id = w.bom_id
+           AND bv.status = 'active'
+         ORDER BY bv.version_number DESC, bv.created_at DESC, bv.id DESC
+         LIMIT 1
+      ) AS active_version ON true
+     WHERE e.tenant_id = $1
+       AND e.status = 'posted'
+       AND e.consumption_movement_id IS NOT NULL
+       AND e.production_movement_id IS NOT NULL
+       AND (
+         $2::uuid IS NULL
+         OR EXISTS (
+           SELECT 1
+             FROM inventory_movement_lines iml
+             JOIN locations l
+               ON l.id = iml.location_id
+              AND l.tenant_id = iml.tenant_id
+            WHERE iml.tenant_id = e.tenant_id
+              AND (iml.movement_id = e.consumption_movement_id OR iml.movement_id = e.production_movement_id)
+              AND l.warehouse_id = $2::uuid
+         )
+       )
+  ),
+  eligible_executions AS (
+    SELECT pe.*
+      FROM posted_executions pe
+     WHERE pe.bom_version_id IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1
+           FROM inventory_movement_lines iml
+          WHERE iml.tenant_id = $1
+            AND iml.movement_id = pe.consumption_movement_id
+            AND LOWER(COALESCE(iml.reason_code, '')) = 'work_order_backflush_override'
+       )
+  ),
+  produced_qty AS (
+    SELECT ee.work_order_execution_id,
+           SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta))::numeric AS produced_qty_canonical
+      FROM eligible_executions ee
+      JOIN inventory_movement_lines iml
+        ON iml.tenant_id = $1
+       AND iml.movement_id = ee.production_movement_id
+       AND iml.item_id = ee.output_item_id
+     WHERE COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+       AND LOWER(COALESCE(iml.reason_code, '')) NOT IN ('scrap', 'work_order_scrap', 'reject', 'work_order_reject')
+     GROUP BY ee.work_order_execution_id
+  ),
+  yield_basis AS (
+    SELECT ee.work_order_execution_id,
+           ee.work_order_id,
+           ee.consumption_movement_id,
+           ee.bom_version_id,
+           COALESCE(pq.produced_qty_canonical, 0)::numeric AS produced_qty_canonical,
+           COALESCE(bv.yield_factor, 1)::numeric AS yield_factor,
+           CASE
+             WHEN LOWER(bv.yield_uom) = LOWER(COALESCE(oi.canonical_uom, bv.yield_uom))
+               THEN bv.yield_quantity::numeric
+             WHEN direct.factor IS NOT NULL
+               THEN bv.yield_quantity::numeric * direct.factor::numeric
+             WHEN reverse.factor IS NOT NULL
+               THEN bv.yield_quantity::numeric / reverse.factor::numeric
+             ELSE NULL::numeric
+           END AS yield_qty_canonical
+      FROM eligible_executions ee
+      JOIN bom_versions bv
+        ON bv.id = ee.bom_version_id
+       AND bv.tenant_id = $1
+      LEFT JOIN items oi
+        ON oi.id = ee.output_item_id
+       AND oi.tenant_id = $1
+      LEFT JOIN uom_conversions direct
+        ON direct.tenant_id = $1
+       AND direct.item_id = ee.output_item_id
+       AND LOWER(direct.from_uom) = LOWER(bv.yield_uom)
+       AND LOWER(direct.to_uom) = LOWER(COALESCE(oi.canonical_uom, bv.yield_uom))
+      LEFT JOIN uom_conversions reverse
+        ON reverse.tenant_id = $1
+       AND reverse.item_id = ee.output_item_id
+       AND LOWER(reverse.from_uom) = LOWER(COALESCE(oi.canonical_uom, bv.yield_uom))
+       AND LOWER(reverse.to_uom) = LOWER(bv.yield_uom)
+      LEFT JOIN produced_qty pq
+        ON pq.work_order_execution_id = ee.work_order_execution_id
+  ),
+  expected_component_qty AS (
+    SELECT yb.work_order_execution_id,
+           yb.work_order_id,
+           bvl.component_item_id,
+           SUM(
+             (
+               yb.produced_qty_canonical
+               / NULLIF(yb.yield_qty_canonical * yb.yield_factor, 0)
+             )
+             * COALESCE(bvl.component_quantity_canonical, bvl.component_quantity::numeric)
+             * (1 + COALESCE(bvl.scrap_factor, 0)::numeric)
+           )::numeric AS required_qty
+      FROM yield_basis yb
+      JOIN bom_version_lines bvl
+        ON bvl.tenant_id = $1
+       AND bvl.bom_version_id = yb.bom_version_id
+     WHERE yb.produced_qty_canonical > 0
+       AND yb.yield_qty_canonical IS NOT NULL
+       AND yb.yield_qty_canonical > 0
+     GROUP BY yb.work_order_execution_id, yb.work_order_id, bvl.component_item_id
+  ),
+  issued_component_qty AS (
+    SELECT yb.work_order_execution_id,
+           yb.work_order_id,
+           iml.item_id AS component_item_id,
+           SUM(ABS(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)))::numeric AS issued_qty
+      FROM yield_basis yb
+      JOIN inventory_movement_lines iml
+        ON iml.tenant_id = $1
+       AND iml.movement_id = yb.consumption_movement_id
+     WHERE COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) < 0
+     GROUP BY yb.work_order_execution_id, yb.work_order_id, iml.item_id
+  ),
+  combined AS (
+    SELECT COALESCE(expected.work_order_id, issued.work_order_id) AS work_order_id,
+           COALESCE(expected.work_order_execution_id, issued.work_order_execution_id) AS work_order_execution_id,
+           COALESCE(expected.component_item_id, issued.component_item_id) AS component_item_id,
+           expected.required_qty,
+           issued.issued_qty,
+           (COALESCE(issued.issued_qty, 0) - COALESCE(expected.required_qty, 0))::numeric AS delta_qty
+      FROM expected_component_qty expected
+      FULL OUTER JOIN issued_component_qty issued
+        ON issued.work_order_execution_id = expected.work_order_execution_id
+       AND issued.component_item_id = expected.component_item_id
+  )
+`;
+
+const workOrderComponentQtyExactMatchCountSql = `
+  ${workOrderComponentQtyExactMatchCte}
+  SELECT COUNT(*)::int AS count
+    FROM combined
+   WHERE required_qty IS NULL
+      OR issued_qty IS NULL
+      OR ABS(delta_qty) > 0.000001
+`;
+
+const workOrderComponentQtyExactMatchRowsSql = `
+  ${workOrderComponentQtyExactMatchCte}
+  SELECT work_order_id AS "workOrderId",
+         work_order_execution_id AS "workOrderExecutionId",
+         component_item_id AS "componentItemId",
+         required_qty AS "requiredQty",
+         issued_qty AS "issuedQty",
+         delta_qty AS "deltaQty"
+    FROM combined
+   WHERE required_qty IS NULL
+      OR issued_qty IS NULL
+      OR ABS(delta_qty) > 0.000001
+   ORDER BY ABS(delta_qty) DESC NULLS LAST, work_order_execution_id, component_item_id
+   LIMIT $3
+`;
+
+const productionFifoLayerContinuityCte = `
+  WITH issue_scopes AS (
+    SELECT e.work_order_id,
+           e.id AS work_order_execution_id,
+           im.id AS movement_id,
+           iml.item_id,
+           iml.location_id,
+           l.warehouse_id,
+           SUM(ABS(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)))::numeric AS issue_qty,
+           SUM(
+             ABS(
+               COALESCE(
+                 iml.extended_cost,
+                 COALESCE(iml.unit_cost, 0) * COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)
+               )
+             )
+           )::numeric AS issue_cost
+      FROM inventory_movements im
+      JOIN inventory_movement_lines iml
+        ON iml.movement_id = im.id
+       AND iml.tenant_id = im.tenant_id
+      JOIN locations l
+        ON l.id = iml.location_id
+       AND l.tenant_id = iml.tenant_id
+      LEFT JOIN work_order_executions e
+        ON e.id::text = im.source_id
+       AND e.tenant_id = im.tenant_id
+     WHERE im.tenant_id = $1
+       AND im.status = 'posted'
+       AND im.source_type = 'work_order_batch_post_issue'
+       AND im.movement_type = 'issue'
+       AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) < 0
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+     GROUP BY e.work_order_id, e.id, im.id, iml.item_id, iml.location_id, l.warehouse_id
+  ),
+  consumption_scopes AS (
+    SELECT e.work_order_id,
+           e.id AS work_order_execution_id,
+           clc.movement_id,
+           cl.item_id,
+           cl.location_id,
+           l.warehouse_id,
+           SUM(clc.consumed_quantity)::numeric AS consumed_qty,
+           SUM(clc.extended_cost)::numeric AS consumed_cost,
+           COUNT(*) FILTER (WHERE cl.id IS NULL)::int AS missing_layer_refs
+      FROM cost_layer_consumptions clc
+      JOIN inventory_movements im
+        ON im.id = clc.movement_id
+       AND im.tenant_id = clc.tenant_id
+      LEFT JOIN work_order_executions e
+        ON e.id::text = im.source_id
+       AND e.tenant_id = im.tenant_id
+      LEFT JOIN inventory_cost_layers cl
+        ON cl.id = clc.cost_layer_id
+       AND cl.tenant_id = clc.tenant_id
+      LEFT JOIN locations l
+        ON l.id = cl.location_id
+       AND l.tenant_id = cl.tenant_id
+     WHERE clc.tenant_id = $1
+       AND clc.consumption_type = 'production_input'
+       AND im.source_type = 'work_order_batch_post_issue'
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+     GROUP BY e.work_order_id, e.id, clc.movement_id, cl.item_id, cl.location_id, l.warehouse_id
+  ),
+  combined AS (
+    SELECT COALESCE(issue.work_order_id, consumption.work_order_id) AS work_order_id,
+           COALESCE(issue.work_order_execution_id, consumption.work_order_execution_id) AS work_order_execution_id,
+           COALESCE(issue.movement_id, consumption.movement_id) AS movement_id,
+           COALESCE(issue.item_id, consumption.item_id) AS item_id,
+           COALESCE(issue.location_id, consumption.location_id) AS location_id,
+           COALESCE(issue.warehouse_id, consumption.warehouse_id) AS warehouse_id,
+           issue.issue_qty,
+           issue.issue_cost,
+           consumption.consumed_qty,
+           consumption.consumed_cost,
+           COALESCE(consumption.missing_layer_refs, 0)::int AS missing_layer_refs,
+           (COALESCE(consumption.consumed_qty, 0) - COALESCE(issue.issue_qty, 0))::numeric AS delta_qty,
+           (COALESCE(consumption.consumed_cost, 0) - COALESCE(issue.issue_cost, 0))::numeric AS delta_cost
+      FROM issue_scopes issue
+      FULL OUTER JOIN consumption_scopes consumption
+        ON consumption.movement_id = issue.movement_id
+       AND consumption.item_id = issue.item_id
+       AND consumption.location_id = issue.location_id
+  )
+`;
+
+const productionFifoLayerContinuityCountSql = `
+  ${productionFifoLayerContinuityCte}
+  SELECT COUNT(*)::int AS count
+    FROM combined
+   WHERE issue_qty IS NULL
+      OR consumed_qty IS NULL
+      OR ABS(delta_qty) > 0.000001
+      OR ABS(delta_cost) > 0.000001
+      OR missing_layer_refs > 0
+`;
+
+const productionFifoLayerContinuityRowsSql = `
+  ${productionFifoLayerContinuityCte}
+  SELECT work_order_id AS "workOrderId",
+         work_order_execution_id AS "workOrderExecutionId",
+         movement_id AS "movementId",
+         item_id AS "itemId",
+         location_id AS "locationId",
+         warehouse_id AS "warehouseId",
+         issue_qty AS "issueQty",
+         consumed_qty AS "consumedQty",
+         delta_qty AS "deltaQty",
+         issue_cost AS "issueCost",
+         consumed_cost AS "consumedCost",
+         delta_cost AS "deltaCost",
+         missing_layer_refs AS "missingLayerRefs"
+    FROM combined
+   WHERE issue_qty IS NULL
+      OR consumed_qty IS NULL
+      OR ABS(delta_qty) > 0.000001
+      OR ABS(delta_cost) > 0.000001
+      OR missing_layer_refs > 0
+   ORDER BY ABS(delta_qty) DESC NULLS LAST, ABS(delta_cost) DESC NULLS LAST, movement_id
+   LIMIT $3
+`;
+
 const warehouseDefaultCompletenessCte = `
   WITH expected_warehouses AS (
     SELECT DISTINCT expected.warehouse_code
@@ -905,6 +1481,251 @@ const orphanedCostLayersRowsSql = `
    LIMIT $3
 `;
 
+const poLineClosedBlocksReceiptsCountSql = `
+  SELECT COUNT(*)::int AS count
+    FROM purchase_order_receipt_lines porl
+    JOIN purchase_order_receipts por
+      ON por.id = porl.purchase_order_receipt_id
+     AND por.tenant_id = porl.tenant_id
+    JOIN purchase_order_lines pol
+      ON pol.id = porl.purchase_order_line_id
+     AND pol.tenant_id = porl.tenant_id
+    JOIN purchase_orders po
+      ON po.id = por.purchase_order_id
+     AND po.tenant_id = por.tenant_id
+    LEFT JOIN locations ship
+      ON ship.id = po.ship_to_location_id
+     AND ship.tenant_id = po.tenant_id
+    LEFT JOIN locations recv
+      ON recv.id = po.receiving_location_id
+     AND recv.tenant_id = po.tenant_id
+   WHERE por.tenant_id = $1
+     AND ($2::uuid IS NULL OR COALESCE(ship.warehouse_id, recv.warehouse_id) = $2::uuid)
+     AND COALESCE(por.status, 'posted') <> 'voided'
+     AND pol.status IN ('closed_short', 'cancelled')
+     AND pol.closed_at IS NOT NULL
+     AND por.received_at > pol.closed_at + INTERVAL '1 millisecond'
+`;
+
+const poLineClosedBlocksReceiptsRowsSql = `
+  SELECT por.tenant_id,
+         por.purchase_order_id,
+         por.id AS purchase_order_receipt_id,
+         por.received_at,
+         pol.id AS purchase_order_line_id,
+         pol.status AS line_status,
+         pol.closed_at AS line_closed_at
+    FROM purchase_order_receipt_lines porl
+    JOIN purchase_order_receipts por
+      ON por.id = porl.purchase_order_receipt_id
+     AND por.tenant_id = porl.tenant_id
+    JOIN purchase_order_lines pol
+      ON pol.id = porl.purchase_order_line_id
+     AND pol.tenant_id = porl.tenant_id
+    JOIN purchase_orders po
+      ON po.id = por.purchase_order_id
+     AND po.tenant_id = por.tenant_id
+    LEFT JOIN locations ship
+      ON ship.id = po.ship_to_location_id
+     AND ship.tenant_id = po.tenant_id
+    LEFT JOIN locations recv
+      ON recv.id = po.receiving_location_id
+     AND recv.tenant_id = po.tenant_id
+   WHERE por.tenant_id = $1
+     AND ($2::uuid IS NULL OR COALESCE(ship.warehouse_id, recv.warehouse_id) = $2::uuid)
+     AND COALESCE(por.status, 'posted') <> 'voided'
+     AND pol.status IN ('closed_short', 'cancelled')
+     AND pol.closed_at IS NOT NULL
+     AND por.received_at > pol.closed_at + INTERVAL '1 millisecond'
+   ORDER BY por.received_at DESC, por.id, pol.id
+   LIMIT $3
+`;
+
+const poStatusConsistencyCte = `
+  WITH received_totals AS (
+    SELECT porl.purchase_order_line_id AS line_id,
+           COALESCE(SUM(porl.quantity_received), 0)::numeric AS qty_received
+      FROM purchase_order_receipt_lines porl
+      JOIN purchase_order_receipts por
+        ON por.id = porl.purchase_order_receipt_id
+       AND por.tenant_id = porl.tenant_id
+     WHERE por.tenant_id = $1
+       AND COALESCE(por.status, 'posted') <> 'voided'
+     GROUP BY porl.purchase_order_line_id
+  ),
+  line_rollup AS (
+    SELECT pol.purchase_order_id,
+           COUNT(*)::int AS total_lines,
+           COUNT(*) FILTER (WHERE pol.status = 'open')::int AS open_lines,
+           COUNT(*) FILTER (WHERE pol.status = 'complete')::int AS complete_lines,
+           COUNT(*) FILTER (WHERE pol.status IN ('closed_short', 'cancelled'))::int AS closed_lines,
+           COUNT(*) FILTER (WHERE COALESCE(rt.qty_received, 0) > 0.000001)::int AS received_lines,
+           COALESCE(SUM(COALESCE(rt.qty_received, 0)), 0)::numeric AS total_received_qty
+      FROM purchase_order_lines pol
+      LEFT JOIN received_totals rt
+        ON rt.line_id = pol.id
+     WHERE pol.tenant_id = $1
+     GROUP BY pol.purchase_order_id
+  ),
+  scoped AS (
+    SELECT po.id AS purchase_order_id,
+           po.status,
+           lr.total_lines,
+           lr.open_lines,
+           lr.complete_lines,
+           lr.closed_lines,
+           lr.received_lines,
+           lr.total_received_qty,
+           COALESCE(ship.warehouse_id, recv.warehouse_id) AS warehouse_id
+      FROM purchase_orders po
+      JOIN line_rollup lr
+        ON lr.purchase_order_id = po.id
+      LEFT JOIN locations ship
+        ON ship.id = po.ship_to_location_id
+       AND ship.tenant_id = po.tenant_id
+      LEFT JOIN locations recv
+        ON recv.id = po.receiving_location_id
+       AND recv.tenant_id = po.tenant_id
+     WHERE po.tenant_id = $1
+       AND ($2::uuid IS NULL OR COALESCE(ship.warehouse_id, recv.warehouse_id) = $2::uuid)
+  ),
+  mismatch AS (
+    SELECT purchase_order_id,
+           status,
+           total_lines,
+           open_lines,
+           complete_lines,
+           closed_lines,
+           received_lines,
+           total_received_qty,
+           warehouse_id,
+           CASE
+             WHEN status = 'received' AND (open_lines > 0 OR closed_lines > 0) THEN 'PO_STATUS_RECEIVED_REQUIRES_ALL_COMPLETE'
+             WHEN status = 'closed' AND open_lines > 0 THEN 'PO_STATUS_CLOSED_REQUIRES_NO_OPEN_LINES'
+             WHEN status = 'partially_received' AND (total_received_qty <= 0 OR open_lines = 0) THEN 'PO_STATUS_PARTIAL_REQUIRES_RECEIPTS_AND_OPEN_LINES'
+             WHEN status = 'approved' AND total_received_qty > 0.000001 THEN 'PO_STATUS_APPROVED_WITH_RECEIPTS'
+             WHEN status = 'canceled' AND total_received_qty > 0.000001 THEN 'PO_STATUS_CANCELED_WITH_RECEIPTS'
+             ELSE NULL
+           END AS issue_code
+      FROM scoped
+  )
+`;
+
+const poStatusConsistencyCountSql = `
+  ${poStatusConsistencyCte}
+  SELECT COUNT(*)::int AS count
+    FROM mismatch
+   WHERE issue_code IS NOT NULL
+`;
+
+const poStatusConsistencyRowsSql = `
+  ${poStatusConsistencyCte}
+  SELECT purchase_order_id,
+         status,
+         total_lines,
+         open_lines,
+         complete_lines,
+         closed_lines,
+         received_lines,
+         total_received_qty,
+         warehouse_id,
+         issue_code
+    FROM mismatch
+   WHERE issue_code IS NOT NULL
+   ORDER BY purchase_order_id
+   LIMIT $3
+`;
+
+const poReceivedQtyIntegrityCte = `
+  WITH line_totals AS (
+    SELECT pol.id AS purchase_order_line_id,
+           pol.purchase_order_id,
+           pol.item_id,
+           pol.quantity_ordered,
+           COALESCE(SUM(
+             CASE
+               WHEN COALESCE(por.status, 'posted') <> 'voided' THEN porl.quantity_received
+               ELSE 0
+             END
+           ), 0)::numeric AS total_received_qty,
+           BOOL_OR(
+             CASE
+               WHEN COALESCE(por.status, 'posted') <> 'voided' THEN COALESCE(porl.over_receipt_approved, false)
+               ELSE false
+             END
+           ) AS has_over_receipt_approval
+      FROM purchase_order_lines pol
+      LEFT JOIN purchase_order_receipt_lines porl
+        ON porl.purchase_order_line_id = pol.id
+       AND porl.tenant_id = pol.tenant_id
+      LEFT JOIN purchase_order_receipts por
+        ON por.id = porl.purchase_order_receipt_id
+       AND por.tenant_id = porl.tenant_id
+     WHERE pol.tenant_id = $1
+     GROUP BY pol.id, pol.purchase_order_id, pol.item_id, pol.quantity_ordered
+  ),
+  scoped AS (
+    SELECT lt.purchase_order_line_id,
+           lt.purchase_order_id,
+           lt.item_id,
+           lt.quantity_ordered,
+           lt.total_received_qty,
+           lt.has_over_receipt_approval,
+           COALESCE(ship.warehouse_id, recv.warehouse_id) AS warehouse_id
+      FROM line_totals lt
+      JOIN purchase_orders po
+        ON po.id = lt.purchase_order_id
+       AND po.tenant_id = $1
+      LEFT JOIN locations ship
+        ON ship.id = po.ship_to_location_id
+       AND ship.tenant_id = po.tenant_id
+      LEFT JOIN locations recv
+        ON recv.id = po.receiving_location_id
+       AND recv.tenant_id = po.tenant_id
+     WHERE ($2::uuid IS NULL OR COALESCE(ship.warehouse_id, recv.warehouse_id) = $2::uuid)
+  ),
+  violations AS (
+    SELECT purchase_order_line_id,
+           purchase_order_id,
+           item_id,
+           quantity_ordered,
+           total_received_qty,
+           has_over_receipt_approval,
+           warehouse_id,
+           CASE
+             WHEN total_received_qty < -0.000001 THEN 'RECEIVED_QTY_NEGATIVE'
+             WHEN total_received_qty - quantity_ordered > 0.000001
+               AND has_over_receipt_approval IS NOT TRUE
+               THEN 'OVER_RECEIPT_NOT_APPROVED'
+             ELSE NULL
+           END AS issue_code
+      FROM scoped
+  )
+`;
+
+const poReceivedQtyIntegrityCountSql = `
+  ${poReceivedQtyIntegrityCte}
+  SELECT COUNT(*)::int AS count
+    FROM violations
+   WHERE issue_code IS NOT NULL
+`;
+
+const poReceivedQtyIntegrityRowsSql = `
+  ${poReceivedQtyIntegrityCte}
+  SELECT purchase_order_id,
+         purchase_order_line_id,
+         item_id,
+         warehouse_id,
+         quantity_ordered,
+         total_received_qty,
+         has_over_receipt_approval,
+         issue_code
+    FROM violations
+   WHERE issue_code IS NOT NULL
+   ORDER BY purchase_order_id, purchase_order_line_id
+   LIMIT $3
+`;
+
 let exitCode = 0;
 const invariantCounts = {};
 
@@ -1019,12 +1840,95 @@ try {
   ]);
   const workOrderCostDriftCount = Number(workOrderCostCountRes.rows[0]?.count ?? 0);
   invariantCounts.work_order_cost_conservation_drift = workOrderCostDriftCount;
+  invariantCounts.production_cost_conservation = workOrderCostDriftCount;
   printSection(
     'work_order_cost_conservation_drift',
     workOrderCostDriftCount,
     workOrderCostRowsRes.rows
   );
+  printSection(
+    'production_cost_conservation',
+    workOrderCostDriftCount,
+    workOrderCostRowsRes.rows
+  );
   if (strictMode && workOrderCostDriftCount > 0) {
+    exitCode = 2;
+  }
+
+  const [workOrderLinkCountRes, workOrderLinkRowsRes] = await Promise.all([
+    pool.query(workOrderProductionLinkIntegrityCountSql, [tenantId]),
+    pool.query(workOrderProductionLinkIntegrityRowsSql, [tenantId, limit])
+  ]);
+  const workOrderLinkIntegrityCount = Number(workOrderLinkCountRes.rows[0]?.count ?? 0);
+  invariantCounts.work_order_production_link_integrity = workOrderLinkIntegrityCount;
+  printSection(
+    'work_order_production_link_integrity',
+    workOrderLinkIntegrityCount,
+    workOrderLinkRowsRes.rows
+  );
+  if (strictMode && workOrderLinkIntegrityCount > 0) {
+    exitCode = 2;
+  }
+
+  const [qcLocationIntegrityCountRes, qcLocationIntegrityRowsRes] = await Promise.all([
+    pool.query(qcLocationIntegrityCountSql, params2),
+    pool.query(qcLocationIntegrityRowsSql, params3)
+  ]);
+  const qcLocationIntegrityCount = Number(qcLocationIntegrityCountRes.rows[0]?.count ?? 0);
+  invariantCounts.qc_location_integrity = qcLocationIntegrityCount;
+  printSection(
+    'qc_location_integrity',
+    qcLocationIntegrityCount,
+    qcLocationIntegrityRowsRes.rows
+  );
+  if (strictMode && qcLocationIntegrityCount > 0) {
+    exitCode = 2;
+  }
+
+  const [productionReceiptLocationValidityCountRes, productionReceiptLocationValidityRowsRes] = await Promise.all([
+    pool.query(productionReceiptLocationValidityCountSql, params2),
+    pool.query(productionReceiptLocationValidityRowsSql, params3)
+  ]);
+  const productionReceiptLocationValidityCount = Number(
+    productionReceiptLocationValidityCountRes.rows[0]?.count ?? 0
+  );
+  invariantCounts.production_receipt_location_validity = productionReceiptLocationValidityCount;
+  printSection(
+    'production_receipt_location_validity',
+    productionReceiptLocationValidityCount,
+    productionReceiptLocationValidityRowsRes.rows
+  );
+  if (strictMode && productionReceiptLocationValidityCount > 0) {
+    exitCode = 2;
+  }
+
+  const [workOrderComponentQtyExactMatchCountRes, workOrderComponentQtyExactMatchRowsRes] = await Promise.all([
+    pool.query(workOrderComponentQtyExactMatchCountSql, params2),
+    pool.query(workOrderComponentQtyExactMatchRowsSql, params3)
+  ]);
+  const workOrderComponentQtyExactMatchCount = Number(workOrderComponentQtyExactMatchCountRes.rows[0]?.count ?? 0);
+  invariantCounts.wo_component_quantity_exact_match = workOrderComponentQtyExactMatchCount;
+  printSection(
+    'wo_component_quantity_exact_match',
+    workOrderComponentQtyExactMatchCount,
+    workOrderComponentQtyExactMatchRowsRes.rows
+  );
+  if (strictMode && workOrderComponentQtyExactMatchCount > 0) {
+    exitCode = 2;
+  }
+
+  const [productionFifoLayerContinuityCountRes, productionFifoLayerContinuityRowsRes] = await Promise.all([
+    pool.query(productionFifoLayerContinuityCountSql, params2),
+    pool.query(productionFifoLayerContinuityRowsSql, params3)
+  ]);
+  const productionFifoLayerContinuityCount = Number(productionFifoLayerContinuityCountRes.rows[0]?.count ?? 0);
+  invariantCounts.production_fifo_layer_continuity = productionFifoLayerContinuityCount;
+  printSection(
+    'production_fifo_layer_continuity',
+    productionFifoLayerContinuityCount,
+    productionFifoLayerContinuityRowsRes.rows
+  );
+  if (strictMode && productionFifoLayerContinuityCount > 0) {
     exitCode = 2;
   }
 
@@ -1117,7 +2021,9 @@ try {
   ]);
   const negativeOnHandCount = Number(negativeOnHandCountRes.rows[0]?.count ?? 0);
   invariantCounts.negative_on_hand = negativeOnHandCount;
+  invariantCounts.no_negative_component_on_hand = negativeOnHandCount;
   printSection('negative_on_hand', negativeOnHandCount, negativeOnHandRowsRes.rows);
+  printSection('no_negative_component_on_hand', negativeOnHandCount, negativeOnHandRowsRes.rows);
   if (strictMode && negativeOnHandCount > 0) {
     exitCode = 2;
   }
@@ -1141,6 +2047,39 @@ try {
   invariantCounts.orphaned_cost_layers = orphanedCostLayersCount;
   printSection('orphaned_cost_layers', orphanedCostLayersCount, orphanedCostLayersRowsRes.rows);
   if (strictMode && orphanedCostLayersCount > 0) {
+    exitCode = 2;
+  }
+
+  const [poLineClosedCountRes, poLineClosedRowsRes] = await Promise.all([
+    pool.query(poLineClosedBlocksReceiptsCountSql, params2),
+    pool.query(poLineClosedBlocksReceiptsRowsSql, params3)
+  ]);
+  const poLineClosedBlocksCount = Number(poLineClosedCountRes.rows[0]?.count ?? 0);
+  invariantCounts.po_line_closed_blocks_receipts = poLineClosedBlocksCount;
+  printSection('po_line_closed_blocks_receipts', poLineClosedBlocksCount, poLineClosedRowsRes.rows);
+  if (strictMode && poLineClosedBlocksCount > 0) {
+    exitCode = 2;
+  }
+
+  const [poStatusConsistencyCountRes, poStatusConsistencyRowsRes] = await Promise.all([
+    pool.query(poStatusConsistencyCountSql, params2),
+    pool.query(poStatusConsistencyRowsSql, params3)
+  ]);
+  const poStatusConsistencyCount = Number(poStatusConsistencyCountRes.rows[0]?.count ?? 0);
+  invariantCounts.po_status_consistency = poStatusConsistencyCount;
+  printSection('po_status_consistency', poStatusConsistencyCount, poStatusConsistencyRowsRes.rows);
+  if (strictMode && poStatusConsistencyCount > 0) {
+    exitCode = 2;
+  }
+
+  const [poReceivedQtyIntegrityCountRes, poReceivedQtyIntegrityRowsRes] = await Promise.all([
+    pool.query(poReceivedQtyIntegrityCountSql, params2),
+    pool.query(poReceivedQtyIntegrityRowsSql, params3)
+  ]);
+  const poReceivedQtyIntegrityCount = Number(poReceivedQtyIntegrityCountRes.rows[0]?.count ?? 0);
+  invariantCounts.po_received_qty_integrity_invalid = poReceivedQtyIntegrityCount;
+  printSection('po_received_qty_integrity_invalid', poReceivedQtyIntegrityCount, poReceivedQtyIntegrityRowsRes.rows);
+  if (strictMode && poReceivedQtyIntegrityCount > 0) {
     exitCode = 2;
   }
 

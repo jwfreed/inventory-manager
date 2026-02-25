@@ -326,6 +326,9 @@ export async function createPurchaseOrderReceipt(
   const receiptId = uuidv4();
   const uniqueSet = new Set(data.lines.map((line) => line.purchaseOrderLineId));
   const uniqueLineIds = Array.from(uniqueSet);
+  if (uniqueLineIds.length !== data.lines.length) {
+    throw new Error('RECEIPT_DUPLICATE_PO_LINE');
+  }
 
   if (data.idempotencyKey) {
     const existing = await query(
@@ -338,122 +341,159 @@ export async function createPurchaseOrderReceipt(
     }
   }
 
-  const poResult = await query(
-    'SELECT status, ship_to_location_id, receiving_location_id FROM purchase_orders WHERE id = $1 AND tenant_id = $2',
-    [data.purchaseOrderId, tenantId]
-  );
-  if (poResult.rowCount === 0) {
-    throw new Error('RECEIPT_PO_NOT_FOUND');
-  }
-  const poRow = poResult.rows[0];
-  if (['received', 'closed', 'canceled'].includes(poRow.status)) {
-    throw new Error('RECEIPT_PO_ALREADY_RECEIVED');
-  }
-  if (poRow.status === 'draft') {
-    throw new Error('RECEIPT_PO_NOT_APPROVED');
-  }
-  if (poRow.status === 'submitted') {
-    if (process.env.NODE_ENV !== 'production') {
-      await query(
-        `UPDATE purchase_orders
-            SET status = 'approved',
-                updated_at = now()
-          WHERE id = $1 AND tenant_id = $2`,
-        [data.purchaseOrderId, tenantId]
-      );
-    } else {
-      throw new Error('RECEIPT_PO_NOT_APPROVED');
-    }
-  }
-
-  const { rows: poLineRows } = await query(
-    `SELECT pol.id, pol.purchase_order_id, pol.item_id, pol.uom, pol.quantity_ordered, pol.unit_price,
-            pol.over_receipt_tolerance_pct,
-            i.requires_lot, i.requires_serial, i.requires_qc
-       FROM purchase_order_lines pol
-       LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = pol.tenant_id
-      WHERE pol.id = ANY($1::uuid[]) AND pol.tenant_id = $2`,
-    [uniqueLineIds, tenantId]
-  );
-  if (poLineRows.length !== uniqueLineIds.length) {
-    throw new Error('RECEIPT_PO_LINES_NOT_FOUND');
-  }
-  const poLineMap = new Map<
-    string,
-    {
-      purchase_order_id: string;
-      item_id: string;
-      uom: string;
-      quantity_ordered: number;
-      unit_price: number | null;
-      over_receipt_tolerance_pct: number;
-      requires_lot: boolean;
-      requires_serial: boolean;
-      requires_qc: boolean;
-    }
-  >();
-  for (const row of poLineRows) {
-    poLineMap.set(row.id, {
-      purchase_order_id: row.purchase_order_id,
-      item_id: row.item_id,
-      uom: row.uom,
-      quantity_ordered: roundQuantity(toNumber(row.quantity_ordered ?? 0)),
-      unit_price: row.unit_price != null ? Number(row.unit_price) : null,
-      over_receipt_tolerance_pct: row.over_receipt_tolerance_pct != null ? Number(row.over_receipt_tolerance_pct) : 0,
-      requires_lot: !!row.requires_lot,
-      requires_serial: !!row.requires_serial,
-      requires_qc: !!row.requires_qc
-    });
-  }
-  for (const line of data.lines) {
-    const poLine = poLineMap.get(line.purchaseOrderLineId);
-    if (!poLine) {
-      throw new Error('RECEIPT_LINE_INVALID_REFERENCE');
-    }
-    if (poLine.purchase_order_id !== data.purchaseOrderId) {
-      throw new Error('RECEIPT_LINES_WRONG_PO');
-    }
-    if (poLine.uom !== line.uom) {
-      throw new Error('RECEIPT_LINE_UOM_MISMATCH');
-    }
-    const receivedQty = toNumber(line.quantityReceived);
-    const expectedQty = roundQuantity(toNumber(poLine.quantity_ordered ?? 0));
-    if (poLine.requires_lot && !line.lotCode) {
-      throw new Error('RECEIPT_LOT_REQUIRED');
-    }
-    if (poLine.requires_serial) {
-      if (!line.serialNumbers || line.serialNumbers.length === 0) {
-        throw new Error('RECEIPT_SERIAL_REQUIRED');
-      }
-      if (!Number.isInteger(receivedQty)) {
-        throw new Error('RECEIPT_SERIAL_QTY_MUST_BE_INTEGER');
-      }
-      const uniqueSerials = new Set(line.serialNumbers);
-      if (uniqueSerials.size !== line.serialNumbers.length) {
-        throw new Error('RECEIPT_SERIAL_DUPLICATE');
-      }
-      if (line.serialNumbers.length !== receivedQty) {
-        throw new Error('RECEIPT_SERIAL_COUNT_MISMATCH');
-      }
-    }
-    if (receivedQty - expectedQty > STATUS_EPSILON) {
-      const tolerance = poLine.over_receipt_tolerance_pct ?? 0;
-      const allowed = roundQuantity(expectedQty * (1 + tolerance));
-      if (receivedQty - allowed > STATUS_EPSILON && !line.overReceiptApproved) {
-        throw new Error('RECEIPT_OVER_RECEIPT_NOT_APPROVED');
-      }
-    }
-  }
-
-  // Default receiving location: prefer explicit provided, otherwise PO receiving/staging, otherwise dedicated receiving, otherwise ship-to.
-  let resolvedReceivedToLocationId = data.receivedToLocationId ?? null;
-  if (!resolvedReceivedToLocationId) {
-    const receivingLoc = poRow.receiving_location_id ?? (await findDefaultReceivingLocation(tenantId));
-    resolvedReceivedToLocationId = receivingLoc ?? poRow.ship_to_location_id ?? null;
-  }
-
   const now = new Date();
   await withTransaction(async (client) => {
+    const poResult = await client.query(
+      `SELECT status, ship_to_location_id, receiving_location_id
+         FROM purchase_orders
+        WHERE id = $1
+          AND tenant_id = $2
+        FOR UPDATE`,
+      [data.purchaseOrderId, tenantId]
+    );
+    if (poResult.rowCount === 0) {
+      throw new Error('RECEIPT_PO_NOT_FOUND');
+    }
+    const poRow = { ...poResult.rows[0] };
+    if (['received', 'closed', 'canceled'].includes(poRow.status)) {
+      throw new Error('RECEIPT_PO_CLOSED');
+    }
+    if (poRow.status === 'draft') {
+      throw new Error('RECEIPT_PO_NOT_APPROVED');
+    }
+    if (poRow.status === 'submitted') {
+      if (process.env.NODE_ENV !== 'production') {
+        await client.query(
+          `UPDATE purchase_orders
+              SET status = 'approved',
+                  updated_at = now()
+            WHERE id = $1
+              AND tenant_id = $2`,
+          [data.purchaseOrderId, tenantId]
+        );
+        poRow.status = 'approved';
+      } else {
+        throw new Error('RECEIPT_PO_NOT_APPROVED');
+      }
+    }
+
+    const { rows: poLineRows } = await client.query(
+      `SELECT pol.id, pol.purchase_order_id, pol.item_id, pol.uom, pol.quantity_ordered, pol.unit_price,
+              pol.status AS line_status,
+              pol.over_receipt_tolerance_pct,
+              i.requires_lot, i.requires_serial, i.requires_qc
+         FROM purchase_order_lines pol
+         LEFT JOIN items i ON i.id = pol.item_id AND i.tenant_id = pol.tenant_id
+        WHERE pol.id = ANY($1::uuid[])
+          AND pol.tenant_id = $2
+        ORDER BY pol.id
+        FOR UPDATE OF pol`,
+      [uniqueLineIds, tenantId]
+    );
+    if (poLineRows.length !== uniqueLineIds.length) {
+      throw new Error('RECEIPT_PO_LINES_NOT_FOUND');
+    }
+    const poLineMap = new Map<
+      string,
+      {
+        purchase_order_id: string;
+        item_id: string;
+        uom: string;
+        quantity_ordered: number;
+        unit_price: number | null;
+        line_status: string;
+        over_receipt_tolerance_pct: number;
+        requires_lot: boolean;
+        requires_serial: boolean;
+        requires_qc: boolean;
+      }
+    >();
+    for (const row of poLineRows) {
+      poLineMap.set(row.id, {
+        purchase_order_id: row.purchase_order_id,
+        item_id: row.item_id,
+        uom: row.uom,
+        quantity_ordered: roundQuantity(toNumber(row.quantity_ordered ?? 0)),
+        unit_price: row.unit_price != null ? Number(row.unit_price) : null,
+        line_status: String(row.line_status ?? 'open'),
+        over_receipt_tolerance_pct: row.over_receipt_tolerance_pct != null ? Number(row.over_receipt_tolerance_pct) : 0,
+        requires_lot: !!row.requires_lot,
+        requires_serial: !!row.requires_serial,
+        requires_qc: !!row.requires_qc
+      });
+    }
+
+    const { rows: receivedRows } = await client.query(
+      `SELECT porl.purchase_order_line_id AS line_id,
+              COALESCE(SUM(porl.quantity_received), 0)::numeric AS qty
+         FROM purchase_order_receipt_lines porl
+         JOIN purchase_order_receipts por
+           ON por.id = porl.purchase_order_receipt_id
+          AND por.tenant_id = porl.tenant_id
+        WHERE por.tenant_id = $1
+          AND por.purchase_order_id = $2
+          AND COALESCE(por.status, 'posted') <> 'voided'
+        GROUP BY porl.purchase_order_line_id`,
+      [tenantId, data.purchaseOrderId]
+    );
+    const receivedMap = new Map<string, number>();
+    for (const row of receivedRows) {
+      receivedMap.set(String(row.line_id), roundQuantity(toNumber(row.qty ?? 0)));
+    }
+
+    for (const line of data.lines) {
+      const poLine = poLineMap.get(line.purchaseOrderLineId);
+      if (!poLine) {
+        throw new Error('RECEIPT_LINE_INVALID_REFERENCE');
+      }
+      if (poLine.purchase_order_id !== data.purchaseOrderId) {
+        throw new Error('RECEIPT_LINES_WRONG_PO');
+      }
+      if (poLine.uom !== line.uom) {
+        throw new Error('RECEIPT_LINE_UOM_MISMATCH');
+      }
+      if (poLine.line_status === 'closed_short' || poLine.line_status === 'cancelled' || poLine.line_status === 'complete') {
+        throw new Error('RECEIPT_PO_LINE_CLOSED');
+      }
+      const receivedQty = toNumber(line.quantityReceived);
+      const expectedQty = roundQuantity(toNumber(poLine.quantity_ordered ?? 0));
+      const alreadyReceivedQty = receivedMap.get(line.purchaseOrderLineId) ?? 0;
+      const projectedTotal = roundQuantity(alreadyReceivedQty + receivedQty);
+      if (poLine.requires_lot && !line.lotCode) {
+        throw new Error('RECEIPT_LOT_REQUIRED');
+      }
+      if (poLine.requires_serial) {
+        if (!line.serialNumbers || line.serialNumbers.length === 0) {
+          throw new Error('RECEIPT_SERIAL_REQUIRED');
+        }
+        if (!Number.isInteger(receivedQty)) {
+          throw new Error('RECEIPT_SERIAL_QTY_MUST_BE_INTEGER');
+        }
+        const uniqueSerials = new Set(line.serialNumbers);
+        if (uniqueSerials.size !== line.serialNumbers.length) {
+          throw new Error('RECEIPT_SERIAL_DUPLICATE');
+        }
+        if (line.serialNumbers.length !== receivedQty) {
+          throw new Error('RECEIPT_SERIAL_COUNT_MISMATCH');
+        }
+      }
+      if (projectedTotal - expectedQty > STATUS_EPSILON) {
+        if (!line.overReceiptApproved) {
+          throw new Error('RECEIPT_OVERRECEIPT_NOT_APPROVED');
+        }
+        if (line.discrepancyReason !== 'over') {
+          throw new Error('RECEIPT_OVERRECEIPT_REASON_REQUIRED');
+        }
+      }
+    }
+
+    // Default receiving location: prefer explicit provided, otherwise PO receiving/staging, otherwise dedicated receiving, otherwise ship-to.
+    let resolvedReceivedToLocationId = data.receivedToLocationId ?? null;
+    if (!resolvedReceivedToLocationId) {
+      const receivingLoc = poRow.receiving_location_id ?? (await findDefaultReceivingLocation(tenantId));
+      resolvedReceivedToLocationId = receivingLoc ?? poRow.ship_to_location_id ?? null;
+    }
+
     const receiptNumber = await generateReceiptNumber();
     if (!resolvedReceivedToLocationId) {
       throw new Error('RECEIPT_RECEIVING_LOCATION_REQUIRED');
@@ -508,10 +548,6 @@ export async function createPurchaseOrderReceipt(
       const receiptLineId = uuidv4();
       const receivedQty = toNumber(line.quantityReceived);
       const expectedQty = roundQuantity(toNumber(poLineMap.get(line.purchaseOrderLineId)?.quantity_ordered ?? 0));
-      const hasDiscrepancy = Math.abs(roundQuantity(receivedQty) - expectedQty) > 1e-6;
-      if (hasDiscrepancy && !line.discrepancyReason) {
-        throw new Error('RECEIPT_DISCREPANCY_REASON_REQUIRED');
-      }
 
       // Default unit_cost to PO line's unit_price if not explicitly provided
       const poLine = poLineMap.get(line.purchaseOrderLineId);
@@ -611,6 +647,7 @@ export async function createPurchaseOrderReceipt(
     }
 
     await enqueueInventoryMovementPosted(client, tenantId, movementId);
+    await updatePoStatusFromReceipts(tenantId, data.purchaseOrderId, client);
 
     if (actor) {
       await recordAuditLog(
@@ -637,7 +674,6 @@ export async function createPurchaseOrderReceipt(
   if (!receipt) {
     throw new Error('RECEIPT_NOT_FOUND_AFTER_CREATE');
   }
-  await updatePoStatusFromReceipts(tenantId, receipt.purchaseOrderId);
   return receipt;
 }
 
@@ -1120,14 +1156,15 @@ export async function voidReceipt(
 ) {
   const reason = assertReason(params.reason);
 
-  return withTransactionRetry(async (client) => {
+  const outcome = await withTransactionRetry(async (client) => {
     const now = new Date();
     const receiptResult = await client.query<{
       id: string;
       status: string;
       inventory_movement_id: string | null;
+      purchase_order_id: string;
     }>(
-      `SELECT id, status, inventory_movement_id
+      `SELECT id, status, inventory_movement_id, purchase_order_id
          FROM purchase_order_receipts
         WHERE id = $1
           AND tenant_id = $2
@@ -1338,8 +1375,14 @@ export async function voidReceipt(
       client
     );
 
-    return fetchReceiptById(tenantId, id, client);
+    const receiptView = await fetchReceiptById(tenantId, id, client);
+    return {
+      receipt: receiptView,
+      purchaseOrderId: receipt.purchase_order_id
+    };
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+  await updatePoStatusFromReceipts(tenantId, outcome.purchaseOrderId);
+  return outcome.receipt;
 }
 async function findDefaultReceivingLocation(tenantId: string): Promise<string | null> {
   const { rows } = await baseQuery(

@@ -64,3 +64,33 @@ export const workOrderIssuePostSchema = z.object({
   overrideNegative: z.boolean().optional(),
   overrideReason: z.string().max(2000).optional()
 });
+
+export const workOrderReportProductionSchema = z.object({
+  warehouseId: z.string().min(1).max(64).optional(),
+  outputQty: z.number().positive(),
+  outputUom: z.string().min(1).max(32).optional(),
+  occurredAt: z.string().datetime().optional(),
+  notes: z.string().max(2000).optional(),
+  idempotencyKey: z.string().min(1).max(255).optional(),
+  consumptionOverrides: z.array(
+    z.object({
+      componentItemId: z.string().uuid(),
+      uom: z.string().min(1).max(32),
+      quantity: z.number().min(0),
+      reason: z.string().max(255).optional()
+    })
+  ).optional(),
+  scrapOutputs: z.array(
+    z.object({
+      uom: z.string().min(1).max(32),
+      quantity: z.number().positive(),
+      reason: z.string().max(255)
+    })
+  ).optional()
+});
+
+export const workOrderVoidReportProductionSchema = z.object({
+  reason: z.string().max(255),
+  notes: z.string().max(2000).optional(),
+  idempotencyKey: z.string().min(1).max(255).optional()
+});

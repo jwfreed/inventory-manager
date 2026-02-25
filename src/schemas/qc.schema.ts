@@ -19,3 +19,15 @@ export const qcEventSchema = z.object({
 }, {
   message: "Exactly one of purchaseOrderReceiptLineId, workOrderId, or workOrderExecutionLineId must be provided."
 });
+
+export const qcWarehouseDispositionSchema = z.object({
+  warehouseId: z.string().min(1).max(64),
+  itemId: z.string().uuid(),
+  quantity: z.number().positive(),
+  uom: z.string().min(1).max(32),
+  occurredAt: z.string().datetime().optional(),
+  notes: z.string().max(2000).optional(),
+  idempotencyKey: z.string().min(1).max(255).optional(),
+  overrideNegative: z.boolean().optional(),
+  overrideReason: z.string().max(2000).optional()
+});

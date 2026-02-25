@@ -1,15 +1,17 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
-import { query, withTransaction } from '../db';
-import { qcEventSchema } from '../schemas/qc.schema';
+import { query, withTransaction, withTransactionRetry } from '../db';
+import { qcEventSchema, qcWarehouseDispositionSchema } from '../schemas/qc.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { recordAuditLog } from '../lib/audit';
 import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
 import { createNcr } from './ncr.service';
 import { resolveDefaultLocationForRole } from './warehouseDefaults.service';
 import { transferInventory } from './transfers.service';
+import { getDefaultSellableLocation, getHoldLocation, getQaLocation } from './locationResolvers.service';
 
 export type QcEventInput = z.infer<typeof qcEventSchema>;
+export type QcWarehouseDispositionInput = z.infer<typeof qcWarehouseDispositionSchema>;
 
 function mapQcEvent(row: any) {
   return {
@@ -27,6 +29,26 @@ function mapQcEvent(row: any) {
     occurredAt: row.occurred_at,
     createdAt: row.created_at
   };
+}
+
+async function resolveWarehouseRootIdByRef(
+  tenantId: string,
+  warehouseRef: string,
+  client: { query: (sql: string, params: unknown[]) => Promise<{ rowCount: number; rows: Array<{ id: string }> }> }
+): Promise<string | null> {
+  const ref = warehouseRef.trim();
+  if (!ref) return null;
+  const res = await client.query(
+    `SELECT id
+       FROM locations
+      WHERE tenant_id = $1
+        AND type = 'warehouse'
+        AND (id::text = $2 OR code = $2)
+      ORDER BY id
+      LIMIT 1`,
+    [tenantId, ref]
+  );
+  return res.rowCount > 0 ? res.rows[0].id : null;
 }
 
 export async function createQcEvent(tenantId: string, data: QcEventInput) {
@@ -325,6 +347,102 @@ export async function createQcEvent(tenantId: string, data: QcEventInput) {
 
     return mapQcEvent(created);
   });
+}
+
+export async function postQcWarehouseDisposition(
+  tenantId: string,
+  action: 'accept' | 'reject',
+  data: QcWarehouseDispositionInput,
+  actor: { type: 'user' | 'system'; id?: string | null },
+  options?: { idempotencyKey?: string | null }
+) {
+  const quantity = toNumber(data.quantity);
+  if (!(quantity > 0)) {
+    throw new Error('QC_INVALID_QUANTITY');
+  }
+  const occurredAt = data.occurredAt ? new Date(data.occurredAt) : new Date();
+  if (Number.isNaN(occurredAt.getTime())) {
+    throw new Error('QC_INVALID_OCCURRED_AT');
+  }
+  const idempotencyKey = options?.idempotencyKey?.trim() || data.idempotencyKey?.trim() || null;
+
+  return withTransactionRetry(async (client) => {
+    const warehouseId = await resolveWarehouseRootIdByRef(tenantId, data.warehouseId, client);
+    if (!warehouseId) {
+      throw new Error('QC_WAREHOUSE_NOT_FOUND');
+    }
+
+    const sourceLocationId = await getQaLocation(tenantId, warehouseId, client);
+    if (!sourceLocationId) {
+      throw new Error('QC_QA_LOCATION_REQUIRED');
+    }
+    const destinationLocationId = action === 'accept'
+      ? await getDefaultSellableLocation(tenantId, warehouseId, client)
+      : await getHoldLocation(tenantId, warehouseId, client);
+    if (!destinationLocationId) {
+      throw new Error(action === 'accept' ? 'QC_ACCEPT_LOCATION_REQUIRED' : 'QC_HOLD_LOCATION_REQUIRED');
+    }
+
+    const sourceId = idempotencyKey
+      ? `qc_wrapper:${action}:${idempotencyKey}`
+      : `qc_wrapper:${action}:${uuidv4()}`;
+    const transfer = await transferInventory(
+      {
+        tenantId,
+        sourceLocationId,
+        destinationLocationId,
+        itemId: data.itemId,
+        quantity,
+        uom: data.uom,
+        sourceType: 'qc_event',
+        sourceId,
+        movementType: 'transfer',
+        qcAction: action === 'accept' ? 'accept' : 'hold',
+        reasonCode: action === 'accept' ? 'QC_ACCEPT' : 'QC_REJECT',
+        notes: data.notes?.trim() || `QC ${action} warehouse disposition`,
+        occurredAt,
+        actorId: actor.id ?? null,
+        overrideNegative: data.overrideNegative,
+        overrideReason: data.overrideReason ?? null,
+        idempotencyKey
+      },
+      client
+    );
+
+    await recordAuditLog(
+      {
+        tenantId,
+        actorType: actor.type,
+        actorId: actor.id ?? null,
+        action: 'create',
+        entityType: action === 'accept' ? 'qc_accept' : 'qc_reject',
+        entityId: transfer.movementId,
+        occurredAt,
+        metadata: {
+          warehouseId,
+          sourceLocationId,
+          destinationLocationId,
+          itemId: data.itemId,
+          quantity,
+          uom: data.uom
+        }
+      },
+      client
+    );
+
+    return {
+      action,
+      movementId: transfer.movementId,
+      warehouseId,
+      sourceLocationId,
+      destinationLocationId,
+      itemId: data.itemId,
+      quantity: roundQuantity(quantity),
+      uom: data.uom,
+      idempotencyKey,
+      replayed: !transfer.created
+    };
+  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
 }
 
 export async function listQcEventsForLine(tenantId: string, lineId: string) {
