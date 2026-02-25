@@ -76,6 +76,7 @@ const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
 
 const startupMode = resolveWarehouseDefaultsStartupMode();
 const schedulerMode = resolveSchedulerStartupMode();
+const REQUIRED_NON_PROD_LOCATION_COLUMNS = ['role', 'is_sellable'] as const;
 
 const app = express();
 
@@ -264,9 +265,50 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
+async function assertNonProductionSchemaCompatibility(): Promise<void> {
+  const nodeEnv = (process.env.NODE_ENV ?? 'development').toLowerCase();
+  if (nodeEnv === 'production') return;
+
+  const res = await pool.query<{ column_name: string }>(
+    `SELECT column_name
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'locations'
+        AND column_name = ANY($1::text[])`,
+    [REQUIRED_NON_PROD_LOCATION_COLUMNS]
+  );
+  const present = new Set(res.rows.map((row) => row.column_name));
+  const missing = REQUIRED_NON_PROD_LOCATION_COLUMNS.filter((column) => !present.has(column));
+  if (missing.length === 0) return;
+
+  const code = 'SCHEMA_COMPAT_LOCATIONS_COLUMNS_MISSING';
+  const remediation = [
+    'Run migrations against the configured DATABASE_URL.',
+    'Suggested command: npm run migrate:up',
+    'If local schema is severely behind, reset and migrate: CONFIRM_DB_RESET=1 npm run db:reset:migrate'
+  ].join(' ');
+
+  console.error('[schema.compatibility.failed]', {
+    code,
+    table: 'locations',
+    missingColumns: missing,
+    nodeEnv,
+    remediation
+  });
+
+  const error = new Error(`${code} missingColumns=${missing.join(',')}`) as Error & {
+    code?: string;
+    details?: { table: string; missingColumns: readonly string[] };
+  };
+  error.code = code;
+  error.details = { table: 'locations', missingColumns: missing };
+  throw error;
+}
+
 async function start() {
   const atpRetryBudgets = resolveAtpRetryBudgets({ enforceProductionCaps: true });
   emitAtpRetryBudgetsEffectiveLogOnce(atpRetryBudgets);
+  await assertNonProductionSchemaCompatibility();
 
   const startupTenantId = process.env.WAREHOUSE_DEFAULTS_TENANT_ID?.trim() || undefined;
   await ensureWarehouseDefaults(startupTenantId, { repair: startupMode.startupRepairMode });

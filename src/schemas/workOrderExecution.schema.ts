@@ -90,7 +90,19 @@ export const workOrderReportProductionSchema = z.object({
 });
 
 export const workOrderVoidReportProductionSchema = z.object({
-  reason: z.string().max(255),
+  workOrderExecutionId: z.string().uuid(),
+  reason: z.string().min(1).max(255),
+  notes: z.string().max(2000).optional(),
+  idempotencyKey: z.string().min(1).max(255).optional()
+});
+
+export const workOrderReportScrapSchema = z.object({
+  workOrderExecutionId: z.string().uuid(),
+  outputItemId: z.string().uuid().optional(),
+  quantity: z.number().positive(),
+  uom: z.string().min(1).max(32),
+  reasonCode: z.string().min(1).max(255),
+  occurredAt: z.string().datetime().optional(),
   notes: z.string().max(2000).optional(),
   idempotencyKey: z.string().min(1).max(255).optional()
 });

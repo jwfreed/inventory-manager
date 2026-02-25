@@ -177,16 +177,29 @@ router.post('/locations', async (req: Request, res: Response) => {
     const location = await createLocation(req.auth!.tenantId, parsed.data);
     return res.status(201).json(location);
   } catch (error) {
+    if (process.env.NODE_ENV === 'test') {
+      const pg = error as { code?: string; constraint?: string; detail?: string; message?: string };
+      console.error('[locations.create] db_error', {
+        code: pg?.code,
+        constraint: pg?.constraint,
+        detail: pg?.detail,
+        message: pg?.message,
+      });
+    }
     const mapped = mapPgErrorToHttp(error, {
       unique: () => ({ status: 409, body: { error: 'Location code must be unique.' } }),
       foreignKey: () => ({ status: 400, body: { error: 'Parent location must exist.' } }),
-      check: () => ({ status: 400, body: { error: 'Invalid location type or hierarchy.' } })
+      check: () => ({ status: 400, body: { error: 'Invalid location type or hierarchy.' } }),
+      notNull: () => ({ status: 400, body: { error: 'Invalid location type or hierarchy.' } }),
     });
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
     }
     if ((error as Error)?.message === 'LOCATION_ROLE_SELLABLE_MISMATCH') {
       return res.status(400).json({ error: 'Location role must match sellable flag.' });
+    }
+    if ((error as Error)?.message === 'LOCATION_ROLE_REQUIRED') {
+      return res.status(400).json({ error: 'Location role is required for non-warehouse-root locations.' });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create location.' });

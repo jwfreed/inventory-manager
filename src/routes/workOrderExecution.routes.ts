@@ -4,23 +4,29 @@ import {
   createWorkOrderCompletion,
   createWorkOrderIssue,
   fetchWorkOrderCompletion,
+  fetchWorkOrderVoidReportResult,
   fetchWorkOrderIssue,
   getWorkOrderExecutionSummary,
   postWorkOrderCompletion,
   postWorkOrderIssue,
   recordWorkOrderBatch,
-  reportWorkOrderProduction
+  reportWorkOrderProduction,
+  reportWorkOrderScrap,
+  voidWorkOrderProductionReport
 } from '../services/workOrderExecution.service';
 import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
   workOrderBatchSchema,
   workOrderIssuePostSchema,
-  workOrderReportProductionSchema
+  workOrderReportProductionSchema,
+  workOrderReportScrapSchema,
+  workOrderVoidReportProductionSchema
 } from '../schemas/workOrderExecution.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
+import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
 import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
 
 const router = Router();
@@ -647,7 +653,7 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
       return res.status(400).json({ error: 'report-production requires at least one component consumption line.' });
     }
     if (error?.message === 'WO_REPORT_SCRAP_NOT_SUPPORTED') {
-      return res.status(400).json({ error: 'scrapOutputs is not supported yet; report good quantity only.' });
+      return res.status(400).json({ error: 'scrapOutputs is not supported in report-production; use POST /work-orders/:id/report-scrap.' });
     }
     if (error?.message === 'WO_REPORT_OVERRIDE_DUPLICATE_COMPONENT') {
       return res.status(400).json({ error: 'consumptionOverrides cannot include duplicate componentItemId values.' });
@@ -696,12 +702,258 @@ router.post('/work-orders/:id/void-report-production', async (req: Request, res:
   if (!uuidSchema.safeParse(workOrderId).success) {
     return res.status(400).json({ error: 'Invalid work order id.' });
   }
-  return res.status(409).json({
-    error: {
-      code: 'WORK_ORDER_REPORT_VOID_NOT_SUPPORTED',
-      message: 'Void report-production is not supported. Post compensating movements instead.'
+  const parsed = workOrderVoidReportProductionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const idempotencyKey = resolveRequestIdempotencyKey(req, parsed.data.idempotencyKey);
+  if (!idempotencyKey) {
+    return res.status(400).json({
+      error: {
+        code: 'WO_VOID_IDEMPOTENCY_REQUIRED',
+        message: 'Idempotency-Key header (or body idempotencyKey) is required for void-report-production.'
+      }
+    });
+  }
+  const tenantId = req.auth!.tenantId;
+  const idempotencyStoreKey = `wo-void:${tenantId}:${workOrderId}:${idempotencyKey}`;
+  let idempotencyStarted = false;
+
+  try {
+    const requestHash = hashRequestBody({
+      workOrderId,
+      ...parsed.data
+    });
+    const record = await beginIdempotency(idempotencyStoreKey, requestHash);
+    if (record.status === 'SUCCEEDED' && record.responseRef?.startsWith('wo_void:')) {
+      const existing = await fetchWorkOrderVoidReportResult(
+        tenantId,
+        workOrderId,
+        parsed.data.workOrderExecutionId
+      );
+      if (existing) {
+        return res.status(200).json({
+          ...existing,
+          idempotencyKey
+        });
+      }
+      return res.status(409).json({
+        error: {
+          code: 'WO_VOID_IDEMPOTENCY_INCOMPLETE',
+          message: 'Void idempotency replay reference exists but no posted void movements were found.'
+        }
+      });
     }
-  });
+    if (record.status === 'IN_PROGRESS' && !record.isNew) {
+      const existing = await fetchWorkOrderVoidReportResult(
+        tenantId,
+        workOrderId,
+        parsed.data.workOrderExecutionId
+      );
+      if (existing) {
+        await completeIdempotency(
+          idempotencyStoreKey,
+          'SUCCEEDED',
+          `wo_void:${existing.workOrderId}:${existing.workOrderExecutionId}`
+        );
+        return res.status(200).json({
+          ...existing,
+          idempotencyKey
+        });
+      }
+      return res.status(409).json({
+        error: {
+          code: 'WO_VOID_IN_PROGRESS',
+          message: 'Void report-production is already in progress for this idempotency key.'
+        }
+      });
+    }
+    idempotencyStarted = true;
+
+    const result = await voidWorkOrderProductionReport(
+      tenantId,
+      workOrderId,
+      parsed.data,
+      {
+        type: 'user',
+        id: req.auth!.userId
+      },
+      { idempotencyKey }
+    );
+
+    await completeIdempotency(
+      idempotencyStoreKey,
+      'SUCCEEDED',
+      `wo_void:${result.workOrderId}:${result.workOrderExecutionId}`
+    );
+    return res.status(result.replayed ? 200 : 201).json({
+      ...result,
+      idempotencyKey
+    });
+  } catch (error: any) {
+    if (idempotencyStarted) {
+      await completeIdempotency(idempotencyStoreKey, 'FAILED', null);
+    }
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
+    if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_VOID_IDEMPOTENCY_MISMATCH',
+          message: 'Idempotency key reused with a different void-report-production request payload.'
+        }
+      });
+    }
+    if (error?.message === 'WO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    if (error?.message === 'WO_VOID_EXECUTION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Work order execution not found for this work order.' });
+    }
+    if (error?.message === 'WO_VOID_EXECUTION_NOT_POSTED') {
+      return res.status(409).json({ error: 'Only posted production reports can be voided.' });
+    }
+    if (error?.message === 'WO_VOID_EXECUTION_MOVEMENTS_MISSING' || error?.message === 'WO_VOID_EXECUTION_MOVEMENT_TYPE_INVALID') {
+      return res.status(409).json({ error: 'Work order execution does not have a valid posted production movement pair.' });
+    }
+    if (error?.message === 'WO_VOID_REASON_REQUIRED') {
+      return res.status(400).json({ error: 'Void reason is required.' });
+    }
+    if (error?.message === 'WO_VOID_OUTPUT_NOT_QA') {
+      return res.status(409).json({ error: 'Void is only allowed while produced output remains in QA.' });
+    }
+    if (error?.message === 'WO_VOID_PRODUCTION_LAYER_MISSING') {
+      return res.status(409).json({ error: 'Production cost layers for this execution were not found.' });
+    }
+    if (error?.code === 'WO_VOID_OUTPUT_ALREADY_MOVED') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_VOID_OUTPUT_ALREADY_MOVED',
+          message: 'Cannot void report-production after output has moved out of QA.',
+          details: error?.details
+        }
+      });
+    }
+    if (error?.message?.startsWith('WO_VOID_LOCATION_WAREHOUSE_MISSING')) {
+      const missing = error.message.split(':')[1] ?? '';
+      return res.status(409).json({
+        error: {
+          code: 'WO_VOID_LOCATION_WAREHOUSE_MISSING',
+          message: 'Warehouse resolution failed for one or more void movement locations.',
+          details: missing
+        }
+      });
+    }
+    if (error?.message === 'WO_VOID_INCOMPLETE') {
+      return res.status(409).json({ error: 'Void movements are present but incomplete. Retry with the same idempotency key.' });
+    }
+    if (error?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
+      return res.status(400).json({
+        error: {
+          code: 'DISCRETE_UOM_REQUIRES_INTEGER',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
+    if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to void report-production.' });
+  }
+});
+
+router.post('/work-orders/:id/report-scrap', async (req: Request, res: Response) => {
+  const workOrderId = req.params.id;
+  if (!uuidSchema.safeParse(workOrderId).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+  const parsed = workOrderReportScrapSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const idempotencyKey = resolveRequestIdempotencyKey(req, parsed.data.idempotencyKey);
+
+  try {
+    const result = await reportWorkOrderScrap(
+      req.auth!.tenantId,
+      workOrderId,
+      parsed.data,
+      {
+        type: 'user',
+        id: req.auth!.userId
+      },
+      { idempotencyKey }
+    );
+    return res.status(result.replayed ? 200 : 201).json({
+      ...result,
+      idempotencyKey
+    });
+  } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
+    if (error?.message === 'WO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    if (error?.message === 'WO_SCRAP_EXECUTION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Work order execution not found for this work order.' });
+    }
+    if (error?.message === 'WO_SCRAP_EXECUTION_NOT_POSTED') {
+      return res.status(409).json({ error: 'Only posted production reports support scrap posting.' });
+    }
+    if (error?.message === 'WO_SCRAP_OUTPUT_ITEM_MISMATCH') {
+      return res.status(400).json({ error: 'outputItemId must match the work order output item.' });
+    }
+    if (error?.message === 'WO_SCRAP_QA_SOURCE_AMBIGUOUS') {
+      return res.status(409).json({ error: 'Could not resolve a unique QA source location for this execution.' });
+    }
+    if (error?.message === 'WO_SCRAP_QA_SOURCE_WAREHOUSE_MISSING') {
+      return res.status(409).json({ error: 'QA source location is missing a warehouse binding.' });
+    }
+    if (error?.message === 'WO_SCRAP_LOCATION_REQUIRED') {
+      return res.status(409).json({ error: 'Warehouse must have a SCRAP default location before posting work-order scrap.' });
+    }
+    if (error?.message === 'WO_SCRAP_REASON_REQUIRED') {
+      return res.status(400).json({ error: 'reasonCode is required for report-scrap.' });
+    }
+    if (error?.message === 'WO_SCRAP_INVALID_OCCURRED_AT') {
+      return res.status(400).json({ error: 'Invalid occurredAt value.' });
+    }
+    if (error?.message === 'WO_SCRAP_INVALID_QTY') {
+      return res.status(400).json({ error: 'quantity must be greater than zero.' });
+    }
+    if (error?.code === 'WO_SCRAP_EXCEEDS_EXECUTION_QA_AVAILABLE') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_SCRAP_EXCEEDS_EXECUTION_QA_AVAILABLE',
+          message: 'Requested scrap quantity exceeds remaining QA inventory for this production execution.',
+          details: error?.details
+        }
+      });
+    }
+    if (error?.code === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({
+        error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'NEGATIVE_OVERRIDE_NOT_ALLOWED') {
+      return res.status(403).json({
+        error: {
+          code: 'NEGATIVE_OVERRIDE_NOT_ALLOWED',
+          message: error.details?.message,
+          details: error.details
+        }
+      });
+    }
+    if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to post work-order scrap.' });
+  }
 });
 
 router.get('/work-orders/:id/execution', async (req: Request, res: Response) => {

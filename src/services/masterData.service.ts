@@ -356,6 +356,9 @@ export async function createLocation(tenantId: string, data: LocationInput) {
   const isSellable = data.type === 'warehouse' ? false : (data.isSellable ?? role === 'SELLABLE');
 
   return withTransaction(async (client) => {
+    if (data.type !== 'warehouse' && role == null) {
+      throw new Error('LOCATION_ROLE_REQUIRED');
+    }
     if (role === 'SELLABLE' && !isSellable) {
       throw new Error('LOCATION_ROLE_SELLABLE_MISMATCH');
     }

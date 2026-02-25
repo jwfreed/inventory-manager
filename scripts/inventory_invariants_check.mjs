@@ -1194,6 +1194,330 @@ const productionFifoLayerContinuityRowsSql = `
    LIMIT $3
 `;
 
+const woVoidIntegrityCte = `
+  WITH void_pairs AS (
+    SELECT e.id AS work_order_execution_id,
+           e.work_order_id,
+           e.consumption_movement_id,
+           e.production_movement_id,
+           vc.id AS void_component_movement_id,
+           vo.id AS void_output_movement_id
+      FROM work_order_executions e
+      LEFT JOIN inventory_movements vc
+        ON vc.tenant_id = e.tenant_id
+       AND vc.source_type = 'work_order_batch_void_components'
+       AND vc.source_id = e.id::text
+      LEFT JOIN inventory_movements vo
+        ON vo.tenant_id = e.tenant_id
+       AND vo.source_type = 'work_order_batch_void_output'
+       AND vo.source_id = e.id::text
+     WHERE e.tenant_id = $1
+       AND (vc.id IS NOT NULL OR vo.id IS NOT NULL)
+       AND (
+         $2::uuid IS NULL
+         OR EXISTS (
+           SELECT 1
+             FROM inventory_movement_lines iml
+             JOIN locations l
+               ON l.id = iml.location_id
+              AND l.tenant_id = iml.tenant_id
+            WHERE iml.tenant_id = $1
+              AND iml.movement_id = ANY(
+                ARRAY[
+                  e.consumption_movement_id,
+                  e.production_movement_id,
+                  vc.id,
+                  vo.id
+                ]::uuid[]
+              )
+              AND l.warehouse_id = $2::uuid
+         )
+       )
+  ),
+  original_component AS (
+    SELECT vp.work_order_execution_id,
+           SUM(ABS(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)))::numeric AS qty,
+           SUM(
+             ABS(
+               COALESCE(
+                 iml.extended_cost,
+                 COALESCE(iml.unit_cost, 0) * COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)
+               )
+             )
+           )::numeric AS cost
+      FROM void_pairs vp
+      JOIN inventory_movement_lines iml
+        ON iml.tenant_id = $1
+       AND iml.movement_id = vp.consumption_movement_id
+     WHERE COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) < 0
+     GROUP BY vp.work_order_execution_id
+  ),
+  original_output AS (
+    SELECT vp.work_order_execution_id,
+           SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta))::numeric AS qty,
+           SUM(
+             COALESCE(
+               iml.extended_cost,
+               COALESCE(iml.unit_cost, 0) * COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)
+             )
+           )::numeric AS cost
+      FROM void_pairs vp
+      JOIN inventory_movement_lines iml
+        ON iml.tenant_id = $1
+       AND iml.movement_id = vp.production_movement_id
+     WHERE COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+       AND LOWER(COALESCE(iml.reason_code, '')) NOT IN ('scrap', 'work_order_scrap', 'reject', 'work_order_reject')
+     GROUP BY vp.work_order_execution_id
+  ),
+  void_component AS (
+    SELECT vp.work_order_execution_id,
+           vp.void_component_movement_id,
+           mv.status,
+           mv.movement_type,
+           SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta))::numeric AS qty,
+           SUM(
+             COALESCE(
+               iml.extended_cost,
+               COALESCE(iml.unit_cost, 0) * COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)
+             )
+           )::numeric AS cost
+      FROM void_pairs vp
+      LEFT JOIN inventory_movements mv
+        ON mv.id = vp.void_component_movement_id
+       AND mv.tenant_id = $1
+      LEFT JOIN inventory_movement_lines iml
+        ON iml.tenant_id = $1
+       AND iml.movement_id = vp.void_component_movement_id
+     GROUP BY vp.work_order_execution_id, vp.void_component_movement_id, mv.status, mv.movement_type
+  ),
+  void_output AS (
+    SELECT vp.work_order_execution_id,
+           vp.void_output_movement_id,
+           mv.status,
+           mv.movement_type,
+           SUM(ABS(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)))::numeric AS qty,
+           SUM(
+             ABS(
+               COALESCE(
+                 iml.extended_cost,
+                 COALESCE(iml.unit_cost, 0) * COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)
+               )
+             )
+           )::numeric AS cost
+      FROM void_pairs vp
+      LEFT JOIN inventory_movements mv
+        ON mv.id = vp.void_output_movement_id
+       AND mv.tenant_id = $1
+      LEFT JOIN inventory_movement_lines iml
+        ON iml.tenant_id = $1
+       AND iml.movement_id = vp.void_output_movement_id
+     GROUP BY vp.work_order_execution_id, vp.void_output_movement_id, mv.status, mv.movement_type
+  ),
+  combined AS (
+    SELECT vp.work_order_id,
+           vp.work_order_execution_id,
+           vp.void_component_movement_id,
+           vp.void_output_movement_id,
+           vcomp.status AS void_component_status,
+           vout.status AS void_output_status,
+           vcomp.movement_type AS void_component_type,
+           vout.movement_type AS void_output_type,
+           COALESCE(oc.qty, 0)::numeric AS original_component_qty,
+           COALESCE(vcomp.qty, 0)::numeric AS void_component_qty,
+           (COALESCE(vcomp.qty, 0) - COALESCE(oc.qty, 0))::numeric AS component_qty_delta,
+           COALESCE(oc.cost, 0)::numeric AS original_component_cost,
+           COALESCE(vcomp.cost, 0)::numeric AS void_component_cost,
+           (COALESCE(vcomp.cost, 0) - COALESCE(oc.cost, 0))::numeric AS component_cost_delta,
+           COALESCE(oo.qty, 0)::numeric AS original_output_qty,
+           COALESCE(vout.qty, 0)::numeric AS void_output_qty,
+           (COALESCE(vout.qty, 0) - COALESCE(oo.qty, 0))::numeric AS output_qty_delta,
+           COALESCE(oo.cost, 0)::numeric AS original_output_cost,
+           COALESCE(vout.cost, 0)::numeric AS void_output_cost,
+           (COALESCE(vout.cost, 0) - COALESCE(oo.cost, 0))::numeric AS output_cost_delta
+      FROM void_pairs vp
+      LEFT JOIN original_component oc
+        ON oc.work_order_execution_id = vp.work_order_execution_id
+      LEFT JOIN original_output oo
+        ON oo.work_order_execution_id = vp.work_order_execution_id
+      LEFT JOIN void_component vcomp
+        ON vcomp.work_order_execution_id = vp.work_order_execution_id
+      LEFT JOIN void_output vout
+        ON vout.work_order_execution_id = vp.work_order_execution_id
+  ),
+  violations AS (
+    SELECT *,
+           CASE
+             WHEN void_component_movement_id IS NULL OR void_output_movement_id IS NULL
+               THEN 'WO_VOID_MISSING_COMPENSATING_MOVEMENT'
+             WHEN void_component_status <> 'posted' OR void_output_status <> 'posted'
+               THEN 'WO_VOID_COMPENSATING_MOVEMENT_NOT_POSTED'
+             WHEN void_component_type <> 'receive' OR void_output_type <> 'issue'
+               THEN 'WO_VOID_COMPENSATING_MOVEMENT_TYPE_INVALID'
+             WHEN ABS(component_qty_delta) > 0.000001
+               THEN 'WO_VOID_COMPONENT_QTY_NOT_CONSERVED'
+             WHEN ABS(output_qty_delta) > 0.000001
+               THEN 'WO_VOID_OUTPUT_QTY_NOT_CONSERVED'
+             WHEN ABS(component_cost_delta) > 0.000001
+               THEN 'WO_VOID_COMPONENT_COST_NOT_CONSERVED'
+             WHEN ABS(output_cost_delta) > 0.000001
+               THEN 'WO_VOID_OUTPUT_COST_NOT_CONSERVED'
+             ELSE NULL
+           END AS issue_code
+      FROM combined
+  )
+`;
+
+const woVoidIntegrityCountSql = `
+  ${woVoidIntegrityCte}
+  SELECT COUNT(*)::int AS count
+    FROM violations
+   WHERE issue_code IS NOT NULL
+`;
+
+const woVoidIntegrityRowsSql = `
+  ${woVoidIntegrityCte}
+  SELECT work_order_id AS "workOrderId",
+         work_order_execution_id AS "workOrderExecutionId",
+         void_component_movement_id AS "voidComponentMovementId",
+         void_output_movement_id AS "voidOutputMovementId",
+         original_component_qty AS "originalComponentQty",
+         void_component_qty AS "voidComponentQty",
+         component_qty_delta AS "componentQtyDelta",
+         original_component_cost AS "originalComponentCost",
+         void_component_cost AS "voidComponentCost",
+         component_cost_delta AS "componentCostDelta",
+         original_output_qty AS "originalOutputQty",
+         void_output_qty AS "voidOutputQty",
+         output_qty_delta AS "outputQtyDelta",
+         original_output_cost AS "originalOutputCost",
+         void_output_cost AS "voidOutputCost",
+         output_cost_delta AS "outputCostDelta",
+         issue_code AS "issueCode"
+    FROM violations
+   WHERE issue_code IS NOT NULL
+   ORDER BY work_order_execution_id
+   LIMIT $3
+`;
+
+const scrapLocationIntegrityCountSql = `
+  WITH scoped AS (
+    SELECT im.id AS movement_id,
+           im.source_id,
+           iml.location_id,
+           l.warehouse_id,
+           l.role,
+           COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)::numeric AS qty
+      FROM inventory_movements im
+      JOIN inventory_movement_lines iml
+        ON iml.movement_id = im.id
+       AND iml.tenant_id = im.tenant_id
+      JOIN locations l
+        ON l.id = iml.location_id
+       AND l.tenant_id = iml.tenant_id
+     WHERE im.tenant_id = $1
+       AND im.source_type = 'work_order_scrap'
+       AND im.movement_type = 'transfer'
+       AND im.status = 'posted'
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+  )
+  SELECT COUNT(*)::int AS count
+    FROM scoped
+   WHERE (qty < 0 AND role IS DISTINCT FROM 'QA')
+      OR (qty > 0 AND role IS DISTINCT FROM 'SCRAP')
+`;
+
+const scrapLocationIntegrityRowsSql = `
+  WITH scoped AS (
+    SELECT im.id AS movement_id,
+           im.source_id,
+           iml.location_id,
+           l.warehouse_id,
+           l.role,
+           COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)::numeric AS qty
+      FROM inventory_movements im
+      JOIN inventory_movement_lines iml
+        ON iml.movement_id = im.id
+       AND iml.tenant_id = im.tenant_id
+      JOIN locations l
+        ON l.id = iml.location_id
+       AND l.tenant_id = iml.tenant_id
+     WHERE im.tenant_id = $1
+       AND im.source_type = 'work_order_scrap'
+       AND im.movement_type = 'transfer'
+       AND im.status = 'posted'
+       AND ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+  )
+  SELECT movement_id AS "movementId",
+         source_id AS "sourceId",
+         location_id AS "locationId",
+         warehouse_id AS "warehouseId",
+         role,
+         qty AS "quantity"
+    FROM scoped
+   WHERE (qty < 0 AND role IS DISTINCT FROM 'QA')
+      OR (qty > 0 AND role IS DISTINCT FROM 'SCRAP')
+   ORDER BY movement_id, location_id
+   LIMIT $3
+`;
+
+const noNegativeOnHandPostVoidCountSql = `
+  WITH void_scopes AS (
+    SELECT DISTINCT iml.item_id,
+                    iml.location_id,
+                    COALESCE(iml.canonical_uom, iml.uom) AS balance_uom
+      FROM inventory_movements im
+      JOIN inventory_movement_lines iml
+        ON iml.movement_id = im.id
+       AND iml.tenant_id = im.tenant_id
+     WHERE im.tenant_id = $1
+       AND im.source_type IN ('work_order_batch_void_components', 'work_order_batch_void_output')
+  )
+  SELECT COUNT(*)::int AS count
+    FROM void_scopes vs
+    JOIN inventory_balance b
+      ON b.tenant_id = $1
+     AND b.item_id = vs.item_id
+     AND b.location_id = vs.location_id
+     AND b.uom = vs.balance_uom
+    JOIN locations l
+      ON l.id = b.location_id
+     AND l.tenant_id = b.tenant_id
+   WHERE ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+     AND b.on_hand < -0.000001
+`;
+
+const noNegativeOnHandPostVoidRowsSql = `
+  WITH void_scopes AS (
+    SELECT DISTINCT iml.item_id,
+                    iml.location_id,
+                    COALESCE(iml.canonical_uom, iml.uom) AS balance_uom
+      FROM inventory_movements im
+      JOIN inventory_movement_lines iml
+        ON iml.movement_id = im.id
+       AND iml.tenant_id = im.tenant_id
+     WHERE im.tenant_id = $1
+       AND im.source_type IN ('work_order_batch_void_components', 'work_order_batch_void_output')
+  )
+  SELECT b.item_id AS "itemId",
+         b.location_id AS "locationId",
+         l.warehouse_id AS "warehouseId",
+         b.uom,
+         b.on_hand AS "onHand"
+    FROM void_scopes vs
+    JOIN inventory_balance b
+      ON b.tenant_id = $1
+     AND b.item_id = vs.item_id
+     AND b.location_id = vs.location_id
+     AND b.uom = vs.balance_uom
+    JOIN locations l
+      ON l.id = b.location_id
+     AND l.tenant_id = b.tenant_id
+   WHERE ($2::uuid IS NULL OR l.warehouse_id = $2::uuid)
+     AND b.on_hand < -0.000001
+   ORDER BY b.on_hand ASC, b.item_id, b.location_id
+   LIMIT $3
+`;
+
 const warehouseDefaultCompletenessCte = `
   WITH expected_warehouses AS (
     SELECT DISTINCT expected.warehouse_code
@@ -1929,6 +2253,47 @@ try {
     productionFifoLayerContinuityRowsRes.rows
   );
   if (strictMode && productionFifoLayerContinuityCount > 0) {
+    exitCode = 2;
+  }
+
+  const [woVoidIntegrityCountRes, woVoidIntegrityRowsRes] = await Promise.all([
+    pool.query(woVoidIntegrityCountSql, params2),
+    pool.query(woVoidIntegrityRowsSql, params3)
+  ]);
+  const woVoidIntegrityCount = Number(woVoidIntegrityCountRes.rows[0]?.count ?? 0);
+  invariantCounts.wo_void_integrity = woVoidIntegrityCount;
+  printSection('wo_void_integrity', woVoidIntegrityCount, woVoidIntegrityRowsRes.rows);
+  if (strictMode && woVoidIntegrityCount > 0) {
+    exitCode = 2;
+  }
+
+  const [scrapLocationIntegrityCountRes, scrapLocationIntegrityRowsRes] = await Promise.all([
+    pool.query(scrapLocationIntegrityCountSql, params2),
+    pool.query(scrapLocationIntegrityRowsSql, params3)
+  ]);
+  const scrapLocationIntegrityCount = Number(scrapLocationIntegrityCountRes.rows[0]?.count ?? 0);
+  invariantCounts.scrap_location_integrity = scrapLocationIntegrityCount;
+  printSection(
+    'scrap_location_integrity',
+    scrapLocationIntegrityCount,
+    scrapLocationIntegrityRowsRes.rows
+  );
+  if (strictMode && scrapLocationIntegrityCount > 0) {
+    exitCode = 2;
+  }
+
+  const [noNegativeOnHandPostVoidCountRes, noNegativeOnHandPostVoidRowsRes] = await Promise.all([
+    pool.query(noNegativeOnHandPostVoidCountSql, params2),
+    pool.query(noNegativeOnHandPostVoidRowsSql, params3)
+  ]);
+  const noNegativeOnHandPostVoidCount = Number(noNegativeOnHandPostVoidCountRes.rows[0]?.count ?? 0);
+  invariantCounts.no_negative_on_hand_post_void = noNegativeOnHandPostVoidCount;
+  printSection(
+    'no_negative_on_hand_post_void',
+    noNegativeOnHandPostVoidCount,
+    noNegativeOnHandPostVoidRowsRes.rows
+  );
+  if (strictMode && noNegativeOnHandPostVoidCount > 0) {
     exitCode = 2;
   }
 

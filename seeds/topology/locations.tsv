@@ -1,8 +1,8 @@
 warehouse_code	local_code	code	name	type	role	is_sellable	active
-FACTORY	RAW_MATERIALS	FACTORY_RAW_MATERIALS	Raw Materials	bin		false	true
-FACTORY	PACKAGING_MATERIALS	FACTORY_PACKAGING_MATERIALS	Packaging Materials	bin		false	true
-FACTORY	BASE_CHOCOLATE	FACTORY_BASE_CHOCOLATE	Base Chocolate	bin		false	true
-FACTORY	TEMPERING_PACKAGING	FACTORY_TEMPERING_PACKAGING	Tempering and Packaging	bin		false	true
+FACTORY	RAW_MATERIALS	FACTORY_RAW_MATERIALS	Raw Materials	bin	SCRAP	false	true
+FACTORY	PACKAGING_MATERIALS	FACTORY_PACKAGING_MATERIALS	Packaging Materials	bin	SCRAP	false	true
+FACTORY	BASE_CHOCOLATE	FACTORY_BASE_CHOCOLATE	Base Chocolate	bin	SCRAP	false	true
+FACTORY	TEMPERING_PACKAGING	FACTORY_TEMPERING_PACKAGING	Tempering and Packaging	bin	SCRAP	false	true
 FACTORY	QA	FACTORY_QA	Factory QA	bin	QA	false	true
 FACTORY	SELLABLE	FACTORY_SELLABLE	Factory Sellable	bin	SELLABLE	true	true
 FACTORY	HOLD	FACTORY_HOLD	Factory Hold	bin	HOLD	false	true

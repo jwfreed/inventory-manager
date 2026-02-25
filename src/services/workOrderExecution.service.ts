@@ -24,8 +24,11 @@ import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
   workOrderBatchSchema,
-  workOrderReportProductionSchema
+  workOrderReportProductionSchema,
+  workOrderReportScrapSchema,
+  workOrderVoidReportProductionSchema
 } from '../schemas/workOrderExecution.schema';
+import { transferInventory } from './transfers.service';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
 // (never inventory_adjustments). External refs include work order ids for traceability.
@@ -34,6 +37,8 @@ type WorkOrderIssueCreateInput = z.infer<typeof workOrderIssueCreateSchema>;
 type WorkOrderCompletionCreateInput = z.infer<typeof workOrderCompletionCreateSchema>;
 type WorkOrderBatchInput = z.infer<typeof workOrderBatchSchema>;
 type WorkOrderReportProductionInput = z.infer<typeof workOrderReportProductionSchema>;
+type WorkOrderVoidReportProductionInput = z.infer<typeof workOrderVoidReportProductionSchema>;
+type WorkOrderReportScrapInput = z.infer<typeof workOrderReportScrapSchema>;
 
 const WIP_COST_METHOD = 'fifo';
 const WORK_ORDER_POST_RETRY_OPTIONS = { isolationLevel: 'SERIALIZABLE' as const, retries: 2 };
@@ -1401,6 +1406,272 @@ export type WorkOrderProductionReportResult = {
   replayed: boolean;
 };
 
+export type WorkOrderVoidReportResult = {
+  workOrderId: string;
+  workOrderExecutionId: string;
+  componentReturnMovementId: string;
+  outputReversalMovementId: string;
+  idempotencyKey: string | null;
+  replayed: boolean;
+};
+
+export type WorkOrderScrapReportResult = {
+  workOrderId: string;
+  workOrderExecutionId: string;
+  scrapMovementId: string;
+  itemId: string;
+  quantity: number;
+  uom: string;
+  idempotencyKey: string | null;
+  replayed: boolean;
+};
+
+const WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE = 'work_order_batch_void_output';
+const WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE = 'work_order_batch_void_components';
+const WORK_ORDER_SCRAP_SOURCE_TYPE = 'work_order_scrap';
+
+type LockedExecutionRow = {
+  id: string;
+  work_order_id: string;
+  status: string;
+  occurred_at: string;
+  consumption_movement_id: string | null;
+  production_movement_id: string | null;
+};
+
+type MovementLineScopeRow = {
+  item_id: string;
+  location_id: string;
+  warehouse_id: string | null;
+  qty_canonical: string | number;
+  balance_uom: string;
+  unit_cost: string | number | null;
+  extended_cost: string | number | null;
+};
+
+type ExistingVoidMovementsRow = {
+  id: string;
+  source_type: string;
+  status: string;
+};
+
+function normalizedOptionalIdempotencyKey(key?: string | null) {
+  if (!key) return null;
+  const trimmed = key.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function assertVoidReason(reason: string) {
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    throw new Error('WO_VOID_REASON_REQUIRED');
+  }
+  return trimmed;
+}
+
+function assertScrapReasonCode(reasonCode: string) {
+  const trimmed = reasonCode.trim();
+  if (!trimmed) {
+    throw new Error('WO_SCRAP_REASON_REQUIRED');
+  }
+  return trimmed;
+}
+
+function assertSameWorkOrderExecution(
+  workOrderId: string,
+  execution: LockedExecutionRow
+) {
+  if (execution.work_order_id !== workOrderId) {
+    throw new Error('WO_VOID_EXECUTION_WORK_ORDER_MISMATCH');
+  }
+}
+
+async function findExistingVoidMovements(
+  client: PoolClient,
+  tenantId: string,
+  executionId: string
+) {
+  const result = await client.query<ExistingVoidMovementsRow>(
+    `SELECT id, source_type, status
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_id = $2
+        AND source_type IN ($3, $4)
+      FOR UPDATE`,
+    [
+      tenantId,
+      executionId,
+      WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE,
+      WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE
+    ]
+  );
+  return result.rows;
+}
+
+async function fetchVoidMovementPair(
+  client: PoolClient,
+  tenantId: string,
+  executionId: string
+) {
+  const rows = await findExistingVoidMovements(client, tenantId, executionId);
+  const component = rows.find((row) => row.source_type === WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE);
+  const output = rows.find((row) => row.source_type === WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE);
+  if (!component || !output) {
+    return null;
+  }
+  if (component.status !== 'posted' || output.status !== 'posted') {
+    throw new Error('WO_VOID_INCOMPLETE');
+  }
+  return {
+    componentReturnMovementId: component.id,
+    outputReversalMovementId: output.id
+  };
+}
+
+async function loadMovementLineScopes(
+  client: PoolClient,
+  tenantId: string,
+  movementId: string,
+  quantitySign: 'positive' | 'negative'
+) {
+  const comparator = quantitySign === 'positive' ? '>' : '<';
+  const result = await client.query<MovementLineScopeRow>(
+    `SELECT iml.item_id,
+            iml.location_id,
+            l.warehouse_id,
+            COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) AS qty_canonical,
+            COALESCE(iml.canonical_uom, iml.uom) AS balance_uom,
+            iml.unit_cost,
+            iml.extended_cost
+       FROM inventory_movement_lines iml
+       JOIN locations l
+         ON l.id = iml.location_id
+        AND l.tenant_id = iml.tenant_id
+      WHERE iml.tenant_id = $1
+        AND iml.movement_id = $2
+        AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) ${comparator} 0
+      ORDER BY iml.item_id, iml.location_id, iml.id
+      FOR UPDATE`,
+    [tenantId, movementId]
+  );
+  return result.rows;
+}
+
+function movementLineUnitCost(line: MovementLineScopeRow): number {
+  const qty = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
+  const extendedCost = line.extended_cost !== null ? Math.abs(toNumber(line.extended_cost)) : null;
+  if (extendedCost !== null && qty > 0) {
+    return roundQuantity(extendedCost / qty);
+  }
+  return roundQuantity(Math.abs(toNumber(line.unit_cost ?? 0)));
+}
+
+async function assertVoidOutputStillInQa(
+  client: PoolClient,
+  tenantId: string,
+  executionId: string,
+  productionMovementId: string
+) {
+  const layerRows = await client.query<{
+    id: string;
+    remaining_quantity: string | number;
+    original_quantity: string | number;
+    location_id: string;
+  }>(
+    `SELECT id, remaining_quantity, original_quantity, location_id
+       FROM inventory_cost_layers
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND source_type = 'production'
+        AND voided_at IS NULL
+      FOR UPDATE`,
+    [tenantId, productionMovementId]
+  );
+  if (layerRows.rowCount === 0) {
+    throw new Error('WO_VOID_PRODUCTION_LAYER_MISSING');
+  }
+
+  const consumedRows = await client.query(
+    `SELECT 1
+       FROM cost_layer_consumptions
+      WHERE tenant_id = $1
+        AND cost_layer_id = ANY($2::uuid[])
+      LIMIT 1`,
+    [tenantId, layerRows.rows.map((row) => row.id)]
+  );
+  if (consumedRows.rowCount > 0) {
+    throw domainError('WO_VOID_OUTPUT_ALREADY_MOVED', {
+      workOrderExecutionId: executionId
+    });
+  }
+
+  for (const row of layerRows.rows) {
+    const remaining = roundQuantity(toNumber(row.remaining_quantity));
+    const original = roundQuantity(toNumber(row.original_quantity));
+    if (Math.abs(remaining - original) > 1e-6) {
+      throw domainError('WO_VOID_OUTPUT_ALREADY_MOVED', {
+        workOrderExecutionId: executionId
+      });
+    }
+    const roleRes = await client.query<{ role: string | null }>(
+      `SELECT role
+         FROM locations
+        WHERE id = $1
+          AND tenant_id = $2`,
+      [row.location_id, tenantId]
+    );
+    if (roleRes.rows[0]?.role !== 'QA') {
+      throw new Error('WO_VOID_OUTPUT_NOT_QA');
+    }
+  }
+}
+
+export async function fetchWorkOrderVoidReportResult(
+  tenantId: string,
+  workOrderId: string,
+  workOrderExecutionId: string,
+  client?: PoolClient
+): Promise<WorkOrderVoidReportResult | null> {
+  const executor = client ? client.query.bind(client) : query;
+  const executionRes = await executor<LockedExecutionRow>(
+    `SELECT id, work_order_id, status, occurred_at, consumption_movement_id, production_movement_id
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND id = $2
+        AND work_order_id = $3`,
+    [tenantId, workOrderExecutionId, workOrderId]
+  );
+  if (executionRes.rowCount === 0) {
+    return null;
+  }
+  const movementRes = await executor<ExistingVoidMovementsRow>(
+    `SELECT id, source_type, status
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_id = $2
+        AND source_type IN ($3, $4)`,
+    [
+      tenantId,
+      workOrderExecutionId,
+      WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE,
+      WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE
+    ]
+  );
+  const component = movementRes.rows.find((row) => row.source_type === WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE);
+  const output = movementRes.rows.find((row) => row.source_type === WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE);
+  if (!component || !output || component.status !== 'posted' || output.status !== 'posted') {
+    return null;
+  }
+  return {
+    workOrderId,
+    workOrderExecutionId,
+    componentReturnMovementId: component.id,
+    outputReversalMovementId: output.id,
+    idempotencyKey: null,
+    replayed: true
+  };
+}
+
 export async function reportWorkOrderProduction(
   tenantId: string,
   workOrderId: string,
@@ -1539,6 +1810,477 @@ export async function reportWorkOrderProduction(
     idempotencyKey: batchResult.idempotencyKey ?? options?.idempotencyKey ?? data.idempotencyKey ?? null,
     replayed: batchResult.replayed
   };
+}
+
+export async function voidWorkOrderProductionReport(
+  tenantId: string,
+  workOrderId: string,
+  data: WorkOrderVoidReportProductionInput,
+  actor: { type: 'user' | 'system'; id?: string | null },
+  options?: { idempotencyKey?: string | null }
+): Promise<WorkOrderVoidReportResult> {
+  const idempotencyKey = normalizedOptionalIdempotencyKey(options?.idempotencyKey ?? data.idempotencyKey ?? null);
+  const reason = assertVoidReason(data.reason);
+
+  return withTransactionRetry(async (client) => {
+    const executionRes = await client.query<LockedExecutionRow>(
+      `SELECT id,
+              work_order_id,
+              status,
+              occurred_at,
+              consumption_movement_id,
+              production_movement_id
+         FROM work_order_executions
+        WHERE tenant_id = $1
+          AND id = $2
+          AND work_order_id = $3
+        FOR UPDATE`,
+      [tenantId, data.workOrderExecutionId, workOrderId]
+    );
+    if (executionRes.rowCount === 0) {
+      throw new Error('WO_VOID_EXECUTION_NOT_FOUND');
+    }
+    const execution = executionRes.rows[0];
+    assertSameWorkOrderExecution(workOrderId, execution);
+    if (execution.status !== 'posted') {
+      throw new Error('WO_VOID_EXECUTION_NOT_POSTED');
+    }
+    if (!execution.consumption_movement_id || !execution.production_movement_id) {
+      throw new Error('WO_VOID_EXECUTION_MOVEMENTS_MISSING');
+    }
+
+    const existingPair = await fetchVoidMovementPair(client, tenantId, execution.id);
+    if (existingPair) {
+      return {
+        workOrderId,
+        workOrderExecutionId: execution.id,
+        componentReturnMovementId: existingPair.componentReturnMovementId,
+        outputReversalMovementId: existingPair.outputReversalMovementId,
+        idempotencyKey,
+        replayed: true
+      };
+    }
+
+    const originalMovements = await client.query<{
+      id: string;
+      movement_type: string;
+      status: string;
+    }>(
+      `SELECT id, movement_type, status
+         FROM inventory_movements
+        WHERE tenant_id = $1
+          AND id = ANY($2::uuid[])
+        FOR UPDATE`,
+      [tenantId, [execution.consumption_movement_id, execution.production_movement_id]]
+    );
+    const originalIssue = originalMovements.rows.find((row) => row.id === execution.consumption_movement_id);
+    const originalProduction = originalMovements.rows.find((row) => row.id === execution.production_movement_id);
+    if (!originalIssue || !originalProduction) {
+      throw new Error('WO_VOID_EXECUTION_MOVEMENTS_MISSING');
+    }
+    if (originalIssue.status !== 'posted' || originalProduction.status !== 'posted') {
+      throw new Error('WO_VOID_EXECUTION_NOT_POSTED');
+    }
+    if (originalIssue.movement_type !== 'issue' || originalProduction.movement_type !== 'receive') {
+      throw new Error('WO_VOID_EXECUTION_MOVEMENT_TYPE_INVALID');
+    }
+
+    const componentLines = await loadMovementLineScopes(
+      client,
+      tenantId,
+      execution.consumption_movement_id,
+      'negative'
+    );
+    const outputLines = await loadMovementLineScopes(
+      client,
+      tenantId,
+      execution.production_movement_id,
+      'positive'
+    );
+    if (componentLines.length === 0 || outputLines.length === 0) {
+      throw new Error('WO_VOID_EXECUTION_MOVEMENTS_MISSING');
+    }
+
+    await assertVoidOutputStillInQa(
+      client,
+      tenantId,
+      execution.id,
+      execution.production_movement_id
+    );
+
+    const missingWarehouseBindings = [
+      ...componentLines.filter((line) => !line.warehouse_id).map((line) => line.location_id),
+      ...outputLines.filter((line) => !line.warehouse_id).map((line) => line.location_id)
+    ];
+    if (missingWarehouseBindings.length > 0) {
+      throw new Error(
+        `WO_VOID_LOCATION_WAREHOUSE_MISSING:${Array.from(new Set(missingWarehouseBindings)).join(',')}`
+      );
+    }
+
+    const advisoryTargets = [
+      ...componentLines.map((line) => ({
+        tenantId,
+        warehouseId: line.warehouse_id ?? '',
+        itemId: line.item_id
+      })),
+      ...outputLines.map((line) => ({
+        tenantId,
+        warehouseId: line.warehouse_id ?? '',
+        itemId: line.item_id
+      }))
+    ];
+    const lockContext = createAtpLockContext({
+      operation: 'work_order_batch_void',
+      tenantId
+    });
+    await acquireAtpLocks(client, advisoryTargets, { lockContext });
+    assertAtpLockHeldOrThrow(lockContext, { workOrderId, workOrderExecutionId: execution.id });
+
+    const now = new Date();
+    const outputMovement = await createInventoryMovement(client, {
+      tenantId,
+      movementType: 'issue',
+      status: 'posted',
+      externalRef: `${WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE}:${execution.id}:${workOrderId}`,
+      sourceType: WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE,
+      sourceId: execution.id,
+      idempotencyKey: idempotencyKey ? `${idempotencyKey}:output` : null,
+      occurredAt: now,
+      postedAt: now,
+      notes: data.notes ?? `Void production output for execution ${execution.id}: ${reason}`,
+      metadata: {
+        workOrderId,
+        workOrderExecutionId: execution.id,
+        reason
+      },
+      createdAt: now,
+      updatedAt: now
+    });
+    if (!outputMovement.created) {
+      await ensurePostedMovementReady(client, tenantId, outputMovement.id);
+      throw new Error('WO_VOID_INCOMPLETE');
+    }
+
+    const componentMovement = await createInventoryMovement(client, {
+      tenantId,
+      movementType: 'receive',
+      status: 'posted',
+      externalRef: `${WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE}:${execution.id}:${workOrderId}`,
+      sourceType: WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE,
+      sourceId: execution.id,
+      idempotencyKey: idempotencyKey ? `${idempotencyKey}:components` : null,
+      occurredAt: now,
+      postedAt: now,
+      notes: data.notes ?? `Void component return for execution ${execution.id}: ${reason}`,
+      metadata: {
+        workOrderId,
+        workOrderExecutionId: execution.id,
+        reason
+      },
+      createdAt: now,
+      updatedAt: now
+    });
+    if (!componentMovement.created) {
+      await ensurePostedMovementReady(client, tenantId, componentMovement.id);
+      throw new Error('WO_VOID_INCOMPLETE');
+    }
+
+    for (const line of outputLines) {
+      const quantityToReverse = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
+      const canonicalFields = await getCanonicalMovementFields(
+        tenantId,
+        line.item_id,
+        -quantityToReverse,
+        line.balance_uom,
+        client
+      );
+      const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
+      const consumption = await consumeCostLayers({
+        tenant_id: tenantId,
+        item_id: line.item_id,
+        location_id: line.location_id,
+        quantity: canonicalQty,
+        consumption_type: 'scrap',
+        consumption_document_id: execution.id,
+        movement_id: outputMovement.id,
+        client,
+        notes: `work_order_void_output:${execution.id}`
+      });
+      const unitCost = canonicalQty > 0 ? consumption.total_cost / canonicalQty : null;
+      const extendedCost = -consumption.total_cost;
+
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId: outputMovement.id,
+        itemId: line.item_id,
+        locationId: line.location_id,
+        quantityDelta: canonicalFields.quantityDeltaCanonical,
+        uom: canonicalFields.canonicalUom,
+        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+        uomEntered: canonicalFields.uomEntered,
+        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+        canonicalUom: canonicalFields.canonicalUom,
+        uomDimension: canonicalFields.uomDimension,
+        unitCost,
+        extendedCost,
+        reasonCode: 'work_order_void_output',
+        lineNotes: `Void output reversal for work order execution ${execution.id}`
+      });
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: line.item_id,
+        locationId: line.location_id,
+        uom: canonicalFields.canonicalUom,
+        deltaOnHand: canonicalFields.quantityDeltaCanonical
+      });
+    }
+
+    for (const line of componentLines) {
+      const quantityToReturn = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
+      const canonicalFields = await getCanonicalMovementFields(
+        tenantId,
+        line.item_id,
+        quantityToReturn,
+        line.balance_uom,
+        client
+      );
+      const unitCost = movementLineUnitCost(line);
+      const extendedCost = roundQuantity(canonicalFields.quantityDeltaCanonical * unitCost);
+
+      await createInventoryMovementLine(client, {
+        tenantId,
+        movementId: componentMovement.id,
+        itemId: line.item_id,
+        locationId: line.location_id,
+        quantityDelta: canonicalFields.quantityDeltaCanonical,
+        uom: canonicalFields.canonicalUom,
+        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+        uomEntered: canonicalFields.uomEntered,
+        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+        canonicalUom: canonicalFields.canonicalUom,
+        uomDimension: canonicalFields.uomDimension,
+        unitCost,
+        extendedCost,
+        reasonCode: 'work_order_void_component_return',
+        lineNotes: `Void component return for work order execution ${execution.id}`
+      });
+      await applyInventoryBalanceDelta(client, {
+        tenantId,
+        itemId: line.item_id,
+        locationId: line.location_id,
+        uom: canonicalFields.canonicalUom,
+        deltaOnHand: canonicalFields.quantityDeltaCanonical
+      });
+      await createCostLayer({
+        tenant_id: tenantId,
+        item_id: line.item_id,
+        location_id: line.location_id,
+        uom: canonicalFields.canonicalUom,
+        quantity: canonicalFields.quantityDeltaCanonical,
+        unit_cost: unitCost,
+        source_type: 'adjustment',
+        source_document_id: execution.id,
+        movement_id: componentMovement.id,
+        notes: `Work-order void component return for execution ${execution.id}`,
+        client
+      });
+    }
+
+    await enqueueInventoryMovementPosted(client, tenantId, outputMovement.id);
+    await enqueueInventoryMovementPosted(client, tenantId, componentMovement.id);
+
+    await recordAuditLog(
+      {
+        tenantId,
+        actorType: actor.type,
+        actorId: actor.id ?? null,
+        action: 'update',
+        entityType: 'work_order_execution',
+        entityId: execution.id,
+        occurredAt: now,
+        metadata: {
+          workOrderId,
+          workOrderExecutionId: execution.id,
+          outputReversalMovementId: outputMovement.id,
+          componentReturnMovementId: componentMovement.id,
+          reason
+        }
+      },
+      client
+    );
+
+    return {
+      workOrderId,
+      workOrderExecutionId: execution.id,
+      componentReturnMovementId: componentMovement.id,
+      outputReversalMovementId: outputMovement.id,
+      idempotencyKey,
+      replayed: false
+    };
+  }, WORK_ORDER_POST_RETRY_OPTIONS);
+}
+
+export async function reportWorkOrderScrap(
+  tenantId: string,
+  workOrderId: string,
+  data: WorkOrderReportScrapInput,
+  actor: { type: 'user' | 'system'; id?: string | null },
+  options?: { idempotencyKey?: string | null }
+): Promise<WorkOrderScrapReportResult> {
+  const occurredAt = data.occurredAt ? new Date(data.occurredAt) : new Date();
+  if (Number.isNaN(occurredAt.getTime())) {
+    throw new Error('WO_SCRAP_INVALID_OCCURRED_AT');
+  }
+  const quantity = roundQuantity(toNumber(data.quantity));
+  if (!(quantity > 0)) {
+    throw new Error('WO_SCRAP_INVALID_QTY');
+  }
+  const reasonCode = assertScrapReasonCode(data.reasonCode);
+  const idempotencyKey = normalizedOptionalIdempotencyKey(options?.idempotencyKey ?? data.idempotencyKey ?? null);
+
+  return withTransactionRetry(async (client) => {
+    const executionRes = await client.query<LockedExecutionRow>(
+      `SELECT id,
+              work_order_id,
+              status,
+              occurred_at,
+              consumption_movement_id,
+              production_movement_id
+         FROM work_order_executions
+        WHERE tenant_id = $1
+          AND id = $2
+          AND work_order_id = $3
+        FOR UPDATE`,
+      [tenantId, data.workOrderExecutionId, workOrderId]
+    );
+    if (executionRes.rowCount === 0) {
+      throw new Error('WO_SCRAP_EXECUTION_NOT_FOUND');
+    }
+    const execution = executionRes.rows[0];
+    assertSameWorkOrderExecution(workOrderId, execution);
+    if (execution.status !== 'posted' || !execution.production_movement_id) {
+      throw new Error('WO_SCRAP_EXECUTION_NOT_POSTED');
+    }
+
+    const outputItemRes = await client.query<{ output_item_id: string }>(
+      `SELECT output_item_id
+         FROM work_orders
+        WHERE tenant_id = $1
+          AND id = $2`,
+      [tenantId, workOrderId]
+    );
+    if (outputItemRes.rowCount === 0) {
+      throw new Error('WO_NOT_FOUND');
+    }
+    const outputItemId = outputItemRes.rows[0].output_item_id;
+    const itemId = data.outputItemId ?? outputItemId;
+    if (itemId !== outputItemId) {
+      throw new Error('WO_SCRAP_OUTPUT_ITEM_MISMATCH');
+    }
+
+    const qaSourceRows = await client.query<{
+      location_id: string;
+      warehouse_id: string | null;
+      role: string | null;
+      total_qty: string | number;
+    }>(
+      `SELECT iml.location_id,
+              l.warehouse_id,
+              l.role,
+              SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta))::numeric AS total_qty
+         FROM inventory_movement_lines iml
+         JOIN locations l
+           ON l.id = iml.location_id
+          AND l.tenant_id = iml.tenant_id
+        WHERE iml.tenant_id = $1
+          AND iml.movement_id = $2
+          AND iml.item_id = $3
+          AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+        GROUP BY iml.location_id, l.warehouse_id, l.role
+       HAVING l.role = 'QA'`,
+      [tenantId, execution.production_movement_id, itemId]
+    );
+    if (qaSourceRows.rowCount !== 1) {
+      throw new Error('WO_SCRAP_QA_SOURCE_AMBIGUOUS');
+    }
+    const qaSource = qaSourceRows.rows[0];
+    if (!qaSource.warehouse_id) {
+      throw new Error('WO_SCRAP_QA_SOURCE_WAREHOUSE_MISSING');
+    }
+    const sourceLocationId = qaSource.location_id;
+    const warehouseId = qaSource.warehouse_id;
+    const scrapLocationId = await getWarehouseDefaultLocationId(tenantId, warehouseId, 'SCRAP', client);
+    if (!scrapLocationId) {
+      throw new Error('WO_SCRAP_LOCATION_REQUIRED');
+    }
+
+    const availableRes = await client.query<{ qty: string | number }>(
+      `SELECT COALESCE(SUM(remaining_quantity), 0)::numeric AS qty
+         FROM inventory_cost_layers
+        WHERE tenant_id = $1
+          AND movement_id = $2
+          AND source_type = 'production'
+          AND item_id = $3
+          AND location_id = $4
+          AND voided_at IS NULL`,
+      [tenantId, execution.production_movement_id, itemId, sourceLocationId]
+    );
+    const availableQty = roundQuantity(toNumber(availableRes.rows[0]?.qty ?? 0));
+    if (quantity - availableQty > 1e-6) {
+      throw domainError('WO_SCRAP_EXCEEDS_EXECUTION_QA_AVAILABLE', {
+        workOrderExecutionId: execution.id,
+        itemId,
+        requestedQty: quantity,
+        availableQty
+      });
+    }
+
+    const lockContext = createAtpLockContext({
+      operation: 'work_order_scrap',
+      tenantId
+    });
+    await acquireAtpLocks(
+      client,
+      [
+        { tenantId, warehouseId, itemId }
+      ],
+      { lockContext }
+    );
+    assertAtpLockHeldOrThrow(lockContext, { workOrderId, workOrderExecutionId: execution.id });
+
+    const sourceId = idempotencyKey ? `idempotency:${idempotencyKey}` : `execution:${execution.id}:${uuidv4()}`;
+    const transfer = await transferInventory(
+      {
+        tenantId,
+        sourceLocationId,
+        destinationLocationId: scrapLocationId,
+        itemId,
+        quantity,
+        uom: data.uom,
+        sourceType: WORK_ORDER_SCRAP_SOURCE_TYPE,
+        sourceId,
+        movementType: 'transfer',
+        reasonCode,
+        notes: data.notes ?? `Work-order scrap for execution ${execution.id}`,
+        occurredAt,
+        actorId: actor.id ?? null,
+        idempotencyKey
+      },
+      client
+    );
+
+    return {
+      workOrderId,
+      workOrderExecutionId: execution.id,
+      scrapMovementId: transfer.movementId,
+      itemId,
+      quantity,
+      uom: data.uom,
+      idempotencyKey,
+      replayed: !transfer.created
+    };
+  }, WORK_ORDER_POST_RETRY_OPTIONS);
 }
 
 export async function recordWorkOrderBatch(
