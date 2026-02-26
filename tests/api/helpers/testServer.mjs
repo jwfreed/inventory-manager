@@ -22,6 +22,74 @@ let startedByUs = false;
 let child;
 let logStream;
 let processHooksInstalled = false;
+const LOCAL_DB_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+function resolveSpawnDatabaseUrl() {
+  const databaseUrl = (process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '').trim();
+  if (!databaseUrl) {
+    throw new Error(
+      'TEST_SERVER_DATABASE_URL_MISSING: set TEST_DATABASE_URL (preferred) or DATABASE_URL before running ops/api tests.'
+    );
+  }
+  let parsed;
+  try {
+    parsed = new URL(databaseUrl);
+  } catch {
+    throw new Error('TEST_SERVER_DATABASE_URL_INVALID: resolved database URL is not a valid URL.');
+  }
+
+  if (process.env.CI) {
+    const host = parsed.hostname.toLowerCase();
+    if (LOCAL_DB_HOSTS.has(host)) {
+      throw new Error(
+        `TEST_SERVER_DATABASE_URL_INVALID_FOR_CI: CI cannot use localhost Postgres (${host}). Set TEST_DATABASE_URL to your Postgres service hostname.`
+      );
+    }
+  }
+  return databaseUrl;
+}
+
+function splitNodeOptions(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return [];
+  return text.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+}
+
+function stripWrappingQuotes(value) {
+  const text = String(value ?? '');
+  if (
+    (text.startsWith('"') && text.endsWith('"')) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+
+function isPermissionModelOption(option) {
+  const normalized = stripWrappingQuotes(option).trim();
+  return (
+    normalized === '--experimental-permission'
+    || normalized === '--permission'
+    || normalized.startsWith('--allow-')
+    || normalized.startsWith('--deny-')
+  );
+}
+
+function sanitizeChildNodeOptions(nodeOptions) {
+  const tokens = splitNodeOptions(nodeOptions);
+  if (tokens.length === 0) return { value: '', removed: [] };
+  const removed = [];
+  const kept = [];
+  for (const token of tokens) {
+    if (isPermissionModelOption(token)) {
+      removed.push(stripWrappingQuotes(token));
+      continue;
+    }
+    kept.push(token);
+  }
+  return { value: kept.join(' ').trim(), removed };
+}
 
 function getBaseUrl() {
   return baseUrl;
@@ -114,12 +182,21 @@ async function ensureTestServer() {
       process.env.TEST_TENANT_ID?.trim()
       || process.env.WAREHOUSE_DEFAULTS_TENANT_ID?.trim()
       || '';
+    const databaseUrl = resolveSpawnDatabaseUrl();
+    const sanitizedNodeOptions = sanitizeChildNodeOptions(process.env.NODE_OPTIONS);
+    if (sanitizedNodeOptions.removed.length > 0) {
+      console.warn('[test.server] stripped Node permission flags for spawned API process', {
+        removed: sanitizedNodeOptions.removed
+      });
+    }
     child = spawn(
       'node',
       ['-r', 'ts-node/register/transpile-only', '-r', 'tsconfig-paths/register', 'src/server.ts', '--repair-defaults'],
       {
         env: {
           ...process.env,
+          DATABASE_URL: databaseUrl,
+          NODE_OPTIONS: sanitizedNodeOptions.value,
           PORT: basePort,
           NODE_ENV: 'test',
           // Tests run with explicit repair mode to avoid fixture drift blocking startup.

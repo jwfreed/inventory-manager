@@ -8,11 +8,62 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL must be set before starting the API');
 }
 
+type DbErrorLike = Error & {
+  code?: string;
+  errors?: Array<{ code?: string; message?: string }>;
+};
+
+function resolveDbTarget(databaseUrl: string): {
+  host: string;
+  port: string;
+  database: string;
+  user: string;
+} | null {
+  try {
+    const parsed = new URL(databaseUrl);
+    const database = decodeURIComponent(parsed.pathname.replace(/^\//, '') || '(default)');
+    const user = parsed.username ? decodeURIComponent(parsed.username) : '(default)';
+    const host = parsed.hostname || '(default)';
+    const port = parsed.port || '5432';
+    return { host, port, database, user };
+  } catch {
+    return null;
+  }
+}
+
+function hasEpermCode(error: unknown): boolean {
+  const candidate = error as DbErrorLike | undefined;
+  if (candidate?.code === 'EPERM') return true;
+  if (!Array.isArray(candidate?.errors)) return false;
+  return candidate.errors.some((entry) => entry?.code === 'EPERM');
+}
+
+export function logDbConnectionHint(error: unknown, context: string): void {
+  if (!hasEpermCode(error)) return;
+  const candidate = error as DbErrorLike | undefined;
+  console.error('[db.connection.hint]', {
+    context,
+    code: candidate?.code ?? null,
+    message: candidate?.message ?? null,
+    hint: 'Possible Node permission model / sandbox restriction; check NODE_OPTIONS and CI network.'
+  });
+}
+
 // Enable query logging with EXPLAIN ANALYZE in development
 const EXPLAIN_SLOW_QUERIES = process.env.NODE_ENV === 'development' && process.env.EXPLAIN_SLOW_QUERIES === 'true';
 const SLOW_QUERY_THRESHOLD_MS = parseInt(process.env.SLOW_QUERY_THRESHOLD_MS || '100', 10);
 const STATEMENT_TIMEOUT_MS = parseInt(process.env.DB_STATEMENT_TIMEOUT_MS || '5000', 10);
 const LOCK_TIMEOUT_MS = parseInt(process.env.DB_LOCK_TIMEOUT_MS || '2000', 10);
+const nodeEnv = (process.env.NODE_ENV ?? 'development').toLowerCase();
+const resolvedDbTarget = resolveDbTarget(process.env.DATABASE_URL);
+
+if (nodeEnv !== 'production') {
+  if (resolvedDbTarget) {
+    console.info('[db.config]', resolvedDbTarget);
+  } else {
+    console.warn('[db.config]', { warning: 'DATABASE_URL could not be parsed for safe target logging.' });
+  }
+}
 
 // Connection pool configuration for production workloads
 export const pool = new Pool({
@@ -31,6 +82,10 @@ pool.on('connect', (client) => {
   }
 });
 
+pool.on('error', (error) => {
+  logDbConnectionHint(error, 'pool');
+});
+
 export async function query<T extends QueryResultRow = QueryResultRow>(
   config: string | QueryConfig<any[]>,
   params?: unknown[]
@@ -41,10 +96,15 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   const startTime = Date.now();
   
   let result: QueryResult<T>;
-  if (typeof config === 'string') {
-    result = await pool.query<T>(config, params);
-  } else {
-    result = await pool.query<T>(config);
+  try {
+    if (typeof config === 'string') {
+      result = await pool.query<T>(config, params);
+    } else {
+      result = await pool.query<T>(config);
+    }
+  } catch (error) {
+    logDbConnectionHint(error, 'query');
+    throw error;
   }
   
   const duration = Date.now() - startTime;
@@ -69,8 +129,9 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
 }
 
 export async function withTransaction<T>(handler: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool.connect();
+  let client: PoolClient | null = null;
   try {
+    client = await pool.connect();
     await client.query('BEGIN');
     if (STATEMENT_TIMEOUT_MS > 0) {
       await client.query(`SET LOCAL statement_timeout TO ${STATEMENT_TIMEOUT_MS}`);
@@ -82,10 +143,13 @@ export async function withTransaction<T>(handler: (client: PoolClient) => Promis
     await client.query('COMMIT');
     return result;
   } catch (err) {
-    await client.query('ROLLBACK');
+    if (client) {
+      await client.query('ROLLBACK').catch(() => undefined);
+    }
+    logDbConnectionHint(err, 'withTransaction');
     throw err;
   } finally {
-    client.release();
+    client?.release();
   }
 }
 
@@ -106,8 +170,9 @@ export async function withTransactionRetry<T>(
     ?? ((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
   let attempt = 0;
   while (true) {
-    const client = await pool.connect();
+    let client: PoolClient | null = null;
     try {
+      client = await pool.connect();
       await client.query('BEGIN');
       if (isolationLevel) {
         await client.query(`SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
@@ -122,7 +187,9 @@ export async function withTransactionRetry<T>(
       await client.query('COMMIT');
       return result;
     } catch (err: any) {
-      await client.query('ROLLBACK');
+      if (client) {
+        await client.query('ROLLBACK').catch(() => undefined);
+      }
       const code = err?.code;
       if (code === '40001' || code === '40P01') {
         if (attempt < retries) {
@@ -146,9 +213,10 @@ export async function withTransactionRetry<T>(
         exhausted.retryAttempts = attempt + 1;
         throw exhausted;
       }
+      logDbConnectionHint(err, 'withTransactionRetry');
       throw err;
     } finally {
-      client.release();
+      client?.release();
     }
   }
 }

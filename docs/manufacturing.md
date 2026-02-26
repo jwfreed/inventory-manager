@@ -1,5 +1,18 @@
 # Manufacturing Report Production (Phase 2)
 
+## No LINE_SIDE Policy (Current Decision)
+- SIAMAYA does **not** model `LINE_SIDE` or line-staging locations in production.
+- There is no `issue-to-line` or `return-from-line` workflow in the current system.
+- `report-production` is backflush-only: component consumption must come from locations with `is_sellable = true` (today this is the warehouse `SELLABLE` default).
+- This is enforced in schema + service guards and must fail loud if violated.
+
+## Future Introduction (Deliberate Change Only)
+- Adding `LINE_SIDE` requires an explicit project change, including:
+  - schema migration(s) and role/location policy updates
+  - new domain endpoints/workflows for issue-to-line and return-from-line
+  - strict invariants + ops tests proving cost and inventory conservation
+- Until those changes are merged, any line-side style role/workflow is intentionally unsupported.
+
 ## Report Production
 - Endpoint: `POST /work-orders/:id/report-production`
 - Purpose: backflush component consumption from BOM and receive finished goods into warehouse `QA`.

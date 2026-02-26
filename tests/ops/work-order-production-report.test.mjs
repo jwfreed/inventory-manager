@@ -268,6 +268,22 @@ test('report-production posts component issue + QA receipt with FIFO cost conser
   const issueByItem = new Map(issueLines.rows.map((row) => [row.item_id, Number(row.qty)]));
   assert.ok(Math.abs((issueByItem.get(componentA) ?? 0) + 40) < 1e-6, `componentA issue qty=${issueByItem.get(componentA)}`);
   assert.ok(Math.abs((issueByItem.get(componentB) ?? 0) + 20) < 1e-6, `componentB issue qty=${issueByItem.get(componentB)}`);
+  const issueSourceRoleRes = await db.query(
+    `SELECT DISTINCT l.role, l.is_sellable
+       FROM inventory_movement_lines iml
+       JOIN locations l
+         ON l.id = iml.location_id
+        AND l.tenant_id = iml.tenant_id
+      WHERE iml.tenant_id = $1
+        AND iml.movement_id = $2
+        AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) < 0`,
+    [tenantId, first.payload.componentIssueMovementId]
+  );
+  assert.ok(issueSourceRoleRes.rowCount > 0, 'expected backflush consume lines to exist');
+  assert.ok(
+    issueSourceRoleRes.rows.every((row) => row.role === 'SELLABLE' && row.is_sellable === true),
+    `expected all backflush source lines to be SELLABLE/sellable=true; got ${JSON.stringify(issueSourceRoleRes.rows)}`
+  );
 
   const receiveLine = await db.query(
     `SELECT location_id, SUM(COALESCE(quantity_delta_canonical, quantity_delta))::numeric AS qty
@@ -570,4 +586,110 @@ test('concurrent report-production calls on shared component do not oversell', {
   assert.ok(Number(onHandRes.rows[0].on_hand) >= 0, `component on_hand=${onHandRes.rows[0].on_hand}`);
 
   await runStrictInvariantsForTenant(session.tenant.id);
+});
+
+test('report-production fails loud when SELLABLE default points to a non-sellable location', async () => {
+  const tenantSlug = `wo-report-no-line-side-${randomUUID().slice(0, 8)}`;
+  const session = await ensureDbSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName: 'WO Report Production No Line Side Policy Tenant'
+  });
+  const token = session.accessToken;
+  const tenantId = session.tenant.id;
+  const db = session.pool;
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:no-line-side` });
+
+  const component = await createItem(token, defaults.SELLABLE.id, 'NOLS-RAW', 'raw');
+  const outputItem = await createItem(token, defaults.QA.id, 'NOLS-FG', 'finished');
+  const bomId = await createBom(token, outputItem, [{ componentItemId: component, quantityPer: 1 }], tenantSlug);
+  const workOrder = await createWorkOrder(token, {
+    kind: 'production',
+    outputItemId: outputItem,
+    outputUom: 'each',
+    quantityPlanned: 1,
+    bomId,
+    defaultConsumeLocationId: defaults.SELLABLE.id,
+    defaultProduceLocationId: defaults.QA.id
+  });
+
+  const nonSellableLocationRes = await apiRequest('POST', '/locations', {
+    token,
+    body: {
+      code: `NOLS-HOLD-${randomUUID().slice(0, 8)}`,
+      name: 'No Line Side Hold Source',
+      type: 'bin',
+      role: 'HOLD',
+      isSellable: false,
+      parentLocationId: warehouse.id,
+      active: true
+    }
+  });
+  assert.equal(nonSellableLocationRes.res.status, 201, JSON.stringify(nonSellableLocationRes.payload));
+
+  const remapRes = await db.query(
+    `UPDATE warehouse_default_location
+        SET location_id = $3
+      WHERE tenant_id = $1
+        AND warehouse_id = $2
+        AND role = 'SELLABLE'`,
+    [tenantId, warehouse.id, nonSellableLocationRes.payload.id]
+  );
+  assert.equal(remapRes.rowCount, 1, 'expected SELLABLE default remap to HOLD for policy test');
+
+  const reportRes = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': `wo-report-no-line-side:${tenantSlug}` },
+    body: {
+      warehouseId: warehouse.id,
+      outputQty: 1,
+      outputUom: 'each',
+      occurredAt: '2026-02-13T00:00:00.000Z'
+    }
+  });
+  assert.equal(reportRes.res.status, 409, JSON.stringify(reportRes.payload));
+  assert.equal(reportRes.payload?.error?.code, 'MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE');
+
+  const executionRes = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND work_order_id = $2`,
+    [tenantId, workOrder.id]
+  );
+  assert.equal(Number(executionRes.rows[0].count), 0, 'no execution should be posted when consumption source is non-sellable');
+});
+
+test('line-side/staging roles are rejected by master-data capability guards', async () => {
+  const tenantSlug = `wo-report-no-line-side-capability-${randomUUID().slice(0, 8)}`;
+  const session = await ensureDbSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName: 'WO Report Production No Line Side Capability Tenant'
+  });
+  const token = session.accessToken;
+  const { warehouse } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:no-line-side-capability` });
+
+  const invalidRoles = ['LINE_SIDE', 'PROD_STAGING'];
+
+  for (const role of invalidRoles) {
+    const code = `NOLS-${role}-${randomUUID().slice(0, 6)}`;
+    const res = await apiRequest('POST', '/locations', {
+      token,
+      body: {
+        code,
+        name: `No Line Side ${role}`,
+        type: 'bin',
+        role,
+        isSellable: false,
+        parentLocationId: warehouse.id,
+        active: true
+      }
+    });
+    assert.equal(res.res.status, 400, `expected role ${role} to be rejected, got ${res.res.status} body=${JSON.stringify(res.payload)}`);
+  }
 });

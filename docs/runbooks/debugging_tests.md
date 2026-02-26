@@ -2,6 +2,8 @@
 
 API and ops tests are run with Node’s built-in test runner. Tests are designed to be deterministic and warehouse-scoped. If a suite hangs or times out, use the handle diagnostics below.
 
+For spawned API server tests, set `TEST_DATABASE_URL` (preferred) or `DATABASE_URL`. In CI, do not point this at `localhost`; use the Postgres service hostname.
+
 ## Standard Commands
 
 API tests:

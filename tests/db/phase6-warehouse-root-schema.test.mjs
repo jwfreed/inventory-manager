@@ -47,12 +47,30 @@ test('locations schema allows role-less, non-sellable warehouse roots', async ()
   assert.equal(Number(invalidRootsRes.rows[0]?.count ?? 0), 0);
 
   const requiredRoleConstraintRes = await pool.query(
-    `SELECT conname
+    `SELECT conname,
+            pg_get_constraintdef(oid) AS def
        FROM pg_constraint
       WHERE conrelid = 'public.locations'::regclass
         AND conname = 'chk_locations_role_required_except_warehouse_root'`
   );
   assert.equal(requiredRoleConstraintRes.rowCount, 1);
+  const requiredRoleDef = String(requiredRoleConstraintRes.rows[0]?.def ?? '').toLowerCase();
+  assert.ok(requiredRoleDef.includes('role is not null'));
+  assert.ok(requiredRoleDef.includes("type = 'warehouse'::text"));
+  assert.ok(requiredRoleDef.includes('parent_location_id is null'));
+
+  const roleWhitelistConstraintRes = await pool.query(
+    `SELECT conname,
+            pg_get_constraintdef(oid) AS def
+       FROM pg_constraint
+      WHERE conrelid = 'public.locations'::regclass
+        AND conname = 'chk_locations_role'`
+  );
+  assert.equal(roleWhitelistConstraintRes.rowCount, 1);
+  const roleWhitelistDef = String(roleWhitelistConstraintRes.rows[0]?.def ?? '').toUpperCase();
+  for (const role of ['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRAP']) {
+    assert.ok(roleWhitelistDef.includes(`'${role}'`), `role whitelist missing ${role}: ${roleWhitelistDef}`);
+  }
 });
 
 test.after(async () => {

@@ -473,6 +473,15 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
         }
       });
     }
+    if (error?.code === 'MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE' || error?.message === 'MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE') {
+      return res.status(409).json({
+        error: {
+          code: 'MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE',
+          message: 'Manufacturing backflush consumption must source from a sellable location.',
+          details: error?.details
+        }
+      });
+    }
     if (error?.message === 'WO_NOT_FOUND') {
       return res.status(404).json({ error: 'Work order not found.' });
     }
@@ -621,6 +630,15 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
           code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON',
           message: error.details?.message,
           details: error.details
+        }
+      });
+    }
+    if (error?.code === 'MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE' || error?.message === 'MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE') {
+      return res.status(409).json({
+        error: {
+          code: 'MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE',
+          message: 'Manufacturing backflush consumption must source from a sellable location.',
+          details: error?.details
         }
       });
     }

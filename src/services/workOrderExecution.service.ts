@@ -2410,8 +2410,13 @@ export async function recordWorkOrderBatch(
     }
 
     if (locationIds.length > 0) {
-      const locRes = await client.query<{ id: string; warehouse_id: string | null }>(
-        'SELECT id, warehouse_id FROM locations WHERE id = ANY($1) AND tenant_id = $2',
+      const locRes = await client.query<{
+        id: string;
+        warehouse_id: string | null;
+        role: string | null;
+        is_sellable: boolean;
+      }>(
+        'SELECT id, warehouse_id, role, is_sellable FROM locations WHERE id = ANY($1) AND tenant_id = $2',
         [locationIds, tenantId]
       );
       const found = new Set(locRes.rows.map((r) => r.id));
@@ -2419,6 +2424,7 @@ export async function recordWorkOrderBatch(
       if (missingLocs.length > 0) {
         throw new Error(`WO_BATCH_LOCATIONS_MISSING:${missingLocs.join(',')}`);
       }
+      const locationById = new Map(locRes.rows.map((row) => [row.id, row]));
       const warehouseByLocationId = new Map(locRes.rows.map((row) => [row.id, row.warehouse_id]));
       const advisoryTargets = [
         ...consumeLinesOrdered.map((line) => ({
@@ -2442,6 +2448,20 @@ export async function recordWorkOrderBatch(
       ];
       if (missingWarehouseBindings.length > 0) {
         throw new Error(`WO_BATCH_LOCATION_WAREHOUSE_MISSING:${Array.from(new Set(missingWarehouseBindings)).join(',')}`);
+      }
+      if (!isDisassembly) {
+        for (const line of consumeLinesOrdered) {
+          const sourceLocation = locationById.get(line.fromLocationId);
+          if (!sourceLocation || sourceLocation.is_sellable !== true) {
+            throw domainError('MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE', {
+              workOrderId,
+              locationId: line.fromLocationId,
+              componentItemId: line.componentItemId,
+              role: sourceLocation?.role ?? null,
+              isSellable: sourceLocation?.is_sellable ?? null
+            });
+          }
+        }
       }
       // Manufacturing posting touches multiple item scopes; acquire warehouse/item advisory locks
       // in deterministic order before stock validation and movement posting to prevent cross-item races.

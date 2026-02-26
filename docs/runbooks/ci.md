@@ -35,12 +35,18 @@ Example snippet:
 
 - name: API tests
   run: npm run test:api
+
+- name: Ops tests
+  run: npm run test:ops
+  env:
+    TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
 ```
 
 ## Local CI-equivalent run
 
 ```bash
 export DATABASE_URL="postgres://$USER@localhost:5432/inventory_dev"
+export TEST_DATABASE_URL="$DATABASE_URL"
 npm run migrate:up
 npm run dev
 npm run test:api
@@ -51,6 +57,7 @@ npm run test:api
 - Ensure a local Postgres instance is running
 - Create a dev/test database (e.g., `inventory_dev`)
 - Point `DATABASE_URL` at that database before running migrations/tests
+- For spawned API processes in tests, `TEST_DATABASE_URL` overrides `DATABASE_URL` and is recommended in CI.
 
 ## Test Order and Suites
 

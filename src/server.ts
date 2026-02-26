@@ -1,7 +1,7 @@
 import './telemetry';
 import express from 'express';
 import cookieParser from 'cookie-parser';
-import { pool } from './db';
+import { pool, logDbConnectionHint } from './db';
 import healthRouter from './routes/health.routes';
 import authRouter from './routes/auth.routes';
 import vendorsRouter from './routes/vendors.routes';
@@ -77,6 +77,26 @@ const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
 const startupMode = resolveWarehouseDefaultsStartupMode();
 const schedulerMode = resolveSchedulerStartupMode();
 const REQUIRED_NON_PROD_LOCATION_COLUMNS = ['role', 'is_sellable'] as const;
+const REQUIRED_NON_PROD_LOCATION_CHECK_CONSTRAINTS = [
+  {
+    name: 'chk_locations_role',
+    checkExpression: "role IS NULL OR role IN ('SELLABLE','QA','HOLD','REJECT','SCRAP')"
+  },
+  {
+    name: 'chk_locations_role_sellable',
+    checkExpression: "role IS NULL OR ((role = 'SELLABLE') = is_sellable)"
+  },
+  {
+    name: 'chk_locations_role_required_except_warehouse_root',
+    checkExpression: "role IS NOT NULL OR (type = 'warehouse' AND parent_location_id IS NULL)"
+  },
+  {
+    name: 'chk_locations_orphan_is_warehouse',
+    checkExpression: "(parent_location_id IS NOT NULL) OR (type = 'warehouse')"
+  }
+] as const;
+const SCHEMA_COMPAT_PROBE_TABLE = '__schema_compat_locations_probe';
+const SCHEMA_COMPAT_PROBE_CONSTRAINT = '__schema_compat_probe_check';
 
 const app = express();
 
@@ -268,41 +288,149 @@ process.on('SIGINT', () => {
 async function assertNonProductionSchemaCompatibility(): Promise<void> {
   const nodeEnv = (process.env.NODE_ENV ?? 'development').toLowerCase();
   if (nodeEnv === 'production') return;
-
-  const res = await pool.query<{ column_name: string }>(
-    `SELECT column_name
-       FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'locations'
-        AND column_name = ANY($1::text[])`,
-    [REQUIRED_NON_PROD_LOCATION_COLUMNS]
-  );
-  const present = new Set(res.rows.map((row) => row.column_name));
-  const missing = REQUIRED_NON_PROD_LOCATION_COLUMNS.filter((column) => !present.has(column));
-  if (missing.length === 0) return;
-
-  const code = 'SCHEMA_COMPAT_LOCATIONS_COLUMNS_MISSING';
   const remediation = [
     'Run migrations against the configured DATABASE_URL.',
     'Suggested command: npm run migrate:up',
     'If local schema is severely behind, reset and migrate: CONFIRM_DB_RESET=1 npm run db:reset:migrate'
   ].join(' ');
+  const client = await pool.connect();
+  try {
+    const res = await client.query<{ column_name: string }>(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'locations'
+          AND column_name = ANY($1::text[])`,
+      [REQUIRED_NON_PROD_LOCATION_COLUMNS]
+    );
+    const present = new Set(res.rows.map((row) => row.column_name));
+    const missing = REQUIRED_NON_PROD_LOCATION_COLUMNS.filter((column) => !present.has(column));
 
-  console.error('[schema.compatibility.failed]', {
-    code,
-    table: 'locations',
-    missingColumns: missing,
-    nodeEnv,
-    remediation
-  });
+    if (missing.length > 0) {
+      const code = 'SCHEMA_COMPAT_LOCATIONS_COLUMNS_MISSING';
+      console.error('[schema.compatibility.failed]', {
+        code,
+        table: 'locations',
+        missingColumns: missing,
+        nodeEnv,
+        remediation
+      });
 
-  const error = new Error(`${code} missingColumns=${missing.join(',')}`) as Error & {
-    code?: string;
-    details?: { table: string; missingColumns: readonly string[] };
-  };
-  error.code = code;
-  error.details = { table: 'locations', missingColumns: missing };
-  throw error;
+      const error = new Error(`${code} missingColumns=${missing.join(',')}`) as Error & {
+        code?: string;
+        details?: { table: string; missingColumns: readonly string[] };
+      };
+      error.code = code;
+      error.details = { table: 'locations', missingColumns: missing };
+      throw error;
+    }
+
+    const existingConstraintRes = await client.query<{ conname: string; definition: string }>(
+      `SELECT c.conname,
+              pg_get_constraintdef(c.oid) AS definition
+         FROM pg_constraint c
+         JOIN pg_class t
+           ON t.oid = c.conrelid
+         JOIN pg_namespace n
+           ON n.oid = t.relnamespace
+        WHERE n.nspname = 'public'
+          AND t.relname = 'locations'
+          AND c.conname = ANY($1::text[])`,
+      [REQUIRED_NON_PROD_LOCATION_CHECK_CONSTRAINTS.map((entry) => entry.name)]
+    );
+
+    const existingByName = new Map(existingConstraintRes.rows.map((row) => [row.conname, row.definition]));
+    const missingConstraints = REQUIRED_NON_PROD_LOCATION_CHECK_CONSTRAINTS
+      .map((entry) => entry.name)
+      .filter((name) => !existingByName.has(name));
+    if (missingConstraints.length > 0) {
+      const code = 'SCHEMA_COMPAT_LOCATIONS_CONSTRAINTS_MISSING';
+      console.error('[schema.compatibility.failed]', {
+        code,
+        table: 'locations',
+        missingConstraints,
+        nodeEnv,
+        remediation
+      });
+      const error = new Error(`${code} missingConstraints=${missingConstraints.join(',')}`) as Error & {
+        code?: string;
+        details?: { table: string; missingConstraints: readonly string[] };
+      };
+      error.code = code;
+      error.details = { table: 'locations', missingConstraints };
+      throw error;
+    }
+
+    await client.query(
+      `CREATE TEMP TABLE IF NOT EXISTS ${SCHEMA_COMPAT_PROBE_TABLE} (
+         LIKE public.locations
+         INCLUDING DEFAULTS
+         INCLUDING GENERATED
+         INCLUDING IDENTITY
+       )`
+    );
+
+    const normalizeDefinition = (value: string) => value.toLowerCase().replace(/\s+/g, '');
+    const mismatchedConstraints: Array<{ name: string; existing: string; expected: string }> = [];
+    for (const required of REQUIRED_NON_PROD_LOCATION_CHECK_CONSTRAINTS) {
+      await client.query(
+        `ALTER TABLE ${SCHEMA_COMPAT_PROBE_TABLE}
+            DROP CONSTRAINT IF EXISTS ${SCHEMA_COMPAT_PROBE_CONSTRAINT}`
+      );
+      await client.query(
+        `ALTER TABLE ${SCHEMA_COMPAT_PROBE_TABLE}
+            ADD CONSTRAINT ${SCHEMA_COMPAT_PROBE_CONSTRAINT}
+            CHECK (${required.checkExpression})`
+      );
+      const expectedRes = await client.query<{ definition: string }>(
+        `SELECT pg_get_constraintdef(c.oid) AS definition
+           FROM pg_constraint c
+           JOIN pg_class t
+             ON t.oid = c.conrelid
+           JOIN pg_namespace n
+             ON n.oid = t.relnamespace
+          WHERE n.oid = pg_my_temp_schema()
+            AND t.relname = $1
+            AND c.conname = $2`,
+        [SCHEMA_COMPAT_PROBE_TABLE, SCHEMA_COMPAT_PROBE_CONSTRAINT]
+      );
+      if (expectedRes.rowCount === 0) {
+        const code = 'SCHEMA_COMPAT_PROBE_CONSTRAINT_DEFINITION_MISSING';
+        const error = new Error(`${code} constraint=${required.name}`) as Error & { code?: string };
+        error.code = code;
+        throw error;
+      }
+      const existing = existingByName.get(required.name)!;
+      const expected = expectedRes.rows[0].definition;
+      if (normalizeDefinition(existing) !== normalizeDefinition(expected)) {
+        mismatchedConstraints.push({
+          name: required.name,
+          existing,
+          expected
+        });
+      }
+    }
+
+    if (mismatchedConstraints.length > 0) {
+      const code = 'SCHEMA_COMPAT_LOCATIONS_CONSTRAINT_DEFINITION_MISMATCH';
+      console.error('[schema.compatibility.failed]', {
+        code,
+        table: 'locations',
+        mismatchedConstraints,
+        nodeEnv,
+        remediation
+      });
+      const error = new Error(`${code} count=${mismatchedConstraints.length}`) as Error & {
+        code?: string;
+        details?: { table: string; mismatchedConstraints: typeof mismatchedConstraints };
+      };
+      error.code = code;
+      error.details = { table: 'locations', mismatchedConstraints };
+      throw error;
+    }
+  } finally {
+    client.release();
+  }
 }
 
 async function start() {
@@ -320,6 +448,7 @@ async function start() {
 }
 
 start().catch((error) => {
+  logDbConnectionHint(error, 'server.start');
   logStructuredStartupFailure(error);
   console.error('Startup failed:', error);
   process.exit(1);
