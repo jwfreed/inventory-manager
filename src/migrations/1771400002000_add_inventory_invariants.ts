@@ -1,5 +1,10 @@
 import type { MigrationBuilder } from 'node-pg-migrate';
 
+/*
+-- ledger-immutability:allow-dangerous-migration
+-- reason: Historical invariant migration includes rollback trigger drops on ledger tables; retained for backward-compatible down migration behavior.
+*/
+
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.sql(`
     CREATE OR REPLACE FUNCTION prevent_update_delete_posted_inventory_movements()

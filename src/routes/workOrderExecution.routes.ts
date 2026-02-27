@@ -4,7 +4,6 @@ import {
   createWorkOrderCompletion,
   createWorkOrderIssue,
   fetchWorkOrderCompletion,
-  fetchWorkOrderVoidReportResult,
   fetchWorkOrderIssue,
   getWorkOrderExecutionSummary,
   postWorkOrderCompletion,
@@ -26,7 +25,6 @@ import {
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
-import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
 import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
 
 const router = Router();
@@ -154,6 +152,29 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
   } catch (error: any) {
     if (mapTxRetryExhausted(error, res)) {
       return;
+    }
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS' || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_POSTING_IDEMPOTENCY_INCOMPLETE',
+          message: 'Work-order production report is already in progress for this idempotency key.',
+          details: error?.details
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'WO_POSTING_IDEMPOTENCY_CONFLICT',
+          message: 'Idempotency key payload conflict detected for report-production.',
+          details: error?.details
+        }
+      });
     }
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({
@@ -440,6 +461,29 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
   } catch (error: any) {
     if (mapTxRetryExhausted(error, res)) {
       return;
+    }
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS' || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_POSTING_IDEMPOTENCY_INCOMPLETE',
+          message: 'Work-order batch posting is already in progress for this idempotency key.',
+          details: error?.details
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'WO_POSTING_IDEMPOTENCY_CONFLICT',
+          message: 'Idempotency key payload conflict detected for work-order batch posting.',
+          details: error?.details
+        }
+      });
     }
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({
@@ -734,60 +778,8 @@ router.post('/work-orders/:id/void-report-production', async (req: Request, res:
     });
   }
   const tenantId = req.auth!.tenantId;
-  const idempotencyStoreKey = `wo-void:${tenantId}:${workOrderId}:${idempotencyKey}`;
-  let idempotencyStarted = false;
 
   try {
-    const requestHash = hashRequestBody({
-      workOrderId,
-      ...parsed.data
-    });
-    const record = await beginIdempotency(idempotencyStoreKey, requestHash);
-    if (record.status === 'SUCCEEDED' && record.responseRef?.startsWith('wo_void:')) {
-      const existing = await fetchWorkOrderVoidReportResult(
-        tenantId,
-        workOrderId,
-        parsed.data.workOrderExecutionId
-      );
-      if (existing) {
-        return res.status(200).json({
-          ...existing,
-          idempotencyKey
-        });
-      }
-      return res.status(409).json({
-        error: {
-          code: 'WO_VOID_IDEMPOTENCY_INCOMPLETE',
-          message: 'Void idempotency replay reference exists but no posted void movements were found.'
-        }
-      });
-    }
-    if (record.status === 'IN_PROGRESS' && !record.isNew) {
-      const existing = await fetchWorkOrderVoidReportResult(
-        tenantId,
-        workOrderId,
-        parsed.data.workOrderExecutionId
-      );
-      if (existing) {
-        await completeIdempotency(
-          idempotencyStoreKey,
-          'SUCCEEDED',
-          `wo_void:${existing.workOrderId}:${existing.workOrderExecutionId}`
-        );
-        return res.status(200).json({
-          ...existing,
-          idempotencyKey
-        });
-      }
-      return res.status(409).json({
-        error: {
-          code: 'WO_VOID_IN_PROGRESS',
-          message: 'Void report-production is already in progress for this idempotency key.'
-        }
-      });
-    }
-    idempotencyStarted = true;
-
     const result = await voidWorkOrderProductionReport(
       tenantId,
       workOrderId,
@@ -798,24 +790,29 @@ router.post('/work-orders/:id/void-report-production', async (req: Request, res:
       },
       { idempotencyKey }
     );
-
-    await completeIdempotency(
-      idempotencyStoreKey,
-      'SUCCEEDED',
-      `wo_void:${result.workOrderId}:${result.workOrderExecutionId}`
-    );
     return res.status(result.replayed ? 200 : 201).json({
       ...result,
       idempotencyKey
     });
   } catch (error: any) {
-    if (idempotencyStarted) {
-      await completeIdempotency(idempotencyStoreKey, 'FAILED', null);
-    }
     if (mapTxRetryExhausted(error, res)) {
       return;
     }
-    if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS' || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_VOID_IN_PROGRESS',
+          message: 'Void report-production is already in progress for this idempotency key.'
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_HASH_MISMATCH'
+      || error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+    ) {
       return res.status(409).json({
         error: {
           code: 'WO_VOID_IDEMPOTENCY_MISMATCH',
@@ -912,6 +909,29 @@ router.post('/work-orders/:id/report-scrap', async (req: Request, res: Response)
   } catch (error: any) {
     if (mapTxRetryExhausted(error, res)) {
       return;
+    }
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS' || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_SCRAP_IN_PROGRESS',
+          message: 'Work-order scrap posting is already in progress for this idempotency key.',
+          details: error?.details
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'WO_SCRAP_IDEMPOTENCY_MISMATCH',
+          message: 'Idempotency key reused with a different report-scrap payload.',
+          details: error?.details
+        }
+      });
     }
     if (error?.message === 'WO_NOT_FOUND') {
       return res.status(404).json({ error: 'Work order not found.' });

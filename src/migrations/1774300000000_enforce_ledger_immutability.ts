@@ -1,6 +1,11 @@
 import type { MigrationBuilder } from 'node-pg-migrate';
 import { ensureTriggerIfMissingOrFail } from './helpers/triggers';
 
+/*
+-- ledger-immutability:allow-dangerous-migration
+-- reason: Down migration intentionally drops ledger immutability triggers/function for explicit rollback support.
+*/
+
 const LEDGER_MUTATION_FUNCTION = 'prevent_ledger_mutation';
 const LEDGER_MUTATION_FUNCTION_BODY = `
 BEGIN

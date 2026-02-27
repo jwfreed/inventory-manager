@@ -29,6 +29,12 @@ import {
   workOrderVoidReportProductionSchema
 } from '../schemas/workOrderExecution.schema';
 import { transferInventory } from './transfers.service';
+import {
+  claimTransactionalIdempotency,
+  finalizeTransactionalIdempotency,
+  hashTransactionalIdempotencyRequest
+} from '../lib/transactionalIdempotency';
+import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
 // (never inventory_adjustments). External refs include work order ids for traceability.
@@ -1799,7 +1805,10 @@ export async function reportWorkOrderProduction(
         produceLines
       },
     context,
-    { idempotencyKey: options?.idempotencyKey ?? data.idempotencyKey ?? null }
+    {
+      idempotencyKey: options?.idempotencyKey ?? data.idempotencyKey ?? null,
+      idempotencyEndpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_REPORT_PRODUCTION
+    }
   );
 
   return {
@@ -1821,8 +1830,36 @@ export async function voidWorkOrderProductionReport(
 ): Promise<WorkOrderVoidReportResult> {
   const idempotencyKey = normalizedOptionalIdempotencyKey(options?.idempotencyKey ?? data.idempotencyKey ?? null);
   const reason = assertVoidReason(data.reason);
+  const idempotencyRequestHash = idempotencyKey
+    ? hashTransactionalIdempotencyRequest({
+      method: 'POST',
+      endpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_VOID_REPORT_PRODUCTION,
+      body: {
+        workOrderId,
+        workOrderExecutionId: data.workOrderExecutionId,
+        reason,
+        notes: data.notes ?? null
+      }
+    })
+    : null;
 
   return withTransactionRetry(async (client) => {
+    if (idempotencyKey && idempotencyRequestHash) {
+      const claim = await claimTransactionalIdempotency<WorkOrderVoidReportResult>(client, {
+        tenantId,
+        key: idempotencyKey,
+        endpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_VOID_REPORT_PRODUCTION,
+        requestHash: idempotencyRequestHash
+      });
+      if (claim.replayed) {
+        return {
+          ...claim.responseBody,
+          idempotencyKey,
+          replayed: true
+        };
+      }
+    }
+
     const executionRes = await client.query<LockedExecutionRow>(
       `SELECT id,
               work_order_id,
@@ -1851,7 +1888,7 @@ export async function voidWorkOrderProductionReport(
 
     const existingPair = await fetchVoidMovementPair(client, tenantId, execution.id);
     if (existingPair) {
-      return {
+      const replayResponse: WorkOrderVoidReportResult = {
         workOrderId,
         workOrderExecutionId: execution.id,
         componentReturnMovementId: existingPair.componentReturnMovementId,
@@ -1859,6 +1896,15 @@ export async function voidWorkOrderProductionReport(
         idempotencyKey,
         replayed: true
       };
+      if (idempotencyKey) {
+        await finalizeTransactionalIdempotency(client, {
+          tenantId,
+          key: idempotencyKey,
+          responseStatus: 200,
+          responseBody: replayResponse
+        });
+      }
+      return replayResponse;
     }
 
     const originalMovements = await client.query<{
@@ -2110,7 +2156,7 @@ export async function voidWorkOrderProductionReport(
       client
     );
 
-    return {
+    const response: WorkOrderVoidReportResult = {
       workOrderId,
       workOrderExecutionId: execution.id,
       componentReturnMovementId: componentMovement.id,
@@ -2118,6 +2164,15 @@ export async function voidWorkOrderProductionReport(
       idempotencyKey,
       replayed: false
     };
+    if (idempotencyKey) {
+      await finalizeTransactionalIdempotency(client, {
+        tenantId,
+        key: idempotencyKey,
+        responseStatus: 201,
+        responseBody: response
+      });
+    }
+    return response;
   }, WORK_ORDER_POST_RETRY_OPTIONS);
 }
 
@@ -2138,8 +2193,41 @@ export async function reportWorkOrderScrap(
   }
   const reasonCode = assertScrapReasonCode(data.reasonCode);
   const idempotencyKey = normalizedOptionalIdempotencyKey(options?.idempotencyKey ?? data.idempotencyKey ?? null);
+  const occurredAtForHash = data.occurredAt ? new Date(data.occurredAt).toISOString() : null;
+  const idempotencyRequestHash = idempotencyKey
+    ? hashTransactionalIdempotencyRequest({
+      method: 'POST',
+      endpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_REPORT_SCRAP,
+      body: {
+        workOrderId,
+        workOrderExecutionId: data.workOrderExecutionId,
+        outputItemId: data.outputItemId ?? null,
+        quantity,
+        uom: data.uom,
+        reasonCode,
+        notes: data.notes ?? null,
+        occurredAt: occurredAtForHash
+      }
+    })
+    : null;
 
   return withTransactionRetry(async (client) => {
+    if (idempotencyKey && idempotencyRequestHash) {
+      const claim = await claimTransactionalIdempotency<WorkOrderScrapReportResult>(client, {
+        tenantId,
+        key: idempotencyKey,
+        endpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_REPORT_SCRAP,
+        requestHash: idempotencyRequestHash
+      });
+      if (claim.replayed) {
+        return {
+          ...claim.responseBody,
+          idempotencyKey,
+          replayed: true
+        };
+      }
+    }
+
     const executionRes = await client.query<LockedExecutionRow>(
       `SELECT id,
               work_order_id,
@@ -2270,7 +2358,7 @@ export async function reportWorkOrderScrap(
       client
     );
 
-    return {
+    const response: WorkOrderScrapReportResult = {
       workOrderId,
       workOrderExecutionId: execution.id,
       scrapMovementId: transfer.movementId,
@@ -2280,6 +2368,15 @@ export async function reportWorkOrderScrap(
       idempotencyKey,
       replayed: !transfer.created
     };
+    if (idempotencyKey) {
+      await finalizeTransactionalIdempotency(client, {
+        tenantId,
+        key: idempotencyKey,
+        responseStatus: response.replayed ? 200 : 201,
+        responseBody: response
+      });
+    }
+    return response;
   }, WORK_ORDER_POST_RETRY_OPTIONS);
 }
 
@@ -2288,7 +2385,7 @@ export async function recordWorkOrderBatch(
   workOrderId: string,
   data: WorkOrderBatchInput,
   context: NegativeOverrideContext = {},
-  options?: { idempotencyKey?: string | null }
+  options?: { idempotencyKey?: string | null; idempotencyEndpoint?: string }
 ): Promise<{
   workOrderId: string;
   executionId: string;
@@ -2300,6 +2397,7 @@ export async function recordWorkOrderBatch(
   replayed: boolean;
 }> {
   const batchIdempotencyKey = options?.idempotencyKey?.trim() ? options.idempotencyKey.trim() : null;
+  const idempotencyEndpoint = options?.idempotencyEndpoint ?? IDEMPOTENCY_ENDPOINTS.WORK_ORDER_RECORD_BATCH;
   const normalizedConsumes: NormalizedBatchConsumeLine[] = data.consumeLines.map((line) => {
     const quantity = toNumber(line.quantity);
     if (quantity <= 0) {
@@ -2332,8 +2430,40 @@ export async function recordWorkOrderBatch(
     produceLines: normalizedProduces
   });
   const requestHash = hashNormalizedBatchRequest(normalizedRequestPayload);
+  const transactionalRequestHash = batchIdempotencyKey
+    ? hashTransactionalIdempotencyRequest({
+      method: 'POST',
+      endpoint: idempotencyEndpoint,
+      body: normalizedRequestPayload
+    })
+    : null;
 
   return withTransactionRetry(async (client) => {
+    if (batchIdempotencyKey && transactionalRequestHash) {
+      const claim = await claimTransactionalIdempotency<{
+        workOrderId: string;
+        executionId: string;
+        issueMovementId: string;
+        receiveMovementId: string;
+        quantityCompleted: number;
+        workOrderStatus: string;
+        idempotencyKey: string | null;
+        replayed: boolean;
+      }>(client, {
+        tenantId,
+        key: batchIdempotencyKey,
+        endpoint: idempotencyEndpoint,
+        requestHash: transactionalRequestHash
+      });
+      if (claim.replayed) {
+        return {
+          ...claim.responseBody,
+          idempotencyKey: batchIdempotencyKey,
+          replayed: true
+        };
+      }
+    }
+
     if (batchIdempotencyKey) {
       const existingBatch = await findPostedBatchByIdempotencyKey(
         client,
@@ -2349,12 +2479,19 @@ export async function recordWorkOrderBatch(
             executionId
           });
         }
-        return {
+        const replayResponse = {
           ...replayPayload,
           executionId,
           idempotencyKey: batchIdempotencyKey,
           replayed: true
         };
+        await finalizeTransactionalIdempotency(client, {
+          tenantId,
+          key: batchIdempotencyKey,
+          responseStatus: 200,
+          responseBody: replayResponse
+        });
+        return replayResponse;
       }
     }
 
@@ -2526,11 +2663,18 @@ export async function recordWorkOrderBatch(
       if (batchIdempotencyKey) {
         const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
         if (replay) {
-          return {
+          const replayResponse = {
             ...replay,
             idempotencyKey: batchIdempotencyKey,
             replayed: true
           };
+          await finalizeTransactionalIdempotency(client, {
+            tenantId,
+            key: batchIdempotencyKey,
+            responseStatus: 200,
+            responseBody: replayResponse
+          });
+          return replayResponse;
         }
       }
       throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
@@ -2563,11 +2707,18 @@ export async function recordWorkOrderBatch(
       if (batchIdempotencyKey) {
         const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
         if (replay) {
-          return {
+          const replayResponse = {
             ...replay,
             idempotencyKey: batchIdempotencyKey,
             replayed: true
           };
+          await finalizeTransactionalIdempotency(client, {
+            tenantId,
+            key: batchIdempotencyKey,
+            responseStatus: 200,
+            responseBody: replayResponse
+          });
+          return replayResponse;
         }
       }
       throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
@@ -2706,11 +2857,18 @@ export async function recordWorkOrderBatch(
       if (batchIdempotencyKey && error?.code === '23505') {
         const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
         if (replay) {
-          return {
+          const replayResponse = {
             ...replay,
             idempotencyKey: batchIdempotencyKey,
             replayed: true
           };
+          await finalizeTransactionalIdempotency(client, {
+            tenantId,
+            key: batchIdempotencyKey,
+            responseStatus: 200,
+            responseBody: replayResponse
+          });
+          return replayResponse;
         }
         throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
           reason: 'execution_insert_conflict_before_batch_finalization',
@@ -2914,7 +3072,7 @@ export async function recordWorkOrderBatch(
       );
     }
 
-    return {
+    const response = {
       workOrderId,
       executionId,
       issueMovementId,
@@ -2924,5 +3082,14 @@ export async function recordWorkOrderBatch(
       idempotencyKey: batchIdempotencyKey,
       replayed: false
     };
+    if (batchIdempotencyKey) {
+      await finalizeTransactionalIdempotency(client, {
+        tenantId,
+        key: batchIdempotencyKey,
+        responseStatus: 201,
+        responseBody: response
+      });
+    }
+    return response;
   }, WORK_ORDER_POST_RETRY_OPTIONS);
 }

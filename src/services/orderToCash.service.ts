@@ -19,6 +19,12 @@ import {
 import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import { getSellableSupplyMap } from './atp.service';
 import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
+import {
+  claimTransactionalIdempotency,
+  finalizeTransactionalIdempotency,
+  hashTransactionalIdempotencyRequest
+} from '../lib/transactionalIdempotency';
+import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import { upsertBackorder } from './backorders.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { ItemLifecycleStatus } from '../types/item';
@@ -689,6 +695,46 @@ export async function createReservations(
 ) {
   const now = new Date();
   const baseIdempotency = options?.idempotencyKey ?? null;
+  const transactionalIdempotencyKey = typeof baseIdempotency === 'string' && baseIdempotency.trim()
+    ? baseIdempotency.trim()
+    : null;
+  const reservationRequestHash = transactionalIdempotencyKey
+    ? hashTransactionalIdempotencyRequest({
+      method: 'POST',
+      endpoint: IDEMPOTENCY_ENDPOINTS.RESERVATIONS_CREATE,
+      body: {
+        reservations: [...data.reservations]
+          .map((reservation) => ({
+            demandType: reservation.demandType,
+            demandId: reservation.demandId,
+            itemId: reservation.itemId,
+            warehouseId: reservation.warehouseId,
+            locationId: reservation.locationId,
+            uom: reservation.uom,
+            quantityReserved: roundQuantity(toNumber(reservation.quantityReserved)),
+            quantityFulfilled: reservation.quantityFulfilled ?? null,
+            expiresAt: reservation.expiresAt ?? null,
+            notes: reservation.notes ?? null,
+            allowBackorder: reservation.allowBackorder ?? null
+          }))
+          .sort((left, right) => {
+            const demandType = left.demandType.localeCompare(right.demandType);
+            if (demandType !== 0) return demandType;
+            const demandId = left.demandId.localeCompare(right.demandId);
+            if (demandId !== 0) return demandId;
+            const item = left.itemId.localeCompare(right.itemId);
+            if (item !== 0) return item;
+            const warehouse = left.warehouseId.localeCompare(right.warehouseId);
+            if (warehouse !== 0) return warehouse;
+            const location = left.locationId.localeCompare(right.locationId);
+            if (location !== 0) return location;
+            const uom = left.uom.localeCompare(right.uom);
+            if (uom !== 0) return uom;
+            return left.quantityReserved - right.quantityReserved;
+          })
+      }
+    })
+    : null;
   let reserveRetryContext: AtpErrorContext = {
     operation: 'reserve',
     tenantId,
@@ -699,6 +745,18 @@ export async function createReservations(
   let results: any[];
   try {
     results = await withTransactionRetry(async (client) => {
+      if (transactionalIdempotencyKey && reservationRequestHash) {
+        const claim = await claimTransactionalIdempotency<any[]>(client, {
+          tenantId,
+          key: transactionalIdempotencyKey,
+          endpoint: IDEMPOTENCY_ENDPOINTS.RESERVATIONS_CREATE,
+          requestHash: reservationRequestHash
+        });
+        if (claim.replayed) {
+          return claim.responseBody;
+        }
+      }
+
       const rows: any[] = [];
       const preparedLines: PreparedReservationCreateLine[] = [];
       for (const reservation of data.reservations) {
@@ -929,6 +987,14 @@ export async function createReservations(
           locationId: reservation.locationId,
           demandId: reservation.demandId,
           demandType: reservation.demandType
+        });
+      }
+      if (transactionalIdempotencyKey) {
+        await finalizeTransactionalIdempotency(client, {
+          tenantId,
+          key: transactionalIdempotencyKey,
+          responseStatus: 201,
+          responseBody: rows
         });
       }
       return rows;

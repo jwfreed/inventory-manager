@@ -5,7 +5,6 @@ import { createPurchaseOrderReceipt, fetchReceiptById, fetchReceiptByIdempotency
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
-import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -24,32 +23,11 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
   if (!parsed.data.idempotencyKey && idempotencyKey) {
     parsed.data.idempotencyKey = idempotencyKey;
   }
-  let idempotencyStarted = false;
 
   try {
-    if (idempotencyKey) {
-      const record = await beginIdempotency(idempotencyKey, hashRequestBody(req.body));
-      if (record.status === 'SUCCEEDED' && record.responseRef) {
-        const [kind, id] = record.responseRef.split(':');
-        if (kind === 'purchase_order_receipt') {
-          const existing = await fetchReceiptById(req.auth!.tenantId, id);
-          if (existing) {
-            return res.status(200).json(existing);
-          }
-        }
-        return res.status(409).json({ error: 'Receipt already posted for this request.' });
-      }
-      // Only reject if it's an EXISTING in-progress operation (not our new insert)
-      if (record.status === 'IN_PROGRESS' && !record.isNew) {
-        return res.status(409).json({ error: 'Receipt posting already in progress for this key.' });
-      }
-      idempotencyStarted = true;
-    }
     const tenantId = req.auth!.tenantId;
-    const receipt = await createPurchaseOrderReceipt(tenantId, parsed.data, { type: 'user', id: req.auth!.userId });
-    if (idempotencyKey && idempotencyStarted) {
-      await completeIdempotency(idempotencyKey, 'SUCCEEDED', `purchase_order_receipt:${receipt.id}`);
-    }
+    const receiptResult = await createPurchaseOrderReceipt(tenantId, parsed.data, { type: 'user', id: req.auth!.userId });
+    const receipt = receiptResult.receipt;
     const itemIds = Array.from(new Set(receipt.lines.map((line: any) => line.itemId).filter(Boolean)));
     const locationIds = Array.from(
       new Set(
@@ -66,11 +44,8 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
       itemIds,
       locationIds
     });
-    return res.status(201).json(receipt);
+    return res.status(receiptResult.replayed ? 200 : 201).json(receipt);
   } catch (error: any) {
-    if (idempotencyKey && idempotencyStarted) {
-      await completeIdempotency(idempotencyKey, 'FAILED', null);
-    }
     if (error?.message === 'RECEIPT_PO_LINES_NOT_FOUND') {
       return res.status(400).json({ error: 'One or more purchase order lines were not found.' });
     }
@@ -115,8 +90,36 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
     if (error?.message === 'RECEIPT_RECEIVING_LOCATION_REQUIRED') {
       return res.status(400).json({ error: 'Receiving location is required to receive inventory.' });
     }
-    if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
-      return res.status(409).json({ error: 'Idempotency key reused with a different request payload.' });
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS' || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+          message: 'Receipt posting already in progress for this idempotency key.'
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS',
+          message: 'Idempotency key was already used for a different endpoint.'
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_HASH_MISMATCH'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD',
+          message: 'Idempotency key reused with a different request payload.'
+        }
+      });
     }
     if (error?.message === 'RECEIPT_LOT_REQUIRED') {
       return res.status(400).json({ error: 'Lot code is required for one or more items.' });
@@ -231,29 +234,10 @@ router.post('/purchase-order-receipts/:id/void', async (req: Request, res: Respo
   }
 
   const idempotencyKey = getIdempotencyKey(req);
-  let idempotencyStarted = false;
 
   try {
-    if (idempotencyKey) {
-      const record = await beginIdempotency(idempotencyKey, hashRequestBody(req.body));
-      if (record.status === 'SUCCEEDED' && record.responseRef) {
-        const [kind, receiptId] = record.responseRef.split(':');
-        if (kind === 'purchase_order_receipt' && receiptId) {
-          const existing = await fetchReceiptById(req.auth!.tenantId, receiptId);
-          if (existing) {
-            return res.status(200).json(existing);
-          }
-        }
-        return res.status(409).json({ error: 'Receipt void already completed for this key.' });
-      }
-      if (record.status === 'IN_PROGRESS' && !record.isNew) {
-        return res.status(409).json({ error: 'Receipt void already in progress for this key.' });
-      }
-      idempotencyStarted = true;
-    }
-
     const tenantId = req.auth!.tenantId;
-    const receipt = await voidReceipt(tenantId, id, {
+    const result = await voidReceipt(tenantId, id, {
       reason: parsed.data.reason,
       idempotencyKey: idempotencyKey ?? null,
       actor: {
@@ -261,17 +245,40 @@ router.post('/purchase-order-receipts/:id/void', async (req: Request, res: Respo
         id: req.auth!.userId
       }
     });
-    if (idempotencyKey && idempotencyStarted) {
-      await completeIdempotency(idempotencyKey, 'SUCCEEDED', `purchase_order_receipt:${receipt.id}`);
-    }
+    const receipt = result.receipt;
     emitEvent(tenantId, 'inventory.receipt.voided', { receiptId: id });
     return res.json(receipt);
   } catch (error: any) {
-    if (idempotencyKey && idempotencyStarted) {
-      await completeIdempotency(idempotencyKey, 'FAILED', null);
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS' || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+          message: 'Receipt void already in progress for this idempotency key.'
+        }
+      });
     }
-    if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
-      return res.status(409).json({ error: 'Idempotency key reused with a different request payload.' });
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS',
+          message: 'Idempotency key was already used for a different endpoint.'
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_HASH_MISMATCH'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD',
+          message: 'Idempotency key reused with a different request payload.'
+        }
+      });
     }
     if (error?.message === 'RECEIPT_NOT_FOUND') {
       return res.status(404).json({ error: 'Receipt not found.' });

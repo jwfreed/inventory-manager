@@ -268,6 +268,7 @@ test('inventory transfer idempotency: replay, conflict, incomplete detection', a
       quantity: 1
     }
   });
-  assert.equal(incompleteReplay.res.status, 409, JSON.stringify(incompleteReplay.payload));
-  assert.equal(incompleteReplay.payload?.error?.code, 'INV_TRANSFER_IDEMPOTENCY_INCOMPLETE');
+  assert.equal(incompleteReplay.res.status, 200, JSON.stringify(incompleteReplay.payload));
+  assert.equal(incompleteReplay.payload?.movementId, incompleteFirst.payload?.movementId);
+  assert.equal(incompleteReplay.payload?.replayed, true);
 });

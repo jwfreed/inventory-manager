@@ -57,6 +57,7 @@ import { runInventoryInvariantCheck } from './jobs/inventoryInvariants.job';
 import { runInventoryLedgerReconcileAndRepair } from './jobs/inventoryLedgerReconcileAndRepair.job';
 import { ensureWarehouseDefaults } from './services/warehouseDefaults.service';
 import { pruneOutboxEvents } from './jobs/outboxRetention.job';
+import { pruneIdempotencyKeys } from './jobs/idempotencyRetention.job';
 import { runReservationExpiry } from './jobs/reservationExpiry.job';
 import inventoryHealthRouter from './routes/inventoryHealth.routes';
 import outboxAdminRouter from './routes/outboxAdmin.routes';
@@ -250,6 +251,18 @@ if (schedulerMode.schedulerEnabled) {
       const result = await pruneOutboxEvents();
       if (result.deleted > 0) {
         console.log(`🧹 Outbox retention pruned ${result.deleted} events (retention=${result.retentionDays}d)`);
+      }
+    },
+    true
+  );
+
+  registerJob(
+    'idempotency-retention',
+    process.env.IDEMPOTENCY_RETENTION_CRON ?? '15 3 * * *', // 03:15 UTC daily
+    async () => {
+      const result = await pruneIdempotencyKeys();
+      if (result.deleted > 0) {
+        console.log(`🧹 Idempotency retention pruned ${result.deleted} keys (retention=${result.retentionDays}d)`);
       }
     },
     true

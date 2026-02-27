@@ -84,14 +84,14 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
 
   const qaSnapshotBefore = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId: qaLocation.id }
+    params: { warehouseId: warehouse.id, itemId, locationId: qaLocation.id }
   });
   assert.equal(qaSnapshotBefore.res.status, 200);
   const qaOnHandBefore = qaSnapshotBefore.payload.data?.[0]?.onHand ?? 0;
 
   const fgSnapshotBefore = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId: fgLocation.id }
+    params: { warehouseId: warehouse.id, itemId, locationId: fgLocation.id }
   });
   assert.equal(fgSnapshotBefore.res.status, 200);
   const fgOnHandBefore = fgSnapshotBefore.payload.data?.[0]?.onHand ?? 0;
@@ -111,7 +111,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
 
   const sellableQaAtp = await apiRequest('GET', '/atp/detail', {
     token,
-    params: { itemId, locationId: fgLocation.id }
+    params: { warehouseId: warehouse.id, itemId, locationId: fgLocation.id }
   });
   assert.equal(sellableQaAtp.res.status, 200);
 
@@ -196,7 +196,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
 
   const qaSnapshot = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId: qaLocation.id }
+    params: { warehouseId: warehouse.id, itemId, locationId: qaLocation.id }
   });
   assert.equal(qaSnapshot.res.status, 200, `Snapshot failed: ${JSON.stringify(qaSnapshot.payload)}`);
   assert.ok(Array.isArray(qaSnapshot.payload.data), `Snapshot data not array: ${JSON.stringify(qaSnapshot.payload)}`);
@@ -209,7 +209,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
 
   const fgSnapshot = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId: fgLocation.id }
+    params: { warehouseId: warehouse.id, itemId, locationId: fgLocation.id }
   });
   assert.equal(fgSnapshot.res.status, 200);
   const fgOnHand = fgSnapshot.payload.data?.[0]?.onHand ?? 0;
@@ -217,7 +217,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
 
   const atpRes = await apiRequest('GET', '/atp', {
     token,
-    params: { itemId }
+    params: { warehouseId: warehouse.id, itemId }
   });
   assert.equal(atpRes.res.status, 200);
   const atpRows = atpRes.payload.data || [];
@@ -318,14 +318,14 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
 
   const qaSnapshotAfterQc = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId: qaLocation.id }
+    params: { warehouseId: warehouse.id, itemId, locationId: qaLocation.id }
   });
   assert.equal(qaSnapshotAfterQc.res.status, 200);
   const qaOnHandAfterQc = qaSnapshotAfterQc.payload.data?.[0]?.onHand ?? 0;
 
   const fgSnapshotAfterQc = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId: fgLocation.id }
+    params: { warehouseId: warehouse.id, itemId, locationId: fgLocation.id }
   });
   assert.equal(fgSnapshotAfterQc.res.status, 200);
   const fgOnHandAfterQc = fgSnapshotAfterQc.payload.data?.[0]?.onHand ?? 0;
@@ -351,7 +351,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
     async () => {
       const snapshot = await apiRequest('GET', '/inventory-snapshot', {
         token,
-        params: { itemId, locationId: qaLocation.id }
+        params: { warehouseId: warehouse.id, itemId, locationId: qaLocation.id }
       });
       assert.equal(snapshot.res.status, 200);
       return Number(snapshot.payload.data?.[0]?.onHand ?? 0);
@@ -369,7 +369,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
     async () => {
       const snapshot = await apiRequest('GET', '/inventory-snapshot', {
         token,
-        params: { itemId, locationId: fgLocation.id }
+        params: { warehouseId: warehouse.id, itemId, locationId: fgLocation.id }
       });
       assert.equal(snapshot.res.status, 200);
       return Number(snapshot.payload.data?.[0]?.onHand ?? 0);

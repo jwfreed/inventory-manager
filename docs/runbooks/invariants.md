@@ -61,3 +61,16 @@ POST /admin/inventory-invariants
 - Warehouses: `docs/runbooks/warehouses.md`
 - CI/testing workflow: `docs/runbooks/ci.md`
 - Debugging tests: `docs/runbooks/debugging_tests.md`
+
+## Ledger Immutability Migration Guard
+
+Architecture guard `tests/architecture/ledger-migration-lint.test.mjs` fails if any migration contains dangerous ledger immutability statements (for example trigger disable/drop, truncate, or dropping `prevent_ledger_mutation`).
+
+If a dangerous migration is intentionally required, add an explicit auditable override inside that migration file:
+
+```sql
+-- ledger-immutability:allow-dangerous-migration
+-- reason: <why this dangerous migration is required>
+```
+
+The reason line is mandatory immediately after the pragma.

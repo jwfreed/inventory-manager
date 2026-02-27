@@ -2,6 +2,8 @@ import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
 import { query } from '../db';
 
+const LEGACY_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+
 export type IdempotencyStatus = 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED';
 
 export type IdempotencyRecord = {
@@ -30,10 +32,20 @@ export async function beginIdempotency(
       status: IdempotencyStatus;
       response_ref: string | null;
     }>(
-      `INSERT INTO idempotency_keys (key, request_hash, status, created_at, updated_at)
-       VALUES ($1, $2, 'IN_PROGRESS', now(), now())
+      `INSERT INTO idempotency_keys (
+          tenant_id,
+          key,
+          endpoint,
+          request_hash,
+          response_status,
+          response_body,
+          status,
+          created_at,
+          updated_at
+       )
+       VALUES ($1, $2, '__legacy__', $3, -1, '{}'::jsonb, 'IN_PROGRESS', now(), now())
        RETURNING key, request_hash, status, response_ref`,
-      [key, requestHash]
+      [LEGACY_TENANT_ID, key, requestHash]
     );
     const row = insert.rows[0];
     return {
@@ -57,8 +69,9 @@ export async function beginIdempotency(
   }>(
     `SELECT key, request_hash, status, response_ref
        FROM idempotency_keys
-      WHERE key = $1`,
-    [key]
+      WHERE tenant_id = $1
+        AND key = $2`,
+    [LEGACY_TENANT_ID, key]
   );
   const row = existing.rows[0];
   if (!row) {
@@ -74,9 +87,10 @@ export async function beginIdempotency(
       `UPDATE idempotency_keys
           SET status = 'IN_PROGRESS',
               updated_at = now()
-        WHERE key = $1
+        WHERE tenant_id = $1
+          AND key = $2
         RETURNING key, request_hash, status, response_ref`,
-      [key]
+      [LEGACY_TENANT_ID, key]
     );
     const updated = retry.rows[0];
     return {
@@ -105,10 +119,11 @@ export async function completeIdempotency(
   const executor = client ? client.query.bind(client) : query;
   await executor(
     `UPDATE idempotency_keys
-        SET status = $2,
-            response_ref = $3,
+        SET status = $3,
+            response_ref = $4,
             updated_at = now()
-      WHERE key = $1`,
-    [key, status, responseRef]
+      WHERE tenant_id = $1
+        AND key = $2`,
+    [LEGACY_TENANT_ID, key, status, responseRef]
   );
 }

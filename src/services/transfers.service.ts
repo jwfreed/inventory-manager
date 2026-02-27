@@ -13,6 +13,12 @@ import {
   enqueueInventoryMovementPosted
 } from '../domains/inventory';
 import { relocateTransferCostLayersInTx, reverseTransferCostLayersInTx } from './transferCosting.service';
+import {
+  claimTransactionalIdempotency,
+  finalizeTransactionalIdempotency,
+  hashTransactionalIdempotencyRequest
+} from '../lib/transactionalIdempotency';
+import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 
 const TRANSFER_REVERSAL_MOVEMENT_TYPE = 'transfer_reversal';
 
@@ -209,6 +215,29 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
         }
       ]
     });
+    const transactionalRequestHash = hashTransactionalIdempotencyRequest({
+      method: 'POST',
+      endpoint: IDEMPOTENCY_ENDPOINTS.INVENTORY_TRANSFERS_CREATE,
+      body: normalizedRequestSummary
+    });
+
+    if (idempotencyKey) {
+      const claim = await claimTransactionalIdempotency<TransferPostResult>(client, {
+        tenantId: input.tenantId,
+        key: idempotencyKey,
+        endpoint: IDEMPOTENCY_ENDPOINTS.INVENTORY_TRANSFERS_CREATE,
+        requestHash: transactionalRequestHash
+      });
+      if (claim.replayed) {
+        const replayBody = claim.responseBody as TransferPostResult;
+        return {
+          ...replayBody,
+          created: false,
+          replayed: true,
+          idempotencyKey
+        };
+      }
+    }
 
     if (!idempotencyKey) {
       const transfer = await transferInventory(
@@ -280,7 +309,7 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
       });
     }
     if (execution.status === 'SUCCEEDED' && execution.inventory_movement_id) {
-      return {
+      const response: TransferPostResult = {
         movementId: execution.inventory_movement_id,
         transferId: execution.inventory_movement_id,
         created: false,
@@ -289,6 +318,13 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
         sourceWarehouseId,
         destinationWarehouseId
       };
+      await finalizeTransactionalIdempotency(client, {
+        tenantId: input.tenantId,
+        key: idempotencyKey,
+        responseStatus: 200,
+        responseBody: response
+      });
+      return response;
     }
     if (execution.status === 'SUCCEEDED' && !execution.inventory_movement_id) {
       throw domainError('INV_TRANSFER_IDEMPOTENCY_INCOMPLETE', {
@@ -350,7 +386,7 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
       [transfer.movementId, now, execution.id]
     );
 
-    return {
+    const response: TransferPostResult = {
       movementId: transfer.movementId,
       transferId: transfer.movementId,
       created: transfer.created,
@@ -359,6 +395,13 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
       sourceWarehouseId,
       destinationWarehouseId
     };
+    await finalizeTransactionalIdempotency(client, {
+      tenantId: input.tenantId,
+      key: idempotencyKey,
+      responseStatus: response.created ? 201 : 200,
+      responseBody: response
+    });
+    return response;
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
 }
 

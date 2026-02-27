@@ -25,8 +25,44 @@ import {
   createInventoryMovementLine,
   enqueueInventoryMovementPosted
 } from '../domains/inventory';
+import {
+  claimTransactionalIdempotency,
+  finalizeTransactionalIdempotency,
+  hashTransactionalIdempotencyRequest
+} from '../lib/transactionalIdempotency';
+import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 
 type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
+
+function normalizeOptionalIdempotencyKey(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeReceiptRequestForHash(data: PurchaseOrderReceiptInput): Record<string, unknown> {
+  const lines = [...data.lines]
+    .map((line) => ({
+      purchaseOrderLineId: line.purchaseOrderLineId,
+      uom: line.uom,
+      quantityReceived: roundQuantity(toNumber(line.quantityReceived)),
+      unitCost: line.unitCost ?? null,
+      discrepancyReason: line.discrepancyReason ?? null,
+      discrepancyNotes: line.discrepancyNotes ?? null,
+      lotCode: line.lotCode ?? null,
+      serialNumbers: line.serialNumbers ?? null,
+      overReceiptApproved: line.overReceiptApproved ?? false
+    }))
+    .sort((left, right) => left.purchaseOrderLineId.localeCompare(right.purchaseOrderLineId));
+  return {
+    purchaseOrderId: data.purchaseOrderId,
+    receivedAt: data.receivedAt ?? null,
+    receivedToLocationId: data.receivedToLocationId ?? null,
+    externalRef: data.externalRef ?? null,
+    notes: data.notes ?? null,
+    lines
+  };
+}
 
 function buildQcSummary(lineId: string, breakdownMap: Map<string, QcBreakdown>, quantityReceived: number) {
   const breakdown = breakdownMap.get(lineId) ?? defaultBreakdown();
@@ -323,6 +359,17 @@ export async function createPurchaseOrderReceipt(
   data: PurchaseOrderReceiptInput,
   actor?: { type: 'user' | 'system'; id?: string | null }
 ) {
+  const normalizedIdempotencyKey = normalizeOptionalIdempotencyKey(data.idempotencyKey ?? null);
+  if (normalizedIdempotencyKey) {
+    data.idempotencyKey = normalizedIdempotencyKey;
+  }
+  const idempotencyRequestHash = normalizedIdempotencyKey
+    ? hashTransactionalIdempotencyRequest({
+      method: 'POST',
+      endpoint: IDEMPOTENCY_ENDPOINTS.PURCHASE_ORDER_RECEIPTS_CREATE,
+      body: normalizeReceiptRequestForHash(data)
+    })
+    : null;
   const receiptId = uuidv4();
   const uniqueSet = new Set(data.lines.map((line) => line.purchaseOrderLineId));
   const uniqueLineIds = Array.from(uniqueSet);
@@ -330,19 +377,28 @@ export async function createPurchaseOrderReceipt(
     throw new Error('RECEIPT_DUPLICATE_PO_LINE');
   }
 
-  if (data.idempotencyKey) {
-    const existing = await query(
-      `SELECT id FROM purchase_order_receipts WHERE tenant_id = $1 AND idempotency_key = $2`,
-      [tenantId, data.idempotencyKey]
-    );
-    if (existing.rowCount && existing.rows[0]?.id) {
-      const receipt = await fetchReceiptById(tenantId, existing.rows[0].id);
-      if (receipt) return receipt;
-    }
-  }
-
   const now = new Date();
+  let outcome:
+    | { receipt: any; replayed: boolean; responseStatus: number }
+    | null = null;
   await withTransaction(async (client) => {
+    if (normalizedIdempotencyKey && idempotencyRequestHash) {
+      const claim = await claimTransactionalIdempotency(client, {
+        tenantId,
+        key: normalizedIdempotencyKey,
+        endpoint: IDEMPOTENCY_ENDPOINTS.PURCHASE_ORDER_RECEIPTS_CREATE,
+        requestHash: idempotencyRequestHash
+      });
+      if (claim.replayed) {
+        outcome = {
+          receipt: claim.responseBody,
+          replayed: true,
+          responseStatus: claim.responseStatus
+        };
+        return;
+      }
+    }
+
     const poResult = await client.query(
       `SELECT status, ship_to_location_id, receiving_location_id
          FROM purchase_orders
@@ -668,13 +724,29 @@ export async function createPurchaseOrderReceipt(
         client
       );
     }
-  });
 
-  const receipt = await fetchReceiptById(tenantId, receiptId);
-  if (!receipt) {
+    const receiptView = await fetchReceiptById(tenantId, receiptId, client);
+    if (!receiptView) {
+      throw new Error('RECEIPT_NOT_FOUND_AFTER_CREATE');
+    }
+    if (normalizedIdempotencyKey) {
+      await finalizeTransactionalIdempotency(client, {
+        tenantId,
+        key: normalizedIdempotencyKey,
+        responseStatus: 201,
+        responseBody: receiptView
+      });
+    }
+    outcome = {
+      receipt: receiptView,
+      replayed: false,
+      responseStatus: 201
+    };
+  });
+  if (!outcome) {
     throw new Error('RECEIPT_NOT_FOUND_AFTER_CREATE');
   }
-  return receipt;
+  return outcome;
 }
 
 export async function fetchReceiptByIdempotencyKey(tenantId: string, key: string) {
@@ -1155,8 +1227,36 @@ export async function voidReceipt(
   params: { reason: string; actor: ReceiptVoidActor; idempotencyKey?: string | null }
 ) {
   const reason = assertReason(params.reason);
+  const normalizedIdempotencyKey = normalizeOptionalIdempotencyKey(params.idempotencyKey ?? null);
+  const idempotencyRequestHash = normalizedIdempotencyKey
+    ? hashTransactionalIdempotencyRequest({
+      method: 'POST',
+      endpoint: IDEMPOTENCY_ENDPOINTS.PURCHASE_ORDER_RECEIPTS_VOID,
+      body: {
+        receiptId: id,
+        reason
+      }
+    })
+    : null;
 
   const outcome = await withTransactionRetry(async (client) => {
+    if (normalizedIdempotencyKey && idempotencyRequestHash) {
+      const claim = await claimTransactionalIdempotency(client, {
+        tenantId,
+        key: normalizedIdempotencyKey,
+        endpoint: IDEMPOTENCY_ENDPOINTS.PURCHASE_ORDER_RECEIPTS_VOID,
+        requestHash: idempotencyRequestHash
+      });
+      if (claim.replayed) {
+        return {
+          receipt: claim.responseBody,
+          purchaseOrderId: null,
+          replayed: true,
+          responseStatus: claim.responseStatus
+        };
+      }
+    }
+
     const now = new Date();
     const receiptResult = await client.query<{
       id: string;
@@ -1376,13 +1476,25 @@ export async function voidReceipt(
     );
 
     const receiptView = await fetchReceiptById(tenantId, id, client);
+    if (normalizedIdempotencyKey) {
+      await finalizeTransactionalIdempotency(client, {
+        tenantId,
+        key: normalizedIdempotencyKey,
+        responseStatus: 200,
+        responseBody: receiptView
+      });
+    }
     return {
       receipt: receiptView,
-      purchaseOrderId: receipt.purchase_order_id
+      purchaseOrderId: receipt.purchase_order_id,
+      replayed: false,
+      responseStatus: 200
     };
   }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
-  await updatePoStatusFromReceipts(tenantId, outcome.purchaseOrderId);
-  return outcome.receipt;
+  if (outcome.purchaseOrderId) {
+    await updatePoStatusFromReceipts(tenantId, outcome.purchaseOrderId);
+  }
+  return outcome;
 }
 async function findDefaultReceivingLocation(tenantId: string): Promise<string | null> {
   const { rows } = await baseQuery(

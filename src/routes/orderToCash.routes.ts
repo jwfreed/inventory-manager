@@ -166,6 +166,30 @@ router.post('/reservations', async (req: Request, res: Response) => {
     });
     return res.status(201).json({ data: results });
   } catch (error) {
+    if ((error as Error & { code?: string })?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+          message: 'Reservation request is already in progress for this idempotency key.'
+        }
+      });
+    }
+    if ((error as Error & { code?: string })?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD') {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD',
+          message: 'Idempotency key reused with a different reservation payload.'
+        }
+      });
+    }
+    if ((error as Error & { code?: string })?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS') {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS',
+          message: 'Idempotency key was already used for a different endpoint.'
+        }
+      });
+    }
     if (mapAtpConcurrencyExhausted(error, res)) {
       return;
     }

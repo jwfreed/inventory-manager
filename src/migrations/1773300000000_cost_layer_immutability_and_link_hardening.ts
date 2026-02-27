@@ -1,5 +1,10 @@
 import type { MigrationBuilder } from 'node-pg-migrate';
 
+/*
+-- ledger-immutability:allow-dangerous-migration
+-- reason: Historical cost-layer migration manages non-immutability trigger lifecycle on inventory_movement_lines and includes rollback drop statements.
+*/
+
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.sql(`
     CREATE OR REPLACE FUNCTION prevent_inventory_cost_layer_mutation()

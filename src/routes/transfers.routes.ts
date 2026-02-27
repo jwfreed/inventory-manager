@@ -57,6 +57,38 @@ router.post('/inventory-transfers', async (req: Request, res: Response) => {
     if (mapTxRetryExhausted(error, res)) {
       return;
     }
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS' || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+          message: 'Inventory transfer request is already in progress for this idempotency key.'
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS',
+          message: 'Idempotency key was already used for a different endpoint.',
+          details: error?.details
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'INV_TRANSFER_IDEMPOTENCY_CONFLICT',
+          message: 'Idempotency key payload conflict detected for inventory transfer posting.',
+          details: error?.details
+        }
+      });
+    }
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({
         error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
