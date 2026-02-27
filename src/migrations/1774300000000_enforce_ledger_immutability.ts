@@ -3,7 +3,7 @@ import { ensureTriggerIfMissingOrFail } from './helpers/triggers';
 
 /*
 -- ledger-immutability:allow-dangerous-migration
--- reason: Down migration intentionally drops ledger immutability triggers/function for explicit rollback support.
+-- reason: Down migration intentionally drops ledger immutability triggers/function for explicit rollback support. #177430
 */
 
 const LEDGER_MUTATION_FUNCTION = 'prevent_ledger_mutation';

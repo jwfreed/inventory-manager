@@ -85,18 +85,37 @@ test('app DB principal is not superuser or owner for ledger tables (strict in CI
        pg_get_userbyid(c.relowner) AS owner_name
      FROM pg_class c
      JOIN pg_namespace n ON n.oid = c.relnamespace
-     WHERE n.nspname = 'public'
-       AND c.relname IN ('inventory_movements', 'inventory_movement_lines')`
+      WHERE n.nspname = 'public'
+        AND c.relname IN ('inventory_movements', 'inventory_movement_lines')`
+  );
+  let hasRdsSuper = false;
+  try {
+    const rdsMembership = await db.query(
+      `SELECT pg_has_role(current_user, 'rds_superuser', 'member') AS has_rds_super`
+    );
+    hasRdsSuper = Boolean(rdsMembership.rows[0]?.has_rds_super);
+  } catch {
+    hasRdsSuper = false;
+  }
+  const dangerousPrivileges = await db.query(
+    `SELECT
+       has_table_privilege(current_user, 'public.inventory_movements', 'TRIGGER') AS can_trigger,
+       has_table_privilege(current_user, 'public.inventory_movements', 'TRUNCATE') AS can_truncate`
   );
 
   const currentUser = String(who.rows[0]?.current_user ?? '');
   const isSuperuser = Boolean(who.rows[0]?.is_superuser);
+  const canTriggerLedger = Boolean(dangerousPrivileges.rows[0]?.can_trigger);
+  const canTruncateLedger = Boolean(dangerousPrivileges.rows[0]?.can_truncate);
   const ownedTables = ownership.rows
     .filter((row) => row.owner_name === currentUser)
     .map((row) => row.table_name);
 
   const risks = [];
   if (isSuperuser) risks.push(`current_user "${currentUser}" is superuser`);
+  if (hasRdsSuper) risks.push(`current_user "${currentUser}" is member of rds_superuser`);
+  if (canTriggerLedger) risks.push(`current_user "${currentUser}" has TRIGGER privilege on inventory_movements`);
+  if (canTruncateLedger) risks.push(`current_user "${currentUser}" has TRUNCATE privilege on inventory_movements`);
   if (ownedTables.length > 0) {
     risks.push(`current_user "${currentUser}" owns ledger table(s): ${ownedTables.join(', ')}`);
   }

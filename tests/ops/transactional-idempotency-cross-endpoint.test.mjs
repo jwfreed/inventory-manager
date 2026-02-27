@@ -186,7 +186,7 @@ test('transactional idempotency rejects same key across endpoints with no ledger
     [tenantId, sharedIdempotencyKey]
   );
   assert.equal(idempotencyBefore.rowCount, 1);
-  assert.equal(idempotencyBefore.rows[0]?.endpoint, '/purchase-order-receipts');
+  assert.equal(idempotencyBefore.rows[0]?.endpoint, 'receipts.post');
 
   const baselineCounts = await snapshotMutationCounts(db, tenantId, sharedIdempotencyKey);
 

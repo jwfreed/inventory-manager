@@ -7,6 +7,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    container:
+      image: node:22
     services:
       postgres:
         image: postgres:16
@@ -14,51 +16,76 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: inventory_test
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd="pg_isready -U postgres -d inventory_test"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=12
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/inventory_test
+      CI: 'true'
+      REDIS_URL: redis://redis:6379
       JWT_SECRET: ci_dummy_secret
       PORT: 3000
       NODE_ENV: test
+      SEED_ADMIN_EMAIL: ci-admin@test.local
+      SEED_ADMIN_PASSWORD: ci-admin-password
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.x
-          cache: npm
+      - name: Install PostgreSQL client
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq postgresql-client
       - name: Install deps
         run: npm ci
+      - name: Build
+        run: npm run build --if-present
       - name: Run migrations
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
         run: npm run migrate:up
-      - name: Start server
+      - name: Seed admin (if present)
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
+        run: npm run seed:admin --if-present
+      - name: Create app_ci role and grants
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
         run: |
-          nohup npm run dev > server.log 2>&1 &
-          echo $! > server.pid
-      - name: Wait for readiness
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ci') THEN
+              CREATE ROLE app_ci WITH LOGIN PASSWORD 'app_ci_pass' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            ELSE
+              ALTER ROLE app_ci WITH LOGIN PASSWORD 'app_ci_pass' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            END IF;
+          END
+          $$;
+          GRANT CONNECT ON DATABASE inventory_test TO app_ci;
+          GRANT USAGE ON SCHEMA public TO app_ci;
+          GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO app_ci;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_ci;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO app_ci;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
+          REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
+          SQL
+      - name: Run npm test as app_ci
+        env:
+          DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
         run: |
-          for i in {1..60}; do
-            if curl -fsS http://localhost:3000/healthz >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Server failed to become ready"
-          cat server.log
-          exit 1
-      - name: Run API tests
-        run: node --test --test-concurrency=1 tests/api/*.test.mjs
-      - name: Stop server
-        if: always()
+          npm test || npm run test:all
+      - name: Run financial core guards as app_ci
+        env:
+          DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
         run: |
-          if [ -f server.pid ]; then
-            kill "$(cat server.pid)" || true
-          fi
-          cat server.log || true
+          npm run test:financial-core

@@ -3,11 +3,6 @@ import type { MigrationBuilder } from 'node-pg-migrate';
 const MOVEMENT_TYPE_VALUES = "('receive','issue','transfer','adjustment','count','receipt_reversal','transfer_reversal')";
 const MOVEMENT_TYPE_VALUES_PREVIOUS = "('receive','issue','transfer','adjustment','count','receipt_reversal')";
 
-/*
--- ledger-immutability:allow-dangerous-migration
--- reason: Historical transfer-cost migration manages non-immutability triggers on inventory_movement_lines and requires rollback drop statements.
-*/
-
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.sql(`
     ALTER TABLE inventory_movements

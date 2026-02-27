@@ -199,7 +199,7 @@ test('transactional idempotency: duplicate replay returns same receipt without d
     [tenantId, idempotencyKey]
   );
   assert.equal(idempotencyRow.rowCount, 1);
-  assert.equal(idempotencyRow.rows[0]?.endpoint, '/purchase-order-receipts');
+  assert.equal(idempotencyRow.rows[0]?.endpoint, 'receipts.post');
   assert.equal(Number(idempotencyRow.rows[0]?.response_status ?? 0), 201);
 
   const receiptLines = await db.query(
@@ -521,7 +521,7 @@ test('transactional idempotency: incomplete key row blocks replay and prevents d
              response_ref = EXCLUDED.response_ref,
              updated_at = now(),
              created_at = now()`,
-    [tenantId, idempotencyKey, '/purchase-order-receipts', requestHash, -1, JSON.stringify({ code: 'IDEMPOTENCY_IN_PROGRESS' })]
+    [tenantId, idempotencyKey, 'receipts.post', requestHash, -1, JSON.stringify({ code: 'IDEMPOTENCY_IN_PROGRESS' })]
   );
 
   const replayAttempt = await apiRequest('POST', '/purchase-order-receipts', {

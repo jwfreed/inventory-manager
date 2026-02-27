@@ -2,7 +2,7 @@ import type { MigrationBuilder } from 'node-pg-migrate';
 
 /*
 -- ledger-immutability:allow-dangerous-migration
--- reason: Historical invariant migration includes rollback trigger drops on ledger tables; retained for backward-compatible down migration behavior.
+-- reason: Historical invariant migration includes rollback trigger drops on ledger tables; retained for backward-compatible down migration behavior. #177140
 */
 
 export async function up(pgm: MigrationBuilder): Promise<void> {
