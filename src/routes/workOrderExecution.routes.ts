@@ -25,7 +25,7 @@ import {
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
-import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
+import { mapTxRetryExhausted, mapAtpConcurrencyExhausted, mapAtpInsufficientAvailable } from './orderToCash.shipmentConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -643,6 +643,12 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
     return res.status(result.replayed ? 200 : 201).json(result);
   } catch (error: any) {
     if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
+    if (mapAtpConcurrencyExhausted(error, res)) {
+      return;
+    }
+    if (mapAtpInsufficientAvailable(error, res)) {
       return;
     }
     if (error?.code === 'INSUFFICIENT_STOCK') {

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -64,6 +65,7 @@ function isDescendant(locationId, warehouseId, byId) {
 test('standard warehouse template creates role bins even with conflicting codes', async () => {
   const tenantSlug = `tmpl-codes-${randomUUID().slice(0, 8)}`;
   const session = await ensureDbSession({
+    apiRequest,
     tenantSlug,
     tenantName: 'Template Role Bin Codes'
   });

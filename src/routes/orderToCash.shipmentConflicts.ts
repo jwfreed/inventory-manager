@@ -111,6 +111,9 @@ export function handlePostShipmentConflict(error: any, res: Response): boolean {
   if (mapTxRetryExhausted(error, res)) {
     return true;
   }
+  if (mapAtpInsufficientAvailable(error, res)) {
+    return true;
+  }
   if (error?.code === 'INSUFFICIENT_AVAILABLE_WITH_ALLOWANCE') {
     jsonConflict(
       res,

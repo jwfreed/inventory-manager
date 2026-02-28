@@ -59,7 +59,7 @@ type BomAccumulator = {
   componentByKey: Map<string, ImportedBomComponent>;
 };
 
-const UOM_ALIASES: Record<string, string> = {
+export const UOM_ALIASES: Record<string, string> = {
   kg: 'kg',
   kilogram: 'kg',
   kilograms: 'kg',
@@ -72,6 +72,12 @@ const UOM_ALIASES: Record<string, string> = {
   pc: 'piece',
   piece: 'piece',
   pieces: 'piece',
+  bag: 'piece',
+  bags: 'piece',
+  tin: 'piece',
+  tins: 'piece',
+  bottle: 'piece',
+  bottles: 'piece',
   bar: 'piece',
   bars: 'piece'
 };
@@ -354,10 +360,13 @@ function readRowsFromXlsx(filePath: string, sheetName: string): ParsedRow[] {
 function readRowsFromJson(filePath: string): ParsedRow[] {
   const raw = fs.readFileSync(filePath, 'utf8');
   const parsed = JSON.parse(raw);
-  if (!Array.isArray(parsed)) {
-    throw new Error(`SEED_BOM_JSON_INVALID_ARRAY file=${filePath}`);
+  if (Array.isArray(parsed)) {
+    return parsed as ParsedRow[];
   }
-  return parsed as ParsedRow[];
+  if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { rows?: unknown }).rows)) {
+    return (parsed as { rows: ParsedRow[] }).rows;
+  }
+  throw new Error(`SEED_BOM_JSON_INVALID_ARRAY file=${filePath}`);
 }
 
 function getNormalizedEntries(row: ParsedRow): Array<[string, unknown]> {

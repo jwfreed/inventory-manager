@@ -166,10 +166,10 @@ async function createAdjustmentWithLots(token, itemId, locationId, quantity, all
   return { movementId, lineId };
 }
 
-async function getAtpDetail(token, itemId, locationId, { allowNotFound = false } = {}) {
+async function getAtpDetail(token, itemId, locationId, warehouseId, { allowNotFound = false } = {}) {
   const res = await apiRequest('GET', '/atp/detail', {
     token,
-    params: { itemId, locationId }
+    params: { itemId, locationId, warehouseId }
   });
   if (allowNotFound && res.res.status === 404) return null;
   assert.equal(res.res.status, 200);
@@ -266,7 +266,7 @@ test('ATP excludes expired lots from sellable on-hand', async () => {
   ]);
 
   const atp = await waitForCondition(
-    () => getAtpDetail(token, itemId, sellable.id),
+    () => getAtpDetail(token, itemId, sellable.id, warehouse.id),
     (value) => value && Math.abs(Number(value.onHand) - 6) < 1e-6,
     { label: 'atp onHand after lots adjustment' }
   );
@@ -282,7 +282,7 @@ test('QC accept into sellable for expired lot stays excluded from ATP', async ()
   const userId = session.user?.id;
   assert.ok(token && tenantId && userId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const vendorRes = await apiRequest('POST', '/vendors', {
     token,
@@ -314,7 +314,7 @@ test('QC accept into sellable for expired lot stays excluded from ATP', async ()
   assert.equal(allocRes.res.status, 201);
 
   const atp = await waitForCondition(
-    () => getAtpDetail(token, itemId, sellable.id, { allowNotFound: true }),
+    () => getAtpDetail(token, itemId, sellable.id, warehouse.id, { allowNotFound: true }),
     (value) => value === null,
     { label: 'atp excludes expired lot after qc accept' }
   );
@@ -327,7 +327,7 @@ test('Derived backorder ignores expired lots', async () => {
   const tenantId = session.tenant?.id;
   assert.ok(token && tenantId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
   const sellable = defaults.SELLABLE;
   const customerId = await createCustomer(tenantId);
   const itemId = await createItem(token, sellable.id);

@@ -611,7 +611,7 @@ export async function createStandardWarehouseTemplate(
         code: 'RECV',
         name: 'Receiving',
         type: 'bin',
-        role: null,
+        role: 'HOLD',
         parentLocationId: warehouseId
       });
     }
@@ -640,11 +640,11 @@ export async function createStandardWarehouseTemplate(
     const hasRecv = (recvRes.rowCount ?? 0) > 0;
 
     for (const loc of baseLocations) {
-      if (loc.role && existingRoles.has(loc.role)) {
-        skippedRoles.push(loc.role);
+      if (loc.code === 'RECV' && hasRecv) {
         continue;
       }
-      if (!loc.role && loc.code === 'RECV' && hasRecv) {
+      if (loc.role && existingRoles.has(loc.role) && loc.code !== 'RECV') {
+        skippedRoles.push(loc.role);
         continue;
       }
       const code = await resolveUniqueLocationCode(client, tenantId, loc.code, warehouseId);

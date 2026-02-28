@@ -32,13 +32,14 @@ async function apiRequest(method, path, { token, body, params, headers } = {}) {
   return { res, payload };
 }
 
-async function getSession() {
+async function getSession(slug) {
+  const resolvedSlug = slug || tenantSlug;
   const session = await ensureDbSession({
     apiRequest,
     adminEmail,
     adminPassword,
-    tenantSlug: tenantSlug,
-    tenantName: tenantSlug
+    tenantSlug: resolvedSlug,
+    tenantName: resolvedSlug
   });
   db = session.pool;
   return session;
@@ -84,7 +85,7 @@ async function seedItemAndStock(token, sellableLocationId, quantity = 10) {
 }
 
 test('Ledger reconcile strict mode fails on drift when repair disabled', async () => {
-  const session = await getSession();
+  const session = await getSession(`recon-strict-${randomUUID().slice(0, 8)}`);
   const token = session.accessToken;
   const tenantId = session.tenant.id;
   const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
@@ -107,7 +108,7 @@ test('Ledger reconcile strict mode fails on drift when repair disabled', async (
 });
 
 test('Ledger reconcile repair fixes drift and clears mismatches', async () => {
-  const session = await getSession();
+  const session = await getSession(`recon-repair-${randomUUID().slice(0, 8)}`);
   const token = session.accessToken;
   const tenantId = session.tenant.id;
   const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});
@@ -140,7 +141,7 @@ test('Ledger reconcile repair fixes drift and clears mismatches', async () => {
 });
 
 test('Ledger reconcile repair aborts when threshold exceeded', async () => {
-  const session = await getSession();
+  const session = await getSession(`recon-thresh-${randomUUID().slice(0, 8)}`);
   const token = session.accessToken;
   const tenantId = session.tenant.id;
   const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url});

@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { v5 as uuidv5 } from 'uuid';
 import type { PoolClient } from 'pg';
 import bcrypt from 'bcryptjs';
+import {
+  createInventoryMovement,
+  createInventoryMovementLine
+} from '../../../src/domains/inventory/internal/ledgerWriter';
+import { createOpeningBalanceCostLayerOnce } from '../../../src/services/costLayers.service';
 import {
   importBomDatasetFromFile,
   type ImportedBom,
@@ -10,6 +17,24 @@ import {
 
 const ID_NAMESPACE = '85fc700f-6f58-4d79-a7db-7af0951374fd';
 const REQUIRED_ROLES = ['SELLABLE', 'QA', 'HOLD'] as const;
+const DEFAULT_BOM_JSON_PATH = path.resolve(process.cwd(), 'scripts/seed/siamaya/siamaya-bom-production.json');
+const DEFAULT_INITIAL_STOCK_SPEC_PATH = path.resolve(process.cwd(), 'scripts/seed/siamaya/initial-stock-spec.json');
+const LOT_TRACKED_ITEM_KEYS = new Set([
+  'cacao beans',
+  'cacao butter',
+  'powdered milk',
+  'coconut milk powder'
+]);
+const FACTORY_OPERATIONAL_LOCATIONS = [
+  { code: 'FACTORY_RECEIVING', localCode: 'RECEIVING', name: 'Factory Receiving' },
+  { code: 'FACTORY_RM_STORE', localCode: 'RM_STORE', name: 'Factory Raw Material Store' },
+  { code: 'FACTORY_PACK_STORE', localCode: 'PACK_STORE', name: 'Factory Packaging Store' },
+  { code: 'FACTORY_PRODUCTION', localCode: 'PRODUCTION', name: 'Factory Production' },
+  { code: 'FACTORY_FG_STAGE', localCode: 'FG_STAGE', name: 'Factory Finished Goods Stage' }
+] as const;
+// Non-root locations currently require a role by DB constraint; HOLD keeps them non-sellable
+// while preserving distinct operational codes (RECEIVING/RM_STORE/PACK_STORE/PRODUCTION/FG_STAGE).
+const OPERATIONAL_LOCATION_ROLE = 'HOLD';
 
 const DEFAULT_OPTIONS = {
   pack: 'siamaya_factory',
@@ -33,6 +58,7 @@ export type SiamayaPackOptions = {
   adminPassword?: string;
   bomFilePath?: string;
   bomSheetName?: string;
+  initialStockSpecPath?: string;
   warehouses?: Array<{ code: string; name: string }>;
   datasetOverride?: {
     items: ImportedItem[];
@@ -71,7 +97,7 @@ export type SeedSummary = {
 };
 
 type CanonicalItem = ImportedItem & {
-  type: 'finished' | 'raw';
+  type: 'raw' | 'wip' | 'finished' | 'packaging';
 };
 
 type CanonicalBom = ImportedBom;
@@ -82,6 +108,22 @@ type UserRow = { id: string; email: string };
 type ItemRow = { id: string; name: string };
 type BomRow = { id: string };
 type BomVersionRow = { id: string };
+type StockSpecLine = {
+  itemKey: string;
+  quantity: number;
+  uom: string;
+  unitCost: number;
+  locationCode: string;
+  lotCode?: string;
+  productionDate?: string;
+  expirationDate?: string;
+};
+
+type InitialStockSpec = {
+  version: number;
+  stockDate: string;
+  items: StockSpecLine[];
+};
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -139,6 +181,7 @@ function buildChecksum(input: {
   userEmail: string;
   items: CanonicalItem[];
   boms: CanonicalBom[];
+  initialStock: InitialStockSpec;
 }): string {
   const lines: string[] = [];
   lines.push(`tenant:${input.tenantSlug}`);
@@ -163,12 +206,114 @@ function buildChecksum(input: {
     }
   }
 
+  lines.push(`initial_stock_date:${input.initialStock.stockDate}`);
+  for (const stockLine of [...input.initialStock.items].sort((left, right) => {
+    const itemCompare = left.itemKey.localeCompare(right.itemKey);
+    if (itemCompare !== 0) return itemCompare;
+    const locationCompare = left.locationCode.localeCompare(right.locationCode);
+    if (locationCompare !== 0) return locationCompare;
+    return left.uom.localeCompare(right.uom);
+  })) {
+    lines.push(
+      [
+        'initial_stock',
+        stockLine.itemKey,
+        toStableQuantity(stockLine.quantity),
+        stockLine.uom,
+        toStableQuantity(stockLine.unitCost),
+        stockLine.locationCode,
+        stockLine.lotCode ?? ''
+      ].join(':')
+    );
+  }
+
   const digest = createHash('sha256').update(lines.join('\n')).digest('hex');
   return `sha256:${digest}`;
 }
 
-function inferCanonicalItemType(item: ImportedItem): 'finished' | 'raw' {
-  return item.appearsAsOutput ? 'finished' : 'raw';
+function isPackagingName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return (
+    lower.includes('wrapper')
+    || lower.includes('sticker')
+    || lower.includes('label')
+    || lower.includes('sleeve')
+    || lower.includes('gold paper')
+    || lower.includes('flow wrap foil')
+    || lower.includes('shrink film')
+    || lower.includes('box')
+    || lower.includes('bags')
+    || lower.includes('bag')
+    || lower.includes('bottle')
+    || lower.includes('tin')
+  );
+}
+
+function isWipName(name: string): boolean {
+  const normalized = normalizeWhitespace(name);
+  return (
+    normalized.startsWith('Base - ')
+    || normalized.includes(' - FLOW WRAP')
+    || normalized.includes(' - GOLD FOIL')
+    || normalized.includes(' - UNWRAPPED')
+    || normalized === 'Cacao Nibs - Raw Material'
+  );
+}
+
+function inferCanonicalItemType(item: ImportedItem): 'raw' | 'wip' | 'finished' | 'packaging' {
+  if (isPackagingName(item.name)) {
+    return 'packaging';
+  }
+  if (item.appearsAsOutput && isWipName(item.name)) {
+    return 'wip';
+  }
+  if (item.appearsAsOutput) {
+    return 'finished';
+  }
+  return 'raw';
+}
+
+function loadInitialStockSpec(filePath: string): InitialStockSpec {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`SEED_INITIAL_STOCK_SPEC_NOT_FOUND file=${filePath}`);
+  }
+  const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as Partial<InitialStockSpec>;
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.items)) {
+    throw new Error(`SEED_INITIAL_STOCK_SPEC_INVALID file=${filePath}`);
+  }
+  const version = Number(parsed.version ?? 0);
+  if (version !== 1) {
+    throw new Error(`SEED_INITIAL_STOCK_SPEC_VERSION_UNSUPPORTED version=${parsed.version}`);
+  }
+  const stockDate = String(parsed.stockDate ?? '').trim();
+  if (!stockDate) {
+    throw new Error('SEED_INITIAL_STOCK_SPEC_STOCK_DATE_REQUIRED');
+  }
+  const items = parsed.items.map((line, index) => {
+    const itemKey = normalizeItemKey(String(line.itemKey ?? ''));
+    const quantity = Number(line.quantity);
+    const unitCost = Number(line.unitCost);
+    const uom = normalizeWhitespace(String(line.uom ?? '')).toLowerCase();
+    const locationCode = normalizeWhitespace(String(line.locationCode ?? '')).toUpperCase();
+    if (!itemKey || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitCost) || unitCost < 0 || !uom || !locationCode) {
+      throw new Error(`SEED_INITIAL_STOCK_SPEC_LINE_INVALID index=${index}`);
+    }
+    return {
+      itemKey,
+      quantity,
+      uom,
+      unitCost,
+      locationCode,
+      lotCode: line.lotCode ? normalizeWhitespace(String(line.lotCode)) : undefined,
+      productionDate: line.productionDate ? String(line.productionDate) : undefined,
+      expirationDate: line.expirationDate ? String(line.expirationDate) : undefined
+    };
+  });
+  return {
+    version,
+    stockDate,
+    items
+  };
 }
 
 function canonicalUomFields(baseUom: string): {
@@ -387,6 +532,65 @@ async function upsertWarehouseRoleLocation(
   return { id: locationId, code, created: true };
 }
 
+async function upsertOperationalLocation(
+  client: PoolClient,
+  args: {
+    tenantId: string;
+    warehouseId: string;
+    code: string;
+    localCode: string;
+    name: string;
+  }
+): Promise<{ id: string; code: string; created: boolean }> {
+  const existing = await client.query<LocationRow>(
+    `SELECT id, code
+       FROM locations
+      WHERE tenant_id = $1
+        AND code = $2`,
+    [args.tenantId, args.code]
+  );
+  if ((existing.rowCount ?? 0) > 0) {
+    const locationId = existing.rows[0].id;
+    await client.query(
+      `UPDATE locations
+          SET local_code = $3,
+              name = $4,
+              type = 'bin',
+              role = $5,
+              is_sellable = false,
+              active = true,
+              parent_location_id = $6,
+              warehouse_id = $6,
+              updated_at = now()
+        WHERE tenant_id = $1
+          AND id = $2`,
+      [args.tenantId, locationId, args.localCode, args.name, OPERATIONAL_LOCATION_ROLE, args.warehouseId]
+    );
+    return { id: locationId, code: args.code, created: false };
+  }
+
+  const locationId = deterministicId('location', args.tenantId, args.code);
+  await client.query(
+    `INSERT INTO locations (
+        id,
+        tenant_id,
+        code,
+        local_code,
+        name,
+        type,
+        role,
+        is_sellable,
+        active,
+        parent_location_id,
+        warehouse_id,
+        created_at,
+        updated_at
+     ) VALUES ($1, $2, $3, $4, $5, 'bin', $6, false, true, $7, $7, now(), now())`,
+    [locationId, args.tenantId, args.code, args.localCode, args.name, OPERATIONAL_LOCATION_ROLE, args.warehouseId]
+  );
+  return { id: locationId, code: args.code, created: true };
+}
+
 async function upsertWarehouseDefault(
   client: PoolClient,
   args: { tenantId: string; warehouseId: string; role: typeof REQUIRED_ROLES[number]; locationId: string }
@@ -497,11 +701,12 @@ async function upsertItems(
                 uom_dimension = $5,
                 canonical_uom = $6,
                 stocking_uom = $7,
+                requires_lot = $8,
                 active = true,
                 lifecycle_status = 'Active',
                 updated_at = now()
-          WHERE id = $8
-            AND tenant_id = $9`,
+          WHERE id = $9
+            AND tenant_id = $10`,
         [
           item.name,
           'Seeded by siamaya_factory',
@@ -510,6 +715,7 @@ async function upsertItems(
           canonical.uomDimension,
           canonical.canonicalUom,
           canonical.stockingUom,
+          LOT_TRACKED_ITEM_KEYS.has(item.key),
           existing.id,
           args.tenantId
         ]
@@ -532,6 +738,7 @@ async function upsertItems(
           uom_dimension,
           canonical_uom,
           stocking_uom,
+          requires_lot,
           active,
           lifecycle_status,
           created_at,
@@ -547,6 +754,7 @@ async function upsertItems(
           $8,
           $9,
           $10,
+          $11,
           true,
           'Active',
           now(),
@@ -562,7 +770,8 @@ async function upsertItems(
         canonical.defaultUom,
         canonical.uomDimension,
         canonical.canonicalUom,
-        canonical.stockingUom
+        canonical.stockingUom,
+        LOT_TRACKED_ITEM_KEYS.has(item.key)
       ]
     );
     idByItemKey.set(item.key, itemId);
@@ -615,6 +824,299 @@ async function upsertSeedUomConversions(
   }
 
   return upserted;
+}
+
+function canonicalMovementFields(uom: string, quantity: number): {
+  quantityDeltaEntered: number;
+  uomEntered: string;
+  quantityDeltaCanonical: number;
+  canonicalUom: string;
+  uomDimension: string;
+} {
+  const normalizedUom = normalizeWhitespace(uom).toLowerCase();
+  if (normalizedUom === 'kg') {
+    return {
+      quantityDeltaEntered: quantity,
+      uomEntered: 'kg',
+      quantityDeltaCanonical: quantity * 1000,
+      canonicalUom: 'g',
+      uomDimension: 'mass'
+    };
+  }
+  if (normalizedUom === 'g') {
+    return {
+      quantityDeltaEntered: quantity,
+      uomEntered: 'g',
+      quantityDeltaCanonical: quantity,
+      canonicalUom: 'g',
+      uomDimension: 'mass'
+    };
+  }
+  return {
+    quantityDeltaEntered: quantity,
+    uomEntered: normalizedUom,
+    quantityDeltaCanonical: quantity,
+    canonicalUom: 'each',
+    uomDimension: 'count'
+  };
+}
+
+async function upsertSeedLot(
+  client: PoolClient,
+  args: {
+    tenantId: string;
+    itemId: string;
+    lotCode: string;
+    productionDate?: string;
+    expirationDate?: string;
+  }
+): Promise<{ id: string; created: boolean }> {
+  const existing = await client.query<{ id: string }>(
+    `SELECT id
+       FROM lots
+      WHERE tenant_id = $1
+        AND item_id = $2
+        AND lot_code = $3
+      LIMIT 1`,
+    [args.tenantId, args.itemId, args.lotCode]
+  );
+  const lotId = deterministicId('lot', args.tenantId, args.itemId, args.lotCode);
+  if ((existing.rowCount ?? 0) > 0) {
+    await client.query(
+      `UPDATE lots
+          SET status = 'active',
+              manufactured_at = COALESCE($4::timestamptz, manufactured_at),
+              expires_at = COALESCE($5::timestamptz, expires_at),
+              updated_at = now()
+        WHERE id = $1
+          AND tenant_id = $2
+          AND item_id = $3`,
+      [existing.rows[0].id, args.tenantId, args.itemId, args.productionDate ?? null, args.expirationDate ?? null]
+    );
+    return { id: existing.rows[0].id, created: false };
+  }
+
+  await client.query(
+    `INSERT INTO lots (
+        id,
+        tenant_id,
+        item_id,
+        lot_code,
+        status,
+        manufactured_at,
+        received_at,
+        expires_at,
+        vendor_lot_code,
+        notes,
+        created_at,
+        updated_at
+     ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, NULL, 'Seeded by siamaya_factory', now(), now())`,
+    [lotId, args.tenantId, args.itemId, args.lotCode, args.productionDate ?? null, args.productionDate ?? null, args.expirationDate ?? null]
+  );
+  return { id: lotId, created: true };
+}
+
+async function seedInitialStockMovement(
+  client: PoolClient,
+  args: {
+    pack: string;
+    tenantId: string;
+    tenantSlug: string;
+    itemIdByKey: Map<string, string>;
+    spec: InitialStockSpec;
+    strictMissingItems: boolean;
+  }
+): Promise<{
+  movementId: string | null;
+  linesCreated: number;
+  costLayersCreated: number;
+  lotsCreated: number;
+  expectedLotCount: number;
+}> {
+  const missingItemKeys = args.spec.items
+    .filter((line) => !args.itemIdByKey.has(line.itemKey))
+    .map((line) => line.itemKey);
+  if (args.strictMissingItems && missingItemKeys.length > 0) {
+    throw new Error(`SEED_INITIAL_STOCK_ITEMS_MISSING keys=${missingItemKeys.join(',')}`);
+  }
+  const seedLines = args.spec.items.filter((line) => args.itemIdByKey.has(line.itemKey));
+  if (seedLines.length === 0) {
+    if (args.strictMissingItems) {
+      throw new Error('SEED_INITIAL_STOCK_NO_MATCHING_ITEMS');
+    }
+    return {
+      movementId: null,
+      linesCreated: 0,
+      costLayersCreated: 0,
+      lotsCreated: 0,
+      expectedLotCount: 0
+    };
+  }
+
+  const locationCodes = Array.from(new Set(seedLines.map((line) => line.locationCode)));
+  const locationRows = await client.query<{ id: string; code: string }>(
+    `SELECT id, code
+       FROM locations
+      WHERE tenant_id = $1
+        AND code = ANY($2::text[])`,
+    [args.tenantId, locationCodes]
+  );
+  const locationIdByCode = new Map(locationRows.rows.map((row) => [row.code, row.id]));
+  for (const code of locationCodes) {
+    if (!locationIdByCode.has(code)) {
+      throw new Error(`SEED_INITIAL_STOCK_LOCATION_MISSING code=${code}`);
+    }
+  }
+
+  const movementExternalRef = `seed:${args.pack}:initial-stock:${args.tenantSlug}:v${args.spec.version}`;
+  const movementSourceId = deterministicId('seed-source', args.tenantId, movementExternalRef);
+  const movementResult = await createInventoryMovement(client, {
+    id: deterministicId('movement', args.tenantId, movementExternalRef),
+    tenantId: args.tenantId,
+    movementType: 'receive',
+    status: 'posted',
+    externalRef: movementExternalRef,
+    sourceType: 'seed_initial_stock',
+    sourceId: movementSourceId,
+    idempotencyKey: movementExternalRef,
+    occurredAt: args.spec.stockDate,
+    postedAt: args.spec.stockDate,
+    notes: 'Seeded initial stock'
+  });
+
+  const movementId = movementResult.id;
+  const expectedLotCount = new Set(seedLines.filter((line) => !!line.lotCode).map((line) => line.lotCode)).size;
+  if (!movementResult.created) {
+    const lineCountRes = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::int::text AS count
+         FROM inventory_movement_lines
+        WHERE tenant_id = $1
+          AND movement_id = $2`,
+      [args.tenantId, movementId]
+    );
+    const expected = seedLines.length;
+    const actual = Number(lineCountRes.rows[0]?.count ?? 0);
+    if (actual !== expected) {
+      throw new Error(`SEED_INITIAL_STOCK_MOVEMENT_LINE_COUNT_MISMATCH expected=${expected} actual=${actual}`);
+    }
+    return { movementId, linesCreated: 0, costLayersCreated: 0, lotsCreated: 0, expectedLotCount };
+  }
+
+  let linesCreated = 0;
+  let costLayersCreated = 0;
+  let lotsCreated = 0;
+  const itemIdsInSeed = Array.from(new Set(seedLines.map((line) => args.itemIdByKey.get(line.itemKey)).filter((id): id is string => !!id)));
+  const itemRequiresLotRows = await client.query<{ id: string; requires_lot: boolean }>(
+    `SELECT id, requires_lot
+       FROM items
+      WHERE tenant_id = $1
+        AND id = ANY($2::uuid[])`,
+    [args.tenantId, itemIdsInSeed]
+  );
+  const requiresLotByItemId = new Map(itemRequiresLotRows.rows.map((row) => [row.id, row.requires_lot]));
+
+  for (let index = 0; index < seedLines.length; index += 1) {
+    const line = seedLines[index];
+    const itemId = args.itemIdByKey.get(line.itemKey);
+    if (!itemId) {
+      throw new Error(`SEED_INITIAL_STOCK_ITEM_MISSING key=${line.itemKey}`);
+    }
+    const isLotTracked = requiresLotByItemId.get(itemId) === true;
+    if (isLotTracked && !line.lotCode) {
+      throw new Error(`SEED_INITIAL_STOCK_LOT_REQUIRED item=${line.itemKey}`);
+    }
+    if (!isLotTracked && line.lotCode) {
+      throw new Error(`SEED_INITIAL_STOCK_LOT_NOT_ALLOWED item=${line.itemKey}`);
+    }
+
+    let lotId: string | null = null;
+    if (line.lotCode) {
+      const lotResult = await upsertSeedLot(client, {
+        tenantId: args.tenantId,
+        itemId,
+        lotCode: line.lotCode,
+        productionDate: line.productionDate,
+        expirationDate: line.expirationDate
+      });
+      lotId = lotResult.id;
+      if (lotResult.created) {
+        lotsCreated += 1;
+      }
+    }
+
+    const canonicalFields = canonicalMovementFields(line.uom, line.quantity);
+    const locationId = locationIdByCode.get(line.locationCode);
+    if (!locationId) {
+      throw new Error(`SEED_INITIAL_STOCK_LOCATION_UNRESOLVED code=${line.locationCode}`);
+    }
+    const lineId = deterministicId('movement-line', movementId, String(index + 1), itemId, locationId);
+    await createInventoryMovementLine(client, {
+      id: lineId,
+      tenantId: args.tenantId,
+      movementId,
+      itemId,
+      locationId,
+      quantityDelta: line.quantity,
+      uom: line.uom,
+      quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+      uomEntered: canonicalFields.uomEntered,
+      quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+      canonicalUom: canonicalFields.canonicalUom,
+      uomDimension: canonicalFields.uomDimension,
+      unitCost: line.unitCost,
+      extendedCost: line.quantity * line.unitCost,
+      reasonCode: 'seed_initial_stock',
+      lineNotes: 'Seeded opening stock',
+      createdAt: args.spec.stockDate
+    });
+    linesCreated += 1;
+
+    if (lotId) {
+      await client.query(
+        `INSERT INTO inventory_movement_lots (
+            id,
+            tenant_id,
+            inventory_movement_line_id,
+            lot_id,
+            uom,
+            quantity_delta,
+            created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          deterministicId('movement-lot', args.tenantId, lineId, lotId),
+          args.tenantId,
+          lineId,
+          lotId,
+          line.uom,
+          line.quantity,
+          args.spec.stockDate
+        ]
+      );
+    }
+
+    const layer = await createOpeningBalanceCostLayerOnce({
+      id: deterministicId('seed-opening-layer', args.tenantId, movementId, lineId),
+      tenant_id: args.tenantId,
+      item_id: itemId,
+      location_id: locationId,
+      uom: line.uom,
+      quantity: line.quantity,
+      unit_cost: line.unitCost,
+      source_type: 'opening_balance',
+      source_document_id: movementId,
+      movement_id: movementId,
+      lot_id: lotId ?? undefined,
+      layer_date: new Date(args.spec.stockDate),
+      notes: 'Seeded opening stock',
+      client
+    });
+    if (layer.id) {
+      costLayersCreated += 1;
+    }
+  }
+
+  return { movementId, linesCreated, costLayersCreated, lotsCreated, expectedLotCount };
 }
 
 async function upsertBomAndVersion(
@@ -808,7 +1310,7 @@ async function replaceBomVersionLines(
 
 async function assertSeedInvariants(
   client: PoolClient,
-  args: { tenantId: string; warehouseCodes: string[] }
+  args: { tenantId: string; warehouseCodes: string[]; seedMovementId?: string; expectedLotCount?: number }
 ): Promise<void> {
   const missingWarehouses = await client.query<{ code: string }>(
     `SELECT expected.code
@@ -858,6 +1360,108 @@ async function assertSeedInvariants(
         .join(',')}`
     );
   }
+
+  const selfReferencingBoms = await client.query<{ bom_code: string; output_item_id: string; component_item_id: string }>(
+    `SELECT b.bom_code, b.output_item_id, bvl.component_item_id
+       FROM boms b
+       JOIN bom_versions bv
+         ON bv.bom_id = b.id
+        AND bv.tenant_id = b.tenant_id
+        AND bv.status = 'active'
+       JOIN bom_version_lines bvl
+         ON bvl.bom_version_id = bv.id
+        AND bvl.tenant_id = bv.tenant_id
+      WHERE b.tenant_id = $1
+        AND b.output_item_id = bvl.component_item_id
+      LIMIT 1`,
+    [args.tenantId]
+  );
+  if ((selfReferencingBoms.rowCount ?? 0) > 0) {
+    const row = selfReferencingBoms.rows[0];
+    throw new Error(
+      `SEED_INVARIANT_BOM_SELF_REFERENCE bom_code=${row.bom_code} output_item_id=${row.output_item_id} component_item_id=${row.component_item_id}`
+    );
+  }
+
+  if (args.seedMovementId) {
+    const costLayerIntegrity = await client.query<{ movement_line_count: string; cost_layer_count: string; non_positive_remaining_layers: string }>(
+      `WITH movement_lines AS (
+         SELECT id
+           FROM inventory_movement_lines
+          WHERE tenant_id = $1
+            AND movement_id = $2
+       ),
+       movement_layers AS (
+         SELECT id, remaining_quantity
+           FROM inventory_cost_layers
+          WHERE tenant_id = $1
+            AND source_type = 'opening_balance'
+            AND movement_id = $2
+            AND voided_at IS NULL
+       ),
+       non_positive_remaining AS (
+         SELECT id
+           FROM movement_layers
+          WHERE remaining_quantity <= 0
+       )
+       SELECT
+         (SELECT COUNT(*)::int::text FROM movement_lines) AS movement_line_count,
+         (SELECT COUNT(*)::int::text FROM movement_layers) AS cost_layer_count,
+         (SELECT COUNT(*)::int::text FROM non_positive_remaining) AS non_positive_remaining_layers`,
+      [args.tenantId, args.seedMovementId]
+    );
+    const movementLineCount = Number(costLayerIntegrity.rows[0]?.movement_line_count ?? 0);
+    const costLayerCount = Number(costLayerIntegrity.rows[0]?.cost_layer_count ?? 0);
+    const nonPositiveRemainingLayerCount = Number(costLayerIntegrity.rows[0]?.non_positive_remaining_layers ?? 0);
+    if (movementLineCount !== costLayerCount || nonPositiveRemainingLayerCount !== 0) {
+      throw new Error(
+        `SEED_INVARIANT_COST_LAYER_INTEGRITY movement_lines=${movementLineCount} cost_layers=${costLayerCount} non_positive_remaining_layers=${nonPositiveRemainingLayerCount}`
+      );
+    }
+
+    const lotIntegrity = await client.query<{ lot_required_lines: string; lot_linked_lines: string; lots_count: string }>(
+      `WITH seed_lines AS (
+         SELECT iml.id, iml.item_id
+           FROM inventory_movement_lines iml
+          WHERE iml.tenant_id = $1
+            AND iml.movement_id = $2
+       ),
+       lot_required AS (
+         SELECT sl.id
+           FROM seed_lines sl
+           JOIN items i
+             ON i.id = sl.item_id
+            AND i.tenant_id = $1
+          WHERE i.requires_lot = true
+       ),
+       lot_linked AS (
+         SELECT DISTINCT iml_lot.inventory_movement_line_id AS id
+           FROM inventory_movement_lots iml_lot
+           JOIN seed_lines sl
+             ON sl.id = iml_lot.inventory_movement_line_id
+          WHERE iml_lot.tenant_id = $1
+       )
+       SELECT
+         (SELECT COUNT(*)::int::text FROM lot_required) AS lot_required_lines,
+         (SELECT COUNT(*)::int::text FROM lot_linked) AS lot_linked_lines,
+         (SELECT COUNT(*)::int::text
+            FROM lots
+           WHERE tenant_id = $1
+             AND item_id IN (SELECT item_id FROM seed_lines)) AS lots_count`,
+      [args.tenantId, args.seedMovementId]
+    );
+    const lotRequiredLines = Number(lotIntegrity.rows[0]?.lot_required_lines ?? 0);
+    const lotLinkedLines = Number(lotIntegrity.rows[0]?.lot_linked_lines ?? 0);
+    const lotCount = Number(lotIntegrity.rows[0]?.lots_count ?? 0);
+    if (lotRequiredLines !== lotLinkedLines) {
+      throw new Error(
+        `SEED_INVARIANT_LOT_LINKS_MISSING lot_required_lines=${lotRequiredLines} lot_linked_lines=${lotLinkedLines}`
+      );
+    }
+    if (typeof args.expectedLotCount === 'number' && lotCount < args.expectedLotCount) {
+      throw new Error(`SEED_INVARIANT_LOT_COUNT_MISMATCH expected_min=${args.expectedLotCount} actual=${lotCount}`);
+    }
+  }
 }
 
 function toCanonicalItems(items: ImportedItem[]): CanonicalItem[] {
@@ -876,6 +1480,8 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
   const adminEmail = normalizeEmail(options.adminEmail ?? DEFAULT_OPTIONS.adminEmail);
   const adminPassword = options.adminPassword ?? DEFAULT_OPTIONS.adminPassword;
   const warehouseSpecs = options.warehouses ?? DEFAULT_OPTIONS.warehouses;
+  const bomFilePath = options.bomFilePath ?? DEFAULT_BOM_JSON_PATH;
+  const initialStockSpec = loadInitialStockSpec(options.initialStockSpecPath ?? DEFAULT_INITIAL_STOCK_SPEC_PATH);
 
   const bomDataset = options.datasetOverride
     ? {
@@ -888,7 +1494,7 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
         unknownUoms: options.datasetOverride.unknownUoms ?? []
       }
     : await importBomDatasetFromFile({
-        filePath: options.bomFilePath,
+        filePath: bomFilePath,
         sheetName: options.bomSheetName
       });
   if (bomDataset.boms.length === 0) {
@@ -903,6 +1509,7 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
   let locationsCreated = 0;
   const seededWarehouseCodes: string[] = [];
   const seededLocationCodes: string[] = [];
+  let factoryWarehouseId: string | null = null;
 
   for (const warehouse of warehouseSpecs) {
     const warehouseCode = normalizeWhitespace(warehouse.code).toUpperCase();
@@ -914,6 +1521,9 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
     });
     seededWarehouseCodes.push(warehouseCode);
     if (warehouseRow.created) warehousesCreated += 1;
+    if (warehouseCode === 'FACTORY') {
+      factoryWarehouseId = warehouseRow.id;
+    }
 
     for (const role of REQUIRED_ROLES) {
       const roleLocation = await upsertWarehouseRoleLocation(client, {
@@ -933,6 +1543,22 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
     }
   }
 
+  if (!factoryWarehouseId) {
+    throw new Error('SEED_FACTORY_WAREHOUSE_REQUIRED');
+  }
+
+  for (const locationSpec of FACTORY_OPERATIONAL_LOCATIONS) {
+    const location = await upsertOperationalLocation(client, {
+      tenantId,
+      warehouseId: factoryWarehouseId,
+      code: locationSpec.code,
+      localCode: locationSpec.localCode,
+      name: locationSpec.name
+    });
+    seededLocationCodes.push(location.code);
+    if (location.created) locationsCreated += 1;
+  }
+
   await upsertAdminUser(client, {
     tenantId,
     email: adminEmail,
@@ -948,6 +1574,15 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
     tenantId,
     items: canonicalItems,
     itemIdByKey
+  });
+
+  const seededStock = await seedInitialStockMovement(client, {
+    pack,
+    tenantId,
+    tenantSlug,
+    itemIdByKey,
+    spec: initialStockSpec,
+    strictMissingItems: !options.datasetOverride && (!options.bomFilePath || path.resolve(options.bomFilePath) === DEFAULT_BOM_JSON_PATH)
   });
 
   let bomLinesUpserted = 0;
@@ -970,7 +1605,20 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
     });
   }
 
-  await assertSeedInvariants(client, { tenantId, warehouseCodes: seededWarehouseCodes });
+  await assertSeedInvariants(
+    client,
+    seededStock.movementId
+      ? {
+          tenantId,
+          warehouseCodes: seededWarehouseCodes,
+          seedMovementId: seededStock.movementId,
+          expectedLotCount: seededStock.expectedLotCount
+        }
+      : {
+          tenantId,
+          warehouseCodes: seededWarehouseCodes
+        }
+  );
 
   const checksum = buildChecksum({
     tenantSlug,
@@ -978,7 +1626,8 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
     locationCodes: seededLocationCodes,
     userEmail: adminEmail,
     items: canonicalItems,
-    boms: canonicalBoms
+    boms: canonicalBoms,
+    initialStock: initialStockSpec
   });
 
   return {

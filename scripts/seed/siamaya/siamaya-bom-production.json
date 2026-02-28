@@ -1,0 +1,4600 @@
+{
+  "schemaVersion": 1,
+  "sourceFile": "3. bom-Table 1.csv",
+  "section": "section_2_authoritative_manual_boms",
+  "processedAt": "2026-02-27T10:50:10.665Z",
+  "corrections": [
+    {
+      "code": "MOONCAKE_FLOW_WRAP_LINK_FIX",
+      "row": 208,
+      "detail": "Corrected Mooncake wrap component to FLOW WRAP intermediate",
+      "before": "Mooncake Milk Chocolate (75g)",
+      "after": "Mooncake Milk Chocolate (75g) - FLOW WRAP"
+    },
+    {
+      "code": "SELF_REF_FLOW_WRAP_OUTPUT_FIX",
+      "row": 212,
+      "detail": "Removed FLOW WRAP suffix from self-referencing output row",
+      "before": "Gingerbread Cookie Milk Chocolate - Christmas (75g) - FLOW WRAP",
+      "after": "Gingerbread Cookie Milk Chocolate - Christmas (75g)"
+    },
+    {
+      "code": "SELF_REF_FLOW_WRAP_OUTPUT_FIX",
+      "row": 214,
+      "detail": "Removed FLOW WRAP suffix from self-referencing output row",
+      "before": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP",
+      "after": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g)"
+    },
+    {
+      "code": "DEFAULT_WRAPPER_QTY_ONE_PIECE",
+      "row": 271,
+      "detail": "Missing wrapper quantity defaulted to 1 piece"
+    },
+    {
+      "code": "DEFAULT_WRAPPER_QTY_ONE_PIECE",
+      "row": 272,
+      "detail": "Missing wrapper quantity defaulted to 1 piece"
+    },
+    {
+      "code": "DEFAULT_WRAPPER_QTY_ONE_PIECE",
+      "row": 273,
+      "detail": "Missing wrapper quantity defaulted to 1 piece"
+    },
+    {
+      "code": "DEFAULT_WRAPPER_QTY_ONE_PIECE",
+      "row": 280,
+      "detail": "Missing wrapper quantity defaulted to 1 piece"
+    },
+    {
+      "code": "DEFAULT_WRAPPER_QTY_ONE_PIECE",
+      "row": 281,
+      "detail": "Missing wrapper quantity defaulted to 1 piece"
+    },
+    {
+      "code": "DEFAULT_WRAPPER_QTY_ONE_PIECE",
+      "row": 282,
+      "detail": "Missing wrapper quantity defaulted to 1 piece"
+    },
+    {
+      "code": "THAI_TEA_8G_BASE_QTY_FIX",
+      "row": 349,
+      "detail": "Corrected suspicious base quantity for Thai Tea 8g",
+      "before": "74.905",
+      "after": "7.905"
+    }
+  ],
+  "rows": [
+    {
+      "Finished Product": "70% Dark Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 8,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "85% Dark Chocolate (8g) - Anantara",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "85% Dark Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "85% Dark Chocolate (8g) - Anantara",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - 8g",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "85% Dark Chocolate (8g) - Anantara",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sleeve - Anantara 85% 8g",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "85% Dark Chocolate (8g) - Mahabhirom",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "85% Dark Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "85% Dark Chocolate (8g) - Mahabhirom",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - 8g",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "85% Dark Chocolate (8g) - Mahabhirom",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sleeve - Mahabhirom 85% 8g",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "85% Dark Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 85% Dark Chocolate",
+      "Component Qty": 8,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Apple Pie Milk Chocolate - Halloween (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Apple Pie Milk Chocolate - Halloween (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Apple Pie Milk Chocolate - Halloween (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 62.137,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Biscuit",
+      "Component Qty": 3.195,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cinnamon Powder",
+      "Component Qty": 0.285,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Dried Apple",
+      "Component Qty": 6.383,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "flow wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Banana Crunch Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Banana Crunch Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Banana Crunch (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Banana Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Chips",
+      "Component Qty": 6.638,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Banana Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Powder",
+      "Component Qty": 1.988,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Banana Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 66.375,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Banana Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Banana Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Banana Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Banana (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Banana Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Powder",
+      "Component Qty": 1.13,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Banana Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 18.87,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Banana Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - Small Bar",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Base - 70% Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Butter",
+      "Component Qty": 50,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Base - 70% Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 650,
+      "Component UOM": "g",
+      "Operation": "prerefine",
+      "Work Center": "grinder",
+      "Note": "Store base chocolate in RM room"
+    },
+    {
+      "Finished Product": "Base - 70% Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Organic Cane Sugar",
+      "Component Qty": 300,
+      "Component UOM": "g",
+      "Operation": "add ingredients to grinder"
+    },
+    {
+      "Finished Product": "Base - 85% Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 850,
+      "Component UOM": "g",
+      "Operation": "prerefine",
+      "Work Center": "grinder",
+      "Note": "Store base chocolate in RM room"
+    },
+    {
+      "Finished Product": "Base - 85% Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Organic Cane Sugar",
+      "Component Qty": 150,
+      "Component UOM": "g",
+      "Operation": "add ingredients to grinder"
+    },
+    {
+      "Finished Product": "Base - Coconut Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Butter",
+      "Component Qty": 30,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Base - Coconut Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 620,
+      "Component UOM": "g",
+      "Operation": "prerefine",
+      "Work Center": "grinder",
+      "Note": "Store base chocolate in RM room"
+    },
+    {
+      "Finished Product": "Base - Coconut Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Coconut Milk Powder",
+      "Component Qty": 100,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Base - Coconut Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Organic Cane Sugar",
+      "Component Qty": 250,
+      "Component UOM": "g",
+      "Operation": "add ingredients to grinder"
+    },
+    {
+      "Finished Product": "Base - Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Butter",
+      "Component Qty": 100,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Base - Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 400,
+      "Component UOM": "g",
+      "Operation": "prerefine",
+      "Work Center": "grinder",
+      "Note": "Store base chocolate in RM room"
+    },
+    {
+      "Finished Product": "Base - Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Organic Cane Sugar",
+      "Component Qty": 350,
+      "Component UOM": "g",
+      "Operation": "add ingredients to grinder"
+    },
+    {
+      "Finished Product": "Base - Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Powdered Milk",
+      "Component Qty": 150,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Base - Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Sunflower Lecithin",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Base - Pomelo",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 710,
+      "Component UOM": "g",
+      "Operation": "prerefine",
+      "Work Center": "grinder",
+      "Note": "Store base chocolate in RM room"
+    },
+    {
+      "Finished Product": "Base - Pomelo",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Coffee Beans",
+      "Component Qty": 20,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Base - Pomelo",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Organic Cane Sugar",
+      "Component Qty": 270,
+      "Component UOM": "g",
+      "Operation": "add ingredients to grinder"
+    },
+    {
+      "Finished Product": "Base - Sugar Free",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 850,
+      "Component UOM": "g",
+      "Operation": "prerefine",
+      "Work Center": "grinder",
+      "Note": "Store base chocolate in RM room"
+    },
+    {
+      "Finished Product": "Base - Sugar Free",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Powdered Milk",
+      "Component Qty": 150,
+      "Component UOM": "g",
+      "Operation": "add ingredients to grinder"
+    },
+    {
+      "Finished Product": "Cacao Hot Sauce",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Hot Sauce (90ml)",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Cacao Hot Sauce",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Cacao Hot Sauce",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Cacao Mass (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "prerefine",
+      "Work Center": "grinder"
+    },
+    {
+      "Finished Product": "Cacao Mass (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Vacuum Pack Bags",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "grind"
+    },
+    {
+      "Finished Product": "Cacao Nibs - Raw Material",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Beans",
+      "Component Qty": 1.25,
+      "Component UOM": "kg",
+      "Operation": "Roast cacao beans",
+      "Work Center": "roaster",
+      "Note": "makes raw material nibs"
+    },
+    {
+      "Finished Product": "Cacao Nibs 1kg - Retail",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "Mix",
+      "Work Center": "Powders"
+    },
+    {
+      "Finished Product": "Cacao Nibs 1kg - Retail",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Silver Bag 12\" x 9\" - 1kg powders",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Cacao Nibs 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Bag Expandable Sides (13*20cm)",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Cacao Nibs 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 250,
+      "Component UOM": "g",
+      "Operation": "Mix",
+      "Work Center": "Powders"
+    },
+    {
+      "Finished Product": "Cacao Nibs 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Cacao Nibs - Retail (250g)",
+      "Component Qty": 2,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Cacao Nibs 80g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 80,
+      "Component UOM": "g",
+      "Operation": "Mix",
+      "Work Center": "Powders"
+    },
+    {
+      "Finished Product": "Cacao Nibs 80g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Paper Bag w/ Window 4.75\" x 8\"",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Cacao Nibs 80g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Cacao Nibs - Retail (80g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Cacao Powder 1kg - Retail",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder Chocolasia",
+      "Component Qty": 100,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Cacao Powder 1kg - Retail",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder KD30",
+      "Component Qty": 900,
+      "Component UOM": "g",
+      "Operation": "Mix",
+      "Work Center": "Powders"
+    },
+    {
+      "Finished Product": "Cacao Powder 1kg - Retail",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Silver Bag 12\" x 9\" - 1kg powders",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Cacao Powder 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Bag Expandable Sides (13*20cm)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Cacao Powder 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder Chocolasia",
+      "Component Qty": 25,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Cacao Powder 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder KD30",
+      "Component Qty": 225,
+      "Component UOM": "g",
+      "Operation": "Mix",
+      "Work Center": "Powders"
+    },
+    {
+      "Finished Product": "Cacao Powder 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Cacao Powder - Retail (250g)",
+      "Component Qty": 2,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Cacao Powder 80g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder Chocolasia",
+      "Component Qty": 8,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Cacao Powder 80g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder KD30",
+      "Component Qty": 72,
+      "Component UOM": "g",
+      "Operation": "Mix",
+      "Work Center": "Powders"
+    },
+    {
+      "Finished Product": "Cacao Powder 80g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Paper Bag w/ Window 4.75\" x 8\"",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Cacao Powder 80g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Cacao Powder - Retail (80g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Ceremonial Cacao (unroasted) (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Beans",
+      "Component Qty": 1.1,
+      "Component UOM": "kg",
+      "Operation": "winnow raw cacao beans",
+      "Work Center": "winnower"
+    },
+    {
+      "Finished Product": "Ceremonial Cacao (unroasted) (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Vacuum Pack Bags",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "grind for 8-10 hours",
+      "Work Center": "grinder"
+    },
+    {
+      "Finished Product": "Chiang Mai Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Chiang Mai Dark Chocolate Box",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Chiang Mai Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coconut Milk 65% Dark chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Chiang Mai Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Dark 70% (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Chiang Mai Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Dark 85% (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Assemble"
+    },
+    {
+      "Finished Product": "Chiang Mai Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Clear",
+      "Component Qty": 2,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Chiang Mai Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "White Inner Box",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Chiang Mai Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Coconut Milk (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Chiang Mai Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Signature Dark 70%",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Chiang Mai Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Signature Dark 85% (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Chocolate Table Rounds 7.5g (1kg/pack) - Melia",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cacao Nibs - Raw Material",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Chocolate Table Rounds 7.5g (1kg/pack) - Melia",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Vacuum Pack Bags",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Coconut Curry Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coconut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Coconut Curry Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Coconut Curry (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Coconut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Coconut Milk Chocolate",
+      "Component Qty": 62.111,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Coconut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Chili Powder",
+      "Component Qty": 0.128,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Dried Coconut Flakes",
+      "Component Qty": 6.21,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Galangal Oil",
+      "Component Qty": 0.15,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Kaffir Lime Oil",
+      "Component Qty": 0.064,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Lemongrass Oil",
+      "Component Qty": 0.128,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Tomato, Dried",
+      "Component Qty": 6.21,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coconut Milk 65% Dark chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Coconut Milk (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Coconut Milk Chocolate",
+      "Component Qty": 18.523,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Dried Coconut Flakes",
+      "Component Qty": 1.502,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - Small Bar",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coconut Milk 65% Dark Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Coconut Milk (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Coconut Milk Chocolate",
+      "Component Qty": 69.375,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Dried Coconut Flakes",
+      "Component Qty": 5.625,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Coconut Milk Chocolate",
+      "Component Qty": 7.409,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Coconut Milk 65% Dark Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Dried Coconut Flakes",
+      "Component Qty": 0.601,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coffee Crunch Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Coffee Crunch (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 19.633,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coffee Beans",
+      "Component Qty": 0.392,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - Small Bar",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coffee Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Coffee Crunch (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 73.53,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coffee Beans",
+      "Component Qty": 1.47,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 7.853,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Coffee Crunch Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coffee Beans",
+      "Component Qty": 0.157,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Couverture 70% Dark Chocolate (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Couverture 70% Dark Chocolate (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Vacuum Pack Bags",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Couverture 85% Dark Chocolate (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - 85% Dark Chocolate",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Couverture 85% Dark Chocolate (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Vacuum Pack Bags",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Couverture Signature Milk Chocolate 50% (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Couverture Signature Milk Chocolate 50% (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Vacuum Pack Bags",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Couverture Simply Cacao Plus Milk (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Couverture Simply Cacao Plus Milk (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Vacuum Pack Bags",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Couverture Thai Tea (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 981,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Couverture Thai Tea (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Thai Tea Powder",
+      "Component Qty": 19,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Couverture Thai Tea (1kg)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Vacuum Pack Bags",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Dark Chocolate Dipped Candied Orange (45g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 15,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Dark Chocolate Dipped Candied Orange (45g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Candied Orange",
+      "Component Qty": 30,
+      "Component UOM": "g",
+      "Operation": "Dip",
+      "Work Center": "Tempering - OTHER"
+    },
+    {
+      "Finished Product": "Dark Chocolate Dipped Candied Orange (45g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clear Plastic Bag 3\" x 6\" (Chocolate Dipped Orange)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Dark Chocolate Dipped Candied Orange (45g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Chocolate Dipped Orange",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 1kg",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder 666",
+      "Component Qty": 495,
+      "Component UOM": "g",
+      "Operation": "Mix",
+      "Work Center": "Powders"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 1kg",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder Chocolasia",
+      "Component Qty": 55,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 1kg",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Organic Cane Sugar",
+      "Component Qty": 445,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 1kg",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Salt",
+      "Component Qty": 5,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 1kg",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Silver Bag 12\" x 9\" - 1kg powders",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Bag Expandable Sides (13*20cm)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder 666",
+      "Component Qty": 123.75,
+      "Component UOM": "g",
+      "Operation": "Mix",
+      "Work Center": "Powders"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder Chocolasia",
+      "Component Qty": 13.75,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Organic Cane Sugar",
+      "Component Qty": 111.25,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Salt",
+      "Component Qty": 1.25,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 250g",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Drinking Chocolate - Retail (250g)",
+      "Component Qty": 2,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 300g (Hotel exclusive",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder 666",
+      "Component Qty": 148.5,
+      "Component UOM": "g",
+      "Operation": "Mix",
+      "Work Center": "Powders"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 300g (Hotel exclusive",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder Chocolasia",
+      "Component Qty": 16.5,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 300g (Hotel exclusive",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Organic Cane Sugar",
+      "Component Qty": 133.5,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 300g (Hotel exclusive",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Salt",
+      "Component Qty": 1.5,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Drinking Chocolate 300g (Hotel exclusive",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Silver Bag 12\" x 9\" - 1kg powders",
+      "Component Qty": 0.5,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Durian Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Durian (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 19.536,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Durian Powder",
+      "Component Qty": 0.489,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - Small Bar",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Durian Milk Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Durian (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 73.17,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Durian Powder",
+      "Component Qty": 1.83,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 7.8,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Durian Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Durian Powder",
+      "Component Qty": 0.2,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - German Chocolate Cake 70% Dark Chocolate - Christmas (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 58.62,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Dried Coconut Flakes",
+      "Component Qty": 4.68,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Pecans",
+      "Component Qty": 5.85,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Toffee",
+      "Component Qty": 5.85,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gingerbread Cookie Milk Chocolate - Christmas (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Gingerbread Cookie Milk Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 66.96,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Gingerbread Cookie Milk Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cinnamon Powder",
+      "Component Qty": 0.4,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Gingerbread Cookie Milk Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clove Powder",
+      "Component Qty": 0.16,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Gingerbread Cookie Milk Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "flow wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Gingerbread Cookie Milk Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Ginger Powder",
+      "Component Qty": 0.78,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Gingerbread Cookie Milk Chocolate - Christmas (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gingerbread Cookie",
+      "Component Qty": 6.7,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Hill Coffee and Pomelo Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Hill Coffee and Pomelo Dark Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Hill Coffee and Pomelo Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Hill Coffee and Pomelo (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Hill Coffee and Pomelo Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Pomelo",
+      "Component Qty": 68.25,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Hill Coffee and Pomelo Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Hill Coffee and Pomelo Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Pomelo, Dried",
+      "Component Qty": 6.75,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Khao Soi Curry Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Khao Soi Curry Milk Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Khao Soi Curry Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Khao Soi (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Khao Soi Curry Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 67.683,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Khao Soi Curry Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Chili Powder",
+      "Component Qty": 0.105,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Khao Soi Curry Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Curry Powder",
+      "Component Qty": 0.405,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Khao Soi Curry Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Khao Soi Curry Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Khao Soi Crispy Noodles",
+      "Component Qty": 4.74,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Khao Soi Curry Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Salt",
+      "Component Qty": 0.035,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Khao Soi Curry Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Shallots, Dried",
+      "Component Qty": 2.033,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mango Chili Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Mango Chili Dark Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Mango Chili Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Mango Chili (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Mango Chili Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 64.913,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Mango Chili Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Chili Powder",
+      "Component Qty": 0.225,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mango Chili Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mango Chili Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Mango, Dried",
+      "Component Qty": 9.735,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mango Chili Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Salt",
+      "Component Qty": 0.128,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mango Jelly Coated with Dark Chocolate (70g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 16,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Mango Jelly Coated with Dark Chocolate (70g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Mango Jelly",
+      "Component Qty": 53,
+      "Component UOM": "g",
+      "Operation": "Coat",
+      "Work Center": "Coating"
+    },
+    {
+      "Finished Product": "Mango Jelly Coated with Dark Chocolate (70g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Shellac",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mango Jelly Coated with Dark Chocolate (70g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Mango Jelly (70g)",
+      "Component Qty": 2,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Mango Jelly Coated with Dark Chocolate (70g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Tin for Mango Jelly",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 56.183,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Mango Jelly",
+      "Component Qty": 11.235,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Popping Candy",
+      "Component Qty": 7.583,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Masala Chai Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Masala Chai (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Allspice Powder",
+      "Component Qty": 0.198,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 18.585,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cardamom Powder",
+      "Component Qty": 0.049,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cinnamon Powder",
+      "Component Qty": 0.881,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clove Oil",
+      "Component Qty": 0.017,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Ginger Oil",
+      "Component Qty": 0.098,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - Small Bar",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Star Anise Powder",
+      "Component Qty": 0.198,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Masala Chai Milk Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Masala Chai (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Allspice Powder",
+      "Component Qty": 0.74,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 69.606,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cardamom Powder",
+      "Component Qty": 0.185,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cinnamon Powder",
+      "Component Qty": 3.3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clove Oil",
+      "Component Qty": 0.062,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Ginger Oil",
+      "Component Qty": 0.367,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Star Anise Powder",
+      "Component Qty": 0.74,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Allspice Powder",
+      "Component Qty": 0.078,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 7.434,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cardamom Powder",
+      "Component Qty": 0.02,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cinnamon Powder",
+      "Component Qty": 0.35,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clove Oil",
+      "Component Qty": 0.007,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Ginger Oil",
+      "Component Qty": 0.037,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Masala Chai Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Star Anise Powder",
+      "Component Qty": 0.078,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mooncake Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Mooncake Milk Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Mooncake Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Mooncake (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Mooncake Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 62.09,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Mooncake Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mooncake Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Lotus Seed",
+      "Component Qty": 3.35,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mooncake Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Salted Egg Powder",
+      "Component Qty": 3.35,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Mooncake Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sunflower Seeds",
+      "Component Qty": 6.21,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: 70% Chocolate Coated Almonds (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Almonds, Whole",
+      "Component Qty": 25.41,
+      "Component UOM": "g",
+      "Operation": "Coat",
+      "Work Center": "Tempering - OTHER"
+    },
+    {
+      "Finished Product": "Paleo Robbie: 70% Chocolate Coated Almonds (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 51.59,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Paleo Robbie: 70% Chocolate Coated Almonds (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder 666",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: 70% Chocolate Coated Almonds (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clear Bag - Short - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: 70% Chocolate Coated Almonds (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sticker - 70% Coated Almonds - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: 70% Chocolate Coated Cashews (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 51.59,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Paleo Robbie: 70% Chocolate Coated Cashews (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder 666",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: 70% Chocolate Coated Cashews (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cashews",
+      "Component Qty": 25.41,
+      "Component UOM": "g",
+      "Operation": "Coat",
+      "Work Center": "Tempering - OTHER"
+    },
+    {
+      "Finished Product": "Paleo Robbie: 70% Chocolate Coated Cashews (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clear Bag - Short - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: 70% Chocolate Coated Cashews (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sticker - 70% Coated Cashews - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Banana Bites (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Sticks",
+      "Component Qty": 60,
+      "Component UOM": "g",
+      "Operation": "Dip",
+      "Work Center": "Tempering - OTHER"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Banana Bites (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 30,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Banana Bites (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clear Bag - Long - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Banana Bites (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Dried Coconut Flakes",
+      "Component Qty": 10,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Banana Bites (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sticker - Banana Bites - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Choc Drizzled Banana Chips (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Chips",
+      "Component Qty": 89.75,
+      "Component UOM": "g",
+      "Operation": "Dip",
+      "Work Center": "Tempering - OTHER"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Choc Drizzled Banana Chips (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 10,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Choc Drizzled Banana Chips (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clear Bag - Long - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Choc Drizzled Banana Chips (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Pink Salt",
+      "Component Qty": 0.25,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Choc Drizzled Banana Chips (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sticker - Drizzled Banana Chips - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Chocolate Almond Butter Cups",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Almond Powder",
+      "Component Qty": 266.6,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Chocolate Almond Butter Cups",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Almonds, Chopped",
+      "Component Qty": 266.6,
+      "Component UOM": "g",
+      "Operation": "Grind almonds",
+      "Work Center": "Grinder"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Chocolate Almond Butter Cups",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 465.3,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Chocolate Almond Butter Cups",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Paper Baking Cups",
+      "Component Qty": 5,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Chocolate Almond Butter Cups",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Salt",
+      "Component Qty": 1.5,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Dark Chocolate Almond Butter Cups",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "White Cake Box",
+      "Component Qty": 0.5,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Hunky Monkey Trail Mix (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Almonds",
+      "Component Qty": 25,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Hunky Monkey Trail Mix (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Chips",
+      "Component Qty": 20,
+      "Component UOM": "g",
+      "Operation": "Mix"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Hunky Monkey Trail Mix (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 25,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering - OTHER"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Hunky Monkey Trail Mix (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cashews",
+      "Component Qty": 20,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Hunky Monkey Trail Mix (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clear Bag - Long - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Hunky Monkey Trail Mix (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Pumpkin Seeds",
+      "Component Qty": 10,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Hunky Monkey Trail Mix (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sticker - Hunky Monkey Trail Mix - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Pineapple Pops (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 30,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Pineapple Pops (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clear Bag - Long - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Pineapple Pops (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Pineapple, Dried",
+      "Component Qty": 65,
+      "Component UOM": "g",
+      "Operation": "Dip",
+      "Work Center": "Tempering - OTHER"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Pineapple Pops (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Plum Powder",
+      "Component Qty": 5,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Pineapple Pops (100g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sticker - Pineapple Pops - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Almonds (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Almonds, Whole",
+      "Component Qty": 25.41,
+      "Component UOM": "g",
+      "Operation": "Coat",
+      "Work Center": "Tempering - OTHER"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Almonds (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 51.59,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Almonds (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder 666",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Almonds (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clear Bag - Short - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Almonds (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sticker - Sugar Free Almonds - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 51.23,
+      "Component UOM": "g",
+      "Operation": "Pack"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cacao Powder 666",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cashews",
+      "Component Qty": 25.41,
+      "Component UOM": "g",
+      "Operation": "Coat",
+      "Work Center": "Tempering - OTHER"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clear Bag - Short - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sticker - Sugar Free Cashews - Paleo Robbie",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Vanilla Oil",
+      "Component Qty": 0.36,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Peanut Curry (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 61.937,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Chili Powder",
+      "Component Qty": 0.063,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Cinnamon Powder",
+      "Component Qty": 0.188,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Clove Oil",
+      "Component Qty": 0.063,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Curry Powder",
+      "Component Qty": 0.27,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Ginger, Dried",
+      "Component Qty": 6.195,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Lemongrass Oil",
+      "Component Qty": 0.09,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Peanuts",
+      "Component Qty": 6.195,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - 70% Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - 85% Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - 85% Dark Chocolate",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Apple Pie Milk Chocolate (Halloween 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 868.497,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Apple Pie Milk Chocolate (Halloween 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Biscuit",
+      "Component Qty": 42.599,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Apple Pie Milk Chocolate (Halloween 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cinnamon Powder",
+      "Component Qty": 3.8,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Apple Pie Milk Chocolate (Halloween 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Dried Apple",
+      "Component Qty": 85.105,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Banana Crunch Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Banana Chips",
+      "Component Qty": 88.5,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Banana Crunch Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Banana Powder",
+      "Component Qty": 26.5,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Banana Crunch Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 885,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coconut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Coconut Milk Chocolate",
+      "Component Qty": 828.14,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coconut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Chili Powder",
+      "Component Qty": 1.7,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coconut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Dried Coconut Flakes",
+      "Component Qty": 82.8,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coconut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Galangal Oil",
+      "Component Qty": 2,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coconut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Kaffir Lime Oil",
+      "Component Qty": 0.853,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coconut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Lemongrass Oil",
+      "Component Qty": 1.707,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coconut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Tomato, Dried",
+      "Component Qty": 82.8,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coconut Milk 65% Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Coconut Milk Chocolate",
+      "Component Qty": 920,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coconut Milk 65% Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Dried Coconut Flakes",
+      "Component Qty": 80,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coffee Crunch Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 980,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Coffee Crunch Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Coffee Beans",
+      "Component Qty": 20,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Durian Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 976,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Durian Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Durian Powder",
+      "Component Qty": 24,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - German Chocolate Cake Dark Chocolate (Xmas 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 781.601,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - German Chocolate Cake Dark Chocolate (Xmas 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Dried Coconut Flakes",
+      "Component Qty": 62.4,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - German Chocolate Cake Dark Chocolate (Xmas 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Pecans",
+      "Component Qty": 78,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - German Chocolate Cake Dark Chocolate (Xmas 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Toffee",
+      "Component Qty": 78,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Gingerbread Cookie Milk Chocolate (Xmas 2024 + 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 892.803,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Gingerbread Cookie Milk Chocolate (Xmas 2024 + 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cinnamon Powder",
+      "Component Qty": 5.333,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Gingerbread Cookie Milk Chocolate (Xmas 2024 + 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Clove Powder",
+      "Component Qty": 2.133,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Gingerbread Cookie Milk Chocolate (Xmas 2024 + 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Ginger Powder",
+      "Component Qty": 10.4,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Gingerbread Cookie Milk Chocolate (Xmas 2024 + 2025)",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Gingerbread Cookie",
+      "Component Qty": 89.331,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Hill Coffee and Pomelo Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Pomelo",
+      "Component Qty": 910,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Hill Coffee and Pomelo Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Pomelo, Dried",
+      "Component Qty": 90,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Khao Soi Curry Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 902.433,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Khao Soi Curry Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Chili Powder",
+      "Component Qty": 1.4,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Khao Soi Curry Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Curry Powder",
+      "Component Qty": 5.4,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Khao Soi Curry Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Khao Soi Crispy Noodles",
+      "Component Qty": 63.2,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Khao Soi Curry Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Salt",
+      "Component Qty": 0.467,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Khao Soi Curry Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Shallots, Dried",
+      "Component Qty": 27.1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mango Chili Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 865.5,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mango Chili Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Chili Powder",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mango Chili Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Mango, Dried",
+      "Component Qty": 129.8,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mango Chili Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Salt",
+      "Component Qty": 1.7,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mango Jelly Popping Candy Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 749.1063,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mango Jelly Popping Candy Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Mango Jelly",
+      "Component Qty": 149.7963,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mango Jelly Popping Candy Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Popping Candy",
+      "Component Qty": 101.0975,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Masala Chai Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Allspice Powder",
+      "Component Qty": 9.88,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Masala Chai Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 929,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Masala Chai Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cardamom Powder",
+      "Component Qty": 2.47,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Masala Chai Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cinnamon Powder",
+      "Component Qty": 43,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Masala Chai Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Clove Oil",
+      "Component Qty": 0.83,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Masala Chai Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Ginger Oil",
+      "Component Qty": 4.9,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Masala Chai Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Star Anise Powder",
+      "Component Qty": 9.88,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mooncake Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 827.871,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mooncake Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Lotus Seed",
+      "Component Qty": 44.666,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mooncake Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Salted Egg Powder",
+      "Component Qty": 44.666,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Mooncake Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Sunflower Seeds",
+      "Component Qty": 82.798,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Paleo Robbie: Simply Cacao Plus Milk",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Paleo Robbie: Simply Cacao Plus Milk with Almonds and Sea Salt",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Almonds, Chopped",
+      "Component Qty": 90.798,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Paleo Robbie: Simply Cacao Plus Milk with Almonds and Sea Salt",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 908.296,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Paleo Robbie: Simply Cacao Plus Milk with Almonds and Sea Salt",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Pink Salt",
+      "Component Qty": 0.907,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Paleo Robbie: Simply Cacao Plus Milk with Vanilla Bean",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 993.064,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Paleo Robbie: Simply Cacao Plus Milk with Vanilla Bean",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Vanilla Oil",
+      "Component Qty": 6.936,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Peanut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 825.829,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Peanut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Chili Powder",
+      "Component Qty": 0.836,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Peanut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Cinnamon Powder",
+      "Component Qty": 2.5,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Peanut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Clove Oil",
+      "Component Qty": 0.836,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Peanut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Curry Powder",
+      "Component Qty": 3.6,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Peanut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Ginger, Dried",
+      "Component Qty": 82.6,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Peanut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Lemongrass Oil",
+      "Component Qty": 1.2,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Peanut Curry Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Peanuts",
+      "Component Qty": 82.6,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Signature Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 1,
+      "Component UOM": "kg",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Smash Daddy's Banana Split Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Banana Chips",
+      "Component Qty": 42,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Smash Daddy's Banana Split Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Banana Powder",
+      "Component Qty": 25.2,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Smash Daddy's Banana Split Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 840.4,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Smash Daddy's Banana Split Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Peanuts",
+      "Component Qty": 42,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Smash Daddy's Banana Split Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Strawberries, Dried",
+      "Component Qty": 42,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Smash Daddy's Banana Split Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Strawberries, Freeze Dried",
+      "Component Qty": 8.4,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Thai Bullet Chili Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 995,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Thai Bullet Chili Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Chili Powder",
+      "Component Qty": 5,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Thai Tea Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 988,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Thai Tea Milk Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Thai Tea Powder",
+      "Component Qty": 12,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Tom Yum Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 886.443,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Sample Cubes - Tom Yum Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Galangal Oil",
+      "Component Qty": 0.893,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Tom Yum Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Kaffir Lime Oil",
+      "Component Qty": 0.893,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Tom Yum Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Lemongrass Oil",
+      "Component Qty": 0.893,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Tom Yum Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Tom Yum Powder",
+      "Component Qty": 22.175,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Sample Cubes - Tom Yum Dark Chocolate",
+      "Output Qty": 1,
+      "Output UOM": "kg",
+      "Component Item": "Tomato, Dried",
+      "Component Qty": 88.7,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Signature Dark 70% Dark Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Dark 70% Dark Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Signature Dark 70% Dark Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Signature Dark 70% (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Signature Dark 70% Dark Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 20,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Signature Dark 70% Dark Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - Small Bar",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Signature Dark 70% Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Dark 70% Dark Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Signature Dark 70% Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Signature Dark 70% (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Signature Dark 70% Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 75,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Signature Dark 70% Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Signature Dark 85% Dark Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Dark 85% Dark Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Signature Dark 85% Dark Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Signature Dark 85% (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Signature Dark 85% Dark Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 85% Dark Chocolate",
+      "Component Qty": 20,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Signature Dark 85% Dark Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - Small Bar",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Signature Dark 85% Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Dark 85% Dark Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Signature Dark 85% Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Signature Dark 85% (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Signature Dark 85% Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 85% Dark Chocolate",
+      "Component Qty": 75,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Signature Dark 85% Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Signature Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Signature Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Signature Milk (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Signature Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 20,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Signature Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - Small Bar",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Signature Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Milk Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Signature Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Signature Milk (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Signature Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 75,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Signature Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Signature Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 8,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk - Paleo Robbie (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Simply Cacao Plus Milk - Paleo Robbie (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk - Paleo Robbie (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Clear",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk - Paleo Robbie (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Simply Cacao Plus Milk - Paleo Robbie (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk - Paleo Robbie (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 75,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk - Paleo Robbie (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Clear",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Simply Cacao Almonds - Paleo Robbie (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Almonds, Chopped",
+      "Component Qty": 6.81,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 68.122,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Pink Salt",
+      "Component Qty": 0.068,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Clear",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Simply Cacao Vanilla - Paleo Robbie (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Sugar Free",
+      "Component Qty": 74.48,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Vanilla Oil",
+      "Component Qty": 0.52,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Smash Daddy's Banana Split Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Smash Daddy's Banana Split Milk Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Smash Daddy's Banana Split Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Smash Daddy's Banana Split (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Smash Daddy's Banana Split Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Chips",
+      "Component Qty": 3.15,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Smash Daddy's Banana Split Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Powder",
+      "Component Qty": 1.89,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Smash Daddy's Banana Split Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 63.03,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Smash Daddy's Banana Split Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Smash Daddy's Banana Split Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Peanuts",
+      "Component Qty": 3.15,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Smash Daddy's Banana Split Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Strawberries, Dried",
+      "Component Qty": 3.15,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Smash Daddy's Banana Split Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Strawberries, Freeze Dried",
+      "Component Qty": 0.63,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Taste of Thailand Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Dark 70% (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Taste of Thailand Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Dark 70% (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Taste of Thailand Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Clear",
+      "Component Qty": 2,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Taste of Thailand Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Taste of Thailand Box",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Taste of Thailand Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Bullet Chili Dark Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Taste of Thailand Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Tea Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Assemble"
+    },
+    {
+      "Finished Product": "Taste of Thailand Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "White Inner Box",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Taste of Thailand Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Thai Bullet Chili (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Taste of Thailand Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Thai Tea (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "70% Dark Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Assemble"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "85% Dark Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coconut Milk 65% Dark Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coffee Crunch Milk Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Durian Milk Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Individual Box - 70% Dark Chocolate (8g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Individual Box - 85% Dark Chocolate (8g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Individual Box - Coconut Milk 65% Dark Chocolate (8g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Individual Box - Coffee Crunch Milk Chocolate (8g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Individual Box - Durian Milk Chocolate (8g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Individual Box - Masala Chai Milk Chocolate (8g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Individual Box - Signature Milk Chocolate (8g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Individual Box - Thai Bullet Chili Dark Chocolate (8g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Individual Box - Thai Tea Milk Chocolate (8g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Masala Chai Milk Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Outer Packing for Tasting Box",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Shrink film (5.5 inch)",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Signature Milk Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Tasting Box FDA",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Bullet Chili Dark Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tasting Box",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Tea Milk Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tea & Coffee Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coffee Crunch Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Tea & Coffee Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Masala Chai Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tea & Coffee Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Clear",
+      "Component Qty": 2,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tea & Coffee Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Tea & Coffee Box",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tea & Coffee Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Tea Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Assemble"
+    },
+    {
+      "Finished Product": "Tea & Coffee Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "White Inner Box",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tea & Coffee Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Coffee Crunch (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tea & Coffee Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Masala Chai (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tea & Coffee Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Thai Tea (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Bullet Chili Dark Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Thai Bullet Chili (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 19.827,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Chili Powder",
+      "Component Qty": 0.198,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - Small Bar",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Bullet Chili Dark Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Thai Bullet Chili (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 74.258,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Chili Powder",
+      "Component Qty": 0.743,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 7.931,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Thai Bullet Chili Dark Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Chili Powder",
+      "Component Qty": 0.079,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Tea Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (20g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Thai Tea (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 19.787,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - Small Bar",
+      "Component Qty": 1,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (20g) - GOLD FOIL",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Tea Powder",
+      "Component Qty": 0.238,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Tea Milk Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Thai Tea (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 74.11,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Tea Powder",
+      "Component Qty": 0.89,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (8g) - Mahabhirom",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Gold Paper - 8g",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (8g) - Mahabhirom",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Sleeve - Mahabhirom Thai Tea 8g",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (8g) - Mahabhirom",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Tea Milk Chocolate (8g) - UNWRAPPED",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - Milk Chocolate",
+      "Component Qty": 7.905,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Thai Tea Milk Chocolate (8g) - UNWRAPPED",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Thai Tea Powder",
+      "Component Qty": 0.095,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Tom Yum Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Tom Yum Dark Chocolate (75g) - FLOW WRAP",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Tom Yum Dark Chocolate (75g)",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Tom Yum (75g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tom Yum Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Base - 70% Dark Chocolate",
+      "Component Qty": 66.483,
+      "Component UOM": "g",
+      "Operation": "Temper",
+      "Work Center": "Tempering"
+    },
+    {
+      "Finished Product": "Tom Yum Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Flow Wrap Foil",
+      "Component Qty": 3,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Tom Yum Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Galangal Oil",
+      "Component Qty": 0.067,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Tom Yum Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Kaffir Lime Oil",
+      "Component Qty": 0.067,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Tom Yum Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Lemongrass Oil",
+      "Component Qty": 0.067,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Tom Yum Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Tom Yum Powder",
+      "Component Qty": 1.663,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Tom Yum Dark Chocolate (75g) - FLOW WRAP",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Tomato, Dried",
+      "Component Qty": 6.653,
+      "Component UOM": "g"
+    },
+    {
+      "Finished Product": "Tropical Fruit Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Banana Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Assemble"
+    },
+    {
+      "Finished Product": "Tropical Fruit Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Coconut Milk 65% Dark chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tropical Fruit Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Durian Milk Chocolate (20g) - GOLD FOIL",
+      "Component Qty": 1,
+      "Component UOM": "piece",
+      "Operation": "Wrap",
+      "Work Center": "Wrapping"
+    },
+    {
+      "Finished Product": "Tropical Fruit Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Stickers - Clear",
+      "Component Qty": 2,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tropical Fruit Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Tropical Fruit Box",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tropical Fruit Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "White Inner Box",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tropical Fruit Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Banana (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tropical Fruit Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Coconut Milk (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    },
+    {
+      "Finished Product": "Tropical Fruit Chocolate Collection",
+      "Output Qty": 1,
+      "Output UOM": "piece",
+      "Component Item": "Wrapper - Durian (20g)",
+      "Component Qty": 1,
+      "Component UOM": "piece"
+    }
+  ]
+}

@@ -148,6 +148,7 @@ test('detects reservation warehouse historical mismatch (warning only)', async (
     await client.query('COMMIT');
 
     expectInvariantLog(/reservation warehouse historical mismatch/);
+    expectInvariantLog(/warehouse default gap/);
     const results = await runInventoryInvariantCheck({ tenantIds: [tenantId] });
     const summary = results.find((row) => row.tenantId === tenantId);
     assert.equal(summary?.reservationWarehouseHistoricalMismatchCount, 1);
@@ -211,6 +212,7 @@ test('does not report mismatch when reservation warehouse matches current locati
     });
     await client.query('COMMIT');
 
+    expectInvariantLog(/warehouse default gap/);
     const results = await runInventoryInvariantCheck({ tenantIds: [tenantId] });
     const summary = results.find((row) => row.tenantId === tenantId);
     assert.equal(summary?.reservationWarehouseHistoricalMismatchCount ?? 0, 0);

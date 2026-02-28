@@ -106,7 +106,7 @@ async function createWarehouseGraph(token, tenantId, label) {
         code: `BIN-${label}-${randomUUID().slice(0, 8)}`,
         name: `BIN ${label}`,
         type: 'bin',
-        role: null,
+        role: 'HOLD',
         isSellable: false,
         parentLocationId: warehouse.id,
       };

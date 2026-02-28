@@ -101,7 +101,7 @@ async function createWarehouseGraph(token) {
     code: `BIN-${randomUUID().slice(0, 8)}`,
     name: 'Sellable B',
     type: 'bin',
-    role: null,
+    role: 'HOLD',
     isSellable: false,
     parentLocationId: sellableA.id,
   };
@@ -183,12 +183,12 @@ async function qcAccept(token, receiptLineId, quantity, actorId) {
   assertOk(res.res, 'POST /qc-events (accept)', res.payload, { receiptLineId, quantity }, [201]);
 }
 
-async function getSnapshot(token, itemId, locationId) {
+async function getSnapshot(token, itemId, locationId, warehouseId) {
   const res = await apiRequest('GET', '/inventory-snapshot', {
     token,
-    params: { itemId, locationId },
+    params: { itemId, locationId, warehouseId },
   });
-  assertOk(res.res, 'GET /inventory-snapshot', res.payload, { itemId, locationId }, [200]);
+  assertOk(res.res, 'GET /inventory-snapshot', res.payload, { itemId, locationId, warehouseId }, [200]);
   const row = res.payload.data?.[0];
   return Number(row?.onHand ?? 0);
 }
@@ -230,8 +230,8 @@ let db;
   const receiptLineA = await receiveIntoQa(token, vendorId, itemId, qaLocation.id, 5);
   await qcAccept(token, receiptLineA, 5, actorId);
 
-  const onHandA1 = await getSnapshot(token, itemId, sellableA.id);
-  const onHandB1 = await getSnapshot(token, itemId, sellableB.id);
+  const onHandA1 = await getSnapshot(token, itemId, sellableA.id, warehouse.id);
+  const onHandB1 = await getSnapshot(token, itemId, sellableB.id, warehouse.id);
   if (Math.abs(onHandA1 - 5) > 1e-6 || Math.abs(onHandB1) > 1e-6) {
     const defaults = await db.query(
       `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,
@@ -260,8 +260,8 @@ let db;
   const receiptLineB = await receiveIntoQa(token, vendorId, itemId, qaLocation.id, 7);
   await qcAccept(token, receiptLineB, 7, actorId);
 
-  const onHandA2 = await getSnapshot(token, itemId, sellableA.id);
-  const onHandB2 = await getSnapshot(token, itemId, sellableB.id);
+  const onHandA2 = await getSnapshot(token, itemId, sellableA.id, warehouse.id);
+  const onHandB2 = await getSnapshot(token, itemId, sellableB.id, warehouse.id);
   if (Math.abs(onHandA2 - 5) > 1e-6 || Math.abs(onHandB2 - 7) > 1e-6) {
     const defaults = await db.query(
       `SELECT role, location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2`,

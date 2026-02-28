@@ -53,6 +53,7 @@ export interface CostLayerConsumption {
 }
 
 interface CreateLayerParams {
+  id?: string;
   tenant_id: string;
   item_id: string;
   location_id: string;
@@ -66,6 +67,12 @@ interface CreateLayerParams {
   layer_date?: Date;
   notes?: string;
   client?: PoolClient;
+}
+
+interface CreateOpeningBalanceLayerParams extends CreateLayerParams {
+  id: string;
+  source_document_id: string;
+  movement_id: string;
 }
 
 interface ConsumeLayersParams {
@@ -216,6 +223,64 @@ export async function createReceiptCostLayerOnce(params: CreateLayerParams): Pro
   );
   if (existing.rowCount === 0) {
     throw new Error('COST_LAYER_RECEIPT_CONFLICT_MISSING');
+  }
+  return existing.rows[0];
+}
+
+/**
+ * Create an opening balance cost layer exactly once using a deterministic layer id.
+ */
+export async function createOpeningBalanceCostLayerOnce(
+  params: CreateOpeningBalanceLayerParams
+): Promise<CostLayer> {
+  if (params.source_type !== 'opening_balance' || !params.source_document_id || !params.movement_id) {
+    throw new Error('COST_LAYER_OPENING_BALANCE_SOURCE_REQUIRED');
+  }
+  const layer_date = params.layer_date || new Date();
+  const extended_cost = params.quantity * params.unit_cost;
+  const executor = params.client ? params.client.query.bind(params.client) : query;
+
+  const insertResult = await executor<CostLayer>(
+    `INSERT INTO inventory_cost_layers (
+      id, tenant_id, item_id, location_id, uom,
+      layer_date, layer_sequence,
+      original_quantity, remaining_quantity,
+      unit_cost, extended_cost,
+      source_type, source_document_id, movement_id, lot_id, notes
+    ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $7, $8, $9, $10, $11, $12, $13, $14)
+    ON CONFLICT (id) DO NOTHING
+    RETURNING *`,
+    [
+      params.id,
+      params.tenant_id,
+      params.item_id,
+      params.location_id,
+      params.uom,
+      layer_date,
+      params.quantity,
+      params.unit_cost,
+      extended_cost,
+      params.source_type,
+      params.source_document_id,
+      params.movement_id,
+      params.lot_id || null,
+      params.notes || null
+    ]
+  );
+
+  if (insertResult.rowCount > 0) {
+    return insertResult.rows[0];
+  }
+
+  const existing = await executor<CostLayer>(
+    `SELECT *
+       FROM inventory_cost_layers
+      WHERE id = $1
+      LIMIT 1`,
+    [params.id]
+  );
+  if (existing.rowCount === 0) {
+    throw new Error('COST_LAYER_OPENING_BALANCE_CONFLICT_MISSING');
   }
   return existing.rows[0];
 }

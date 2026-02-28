@@ -268,7 +268,7 @@ test('transferred FIFO layers drive downstream shipment COGS at destination', as
   const tenantId = session.tenant.id;
   const db = session.pool;
   const actorId = session.user?.id ?? null;
-  const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:cogs` });
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:cogs` });
   const sellable = defaults.SELLABLE;
 
   const vendorId = await createVendor(token);

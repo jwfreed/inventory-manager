@@ -167,6 +167,7 @@ test('WAREHOUSE_ID_DRIFT is detected and blocks reparent until cleared', async (
     );
 
     expectInvariantLog(/CRITICAL invariant violation/);
+    expectInvariantLog(/warehouse default gap/);
     const results = await runInventoryInvariantCheck({ tenantIds: [tenantId] });
     const summary = results.find((row) => row.tenantId === tenantId);
     assert.ok(summary?.warehouseIdDriftCount && summary.warehouseIdDriftCount > 0);
@@ -194,6 +195,7 @@ test('WAREHOUSE_ID_DRIFT is detected and blocks reparent until cleared', async (
       `UPDATE locations SET warehouse_id = $1 WHERE tenant_id = $2 AND id = $3`,
       [w1.id, tenantId, childId]
     );
+    expectInvariantLog(/warehouse default gap/);
     await runInventoryInvariantCheck({ tenantIds: [tenantId] });
     const cleared = await fetchBlock(tenantId);
     assert.ok(cleared && cleared.active === false, `Expected block cleared: ${safeJson(cleared)}`);

@@ -104,6 +104,11 @@ test('cost layer dedupe keeps one active receipt layer per source', async (t) =>
 
   const earlier = new Date(Date.now() - 10000);
   const later = new Date();
+
+  // Drop the migration-applied unique index so we can insert duplicate layers
+  // for dedupe testing, then recreate it after the dedupe query below.
+  await db.query(`DROP INDEX IF EXISTS uq_cost_layers_receipt_source_active`);
+
   await insertLayer(earlier);
   await insertLayer(later);
 
@@ -177,6 +182,13 @@ test('cost layer dedupe keeps one active receipt layer per source', async (t) =>
   assert.equal(finalCount, 1);
 
   await db.query(`DROP INDEX IF EXISTS ${indexName}`);
+
+  // Restore the migration-applied unique index that we dropped earlier.
+  await db.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_cost_layers_receipt_source_active
+       ON inventory_cost_layers (tenant_id, source_document_id)
+      WHERE source_type = 'receipt' AND source_document_id IS NOT NULL AND voided_at IS NULL`
+  );
 });
 
 test.afterEach(async (t) => {
@@ -187,6 +199,18 @@ test.afterEach(async (t) => {
       await db.query(`DROP INDEX IF EXISTS ${name}`);
     } catch {
       // ignore cleanup errors
+    }
+  }
+  // Always restore the migration-applied unique index
+  if (db) {
+    try {
+      await db.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_cost_layers_receipt_source_active
+           ON inventory_cost_layers (tenant_id, source_document_id)
+          WHERE source_type = 'receipt' AND source_document_id IS NOT NULL AND voided_at IS NULL`
+      );
+    } catch {
+      // ignore if already exists
     }
   }
 });

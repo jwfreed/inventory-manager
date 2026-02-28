@@ -228,7 +228,7 @@ test('siamaya_factory seed pack is deterministic and idempotent', async () => {
   assert.equal(first.tenant, tenantSlug);
   assert.equal(first.receiptMode, 'none');
   assert.equal(first.warehousesCreated, 4);
-  assert.equal(first.locationsCreated, 12);
+  assert.equal(first.locationsCreated, 17);
   assert.equal(first.usersUpserted, 1);
   assert.equal(first.itemsUpserted, 7);
   assert.equal(first.bomsUpserted, 2);

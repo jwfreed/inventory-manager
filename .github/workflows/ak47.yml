@@ -22,19 +22,55 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=12
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
     env:
+      CI: 'true'
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
+      REDIS_URL: redis://redis:6379
       JWT_SECRET: ci_dummy_secret
       PORT: 3000
       NODE_ENV: test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq postgresql-client
       - name: Install deps
         run: npm ci
       - name: Run migrations
         run: npm run migrate:up
+      - name: Create app_ci role and grants
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ci') THEN
+              CREATE ROLE app_ci WITH LOGIN PASSWORD 'app_ci_pass' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            ELSE
+              ALTER ROLE app_ci WITH LOGIN PASSWORD 'app_ci_pass' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            END IF;
+          END
+          $$;
+          GRANT CONNECT ON DATABASE inventory_test TO app_ci;
+          GRANT USAGE ON SCHEMA public TO app_ci;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_ci;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_ci;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_ci;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
+          REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
+          SQL
       - name: Start server
+        env:
+          DATABASE_URL: postgresql://app_ci:app_ci_pass@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgresql://app_ci:app_ci_pass@postgres:5432/inventory_test
         run: |
           nohup npm run dev > server.log 2>&1 &
           echo $! > server.pid
@@ -51,6 +87,9 @@ jobs:
           cat server.log
           exit 1
       - name: Run ops tests 5x
+        env:
+          DATABASE_URL: postgresql://app_ci:app_ci_pass@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgresql://app_ci:app_ci_pass@postgres:5432/inventory_test
         run: node tests/helpers/runRepeated.mjs --cmd "npm run test:ops:nomigrate" --times 5
       - name: Stop server
         if: always()

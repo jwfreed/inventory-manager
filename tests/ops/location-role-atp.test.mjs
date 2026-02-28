@@ -95,7 +95,7 @@ test('ATP respects location role and sellable flag', async () => {
   assert.ok(token);
   assert.ok(tenantId);
 
-  const { defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, tenantId, apiRequest, scope: import.meta.url});
   const sellableLocation = defaults.SELLABLE;
   const qaLocation = defaults.QA;
   assert.ok(sellableLocation);
@@ -132,13 +132,13 @@ test('ATP respects location role and sellable flag', async () => {
 
   const atpRes1 = await apiRequest('GET', '/atp/detail', {
     token,
-    params: { itemId, locationId: sellableLocation.id }
+    params: { itemId, locationId: sellableLocation.id, warehouseId: warehouse.id }
   });
   assert.equal(atpRes1.res.status, 200);
 
   const atpRes2 = await apiRequest('GET', '/atp/detail', {
     token,
-    params: { itemId, locationId: qaLocation.id }
+    params: { itemId, locationId: qaLocation.id, warehouseId: warehouse.id }
   });
   assert.equal(atpRes2.res.status, 404);
 });

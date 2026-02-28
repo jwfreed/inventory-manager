@@ -799,6 +799,15 @@ test('record-batch idempotency key reports incomplete executions with missing id
     [tenantId, executionId]
   );
 
+  // Clear transactional idempotency cache so the second call reaches the
+  // execution-state check rather than returning the cached success response.
+  await db.query(
+    `DELETE FROM idempotency_keys
+      WHERE tenant_id = $1
+        AND key = $2`,
+    [tenantId, idempotencyKey]
+  );
+
   const second = await recordBatch(token, workOrderId, {
     consumeItemId: componentItemId,
     consumeLocationId: sellable.id,

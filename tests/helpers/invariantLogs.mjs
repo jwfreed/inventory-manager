@@ -32,7 +32,7 @@ export function assertInvariantLogsSatisfied() {
 
   captured.forEach((entry, idx) => {
     for (let i = 0; i < expected.length; i += 1) {
-      if (expected[i].test(entry.message)) {
+      if (!expectedMatched[i] && expected[i].test(entry.message)) {
         matched[idx] = true;
         expectedMatched[i] = true;
         break;

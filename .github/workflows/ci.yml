@@ -71,18 +71,17 @@ jobs:
           $$;
           GRANT CONNECT ON DATABASE inventory_test TO app_ci;
           GRANT USAGE ON SCHEMA public TO app_ci;
-          GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO app_ci;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_ci;
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_ci;
-          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO app_ci;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_ci;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
           REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
           SQL
-      - name: Run npm test as app_ci
+      - name: Run full test suite as app_ci
         env:
           DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
           TEST_DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
-        run: |
-          npm test || npm run test:all
+        run: npm run test:all
       - name: Run financial core guards as app_ci
         env:
           DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
