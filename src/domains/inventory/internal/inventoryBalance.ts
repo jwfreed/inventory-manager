@@ -31,7 +31,28 @@ export async function ensureInventoryBalanceRow(
     `INSERT INTO inventory_balance (
         tenant_id, item_id, location_id, uom, on_hand, reserved, allocated, created_at, updated_at
      )
-     VALUES ($1, $2, $3, $4, 0, 0, 0, now(), now())
+     VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        COALESCE(
+          (
+            SELECT on_hand_qty
+              FROM inventory_on_hand_location_v
+             WHERE tenant_id = $1
+               AND item_id = $2
+               AND location_id = $3
+               AND uom = $4
+             LIMIT 1
+          ),
+          0
+        ),
+        0,
+        0,
+        now(),
+        now()
+     )
      ON CONFLICT (tenant_id, item_id, location_id, uom) DO NOTHING`,
     [tenantId, itemId, locationId, uom]
   );

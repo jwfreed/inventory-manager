@@ -125,6 +125,9 @@ type InitialStockSpec = {
   items: StockSpecLine[];
 };
 
+const PLACEHOLDER_ITEM_SKU_REGEX = /^(EXP|RES|WO-ITEM)-/i;
+const PLACEHOLDER_ITEM_NAME_REGEX = /^Item\s+(EXP|RES|WO-ITEM)-/i;
+
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
@@ -271,6 +274,19 @@ function inferCanonicalItemType(item: ImportedItem): 'raw' | 'wip' | 'finished' 
     return 'finished';
   }
   return 'raw';
+}
+
+function assertCanonicalSeedItemNames(items: CanonicalItem[]): void {
+  const offenders = items.filter(
+    (item) => PLACEHOLDER_ITEM_SKU_REGEX.test(item.name) || PLACEHOLDER_ITEM_NAME_REGEX.test(item.name)
+  );
+  if (offenders.length > 0) {
+    const sample = offenders
+      .slice(0, 5)
+      .map((item) => item.name)
+      .join(',');
+    throw new Error(`SEED_BOM_PLACEHOLDER_ITEM_NAMES_DETECTED count=${offenders.length} sample=${sample}`);
+  }
 }
 
 function loadInitialStockSpec(filePath: string): InitialStockSpec {
@@ -778,6 +794,52 @@ async function upsertItems(
   }
 
   return idByItemKey;
+}
+
+async function deactivateLegacyPlaceholderItems(
+  client: PoolClient,
+  args: { tenantId: string; canonicalItems: CanonicalItem[] }
+): Promise<number> {
+  const canonicalKeys = args.canonicalItems.map((item) => item.key);
+  const res = await client.query<{ id: string }>(
+    `WITH candidates AS (
+       SELECT i.id
+         FROM items i
+        WHERE i.tenant_id = $1
+          AND i.active = true
+          AND (
+            i.sku ~* '^(EXP|RES|WO-ITEM)-'
+            OR i.name ~* '^Item\\s+(EXP|RES|WO-ITEM)-'
+          )
+          AND NOT (lower(regexp_replace(trim(i.name), '\\s+', ' ', 'g')) = ANY($2::text[]))
+          AND NOT EXISTS (
+            SELECT 1
+              FROM inventory_movement_lines iml
+             WHERE iml.tenant_id = i.tenant_id
+               AND iml.item_id = i.id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+              FROM bom_version_lines bvl
+             WHERE bvl.tenant_id = i.tenant_id
+               AND bvl.component_item_id = i.id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+              FROM boms b
+             WHERE b.tenant_id = i.tenant_id
+               AND b.output_item_id = i.id
+          )
+     )
+     UPDATE items i
+        SET active = false,
+            updated_at = now()
+       FROM candidates c
+      WHERE i.id = c.id
+      RETURNING i.id`,
+    [args.tenantId, canonicalKeys]
+  );
+  return res.rowCount ?? 0;
 }
 
 async function upsertSeedUomConversions(
@@ -1502,6 +1564,7 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
   }
 
   const canonicalItems = toCanonicalItems(bomDataset.items);
+  assertCanonicalSeedItemNames(canonicalItems);
   const canonicalBoms = bomDataset.boms;
   const { id: tenantId } = await upsertTenant(client, tenantSlug, tenantName);
 
@@ -1569,6 +1632,10 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
     tenantId,
     tenantSlug,
     items: canonicalItems
+  });
+  await deactivateLegacyPlaceholderItems(client, {
+    tenantId,
+    canonicalItems
   });
   const uomConversionsUpserted = await upsertSeedUomConversions(client, {
     tenantId,
