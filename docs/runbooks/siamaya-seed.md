@@ -1,22 +1,32 @@
 # Siamaya Seed Pack (Factory)
 
-## Regenerate Production BOM JSON
+## Real-Data Inputs
 
-```bash
-npm run seed:siamaya:bom:preprocess -- \
-  --input "/path/to/3. bom-Table 1.csv" \
-  --output scripts/seed/siamaya/siamaya-bom-production.json
-```
+The default `siamaya_factory` run auto-detects and imports:
+- Loyverse item CSV (`Siamaya items_cleaned.import.csv`)
+- Odoo BOM workbook (`-Siamaya- 6. BOM (mrp.routing.workcenter)_old.xlsx`, sheet `3. bom`)
+- Optional mapping reports:
+  - `bom_output_item_mapping_report.csv`
+  - `bom_unmatched_components_report.csv`
 
-Notes:
-- Only Section 2 is imported.
-- Wrapper lines with missing quantity default to `1 piece`.
-- Byproduct rows are not inserted as BOM lines.
+Unmapped BOM outputs/components are skipped and written to a deterministic review artifact:
+- `scripts/seed/siamaya/seed_review_required.csv`
 
 ## Run Siamaya Seed
 
 ```bash
 npm run seed -- --pack siamaya_factory
+```
+
+Optional explicit paths:
+
+```bash
+npm run seed -- --pack siamaya_factory \
+  --items-csv "/mnt/data/Siamaya items_cleaned.import.csv" \
+  --bom-file "/mnt/data/-Siamaya- 6. BOM (mrp.routing.workcenter)_old.xlsx" \
+  --bom-output-mapping-report "/mnt/data/bom_output_item_mapping_report.csv" \
+  --bom-unmatched-component-report "/mnt/data/bom_unmatched_components_report.csv" \
+  --review-report "scripts/seed/siamaya/seed_review_required.csv"
 ```
 
 Then run:
@@ -47,14 +57,13 @@ SELECT
     JOIN tenants t ON t.id=l.tenant_id
     WHERE t.slug='siamaya' AND m.external_ref LIKE 'seed:siamaya_factory:initial-stock:%') AS seed_lines,
   (SELECT COUNT(*) FROM inventory_cost_layers cl JOIN tenants t ON t.id=cl.tenant_id
-    WHERE t.slug='siamaya' AND cl.source_type='receipt' AND cl.notes='Seeded opening stock') AS seed_cost_layers,
+    WHERE t.slug='siamaya' AND cl.source_type='opening_balance' AND cl.notes='Seeded opening stock') AS seed_cost_layers,
   (SELECT COUNT(*) FROM lots lo JOIN tenants t ON t.id=lo.tenant_id
     WHERE t.slug='siamaya') AS lots;
 ```
 
-Expected targets for the default `siamaya_factory` pack:
+Expected topology targets for the default `siamaya_factory` pack:
 - Warehouses: `4`
 - Role + operational non-root locations: `17` (`3x4` role defaults + `5` factory operational bins)
-- Initial stock movement lines: `8`
-- Initial stock receipt cost layers: `8`
-- Seeded lots for tracked raw items: `4`
+- Initial stock movement/cost layers: dynamic from Loyverse `In stock [Factory]` rows with qty `> 0`
+- Seeded lots for tracked raw items: `4` minimum when tracked items exist in opening stock

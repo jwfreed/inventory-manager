@@ -6,8 +6,12 @@ import { seedPurchaseOrdersAndReceiptsViaApi } from './receipts/seed_purchase_or
 
 type RunnerOptions = {
   pack: string;
+  itemsCsvPath?: string;
   bomFilePath?: string;
   bomSheetName?: string;
+  bomOutputMappingReportPath?: string;
+  bomUnmatchedComponentReportPath?: string;
+  reviewReportPath?: string;
   tenantSlug?: string;
   tenantName?: string;
   adminEmail?: string;
@@ -59,8 +63,13 @@ function parseRunnerOptions(): RunnerOptions {
   const pack = getArg('pack') ?? process.env.SEED_PACK ?? '';
   return {
     pack,
+    itemsCsvPath: getArg('items-csv') ?? process.env.SEED_ITEMS_CSV,
     bomFilePath: getArg('bom-file') ?? process.env.SEED_BOM_FILE,
     bomSheetName: getArg('bom-sheet') ?? process.env.SEED_BOM_SHEET,
+    bomOutputMappingReportPath: getArg('bom-output-mapping-report') ?? process.env.SEED_BOM_OUTPUT_MAPPING_REPORT,
+    bomUnmatchedComponentReportPath:
+      getArg('bom-unmatched-component-report') ?? process.env.SEED_BOM_UNMATCHED_COMPONENT_REPORT,
+    reviewReportPath: getArg('review-report') ?? process.env.SEED_REVIEW_REPORT,
     tenantSlug: getArg('tenant-slug') ?? process.env.SEED_TENANT_SLUG,
     tenantName: getArg('tenant-name') ?? process.env.SEED_TENANT_NAME,
     adminEmail: getArg('admin-email') ?? process.env.SEED_ADMIN_EMAIL,
@@ -140,8 +149,12 @@ export async function runSeedPack(options: RunnerOptions): Promise<SeedSummary> 
       if (options.pack === 'siamaya_factory') {
         summary = await runSiamayaFactoryPack(client, {
           pack: options.pack,
+          itemsCsvPath: options.itemsCsvPath,
           bomFilePath: options.bomFilePath,
           bomSheetName: options.bomSheetName,
+          bomOutputMappingReportPath: options.bomOutputMappingReportPath,
+          bomUnmatchedComponentReportPath: options.bomUnmatchedComponentReportPath,
+          reviewReportPath: options.reviewReportPath,
           tenantSlug: options.tenantSlug,
           tenantName: options.tenantName,
           adminEmail: options.adminEmail,

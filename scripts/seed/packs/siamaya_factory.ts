@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { v5 as uuidv5 } from 'uuid';
@@ -12,13 +13,33 @@ import { createOpeningBalanceCostLayerOnce } from '../../../src/services/costLay
 import {
   importBomDatasetFromFile,
   type ImportedBom,
-  type ImportedItem
+  type ImportedItem,
+  UOM_ALIASES
 } from '../siamaya/import_bom_from_xlsx';
+import { parseCsv } from '../../../src/lib/csv';
 
 const ID_NAMESPACE = '85fc700f-6f58-4d79-a7db-7af0951374fd';
 const REQUIRED_ROLES = ['SELLABLE', 'QA', 'HOLD'] as const;
 const DEFAULT_BOM_JSON_PATH = path.resolve(process.cwd(), 'scripts/seed/siamaya/siamaya-bom-production.json');
 const DEFAULT_INITIAL_STOCK_SPEC_PATH = path.resolve(process.cwd(), 'scripts/seed/siamaya/initial-stock-spec.json');
+const DEFAULT_REVIEW_REPORT_PATH = path.resolve(process.cwd(), 'scripts/seed/siamaya/seed_review_required.csv');
+const DEFAULT_LOYVERSE_ITEMS_CSV_CANDIDATES = [
+  '/mnt/data/Siamaya items_cleaned.import.csv',
+  '/Users/jonathanfreed/Downloads/Siamaya items_cleaned.import.csv',
+  path.resolve(process.cwd(), 'docs/Siamaya items_cleaned.import.csv')
+] as const;
+const DEFAULT_SIAMAYA_BOM_XLSX_CANDIDATES = [
+  '/mnt/data/-Siamaya- 6. BOM (mrp.routing.workcenter)_old.xlsx',
+  path.resolve(process.cwd(), 'docs/-Siamaya- 6. BOM (mrp.routing.workcenter)_old.xlsx')
+] as const;
+const DEFAULT_BOM_OUTPUT_MAPPING_REPORT_CANDIDATES = [
+  '/mnt/data/bom_output_item_mapping_report.csv',
+  '/Users/jonathanfreed/Downloads/bom_output_item_mapping_report.csv'
+] as const;
+const DEFAULT_BOM_COMPONENT_MAPPING_REPORT_CANDIDATES = [
+  '/mnt/data/bom_unmatched_components_report.csv',
+  '/Users/jonathanfreed/Downloads/bom_unmatched_components_report.csv'
+] as const;
 const LOT_TRACKED_ITEM_KEYS = new Set([
   'cacao beans',
   'cacao butter',
@@ -44,9 +65,9 @@ const DEFAULT_OPTIONS = {
   adminPassword: 'admin@local',
   warehouses: [
     { code: 'FACTORY', name: 'Factory' },
-    { code: 'STORE_1', name: 'Store 1' },
-    { code: 'STORE_2', name: 'Store 2' },
-    { code: 'STORE_3', name: 'Store 3' }
+    { code: 'STORE_1', name: 'Thapae Store' },
+    { code: 'STORE_2', name: 'Factory Store' },
+    { code: 'STORE_3', name: 'CNX Airport Store' }
   ]
 } as const;
 
@@ -56,8 +77,12 @@ export type SiamayaPackOptions = {
   tenantName?: string;
   adminEmail?: string;
   adminPassword?: string;
+  itemsCsvPath?: string;
   bomFilePath?: string;
   bomSheetName?: string;
+  bomOutputMappingReportPath?: string;
+  bomUnmatchedComponentReportPath?: string;
+  reviewReportPath?: string;
   initialStockSpecPath?: string;
   warehouses?: Array<{ code: string; name: string }>;
   datasetOverride?: {
@@ -98,6 +123,8 @@ export type SeedSummary = {
 
 type CanonicalItem = ImportedItem & {
   type: 'raw' | 'wip' | 'finished' | 'packaging';
+  sku?: string;
+  useProduction?: boolean;
 };
 
 type CanonicalBom = ImportedBom;
@@ -125,8 +152,715 @@ type InitialStockSpec = {
   items: StockSpecLine[];
 };
 
+type SuggestedMatchReports = {
+  outputSuggestByKey: Map<string, string>;
+  componentSuggestByKey: Map<string, string>;
+};
+
+type RealDataReviewRow = {
+  kind: 'output' | 'component' | 'validation';
+  outputName: string;
+  componentName?: string;
+  reason: string;
+  suggested?: string;
+  rawValue?: string;
+  rowNumber?: number;
+};
+
+type ParsedManualBomComponent = {
+  name: string;
+  quantity: number;
+  uom: string;
+  note: string | null;
+  rowNumber: number;
+};
+
+type ParsedManualBom = {
+  outputName: string;
+  outputQuantity: number;
+  outputUom: string;
+  components: ParsedManualBomComponent[];
+};
+
+type ParsedManualBomDataset = {
+  boms: ParsedManualBom[];
+  unknownUoms: string[];
+  validationIssues: RealDataReviewRow[];
+};
+
 const PLACEHOLDER_ITEM_SKU_REGEX = /^(EXP|RES|WO-ITEM)-/i;
 const PLACEHOLDER_ITEM_NAME_REGEX = /^Item\s+(EXP|RES|WO-ITEM)-/i;
+const MATCH_SUFFIX_REGEX = /\s*-\s*(UNWRAPPED|FLOW WRAP|GOLD FOIL|SILVER FOIL|FOIL|MAHABHIROM|ANANTARA)\b/gi;
+const PAREN_UOM_REGEX = /\([^)]*\)/g;
+
+function resolveFirstExistingPath(primary: string | undefined, candidates: readonly string[]): string | null {
+  if (primary) {
+    const resolved = path.resolve(primary);
+    if (fs.existsSync(resolved)) {
+      return resolved;
+    }
+  }
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function toCsvRows(filePath: string): Array<Record<string, string>> {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const parsed = parseCsv(raw);
+  return parsed.rows.map((row) => {
+    const record: Record<string, string> = {};
+    for (let index = 0; index < parsed.headers.length; index += 1) {
+      const header = parsed.headers[index];
+      if (!header) continue;
+      record[header] = String(row[index] ?? '');
+    }
+    return record;
+  });
+}
+
+function parseNumber(value: string): number | null {
+  const normalized = normalizeWhitespace(value).replace(/,/g, '');
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeForBomMapping(value: string): string {
+  const base = normalizeWhitespace(value)
+    .toLowerCase()
+    .replace(PAREN_UOM_REGEX, ' ')
+    .replace(MATCH_SUFFIX_REGEX, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return base;
+}
+
+function normalizeUomStrict(raw: string, unknownUoms: Set<string>): string {
+  const normalized = normalizeWhitespace(raw);
+  if (!normalized) {
+    return 'piece';
+  }
+  const key = normalized.toLowerCase();
+  const mapped = UOM_ALIASES[key];
+  if (mapped) {
+    return mapped;
+  }
+  unknownUoms.add(normalized);
+  return key;
+}
+
+function isPackagingKeyword(name: string): boolean {
+  const lower = name.toLowerCase();
+  return (
+    lower.includes('wrapper')
+    || lower.includes('sticker')
+    || lower.includes('label')
+    || lower.includes('sleeve')
+    || lower.includes('gold paper')
+    || lower.includes('flow wrap foil')
+    || lower.includes('shrink film')
+    || lower.includes('box')
+    || lower.includes('bags')
+    || lower.includes('bag')
+    || lower.includes('bottle')
+    || lower.includes('tin')
+    || lower.includes('jar')
+    || lower.includes('cap')
+    || lower.includes('lid')
+    || lower.includes('foil')
+    || lower.includes('wrap')
+  );
+}
+
+function inferTypeWithSets(
+  item: ImportedItem,
+  outputKeys: Set<string>,
+  componentKeys: Set<string>
+): 'raw' | 'wip' | 'finished' | 'packaging' {
+  if (isPackagingKeyword(item.name)) {
+    return 'packaging';
+  }
+  if (outputKeys.has(item.key)) {
+    if (isWipName(item.name) || /\b(base|mix|paste|ganache)\b/i.test(item.name)) {
+      return 'wip';
+    }
+    return 'finished';
+  }
+  if (componentKeys.has(item.key)) {
+    return 'raw';
+  }
+  return 'raw';
+}
+
+function writeReviewCsv(filePath: string, rows: RealDataReviewRow[]): void {
+  const sorted = [...rows].sort((left, right) => {
+    const kindCompare = left.kind.localeCompare(right.kind);
+    if (kindCompare !== 0) return kindCompare;
+    const outputCompare = left.outputName.localeCompare(right.outputName);
+    if (outputCompare !== 0) return outputCompare;
+    const componentCompare = (left.componentName ?? '').localeCompare(right.componentName ?? '');
+    if (componentCompare !== 0) return componentCompare;
+    return left.reason.localeCompare(right.reason);
+  });
+
+  const escaped = (value: string): string => `"${value.replace(/"/g, '""')}"`;
+  const header = [
+    'kind',
+    'output_name',
+    'component_name',
+    'reason',
+    'suggested',
+    'raw_value',
+    'row_number'
+  ];
+  const lines = [header.join(',')];
+  for (const row of sorted) {
+    lines.push(
+      [
+        row.kind,
+        row.outputName,
+        row.componentName ?? '',
+        row.reason,
+        row.suggested ?? '',
+        row.rawValue ?? '',
+        row.rowNumber ? String(row.rowNumber) : ''
+      ]
+        .map((value) => escaped(value))
+        .join(',')
+    );
+  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${lines.join('\n')}\n`, 'utf8');
+}
+
+function parseLoyverseItems(args: {
+  itemsCsvPath: string;
+  tenantSlug: string;
+}): {
+  items: ImportedItem[];
+  itemSkuByKey: Map<string, string>;
+  initialStock: InitialStockSpec;
+  unknownUoms: string[];
+} {
+  const rows = toCsvRows(args.itemsCsvPath);
+  const unknownUoms = new Set<string>();
+  const byKey = new Map<string, ImportedItem>();
+  const itemSkuByKey = new Map<string, string>();
+  const stockLines: StockSpecLine[] = [];
+
+  for (const row of rows) {
+    const name = normalizeWhitespace(row.Name ?? row.item_name ?? '');
+    if (!name) continue;
+    const key = normalizeItemKey(name);
+    const sku = normalizeWhitespace(row.SKU ?? '');
+    const qtyFactory = parseNumber(row['In stock [Factory]'] ?? '');
+    const costValue = parseNumber(row.Cost ?? '') ?? parseNumber(row['Purchase cost'] ?? '');
+    const stockingUomRaw = row.stockingUom ?? row.uomDenomination ?? row.canonicalUom ?? '';
+    const baseUom = normalizeUomStrict(stockingUomRaw, unknownUoms);
+    if (qtyFactory !== null && qtyFactory > 0 && (costValue === null || costValue < 0)) {
+      throw new Error(`SEED_REAL_DATA_COST_REQUIRED_FOR_STOCK item=${name} sku=${sku || '__missing__'}`);
+    }
+    const imported: ImportedItem = {
+      key,
+      name,
+      baseUom,
+      appearsAsOutput: false,
+      appearsAsComponent: false
+    };
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, imported);
+      if (sku) {
+        itemSkuByKey.set(key, sku);
+      }
+    }
+    if (qtyFactory !== null && qtyFactory > 0) {
+      stockLines.push({
+        itemKey: key,
+        quantity: qtyFactory,
+        uom: baseUom,
+        unitCost: costValue ?? 0,
+        locationCode: 'FACTORY_SELLABLE'
+      });
+    }
+  }
+
+  const initialStock: InitialStockSpec = {
+    version: Number.parseInt(createHash('sha256').update(fs.readFileSync(args.itemsCsvPath, 'utf8')).digest('hex').slice(0, 8), 16),
+    stockDate: '2026-01-01T00:00:00.000Z',
+    items: stockLines.sort((left, right) => left.itemKey.localeCompare(right.itemKey))
+  };
+  return {
+    items: Array.from(byKey.values()).sort((left, right) => left.key.localeCompare(right.key)),
+    itemSkuByKey,
+    initialStock,
+    unknownUoms: Array.from(unknownUoms).sort((left, right) => left.localeCompare(right))
+  };
+}
+
+function loadSuggestedMatchReports(args: {
+  outputReportPath: string | null;
+  componentReportPath: string | null;
+}): SuggestedMatchReports {
+  const outputSuggestByKey = new Map<string, string>();
+  const componentSuggestByKey = new Map<string, string>();
+
+  if (args.outputReportPath && fs.existsSync(args.outputReportPath)) {
+    for (const row of toCsvRows(args.outputReportPath)) {
+      const outputName = normalizeWhitespace(row.bom_output_name ?? '');
+      const suggestion = normalizeWhitespace(row.suggest_1 ?? '');
+      if (outputName && suggestion) {
+        outputSuggestByKey.set(normalizeItemKey(outputName), suggestion);
+      }
+    }
+  }
+
+  if (args.componentReportPath && fs.existsSync(args.componentReportPath)) {
+    for (const row of toCsvRows(args.componentReportPath)) {
+      const componentName = normalizeWhitespace(row.component_name ?? '');
+      const suggestion = normalizeWhitespace(row.suggest_1 ?? '');
+      if (componentName && suggestion) {
+        componentSuggestByKey.set(normalizeItemKey(componentName), suggestion);
+      }
+    }
+  }
+
+  return { outputSuggestByKey, componentSuggestByKey };
+}
+
+function decodeXml(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function attrValue(fragment: string, name: string): string | null {
+  const regex = new RegExp(`${name}="([^"]*)"`);
+  const match = fragment.match(regex);
+  return match ? decodeXml(match[1]) : null;
+}
+
+function columnToIndex(cellRef: string): number {
+  const letters = cellRef.replace(/\d+/g, '').toUpperCase();
+  let index = 0;
+  for (const ch of letters) {
+    index = index * 26 + (ch.charCodeAt(0) - 64);
+  }
+  return Math.max(index - 1, 0);
+}
+
+function readZipEntry(filePath: string, entryPath: string): string {
+  try {
+    return execFileSync('unzip', ['-p', filePath, entryPath], {
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024
+    });
+  } catch {
+    return '';
+  }
+}
+
+function parseSharedStrings(sharedStringsXml: string): string[] {
+  if (!sharedStringsXml) {
+    return [];
+  }
+  const strings: string[] = [];
+  const siRegex = /<si[^>]*>([\s\S]*?)<\/si>/g;
+  for (const match of sharedStringsXml.matchAll(siRegex)) {
+    const body = match[1];
+    const pieces: string[] = [];
+    const tRegex = /<t(?:\s+xml:space="preserve")?[^>]*>([\s\S]*?)<\/t>/g;
+    for (const textMatch of body.matchAll(tRegex)) {
+      pieces.push(decodeXml(textMatch[1]));
+    }
+    strings.push(normalizeWhitespace(pieces.join('')));
+  }
+  return strings;
+}
+
+function resolveWorksheetPath(workbookXml: string, relsXml: string, sheetName: string): string {
+  const sheets = Array.from(workbookXml.matchAll(/<sheet\b([^>]*)\/>/g));
+  const targetSheet = sheets.find((sheet) => attrValue(sheet[1], 'name') === sheetName);
+  if (!targetSheet) {
+    throw new Error(`SEED_BOM_SHEET_NOT_FOUND sheet=${sheetName}`);
+  }
+  const relationshipId = attrValue(targetSheet[1], 'r:id');
+  if (!relationshipId) {
+    throw new Error(`SEED_BOM_SHEET_RELATIONSHIP_MISSING sheet=${sheetName}`);
+  }
+  for (const relationship of relsXml.matchAll(/<Relationship\b([^>]*)\/>/g)) {
+    const attrs = relationship[1];
+    if (attrValue(attrs, 'Id') !== relationshipId) continue;
+    const target = attrValue(attrs, 'Target');
+    if (!target) break;
+    if (target.startsWith('/xl/')) return target.slice(4);
+    if (target.startsWith('xl/')) return target.slice(3);
+    return target.startsWith('/') ? target.slice(1) : target;
+  }
+  throw new Error(`SEED_BOM_SHEET_TARGET_MISSING sheet=${sheetName} relationship=${relationshipId}`);
+}
+
+function readWorksheetGrid(filePath: string, sheetName: string): Array<Map<number, string | number | null>> {
+  const workbookXml = readZipEntry(filePath, 'xl/workbook.xml');
+  const relsXml = readZipEntry(filePath, 'xl/_rels/workbook.xml.rels');
+  if (!workbookXml || !relsXml) {
+    throw new Error(`SEED_BOM_XLSX_PARSE_FAILED file=${filePath}`);
+  }
+  const worksheetPath = resolveWorksheetPath(workbookXml, relsXml, sheetName);
+  const worksheetXml = readZipEntry(filePath, `xl/${worksheetPath}`);
+  if (!worksheetXml) {
+    throw new Error(`SEED_BOM_WORKSHEET_READ_FAILED file=${filePath} sheet=${sheetName}`);
+  }
+  const sharedStrings = parseSharedStrings(readZipEntry(filePath, 'xl/sharedStrings.xml'));
+  const rows: Array<Map<number, string | number | null>> = [];
+  const rowRegex = /<row\b[^>]*>([\s\S]*?)<\/row>/g;
+  for (const rowMatch of worksheetXml.matchAll(rowRegex)) {
+    const rowBody = rowMatch[1];
+    const cellMap = new Map<number, string | number | null>();
+    const cellRegex = /<c\b([^>]*)>([\s\S]*?)<\/c>|<c\b([^>]*)\/>/g;
+    for (const cellMatch of rowBody.matchAll(cellRegex)) {
+      const attrs = cellMatch[1] ?? cellMatch[3] ?? '';
+      const cellBody = cellMatch[2] ?? '';
+      const cellRef = attrValue(attrs, 'r');
+      if (!cellRef) continue;
+      const type = attrValue(attrs, 't');
+      const index = columnToIndex(cellRef);
+      let value: string | number | null = null;
+
+      if (type === 'inlineStr') {
+        const inlineMatch = cellBody.match(/<is[^>]*>([\s\S]*?)<\/is>/);
+        if (inlineMatch) {
+          const textMatches = Array.from(inlineMatch[1].matchAll(/<t(?:\s+xml:space="preserve")?[^>]*>([\s\S]*?)<\/t>/g));
+          value = normalizeWhitespace(textMatches.map((textMatch) => decodeXml(textMatch[1])).join(''));
+        }
+      } else {
+        const valueMatch = cellBody.match(/<v[^>]*>([\s\S]*?)<\/v>/);
+        if (valueMatch) {
+          const raw = decodeXml(valueMatch[1]);
+          if (type === 's') {
+            const sharedIndex = Number(raw);
+            value = Number.isFinite(sharedIndex) ? sharedStrings[sharedIndex] ?? null : null;
+          } else {
+            const numeric = Number(raw);
+            value = Number.isFinite(numeric) ? numeric : normalizeWhitespace(raw);
+          }
+        }
+      }
+      cellMap.set(index, value);
+    }
+    rows.push(cellMap);
+  }
+  return rows;
+}
+
+function isWrapperLikeName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return (
+    lower.includes('wrapper')
+    || lower.includes('sticker')
+    || lower.includes('label')
+    || lower.includes('sleeve')
+    || lower.includes('foil')
+    || lower.includes('box')
+    || lower.includes('bag')
+    || lower.includes('bottle')
+    || lower.includes('tin')
+  );
+}
+
+function parseManualBomsFromXlsx(filePath: string, sheetName: string): ParsedManualBomDataset {
+  const unknownUoms = new Set<string>();
+  const validationIssues: RealDataReviewRow[] = [];
+  const rows = readWorksheetGrid(filePath, sheetName);
+  const headerIndex = rows.findIndex((row) => normalizeWhitespace(String(row.get(0) ?? '')).toLowerCase() === 'finished goods');
+  if (headerIndex < 0) {
+    throw new Error('SEED_BOM_MANUAL_SECTION_NOT_FOUND marker=Finished Goods');
+  }
+
+  const boms = new Map<string, ParsedManualBom>();
+  let currentOutput: ParsedManualBom | null = null;
+
+  for (let rowIndex = headerIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    const rawCol0 = normalizeWhitespace(String(row.get(0) ?? ''));
+    const outputName = /^[0-9]+(?:\.0+)?$/.test(rawCol0) ? '' : rawCol0;
+    const componentNameRaw = normalizeWhitespace(String(row.get(3) ?? ''));
+    const outputQty = typeof row.get(1) === 'number' ? Number(row.get(1)) : parseNumber(String(row.get(1) ?? ''));
+    const outputUomRaw = normalizeWhitespace(String(row.get(2) ?? ''));
+    const outputUom = normalizeUomStrict(outputUomRaw, unknownUoms);
+
+    if (outputName) {
+      if (outputQty === null || outputQty <= 0) {
+        if (componentNameRaw) {
+          validationIssues.push({
+            kind: 'validation',
+            outputName,
+            reason: 'INVALID_OUTPUT_QUANTITY',
+            rawValue: String(row.get(1) ?? ''),
+            rowNumber: rowIndex + 1
+          });
+        }
+      } else if (!outputUomRaw) {
+        if (componentNameRaw) {
+          validationIssues.push({
+            kind: 'validation',
+            outputName,
+            reason: 'MISSING_OUTPUT_UOM',
+            rowNumber: rowIndex + 1
+          });
+        }
+      } else if (/ test$/i.test(outputName)) {
+        currentOutput = null;
+      } else {
+        const bomKey = normalizeItemKey(outputName);
+        const existing = boms.get(bomKey);
+        if (existing) {
+          existing.outputName = outputName;
+          existing.outputQuantity = outputQty;
+          existing.outputUom = outputUom;
+          currentOutput = existing;
+        } else {
+          const created: ParsedManualBom = {
+            outputName,
+            outputQuantity: outputQty,
+            outputUom,
+            components: []
+          };
+          boms.set(bomKey, created);
+          currentOutput = created;
+        }
+      }
+    }
+
+    if (!currentOutput || !componentNameRaw) {
+      continue;
+    }
+    let componentQty = typeof row.get(4) === 'number' ? Number(row.get(4)) : parseNumber(String(row.get(4) ?? ''));
+    const componentUomRaw = normalizeWhitespace(String(row.get(5) ?? ''));
+    let componentUom = componentUomRaw ? normalizeUomStrict(componentUomRaw, unknownUoms) : '';
+    const operation = normalizeWhitespace(String(row.get(6) ?? ''));
+    const workCenter = normalizeWhitespace(String(row.get(7) ?? ''));
+    const noteText = normalizeWhitespace(String(row.get(8) ?? ''));
+    const note = [operation, workCenter, noteText].filter(Boolean).join(' | ') || null;
+    let componentName = componentNameRaw;
+
+    if (componentQty === null && isWrapperLikeName(componentName)) {
+      componentQty = 1;
+      componentUom = componentUom || 'piece';
+    }
+
+    if (
+      /\bthai tea\b/i.test(currentOutput.outputName)
+      && /\(8g\)/i.test(currentOutput.outputName)
+      && /^base - /i.test(componentName)
+      && componentQty !== null
+      && componentQty > 20
+    ) {
+      componentQty = 7.905;
+    }
+
+    if (currentOutput.outputName === 'Mooncake Milk Chocolate (75g)' && componentName === currentOutput.outputName) {
+      componentName = `${currentOutput.outputName} - FLOW WRAP`;
+    }
+
+    if (normalizeItemKey(currentOutput.outputName) === normalizeItemKey(componentName)) {
+      validationIssues.push({
+        kind: 'validation',
+        outputName: currentOutput.outputName,
+        componentName,
+        reason: 'SELF_REFERENCE_SKIPPED',
+        rowNumber: rowIndex + 1
+      });
+      continue;
+    }
+
+    if (componentQty === null || componentQty <= 0) {
+      validationIssues.push({
+        kind: 'validation',
+        outputName: currentOutput.outputName,
+        componentName,
+        reason: 'INVALID_COMPONENT_QUANTITY',
+        rawValue: String(row.get(4) ?? ''),
+        rowNumber: rowIndex + 1
+      });
+      continue;
+    }
+    if (!componentUom) {
+      validationIssues.push({
+        kind: 'validation',
+        outputName: currentOutput.outputName,
+        componentName,
+        reason: 'MISSING_COMPONENT_UOM',
+        rawValue: String(row.get(5) ?? ''),
+        rowNumber: rowIndex + 1
+      });
+      continue;
+    }
+
+    currentOutput.components.push({
+      name: componentName,
+      quantity: componentQty,
+      uom: componentUom,
+      note,
+      rowNumber: rowIndex + 1
+    });
+  }
+
+  return {
+    boms: Array.from(boms.values()).sort((left, right) => normalizeItemKey(left.outputName).localeCompare(normalizeItemKey(right.outputName))),
+    unknownUoms: Array.from(unknownUoms).sort((left, right) => left.localeCompare(right)),
+    validationIssues
+  };
+}
+
+function mapManualBomsToItems(args: {
+  manual: ParsedManualBomDataset;
+  loyverseItems: ImportedItem[];
+  reports: SuggestedMatchReports;
+}): { items: ImportedItem[]; boms: ImportedBom[]; reviewRows: RealDataReviewRow[] } {
+  const reviewRows: RealDataReviewRow[] = [...args.manual.validationIssues];
+  const loyverseByNorm = new Map<string, ImportedItem[]>();
+  for (const item of args.loyverseItems) {
+    const norm = normalizeForBomMapping(item.name);
+    const existing = loyverseByNorm.get(norm) ?? [];
+    existing.push(item);
+    loyverseByNorm.set(norm, existing);
+  }
+  for (const candidates of loyverseByNorm.values()) {
+    candidates.sort((left, right) => {
+      const nameCompare = left.name.localeCompare(right.name);
+      if (nameCompare !== 0) return nameCompare;
+      return left.key.localeCompare(right.key);
+    });
+  }
+
+  const resolveLoyverseItem = (rawName: string): ImportedItem | null => {
+    const normalizedRaw = normalizeWhitespace(rawName).toLowerCase();
+    const candidates = loyverseByNorm.get(normalizeForBomMapping(rawName));
+    if (!candidates || candidates.length === 0) return null;
+    const exact = candidates.find((candidate) => normalizeWhitespace(candidate.name).toLowerCase() === normalizedRaw);
+    if (exact) return exact;
+    return candidates[0];
+  };
+
+  const outputKeys = new Set<string>();
+  const componentKeys = new Set<string>();
+  const boms: ImportedBom[] = [];
+
+  for (const manualBom of args.manual.boms) {
+    let outputItem = resolveLoyverseItem(manualBom.outputName);
+    if (!outputItem) {
+      const suggested = args.reports.outputSuggestByKey.get(normalizeItemKey(manualBom.outputName));
+      if (suggested) {
+        outputItem = resolveLoyverseItem(suggested);
+      }
+      if (!outputItem) {
+        reviewRows.push({
+          kind: 'output',
+          outputName: manualBom.outputName,
+          reason: 'OUTPUT_UNMAPPED_NO_SUGGESTION',
+          suggested: suggested ?? undefined
+        });
+        continue;
+      }
+    }
+
+    const mappedComponents: ImportedBom['components'] = [];
+    for (const component of manualBom.components) {
+      let componentItem = resolveLoyverseItem(component.name);
+      if (!componentItem) {
+        const suggested = args.reports.componentSuggestByKey.get(normalizeItemKey(component.name));
+        if (suggested) {
+          componentItem = resolveLoyverseItem(suggested);
+        }
+        if (!componentItem) {
+          reviewRows.push({
+            kind: 'component',
+            outputName: manualBom.outputName,
+            componentName: component.name,
+            reason: 'COMPONENT_UNMAPPED_NO_SUGGESTION',
+            suggested: suggested ?? undefined,
+            rowNumber: component.rowNumber
+          });
+          continue;
+        }
+      }
+
+      if (componentItem.key === outputItem.key) {
+        reviewRows.push({
+          kind: 'component',
+          outputName: manualBom.outputName,
+          componentName: component.name,
+          reason: 'COMPONENT_SELF_REFERENCE_AFTER_MAPPING',
+          rowNumber: component.rowNumber
+        });
+        continue;
+      }
+
+      if (!(component.quantity > 0) || !component.uom) {
+        reviewRows.push({
+          kind: 'validation',
+          outputName: manualBom.outputName,
+          componentName: component.name,
+          reason: 'COMPONENT_INVALID_QTY_OR_UOM',
+          rawValue: `${component.quantity}|${component.uom}`,
+          rowNumber: component.rowNumber
+        });
+        continue;
+      }
+
+      componentKeys.add(componentItem.key);
+      mappedComponents.push({
+        componentKey: componentItem.key,
+        componentName: componentItem.name,
+        quantity: component.quantity,
+        uom: component.uom,
+        note: component.note,
+        sequence: component.rowNumber
+      });
+    }
+
+    if (mappedComponents.length === 0) {
+      reviewRows.push({
+        kind: 'output',
+        outputName: manualBom.outputName,
+        reason: 'OUTPUT_SKIPPED_NO_MAPPED_COMPONENTS'
+      });
+      continue;
+    }
+
+    outputKeys.add(outputItem.key);
+    boms.push({
+      outputKey: outputItem.key,
+      outputName: outputItem.name,
+      outputQuantity: manualBom.outputQuantity,
+      outputUom: manualBom.outputUom,
+      components: mappedComponents.sort((left, right) => {
+        if (left.sequence !== right.sequence) return left.sequence - right.sequence;
+        return left.componentKey.localeCompare(right.componentKey);
+      })
+    });
+  }
+
+  const items = args.loyverseItems.map((item) => ({
+    ...item,
+    appearsAsOutput: outputKeys.has(item.key),
+    appearsAsComponent: componentKeys.has(item.key)
+  }));
+
+  return {
+    items: items.sort((left, right) => left.key.localeCompare(right.key)),
+    boms: boms.sort((left, right) => left.outputKey.localeCompare(right.outputKey)),
+    reviewRows
+  };
+}
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -234,24 +968,6 @@ function buildChecksum(input: {
   return `sha256:${digest}`;
 }
 
-function isPackagingName(name: string): boolean {
-  const lower = name.toLowerCase();
-  return (
-    lower.includes('wrapper')
-    || lower.includes('sticker')
-    || lower.includes('label')
-    || lower.includes('sleeve')
-    || lower.includes('gold paper')
-    || lower.includes('flow wrap foil')
-    || lower.includes('shrink film')
-    || lower.includes('box')
-    || lower.includes('bags')
-    || lower.includes('bag')
-    || lower.includes('bottle')
-    || lower.includes('tin')
-  );
-}
-
 function isWipName(name: string): boolean {
   const normalized = normalizeWhitespace(name);
   return (
@@ -261,19 +977,6 @@ function isWipName(name: string): boolean {
     || normalized.includes(' - UNWRAPPED')
     || normalized === 'Cacao Nibs - Raw Material'
   );
-}
-
-function inferCanonicalItemType(item: ImportedItem): 'raw' | 'wip' | 'finished' | 'packaging' {
-  if (isPackagingName(item.name)) {
-    return 'packaging';
-  }
-  if (item.appearsAsOutput && isWipName(item.name)) {
-    return 'wip';
-  }
-  if (item.appearsAsOutput) {
-    return 'finished';
-  }
-  return 'raw';
 }
 
 function assertCanonicalSeedItemNames(items: CanonicalItem[]): void {
@@ -495,10 +1198,16 @@ async function upsertWarehouseRoot(
 
 async function upsertWarehouseRoleLocation(
   client: PoolClient,
-  args: { tenantId: string; warehouseId: string; warehouseCode: string; role: typeof REQUIRED_ROLES[number] }
+  args: {
+    tenantId: string;
+    warehouseId: string;
+    warehouseCode: string;
+    warehouseName: string;
+    role: typeof REQUIRED_ROLES[number];
+  }
 ): Promise<{ id: string; code: string; created: boolean }> {
   const code = `${args.warehouseCode}_${args.role}`;
-  const name = `${args.warehouseCode} ${args.role}`;
+  const name = `${args.warehouseName} / ${args.role}`;
   const existing = await client.query<LocationRow>(
     `SELECT id, code
        FROM locations
@@ -697,33 +1406,142 @@ async function loadExistingItemsByNormalizedName(client: PoolClient, tenantId: s
   return map;
 }
 
+async function hasItemsUseProductionColumn(client: PoolClient): Promise<boolean> {
+  const result = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'items'
+          AND column_name = 'use_production'
+     ) AS exists`
+  );
+  return result.rows[0]?.exists === true;
+}
+
 async function upsertItems(
   client: PoolClient,
   args: { tenantId: string; tenantSlug: string; items: CanonicalItem[] }
-): Promise<Map<string, string>> {
+): Promise<{ idByItemKey: Map<string, string>; createdCount: number; updatedCount: number }> {
   const existingByNormalizedName = await loadExistingItemsByNormalizedName(client, args.tenantId);
+  const supportsUseProduction = await hasItemsUseProductionColumn(client);
   const idByItemKey = new Map<string, string>();
+  let createdCount = 0;
+  let updatedCount = 0;
 
   for (const item of args.items) {
     const canonical = canonicalUomFields(item.baseUom);
     const existing = existingByNormalizedName.get(item.key);
     if (existing) {
+      if (supportsUseProduction) {
+        await client.query(
+          `UPDATE items
+              SET name = $1,
+                  description = $2,
+                  type = $3,
+                  default_uom = $4,
+                  uom_dimension = $5,
+                  canonical_uom = $6,
+                  stocking_uom = $7,
+                  requires_lot = $8,
+                  use_production = $9,
+                  active = true,
+                  lifecycle_status = 'Active',
+                  updated_at = now()
+            WHERE id = $10
+              AND tenant_id = $11`,
+          [
+            item.name,
+            'Seeded by siamaya_factory',
+            item.type,
+            canonical.defaultUom,
+            canonical.uomDimension,
+            canonical.canonicalUom,
+            canonical.stockingUom,
+            LOT_TRACKED_ITEM_KEYS.has(item.key),
+            item.useProduction === true,
+            existing.id,
+            args.tenantId
+          ]
+        );
+      } else {
+        await client.query(
+          `UPDATE items
+              SET name = $1,
+                  description = $2,
+                  type = $3,
+                  default_uom = $4,
+                  uom_dimension = $5,
+                  canonical_uom = $6,
+                  stocking_uom = $7,
+                  requires_lot = $8,
+                  active = true,
+                  lifecycle_status = 'Active',
+                  updated_at = now()
+            WHERE id = $9
+              AND tenant_id = $10`,
+          [
+            item.name,
+            'Seeded by siamaya_factory',
+            item.type,
+            canonical.defaultUom,
+            canonical.uomDimension,
+            canonical.canonicalUom,
+            canonical.stockingUom,
+            LOT_TRACKED_ITEM_KEYS.has(item.key),
+            existing.id,
+            args.tenantId
+          ]
+        );
+      }
+      idByItemKey.set(item.key, existing.id);
+      updatedCount += 1;
+      continue;
+    }
+
+    const itemId = deterministicId('item', args.tenantId, item.key);
+    const sku = item.sku ? normalizeWhitespace(item.sku) : deterministicSku(args.tenantSlug, item.key);
+    if (supportsUseProduction) {
       await client.query(
-        `UPDATE items
-            SET name = $1,
-                description = $2,
-                type = $3,
-                default_uom = $4,
-                uom_dimension = $5,
-                canonical_uom = $6,
-                stocking_uom = $7,
-                requires_lot = $8,
-                active = true,
-                lifecycle_status = 'Active',
-                updated_at = now()
-          WHERE id = $9
-            AND tenant_id = $10`,
+        `INSERT INTO items (
+            id,
+            tenant_id,
+            sku,
+            name,
+            description,
+            type,
+            default_uom,
+            uom_dimension,
+            canonical_uom,
+            stocking_uom,
+            requires_lot,
+            use_production,
+            active,
+            lifecycle_status,
+            created_at,
+            updated_at
+         ) VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            $6,
+            $7,
+            $8,
+            $9,
+            $10,
+            $11,
+            $12,
+            true,
+            'Active',
+            now(),
+            now()
+         )`,
         [
+          itemId,
+          args.tenantId,
+          sku,
           item.name,
           'Seeded by siamaya_factory',
           item.type,
@@ -732,68 +1550,64 @@ async function upsertItems(
           canonical.canonicalUom,
           canonical.stockingUom,
           LOT_TRACKED_ITEM_KEYS.has(item.key),
-          existing.id,
-          args.tenantId
+          item.useProduction === true
         ]
       );
-      idByItemKey.set(item.key, existing.id);
-      continue;
-    }
-
-    const itemId = deterministicId('item', args.tenantId, item.key);
-    const sku = deterministicSku(args.tenantSlug, item.key);
-    await client.query(
-      `INSERT INTO items (
-          id,
-          tenant_id,
+    } else {
+      await client.query(
+        `INSERT INTO items (
+            id,
+            tenant_id,
+            sku,
+            name,
+            description,
+            type,
+            default_uom,
+            uom_dimension,
+            canonical_uom,
+            stocking_uom,
+            requires_lot,
+            active,
+            lifecycle_status,
+            created_at,
+            updated_at
+         ) VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            $6,
+            $7,
+            $8,
+            $9,
+            $10,
+            $11,
+            true,
+            'Active',
+            now(),
+            now()
+         )`,
+        [
+          itemId,
+          args.tenantId,
           sku,
-          name,
-          description,
-          type,
-          default_uom,
-          uom_dimension,
-          canonical_uom,
-          stocking_uom,
-          requires_lot,
-          active,
-          lifecycle_status,
-          created_at,
-          updated_at
-       ) VALUES (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          $7,
-          $8,
-          $9,
-          $10,
-          $11,
-          true,
-          'Active',
-          now(),
-          now()
-       )`,
-      [
-        itemId,
-        args.tenantId,
-        sku,
-        item.name,
-        'Seeded by siamaya_factory',
-        item.type,
-        canonical.defaultUom,
-        canonical.uomDimension,
-        canonical.canonicalUom,
-        canonical.stockingUom,
-        LOT_TRACKED_ITEM_KEYS.has(item.key)
-      ]
-    );
+          item.name,
+          'Seeded by siamaya_factory',
+          item.type,
+          canonical.defaultUom,
+          canonical.uomDimension,
+          canonical.canonicalUom,
+          canonical.stockingUom,
+          LOT_TRACKED_ITEM_KEYS.has(item.key)
+        ]
+      );
+    }
     idByItemKey.set(item.key, itemId);
+    createdCount += 1;
   }
 
-  return idByItemKey;
+  return { idByItemKey, createdCount, updatedCount };
 }
 
 async function deactivateLegacyPlaceholderItems(
@@ -1189,7 +2003,7 @@ async function upsertBomAndVersion(
     bom: CanonicalBom;
     outputItemId: string;
   }
-): Promise<{ bomId: string; versionId: string }> {
+): Promise<{ bomId: string; versionId: string; bomCreated: boolean; versionCreated: boolean }> {
   const bomCode = deterministicBomCode(args.tenantSlug, args.bom.outputKey);
   const existingBom = await client.query<BomRow>(
     `SELECT id
@@ -1201,6 +2015,7 @@ async function upsertBomAndVersion(
   );
 
   let bomId: string;
+  let bomCreated = false;
   if ((existingBom.rowCount ?? 0) > 0) {
     bomId = existingBom.rows[0].id;
     await client.query(
@@ -1216,6 +2031,7 @@ async function upsertBomAndVersion(
     );
   } else {
     bomId = deterministicId('bom', args.tenantId, args.bom.outputKey);
+    bomCreated = true;
     await client.query(
       `INSERT INTO boms (
           id,
@@ -1243,6 +2059,7 @@ async function upsertBomAndVersion(
   );
 
   let versionId: string;
+  let versionCreated = false;
   if ((existingVersion.rowCount ?? 0) > 0) {
     versionId = existingVersion.rows[0].id;
     await client.query(
@@ -1261,6 +2078,7 @@ async function upsertBomAndVersion(
     );
   } else {
     versionId = deterministicId('bom-version', bomId, '1');
+    versionCreated = true;
     await client.query(
       `INSERT INTO bom_versions (
           id,
@@ -1288,7 +2106,7 @@ async function upsertBomAndVersion(
     );
   }
 
-  return { bomId, versionId };
+  return { bomId, versionId, bomCreated, versionCreated };
 }
 
 async function replaceBomVersionLines(
@@ -1526,12 +2344,24 @@ async function assertSeedInvariants(
   }
 }
 
-function toCanonicalItems(items: ImportedItem[]): CanonicalItem[] {
+function toCanonicalItems(items: ImportedItem[], boms: CanonicalBom[]): CanonicalItem[] {
+  const outputKeys = new Set<string>(boms.map((bom) => bom.outputKey));
+  const componentKeys = new Set<string>();
+  for (const bom of boms) {
+    for (const component of bom.components) {
+      componentKeys.add(component.componentKey);
+    }
+  }
+
   return items
-    .map((item) => ({
-      ...item,
-      type: inferCanonicalItemType(item)
-    }))
+    .map((item) => {
+      const type = inferTypeWithSets(item, outputKeys, componentKeys);
+      return {
+        ...item,
+        type,
+        useProduction: outputKeys.has(item.key)
+      };
+    })
     .sort((left, right) => left.key.localeCompare(right.key));
 }
 
@@ -1542,8 +2372,31 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
   const adminEmail = normalizeEmail(options.adminEmail ?? DEFAULT_OPTIONS.adminEmail);
   const adminPassword = options.adminPassword ?? DEFAULT_OPTIONS.adminPassword;
   const warehouseSpecs = options.warehouses ?? DEFAULT_OPTIONS.warehouses;
-  const bomFilePath = options.bomFilePath ?? DEFAULT_BOM_JSON_PATH;
-  const initialStockSpec = loadInitialStockSpec(options.initialStockSpecPath ?? DEFAULT_INITIAL_STOCK_SPEC_PATH);
+  const explicitBomPath = options.bomFilePath ? path.resolve(options.bomFilePath) : undefined;
+  const resolvedItemsCsvPath = resolveFirstExistingPath(options.itemsCsvPath, DEFAULT_LOYVERSE_ITEMS_CSV_CANDIDATES);
+  const resolvedBomWorkbookPath = resolveFirstExistingPath(
+    explicitBomPath && explicitBomPath.toLowerCase().endsWith('.xlsx') ? explicitBomPath : undefined,
+    DEFAULT_SIAMAYA_BOM_XLSX_CANDIDATES
+  );
+  const resolvedOutputReportPath = resolveFirstExistingPath(
+    options.bomOutputMappingReportPath,
+    DEFAULT_BOM_OUTPUT_MAPPING_REPORT_CANDIDATES
+  );
+  const resolvedComponentReportPath = resolveFirstExistingPath(
+    options.bomUnmatchedComponentReportPath,
+    DEFAULT_BOM_COMPONENT_MAPPING_REPORT_CANDIDATES
+  );
+  const reviewReportPath = path.resolve(options.reviewReportPath ?? DEFAULT_REVIEW_REPORT_PATH);
+
+  const useRealDataImport =
+    !options.datasetOverride
+    && !!resolvedItemsCsvPath
+    && !!resolvedBomWorkbookPath
+    && (!explicitBomPath || explicitBomPath.toLowerCase().endsWith('.xlsx'));
+
+  let initialStockSpec = loadInitialStockSpec(options.initialStockSpecPath ?? DEFAULT_INITIAL_STOCK_SPEC_PATH);
+  let realDataReviewRows: RealDataReviewRow[] = [];
+  let skuByItemKey = new Map<string, string>();
 
   const bomDataset = options.datasetOverride
     ? {
@@ -1555,17 +2408,82 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
         boms: options.datasetOverride.boms,
         unknownUoms: options.datasetOverride.unknownUoms ?? []
       }
-    : await importBomDatasetFromFile({
-        filePath: bomFilePath,
-        sheetName: options.bomSheetName
-      });
+    : useRealDataImport
+      ? (() => {
+          const loyverse = parseLoyverseItems({
+            itemsCsvPath: resolvedItemsCsvPath,
+            tenantSlug
+          });
+          const manual = parseManualBomsFromXlsx(resolvedBomWorkbookPath, options.bomSheetName ?? '3. bom');
+          const reports = loadSuggestedMatchReports({
+            outputReportPath: resolvedOutputReportPath,
+            componentReportPath: resolvedComponentReportPath
+          });
+          const mapped = mapManualBomsToItems({
+            manual,
+            loyverseItems: loyverse.items,
+            reports
+          });
+          realDataReviewRows = mapped.reviewRows;
+          initialStockSpec = loyverse.initialStock;
+          skuByItemKey = loyverse.itemSkuByKey;
+
+          writeReviewCsv(reviewReportPath, realDataReviewRows);
+          const fatalValidationRows = realDataReviewRows.filter(
+            (row) =>
+              row.kind === 'validation'
+              && (row.reason === 'INVALID_COMPONENT_QUANTITY'
+                || row.reason === 'MISSING_COMPONENT_UOM'
+                || row.reason === 'INVALID_OUTPUT_QUANTITY'
+                || row.reason === 'MISSING_OUTPUT_UOM')
+          );
+          if (fatalValidationRows.length > 0) {
+            throw new Error(
+              `SEED_REAL_DATA_VALIDATION_FAILED count=${fatalValidationRows.length} review=${reviewReportPath}`
+            );
+          }
+
+          console.log(
+            JSON.stringify({
+              code: 'SEED_REAL_DATA_IMPORT_SUMMARY',
+              itemsCsvPath: resolvedItemsCsvPath,
+              bomWorkbookPath: resolvedBomWorkbookPath,
+              bomOutputReportPath: resolvedOutputReportPath,
+              bomComponentReportPath: resolvedComponentReportPath,
+              reviewReportPath,
+              totalLoyverseItems: loyverse.items.length,
+              totalManualBomsParsed: manual.boms.length,
+              totalMappedBoms: mapped.boms.length,
+              totalReviewRows: realDataReviewRows.length
+            })
+          );
+
+          return {
+            sourcePath: resolvedBomWorkbookPath,
+            sourceKind: 'xlsx' as const,
+            sheetName: options.bomSheetName ?? '3. bom',
+            rowCount: manual.boms.length,
+            items: mapped.items,
+            boms: mapped.boms,
+            unknownUoms: Array.from(new Set([...manual.unknownUoms, ...loyverse.unknownUoms])).sort((left, right) =>
+              left.localeCompare(right)
+            )
+          };
+        })()
+      : await importBomDatasetFromFile({
+          filePath: explicitBomPath ?? DEFAULT_BOM_JSON_PATH,
+          sheetName: options.bomSheetName
+        });
   if (bomDataset.boms.length === 0) {
     throw new Error(`SEED_BOM_EMPTY source=${bomDataset.sourcePath}`);
   }
 
-  const canonicalItems = toCanonicalItems(bomDataset.items);
-  assertCanonicalSeedItemNames(canonicalItems);
   const canonicalBoms = bomDataset.boms;
+  const canonicalItems = toCanonicalItems(bomDataset.items, canonicalBoms).map((item) => ({
+    ...item,
+    sku: skuByItemKey.get(item.key)
+  }));
+  assertCanonicalSeedItemNames(canonicalItems);
   const { id: tenantId } = await upsertTenant(client, tenantSlug, tenantName);
 
   let warehousesCreated = 0;
@@ -1593,6 +2511,7 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
         tenantId,
         warehouseId: warehouseRow.id,
         warehouseCode,
+        warehouseName,
         role
       });
       seededLocationCodes.push(roleLocation.code);
@@ -1628,11 +2547,12 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
     password: adminPassword
   });
 
-  const itemIdByKey = await upsertItems(client, {
+  const upsertedItems = await upsertItems(client, {
     tenantId,
     tenantSlug,
     items: canonicalItems
   });
+  const itemIdByKey = upsertedItems.idByItemKey;
   await deactivateLegacyPlaceholderItems(client, {
     tenantId,
     canonicalItems
@@ -1649,27 +2569,54 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
     tenantSlug,
     itemIdByKey,
     spec: initialStockSpec,
-    strictMissingItems: !options.datasetOverride && (!options.bomFilePath || path.resolve(options.bomFilePath) === DEFAULT_BOM_JSON_PATH)
+    strictMissingItems:
+      useRealDataImport
+      || (!options.datasetOverride && (!options.bomFilePath || path.resolve(options.bomFilePath) === DEFAULT_BOM_JSON_PATH))
   });
 
   let bomLinesUpserted = 0;
+  let bomsCreated = 0;
+  let bomVersionsCreated = 0;
   for (const bom of canonicalBoms) {
     const outputItemId = itemIdByKey.get(bom.outputKey);
     if (!outputItemId) {
       throw new Error(`SEED_BOM_OUTPUT_ITEM_MISSING key=${bom.outputKey}`);
     }
-    const { versionId } = await upsertBomAndVersion(client, {
+    const { versionId, bomCreated, versionCreated } = await upsertBomAndVersion(client, {
       tenantId,
       tenantSlug,
       bom,
       outputItemId
     });
+    if (bomCreated) bomsCreated += 1;
+    if (versionCreated) bomVersionsCreated += 1;
     bomLinesUpserted += await replaceBomVersionLines(client, {
       tenantId,
       versionId,
       bom,
       itemIdByKey
     });
+  }
+
+  if (useRealDataImport) {
+    const outputSkipped = realDataReviewRows.filter((row) => row.kind === 'output').length;
+    const componentSkipped = realDataReviewRows.filter((row) => row.kind === 'component').length;
+    const validationIssueCount = realDataReviewRows.filter((row) => row.kind === 'validation').length;
+    console.log(
+      JSON.stringify({
+        code: 'SEED_REAL_DATA_APPLY_SUMMARY',
+        totalBomsParsed: bomDataset.rowCount,
+        bomsCreated,
+        bomsUpserted: canonicalBoms.length,
+        bomsSkipped: outputSkipped,
+        componentLinesCreated: bomLinesUpserted,
+        componentLinesSkipped: componentSkipped,
+        validationIssues: validationIssueCount,
+        internalItemsCreated: upsertedItems.createdCount,
+        itemsUpdated: upsertedItems.updatedCount,
+        reviewReportPath
+      })
+    );
   }
 
   await assertSeedInvariants(
