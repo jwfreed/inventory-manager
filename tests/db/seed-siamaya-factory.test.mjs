@@ -39,6 +39,170 @@ async function fetchTenantCounts(tenantId) {
   return res.rows[0];
 }
 
+async function fetchOpeningBalanceLedgerLayerParity(tenantId) {
+  const res = await db.query(
+    `WITH ledger AS (
+       SELECT iml.item_id,
+              iml.location_id,
+              COALESCE(iml.canonical_uom, iml.uom) AS uom,
+              SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS qty
+         FROM inventory_movement_lines iml
+         JOIN inventory_movements m
+           ON m.id = iml.movement_id
+          AND m.tenant_id = iml.tenant_id
+        WHERE iml.tenant_id = $1
+          AND m.status = 'posted'
+          AND m.source_type = 'opening_balance'
+        GROUP BY iml.item_id, iml.location_id, COALESCE(iml.canonical_uom, iml.uom)
+     ),
+     layers AS (
+       SELECT item_id,
+              location_id,
+              uom,
+              SUM(remaining_quantity) AS qty
+         FROM inventory_cost_layers
+        WHERE tenant_id = $1
+          AND source_type = 'opening_balance'
+          AND voided_at IS NULL
+        GROUP BY item_id, location_id, uom
+     ),
+     combined AS (
+       SELECT COALESCE(l.item_id, c.item_id) AS item_id,
+              COALESCE(l.location_id, c.location_id) AS location_id,
+              COALESCE(l.uom, c.uom) AS uom,
+              COALESCE(l.qty, 0) AS ledger_qty,
+              COALESCE(c.qty, 0) AS layer_qty,
+              (COALESCE(l.qty, 0) - COALESCE(c.qty, 0)) AS variance_qty
+         FROM ledger l
+         FULL OUTER JOIN layers c
+           ON l.item_id = c.item_id
+          AND l.location_id = c.location_id
+          AND l.uom = c.uom
+     )
+     SELECT COUNT(*) FILTER (WHERE ABS(variance_qty) > 1e-6)::int AS mismatch_count,
+            COALESCE(SUM(ABS(variance_qty)), 0)::numeric AS abs_variance_qty
+       FROM combined`,
+    [tenantId]
+  );
+  return res.rows[0];
+}
+
+async function fetchOpeningBalanceExtendedValueParity(tenantId) {
+  const res = await db.query(
+    `WITH movement_scope AS (
+       SELECT id
+         FROM inventory_movements
+        WHERE tenant_id = $1
+          AND source_type = 'opening_balance'
+          AND movement_type = 'receive'
+          AND external_ref LIKE 'seed:siamaya_factory:initial-stock:%'
+     ),
+     entered AS (
+       SELECT COALESCE(SUM(COALESCE(iml.quantity_delta_entered, iml.quantity_delta) * COALESCE(iml.unit_cost, 0)), 0) AS total
+         FROM inventory_movement_lines iml
+         JOIN movement_scope ms ON ms.id = iml.movement_id
+        WHERE iml.tenant_id = $1
+          AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+     ),
+     layers AS (
+       SELECT COALESCE(SUM(icl.original_quantity * icl.unit_cost), 0) AS total
+         FROM inventory_cost_layers icl
+         JOIN movement_scope ms ON ms.id = icl.movement_id
+        WHERE icl.tenant_id = $1
+          AND icl.source_type = 'opening_balance'
+          AND icl.voided_at IS NULL
+     )
+     SELECT entered.total::text AS entered_total,
+            layers.total::text AS layer_total
+       FROM entered, layers`,
+    [tenantId]
+  );
+  return res.rows[0];
+}
+
+async function fetchDiagnosticsABC(tenantId) {
+  const [aRes, bRes, cRes] = await Promise.all([
+    db.query(
+      `WITH ledger AS (
+         SELECT tenant_id, item_id, location_id, uom, on_hand_qty
+           FROM inventory_on_hand_location_v
+          WHERE tenant_id = $1
+       ),
+       layers AS (
+         SELECT tenant_id, item_id, location_id, uom, SUM(remaining_quantity) AS layer_qty
+           FROM inventory_cost_layers
+          WHERE tenant_id = $1
+            AND voided_at IS NULL
+          GROUP BY tenant_id, item_id, location_id, uom
+       )
+       SELECT COUNT(*)::int AS count
+         FROM ledger
+         LEFT JOIN layers
+           ON layers.tenant_id = ledger.tenant_id
+          AND layers.item_id = ledger.item_id
+          AND layers.location_id = ledger.location_id
+          AND layers.uom = ledger.uom
+        WHERE ledger.on_hand_qty > 0
+          AND COALESCE(layers.layer_qty, 0) = 0`,
+      [tenantId]
+    ),
+    db.query(
+      `WITH offenders AS (
+         SELECT oh.tenant_id, oh.item_id, oh.location_id, oh.uom
+           FROM inventory_on_hand_location_v oh
+           LEFT JOIN (
+             SELECT tenant_id, item_id, location_id, uom, SUM(remaining_quantity) AS layer_qty
+               FROM inventory_cost_layers
+              WHERE tenant_id = $1
+                AND voided_at IS NULL
+              GROUP BY tenant_id, item_id, location_id, uom
+           ) cl
+             ON cl.tenant_id = oh.tenant_id
+            AND cl.item_id = oh.item_id
+            AND cl.location_id = oh.location_id
+            AND cl.uom = oh.uom
+          WHERE oh.tenant_id = $1
+            AND oh.on_hand_qty > 0
+            AND COALESCE(cl.layer_qty, 0) = 0
+       )
+       SELECT COUNT(*)::int AS count
+         FROM inventory_movement_lines ml
+         JOIN inventory_movements m ON m.id = ml.movement_id
+         JOIN offenders o
+           ON o.tenant_id = m.tenant_id
+          AND o.item_id = ml.item_id
+          AND o.location_id = ml.location_id
+          AND o.uom = ml.uom
+        WHERE m.tenant_id = $1
+          AND ml.quantity_delta > 0`,
+      [tenantId]
+    ),
+    db.query(
+      `SELECT COUNT(*)::int AS count
+         FROM (
+           SELECT oh.item_id, oh.location_id, oh.uom AS ledger_uom, cl.uom AS layer_uom
+             FROM inventory_on_hand_location_v oh
+             JOIN inventory_cost_layers cl
+               ON cl.tenant_id = oh.tenant_id
+              AND cl.item_id = oh.item_id
+              AND cl.location_id = oh.location_id
+            WHERE oh.tenant_id = $1
+              AND cl.voided_at IS NULL
+              AND oh.on_hand_qty > 0
+            GROUP BY oh.item_id, oh.location_id, oh.uom, cl.uom
+           HAVING oh.uom <> cl.uom
+         ) mismatches`,
+      [tenantId]
+    )
+  ]);
+
+  return {
+    offendersA: Number(aRes.rows[0]?.count ?? 0),
+    offendersB: Number(bRes.rows[0]?.count ?? 0),
+    mismatchesC: Number(cRes.rows[0]?.count ?? 0)
+  };
+}
+
 async function fetchUomConversionPairCounts(tenantId) {
   const res = await db.query(
     `SELECT
@@ -223,6 +387,9 @@ test('siamaya_factory seed pack is deterministic and idempotent', async () => {
   assert.ok(tenantId, 'tenant should exist after first run');
 
   const firstCounts = await fetchTenantCounts(tenantId);
+  const firstParity = await fetchOpeningBalanceLedgerLayerParity(tenantId);
+  const firstValueParity = await fetchOpeningBalanceExtendedValueParity(tenantId);
+  const firstDiagnostics = await fetchDiagnosticsABC(tenantId);
   const firstConversionCounts = await fetchUomConversionPairCounts(tenantId);
   assert.equal(first.pack, 'siamaya_factory');
   assert.equal(first.tenant, tenantSlug);
@@ -236,6 +403,15 @@ test('siamaya_factory seed pack is deterministic and idempotent', async () => {
   assert.equal(first.bomLinesUpserted, 6);
   assert.ok(first.uomConversionsUpserted > 0, 'canonical uom conversions should be upserted');
   assert.deepEqual(first.unknownUoms, []);
+  assert.equal(firstParity.mismatch_count, 0, 'opening-balance ledger/layer UOM parity must be exact after first run');
+  assert.equal(Number(firstParity.abs_variance_qty), 0, 'opening-balance ledger/layer quantity variance must be zero');
+  assert.ok(
+    Math.abs(Number(firstValueParity.entered_total) - Number(firstValueParity.layer_total)) <= 0.01,
+    `opening-balance extended value parity must hold (entered=${firstValueParity.entered_total}, layer=${firstValueParity.layer_total})`
+  );
+  assert.equal(firstDiagnostics.offendersA, 0, 'diagnostic A offenders must be zero after first run');
+  assert.equal(firstDiagnostics.offendersB, 0, 'diagnostic B offenders must be zero after first run');
+  assert.equal(firstDiagnostics.mismatchesC, 0, 'diagnostic C UOM mismatches must be zero after first run');
   assert.ok(firstConversionCounts.piece_to_each > 0);
   assert.ok(firstConversionCounts.each_to_piece > 0);
   assert.ok(firstConversionCounts.kg_to_g > 0);
@@ -251,6 +427,9 @@ test('siamaya_factory seed pack is deterministic and idempotent', async () => {
   });
 
   const secondCounts = await fetchTenantCounts(tenantId);
+  const secondParity = await fetchOpeningBalanceLedgerLayerParity(tenantId);
+  const secondValueParity = await fetchOpeningBalanceExtendedValueParity(tenantId);
+  const secondDiagnostics = await fetchDiagnosticsABC(tenantId);
   assert.deepEqual(secondCounts, firstCounts, 'second run must not increase row counts');
   assert.equal(second.warehousesCreated, 0);
   assert.equal(second.locationsCreated, 0);
@@ -260,6 +439,15 @@ test('siamaya_factory seed pack is deterministic and idempotent', async () => {
   assert.equal(second.bomVersionsUpserted, first.bomVersionsUpserted);
   assert.equal(second.bomLinesUpserted, first.bomLinesUpserted);
   assert.equal(second.checksum, first.checksum, 'checksum must remain stable across runs');
+  assert.equal(secondParity.mismatch_count, 0, 'opening-balance parity must remain exact after second run');
+  assert.equal(Number(secondParity.abs_variance_qty), 0, 'opening-balance variance must remain zero after second run');
+  assert.ok(
+    Math.abs(Number(secondValueParity.entered_total) - Number(secondValueParity.layer_total)) <= 0.01,
+    `second-run opening-balance extended value parity must hold (entered=${secondValueParity.entered_total}, layer=${secondValueParity.layer_total})`
+  );
+  assert.equal(secondDiagnostics.offendersA, 0, 'diagnostic A offenders must remain zero after second run');
+  assert.equal(secondDiagnostics.offendersB, 0, 'diagnostic B offenders must remain zero after second run');
+  assert.equal(secondDiagnostics.mismatchesC, 0, 'diagnostic C UOM mismatches must remain zero after second run');
 
   const membershipRes = await db.query(
     `SELECT tm.role, tm.status

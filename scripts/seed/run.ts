@@ -16,6 +16,7 @@ type RunnerOptions = {
   tenantName?: string;
   adminEmail?: string;
   adminPassword?: string;
+  repairOpeningBalanceLayers: boolean;
   withReceipts: boolean;
   receiptMode?: 'clean' | 'partial_then_close_short' | 'partial_with_discrepancy';
   apiBaseUrl: string;
@@ -74,6 +75,11 @@ function parseRunnerOptions(): RunnerOptions {
     tenantName: getArg('tenant-name') ?? process.env.SEED_TENANT_NAME,
     adminEmail: getArg('admin-email') ?? process.env.SEED_ADMIN_EMAIL,
     adminPassword: getArg('admin-password') ?? process.env.SEED_ADMIN_PASSWORD,
+    repairOpeningBalanceLayers: getBooleanArg(
+      'repair-opening-balance-layers',
+      process.env.SEED_REPAIR_OPENING_BALANCE_LAYERS,
+      true
+    ),
     withReceipts: getBooleanArg('with-receipts', process.env.SEED_WITH_RECEIPTS, false),
     receiptMode: parseReceiptMode(getArg('receipt-mode') ?? process.env.SEED_RECEIPT_MODE),
     apiBaseUrl: getArg('api-base-url') ?? process.env.SEED_API_BASE_URL ?? 'http://localhost:3000'
@@ -158,7 +164,8 @@ export async function runSeedPack(options: RunnerOptions): Promise<SeedSummary> 
           tenantSlug: options.tenantSlug,
           tenantName: options.tenantName,
           adminEmail: options.adminEmail,
-          adminPassword: options.adminPassword
+          adminPassword: options.adminPassword,
+          repairOpeningBalanceLayers: options.repairOpeningBalanceLayers
         });
       } else if (options.pack === 'demo') {
         summary = await runDemoPack(client);

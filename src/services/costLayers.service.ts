@@ -73,6 +73,7 @@ interface CreateOpeningBalanceLayerParams extends CreateLayerParams {
   id: string;
   source_document_id: string;
   movement_id: string;
+  layer_sequence?: number;
 }
 
 interface ConsumeLayersParams {
@@ -238,6 +239,7 @@ export async function createOpeningBalanceCostLayerOnce(
   }
   const layer_date = params.layer_date || new Date();
   const extended_cost = params.quantity * params.unit_cost;
+  const layerSequence = params.layer_sequence ?? 1;
   const executor = params.client ? params.client.query.bind(params.client) : query;
 
   const insertResult = await executor<CostLayer>(
@@ -247,7 +249,7 @@ export async function createOpeningBalanceCostLayerOnce(
       original_quantity, remaining_quantity,
       unit_cost, extended_cost,
       source_type, source_document_id, movement_id, lot_id, notes
-    ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $7, $8, $9, $10, $11, $12, $13, $14)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11, $12, $13, $14, $15)
     ON CONFLICT (id) DO NOTHING
     RETURNING *`,
     [
@@ -257,6 +259,7 @@ export async function createOpeningBalanceCostLayerOnce(
       params.location_id,
       params.uom,
       layer_date,
+      layerSequence,
       params.quantity,
       params.unit_cost,
       extended_cost,

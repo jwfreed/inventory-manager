@@ -84,6 +84,7 @@ export type SiamayaPackOptions = {
   bomUnmatchedComponentReportPath?: string;
   reviewReportPath?: string;
   initialStockSpecPath?: string;
+  repairOpeningBalanceLayers?: boolean;
   warehouses?: Array<{ code: string; name: string }>;
   datasetOverride?: {
     items: ImportedItem[];
@@ -1737,6 +1738,14 @@ function canonicalMovementFields(uom: string, quantity: number): {
   };
 }
 
+function canonicalUnitCostFromEnteredCost(quantityEntered: number, unitCostEntered: number, quantityCanonical: number): number {
+  if (quantityCanonical < MIN_CANONICAL_QTY) {
+    throw new Error('SEED_INITIAL_STOCK_CANONICAL_QTY_INVALID');
+  }
+  const extended = quantityEntered * unitCostEntered;
+  return extended / quantityCanonical;
+}
+
 async function upsertSeedLot(
   client: PoolClient,
   args: {
@@ -1792,6 +1801,190 @@ async function upsertSeedLot(
   return { id: lotId, created: true };
 }
 
+type SeedOpeningBalanceExpectedLayer = {
+  legacyLayerId: string;
+  canonicalLayerId: string;
+  sequence: number;
+  itemId: string;
+  locationId: string;
+  uom: string;
+  quantity: number;
+  unitCost: number;
+  lotId: string | null;
+};
+
+type ExistingOpeningBalanceLayer = {
+  id: string;
+  layer_sequence: number;
+  item_id: string;
+  location_id: string;
+  uom: string;
+  original_quantity: string;
+  remaining_quantity: string;
+  unit_cost: string;
+  lot_id: string | null;
+};
+
+const MIN_CANONICAL_QTY = 0.000001;
+
+function openingLayerMatchesExpected(layer: ExistingOpeningBalanceLayer, expected: SeedOpeningBalanceExpectedLayer): boolean {
+  if (layer.layer_sequence !== expected.sequence) return false;
+  if (layer.item_id !== expected.itemId) return false;
+  if (layer.location_id !== expected.locationId) return false;
+  if (layer.uom !== expected.uom) return false;
+  if ((layer.lot_id ?? null) !== (expected.lotId ?? null)) return false;
+  const originalQty = Number(layer.original_quantity);
+  const remainingQty = Number(layer.remaining_quantity);
+  const unitCost = Number(layer.unit_cost);
+  return (
+    Math.abs(originalQty - expected.quantity) <= 1e-6
+    && Math.abs(remainingQty - expected.quantity) <= 1e-6
+    && Math.abs(unitCost - expected.unitCost) <= 1e-6
+  );
+}
+
+async function reconcileSeedOpeningBalanceCostLayers(
+  client: PoolClient,
+  args: {
+    tenantId: string;
+    movementId: string;
+    expectedExternalRef: string;
+    layerDate: string;
+    expectedLayers: SeedOpeningBalanceExpectedLayer[];
+    enabled: boolean;
+  }
+): Promise<{ created: number; voided: number }> {
+  if (!args.enabled) {
+    return { created: 0, voided: 0 };
+  }
+
+  const movementScope = await client.query<{
+    source_type: string;
+    movement_type: string;
+    external_ref: string | null;
+    idempotency_key: string | null;
+  }>(
+    `SELECT source_type, movement_type, external_ref, idempotency_key
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND id = $2
+      LIMIT 1`,
+    [args.tenantId, args.movementId]
+  );
+  if ((movementScope.rowCount ?? 0) !== 1) {
+    throw new Error(`SEED_OPENING_BALANCE_REPAIR_SCOPE_MISSING movement_id=${args.movementId}`);
+  }
+  const movement = movementScope.rows[0];
+  if (
+    movement.source_type !== 'opening_balance'
+    || movement.movement_type !== 'receive'
+    || (movement.external_ref ?? '') !== args.expectedExternalRef
+    || (movement.idempotency_key ?? '') !== args.expectedExternalRef
+  ) {
+    throw new Error(
+      `SEED_OPENING_BALANCE_REPAIR_SCOPE_MISMATCH movement_id=${args.movementId} source_type=${movement.source_type} movement_type=${movement.movement_type} external_ref=${movement.external_ref ?? ''}`
+    );
+  }
+
+  const existingRes = await client.query<ExistingOpeningBalanceLayer>(
+    `SELECT id, layer_sequence, item_id, location_id, uom, original_quantity, remaining_quantity, unit_cost, lot_id
+       FROM inventory_cost_layers
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND source_type = 'opening_balance'
+        AND source_document_id = $2
+        AND voided_at IS NULL
+      ORDER BY id`,
+    [args.tenantId, args.movementId]
+  );
+  const existingById = new Map(existingRes.rows.map((row) => [row.id, row]));
+  const keepIds = new Set<string>();
+  const voidIds = new Set<string>();
+  const toCreate: SeedOpeningBalanceExpectedLayer[] = [];
+
+  for (const expected of args.expectedLayers) {
+    const canonical = existingById.get(expected.canonicalLayerId);
+    if (canonical && openingLayerMatchesExpected(canonical, expected)) {
+      keepIds.add(canonical.id);
+      continue;
+    }
+    if (canonical) {
+      voidIds.add(canonical.id);
+    }
+
+    const legacy = existingById.get(expected.legacyLayerId);
+    if (legacy && openingLayerMatchesExpected(legacy, expected)) {
+      keepIds.add(legacy.id);
+      continue;
+    }
+    if (legacy) {
+      voidIds.add(legacy.id);
+    }
+
+    toCreate.push(expected);
+  }
+
+  for (const existing of existingRes.rows) {
+    if (!keepIds.has(existing.id) && !voidIds.has(existing.id)) {
+      voidIds.add(existing.id);
+    }
+  }
+
+  let voided = 0;
+  if (voidIds.size > 0) {
+    const consumedRes = await client.query<{ id: string }>(
+      `SELECT DISTINCT c.cost_layer_id AS id
+         FROM cost_layer_consumptions c
+        WHERE c.tenant_id = $1
+          AND c.cost_layer_id = ANY($2::uuid[])
+        LIMIT 1`,
+      [args.tenantId, Array.from(voidIds)]
+    );
+    if ((consumedRes.rowCount ?? 0) > 0) {
+      throw new Error(`SEED_OPENING_BALANCE_REPAIR_CONSUMED_LAYER layer_id=${consumedRes.rows[0].id}`);
+    }
+
+    const voidRes = await client.query<{ id: string }>(
+      `UPDATE inventory_cost_layers
+          SET voided_at = COALESCE(voided_at, now()),
+              void_reason = COALESCE(void_reason, 'seed_opening_balance_repair'),
+              updated_at = now()
+        WHERE tenant_id = $1
+          AND id = ANY($2::uuid[])
+          AND voided_at IS NULL
+      RETURNING id`,
+      [args.tenantId, Array.from(voidIds)]
+    );
+    voided = voidRes.rowCount ?? 0;
+  }
+
+  let created = 0;
+  for (const expected of toCreate) {
+    const layer = await createOpeningBalanceCostLayerOnce({
+      id: expected.canonicalLayerId,
+      tenant_id: args.tenantId,
+      item_id: expected.itemId,
+      location_id: expected.locationId,
+      uom: expected.uom,
+      quantity: expected.quantity,
+      unit_cost: expected.unitCost,
+      layer_sequence: expected.sequence,
+      source_type: 'opening_balance',
+      source_document_id: args.movementId,
+      movement_id: args.movementId,
+      lot_id: expected.lotId ?? undefined,
+      layer_date: new Date(args.layerDate),
+      notes: 'Seeded opening stock',
+      client
+    });
+    if (layer.id === expected.canonicalLayerId) {
+      created += 1;
+    }
+  }
+
+  return { created, voided };
+}
+
 async function seedInitialStockMovement(
   client: PoolClient,
   args: {
@@ -1801,6 +1994,7 @@ async function seedInitialStockMovement(
     itemIdByKey: Map<string, string>;
     spec: InitialStockSpec;
     strictMissingItems: boolean;
+    repairOpeningBalanceLayers: boolean;
   }
 ): Promise<{
   movementId: string | null;
@@ -1852,7 +2046,7 @@ async function seedInitialStockMovement(
     movementType: 'receive',
     status: 'posted',
     externalRef: movementExternalRef,
-    sourceType: 'seed_initial_stock',
+    sourceType: 'opening_balance',
     sourceId: movementSourceId,
     idempotencyKey: movementExternalRef,
     occurredAt: args.spec.stockDate,
@@ -1875,12 +2069,12 @@ async function seedInitialStockMovement(
     if (actual !== expected) {
       throw new Error(`SEED_INITIAL_STOCK_MOVEMENT_LINE_COUNT_MISMATCH expected=${expected} actual=${actual}`);
     }
-    return { movementId, linesCreated: 0, costLayersCreated: 0, lotsCreated: 0, expectedLotCount };
   }
 
   let linesCreated = 0;
   let costLayersCreated = 0;
   let lotsCreated = 0;
+  const expectedLayers: SeedOpeningBalanceExpectedLayer[] = [];
   const itemIdsInSeed = Array.from(new Set(seedLines.map((line) => args.itemIdByKey.get(line.itemKey)).filter((id): id is string => !!id)));
   const itemRequiresLotRows = await client.query<{ id: string; requires_lot: boolean }>(
     `SELECT id, requires_lot
@@ -1921,76 +2115,113 @@ async function seedInitialStockMovement(
     }
 
     const canonicalFields = canonicalMovementFields(line.uom, line.quantity);
+    const canonicalQty = canonicalFields.quantityDeltaCanonical;
+    if (canonicalQty < MIN_CANONICAL_QTY) {
+      throw new Error(
+        `SEED_INITIAL_STOCK_CANONICAL_QTY_TOO_SMALL item=${line.itemKey} uom=${line.uom} quantity=${line.quantity} canonical_qty=${canonicalQty}`
+      );
+    }
+    const canonicalUnitCost = canonicalUnitCostFromEnteredCost(line.quantity, line.unitCost, canonicalQty);
     const locationId = locationIdByCode.get(line.locationCode);
     if (!locationId) {
       throw new Error(`SEED_INITIAL_STOCK_LOCATION_UNRESOLVED code=${line.locationCode}`);
     }
     const lineId = deterministicId('movement-line', movementId, String(index + 1), itemId, locationId);
-    await createInventoryMovementLine(client, {
-      id: lineId,
-      tenantId: args.tenantId,
-      movementId,
-      itemId,
-      locationId,
-      quantityDelta: line.quantity,
-      uom: line.uom,
-      quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-      uomEntered: canonicalFields.uomEntered,
-      quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-      canonicalUom: canonicalFields.canonicalUom,
-      uomDimension: canonicalFields.uomDimension,
-      unitCost: line.unitCost,
-      extendedCost: line.quantity * line.unitCost,
-      reasonCode: 'seed_initial_stock',
-      lineNotes: 'Seeded opening stock',
-      createdAt: args.spec.stockDate
-    });
-    linesCreated += 1;
+    if (movementResult.created) {
+      await createInventoryMovementLine(client, {
+        id: lineId,
+        tenantId: args.tenantId,
+        movementId,
+        itemId,
+        locationId,
+        quantityDelta: line.quantity,
+        uom: line.uom,
+        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+        uomEntered: canonicalFields.uomEntered,
+        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+        canonicalUom: canonicalFields.canonicalUom,
+        uomDimension: canonicalFields.uomDimension,
+        unitCost: line.unitCost,
+        extendedCost: line.quantity * line.unitCost,
+        reasonCode: 'seed_initial_stock',
+        lineNotes: 'Seeded opening stock',
+        createdAt: args.spec.stockDate
+      });
+      linesCreated += 1;
+    }
 
     if (lotId) {
-      await client.query(
-        `INSERT INTO inventory_movement_lots (
-            id,
-            tenant_id,
-            inventory_movement_line_id,
-            lot_id,
-            uom,
-            quantity_delta,
-            created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (id) DO NOTHING`,
-        [
-          deterministicId('movement-lot', args.tenantId, lineId, lotId),
-          args.tenantId,
-          lineId,
-          lotId,
-          line.uom,
-          line.quantity,
-          args.spec.stockDate
-        ]
-      );
+      if (movementResult.created) {
+        await client.query(
+          `INSERT INTO inventory_movement_lots (
+              id,
+              tenant_id,
+              inventory_movement_line_id,
+              lot_id,
+              uom,
+              quantity_delta,
+              created_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (id) DO NOTHING`,
+          [
+            deterministicId('movement-lot', args.tenantId, lineId, lotId),
+            args.tenantId,
+            lineId,
+            lotId,
+            line.uom,
+            line.quantity,
+            args.spec.stockDate
+          ]
+        );
+      }
     }
 
-    const layer = await createOpeningBalanceCostLayerOnce({
-      id: deterministicId('seed-opening-layer', args.tenantId, movementId, lineId),
-      tenant_id: args.tenantId,
-      item_id: itemId,
-      location_id: locationId,
-      uom: line.uom,
-      quantity: line.quantity,
-      unit_cost: line.unitCost,
-      source_type: 'opening_balance',
-      source_document_id: movementId,
-      movement_id: movementId,
-      lot_id: lotId ?? undefined,
-      layer_date: new Date(args.spec.stockDate),
-      notes: 'Seeded opening stock',
-      client
+    const legacyLayerId = deterministicId('seed-opening-layer', args.tenantId, movementId, lineId);
+    const canonicalLayerId = deterministicId('seed-opening-layer-v2', args.tenantId, movementId, lineId);
+    expectedLayers.push({
+      legacyLayerId,
+      canonicalLayerId,
+      sequence: index + 1,
+      itemId,
+      locationId,
+      uom: canonicalFields.canonicalUom,
+      quantity: canonicalQty,
+      unitCost: canonicalUnitCost,
+      lotId
     });
-    if (layer.id) {
-      costLayersCreated += 1;
+    if (movementResult.created) {
+      const layer = await createOpeningBalanceCostLayerOnce({
+        id: canonicalLayerId,
+        tenant_id: args.tenantId,
+        item_id: itemId,
+        location_id: locationId,
+        uom: canonicalFields.canonicalUom,
+        quantity: canonicalQty,
+        unit_cost: canonicalUnitCost,
+        layer_sequence: index + 1,
+        source_type: 'opening_balance',
+        source_document_id: movementId,
+        movement_id: movementId,
+        lot_id: lotId ?? undefined,
+        layer_date: new Date(args.spec.stockDate),
+        notes: 'Seeded opening stock',
+        client
+      });
+      if (layer.id) {
+        costLayersCreated += 1;
+      }
     }
   }
+
+  const repairedLayers = await reconcileSeedOpeningBalanceCostLayers(client, {
+    tenantId: args.tenantId,
+    movementId,
+    expectedExternalRef: movementExternalRef,
+    layerDate: args.spec.stockDate,
+    expectedLayers,
+    enabled: args.repairOpeningBalanceLayers
+  });
+  costLayersCreated += repairedLayers.created;
 
   return { movementId, linesCreated, costLayersCreated, lotsCreated, expectedLotCount };
 }
@@ -2264,7 +2495,12 @@ async function assertSeedInvariants(
   }
 
   if (args.seedMovementId) {
-    const costLayerIntegrity = await client.query<{ movement_line_count: string; cost_layer_count: string; non_positive_remaining_layers: string }>(
+    const costLayerIntegrity = await client.query<{
+      movement_line_count: string;
+      cost_layer_count: string;
+      non_positive_remaining_layers: string;
+      qty_mismatch_rows: string;
+    }>(
       `WITH movement_lines AS (
          SELECT id
            FROM inventory_movement_lines
@@ -2272,7 +2508,7 @@ async function assertSeedInvariants(
             AND movement_id = $2
        ),
        movement_layers AS (
-         SELECT id, remaining_quantity
+         SELECT id, remaining_quantity, original_quantity, unit_cost
            FROM inventory_cost_layers
           WHERE tenant_id = $1
             AND source_type = 'opening_balance'
@@ -2283,19 +2519,75 @@ async function assertSeedInvariants(
          SELECT id
            FROM movement_layers
           WHERE remaining_quantity <= 0
+       ),
+       movement_by_uom AS (
+         SELECT item_id,
+                location_id,
+                COALESCE(canonical_uom, uom) AS uom,
+                SUM(COALESCE(quantity_delta_canonical, quantity_delta)) AS qty
+           FROM inventory_movement_lines
+          WHERE tenant_id = $1
+            AND movement_id = $2
+          GROUP BY item_id, location_id, COALESCE(canonical_uom, uom)
+       ),
+       layers_by_uom AS (
+         SELECT item_id,
+                location_id,
+                uom,
+                SUM(remaining_quantity) AS qty
+           FROM inventory_cost_layers
+          WHERE tenant_id = $1
+            AND movement_id = $2
+            AND source_type = 'opening_balance'
+            AND voided_at IS NULL
+          GROUP BY item_id, location_id, uom
+       ),
+       qty_mismatch AS (
+         SELECT COALESCE(m.item_id, l.item_id) AS item_id,
+                COALESCE(m.location_id, l.location_id) AS location_id,
+                COALESCE(m.uom, l.uom) AS uom,
+                COALESCE(m.qty, 0) AS movement_qty,
+                COALESCE(l.qty, 0) AS layer_qty
+           FROM movement_by_uom m
+           FULL OUTER JOIN layers_by_uom l
+             ON m.item_id = l.item_id
+            AND m.location_id = l.location_id
+            AND m.uom = l.uom
+          WHERE ABS(COALESCE(m.qty, 0) - COALESCE(l.qty, 0)) > 1e-6
        )
        SELECT
          (SELECT COUNT(*)::int::text FROM movement_lines) AS movement_line_count,
          (SELECT COUNT(*)::int::text FROM movement_layers) AS cost_layer_count,
-         (SELECT COUNT(*)::int::text FROM non_positive_remaining) AS non_positive_remaining_layers`,
+         (SELECT COUNT(*)::int::text FROM non_positive_remaining) AS non_positive_remaining_layers,
+         (SELECT COUNT(*)::int::text FROM qty_mismatch) AS qty_mismatch_rows,
+         (
+           SELECT COALESCE(SUM(COALESCE(iml.quantity_delta_entered, iml.quantity_delta) * COALESCE(iml.unit_cost, 0)), 0)::text
+             FROM inventory_movement_lines iml
+            WHERE iml.tenant_id = $1
+              AND iml.movement_id = $2
+              AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+         ) AS entered_extended_total,
+         (
+           SELECT COALESCE(SUM(original_quantity * unit_cost), 0)::text
+             FROM movement_layers
+         ) AS layer_extended_total`,
       [args.tenantId, args.seedMovementId]
     );
     const movementLineCount = Number(costLayerIntegrity.rows[0]?.movement_line_count ?? 0);
     const costLayerCount = Number(costLayerIntegrity.rows[0]?.cost_layer_count ?? 0);
     const nonPositiveRemainingLayerCount = Number(costLayerIntegrity.rows[0]?.non_positive_remaining_layers ?? 0);
-    if (movementLineCount !== costLayerCount || nonPositiveRemainingLayerCount !== 0) {
+    const qtyMismatchRows = Number(costLayerIntegrity.rows[0]?.qty_mismatch_rows ?? 0);
+    const enteredExtendedTotal = Number(costLayerIntegrity.rows[0]?.entered_extended_total ?? 0);
+    const layerExtendedTotal = Number(costLayerIntegrity.rows[0]?.layer_extended_total ?? 0);
+    const extendedVariance = Math.abs(enteredExtendedTotal - layerExtendedTotal);
+    if (
+      movementLineCount !== costLayerCount
+      || nonPositiveRemainingLayerCount !== 0
+      || qtyMismatchRows !== 0
+      || extendedVariance > 0.01
+    ) {
       throw new Error(
-        `SEED_INVARIANT_COST_LAYER_INTEGRITY movement_lines=${movementLineCount} cost_layers=${costLayerCount} non_positive_remaining_layers=${nonPositiveRemainingLayerCount}`
+        `SEED_INVARIANT_COST_LAYER_INTEGRITY movement_lines=${movementLineCount} cost_layers=${costLayerCount} non_positive_remaining_layers=${nonPositiveRemainingLayerCount} qty_mismatch_rows=${qtyMismatchRows} entered_extended_total=${enteredExtendedTotal} layer_extended_total=${layerExtendedTotal} extended_variance=${extendedVariance}`
       );
     }
 
@@ -2569,6 +2861,7 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
     tenantSlug,
     itemIdByKey,
     spec: initialStockSpec,
+    repairOpeningBalanceLayers: options.repairOpeningBalanceLayers ?? true,
     strictMissingItems:
       useRealDataImport
       || (!options.datasetOverride && (!options.bomFilePath || path.resolve(options.bomFilePath) === DEFAULT_BOM_JSON_PATH))
