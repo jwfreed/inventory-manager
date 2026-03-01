@@ -69,8 +69,8 @@ jobs:
           SQL
       - name: Start server
         env:
-          DATABASE_URL: postgresql://app_ci:app_ci_pass@postgres:5432/inventory_test
-          TEST_DATABASE_URL: postgresql://app_ci:app_ci_pass@postgres:5432/inventory_test
+          DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
         run: |
           nohup npm run dev > server.log 2>&1 &
           echo $! > server.pid
@@ -88,8 +88,8 @@ jobs:
           exit 1
       - name: Run ops tests 5x
         env:
-          DATABASE_URL: postgresql://app_ci:app_ci_pass@postgres:5432/inventory_test
-          TEST_DATABASE_URL: postgresql://app_ci:app_ci_pass@postgres:5432/inventory_test
+          DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
         run: node tests/helpers/runRepeated.mjs --cmd "npm run test:ops:nomigrate" --times 5
       - name: Stop server
         if: always()

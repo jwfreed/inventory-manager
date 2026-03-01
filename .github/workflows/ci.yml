@@ -77,14 +77,14 @@ jobs:
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
           REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
           SQL
-      - name: Run full test suite as app_ci
+      - name: Run full test suite as postgres
         env:
-          DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
-          TEST_DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
         run: npm run test:all
-      - name: Run financial core guards as app_ci
+      - name: Run financial core guards as postgres
         env:
-          DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
-          TEST_DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
         run: |
           npm run test:financial-core
