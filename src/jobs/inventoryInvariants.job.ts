@@ -1,9 +1,23 @@
-import { query } from '../db';
+import type { PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { pool, query as dbQuery } from '../db';
 import { emitEvent } from '../lib/events';
 
 let isRunning = false;
 let lastRunTime: Date | null = null;
 let lastRunDuration: number | null = null;
+type InventoryInvariantRunFailure = {
+  tenantId: string | null;
+  tenantSlug: string | null;
+  message: string;
+  code: string | null;
+  at: Date;
+  attempt: number | null;
+};
+let lastRunError: InventoryInvariantRunFailure | null = null;
+let lastRunOk: boolean | null = null;
+let lastRunFailures: InventoryInvariantRunFailure[] = [];
+let lastRunFailureCountTotal = 0;
+let lastRunFailureCountRecorded = 0;
 
 type Tenant = { id: string; name: string; slug: string };
 type InventoryInvariantSummary = {
@@ -51,6 +65,121 @@ function parseBoolean(value: string | undefined, fallback = false): boolean {
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseNonNegativeInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+const MAX_RECORDED_FAILURES = parsePositiveInt(
+  process.env.INVARIANTS_MAX_RECORDED_FAILURES,
+  50
+);
+
+type InvariantRuntimeConfig = {
+  maxAttemptsPerTenant: number;
+  maxTenantWallClockMs: number;
+  retryBaseDelayMs: number;
+  retryMaxDelayMs: number;
+  statementTimeoutMs: number;
+  lockTimeoutMs: number;
+  queryTimeoutMs: number;
+};
+
+const RETRYABLE_INVARIANT_SQL_STATES = new Set(['40001', '40P01', '55P03', '57014']);
+
+function resolveInvariantRuntimeConfig(env: NodeJS.ProcessEnv = process.env): InvariantRuntimeConfig {
+  const nodeEnv = String(env.NODE_ENV ?? '').trim().toLowerCase();
+  const ciLike = parseBoolean(env.CI, false) || nodeEnv === 'test';
+  const statementTimeoutMs = parsePositiveInt(
+    env.INVARIANTS_STATEMENT_TIMEOUT_MS,
+    ciLike ? 30000 : 15000
+  );
+  const lockTimeoutMs = parsePositiveInt(
+    env.INVARIANTS_LOCK_TIMEOUT_MS,
+    ciLike ? 5000 : 3000
+  );
+  const queryTimeoutMsDefault = Math.max(statementTimeoutMs + 1000, lockTimeoutMs + 1000);
+  return {
+    maxAttemptsPerTenant: parsePositiveInt(env.INVARIANTS_MAX_ATTEMPTS_PER_TENANT, ciLike ? 4 : 3),
+    maxTenantWallClockMs: parsePositiveInt(env.INVARIANTS_MAX_TENANT_WALL_CLOCK_MS, ciLike ? 120000 : 180000),
+    retryBaseDelayMs: parsePositiveInt(env.INVARIANTS_RETRY_BASE_DELAY_MS, 200),
+    retryMaxDelayMs: parsePositiveInt(env.INVARIANTS_RETRY_MAX_DELAY_MS, 2000),
+    statementTimeoutMs,
+    lockTimeoutMs,
+    queryTimeoutMs: parseNonNegativeInt(env.INVARIANTS_QUERY_TIMEOUT_MS, queryTimeoutMsDefault)
+  };
+}
+
+function resolveSqlState(error: unknown): string | null {
+  const candidate = error as { code?: unknown; cause?: { code?: unknown } } | undefined;
+  if (typeof candidate?.code === 'string' && candidate.code.trim().length > 0) {
+    return candidate.code.trim();
+  }
+  if (typeof candidate?.cause?.code === 'string' && candidate.cause.code.trim().length > 0) {
+    return candidate.cause.code.trim();
+  }
+  return null;
+}
+
+function isRetryableInvariantError(error: unknown): boolean {
+  const sqlState = resolveSqlState(error);
+  if (sqlState && RETRYABLE_INVARIANT_SQL_STATES.has(sqlState)) {
+    return true;
+  }
+  const message = String((error as { message?: unknown } | undefined)?.message ?? '').toLowerCase();
+  return message.includes('statement timeout')
+    || message.includes('lock timeout')
+    || message.includes('canceling statement due to');
+}
+
+function buildRetryDelayMs(attempt: number, config: InvariantRuntimeConfig): number {
+  const normalizedAttempt = Math.max(1, Math.floor(Number(attempt) || 1));
+  const candidate = config.retryBaseDelayMs * 2 ** Math.max(0, normalizedAttempt - 1);
+  return Math.min(config.retryMaxDelayMs, candidate);
+}
+
+function sleep(delayMs: number): Promise<void> {
+  if (delayMs <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function configureInvariantSessionTimeouts(client: PoolClient, config: InvariantRuntimeConfig): Promise<void> {
+  if (config.statementTimeoutMs > 0) {
+    await client.query(`SET statement_timeout TO ${Math.floor(config.statementTimeoutMs)}`);
+  }
+  if (config.lockTimeoutMs > 0) {
+    await client.query(`SET lock_timeout TO ${Math.floor(config.lockTimeoutMs)}`);
+  }
+}
+
+async function resetInvariantSessionTimeouts(client: PoolClient): Promise<void> {
+  await client.query('RESET statement_timeout');
+  await client.query('RESET lock_timeout');
+}
+
+function buildTenantWallClockExceededError(params: {
+  tenantId: string;
+  tenantSlug: string;
+  maxTenantWallClockMs: number;
+  attempts: number;
+  cause: unknown;
+}) {
+  const error = new Error('INVENTORY_INVARIANTS_TENANT_WALL_CLOCK_EXCEEDED') as Error & {
+    code?: string;
+    details?: Record<string, unknown>;
+    cause?: unknown;
+  };
+  error.code = 'INVENTORY_INVARIANTS_TENANT_WALL_CLOCK_EXCEEDED';
+  error.details = {
+    tenantId: params.tenantId,
+    tenantSlug: params.tenantSlug,
+    maxTenantWallClockMs: params.maxTenantWallClockMs,
+    attempts: params.attempts
+  };
+  error.cause = params.cause;
+  return error;
 }
 
 export function resolveInvariantTenantScopeEnv(env: NodeJS.ProcessEnv = process.env): string[] {
@@ -124,7 +253,7 @@ function emitInvariantDiagnosticEvent(params: {
 }
 
 async function getAllActiveTenants(): Promise<Tenant[]> {
-  const result = await query<{ id: string; name: string; slug: string }>(
+  const result = await dbQuery<{ id: string; name: string; slug: string }>(
     'SELECT id, name, slug FROM tenants ORDER BY name'
   );
   return result.rows.map((row) => ({
@@ -151,6 +280,10 @@ export async function runInventoryInvariantCheck(
   const strictMode = isStrictModeEnabled(options.strict);
   const results: InventoryInvariantSummary[] = [];
   const strictViolations: InventoryInvariantStrictViolation[] = [];
+  let runHadFailures = false;
+  let firstFailure: InventoryInvariantRunFailure | null = null;
+  const runFailures: InventoryInvariantRunFailure[] = [];
+  let runFailureCountTotal = 0;
 
   try {
     const scopedTenantIds = options.tenantIds?.length
@@ -159,7 +292,7 @@ export async function runInventoryInvariantCheck(
     const allowAllTenants = parseBoolean(process.env.INVARIANTS_ALLOW_ALL_TENANTS, false);
     const tenants = scopedTenantIds.length
       ? (
-          await query<Tenant>(
+          await dbQuery<Tenant>(
             'SELECT id, name, slug FROM tenants WHERE id = ANY($1) ORDER BY name',
             [scopedTenantIds]
           )
@@ -173,8 +306,54 @@ export async function runInventoryInvariantCheck(
       );
       return [];
     }
+    const runtimeConfig = resolveInvariantRuntimeConfig();
     for (const tenant of tenants) {
-      try {
+      const tenantDeadlineAt = Date.now() + runtimeConfig.maxTenantWallClockMs;
+      let attempt = 0;
+      let tenantCompleted = false;
+      while (!tenantCompleted) {
+        attempt += 1;
+        let client: PoolClient | null = null;
+        try {
+          if (Date.now() >= tenantDeadlineAt) {
+            throw buildTenantWallClockExceededError({
+              tenantId: tenant.id,
+              tenantSlug: tenant.slug,
+              maxTenantWallClockMs: runtimeConfig.maxTenantWallClockMs,
+              attempts: attempt,
+              cause: new Error('tenant wall-clock budget exhausted before starting attempt')
+            });
+          }
+          client = await pool.connect();
+          await configureInvariantSessionTimeouts(client, runtimeConfig);
+          const query = async <T extends QueryResultRow = QueryResultRow>(
+            sql: string,
+            params: unknown[] = []
+          ): Promise<QueryResult<T>> => {
+            const remainingMs = tenantDeadlineAt - Date.now();
+            if (remainingMs <= 0) {
+              throw buildTenantWallClockExceededError({
+                tenantId: tenant.id,
+                tenantSlug: tenant.slug,
+                maxTenantWallClockMs: runtimeConfig.maxTenantWallClockMs,
+                attempts: attempt,
+                cause: new Error('tenant wall-clock budget exhausted before query')
+              });
+            }
+            const configuredQueryTimeoutMs = runtimeConfig.queryTimeoutMs;
+            const queryTimeoutMs = configuredQueryTimeoutMs > 0
+              ? Math.max(1, Math.min(configuredQueryTimeoutMs, remainingMs))
+              : Math.max(1, remainingMs);
+            const activeClient = client;
+            if (!activeClient) {
+              throw new Error('INVENTORY_INVARIANTS_CLIENT_UNAVAILABLE');
+            }
+            return activeClient.query<T>({
+              text: sql,
+              values: params,
+              query_timeout: queryTimeoutMs
+            } as any);
+          };
         const receiptLines = await query<{ count: string }>(
           `SELECT COUNT(*) AS count
              FROM purchase_order_receipt_lines prl
@@ -1060,12 +1239,67 @@ export async function runInventoryInvariantCheck(
             });
           }
         }
+        tenantCompleted = true;
       } catch (error) {
-        if (strictMode) {
-          throw error;
+        const remainingMs = tenantDeadlineAt - Date.now();
+        const canRetry = isRetryableInvariantError(error)
+          && attempt < runtimeConfig.maxAttemptsPerTenant
+          && remainingMs > 0;
+
+        if (canRetry) {
+          const retryDelayMs = Math.min(buildRetryDelayMs(attempt, runtimeConfig), remainingMs);
+          console.warn('[inventory_invariant_retry]', {
+            tenantId: tenant.id,
+            tenantSlug: tenant.slug,
+            attempt,
+            maxAttempts: runtimeConfig.maxAttemptsPerTenant,
+            retryDelayMs,
+            remainingMs,
+            sqlState: resolveSqlState(error),
+            message: (error as Error)?.message ?? String(error)
+          });
+          await sleep(retryDelayMs);
+          continue;
         }
-        console.error(`Inventory invariant check failed for tenant ${tenant.slug}:`, error);
+
+        const finalError = remainingMs <= 0
+          ? buildTenantWallClockExceededError({
+              tenantId: tenant.id,
+              tenantSlug: tenant.slug,
+              maxTenantWallClockMs: runtimeConfig.maxTenantWallClockMs,
+              attempts: attempt,
+              cause: error
+            })
+          : error;
+        const failure: InventoryInvariantRunFailure = {
+          tenantId: tenant.id,
+          tenantSlug: tenant.slug,
+          message: (finalError as Error)?.message ?? String(finalError),
+          code: resolveSqlState(finalError),
+          at: new Date(),
+          attempt
+        };
+        runHadFailures = true;
+        runFailureCountTotal += 1;
+        if (runFailures.length < MAX_RECORDED_FAILURES) {
+          runFailures.push(failure);
+        }
+        if (!firstFailure) {
+          firstFailure = failure;
+        }
+
+        if (strictMode) {
+          throw finalError;
+        }
+        console.error(`Inventory invariant check failed for tenant ${tenant.slug}:`, finalError);
+        break;
+      } finally {
+        if (client) {
+          await resetInvariantSessionTimeouts(client).catch(() => undefined);
+          client.release();
+        }
       }
+    }
     }
 
     lastRunTime = new Date();
@@ -1083,6 +1317,40 @@ export async function runInventoryInvariantCheck(
       };
       throw strictError;
     }
+    if (runHadFailures) {
+      lastRunOk = false;
+      lastRunError = firstFailure ?? {
+        tenantId: null,
+        tenantSlug: null,
+        message: 'INVENTORY_INVARIANTS_NON_STRICT_FAILURE',
+        code: 'INVENTORY_INVARIANTS_NON_STRICT_FAILURE',
+        at: new Date(),
+        attempt: null
+      };
+      lastRunFailures = runFailures.slice();
+      lastRunFailureCountTotal = runFailureCountTotal;
+      lastRunFailureCountRecorded = lastRunFailures.length;
+    } else {
+      lastRunOk = true;
+      lastRunError = null;
+      lastRunFailures = [];
+      lastRunFailureCountTotal = 0;
+      lastRunFailureCountRecorded = 0;
+    }
+  } catch (error) {
+    lastRunError = {
+      tenantId: null,
+      tenantSlug: null,
+      message: (error as Error)?.message ?? String(error),
+      code: resolveSqlState(error),
+      at: new Date(),
+      attempt: null
+    };
+    lastRunOk = false;
+    lastRunFailures = lastRunError && MAX_RECORDED_FAILURES > 0 ? [lastRunError] : [];
+    lastRunFailureCountTotal = lastRunError ? 1 : 0;
+    lastRunFailureCountRecorded = lastRunFailures.length;
+    throw error;
   } finally {
     isRunning = false;
   }
@@ -1093,7 +1361,12 @@ export async function runInventoryInvariantCheck(
 export function getInventoryInvariantJobStatus() {
   return {
     isRunning,
+    lastRunOk,
     lastRunTime,
-    lastRunDuration
+    lastRunDuration,
+    lastRunError,
+    lastRunFailures,
+    failureCountTotal: lastRunFailureCountTotal,
+    failureCountRecorded: lastRunFailureCountRecorded
   };
 }
