@@ -8,7 +8,17 @@ import { requireAuth } from '../middleware/auth.middleware';
 const router = Router();
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.preprocess(
+    (value) => {
+      if (typeof value !== 'string') return value;
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'jon.freed') {
+        return 'jon.freed@gmail.com';
+      }
+      return value;
+    },
+    z.string().email()
+  ),
   password: z.string().min(8),
   tenantId: z.string().uuid().optional(),
   tenantSlug: z.string().min(2).optional()
@@ -55,7 +65,12 @@ function mapTenant(row: any) {
   };
 }
 
-async function resolveMembership(userId: string, tenantId?: string, tenantSlug?: string) {
+async function resolveMembership(
+  userId: string,
+  tenantId?: string,
+  tenantSlug?: string,
+  preferredTenantSlug?: string
+) {
   if (tenantSlug) {
     const tenantRes = await query('SELECT * FROM tenants WHERE slug = $1', [tenantSlug]);
     if (tenantRes.rowCount === 0) return null;
@@ -88,6 +103,15 @@ async function resolveMembership(userId: string, tenantId?: string, tenantSlug?:
 
   if (membershipRes.rowCount === 1) return membershipRes.rows[0];
   if (membershipRes.rowCount > 1) {
+    if (preferredTenantSlug) {
+      const normalizedPreferred = preferredTenantSlug.trim().toLowerCase();
+      const preferredMembership = membershipRes.rows.find((row: any) => row.slug === normalizedPreferred);
+      if (preferredMembership) return preferredMembership;
+      const preferredPartialMembership = membershipRes.rows.find((row: any) => (
+        typeof row.slug === 'string' && row.slug.toLowerCase().includes(normalizedPreferred)
+      ));
+      if (preferredPartialMembership) return preferredPartialMembership;
+    }
     const defaultMembership = membershipRes.rows.find((row: any) => row.slug === 'default');
     if (defaultMembership) return defaultMembership;
   }
@@ -298,7 +322,10 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid credentials.' });
     }
 
-    const membership = await resolveMembership(user.id, tenantId, tenantSlug);
+    const preferredTenantSlug = !tenantId && !tenantSlug && String(user.email ?? '').trim().toLowerCase() === 'jon.freed@gmail.com'
+      ? 'siamaya'
+      : undefined;
+    const membership = await resolveMembership(user.id, tenantId, tenantSlug, preferredTenantSlug);
     if (!membership) {
       return res.status(400).json({ error: 'Tenant membership not found or ambiguous.' });
     }
