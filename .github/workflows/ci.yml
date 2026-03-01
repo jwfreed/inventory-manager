@@ -32,6 +32,7 @@ jobs:
       CI: 'true'
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ci_dummy_secret
+      PGPASSWORD: postgres
       PORT: 3000
       API_BASE_URL: http://127.0.0.1:3000
       TEST_BASE_URL: http://127.0.0.1:3000
@@ -47,6 +48,16 @@ jobs:
           apt-get install -y -qq postgresql-client
       - name: Install deps
         run: npm ci
+      - name: Wait for Postgres readiness
+        run: |
+          for i in {1..60}; do
+            if pg_isready -h postgres -p 5432 -U postgres -d inventory_test >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Postgres failed to become ready"
+          exit 1
       - name: Build
         run: npm run build --if-present
       - name: Run migrations
@@ -92,11 +103,16 @@ jobs:
             echo "API already listening on 127.0.0.1:3000; skipping startup."
             exit 0
           fi
-          nohup npm run dev > server.log 2>&1 &
+          nohup npm run dev -- --repair-defaults > server.log 2>&1 &
           echo $! > server.pid
       - name: Wait for API readiness
         run: |
           for i in {1..60}; do
+            if [ -f server.pid ] && ! kill -0 "$(cat server.pid)" 2>/dev/null; then
+              echo "API process exited before readiness"
+              tail -200 server.log || true
+              exit 1
+            fi
             if curl -fsS "http://127.0.0.1:3000/healthz" >/dev/null; then
               exit 0
             fi

@@ -489,9 +489,38 @@ async function start() {
   });
 }
 
-start().catch((error) => {
+function logFatalStartupError(error: unknown): void {
+  const candidate = error as {
+    message?: unknown;
+    code?: unknown;
+    stack?: unknown;
+    cause?: { message?: unknown; code?: unknown; stack?: unknown } | unknown;
+  } | undefined;
+  const causeCandidate = candidate?.cause as {
+    message?: unknown;
+    code?: unknown;
+    stack?: unknown;
+  } | undefined;
+
+  const payload = {
+    message: typeof candidate?.message === 'string' ? candidate.message : String(error),
+    code: typeof candidate?.code === 'string' ? candidate.code : null,
+    stack: typeof candidate?.stack === 'string' ? candidate.stack : null,
+    cause: causeCandidate
+      ? {
+          message: typeof causeCandidate.message === 'string' ? causeCandidate.message : String(candidate?.cause),
+          code: typeof causeCandidate.code === 'string' ? causeCandidate.code : null,
+          stack: typeof causeCandidate.stack === 'string' ? causeCandidate.stack : null
+        }
+      : null
+  };
+
+  console.error('Startup fatal error details:', payload);
+}
+
+void start().catch((error) => {
   logDbConnectionHint(error, 'server.start');
   logStructuredStartupFailure(error);
-  console.error('Startup failed:', error);
+  logFatalStartupError(error);
   process.exit(1);
 });
