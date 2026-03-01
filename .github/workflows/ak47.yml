@@ -35,6 +35,8 @@ jobs:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ci_dummy_secret
       PORT: 3000
+      API_BASE_URL: http://127.0.0.1:3000
+      TEST_BASE_URL: http://127.0.0.1:3000
       NODE_ENV: test
     steps:
       - name: Checkout
@@ -76,9 +78,8 @@ jobs:
           echo $! > server.pid
       - name: Wait for readiness
         run: |
-          HEALTH_HOST="$(hostname)"
           for i in {1..60}; do
-            if curl -fsS "http://${HEALTH_HOST}:3000/healthz" >/dev/null; then
+            if curl -fsS "http://127.0.0.1:3000/healthz" >/dev/null; then
               exit 0
             fi
             sleep 1
