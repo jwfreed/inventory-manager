@@ -478,9 +478,7 @@ async function start() {
   await ensureWarehouseDefaults(startupTenantId, { repair: startupMode.startupRepairMode });
   httpServer = app.listen(PORT, HOST);
   httpServer.on('error', (error) => {
-    logDbConnectionHint(error, 'server.listen');
-    console.error('Server listen failed:', error);
-    process.exit(1);
+    scheduleFatalExit('server.listen', error);
   });
   httpServer.on('listening', () => {
     console.log(`\n🚀 Inventory Manager API listening on ${HOST}:${PORT}`);
@@ -489,7 +487,7 @@ async function start() {
   });
 }
 
-function logFatalStartupError(error: unknown): void {
+function logFatalStartupError(context: string, error: unknown): void {
   const candidate = error as {
     message?: unknown;
     code?: unknown;
@@ -503,6 +501,7 @@ function logFatalStartupError(error: unknown): void {
   } | undefined;
 
   const payload = {
+    context,
     message: typeof candidate?.message === 'string' ? candidate.message : String(error),
     code: typeof candidate?.code === 'string' ? candidate.code : null,
     stack: typeof candidate?.stack === 'string' ? candidate.stack : null,
@@ -515,12 +514,30 @@ function logFatalStartupError(error: unknown): void {
       : null
   };
 
-  console.error('Startup fatal error details:', payload);
+  process.stderr.write(`Startup fatal error details: ${JSON.stringify(payload)}\n`);
 }
 
-void start().catch((error) => {
-  logDbConnectionHint(error, 'server.start');
+let fatalExitScheduled = false;
+
+function scheduleFatalExit(context: string, error: unknown): void {
+  if (fatalExitScheduled) return;
+  fatalExitScheduled = true;
+  logDbConnectionHint(error, context);
   logStructuredStartupFailure(error);
-  logFatalStartupError(error);
-  process.exit(1);
+  logFatalStartupError(context, error);
+  setTimeout(() => {
+    process.exit(1);
+  }, 25).unref();
+}
+
+process.on('unhandledRejection', (reason) => {
+  scheduleFatalExit('unhandledRejection', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  scheduleFatalExit('uncaughtException', error);
+});
+
+void start().catch((error) => {
+  scheduleFatalExit('server.start', error);
 });
