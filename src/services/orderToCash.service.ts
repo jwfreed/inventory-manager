@@ -55,8 +55,6 @@ export type ReservationCreateInput = z.infer<typeof reservationsCreateSchema>;
 type ReservationCreateLine = ReservationCreateInput['reservations'][number];
 type PreparedReservationCreateLine = {
   reservation: ReservationCreateLine;
-  canonicalQuantity: number;
-  canonicalUom: string;
   derivedWarehouseId: string;
 };
 type ReservationRow = {
@@ -76,7 +74,10 @@ type ReservationRow = {
 const BACKORDERS_ENABLED = process.env.BACKORDERS_ENABLED !== 'false';
 const atpRetryBudgets = resolveAtpRetryBudgets();
 const ATP_SERIALIZABLE_RETRIES = atpRetryBudgets.serializableRetries;
-const ATP_RESERVATION_CREATE_RETRIES = atpRetryBudgets.reservationCreateRetries;
+const ATP_RESERVATION_CREATE_RETRIES = Math.max(atpRetryBudgets.reservationCreateRetries, 10);
+// Shipment posting is the heaviest ATP mutation path (reservation transitions + FIFO issue);
+// allow a slightly larger retry window than the baseline serializable budget.
+const ATP_SHIPMENT_POST_RETRIES = Math.max(ATP_SERIALIZABLE_RETRIES, 8);
 const ATP_RETRY_BASE_DELAY_MS = 5;
 const ATP_RETRY_JITTER_MS = 5;
 
@@ -108,7 +109,9 @@ function compareReservationLockKey(
   if (itemCompare !== 0) return itemCompare;
   const locationCompare = left.reservation.locationId.localeCompare(right.reservation.locationId);
   if (locationCompare !== 0) return locationCompare;
-  const uomCompare = left.canonicalUom.toLowerCase().localeCompare(right.canonicalUom.toLowerCase());
+  const leftUom = String(left.reservation.uom ?? '').trim().toLowerCase();
+  const rightUom = String(right.reservation.uom ?? '').trim().toLowerCase();
+  const uomCompare = leftUom.localeCompare(rightUom);
   if (uomCompare !== 0) return uomCompare;
   const demandCompare = left.reservation.demandId.localeCompare(right.reservation.demandId);
   if (demandCompare !== 0) return demandCompare;
@@ -760,18 +763,9 @@ export async function createReservations(
       const rows: any[] = [];
       const preparedLines: PreparedReservationCreateLine[] = [];
       for (const reservation of data.reservations) {
-        const canonical = await convertToCanonical(
-          tenantId,
-          reservation.itemId,
-          reservation.quantityReserved,
-          reservation.uom,
-          client
-        );
         const derivedWarehouseId = await resolveReservationDerivedWarehouseScope(client, tenantId, reservation);
         preparedLines.push({
           reservation,
-          canonicalQuantity: roundQuantity(canonical.quantity),
-          canonicalUom: canonical.canonicalUom,
           derivedWarehouseId
         });
       }
@@ -805,7 +799,16 @@ export async function createReservations(
       );
 
       for (const line of preparedLines) {
-        const { reservation, canonicalQuantity, canonicalUom, derivedWarehouseId } = line;
+        const { reservation, derivedWarehouseId } = line;
+        const canonical = await convertToCanonical(
+          tenantId,
+          reservation.itemId,
+          reservation.quantityReserved,
+          reservation.uom,
+          client
+        );
+        const canonicalQuantity = roundQuantity(canonical.quantity);
+        const canonicalUom = canonical.canonicalUom;
         await assertSellableLocationOrThrow(client, tenantId, reservation.locationId, {
           expectedWarehouseId: derivedWarehouseId
         });
@@ -2121,7 +2124,7 @@ export async function postShipment(
     }
 
       return getShipment(tenantId, shipmentId, client);
-    }, buildAtpRetryOptions(shipmentRetryContext, ATP_SERIALIZABLE_RETRIES));
+    }, buildAtpRetryOptions(shipmentRetryContext, ATP_SHIPMENT_POST_RETRIES));
   } catch (error) {
     withAtpRetryHandling(error, shipmentRetryContext);
   }

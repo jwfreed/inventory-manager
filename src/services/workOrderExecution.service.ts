@@ -47,7 +47,7 @@ type WorkOrderVoidReportProductionInput = z.infer<typeof workOrderVoidReportProd
 type WorkOrderReportScrapInput = z.infer<typeof workOrderReportScrapSchema>;
 
 const WIP_COST_METHOD = 'fifo';
-const WORK_ORDER_POST_RETRY_OPTIONS = { isolationLevel: 'SERIALIZABLE' as const, retries: 2 };
+const WORK_ORDER_POST_RETRY_OPTIONS = { isolationLevel: 'SERIALIZABLE' as const, retries: 8 };
 
 type DomainError = Error & {
   code?: string;

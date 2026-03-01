@@ -33,6 +33,10 @@ function summarizeIssues(issues) {
 }
 
 export async function seedWarehouseTopologyForTenant(client, tenantId, options = {}) {
+  // Topology fix/check performs broad location/default reads and writes that can conflict under
+  // SERIALIZABLE when many test tenants initialize in parallel. Serialize this routine per tx.
+  await client.query('SELECT pg_advisory_xact_lock($1::integer, $2::integer)', [1729001, 1729002]);
+
   const topology = options.topology ?? await loadWarehouseTopology({ topologyDir: options.topologyDir });
   const fixMode = options.fix === true;
 

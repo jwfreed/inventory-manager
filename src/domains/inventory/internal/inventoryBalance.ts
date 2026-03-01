@@ -27,34 +27,41 @@ export async function ensureInventoryBalanceRow(
   locationId: string,
   uom: string
 ) {
-  await client.query(
+  const inserted = await client.query(
     `INSERT INTO inventory_balance (
         tenant_id, item_id, location_id, uom, on_hand, reserved, allocated, created_at, updated_at
      )
-     VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        COALESCE(
-          (
-            SELECT on_hand_qty
-              FROM inventory_on_hand_location_v
-             WHERE tenant_id = $1
-               AND item_id = $2
-               AND location_id = $3
-               AND uom = $4
-             LIMIT 1
-          ),
-          0
-        ),
-        0,
-        0,
-        now(),
-        now()
-     )
-     ON CONFLICT (tenant_id, item_id, location_id, uom) DO NOTHING`,
+     VALUES ($1, $2, $3, $4, 0, 0, 0, now(), now())
+     ON CONFLICT (tenant_id, item_id, location_id, uom) DO NOTHING
+     RETURNING tenant_id`,
     [tenantId, itemId, locationId, uom]
+  );
+
+  // Only backfill from ledger if this transaction inserted a brand-new balance row.
+  if (inserted.rowCount === 0) return;
+
+  const ledgerRes = await client.query<{ on_hand_qty: string | number }>(
+    `SELECT on_hand_qty
+       FROM inventory_on_hand_location_v
+      WHERE tenant_id = $1
+        AND item_id = $2
+        AND location_id = $3
+        AND uom = $4
+      LIMIT 1`,
+    [tenantId, itemId, locationId, uom]
+  );
+  const onHandQty = normalizeQuantity(ledgerRes.rows[0]?.on_hand_qty ?? 0);
+  if (Math.abs(onHandQty) <= EPSILON) return;
+
+  await client.query(
+    `UPDATE inventory_balance
+        SET on_hand = $5,
+            updated_at = now()
+      WHERE tenant_id = $1
+        AND item_id = $2
+        AND location_id = $3
+        AND uom = $4`,
+    [tenantId, itemId, locationId, uom, onHandQty]
   );
 }
 
@@ -119,13 +126,40 @@ export async function applyInventoryBalanceDelta(
   ) {
     return;
   }
-  const current = await getInventoryBalanceForUpdate(
-    client,
-    params.tenantId,
-    params.itemId,
-    params.locationId,
-    params.uom
+
+  let balanceRes = await client.query<InventoryBalanceRow>(
+    `SELECT * FROM inventory_balance
+      WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4
+      FOR UPDATE`,
+    [params.tenantId, params.itemId, params.locationId, params.uom]
   );
+
+  if (balanceRes.rowCount === 0) {
+    await client.query(
+      `INSERT INTO inventory_balance (
+          tenant_id, item_id, location_id, uom, on_hand, reserved, allocated, created_at, updated_at
+       )
+       VALUES ($1, $2, $3, $4, 0, 0, 0, now(), now())
+       ON CONFLICT (tenant_id, item_id, location_id, uom) DO NOTHING`,
+      [params.tenantId, params.itemId, params.locationId, params.uom]
+    );
+    balanceRes = await client.query<InventoryBalanceRow>(
+      `SELECT * FROM inventory_balance
+        WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4
+        FOR UPDATE`,
+      [params.tenantId, params.itemId, params.locationId, params.uom]
+    );
+  }
+
+  if (balanceRes.rowCount === 0) {
+    throw new Error('INVENTORY_BALANCE_ROW_MISSING');
+  }
+  const currentRow = balanceRes.rows[0];
+  const current = {
+    onHand: normalizeQuantity(currentRow.on_hand),
+    reserved: normalizeQuantity(currentRow.reserved),
+    allocated: normalizeQuantity(currentRow.allocated)
+  };
   const nextOnHand = roundQuantity(current.onHand + deltaOnHand);
   const nextReserved = roundQuantity(current.reserved + deltaReserved);
   const nextAllocated = roundQuantity(current.allocated + deltaAllocated);

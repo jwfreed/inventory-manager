@@ -234,6 +234,14 @@ router.post('/reservations', async (req: Request, res: Response) => {
         }
       });
     }
+    if ((error as Error)?.message === 'RESERVATION_CONFLICT') {
+      return res.status(409).json({
+        error: {
+          code: 'RESERVATION_CONFLICT',
+          message: 'Reservation already exists or was concurrently created for this demand scope.'
+        }
+      });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to create reservation.' });
   }

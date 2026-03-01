@@ -727,6 +727,35 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
       return res.status(400).json({ error: 'consumptionOverrides cannot include duplicate componentItemId values.' });
     }
     if (
+      error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS'
+      || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS'
+      || error?.code === 'IDEMPOTENCY_MISSING_CLAIM'
+      || error?.message === 'IDEMPOTENCY_MISSING_CLAIM'
+      || error?.code === 'IDEMPOTENCY_ALREADY_FINALIZED'
+      || error?.message === 'IDEMPOTENCY_ALREADY_FINALIZED'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'WO_POSTING_IDEMPOTENCY_INCOMPLETE',
+          message: 'Work-order production report is incomplete for this idempotency key.'
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_HASH_MISMATCH'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'WO_POSTING_IDEMPOTENCY_CONFLICT',
+          message: 'Idempotency key payload conflict detected for report-production.'
+        }
+      });
+    }
+    if (
       error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
       error?.message === 'WO_POSTING_IDEMPOTENCY_CONFLICT' ||
       error?.message === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE' ||
