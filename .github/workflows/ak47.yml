@@ -8,6 +8,9 @@ on:
 jobs:
   ops-stability:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     container:
       image: node:22
     services:
