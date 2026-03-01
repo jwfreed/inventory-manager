@@ -69,14 +69,23 @@ jobs:
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
           REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
           SQL
-      - name: Start server
+      - name: Start API server (if needed)
         env:
           DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
           TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
         run: |
+          if command -v nc >/dev/null 2>&1; then
+            if nc -z 127.0.0.1 3000 2>/dev/null; then
+              echo "API already listening on 127.0.0.1:3000; skipping startup."
+              exit 0
+            fi
+          elif (echo > /dev/tcp/127.0.0.1/3000) >/dev/null 2>&1; then
+            echo "API already listening on 127.0.0.1:3000; skipping startup."
+            exit 0
+          fi
           nohup npm run dev > server.log 2>&1 &
           echo $! > server.pid
-      - name: Wait for readiness
+      - name: Wait for API readiness
         run: |
           for i in {1..60}; do
             if curl -fsS "http://127.0.0.1:3000/healthz" >/dev/null; then
@@ -85,20 +94,20 @@ jobs:
             sleep 1
           done
           echo "Server failed to become ready"
-          cat server.log
+          tail -200 server.log || true
           exit 1
       - name: Run ops tests 5x
         env:
           DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
           TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
         run: node tests/helpers/runRepeated.mjs --cmd "npm run test:ops:nomigrate" --times 5
-      - name: Stop server
+      - name: Stop API server
         if: always()
         run: |
           if [ -f server.pid ]; then
             kill "$(cat server.pid)" || true
           fi
-          cat server.log || true
+          tail -200 server.log || true
       - name: Upload server log on failure
         if: failure()
         uses: actions/upload-artifact@v4

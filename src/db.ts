@@ -54,6 +54,7 @@ const EXPLAIN_SLOW_QUERIES = process.env.NODE_ENV === 'development' && process.e
 const SLOW_QUERY_THRESHOLD_MS = parseInt(process.env.SLOW_QUERY_THRESHOLD_MS || '100', 10);
 const STATEMENT_TIMEOUT_MS = parseInt(process.env.DB_STATEMENT_TIMEOUT_MS || '5000', 10);
 const LOCK_TIMEOUT_MS = parseInt(process.env.DB_LOCK_TIMEOUT_MS || '2000', 10);
+const QUERY_TIMEOUT_MS = parseInt(process.env.DB_QUERY_TIMEOUT_MS || '0', 10);
 const nodeEnv = (process.env.NODE_ENV ?? 'development').toLowerCase();
 const resolvedDbTarget = resolveDbTarget(process.env.DATABASE_URL);
 
@@ -71,6 +72,9 @@ export const pool = new Pool({
   max: parseInt(process.env.DB_POOL_MAX || '20', 10), // Maximum connections
   idleTimeoutMillis: 30000, // Close idle connections after 30s
   connectionTimeoutMillis: 5000, // Fail fast if can't connect in 5s
+  ...(STATEMENT_TIMEOUT_MS > 0 ? { statement_timeout: STATEMENT_TIMEOUT_MS } : {}),
+  ...(LOCK_TIMEOUT_MS > 0 ? { lock_timeout: LOCK_TIMEOUT_MS } : {}),
+  ...(QUERY_TIMEOUT_MS > 0 ? { query_timeout: QUERY_TIMEOUT_MS } : {}),
 });
 
 pool.on('connect', (client) => {

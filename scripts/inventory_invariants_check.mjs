@@ -87,6 +87,19 @@ const limit = parsePositiveInt(getArg('limit') ?? process.env.LIMIT, 200);
 const bomCycleLimit = parsePositiveInt(getArg('bom-cycle-limit') ?? process.env.BOM_CYCLE_LIMIT, 50);
 const bomCycleNodeLimit = parsePositiveInt(getArg('bom-cycle-node-limit') ?? process.env.BOM_CYCLE_NODE_LIMIT, 10000);
 const strictMode = parseBoolean(getArg('strict') ?? process.env.INVARIANTS_STRICT, false);
+const ciLike = parseBoolean(process.env.CI, false) || String(process.env.NODE_ENV ?? '').trim().toLowerCase() === 'test';
+const statementTimeoutMs = parsePositiveInt(
+  getArg('statement-timeout-ms') ?? process.env.INVARIANTS_SCRIPT_STATEMENT_TIMEOUT_MS,
+  ciLike ? 30000 : 15000
+);
+const lockTimeoutMs = parsePositiveInt(
+  getArg('lock-timeout-ms') ?? process.env.INVARIANTS_SCRIPT_LOCK_TIMEOUT_MS,
+  ciLike ? 5000 : 3000
+);
+const queryTimeoutMs = parsePositiveInt(
+  getArg('query-timeout-ms') ?? process.env.INVARIANTS_SCRIPT_QUERY_TIMEOUT_MS,
+  Math.max(statementTimeoutMs + 1000, lockTimeoutMs + 1000)
+);
 
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is required');
@@ -101,7 +114,10 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: parsePositiveInt(process.env.DB_POOL_MAX, 20),
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000
+  connectionTimeoutMillis: 5000,
+  statement_timeout: statementTimeoutMs,
+  lock_timeout: lockTimeoutMs,
+  query_timeout: queryTimeoutMs
 });
 
 const params2 = [tenantId, warehouseId];

@@ -79,10 +79,19 @@ jobs:
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
           REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
           SQL
-      - name: Start API server
+      - name: Start API server (if needed)
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
         run: |
+          if command -v nc >/dev/null 2>&1; then
+            if nc -z 127.0.0.1 3000 2>/dev/null; then
+              echo "API already listening on 127.0.0.1:3000; skipping startup."
+              exit 0
+            fi
+          elif (echo > /dev/tcp/127.0.0.1/3000) >/dev/null 2>&1; then
+            echo "API already listening on 127.0.0.1:3000; skipping startup."
+            exit 0
+          fi
           nohup npm run dev > server.log 2>&1 &
           echo $! > server.pid
       - name: Wait for API readiness
@@ -94,13 +103,35 @@ jobs:
             sleep 1
           done
           echo "API failed to become ready"
-          cat server.log
+          tail -200 server.log || true
           exit 1
       - name: Run full test suite as postgres
+        id: full_suite
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
           TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
-        run: npm run test:all
+        run: node --test --test-reporter=spec --test-timeout=900000 --test-concurrency=1 --import ./tests/setup.mjs tests/api/*.test.mjs tests/ops/*.test.mjs tests/db/*.test.mjs
+      - name: DB invariant diagnostics (on full-suite failure)
+        if: failure() && steps.full_suite.outcome == 'failure'
+        continue-on-error: true
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
+        run: |
+          tests=(
+            tests/db/inventory-invariants-scope-hardening.test.mjs
+            tests/db/inventory-invariants.test.mjs
+            tests/db/phase6-invariants-reservation-warehouse-historical-mismatch.test.mjs
+            tests/db/phase6-invariants-warehouse-id-drift.test.mjs
+            tests/ops/clean-dev-db-no-drift.test.mjs
+          )
+          for t in "${tests[@]}"; do
+            echo "==== pg_stat_activity before ${t} ===="
+            psql "$DATABASE_URL" -c "select now(), pid, state, wait_event_type, wait_event, query from pg_stat_activity where datname=current_database() order by state, pid;"
+            echo "==== rerun ${t} ===="
+            node --test --test-reporter=spec --test-timeout=900000 --test-concurrency=1 --import ./tests/setup.mjs "$t" || true
+            echo "==== pg_stat_activity after ${t} ===="
+            psql "$DATABASE_URL" -c "select now(), pid, state, wait_event_type, wait_event, query from pg_stat_activity where datname=current_database() order by state, pid;"
+          done
       - name: Run financial core guards as postgres
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
@@ -113,4 +144,4 @@ jobs:
           if [ -f server.pid ]; then
             kill "$(cat server.pid)" || true
           fi
-          cat server.log || true
+          tail -200 server.log || true

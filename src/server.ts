@@ -1,4 +1,5 @@
 import './telemetry';
+import type { Server } from 'node:http';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import { pool, logDbConnectionHint } from './db';
@@ -62,6 +63,7 @@ import { runReservationExpiry } from './jobs/reservationExpiry.job';
 import inventoryHealthRouter from './routes/inventoryHealth.routes';
 import outboxAdminRouter from './routes/outboxAdmin.routes';
 import { startEventBridge } from './lib/events';
+import { shutdownCache } from './lib/redis';
 import {
   logStructuredStartupFailure,
   resolveWarehouseDefaultsStartupMode
@@ -70,10 +72,13 @@ import { resolveSchedulerStartupMode } from './config/schedulerStartup';
 import { emitAtpRetryBudgetsEffectiveLogOnce, resolveAtpRetryBudgets } from './config/atpRetryBudgets';
 
 const PORT = Number(process.env.PORT) || 3000;
+const HOST = String(process.env.HOST ?? '0.0.0.0').trim() || '0.0.0.0';
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
+let httpServer: Server | null = null;
+let isShuttingDown = false;
 
 const startupMode = resolveWarehouseDefaultsStartupMode();
 const schedulerMode = resolveSchedulerStartupMode();
@@ -228,7 +233,9 @@ if (schedulerMode.schedulerEnabled) {
   registerJob(
     'inventory-invariant-check',
     process.env.INVENTORY_INVARIANT_CRON ?? '30 * * * *', // Hourly by default
-    runInventoryInvariantCheck,
+    async () => {
+      await runInventoryInvariantCheck();
+    },
     true
   );
 
@@ -281,21 +288,37 @@ if (schedulerMode.schedulerEnabled) {
   console.log('\n📅 Scheduler disabled for development (set ENABLE_SCHEDULER=true to enable)');
 }
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('\n🛑 SIGTERM received, shutting down gracefully...');
-  if (schedulerMode.schedulerEnabled) {
-    stopScheduler();
+async function closeHttpServer(server: Server): Promise<void> {
+  await new Promise<void>((resolve) => {
+    server.close(() => resolve());
+  });
+}
+
+async function shutdown(signal: 'SIGTERM' | 'SIGINT'): Promise<void> {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\n🛑 ${signal} received, shutting down gracefully...`);
+  try {
+    if (schedulerMode.schedulerEnabled) {
+      stopScheduler();
+    }
+    if (httpServer) {
+      await closeHttpServer(httpServer);
+      httpServer = null;
+    }
+    await pool.end().catch(() => undefined);
+    await shutdownCache().catch(() => undefined);
+  } finally {
+    process.exit(0);
   }
-  process.exit(0);
+}
+
+process.on('SIGTERM', () => {
+  void shutdown('SIGTERM');
 });
 
 process.on('SIGINT', () => {
-  console.log('\n🛑 SIGINT received, shutting down gracefully...');
-  if (schedulerMode.schedulerEnabled) {
-    stopScheduler();
-  }
-  process.exit(0);
+  void shutdown('SIGINT');
 });
 
 async function assertNonProductionSchemaCompatibility(): Promise<void> {
@@ -453,8 +476,14 @@ async function start() {
 
   const startupTenantId = process.env.WAREHOUSE_DEFAULTS_TENANT_ID?.trim() || undefined;
   await ensureWarehouseDefaults(startupTenantId, { repair: startupMode.startupRepairMode });
-  app.listen(PORT, () => {
-    console.log(`\n🚀 Inventory Manager API listening on port ${PORT}`);
+  httpServer = app.listen(PORT, HOST);
+  httpServer.on('error', (error) => {
+    logDbConnectionHint(error, 'server.listen');
+    console.error('Server listen failed:', error);
+    process.exit(1);
+  });
+  httpServer.on('listening', () => {
+    console.log(`\n🚀 Inventory Manager API listening on ${HOST}:${PORT}`);
     console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`   Timezone: UTC (for scheduled jobs)\n`);
   });
