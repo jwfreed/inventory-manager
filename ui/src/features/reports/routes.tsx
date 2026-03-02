@@ -11,6 +11,8 @@ const OpenPOAgingPage = lazy(() => import('./pages/OpenPOAgingPage'))
 const SalesOrderFillPage = lazy(() => import('./pages/SalesOrderFillPage'))
 const ProductionRunFrequencyPage = lazy(() => import('./pages/ProductionRunFrequencyPage'))
 
+// TODO(nav): group report links by domain (Inventory/Purchasing/Production/Sales/Quality)
+// when SectionNav supports nested groups without introducing a new navigation pattern.
 export const reportRoutes: AppRouteObject[] = [
   {
     path: '/reports/inventory-valuation',

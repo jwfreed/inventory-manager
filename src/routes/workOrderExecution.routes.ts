@@ -720,6 +720,21 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
     if (error?.message === 'WO_REPORT_NO_COMPONENT_CONSUMPTION') {
       return res.status(400).json({ error: 'report-production requires at least one component consumption line.' });
     }
+    if (error?.message === 'WO_REPORT_OUTPUT_LOT_NOT_FOUND') {
+      return res.status(404).json({ error: 'Output lot not found.' });
+    }
+    if (error?.message === 'WO_REPORT_OUTPUT_LOT_ITEM_MISMATCH') {
+      return res.status(400).json({ error: 'Output lot does not match the work order output item.' });
+    }
+    if (error?.message === 'WO_REPORT_INPUT_LOT_NOT_FOUND') {
+      return res.status(404).json({ error: 'One or more input lots were not found.' });
+    }
+    if (error?.message === 'WO_REPORT_INPUT_LOT_ITEM_MISMATCH') {
+      return res.status(400).json({ error: 'One or more input lots do not match selected components.' });
+    }
+    if (error?.message === 'WO_REPORT_INPUT_LOT_COMPONENT_UNKNOWN') {
+      return res.status(400).json({ error: 'Input lots must reference components consumed by this report.' });
+    }
     if (error?.message === 'WO_REPORT_SCRAP_NOT_SUPPORTED') {
       return res.status(400).json({ error: 'scrapOutputs is not supported in report-production; use POST /work-orders/:id/report-scrap.' });
     }

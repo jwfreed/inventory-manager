@@ -13,6 +13,7 @@ export const adminRoutes: AppRouteObject[] = [
         to: '/admin/inventory-health',
         section: 'admin',
         order: 90,
+        description: 'Admin diagnostics for inventory data health checks',
       },
     },
   },

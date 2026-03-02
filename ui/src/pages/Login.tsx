@@ -33,7 +33,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      navigate('/home', { replace: true })
+      navigate('/dashboard', { replace: true })
     }
   }, [status, navigate])
 
@@ -48,7 +48,7 @@ export default function LoginPage() {
         password: loginPassword,
         tenantSlug: loginTenantSlug.trim() || undefined,
       })
-      navigate('/home', { replace: true })
+      navigate('/dashboard', { replace: true })
     } catch (error) {
       setLoginError(getErrorMessage(error, 'Unable to sign in.'))
     } finally {
@@ -69,7 +69,7 @@ export default function LoginPage() {
         adminPassword,
         adminName: adminName.trim() || undefined,
       })
-      navigate('/home', { replace: true })
+      navigate('/dashboard', { replace: true })
     } catch (error) {
       setBootstrapError(getErrorMessage(error, 'Unable to bootstrap admin account.'))
     } finally {

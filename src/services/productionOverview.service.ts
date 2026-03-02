@@ -6,7 +6,6 @@ interface ProductionOverviewQuery {
   dateTo?: string;
   itemId?: string;
   locationId?: string;
-  workCenterId?: string;
 }
 
 /**

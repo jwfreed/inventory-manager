@@ -7,7 +7,7 @@ import { appShellRoutes } from './routeData'
 import { onboardingRoutes } from '../features/onboarding'
 
 const shellRoutes: AppRouteObject[] = [
-  { index: true, element: <Navigate to="/home" replace /> },
+  { index: true, element: <Navigate to="/dashboard" replace /> },
   ...appShellRoutes,
   { path: '*', element: <Navigate to="/not-found" replace /> },
 ]

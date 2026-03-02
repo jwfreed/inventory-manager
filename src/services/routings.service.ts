@@ -1,4 +1,5 @@
 import { query, pool } from '../db';
+import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import {
   createWorkCenterSchema,
@@ -14,44 +15,106 @@ type WorkCenter = z.infer<typeof workCenterSchema>;
 type Routing = z.infer<typeof routingSchema>;
 type RoutingStep = z.infer<typeof routingStepSchema>;
 
-export class RoutingsService {
-  // Work Center Methods
+type SqlExecutor = <T>(sql: string, params?: any[]) => Promise<{ rows: T[]; rowCount: number | null }>;
 
-  async getAllWorkCenters(): Promise<WorkCenter[]> {
+function executorFor(client?: PoolClient): SqlExecutor {
+  if (client) {
+    return client.query.bind(client) as SqlExecutor;
+  }
+  return query as SqlExecutor;
+}
+
+async function assertLocationBelongsToTenant(
+  tenantId: string,
+  locationId: string | null | undefined,
+  client?: PoolClient
+): Promise<void> {
+  if (!locationId) return;
+  const executor = executorFor(client);
+  const res = await executor<{ id: string }>(
+    'SELECT id FROM locations WHERE id = $1 AND tenant_id = $2',
+    [locationId, tenantId]
+  );
+  if (!res.rows[0]) {
+    throw new Error('WORK_CENTER_LOCATION_NOT_FOUND');
+  }
+}
+
+async function assertItemBelongsToTenant(
+  tenantId: string,
+  itemId: string,
+  client?: PoolClient
+): Promise<void> {
+  const executor = executorFor(client);
+  const res = await executor<{ id: string }>(
+    'SELECT id FROM items WHERE id = $1 AND tenant_id = $2',
+    [itemId, tenantId]
+  );
+  if (!res.rows[0]) {
+    throw new Error('ROUTING_ITEM_NOT_FOUND');
+  }
+}
+
+async function assertWorkCentersBelongToTenant(
+  tenantId: string,
+  workCenterIds: string[],
+  client?: PoolClient
+): Promise<void> {
+  if (workCenterIds.length === 0) return;
+  const executor = executorFor(client);
+  const uniqueIds = Array.from(new Set(workCenterIds));
+  const res = await executor<{ id: string }>(
+    'SELECT id FROM work_centers WHERE tenant_id = $1 AND id = ANY($2::uuid[])',
+    [tenantId, uniqueIds]
+  );
+  const found = new Set(res.rows.map((row) => row.id));
+  const missing = uniqueIds.filter((id) => !found.has(id));
+  if (missing.length > 0) {
+    throw new Error('WORK_CENTER_NOT_FOUND');
+  }
+}
+
+export class RoutingsService {
+  async getAllWorkCenters(tenantId: string): Promise<WorkCenter[]> {
     const res = await query<WorkCenter>(
-      `SELECT 
-        id, code, name, description, location_id as "locationId", 
-        hourly_rate::float as "hourlyRate", capacity, status, 
-        created_at as "createdAt", updated_at as "updatedAt"
-       FROM work_centers
-       ORDER BY code`
+      `SELECT
+         id, code, name, description, location_id as "locationId",
+         hourly_rate::float as "hourlyRate", capacity, status,
+         created_at as "createdAt", updated_at as "updatedAt"
+        FROM work_centers
+       WHERE tenant_id = $1
+       ORDER BY code`,
+      [tenantId]
     );
     return res.rows;
   }
 
-  async getWorkCenterById(id: string): Promise<WorkCenter | null> {
+  async getWorkCenterById(tenantId: string, id: string): Promise<WorkCenter | null> {
     const res = await query<WorkCenter>(
-      `SELECT 
-        id, code, name, description, location_id as "locationId", 
-        hourly_rate::float as "hourlyRate", capacity, status, 
-        created_at as "createdAt", updated_at as "updatedAt"
-       FROM work_centers
-       WHERE id = $1`,
-      [id]
+      `SELECT
+         id, code, name, description, location_id as "locationId",
+         hourly_rate::float as "hourlyRate", capacity, status,
+         created_at as "createdAt", updated_at as "updatedAt"
+        FROM work_centers
+       WHERE id = $1
+         AND tenant_id = $2`,
+      [id, tenantId]
     );
     return res.rows[0] || null;
   }
 
-  async createWorkCenter(data: z.infer<typeof createWorkCenterSchema>): Promise<WorkCenter> {
+  async createWorkCenter(tenantId: string, data: z.infer<typeof createWorkCenterSchema>): Promise<WorkCenter> {
+    await assertLocationBelongsToTenant(tenantId, data.locationId ?? null);
     const res = await query<WorkCenter>(
       `INSERT INTO work_centers (
-        code, name, description, location_id, hourly_rate, capacity, status
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING 
-        id, code, name, description, location_id as "locationId", 
-        hourly_rate::float as "hourlyRate", capacity, status, 
-        created_at as "createdAt", updated_at as "updatedAt"`,
+         tenant_id, code, name, description, location_id, hourly_rate, capacity, status
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING
+         id, code, name, description, location_id as "locationId",
+         hourly_rate::float as "hourlyRate", capacity, status,
+         created_at as "createdAt", updated_at as "updatedAt"`,
       [
+        tenantId,
         data.code,
         data.name,
         data.description,
@@ -64,10 +127,14 @@ export class RoutingsService {
     return res.rows[0];
   }
 
-  async updateWorkCenter(id: string, data: z.infer<typeof updateWorkCenterSchema>): Promise<WorkCenter | null> {
+  async updateWorkCenter(
+    tenantId: string,
+    id: string,
+    data: z.infer<typeof updateWorkCenterSchema>
+  ): Promise<WorkCenter | null> {
     const updates: string[] = [];
-    const values: any[] = [id];
-    let paramIndex = 2;
+    const values: any[] = [id, tenantId];
+    let paramIndex = 3;
 
     if (data.code !== undefined) {
       updates.push(`code = $${paramIndex++}`);
@@ -82,6 +149,7 @@ export class RoutingsService {
       values.push(data.description);
     }
     if (data.locationId !== undefined) {
+      await assertLocationBelongsToTenant(tenantId, data.locationId ?? null);
       updates.push(`location_id = $${paramIndex++}`);
       values.push(data.locationId);
     }
@@ -98,94 +166,105 @@ export class RoutingsService {
       values.push(data.status);
     }
 
-    if (updates.length === 0) return this.getWorkCenterById(id);
+    if (updates.length === 0) return this.getWorkCenterById(tenantId, id);
 
     const res = await query<WorkCenter>(
-      `UPDATE work_centers 
-       SET ${updates.join(', ')} 
-       WHERE id = $1
-       RETURNING 
-        id, code, name, description, location_id as "locationId", 
-        hourly_rate::float as "hourlyRate", capacity, status, 
+      `UPDATE work_centers
+          SET ${updates.join(', ')}
+        WHERE id = $1
+          AND tenant_id = $2
+      RETURNING
+        id, code, name, description, location_id as "locationId",
+        hourly_rate::float as "hourlyRate", capacity, status,
         created_at as "createdAt", updated_at as "updatedAt"`,
       values
     );
     return res.rows[0] || null;
   }
 
-  // Routing Methods
-
-  async getRoutingsByItemId(itemId: string): Promise<Routing[]> {
+  async getRoutingsByItemId(tenantId: string, itemId: string): Promise<Routing[]> {
     const res = await query<Routing>(
-      `SELECT 
-        id, item_id as "itemId", name, version, is_default as "isDefault", 
-        status, notes, created_at as "createdAt", updated_at as "updatedAt"
-       FROM routings
+      `SELECT
+         id, item_id as "itemId", name, version, is_default as "isDefault",
+         status, notes, created_at as "createdAt", updated_at as "updatedAt"
+        FROM routings
        WHERE item_id = $1
+         AND tenant_id = $2
        ORDER BY version DESC`,
-      [itemId]
+      [itemId, tenantId]
     );
-    
+
     const routings = res.rows;
     for (const routing of routings) {
-      routing.steps = await this.getRoutingSteps(routing.id);
+      routing.steps = await this.getRoutingSteps(tenantId, routing.id);
     }
     return routings;
   }
 
-  async getRoutingById(id: string): Promise<Routing | null> {
+  async getRoutingById(tenantId: string, id: string): Promise<Routing | null> {
     const res = await query<Routing>(
-      `SELECT 
-        id, item_id as "itemId", name, version, is_default as "isDefault", 
-        status, notes, created_at as "createdAt", updated_at as "updatedAt"
-       FROM routings
-       WHERE id = $1`,
-      [id]
+      `SELECT
+         id, item_id as "itemId", name, version, is_default as "isDefault",
+         status, notes, created_at as "createdAt", updated_at as "updatedAt"
+        FROM routings
+       WHERE id = $1
+         AND tenant_id = $2`,
+      [id, tenantId]
     );
-    
+
     if (!res.rows[0]) return null;
-    
+
     const routing = res.rows[0];
-    routing.steps = await this.getRoutingSteps(routing.id);
+    routing.steps = await this.getRoutingSteps(tenantId, routing.id);
     return routing;
   }
 
-  async getRoutingSteps(routingId: string) {
+  async getRoutingSteps(tenantId: string, routingId: string): Promise<RoutingStep[]> {
     const res = await query<RoutingStep>(
-      `SELECT 
-        id, sequence_number as "sequenceNumber", work_center_id as "workCenterId", 
-        description, setup_time_minutes::float as "setupTimeMinutes", 
-        run_time_minutes::float as "runTimeMinutes", 
-        machine_time_minutes::float as "machineTimeMinutes"
-       FROM routing_steps
+      `SELECT
+         id, sequence_number as "sequenceNumber", work_center_id as "workCenterId",
+         description, setup_time_minutes::float as "setupTimeMinutes",
+         run_time_minutes::float as "runTimeMinutes",
+         machine_time_minutes::float as "machineTimeMinutes"
+        FROM routing_steps
        WHERE routing_id = $1
+         AND tenant_id = $2
        ORDER BY sequence_number`,
-      [routingId]
+      [routingId, tenantId]
     );
     return res.rows;
   }
 
-  async createRouting(data: z.infer<typeof createRoutingSchema>): Promise<Routing> {
+  async createRouting(tenantId: string, data: z.infer<typeof createRoutingSchema>): Promise<Routing> {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await assertItemBelongsToTenant(tenantId, data.itemId, client);
+      await assertWorkCentersBelongToTenant(
+        tenantId,
+        (data.steps ?? []).map((step) => step.workCenterId),
+        client
+      );
 
-      // If this is set as default, unset other defaults for the item
       if (data.isDefault) {
         await client.query(
-          `UPDATE routings SET is_default = false WHERE item_id = $1`,
-          [data.itemId]
+          `UPDATE routings
+              SET is_default = false
+            WHERE tenant_id = $1
+              AND item_id = $2`,
+          [tenantId, data.itemId]
         );
       }
 
       const res = await client.query<Routing>(
         `INSERT INTO routings (
-          item_id, name, version, is_default, status, notes
-         ) VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING 
-          id, item_id as "itemId", name, version, is_default as "isDefault", 
-          status, notes, created_at as "createdAt", updated_at as "updatedAt"`,
+           tenant_id, item_id, name, version, is_default, status, notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING
+           id, item_id as "itemId", name, version, is_default as "isDefault",
+           status, notes, created_at as "createdAt", updated_at as "updatedAt"`,
         [
+          tenantId,
           data.itemId,
           data.name,
           data.version,
@@ -200,10 +279,11 @@ export class RoutingsService {
         for (const step of data.steps) {
           await client.query(
             `INSERT INTO routing_steps (
-              routing_id, sequence_number, work_center_id, description, 
-              setup_time_minutes, run_time_minutes, machine_time_minutes
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+               tenant_id, routing_id, sequence_number, work_center_id, description,
+               setup_time_minutes, run_time_minutes, machine_time_minutes
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
             [
+              tenantId,
               routing.id,
               step.sequenceNumber,
               step.workCenterId,
@@ -217,7 +297,7 @@ export class RoutingsService {
       }
 
       await client.query('COMMIT');
-      routing.steps = await this.getRoutingSteps(routing.id); // Re-fetch steps to be sure
+      routing.steps = await this.getRoutingSteps(tenantId, routing.id);
       return routing;
     } catch (e) {
       await client.query('ROLLBACK');
@@ -227,27 +307,51 @@ export class RoutingsService {
     }
   }
 
-  async updateRouting(id: string, data: z.infer<typeof updateRoutingSchema>): Promise<Routing | null> {
+  async updateRouting(
+    tenantId: string,
+    id: string,
+    data: z.infer<typeof updateRoutingSchema>
+  ): Promise<Routing | null> {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      const currentRouting = await this.getRoutingById(id);
-      if (!currentRouting) {
-        throw new Error('Routing not found');
+      const currentRes = await client.query<{ item_id: string }>(
+        `SELECT item_id
+           FROM routings
+          WHERE id = $1
+            AND tenant_id = $2
+          FOR UPDATE`,
+        [id, tenantId]
+      );
+      if (!currentRes.rows[0]) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      const currentItemId = currentRes.rows[0].item_id;
+
+      if (data.steps) {
+        await assertWorkCentersBelongToTenant(
+          tenantId,
+          data.steps.map((step) => step.workCenterId),
+          client
+        );
       }
 
-      // If setting as default, unset others
       if (data.isDefault) {
         await client.query(
-          `UPDATE routings SET is_default = false WHERE item_id = $1 AND id != $2`,
-          [currentRouting.itemId, id]
+          `UPDATE routings
+              SET is_default = false
+            WHERE tenant_id = $1
+              AND item_id = $2
+              AND id != $3`,
+          [tenantId, currentItemId, id]
         );
       }
 
       const updates: string[] = [];
-      const values: any[] = [id];
-      let paramIndex = 2;
+      const values: any[] = [id, tenantId];
+      let paramIndex = 3;
 
       if (data.name !== undefined) {
         updates.push(`name = $${paramIndex++}`);
@@ -272,22 +376,29 @@ export class RoutingsService {
 
       if (updates.length > 0) {
         await client.query(
-          `UPDATE routings SET ${updates.join(', ')} WHERE id = $1`,
+          `UPDATE routings
+              SET ${updates.join(', ')}
+            WHERE id = $1
+              AND tenant_id = $2`,
           values
         );
       }
 
       if (data.steps) {
-        // Replace all steps
-        await client.query(`DELETE FROM routing_steps WHERE routing_id = $1`, [id]);
-        
+        await client.query(
+          `DELETE FROM routing_steps
+            WHERE routing_id = $1
+              AND tenant_id = $2`,
+          [id, tenantId]
+        );
         for (const step of data.steps) {
           await client.query(
             `INSERT INTO routing_steps (
-              routing_id, sequence_number, work_center_id, description, 
-              setup_time_minutes, run_time_minutes, machine_time_minutes
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+               tenant_id, routing_id, sequence_number, work_center_id, description,
+               setup_time_minutes, run_time_minutes, machine_time_minutes
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
             [
+              tenantId,
               id,
               step.sequenceNumber,
               step.workCenterId,
@@ -301,7 +412,7 @@ export class RoutingsService {
       }
 
       await client.query('COMMIT');
-      return this.getRoutingById(id);
+      return this.getRoutingById(tenantId, id);
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;

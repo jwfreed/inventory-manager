@@ -69,6 +69,16 @@ export const workOrderReportProductionSchema = z.object({
   warehouseId: z.string().min(1).max(64).optional(),
   outputQty: z.number().positive(),
   outputUom: z.string().min(1).max(32).optional(),
+  outputLotId: z.string().uuid().optional(),
+  outputLotCode: z.string().min(1).max(120).optional(),
+  inputLots: z.array(
+    z.object({
+      componentItemId: z.string().uuid(),
+      lotId: z.string().uuid(),
+      uom: z.string().min(1).max(32),
+      quantity: z.number().positive()
+    })
+  ).optional(),
   occurredAt: z.string().datetime().optional(),
   notes: z.string().max(2000).optional(),
   idempotencyKey: z.string().min(1).max(255).optional(),

@@ -1,17 +1,19 @@
-import type { RouteObject } from 'react-router-dom';
-import { WorkCentersPage } from './pages/WorkCentersPage';
+import type { AppRouteObject } from '../../shared/routes'
+import { WorkCentersPage } from './pages/WorkCentersPage'
 
-export const routingsRoutes: RouteObject[] = [
+export const routingsRoutes: AppRouteObject[] = [
   {
     path: 'work-centers',
     element: <WorkCentersPage />,
     handle: {
-      breadcrumb: 'Work Centers',
+      breadcrumb: 'Production Areas',
       nav: {
-        label: 'Work Centers',
+        label: 'Production Areas',
         to: '/work-centers',
-        order: 11,
+        section: 'master-data',
+        order: 74,
+        description: 'Used to group production records and filter reports.',
       },
     },
   },
-];
+]

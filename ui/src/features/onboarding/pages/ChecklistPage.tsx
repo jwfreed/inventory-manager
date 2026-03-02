@@ -58,7 +58,7 @@ export default function ChecklistPage() {
       business_type: progress.businessType ?? null,
       path_chosen: progress.pathChosen ?? null,
     })
-    navigate('/home')
+    navigate('/dashboard')
   }
 
   const handleComplete = () => {

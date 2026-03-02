@@ -120,12 +120,12 @@ export const RoutingForm: React.FC<RoutingFormProps> = ({ itemId, initialData, o
               </div>
 
               <div className="flex-1">
-                <label className="block text-xs font-medium text-gray-500">Work Center</label>
+                <label className="block text-xs font-medium text-gray-500">Production Area</label>
                 <select
                   {...register(`steps.${index}.workCenterId`, { required: true })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 >
-                  <option value="">Select Work Center</option>
+                  <option value="">Select Production Area</option>
                   {workCenters?.map((wc) => (
                     <option key={wc.id} value={wc.id}>
                       {wc.name} ({wc.code})

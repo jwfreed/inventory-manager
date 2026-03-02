@@ -5,7 +5,6 @@ export interface ProductionOverviewFilters {
   dateTo?: string
   itemId?: string
   locationId?: string
-  workCenterId?: string
 }
 
 export interface ProductionVolumeTrend {
@@ -52,7 +51,6 @@ export async function getProductionOverview(
   if (filters.dateTo) params.dateTo = filters.dateTo
   if (filters.itemId) params.itemId = filters.itemId
   if (filters.locationId) params.locationId = filters.locationId
-  if (filters.workCenterId) params.workCenterId = filters.workCenterId
 
   return apiGet<ProductionOverviewData>('/production-overview', { params })
 }

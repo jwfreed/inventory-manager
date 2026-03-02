@@ -1,5 +1,5 @@
 import type { AppNavItem, AppRouteObject } from '../shared/routes'
-import HomePage from '../pages/Home'
+import { Navigate } from 'react-router-dom'
 import NotFoundPage from '../pages/NotFound'
 import { itemRoutes } from '../features/items'
 import { kpiRoutes } from '../features/kpis'
@@ -22,17 +22,7 @@ import { adminRoutes } from '../features/admin'
 const coreRoutes: AppRouteObject[] = [
   {
     path: 'home',
-    element: <HomePage />,
-    handle: {
-      breadcrumb: 'Home',
-      nav: {
-        label: 'Home',
-        to: '/home',
-        section: 'dashboard',
-        order: 10,
-        description: 'Welcome and quick access',
-      },
-    },
+    element: <Navigate to="/dashboard" replace />,
   },
 ]
 

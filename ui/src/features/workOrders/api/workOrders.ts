@@ -185,3 +185,41 @@ export async function recordWorkOrderBatch(
 ): Promise<RecordBatchResult> {
   return apiPost<RecordBatchResult>(`/work-orders/${workOrderId}/record-batch`, payload)
 }
+
+export type ReportProductionPayload = {
+  warehouseId?: string
+  outputQty: number
+  outputUom?: string
+  outputLotId?: string
+  outputLotCode?: string
+  inputLots?: Array<{
+    componentItemId: string
+    lotId: string
+    uom: string
+    quantity: number
+  }>
+  occurredAt?: string
+  notes?: string | null
+  idempotencyKey?: string
+}
+
+export type ReportProductionResult = {
+  workOrderId: string
+  productionReportId: string
+  componentIssueMovementId: string
+  productionReceiptMovementId: string
+  idempotencyKey: string | null
+  replayed: boolean
+  lotTracking?: {
+    outputLotId: string
+    outputLotCode: string
+    inputLotCount: number
+  }
+}
+
+export async function reportWorkOrderProduction(
+  workOrderId: string,
+  payload: ReportProductionPayload,
+): Promise<ReportProductionResult> {
+  return apiPost<ReportProductionResult>(`/work-orders/${workOrderId}/report-production`, payload)
+}

@@ -43,7 +43,7 @@ export const WorkCenterForm: React.FC<WorkCenterFormProps> = ({ initialData, onS
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700">Name</label>
+        <label className="block text-sm font-medium text-gray-700">Production Area Name</label>
         <input
           {...register('name', { required: 'Name is required' })}
           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"

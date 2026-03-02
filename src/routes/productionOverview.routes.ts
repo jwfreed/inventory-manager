@@ -14,8 +14,7 @@ const productionOverviewQuerySchema = z.object({
   dateFrom: z.string().datetime().optional(),
   dateTo: z.string().datetime().optional(),
   itemId: z.string().uuid().optional(),
-  locationId: z.string().uuid().optional(),
-  workCenterId: z.string().uuid().optional()
+  locationId: z.string().uuid().optional()
 });
 
 /**

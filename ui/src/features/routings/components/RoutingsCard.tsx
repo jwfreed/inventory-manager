@@ -97,7 +97,7 @@ export const RoutingsCard: React.FC<RoutingsCardProps> = ({ itemId }) => {
         <div>
           <h3 className="text-lg font-medium leading-6 text-gray-900">Production Routings</h3>
           <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            Manage manufacturing steps and work centers.
+            Manage manufacturing steps and production areas.
           </p>
         </div>
         <button
@@ -157,7 +157,7 @@ export const RoutingsCard: React.FC<RoutingsCardProps> = ({ itemId }) => {
                       <thead>
                         <tr>
                           <th className="text-left text-xs font-medium text-gray-500">Seq</th>
-                          <th className="text-left text-xs font-medium text-gray-500">Work Center</th>
+                          <th className="text-left text-xs font-medium text-gray-500">Production Area</th>
                           <th className="text-left text-xs font-medium text-gray-500">Description</th>
                           <th className="text-right text-xs font-medium text-gray-500">Setup</th>
                           <th className="text-right text-xs font-medium text-gray-500">Run</th>

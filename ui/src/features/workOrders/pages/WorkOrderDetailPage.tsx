@@ -12,6 +12,7 @@ import { ExecutionSummaryPanel } from '../components/ExecutionSummaryPanel'
 import { IssueDraftForm } from '../components/IssueDraftForm'
 import { CompletionDraftForm } from '../components/CompletionDraftForm'
 import { RecordBatchForm } from '../components/RecordBatchForm'
+import { ReportProductionForm } from '../components/ReportProductionForm'
 import { WorkOrderRequirementsTable } from '../components/WorkOrderRequirementsTable'
 import { WorkOrderNextStepPanel } from '../components/WorkOrderNextStepPanel'
 import { useLocationsList } from '@features/locations/queries'
@@ -610,7 +611,7 @@ export default function WorkOrderDetailPage() {
                         : 'Make product'
                       : isDisassembly
                         ? 'Disassemble & record outputs'
-                        : 'Issue & complete'}
+                        : 'Report production'}
               </button>
             ))}
           </div>
@@ -668,11 +669,26 @@ export default function WorkOrderDetailPage() {
           )}
 
           {tab === 'batch' && workOrderQuery.data && (
-            <RecordBatchForm
-              workOrder={workOrderQuery.data}
-              outputItem={outputItemQuery.data}
-              onRefetch={refreshAll}
-            />
+            <div className="space-y-4">
+              {!isDisassembly && (
+                <ReportProductionForm workOrder={workOrderQuery.data} onRefetch={refreshAll} />
+              )}
+              <details
+                className="rounded-lg border border-slate-200 bg-white"
+                open={isDisassembly}
+              >
+                <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">
+                  Advanced: Record batch (manual consume/produce lines)
+                </summary>
+                <div className="border-t border-slate-200 p-4">
+                  <RecordBatchForm
+                    workOrder={workOrderQuery.data}
+                    outputItem={outputItemQuery.data}
+                    onRefetch={refreshAll}
+                  />
+                </div>
+              </details>
+            </div>
           )}
 
           {!isDisassembly && workOrderQuery.data && (

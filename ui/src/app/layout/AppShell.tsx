@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Badge, Breadcrumbs, Button } from '@shared/ui'
 import { useAuth } from '@shared/auth'
 import { navItems } from '../routeData'
@@ -9,6 +9,7 @@ import OnboardingNudge from '@features/onboarding/components/OnboardingNudge'
 function AppShell() {
   const { user, tenant, logout } = useAuth()
   const location = useLocation()
+  const contentScrollRef = useRef<HTMLElement | null>(null)
   const envLabel = useMemo(() => {
     const mode = import.meta.env.MODE ?? 'development'
     return mode.toUpperCase()
@@ -18,19 +19,19 @@ function AppShell() {
   const tenantLabel = tenant?.name || tenant?.slug
 
   useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
+    contentScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
   }, [location.pathname])
 
   return (
-    <div className="flex min-h-screen bg-slate-25 text-slate-900">
-      <aside className="hidden w-64 border-r border-slate-200 bg-white lg:flex lg:flex-col">
+    <div className="h-screen overflow-hidden bg-slate-25 text-slate-900">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 overflow-y-auto border-r border-slate-200 bg-white lg:flex lg:flex-col">
         <div className="px-5 py-6">
           <div className="text-lg font-semibold text-slate-900">Inventory UI</div>
           <p className="mt-1 text-sm text-slate-500">Inventory & manufacturing ops</p>
         </div>
         <SectionNav navItems={navItems} />
       </aside>
-      <div className="flex flex-1 flex-col">
+      <div className="flex h-full min-w-0 flex-col lg:pl-64">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
           <div>
             <h1 className="text-lg font-semibold text-slate-900">Inventory Manager</h1>
@@ -51,7 +52,7 @@ function AppShell() {
             </Button>
           </div>
         </header>
-        <main className="flex-1 bg-slate-25">
+        <main ref={contentScrollRef} className="flex-1 overflow-y-auto bg-slate-25">
           <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
             <Breadcrumbs />
             <OnboardingNudge />

@@ -17,7 +17,7 @@ export default function DonePage() {
       business_type: progress.businessType ?? null,
       path_chosen: progress.pathChosen ?? null,
     })
-    navigate('/home')
+    navigate('/dashboard')
   }
 
   return (
