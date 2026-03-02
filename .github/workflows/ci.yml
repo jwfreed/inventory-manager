@@ -42,7 +42,6 @@ jobs:
       NODE_ENV: test
       SEED_ADMIN_EMAIL: ci-admin@test.local
       SEED_ADMIN_PASSWORD: ci-admin-password
-      INVARIANTS_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -175,14 +174,14 @@ jobs:
           node --test --test-reporter=spec --test-timeout=900000 --test-concurrency=4 --import ./tests/setup.mjs "${tests[@]}"
       - name: Prepare isolated DB for invariant gate files
         env:
-          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
         run: |
           set -euo pipefail
           psql "postgres://postgres:postgres@postgres:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS inventory_test_invariants;"
           psql "postgres://postgres:postgres@postgres:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE inventory_test_invariants;"
           psql "postgres://postgres:postgres@postgres:5432/postgres" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE inventory_test_invariants TO app_ci;"
-          DATABASE_URL="$INVARIANTS_DATABASE_URL" npm run migrate:up
-          psql "$INVARIANTS_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          npm run migrate:up
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
           GRANT USAGE ON SCHEMA public TO app_ci;
           GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_ci;
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_ci;
