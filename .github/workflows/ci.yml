@@ -42,6 +42,7 @@ jobs:
       NODE_ENV: test
       SEED_ADMIN_EMAIL: ci-admin@test.local
       SEED_ADMIN_PASSWORD: ci-admin-password
+      INVARIANTS_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -143,18 +144,64 @@ jobs:
             ps -p "$SERVER_PID" -o pid,ppid,stat,etime,cmd || true
           fi
           exit 1
-      - name: Run full test suite as postgres
-        id: full_suite
+      - name: Run main test suite (excluding invariant gate files)
+        id: main_suite
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
           TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
-        run: node --test --test-reporter=spec --test-timeout=900000 --test-concurrency=1 --import ./tests/setup.mjs tests/api/*.test.mjs tests/ops/*.test.mjs tests/db/*.test.mjs
-      - name: DB invariant diagnostics (on full-suite failure)
-        if: failure() && steps.full_suite.outcome == 'failure'
-        continue-on-error: true
+        run: |
+          set -euo pipefail
+          excluded=(
+            tests/db/inventory-invariants-scope-hardening.test.mjs
+            tests/db/inventory-invariants.test.mjs
+            tests/db/phase6-invariants-reservation-warehouse-historical-mismatch.test.mjs
+            tests/db/phase6-invariants-warehouse-id-drift.test.mjs
+            tests/ops/clean-dev-db-no-drift.test.mjs
+          )
+          tests=()
+          while IFS= read -r file; do
+            skip=false
+            for ex in "${excluded[@]}"; do
+              if [[ "$file" == "$ex" ]]; then
+                skip=true
+                break
+              fi
+            done
+            if [[ "$skip" == false ]]; then
+              tests+=("$file")
+            fi
+          done < <(find tests/api tests/ops tests/db -maxdepth 1 -type f -name '*.test.mjs' | sort)
+          echo "Running ${#tests[@]} tests in main suite"
+          node --test --test-reporter=spec --test-timeout=900000 --test-concurrency=4 --import ./tests/setup.mjs "${tests[@]}"
+      - name: Prepare isolated DB for invariant gate files
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
         run: |
+          set -euo pipefail
+          psql "postgres://postgres:postgres@postgres:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS inventory_test_invariants;"
+          psql "postgres://postgres:postgres@postgres:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE inventory_test_invariants;"
+          psql "postgres://postgres:postgres@postgres:5432/postgres" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE inventory_test_invariants TO app_ci;"
+          DATABASE_URL="$INVARIANTS_DATABASE_URL" npm run migrate:up
+          DATABASE_URL="$INVARIANTS_DATABASE_URL" npm run seed:admin --if-present
+          psql "$INVARIANTS_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          GRANT USAGE ON SCHEMA public TO app_ci;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_ci;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_ci;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_ci;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
+          REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
+          SQL
+      - name: Run invariant gate files serially with bounded budgets
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
+          TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
+          INVARIANTS_MAX_ATTEMPTS_PER_TENANT: '2'
+          INVARIANTS_MAX_TENANT_WALL_CLOCK_MS: '90000'
+          INVARIANTS_STATEMENT_TIMEOUT_MS: '15000'
+          INVARIANTS_LOCK_TIMEOUT_MS: '3000'
+          INVARIANTS_QUERY_TIMEOUT_MS: '20000'
+        run: |
+          set -euo pipefail
           tests=(
             tests/db/inventory-invariants-scope-hardening.test.mjs
             tests/db/inventory-invariants.test.mjs
@@ -165,8 +212,8 @@ jobs:
           for t in "${tests[@]}"; do
             echo "==== pg_stat_activity before ${t} ===="
             psql "$DATABASE_URL" -c "select now(), pid, state, wait_event_type, wait_event, query from pg_stat_activity where datname=current_database() order by state, pid;"
-            echo "==== rerun ${t} ===="
-            node --test --test-reporter=spec --test-timeout=900000 --test-concurrency=1 --import ./tests/setup.mjs "$t" || true
+            echo "==== run ${t} ===="
+            node --test --test-reporter=spec --test-timeout=900000 --test-concurrency=1 --import ./tests/setup.mjs "$t"
             echo "==== pg_stat_activity after ${t} ===="
             psql "$DATABASE_URL" -c "select now(), pid, state, wait_event_type, wait_event, query from pg_stat_activity where datname=current_database() order by state, pid;"
           done
