@@ -42,6 +42,7 @@ jobs:
       NODE_ENV: test
       SEED_ADMIN_EMAIL: ci-admin@test.local
       SEED_ADMIN_PASSWORD: ci-admin-password
+      INVENTORY_TX_MAX_ATTEMPTS: '5'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -171,7 +172,7 @@ jobs:
             fi
           done < <(find tests/api tests/ops tests/db -maxdepth 1 -type f -name '*.test.mjs' | sort)
           echo "Running ${#tests[@]} tests in main suite"
-          node --test --test-reporter=spec --test-timeout=900000 --test-concurrency=4 --import ./tests/setup.mjs "${tests[@]}"
+          node --test --test-reporter=spec --test-timeout=900000 --test-concurrency=3 --import ./tests/setup.mjs "${tests[@]}"
       - name: Prepare isolated DB for invariant gate files
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants

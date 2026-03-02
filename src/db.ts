@@ -55,6 +55,7 @@ const SLOW_QUERY_THRESHOLD_MS = parseInt(process.env.SLOW_QUERY_THRESHOLD_MS || 
 const STATEMENT_TIMEOUT_MS = parseInt(process.env.DB_STATEMENT_TIMEOUT_MS || '5000', 10);
 const LOCK_TIMEOUT_MS = parseInt(process.env.DB_LOCK_TIMEOUT_MS || '2000', 10);
 const QUERY_TIMEOUT_MS = parseInt(process.env.DB_QUERY_TIMEOUT_MS || '0', 10);
+const INVENTORY_TX_MAX_ATTEMPTS = parseInt(process.env.INVENTORY_TX_MAX_ATTEMPTS || '', 10);
 const nodeEnv = (process.env.NODE_ENV ?? 'development').toLowerCase();
 const resolvedDbTarget = resolveDbTarget(process.env.DATABASE_URL);
 
@@ -167,7 +168,11 @@ export async function withTransactionRetry<T>(
     sleep?: (delayMs: number) => Promise<void>;
   }
 ): Promise<T> {
-  const retries = options?.retries ?? 2;
+  const retries =
+    options?.retries
+    ?? (Number.isFinite(INVENTORY_TX_MAX_ATTEMPTS) && INVENTORY_TX_MAX_ATTEMPTS > 0
+      ? INVENTORY_TX_MAX_ATTEMPTS - 1
+      : 2);
   const isolationLevel = options?.isolationLevel;
   const sleep =
     options?.sleep
