@@ -182,7 +182,6 @@ jobs:
           psql "postgres://postgres:postgres@postgres:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE inventory_test_invariants;"
           psql "postgres://postgres:postgres@postgres:5432/postgres" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE inventory_test_invariants TO app_ci;"
           DATABASE_URL="$INVARIANTS_DATABASE_URL" npm run migrate:up
-          DATABASE_URL="$INVARIANTS_DATABASE_URL" npm run seed:admin --if-present
           psql "$INVARIANTS_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
           GRANT USAGE ON SCHEMA public TO app_ci;
           GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_ci;
@@ -191,6 +190,49 @@ jobs:
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
           REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
           SQL
+      - name: Restart API server on isolated invariant DB
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
+          TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
+        run: |
+          set -euo pipefail
+          if [ -f server.pid ]; then
+            kill "$(cat server.pid)" || true
+            rm -f server.pid
+          fi
+          nohup npm run dev -- --repair-defaults > server.log 2>&1 &
+          SERVER_PID=$!
+          echo "$SERVER_PID" > server.pid
+          echo "SERVER_PID=$SERVER_PID" >> "$GITHUB_ENV"
+          for i in {1..60}; do
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "API process exited while switching to invariant DB"
+              cat server.log || true
+              exit 1
+            fi
+            if curl -fsS "http://127.0.0.1:3000/healthz" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS "http://127.0.0.1:3000/healthz" >/dev/null
+      - name: Seed admin user in isolated invariant DB
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
+          TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
+          SEED_ADMIN_EMAIL: ci-admin@test.local
+          SEED_ADMIN_PASSWORD: ci-admin-password
+        run: |
+          set -euo pipefail
+          status="$(curl -sS -o /tmp/bootstrap-invariants.json -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d "{\"adminEmail\":\"$SEED_ADMIN_EMAIL\",\"adminPassword\":\"$SEED_ADMIN_PASSWORD\",\"tenantSlug\":\"default\",\"tenantName\":\"Default Tenant\"}" \
+            "http://127.0.0.1:3000/auth/bootstrap")"
+          if [[ "$status" != "200" && "$status" != "409" ]]; then
+            echo "auth/bootstrap failed for isolated DB with status $status"
+            cat /tmp/bootstrap-invariants.json || true
+            exit 1
+          fi
       - name: Run invariant gate files serially with bounded budgets
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
