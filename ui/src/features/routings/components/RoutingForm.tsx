@@ -1,8 +1,9 @@
 import React from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, useWatch } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
 import { getWorkCenters } from '../api';
-import type { Routing, RoutingStep } from '../types';
+import { listLocations } from '../../locations/api/locations';
+import type { Routing, RoutingStep, WorkCenter } from '../types';
 import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 interface RoutingFormProps {
@@ -30,11 +31,52 @@ export const RoutingForm: React.FC<RoutingFormProps> = ({ itemId, initialData, o
     control,
     name: 'steps'
   });
+  const stepWorkCenterIds = useWatch({
+    control,
+    name: fields.map((_, index) => `steps.${index}.workCenterId`)
+  });
 
   const { data: workCenters } = useQuery({
     queryKey: ['workCenters'],
     queryFn: getWorkCenters
   });
+  const {
+    data: locationsData,
+    isLoading: isLocationsLoading,
+    isError: isLocationsError
+  } = useQuery({
+    queryKey: ['locations'],
+    queryFn: () => listLocations(),
+    staleTime: 5 * 60 * 1000
+  });
+  const locations = React.useMemo(() => {
+    if (Array.isArray(locationsData)) return locationsData;
+    return locationsData?.data ?? [];
+  }, [locationsData]);
+
+  const workCenterById = React.useMemo(() => {
+    const map = new Map<string, WorkCenter>();
+    workCenters?.forEach((workCenter) => map.set(workCenter.id, workCenter));
+    return map;
+  }, [workCenters]);
+  const locationById = React.useMemo(() => {
+    const map = new Map<string, { name: string; code: string }>();
+    locations.forEach((location) => {
+      map.set(location.id, { name: location.name, code: location.code });
+    });
+    return map;
+  }, [locations]);
+
+  const getReceiveToHint = (workCenterId?: string) => {
+    if (!workCenterId) return null;
+    if (isLocationsLoading) return 'Receives to: Loading...';
+    if (isLocationsError) return 'Receives to: Unknown (system defaults will be used)';
+    const workCenter = workCenterById.get(workCenterId);
+    if (!workCenter?.locationId) return 'Receives to: Not set — system defaults will be used';
+    const location = locationById.get(workCenter.locationId);
+    if (!location) return 'Receives to: Unknown (system defaults will be used)';
+    return `Receives to: ${location.name} (${location.code})`;
+  };
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -108,81 +150,90 @@ export const RoutingForm: React.FC<RoutingFormProps> = ({ itemId, initialData, o
         </div>
 
         <div className="mt-4 space-y-4">
-          {fields.map((field: any, index: number) => (
-            <div key={field.id} className="flex flex-col space-y-4 rounded-md border border-gray-200 p-4 sm:flex-row sm:space-y-0 sm:space-x-4">
-              <div className="w-20">
-                <label className="block text-xs font-medium text-gray-500">Seq</label>
-                <input
-                  type="number"
-                  {...register(`steps.${index}.sequenceNumber`, { valueAsNumber: true, required: true })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
-              </div>
+          {fields.map((field, index: number) => {
+            const selectedWorkCenterId = typeof stepWorkCenterIds?.[index] === 'string' ? stepWorkCenterIds[index] : undefined;
+            const receiveToHint = getReceiveToHint(selectedWorkCenterId);
+            return (
+              <div key={field.id} className="flex flex-col space-y-4 rounded-md border border-gray-200 p-4 sm:flex-row sm:space-y-0 sm:space-x-4">
+                <div className="w-20">
+                  <label className="block text-xs font-medium text-gray-500">Seq</label>
+                  <input
+                    type="number"
+                    {...register(`steps.${index}.sequenceNumber`, { valueAsNumber: true, required: true })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
 
-              <div className="flex-1">
-                <label className="block text-xs font-medium text-gray-500">Production Area</label>
-                <select
-                  {...register(`steps.${index}.workCenterId`, { required: true })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                >
-                  <option value="">Select Production Area</option>
-                  {workCenters?.map((wc) => (
-                    <option key={wc.id} value={wc.id}>
-                      {wc.name} ({wc.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-500">Production Area</label>
+                  <select
+                    {...register(`steps.${index}.workCenterId`, { required: true })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  >
+                    <option value="">Select Production Area</option>
+                    {workCenters?.map((wc) => (
+                      <option key={wc.id} value={wc.id}>
+                        {wc.name} ({wc.code})
+                      </option>
+                    ))}
+                  </select>
+                  {receiveToHint && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {receiveToHint}
+                    </p>
+                  )}
+                </div>
 
-              <div className="flex-1">
-                <label className="block text-xs font-medium text-gray-500">Description</label>
-                <input
-                  {...register(`steps.${index}.description`)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
-              </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-500">Description</label>
+                  <input
+                    {...register(`steps.${index}.description`)}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
 
-              <div className="w-24">
-                <label className="block text-xs font-medium text-gray-500">Setup (min)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  {...register(`steps.${index}.setupTimeMinutes`, { valueAsNumber: true, min: 0 })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
-              </div>
+                <div className="w-24">
+                  <label className="block text-xs font-medium text-gray-500">Setup (min)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    {...register(`steps.${index}.setupTimeMinutes`, { valueAsNumber: true, min: 0 })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
 
-              <div className="w-24">
-                <label className="block text-xs font-medium text-gray-500">Run (min)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  {...register(`steps.${index}.runTimeMinutes`, { valueAsNumber: true, min: 0 })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
-              </div>
+                <div className="w-24">
+                  <label className="block text-xs font-medium text-gray-500">Run (min)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    {...register(`steps.${index}.runTimeMinutes`, { valueAsNumber: true, min: 0 })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
 
-              <div className="w-24">
-                <label className="block text-xs font-medium text-gray-500">Machine (min)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  {...register(`steps.${index}.machineTimeMinutes`, { valueAsNumber: true, min: 0 })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
-              </div>
+                <div className="w-24">
+                  <label className="block text-xs font-medium text-gray-500">Machine (min)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    {...register(`steps.${index}.machineTimeMinutes`, { valueAsNumber: true, min: 0 })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
 
-              <div className="flex items-end pb-1">
-                <button
-                  type="button"
-                  onClick={() => remove(index)}
-                  className="text-red-600 hover:text-red-900"
-                >
-                  <TrashIcon className="h-5 w-5" aria-hidden="true" />
-                </button>
+                <div className="flex items-end pb-1">
+                  <button
+                    type="button"
+                    onClick={() => remove(index)}
+                    className="text-red-600 hover:text-red-900"
+                  >
+                    <TrashIcon className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

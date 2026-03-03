@@ -25,15 +25,22 @@ export function ReportProductionForm({ workOrder, onRefetch }: Props) {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const clientRequestIdRef = useRef<string | null>(null)
 
+  const receiveToCodeOrId =
+    workOrder.reportProductionReceiveToLocationCode ?? workOrder.reportProductionReceiveToLocationId ?? null
+  const hasResolvedReceiveToLocation = Boolean(
+    workOrder.reportProductionReceiveToLocationName || receiveToCodeOrId,
+  )
   const receiveToLabel = workOrder.reportProductionReceiveToLocationName
-    ? `${workOrder.reportProductionReceiveToLocationName} (${workOrder.reportProductionReceiveToLocationCode ?? workOrder.reportProductionReceiveToLocationId})`
-    : (workOrder.reportProductionReceiveToLocationCode ?? workOrder.reportProductionReceiveToLocationId ?? 'Warehouse QA default')
+    ? (receiveToCodeOrId
+      ? `${workOrder.reportProductionReceiveToLocationName} (${receiveToCodeOrId})`
+      : workOrder.reportProductionReceiveToLocationName)
+    : (receiveToCodeOrId ?? 'System default')
   const receiveToSource =
     workOrder.reportProductionReceiveToSource === 'routing_snapshot'
       ? 'Routing snapshot'
       : workOrder.reportProductionReceiveToSource === 'work_order_default'
         ? 'Work order default'
-        : 'Warehouse default'
+        : 'System default'
 
   const clearClientRequestId = () => {
     clientRequestIdRef.current = null
@@ -137,14 +144,19 @@ export function ReportProductionForm({ workOrder, onRefetch }: Props) {
           />
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-          Receive-to location: <span className="font-semibold">{receiveToLabel}</span> ({receiveToSource})
-        </div>
-
         {formError && <Alert variant="error" title="Report failed" message={formError} />}
         {successMessage && <Alert variant="success" title="Production reported" message={successMessage} />}
 
-        <div className="flex justify-end">
+        <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 md:flex-row md:items-center md:justify-between">
+          <div className="md:flex-1">
+            {hasResolvedReceiveToLocation ? (
+              <div>
+                Receive-to location: <span className="font-semibold">{receiveToLabel}</span> ({receiveToSource})
+              </div>
+            ) : (
+              <div>Receive-to location: System default</div>
+            )}
+          </div>
           <Button onClick={submit} disabled={disabled}>
             {mutation.isPending ? 'Posting...' : 'Report Production'}
           </Button>

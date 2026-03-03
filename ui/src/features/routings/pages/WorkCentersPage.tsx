@@ -3,16 +3,27 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getWorkCenters, createWorkCenter, updateWorkCenter } from '../api';
 import { WorkCenterForm } from '../components/WorkCenterForm';
 import type { WorkCenter } from '../types';
+import { listLocations } from '../../locations/api/locations';
 import { PlusIcon, PencilIcon } from '@heroicons/react/24/outline';
 
 export const WorkCentersPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingWorkCenter, setEditingWorkCenter] = useState<WorkCenter | null>(null);
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: workCenters, isLoading } = useQuery({
     queryKey: ['workCenters'],
     queryFn: getWorkCenters
+  });
+  const {
+    data: locationsData,
+    isLoading: isLocationsLoading,
+    isError: isLocationsError
+  } = useQuery({
+    queryKey: ['locations'],
+    queryFn: () => listLocations(),
+    staleTime: 5 * 60 * 1000
   });
 
   const createMutation = useMutation({
@@ -50,6 +61,25 @@ export const WorkCentersPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const locations = React.useMemo(() => {
+    if (Array.isArray(locationsData)) return locationsData;
+    return locationsData?.data ?? [];
+  }, [locationsData]);
+  const locationsById = React.useMemo(
+    () => new Map(locations.map((location) => [location.id, location])),
+    [locations]
+  );
+  const hasRows = Boolean(workCenters && workCenters.length > 0);
+
+  const getReceiveToLocationLabel = (locationId?: string | null) => {
+    if (!locationId) return 'Not set';
+    if (isLocationsLoading) return 'Loading...';
+    if (isLocationsError) return 'Unknown';
+    const location = locationsById.get(locationId);
+    if (!location) return 'Unknown';
+    return `${location.name} (${location.code})`;
+  };
+
   if (isLoading) return <div>Loading...</div>;
 
   return (
@@ -58,7 +88,7 @@ export const WorkCentersPage: React.FC = () => {
         <div className="sm:flex-auto">
           <h1 className="text-xl font-semibold text-gray-900">Production Areas</h1>
           <p className="mt-2 text-sm text-gray-700">
-            Production Areas are used to group production records and filter reports.
+            Optional. Used to automatically determine where output is received when reporting production via routings.
           </p>
         </div>
         <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
@@ -72,65 +102,94 @@ export const WorkCentersPage: React.FC = () => {
           </button>
         </div>
       </div>
-      <div className="mt-8 flex flex-col">
-        <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
-          <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
-            <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-              <table className="min-w-full divide-y divide-gray-300">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
-                      Code
-                    </th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Name
-                    </th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Hourly Rate
-                    </th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Capacity
-                    </th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Status
-                    </th>
-                    <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                      <span className="sr-only">Edit</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {workCenters?.map((wc) => (
-                    <tr key={wc.id}>
-                      <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                        {wc.code}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{wc.name}</td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{wc.hourlyRate}</td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{wc.capacity}</td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                          wc.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {wc.status}
-                        </span>
-                      </td>
-                      <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                        <button
-                          onClick={() => handleEdit(wc)}
-                          className="text-indigo-600 hover:text-indigo-900"
-                        >
-                          <PencilIcon className="h-5 w-5" aria-hidden="true" />
-                        </button>
-                      </td>
+      {hasRows ? (
+        <div className="mt-8 flex flex-col">
+          <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+            <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+              <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                <table className="min-w-full divide-y divide-gray-300">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
+                        Code
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Name
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Receive-to Location
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Status
+                      </th>
+                      <th scope="col" className="py-3.5 pl-3 pr-4 text-right text-sm font-semibold text-gray-900 sm:pr-6">
+                        Actions
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {workCenters?.map((wc) => (
+                      <tr key={wc.id}>
+                        <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
+                          {wc.code}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{wc.name}</td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          {getReceiveToLocationLabel(wc.locationId)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
+                            wc.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {wc.status}
+                          </span>
+                        </td>
+                        <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                          <button
+                            onClick={() => handleEdit(wc)}
+                            className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-900"
+                          >
+                            <PencilIcon className="h-4 w-4" aria-hidden="true" />
+                            Edit
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="mt-8 rounded-lg border border-dashed border-gray-300 bg-white px-6 py-8">
+          <h2 className="text-base font-semibold text-gray-900">No production areas yet</h2>
+          <p className="mt-2 max-w-2xl whitespace-pre-line text-sm text-gray-600">
+            {'Production areas link routing steps to a receive-to location.\nExample: Nib Processing \u2192 NIB Warehouse, Packaging \u2192 Finished Goods.'}
+          </p>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleAddNew}
+              className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            >
+              Add Production Area
+            </button>
+            <button
+              type="button"
+              className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+              onClick={() => setShowHowItWorks((value) => !value)}
+            >
+              Learn how this works
+            </button>
+          </div>
+          {showHowItWorks && (
+            <p className="mt-4 max-w-2xl text-sm text-gray-600">
+              Routing steps can use a production area location as the receive-to target. If not set, system defaults are used.
+            </p>
+          )}
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 z-10 overflow-y-auto">
