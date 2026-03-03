@@ -11,6 +11,15 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
   `);
 
   pgm.sql(`
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM locations WHERE tenant_id IS NULL) THEN
+        RAISE EXCEPTION 'LOCATIONS_TENANT_ID_NULL';
+      END IF;
+    END $$;
+  `);
+
+  pgm.sql(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_locations_tenant_id_id_unique
       ON locations (tenant_id, id);
   `);
@@ -32,8 +41,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
 
   pgm.sql(`
     UPDATE work_orders wo
-       SET produce_to_location_id_snapshot = selected.location_id
-      FROM LATERAL (
+       SET produce_to_location_id_snapshot = (
         SELECT wc.location_id
           FROM routing_steps rs
           JOIN work_centers wc
@@ -44,7 +52,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
            AND wc.location_id IS NOT NULL
          ORDER BY rs.sequence_number DESC
          LIMIT 1
-      ) selected
+      )
      WHERE wo.kind = 'production'
        AND wo.status IN ('draft', 'released', 'in_progress')
        AND wo.routing_id IS NOT NULL
@@ -58,10 +66,11 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
 }
 
 export async function down(pgm: MigrationBuilder): Promise<void> {
+  // idx_locations_tenant_id_id_unique may be shared infra for other composite tenant FKs;
+  // do not drop it from this migration rollback.
   pgm.sql(`
     ALTER TABLE work_orders DROP CONSTRAINT IF EXISTS fk_work_orders_produce_location_snapshot;
     DROP INDEX IF EXISTS idx_work_orders_tenant_produce_location_snapshot;
-    DROP INDEX IF EXISTS idx_locations_tenant_id_id_unique;
     ALTER TABLE work_orders DROP COLUMN IF EXISTS produce_to_location_id_snapshot;
   `);
 }

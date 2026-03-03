@@ -34,8 +34,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
 
   pgm.sql(`
     UPDATE work_orders wo
-       SET routing_id = selected.id
-      FROM LATERAL (
+       SET routing_id = (
         SELECT r.id
           FROM routings r
          WHERE r.tenant_id = wo.tenant_id
@@ -51,7 +50,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
            r.created_at DESC,
            r.id
          LIMIT 1
-      ) selected
+      )
      WHERE wo.routing_id IS NULL
        AND wo.kind = 'production'
        AND wo.status IN ('draft', 'released', 'in_progress');

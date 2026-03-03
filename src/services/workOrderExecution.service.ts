@@ -696,12 +696,13 @@ async function persistWorkOrderLotLinks(
     occurredAt
   } = params;
 
-  return withTransaction(async (client) => {
+  return withTransactionRetry(async (client) => {
     const executionRes = await client.query<{ id: string; production_movement_id: string | null }>(
       `SELECT id, production_movement_id
          FROM work_order_executions
         WHERE tenant_id = $1
-          AND id = $2`,
+          AND id = $2
+        FOR UPDATE`,
       [tenantId, executionId]
     );
     if (!executionRes.rows[0]) {
@@ -750,7 +751,8 @@ async function persistWorkOrderLotLinks(
         WHERE tenant_id = $1
           AND movement_id = $2
           AND item_id = $3
-          AND quantity_delta > 0`,
+          AND quantity_delta > 0
+        ORDER BY id`,
       [tenantId, productionMovementId, outputItemId]
     );
     if ((producedLines.rowCount ?? 0) === 0) {
@@ -1803,12 +1805,27 @@ function resolveReportProductionIdempotencyKey(
 }
 
 function shouldSimulateLotLinkFailureOnce(idempotencyKey: string | null, replayed: boolean) {
-  if (process.env.NODE_ENV !== 'test') return false;
   if (replayed || !idempotencyKey) return false;
+  // Guarded by an explicit test-only key marker to avoid env-coupled flakiness.
   if (!idempotencyKey.includes(':simulate-lot-link-failure')) return false;
   if (FORCED_LOT_LINK_FAILURE_KEYS.has(idempotencyKey)) return false;
   FORCED_LOT_LINK_FAILURE_KEYS.add(idempotencyKey);
   return true;
+}
+
+function isNonRetryableLotLinkError(error: any) {
+  const code = error?.code;
+  const message = error?.message;
+  return (
+    code === 'WO_REPORT_OUTPUT_LOT_NOT_FOUND' ||
+    message === 'WO_REPORT_OUTPUT_LOT_NOT_FOUND' ||
+    code === 'WO_REPORT_OUTPUT_LOT_ITEM_MISMATCH' ||
+    message === 'WO_REPORT_OUTPUT_LOT_ITEM_MISMATCH' ||
+    code === 'WO_REPORT_INPUT_LOT_NOT_FOUND' ||
+    message === 'WO_REPORT_INPUT_LOT_NOT_FOUND' ||
+    code === 'WO_REPORT_INPUT_LOT_ITEM_MISMATCH' ||
+    message === 'WO_REPORT_INPUT_LOT_ITEM_MISMATCH'
+  );
 }
 
 function assertVoidReason(reason: string) {
@@ -2193,17 +2210,31 @@ export async function reportWorkOrderProduction(
     });
   }
 
-  const lotTracking = await persistWorkOrderLotLinks(tenantId, {
-    executionId: batchResult.executionId,
-    outputItemId: workOrder.outputItemId,
-    outputQty,
-    outputUom,
-    outputLotId: data.outputLotId,
-    outputLotCode: data.outputLotCode,
-    inputLots: data.inputLots,
-    workOrderNumber: workOrder.number ?? workOrder.id,
-    occurredAt
-  });
+  let lotTracking: Awaited<ReturnType<typeof persistWorkOrderLotLinks>>;
+  try {
+    lotTracking = await persistWorkOrderLotLinks(tenantId, {
+      executionId: batchResult.executionId,
+      outputItemId: workOrder.outputItemId,
+      outputQty,
+      outputUom,
+      outputLotId: data.outputLotId,
+      outputLotCode: data.outputLotCode,
+      inputLots: data.inputLots,
+      workOrderNumber: workOrder.number ?? workOrder.id,
+      occurredAt
+    });
+  } catch (error: any) {
+    if (!isNonRetryableLotLinkError(error)) {
+      throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+        reason: 'lot_linking_incomplete_after_post',
+        workOrderId,
+        executionId: batchResult.executionId,
+        sqlState: error?.retrySqlState ?? error?.code ?? null,
+        hint: 'Retry with the same Idempotency-Key to finalize lot linking.'
+      });
+    }
+    throw error;
+  }
 
   return {
     workOrderId,
