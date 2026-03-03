@@ -46,9 +46,15 @@ import {
   computeReplenishmentRecommendations,
   computeFulfillmentFillRate,
 } from '../services/planning.service';
+import { computeDashboardKpis } from '../services/dashboardKpi.service';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
+const dashboardComputeSchema = z.object({
+  warehouseId: z.string().uuid().optional(),
+  windowDays: z.number().int().min(1).max(365).optional(),
+  idempotencyKey: z.string().min(1).max(255).optional(),
+});
 
 router.post('/mps/plans', async (req: Request, res: Response) => {
   const parsed = mpsPlanSchema.safeParse(req.body);
@@ -312,6 +318,22 @@ router.get('/kpis/runs', async (req: Request, res: Response) => {
   const offset = Math.max(0, Number(req.query.offset) || 0);
   const data = await listKpiRuns(req.auth!.tenantId, limit, offset);
   return res.json({ data, paging: { limit, offset } });
+});
+
+router.post('/kpis/compute/dashboard', async (req: Request, res: Response) => {
+  const parsed = dashboardComputeSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const result = await computeDashboardKpis(req.auth!.tenantId, parsed.data);
+    return res.json(result);
+  } catch (error: any) {
+    if (error?.message === 'WAREHOUSE_SCOPE_REQUIRED') {
+      return res.status(400).json({ error: 'No active warehouse available for KPI scope.' });
+    }
+    return res.status(500).json({ error: 'Failed to compute dashboard KPIs.' });
+  }
 });
 
 router.get('/kpis/fulfillment-fill-rate', async (req: Request, res: Response) => {

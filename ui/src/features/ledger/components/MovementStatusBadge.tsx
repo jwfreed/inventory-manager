@@ -1,4 +1,4 @@
-import { Badge } from '../../../components/Badge'
+import { SeverityPill, type Severity } from '@shared/ui'
 
 type Props = {
   status: string
@@ -6,14 +6,14 @@ type Props = {
 
 export function MovementStatusBadge({ status }: Props) {
   const normalized = status?.toLowerCase()
-  const variant =
+  const severity: Severity =
     normalized === 'posted'
-      ? 'success'
+      ? 'info'
       : normalized === 'draft'
-        ? 'warning'
+        ? 'watch'
         : normalized === 'canceled'
-          ? 'danger'
-          : 'neutral'
+          ? 'critical'
+          : 'info'
 
-  return <Badge variant={variant}>{status}</Badge>
+  return <SeverityPill severity={severity} label={status} />
 }

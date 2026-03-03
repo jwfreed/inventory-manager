@@ -27,3 +27,14 @@ export type KpiRun = {
   as_of?: string | null
   notes?: string | null
 }
+
+export type DashboardKpiComputeResult = {
+  runId: string
+  reused: boolean
+  computedAt: string
+  asOf: string
+  warehouseId: string
+  runtimeMs: number
+  runtimeEstimateSeconds: number
+  snapshotsWritten: number
+}

@@ -68,7 +68,7 @@ export function DataTable<T>({
               <tr
                 key={rowKey(row)}
                 className={cn(
-                  'hover:bg-slate-50',
+                  'transition-colors hover:bg-slate-50',
                   onRowClick && 'cursor-pointer',
                   rowClassName?.(row),
                 )}

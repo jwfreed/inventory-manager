@@ -11,7 +11,7 @@ type Props = {
 
 export function EmptyState({ title, description, icon, action, className }: Props) {
   return (
-    <div className={cn('rounded-xl border border-dashed border-slate-200 bg-white p-6', className)}>
+    <div className={cn('rounded-xl border border-dashed border-slate-200 bg-white p-5', className)}>
       <div className="flex items-start gap-3">
         {icon && <div className="text-slate-500">{icon}</div>}
         <div className="flex-1">

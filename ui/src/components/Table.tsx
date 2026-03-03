@@ -50,7 +50,7 @@ export function Table<T extends Record<string, unknown>>({
             </tr>
           ) : (
             data.map((row, idx) => (
-              <tr key={idx} className="hover:bg-slate-50">
+              <tr key={idx} className="transition-colors hover:bg-slate-50">
                 {columns.map((column) => (
                   <td key={String(column.accessor)} className="px-4 py-3 text-sm text-slate-800">
                     {column.render

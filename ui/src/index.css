@@ -7,6 +7,25 @@
 :root {
   color: #0f172a;
   background-color: #f8fafc;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --neutral-25: #f8fafc;
+  --neutral-50: #f1f5f9;
+  --neutral-100: #e2e8f0;
+  --neutral-200: #cbd5e1;
+  --neutral-700: #334155;
+  --neutral-900: #0f172a;
+  --severity-info: #0369a1;
+  --severity-watch: #a16207;
+  --severity-action: #c2410c;
+  --severity-critical: #be123c;
 }
 
 body {
@@ -20,4 +39,9 @@ body {
 
 a {
   @apply text-brand-600 hover:text-brand-700;
+}
+
+:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }

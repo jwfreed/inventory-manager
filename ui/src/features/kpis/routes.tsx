@@ -1,5 +1,6 @@
 import type { AppRouteObject } from '../../shared/routes'
 import DashboardPage from './pages/DashboardPage'
+import ResolutionQueuePage from './pages/ResolutionQueuePage'
 
 export const kpiRoutes: AppRouteObject[] = [
   {
@@ -14,6 +15,13 @@ export const kpiRoutes: AppRouteObject[] = [
         order: 11,
         description: 'Key performance indicators and metrics',
       },
+    },
+  },
+  {
+    path: 'dashboard/resolution-queue',
+    element: <ResolutionQueuePage />,
+    handle: {
+      breadcrumb: 'Resolution Queue',
     },
   },
 ]

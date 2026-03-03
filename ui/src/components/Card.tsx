@@ -13,7 +13,7 @@ export function Card({ title, description, action, children, className }: Props)
   return (
     <div className={cn('rounded-xl border border-slate-200 bg-white shadow-sm', className)}>
       {(title || action) && (
-        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3.5 sm:px-5">
           <div>
             {title && <h3 className="text-base font-semibold text-slate-900">{title}</h3>}
             {description && <p className="text-sm text-slate-500">{description}</p>}
@@ -21,7 +21,7 @@ export function Card({ title, description, action, children, className }: Props)
           {action}
         </div>
       )}
-      <div className="px-5 py-4">{children}</div>
+      <div className="px-4 py-3.5 sm:px-5">{children}</div>
     </div>
   )
 }

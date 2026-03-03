@@ -1,5 +1,12 @@
-import { apiGet } from '../../../api/http'
-import type { ApiError, ApiNotAvailable, FulfillmentFillRate, KpiRun, KpiSnapshot } from '../../../api/types'
+import { apiGet, apiPost } from '../../../api/http'
+import type {
+  ApiError,
+  ApiNotAvailable,
+  DashboardKpiComputeResult,
+  FulfillmentFillRate,
+  KpiRun,
+  KpiSnapshot,
+} from '../../../api/types'
 
 export type KpiListSuccess<T> = {
   type: 'success'
@@ -28,6 +35,8 @@ const KPI_RUN_ENDPOINT = '/kpis/runs'
 type SnapshotApiRow = Partial<KpiSnapshot> & {
   kpiName?: string
   name?: string
+  computedAt?: string | null
+  kpiRunId?: string | null
   value_unit?: string
   valueUnit?: string
   units?: string | null
@@ -78,7 +87,10 @@ function normalizeSnapshot(row: SnapshotApiRow): KpiSnapshot {
     value,
     unit: row?.unit ?? row?.units ?? row?.value_unit ?? row?.valueUnit ?? null,
     computed_at: computedAt || '',
-    dimensions: row?.dimensions ?? (row as Record<string, unknown>)?.attrs ?? null,
+    dimensions:
+      (row?.dimensions as Record<string, unknown> | null | undefined) ??
+      ((row as Record<string, unknown>)?.attrs as Record<string, unknown> | undefined) ??
+      null,
     kpi_run_id: row?.kpi_run_id ?? row?.kpiRunId ?? null,
   }
 }
@@ -127,7 +139,7 @@ export async function listKpiSnapshots(
 
   try {
     const response = await apiGet<unknown>(KPI_SNAPSHOT_ENDPOINT, { params: buildSnapshotQuery(params) })
-    const data = extractList(response, normalizeSnapshot)
+    const data = extractList(response, (row) => normalizeSnapshot(row as SnapshotApiRow))
     return { type: 'success', endpoint: KPI_SNAPSHOT_ENDPOINT, attempted: [KPI_SNAPSHOT_ENDPOINT], data }
   } catch (err) {
     const apiErr = err as ApiError
@@ -151,7 +163,7 @@ export async function listKpiRuns(
     if (params.offset !== undefined) queryParams.offset = params.offset
 
     const response = await apiGet<unknown>(KPI_RUN_ENDPOINT, { params: queryParams })
-    const data = extractList(response, normalizeRun)
+    const data = extractList(response, (row) => normalizeRun(row as RunApiRow))
     return { type: 'success', endpoint: KPI_RUN_ENDPOINT, attempted: [KPI_RUN_ENDPOINT], data }
   } catch (err) {
     const apiErr = err as ApiError
@@ -167,4 +179,12 @@ export async function getFulfillmentFillRate(params: { from?: string; to?: strin
   if (params.from) query.from = params.from
   if (params.to) query.to = params.to
   return apiGet<FulfillmentFillRate>('/kpis/fulfillment-fill-rate', { params: query })
+}
+
+export async function runDashboardKpis(params: {
+  warehouseId?: string
+  windowDays?: number
+  idempotencyKey?: string
+} = {}) {
+  return apiPost<DashboardKpiComputeResult>('/kpis/compute/dashboard', params)
 }

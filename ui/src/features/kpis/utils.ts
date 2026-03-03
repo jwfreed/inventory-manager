@@ -13,7 +13,7 @@ export function getAgeInDays(value?: string | null) {
   return diffMs / (1000 * 60 * 60 * 24)
 }
 
-export function isStale(value?: string | null, thresholdDays: number) {
+export function isStale(value: string | null | undefined, thresholdDays: number) {
   const age = getAgeInDays(value)
   if (age === null) return false
   return age > thresholdDays
