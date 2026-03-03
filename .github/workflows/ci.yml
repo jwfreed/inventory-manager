@@ -196,9 +196,23 @@ jobs:
           TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
         run: |
           set -euo pipefail
+          # Ensure no stale dev server keeps listening on :3000 with the wrong DB.
+          pkill -f 'src/server.ts' || true
+          pkill -f 'ts-node.*src/server.ts' || true
           if [ -f server.pid ]; then
             kill "$(cat server.pid)" || true
             rm -f server.pid
+          fi
+          for i in {1..30}; do
+            if ! (echo > /dev/tcp/127.0.0.1/3000) >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          if (echo > /dev/tcp/127.0.0.1/3000) >/dev/null 2>&1; then
+            echo "Port 3000 is still in use before invariant DB server restart"
+            ss -ltnp | awk 'NR==1 || /:3000/' || true
+            exit 1
           fi
           nohup npm run dev -- --repair-defaults > server.log 2>&1 &
           SERVER_PID=$!
@@ -233,6 +247,8 @@ jobs:
             cat /tmp/bootstrap-invariants.json || true
             exit 1
           fi
+          # Guardrail: verify that bootstrap touched the isolated DB used by invariant tests.
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -tAc "SELECT id FROM users WHERE email = '$SEED_ADMIN_EMAIL' LIMIT 1" | grep -q .
       - name: Run invariant gate files serially with bounded budgets
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test_invariants
