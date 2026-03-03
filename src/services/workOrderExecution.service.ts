@@ -49,6 +49,7 @@ type WorkOrderReportScrapInput = z.infer<typeof workOrderReportScrapSchema>;
 
 const WIP_COST_METHOD = 'fifo';
 const WORK_ORDER_POST_RETRY_OPTIONS = { isolationLevel: 'SERIALIZABLE' as const, retries: 8 };
+const FORCED_LOT_LINK_FAILURE_KEYS = new Set<string>();
 
 type DomainError = Error & {
   code?: string;
@@ -551,6 +552,28 @@ async function resolveRoutingFinalStepProduceLocation(
   return res.rows[0]?.location_id ?? null;
 }
 
+async function resolveRoutingFinalStepProduceLocationByRoutingId(
+  tenantId: string,
+  routingId: string,
+  client?: PoolClient
+): Promise<string | null> {
+  const executor = client ? client.query.bind(client) : query;
+  const res = await executor<{ location_id: string | null }>(
+    `SELECT wc.location_id
+       FROM routing_steps rs
+       JOIN work_centers wc
+         ON wc.id = rs.work_center_id
+        AND wc.tenant_id = $1
+      WHERE rs.tenant_id = $1
+        AND rs.routing_id = $2
+        AND wc.location_id IS NOT NULL
+      ORDER BY rs.sequence_number DESC
+      LIMIT 1`,
+    [tenantId, routingId]
+  );
+  return res.rows[0]?.location_id ?? null;
+}
+
 function buildAutoOutputLotCode(workOrderNumber: string, executionId: string) {
   const normalizedOrder = workOrderNumber.replace(/[^A-Za-z0-9-]/g, '').slice(0, 48) || 'WO';
   return `WO-${normalizedOrder}-${executionId.slice(0, 8).toUpperCase()}`;
@@ -674,15 +697,19 @@ async function persistWorkOrderLotLinks(
   } = params;
 
   return withTransaction(async (client) => {
-    const executionExists = await client.query(
-      `SELECT id
+    const executionRes = await client.query<{ id: string; production_movement_id: string | null }>(
+      `SELECT id, production_movement_id
          FROM work_order_executions
         WHERE tenant_id = $1
           AND id = $2`,
       [tenantId, executionId]
     );
-    if (!executionExists.rows[0]) {
+    if (!executionRes.rows[0]) {
       throw new Error('WO_REPORT_EXECUTION_NOT_FOUND');
+    }
+    const productionMovementId = executionRes.rows[0].production_movement_id;
+    if (!productionMovementId) {
+      throw new Error('WO_REPORT_EXECUTION_NOT_POSTED');
     }
 
     const resolvedOutputLot = await resolveOrCreateOutputLot(client, {
@@ -712,6 +739,41 @@ async function persistWorkOrderLotLinks(
         now
       ]
     );
+
+    const producedLines = await client.query<{
+      id: string;
+      uom: string;
+      quantity_delta: string | number;
+    }>(
+      `SELECT id, uom, quantity_delta
+         FROM inventory_movement_lines
+        WHERE tenant_id = $1
+          AND movement_id = $2
+          AND item_id = $3
+          AND quantity_delta > 0`,
+      [tenantId, productionMovementId, outputItemId]
+    );
+    if ((producedLines.rowCount ?? 0) === 0) {
+      throw new Error('WO_REPORT_OUTPUT_MOVEMENT_LINES_MISSING');
+    }
+    for (const producedLine of producedLines.rows) {
+      await client.query(
+        `INSERT INTO inventory_movement_lots (
+           id, tenant_id, inventory_movement_line_id, lot_id, uom, quantity_delta, created_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (tenant_id, inventory_movement_line_id, lot_id) DO NOTHING`,
+        [
+          uuidv4(),
+          tenantId,
+          producedLine.id,
+          resolvedOutputLot.id,
+          producedLine.uom,
+          roundQuantity(toNumber(producedLine.quantity_delta)),
+          now
+        ]
+      );
+    }
 
     const normalizedInputLots = Array.isArray(inputLots) ? inputLots : [];
     if (normalizedInputLots.length > 0) {
@@ -1724,6 +1786,31 @@ function normalizedOptionalIdempotencyKey(key?: string | null) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function resolveReportProductionIdempotencyKey(
+  workOrderId: string,
+  data: WorkOrderReportProductionInput,
+  options?: { idempotencyKey?: string | null }
+) {
+  const explicit = normalizedOptionalIdempotencyKey(options?.idempotencyKey ?? data.idempotencyKey ?? null);
+  if (explicit) {
+    return explicit;
+  }
+  const clientRequestId = normalizedOptionalIdempotencyKey(data.clientRequestId ?? null);
+  if (!clientRequestId) {
+    return null;
+  }
+  return `wo-report:${workOrderId}:${clientRequestId}`;
+}
+
+function shouldSimulateLotLinkFailureOnce(idempotencyKey: string | null, replayed: boolean) {
+  if (process.env.NODE_ENV !== 'test') return false;
+  if (replayed || !idempotencyKey) return false;
+  if (!idempotencyKey.includes(':simulate-lot-link-failure')) return false;
+  if (FORCED_LOT_LINK_FAILURE_KEYS.has(idempotencyKey)) return false;
+  FORCED_LOT_LINK_FAILURE_KEYS.add(idempotencyKey);
+  return true;
+}
+
 function assertVoidReason(reason: string) {
   const trimmed = reason.trim();
   if (!trimmed) {
@@ -1942,6 +2029,7 @@ export async function reportWorkOrderProduction(
   context: NegativeOverrideContext = {},
   options?: { idempotencyKey?: string | null }
 ): Promise<WorkOrderProductionReportResult> {
+  const reportIdempotencyKey = resolveReportProductionIdempotencyKey(workOrderId, data, options);
   const outputQty = toNumber(data.outputQty);
   if (!(outputQty > 0)) {
     throw new Error('WO_REPORT_INVALID_OUTPUT_QTY');
@@ -1968,10 +2056,18 @@ export async function reportWorkOrderProduction(
     throw new Error('WO_REPORT_INVALID_OCCURRED_AT');
   }
 
-  const routingProduceLocationId = await resolveRoutingFinalStepProduceLocation(tenantId, workOrder.outputItemId);
-  const warehouseFromRoutingStep = routingProduceLocationId
-    ? await resolveWarehouseIdForLocation(tenantId, routingProduceLocationId)
+  const routingSnapshotProduceLocationId = workOrder.produceToLocationIdSnapshot ?? null;
+  const runtimeRoutingProduceLocationId = workOrder.routingId
+    ? await resolveRoutingFinalStepProduceLocationByRoutingId(tenantId, workOrder.routingId)
+    : await resolveRoutingFinalStepProduceLocation(tenantId, workOrder.outputItemId);
+  const warehouseFromRoutingSnapshot = routingSnapshotProduceLocationId
+    ? await resolveWarehouseIdForLocation(tenantId, routingSnapshotProduceLocationId)
     : null;
+  const warehouseFromRoutingStep = runtimeRoutingProduceLocationId
+    ? await resolveWarehouseIdForLocation(tenantId, runtimeRoutingProduceLocationId)
+    : null;
+  const effectiveSnapshotProduceLocationId = warehouseFromRoutingSnapshot ? routingSnapshotProduceLocationId : null;
+  const effectiveRuntimeRoutingProduceLocationId = warehouseFromRoutingStep ? runtimeRoutingProduceLocationId : null;
   const warehouseFromInput = await resolveWarehouseRootId(undefined, tenantId, data.warehouseId ?? null);
   const warehouseFromProduceDefault = workOrder.defaultProduceLocationId
     ? await resolveWarehouseIdForLocation(tenantId, workOrder.defaultProduceLocationId)
@@ -1981,6 +2077,7 @@ export async function reportWorkOrderProduction(
     : null;
   const warehouseId =
     warehouseFromInput ??
+    warehouseFromRoutingSnapshot ??
     warehouseFromRoutingStep ??
     warehouseFromProduceDefault ??
     warehouseFromConsumeDefault;
@@ -1990,7 +2087,8 @@ export async function reportWorkOrderProduction(
 
   const consumeLocationId = await getWarehouseDefaultLocationId(tenantId, warehouseId, 'SELLABLE');
   const produceLocationId =
-    routingProduceLocationId ??
+    effectiveSnapshotProduceLocationId ??
+    effectiveRuntimeRoutingProduceLocationId ??
     workOrder.defaultProduceLocationId ??
     await getWarehouseDefaultLocationId(tenantId, warehouseId, 'QA');
   if (!consumeLocationId || !produceLocationId) {
@@ -2082,10 +2180,18 @@ export async function reportWorkOrderProduction(
       },
     context,
     {
-      idempotencyKey: options?.idempotencyKey ?? data.idempotencyKey ?? null,
+      idempotencyKey: reportIdempotencyKey,
       idempotencyEndpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_REPORT_PRODUCTION
     }
   );
+
+  if (shouldSimulateLotLinkFailureOnce(reportIdempotencyKey, batchResult.replayed)) {
+    throw domainError('WO_REPORT_LOT_LINK_INCOMPLETE', {
+      reason: 'simulated_failure_after_post_before_lot_link',
+      workOrderId,
+      productionReportId: batchResult.executionId
+    });
+  }
 
   const lotTracking = await persistWorkOrderLotLinks(tenantId, {
     executionId: batchResult.executionId,
@@ -2104,7 +2210,7 @@ export async function reportWorkOrderProduction(
     productionReportId: batchResult.executionId,
     componentIssueMovementId: batchResult.issueMovementId,
     productionReceiptMovementId: batchResult.receiveMovementId,
-    idempotencyKey: batchResult.idempotencyKey ?? options?.idempotencyKey ?? data.idempotencyKey ?? null,
+    idempotencyKey: batchResult.idempotencyKey ?? reportIdempotencyKey,
     replayed: batchResult.replayed,
     lotTracking
   };

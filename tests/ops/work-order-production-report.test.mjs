@@ -320,6 +320,125 @@ test('report-production posts component issue + QA receipt with FIFO cost conser
   await runStrictInvariantsForTenant(tenantId);
 });
 
+test('report-production retry with same idempotency key completes lot-linking without duplicate posting', { timeout: 240000 }, async () => {
+  const tenantSlug = `wo-report-lot-repair-${randomUUID().slice(0, 8)}`;
+  const session = await ensureDbSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName: 'WO Report Production Lot Repair Tenant'
+  });
+  const token = session.accessToken;
+  const tenantId = session.tenant.id;
+  const db = session.pool;
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:lot-repair` });
+  const vendorId = await createVendor(token);
+
+  const component = await createItem(token, defaults.SELLABLE.id, 'LOTFIX-RAW', 'raw');
+  const outputItem = await createItem(token, defaults.QA.id, 'LOTFIX-FG', 'finished');
+  const receiptLine = await createReceipt({
+    token,
+    vendorId,
+    itemId: component,
+    locationId: defaults.SELLABLE.id,
+    quantity: 20,
+    unitCost: 6,
+    keySuffix: tenantSlug
+  });
+  await qcAcceptReceiptLine(token, receiptLine, 20);
+
+  const bomId = await createBom(token, outputItem, [{ componentItemId: component, quantityPer: 1 }], tenantSlug);
+  const workOrder = await createWorkOrder(token, {
+    kind: 'production',
+    outputItemId: outputItem,
+    outputUom: 'each',
+    quantityPlanned: 10,
+    bomId,
+    defaultConsumeLocationId: defaults.SELLABLE.id,
+    defaultProduceLocationId: defaults.QA.id
+  });
+
+  const idempotencyKey = `wo-report:${tenantSlug}:simulate-lot-link-failure`;
+  const payload = {
+    warehouseId: warehouse.id,
+    outputQty: 10,
+    outputUom: 'each',
+    occurredAt: '2026-02-18T00:00:00.000Z'
+  };
+
+  const first = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: payload
+  });
+  assert.equal(first.res.status, 409, JSON.stringify(first.payload));
+  assert.equal(first.payload?.error?.code, 'WO_REPORT_LOT_LINK_INCOMPLETE');
+
+  const replay = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: payload
+  });
+  assert.equal(replay.res.status, 200, JSON.stringify(replay.payload));
+  assert.equal(replay.payload?.replayed, true);
+  assert.ok(replay.payload?.lotTracking?.outputLotId, 'replay should complete lot-linking');
+
+  const executionRes = await db.query(
+    `SELECT id
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND work_order_id = $2
+        AND idempotency_key = $3`,
+    [tenantId, workOrder.id, idempotencyKey]
+  );
+  assert.equal(executionRes.rowCount, 1, 'same idempotency key must map to one execution');
+
+  const movementRes = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_id = $2
+        AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')`,
+    [tenantId, executionRes.rows[0].id]
+  );
+  assert.equal(Number(movementRes.rows[0].count), 2, 'retries must not create extra movements');
+
+  const producedLineRes = await db.query(
+    `SELECT id
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND item_id = $3
+      LIMIT 1`,
+    [tenantId, replay.payload.productionReceiptMovementId, outputItem]
+  );
+  assert.equal(producedLineRes.rowCount, 1);
+
+  const outputLotId = replay.payload.lotTracking.outputLotId;
+  const movementLotRes = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movement_lots
+      WHERE tenant_id = $1
+        AND inventory_movement_line_id = $2
+        AND lot_id = $3`,
+    [tenantId, producedLineRes.rows[0].id, outputLotId]
+  );
+  assert.equal(Number(movementLotRes.rows[0].count), 1, 'movement lot dedupe must be stable under retry');
+
+  const lotLinkRes = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM work_order_lot_links
+      WHERE tenant_id = $1
+        AND work_order_execution_id = $2
+        AND role = 'produce'
+        AND lot_id = $3`,
+    [tenantId, executionRes.rows[0].id, outputLotId]
+  );
+  assert.equal(Number(lotLinkRes.rows[0].count), 1, 'produce lot link must be recorded exactly once');
+});
+
 test('report-production backflush depletes FIFO layers in order when consumption crosses layers', { timeout: 240000 }, async () => {
   const tenantSlug = `wo-report-fifo-${randomUUID().slice(0, 8)}`;
   const session = await ensureDbSession({

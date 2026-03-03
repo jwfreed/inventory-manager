@@ -198,6 +198,7 @@ export type ReportProductionPayload = {
     uom: string
     quantity: number
   }>
+  clientRequestId?: string
   occurredAt?: string
   notes?: string | null
   idempotencyKey?: string

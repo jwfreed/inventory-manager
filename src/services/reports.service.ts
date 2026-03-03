@@ -93,7 +93,7 @@ export async function getInventoryValuation(
         iml.uom,
         SUM(iml.quantity_delta) AS quantity_on_hand
       FROM inventory_movement_lines iml
-      JOIN inventory_movements im ON im.id = iml.movement_id
+      JOIN inventory_movements im ON im.id = iml.movement_id AND im.tenant_id = iml.tenant_id
       WHERE im.status = 'posted'
         AND iml.tenant_id = $1
         AND im.tenant_id = $1
@@ -135,7 +135,7 @@ export async function getInventoryValuation(
         iml.uom,
         SUM(iml.quantity_delta) AS quantity_on_hand
       FROM inventory_movement_lines iml
-      JOIN inventory_movements im ON im.id = iml.movement_id
+      JOIN inventory_movements im ON im.id = iml.movement_id AND im.tenant_id = iml.tenant_id
       WHERE im.status = 'posted'
         AND iml.tenant_id = $1
         AND im.tenant_id = $1
@@ -227,7 +227,7 @@ export async function getCostVariance(
         iml.item_id,
         SUM(iml.quantity_delta) AS quantity_on_hand
       FROM inventory_movement_lines iml
-      JOIN inventory_movements im ON im.id = iml.movement_id
+      JOIN inventory_movements im ON im.id = iml.movement_id AND im.tenant_id = iml.tenant_id
       WHERE im.status = 'posted'
         AND iml.tenant_id = $1
         AND im.tenant_id = $1
@@ -450,8 +450,12 @@ export async function getWorkOrderProgress(params: {
       COALESCE(
         (SELECT SUM(quantity)
          FROM work_order_execution_lines woel
-         JOIN work_order_executions woe ON woel.work_order_execution_id = woe.id
+         JOIN work_order_executions woe
+           ON woel.work_order_execution_id = woe.id
+          AND woel.tenant_id = woe.tenant_id
          WHERE woe.work_order_id = wo.id 
+           AND woe.tenant_id = wo.tenant_id
+           AND woel.tenant_id = wo.tenant_id
            AND woel.line_type = 'produce'
            AND woe.status = 'posted'),
         0
@@ -461,8 +465,12 @@ export async function getWorkOrderProgress(params: {
           ROUND((COALESCE(
             (SELECT SUM(quantity)
              FROM work_order_execution_lines woel
-             JOIN work_order_executions woe ON woel.work_order_execution_id = woe.id
+             JOIN work_order_executions woe
+               ON woel.work_order_execution_id = woe.id
+              AND woel.tenant_id = woe.tenant_id
              WHERE woe.work_order_id = wo.id 
+               AND woe.tenant_id = wo.tenant_id
+               AND woel.tenant_id = wo.tenant_id
                AND woel.line_type = 'produce'
                AND woe.status = 'posted'),
             0
@@ -605,15 +613,16 @@ export async function getMovementTransactionHistory(params: {
       im.created_at::text as "createdAt",
       im.posted_at::text as "postedAt"
     FROM inventory_movements im
-    JOIN inventory_movement_lines iml ON im.id = iml.movement_id
+    JOIN inventory_movement_lines iml ON im.id = iml.movement_id AND im.tenant_id = iml.tenant_id
     JOIN items i ON iml.item_id = i.id AND iml.tenant_id = i.tenant_id
     JOIN locations l ON iml.location_id = l.id AND iml.tenant_id = l.tenant_id
     LEFT JOIN (
-      SELECT iml_lot.inventory_movement_line_id, MIN(l.lot_code) as lot_code
+      SELECT iml_lot.tenant_id, iml_lot.inventory_movement_line_id, MIN(l.lot_code) as lot_code
       FROM inventory_movement_lots iml_lot
-      JOIN lots l ON iml_lot.lot_id = l.id
-      GROUP BY iml_lot.inventory_movement_line_id
-    ) lot ON iml.id = lot.inventory_movement_line_id
+      JOIN lots l ON iml_lot.lot_id = l.id AND iml_lot.tenant_id = l.tenant_id
+      WHERE iml_lot.tenant_id = $1
+      GROUP BY iml_lot.tenant_id, iml_lot.inventory_movement_line_id
+    ) lot ON iml.id = lot.inventory_movement_line_id AND iml.tenant_id = lot.tenant_id
     WHERE ${whereClause}
     ORDER BY im.occurred_at DESC, im.created_at DESC, iml.id
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -711,7 +720,7 @@ export async function getInventoryMovementVelocity(params: {
         SUM(iml.quantity_delta) as net_change,
         ($4::date - $3::date) + 1 as days_in_period
       FROM inventory_movements im
-      JOIN inventory_movement_lines iml ON im.id = iml.movement_id
+      JOIN inventory_movement_lines iml ON im.id = iml.movement_id AND im.tenant_id = iml.tenant_id
       JOIN items i ON iml.item_id = i.id AND iml.tenant_id = i.tenant_id
       WHERE ${whereClause}
       GROUP BY iml.item_id, i.sku, i.name, i.type
@@ -722,8 +731,9 @@ export async function getInventoryMovementVelocity(params: {
         iml.item_id,
         SUM(iml.quantity_delta) as quantity_on_hand
       FROM inventory_movement_lines iml
-      JOIN inventory_movements im ON iml.movement_id = im.id
+      JOIN inventory_movements im ON iml.movement_id = im.id AND iml.tenant_id = im.tenant_id
       WHERE im.tenant_id = $1 
+        AND iml.tenant_id = $1
         AND im.status = 'posted'
         ${locationId ? `AND iml.location_id = $${queryParams.indexOf(locationId) + 1}` : ''}
       GROUP BY iml.item_id
@@ -832,7 +842,7 @@ export async function getOpenPOAging(params: {
           porl.purchase_order_line_id,
           SUM(porl.quantity_received) as quantity_received
         FROM purchase_order_receipt_lines porl
-        JOIN purchase_order_receipts por ON porl.purchase_order_receipt_id = por.id
+        JOIN purchase_order_receipts por ON porl.purchase_order_receipt_id = por.id AND porl.tenant_id = por.tenant_id
         WHERE por.tenant_id = $1 AND por.status = 'posted'
         GROUP BY porl.purchase_order_line_id
       ) rcpt ON pol.id = rcpt.purchase_order_line_id
@@ -973,7 +983,7 @@ export async function getSalesOrderFillPerformance(params: {
           sosl.sales_order_line_id,
           SUM(sosl.quantity_shipped) as quantity_shipped
         FROM sales_order_shipment_lines sosl
-        JOIN sales_order_shipments sos ON sosl.sales_order_shipment_id = sos.id
+        JOIN sales_order_shipments sos ON sosl.sales_order_shipment_id = sos.id AND sosl.tenant_id = sos.tenant_id
         WHERE sos.tenant_id = $1
         GROUP BY sosl.sales_order_line_id
       ) ship ON sol.id = ship.sales_order_line_id
@@ -1129,14 +1139,16 @@ export async function getProductionRunFrequency(params: {
   const sql = `
     WITH execution_produced AS (
       SELECT 
+        woe.tenant_id,
         woe.id as execution_id,
         COALESCE(SUM(woel.quantity), 0) as quantity_produced
       FROM work_order_executions woe
       LEFT JOIN work_order_execution_lines woel ON woel.work_order_execution_id = woe.id
+        AND woel.tenant_id = woe.tenant_id
         AND woel.line_type = 'produce'
       WHERE woe.status = 'posted'
         AND woe.tenant_id = $1
-      GROUP BY woe.id
+      GROUP BY woe.tenant_id, woe.id
     ),
     production_stats AS (
       SELECT 
@@ -1148,9 +1160,9 @@ export async function getProductionRunFrequency(params: {
         COALESCE(SUM(ep.quantity_produced), 0)::numeric as total_quantity_produced,
         MAX(woe.occurred_at)::date as last_production_date
       FROM work_orders wo
-      JOIN work_order_executions woe ON wo.id = woe.work_order_id
+      JOIN work_order_executions woe ON wo.id = woe.work_order_id AND wo.tenant_id = woe.tenant_id
       JOIN items i ON wo.output_item_id = i.id AND wo.tenant_id = i.tenant_id
-      LEFT JOIN execution_produced ep ON woe.id = ep.execution_id
+      LEFT JOIN execution_produced ep ON woe.id = ep.execution_id AND woe.tenant_id = ep.tenant_id
       WHERE ${whereClause}
         AND woe.status = 'posted'
       GROUP BY wo.output_item_id, i.sku, i.name, i.type

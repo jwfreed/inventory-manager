@@ -723,6 +723,15 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
     if (error?.message === 'WO_REPORT_OUTPUT_LOT_NOT_FOUND') {
       return res.status(404).json({ error: 'Output lot not found.' });
     }
+    if (error?.message === 'WO_REPORT_EXECUTION_NOT_FOUND') {
+      return res.status(409).json({ error: 'Work order execution was not found for lot association; retry with the same idempotency key.' });
+    }
+    if (error?.message === 'WO_REPORT_EXECUTION_NOT_POSTED') {
+      return res.status(409).json({ error: 'Work order execution is not posted yet; retry with the same idempotency key.' });
+    }
+    if (error?.message === 'WO_REPORT_OUTPUT_MOVEMENT_LINES_MISSING') {
+      return res.status(409).json({ error: 'Produced movement lines were not available for lot association; retry with the same idempotency key.' });
+    }
     if (error?.message === 'WO_REPORT_OUTPUT_LOT_ITEM_MISMATCH') {
       return res.status(400).json({ error: 'Output lot does not match the work order output item.' });
     }
@@ -737,6 +746,15 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
     }
     if (error?.message === 'WO_REPORT_SCRAP_NOT_SUPPORTED') {
       return res.status(400).json({ error: 'scrapOutputs is not supported in report-production; use POST /work-orders/:id/report-scrap.' });
+    }
+    if (error?.code === 'WO_REPORT_LOT_LINK_INCOMPLETE' || error?.message === 'WO_REPORT_LOT_LINK_INCOMPLETE') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_REPORT_LOT_LINK_INCOMPLETE',
+          message: 'Production was posted but lot-linking is incomplete. Retry with the same idempotency key.',
+          details: error?.details
+        }
+      });
     }
     if (error?.message === 'WO_REPORT_OVERRIDE_DUPLICATE_COMPONENT') {
       return res.status(400).json({ error: 'consumptionOverrides cannot include duplicate componentItemId values.' });

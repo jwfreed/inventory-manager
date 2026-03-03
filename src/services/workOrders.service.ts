@@ -22,6 +22,8 @@ type WorkOrderRow = {
   kind: string;
   bom_id: string | null;
   bom_version_id: string | null;
+  routing_id: string | null;
+  produce_to_location_id_snapshot: string | null;
   related_work_order_id: string | null;
   output_item_id: string;
   output_uom: string;
@@ -47,6 +49,8 @@ function mapWorkOrder(row: WorkOrderRow) {
     kind: row.kind,
     bomId: row.bom_id,
     bomVersionId: row.bom_version_id,
+    routingId: row.routing_id,
+    produceToLocationIdSnapshot: row.produce_to_location_id_snapshot,
     relatedWorkOrderId: row.related_work_order_id,
     outputItemId: row.output_item_id,
     outputUom: row.output_uom,
@@ -61,6 +65,133 @@ function mapWorkOrder(row: WorkOrderRow) {
     description: row.description ?? row.notes ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  };
+}
+
+type WorkOrderMapped = ReturnType<typeof mapWorkOrder>;
+
+type LocationHint = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+async function resolveDefaultRoutingId(
+  tenantId: string,
+  outputItemId: string,
+  client: PoolClient
+): Promise<string | null> {
+  const routingRes = await client.query<{ id: string }>(
+    `SELECT id
+       FROM routings
+      WHERE tenant_id = $1
+        AND item_id = $2
+      ORDER BY
+        CASE WHEN is_default THEN 0 ELSE 1 END,
+        CASE
+          WHEN status = 'active' THEN 0
+          WHEN status = 'draft' THEN 1
+          ELSE 2
+        END,
+        updated_at DESC,
+        created_at DESC,
+        id
+      LIMIT 1`,
+    [tenantId, outputItemId]
+  );
+  return routingRes.rows[0]?.id ?? null;
+}
+
+async function resolveRoutingFinalStepLocationHint(
+  tenantId: string,
+  routingId: string,
+  client?: PoolClient
+): Promise<LocationHint | null> {
+  const executor = client ? client.query.bind(client) : query;
+  const res = await executor<LocationHint>(
+    `SELECT l.id, l.code, l.name
+       FROM routing_steps rs
+       JOIN work_centers wc
+         ON wc.id = rs.work_center_id
+        AND wc.tenant_id = $1
+       JOIN locations l
+         ON l.id = wc.location_id
+        AND l.tenant_id = $1
+      WHERE rs.tenant_id = $1
+        AND rs.routing_id = $2
+      ORDER BY rs.sequence_number DESC
+      LIMIT 1`,
+    [tenantId, routingId]
+  );
+  return res.rows[0] ?? null;
+}
+
+async function resolveLocationHintById(
+  tenantId: string,
+  locationId: string,
+  client?: PoolClient
+): Promise<LocationHint | null> {
+  const executor = client ? client.query.bind(client) : query;
+  const res = await executor<LocationHint>(
+    `SELECT id, code, name
+       FROM locations
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, locationId]
+  );
+  return res.rows[0] ?? null;
+}
+
+async function withReportProductionLocationHint(
+  tenantId: string,
+  workOrder: WorkOrderMapped,
+  client?: PoolClient
+) {
+  if (workOrder.produceToLocationIdSnapshot) {
+    const snapshotLocation = await resolveLocationHintById(tenantId, workOrder.produceToLocationIdSnapshot, client);
+    if (snapshotLocation) {
+      return {
+        ...workOrder,
+        reportProductionReceiveToLocationId: snapshotLocation.id,
+        reportProductionReceiveToLocationCode: snapshotLocation.code,
+        reportProductionReceiveToLocationName: snapshotLocation.name,
+        reportProductionReceiveToSource: 'routing_snapshot'
+      };
+    }
+  }
+
+  if (workOrder.routingId) {
+    const snapshotLocation = await resolveRoutingFinalStepLocationHint(tenantId, workOrder.routingId, client);
+    if (snapshotLocation) {
+      return {
+        ...workOrder,
+        reportProductionReceiveToLocationId: snapshotLocation.id,
+        reportProductionReceiveToLocationCode: snapshotLocation.code,
+        reportProductionReceiveToLocationName: snapshotLocation.name,
+        reportProductionReceiveToSource: 'routing_snapshot'
+      };
+    }
+  }
+
+  if (workOrder.defaultProduceLocationId) {
+    const defaultLocation = await resolveLocationHintById(tenantId, workOrder.defaultProduceLocationId, client);
+    if (defaultLocation) {
+      return {
+        ...workOrder,
+        reportProductionReceiveToLocationId: defaultLocation.id,
+        reportProductionReceiveToLocationCode: defaultLocation.code,
+        reportProductionReceiveToLocationName: defaultLocation.name,
+        reportProductionReceiveToSource: 'work_order_default'
+      };
+    }
+  }
+
+  return {
+    ...workOrder,
+    reportProductionReceiveToLocationId: null,
+    reportProductionReceiveToLocationCode: null,
+    reportProductionReceiveToLocationName: null,
+    reportProductionReceiveToSource: 'warehouse_default'
   };
 }
 
@@ -139,19 +270,31 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
         }
 
         const number = await generateWorkOrderNumber(tenantId, client);
+        const routingId =
+          kind === 'production'
+            ? await resolveDefaultRoutingId(tenantId, data.outputItemId, client)
+            : null;
+        const produceLocationSnapshot =
+          routingId
+            ? await resolveRoutingFinalStepLocationHint(tenantId, routingId, client)
+            : null;
         const inserted = await client.query(
           `INSERT INTO work_orders (
               id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, related_work_order_id,
+              routing_id,
+              produce_to_location_id_snapshot,
               output_item_id, output_uom,
               quantity_planned, quantity_completed, default_consume_location_id, default_produce_location_id,
               scheduled_start_at, scheduled_due_at, released_at,
               completed_at, description, created_at, updated_at
            ) VALUES (
               $1, $2, $3, $4, $5, $6, $7, $8, $9,
-              $10, $11,
-              $12, $13, $14, $15,
-              $16, $17, NULL,
-              NULL, $18, $19, $19
+              $10,
+              $11,
+              $12, $13,
+              $14, $15, $16, $17,
+              $18, $19, NULL,
+              NULL, $20, $21, $21
            ) RETURNING *`,
           [
             id,
@@ -163,6 +306,8 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
             data.bomId ?? null,
             data.bomVersionId ?? null,
             data.relatedWorkOrderId ?? null,
+            routingId,
+            produceLocationSnapshot?.id ?? null,
             data.outputItemId,
             outputUom,
             plannedQty,
@@ -176,7 +321,7 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
           ]
         );
 
-        return mapWorkOrder(inserted.rows[0]);
+        return withReportProductionLocationHint(tenantId, mapWorkOrder(inserted.rows[0]), client);
       });
     } catch (error: any) {
       if (error?.code === '23505' && error?.constraint === 'idx_work_orders_tenant_number_unique' && attempt === 0) {
@@ -191,7 +336,7 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
 
 export async function getWorkOrderById(tenantId: string, id: string) {
   const result = await query<WorkOrderRow>(
-    `SELECT id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, related_work_order_id,
+    `SELECT id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, routing_id, produce_to_location_id_snapshot, related_work_order_id,
             output_item_id, output_uom, quantity_planned, quantity_completed, default_consume_location_id,
             default_produce_location_id, scheduled_start_at, scheduled_due_at, released_at, completed_at,
             notes, description, created_at, updated_at
@@ -201,7 +346,7 @@ export async function getWorkOrderById(tenantId: string, id: string) {
   if (result.rowCount === 0) {
     return null;
   }
-  return mapWorkOrder(result.rows[0]);
+  return withReportProductionLocationHint(tenantId, mapWorkOrder(result.rows[0]));
 }
 
 export async function listWorkOrders(tenantId: string, filters: WorkOrderListQuery) {
@@ -232,7 +377,7 @@ export async function listWorkOrders(tenantId: string, filters: WorkOrderListQue
   params.push(limit, offset);
 
   const { rows } = await query<WorkOrderRow>(
-    `SELECT id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, related_work_order_id,
+    `SELECT id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, routing_id, produce_to_location_id_snapshot, related_work_order_id,
             output_item_id, output_uom, quantity_planned, quantity_completed, default_consume_location_id,
             default_produce_location_id, scheduled_start_at, scheduled_due_at, released_at, completed_at,
             notes, description, created_at, updated_at

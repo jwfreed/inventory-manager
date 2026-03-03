@@ -76,7 +76,7 @@ export const WorkCenterForm: React.FC<WorkCenterFormProps> = ({ initialData, onS
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Hourly Rate</label>
+          <label className="block text-sm font-medium text-gray-700">Hourly Rate (informational only)</label>
           <input
             type="number"
             step="0.01"
@@ -86,7 +86,7 @@ export const WorkCenterForm: React.FC<WorkCenterFormProps> = ({ initialData, onS
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">Capacity</label>
+          <label className="block text-sm font-medium text-gray-700">Capacity (informational only)</label>
           <input
             type="number"
             {...register('capacity', { valueAsNumber: true, min: 1 })}
@@ -94,6 +94,9 @@ export const WorkCenterForm: React.FC<WorkCenterFormProps> = ({ initialData, onS
           />
         </div>
       </div>
+      <p className="text-xs text-gray-500">
+        Capacity and hourly rate are stored for reference and reporting only.
+      </p>
 
       <div>
         <label className="block text-sm font-medium text-gray-700">Status</label>

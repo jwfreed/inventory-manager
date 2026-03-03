@@ -83,13 +83,13 @@ export class ProductionVarianceService {
     let paramIndex = 2;
 
     if (startDate) {
-      whereConditions.push(`woe.occurred_at >= $${paramIndex}`);
+      whereConditions.push(`ed.occurred_at >= $${paramIndex}`);
       queryParams.push(startDate);
       paramIndex++;
     }
 
     if (endDate) {
-      whereConditions.push(`woe.occurred_at < $${paramIndex}`);
+      whereConditions.push(`ed.occurred_at < $${paramIndex}`);
       queryParams.push(endDate);
       paramIndex++;
     }
@@ -112,6 +112,7 @@ export class ProductionVarianceService {
       WITH execution_consumption AS (
         -- Actual consumption from execution lines
         SELECT 
+          woe.tenant_id,
           woe.id as execution_id,
           woe.work_order_id,
           woe.occurred_at,
@@ -120,12 +121,15 @@ export class ProductionVarianceService {
         FROM work_order_executions woe
         JOIN work_order_execution_lines woel 
           ON woe.id = woel.work_order_execution_id
+         AND woe.tenant_id = woel.tenant_id
         WHERE woel.line_type = 'consume'
-        GROUP BY woe.id, woe.work_order_id, woe.occurred_at, woel.item_id
+          AND woe.tenant_id = $1
+        GROUP BY woe.tenant_id, woe.id, woe.work_order_id, woe.occurred_at, woel.item_id
       ),
       expected_consumption AS (
         -- Expected consumption from BOM (scaled by execution produced quantity)
         SELECT 
+          woe.tenant_id,
           woe.id as execution_id,
           woe.work_order_id,
           bl.component_item_id,
@@ -134,6 +138,7 @@ export class ProductionVarianceService {
             (SELECT SUM(woel_prod.quantity)
              FROM work_order_execution_lines woel_prod
              WHERE woel_prod.work_order_execution_id = woe.id
+               AND woel_prod.tenant_id = woe.tenant_id
                AND woel_prod.line_type = 'produce'),
             0
           ) as produced_qty,
@@ -143,6 +148,7 @@ export class ProductionVarianceService {
               (SELECT SUM(woel_prod.quantity)
                FROM work_order_execution_lines woel_prod
                WHERE woel_prod.work_order_execution_id = woe.id
+                 AND woel_prod.tenant_id = woe.tenant_id
                  AND woel_prod.line_type = 'produce'),
               0
             ) / b.quantity
@@ -152,6 +158,7 @@ export class ProductionVarianceService {
         JOIN boms b ON wo.output_item_id = b.item_id AND wo.tenant_id = b.tenant_id
         JOIN bom_lines bl ON b.id = bl.bom_id AND b.tenant_id = bl.tenant_id
         WHERE b.active = true
+          AND woe.tenant_id = $1
       )
       SELECT 
         wo.id as work_order_id,
@@ -177,14 +184,16 @@ export class ProductionVarianceService {
           ELSE NULL
         END as variance_percent
       FROM execution_consumption ec
-      JOIN work_orders wo ON ec.work_order_id = wo.id
-      JOIN items oi ON wo.output_item_id = oi.id
-      JOIN items ci ON ec.component_item_id = ci.id
+      JOIN work_orders wo ON ec.work_order_id = wo.id AND ec.tenant_id = wo.tenant_id
+      JOIN items oi ON wo.output_item_id = oi.id AND wo.tenant_id = oi.tenant_id
+      JOIN items ci ON ec.component_item_id = ci.id AND ec.tenant_id = ci.tenant_id
       LEFT JOIN expected_consumption exp 
-        ON ec.execution_id = exp.execution_id 
+        ON ec.execution_id = exp.execution_id
+        AND ec.tenant_id = exp.tenant_id
         AND ec.component_item_id = exp.component_item_id
       JOIN work_order_executions woe 
         ON ec.execution_id = woe.id
+       AND ec.tenant_id = woe.tenant_id
       WHERE ${whereClause}
       ORDER BY ec.occurred_at DESC, wo.work_order_number, ci.sku
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -292,6 +301,7 @@ export class ProductionVarianceService {
       WITH execution_production AS (
         -- Actual production from execution lines
         SELECT 
+          woe.tenant_id,
           woe.id as execution_id,
           woe.work_order_id,
           woe.occurred_at,
@@ -299,12 +309,15 @@ export class ProductionVarianceService {
         FROM work_order_executions woe
         JOIN work_order_execution_lines woel 
           ON woe.id = woel.work_order_execution_id
+         AND woe.tenant_id = woel.tenant_id
         WHERE woel.line_type = 'produce'
-        GROUP BY woe.id, woe.work_order_id, woe.occurred_at
+          AND woe.tenant_id = $1
+        GROUP BY woe.tenant_id, woe.id, woe.work_order_id, woe.occurred_at
       ),
       expected_production AS (
         -- Expected production based on BOM and consumed materials
         SELECT 
+          woe.tenant_id,
           woe.id as execution_id,
           woe.work_order_id,
           -- Expected = BOM output quantity * (actual consumed / BOM component quantity)
@@ -314,6 +327,7 @@ export class ProductionVarianceService {
               (SELECT SUM(woel_cons.quantity)
                FROM work_order_execution_lines woel_cons
                WHERE woel_cons.work_order_execution_id = woe.id
+                 AND woel_cons.tenant_id = woe.tenant_id
                  AND woel_cons.item_id = bl.component_item_id
                  AND woel_cons.line_type = 'consume'),
               0
@@ -324,6 +338,7 @@ export class ProductionVarianceService {
         JOIN boms b ON wo.output_item_id = b.item_id AND wo.tenant_id = b.tenant_id
         JOIN bom_lines bl ON b.id = bl.bom_id AND b.tenant_id = bl.tenant_id
         WHERE b.active = true
+          AND woe.tenant_id = $1
         GROUP BY woe.id, woe.work_order_id, b.quantity
       )
       SELECT 
@@ -346,10 +361,10 @@ export class ProductionVarianceService {
           ELSE NULL
         END as yield_percent
       FROM execution_production ep
-      JOIN work_orders wo ON ep.work_order_id = wo.id
-      JOIN items oi ON wo.output_item_id = oi.id
-      LEFT JOIN expected_production exp ON ep.execution_id = exp.execution_id
-      JOIN work_order_executions woe ON ep.execution_id = woe.id
+      JOIN work_orders wo ON ep.work_order_id = wo.id AND ep.tenant_id = wo.tenant_id
+      JOIN items oi ON wo.output_item_id = oi.id AND wo.tenant_id = oi.tenant_id
+      LEFT JOIN expected_production exp ON ep.execution_id = exp.execution_id AND ep.tenant_id = exp.tenant_id
+      JOIN work_order_executions woe ON ep.execution_id = woe.id AND ep.tenant_id = woe.tenant_id
       WHERE ${whereClause}
       ORDER BY ep.occurred_at DESC, wo.work_order_number
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -451,6 +466,7 @@ export class ProductionVarianceService {
     const sql = `
       WITH execution_details AS (
         SELECT 
+          woe.tenant_id,
           woe.id as execution_id,
           woe.work_order_id,
           woe.occurred_at,
@@ -466,16 +482,19 @@ export class ProductionVarianceService {
           (SELECT COUNT(DISTINCT woel_cons.item_id)
            FROM work_order_execution_lines woel_cons
            WHERE woel_cons.work_order_execution_id = woe.id
+             AND woel_cons.tenant_id = woe.tenant_id
              AND woel_cons.line_type = 'consume') as consumed_item_count,
           -- Sum produced quantity
           COALESCE(
             (SELECT SUM(woel_prod.quantity)
              FROM work_order_execution_lines woel_prod
              WHERE woel_prod.work_order_execution_id = woe.id
+               AND woel_prod.tenant_id = woe.tenant_id
                AND woel_prod.line_type = 'produce'),
             0
           ) as produced_quantity
         FROM work_order_executions woe
+        WHERE woe.tenant_id = $1
       )
       SELECT 
         ed.execution_id,
@@ -489,8 +508,8 @@ export class ProductionVarianceService {
         ed.consumed_item_count::integer,
         ed.produced_quantity
       FROM execution_details ed
-      JOIN work_orders wo ON ed.work_order_id = wo.id
-      JOIN items oi ON wo.output_item_id = oi.id
+      JOIN work_orders wo ON ed.work_order_id = wo.id AND ed.tenant_id = wo.tenant_id
+      JOIN items oi ON wo.output_item_id = oi.id AND wo.tenant_id = oi.tenant_id
       WHERE ${whereClause}
       ORDER BY ed.occurred_at DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}

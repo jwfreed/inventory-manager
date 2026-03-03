@@ -81,6 +81,7 @@ export const workOrderReportProductionSchema = z.object({
   ).optional(),
   occurredAt: z.string().datetime().optional(),
   notes: z.string().max(2000).optional(),
+  clientRequestId: z.string().uuid().optional(),
   idempotencyKey: z.string().min(1).max(255).optional(),
   consumptionOverrides: z.array(
     z.object({

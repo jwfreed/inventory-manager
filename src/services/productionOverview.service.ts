@@ -211,9 +211,15 @@ export async function getMaterialsConsumed(
       COUNT(DISTINCT wmi.work_order_id) as work_order_count,
       COUNT(DISTINCT wmi.id) as execution_count
     FROM work_order_material_issue_lines wmil
-    JOIN work_order_material_issues wmi ON wmil.work_order_material_issue_id = wmi.id
-    JOIN work_orders wo ON wmi.work_order_id = wo.id
+    JOIN work_order_material_issues wmi
+      ON wmil.work_order_material_issue_id = wmi.id
+     AND wmil.tenant_id = wmi.tenant_id
+    JOIN work_orders wo
+      ON wmi.work_order_id = wo.id
+     AND wmi.tenant_id = wo.tenant_id
     WHERE wmil.tenant_id = $1
+      AND wmi.tenant_id = $1
+      AND wo.tenant_id = $1
       AND wmi.status = 'posted'
       ${whereClause}
     GROUP BY wmil.component_item_id, wmil.uom

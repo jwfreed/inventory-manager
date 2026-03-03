@@ -5,6 +5,7 @@ export type WorkOrder = {
   kind?: 'production' | 'disassembly'
   bomId?: string
   bomVersionId?: string | null
+  routingId?: string | null
   relatedWorkOrderId?: string | null
   outputItemId: string
   outputItemSku?: string
@@ -19,6 +20,10 @@ export type WorkOrder = {
   releasedAt?: string | null
   completedAt?: string | null
   description?: string | null
+  reportProductionReceiveToLocationId?: string | null
+  reportProductionReceiveToLocationCode?: string | null
+  reportProductionReceiveToLocationName?: string | null
+  reportProductionReceiveToSource?: 'routing_snapshot' | 'work_order_default' | 'warehouse_default' | null
 }
 
 export type WorkOrderListResponse = {
