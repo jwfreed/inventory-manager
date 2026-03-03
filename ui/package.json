@@ -11,6 +11,8 @@
     "test": "vitest",
     "test:smoke": "bash -lc 'set -euo pipefail; files=$(find src/test -type f \\( -name \"*production*\" -o -name \"*routing*\" -o -name \"*workcenter*\" -o -name \"*report*\" \\) | tr \"\\n\" \" \"); if [ -z \"${files// }\" ]; then echo \"No matching UI smoke tests under src/test\"; exit 0; fi; vitest run $files'",
     "test:ui:manufacturing": "vitest run src/test/manufacturing",
+    "test:ui:smoke": "vitest run src/test/smoke",
+    "test:ui:fast": "vitest run src/test/smoke src/test/manufacturing",
     "test:ui:pages": "vitest run src/test/pages",
     "test:ui:forms": "vitest run src/test/forms",
     "test:ui:state": "vitest run src/test/state",
