@@ -1,5 +1,6 @@
 import type {
   FulfillmentFillRate,
+  InventoryUomInconsistency,
   InventorySnapshotRow,
   Item,
   Location,
@@ -31,6 +32,7 @@ export type DashboardExceptionType =
   | 'inbound_aging'
   | 'work_order_risk'
   | 'cycle_count_hygiene'
+  | 'uom_inconsistent'
 
 export type ResolutionQueueRow = {
   id: string
@@ -78,6 +80,7 @@ export type AttentionState = 'all_clear' | 'not_configured' | 'exceptions_presen
 
 export type BuildDashboardExceptionsInput = {
   inventoryRows: InventorySnapshotRow[]
+  uomInconsistencies: InventoryUomInconsistency[]
   recommendations: ReplenishmentRecommendation[]
   policyScopeSet: Set<string>
   purchaseOrders: PurchaseOrder[]
@@ -280,8 +283,10 @@ export function deriveCoverageState(input: CoverageInput): MonitoringCoverage {
 export function deriveAttentionState(input: {
   coverage: MonitoringCoverage
   exceptionCount: number
+  blockingExceptionCount?: number
 }): AttentionState {
-  if (input.exceptionCount > 0) return 'exceptions_present'
+  const blockingExceptionCount = input.blockingExceptionCount ?? input.exceptionCount
+  if (blockingExceptionCount > 0) return 'exceptions_present'
   if (!input.coverage.inventoryMonitoringConfigured) return 'not_configured'
   return 'all_clear'
 }
@@ -519,6 +524,41 @@ export function buildDashboardExceptions(input: BuildDashboardExceptionsInput): 
     })
   })
 
+  input.uomInconsistencies.forEach((entry) => {
+    const readableItem = itemLabel(entry.itemId, input.itemLookup, entry.itemId)
+    const readableLocation = locationLabel(entry.locationId, input.locationLookup, entry.locationId)
+    const warehouseId = resolveWarehouseId(entry.locationId, input.locationLookup) ?? undefined
+    const observed = entry.observedUoms.join(', ')
+    const severity: Severity = entry.severity ?? 'action'
+    const recommendedAction =
+      entry.reason === 'STOCKING_UOM_UNSET'
+        ? 'Set stock UOM and conversion policy for this item before aggregating location availability.'
+        : entry.reason === 'LEGACY_FALLBACK_USED'
+          ? 'Review legacy conversion fallback and promote to registry or item override mapping.'
+          : entry.reason === 'UNKNOWN_UOM'
+            ? 'Resolve unknown UOM codes by mapping aliases or updating canonical registry entries.'
+            : 'Define valid UOM conversion/override mappings; non-convertible UOMs are blocking safe aggregation.'
+    rows.push({
+      id: `uom-inconsistent:${entry.itemId}:${entry.locationId}`,
+      type: 'uom_inconsistent',
+      severity,
+      itemLabel: readableItem,
+      itemId: entry.itemId,
+      locationLabel: readableLocation,
+      locationId: entry.locationId,
+      warehouseId,
+      impactScore: Math.max(1, entry.observedUoms.length),
+      occurredAt: input.asOf,
+      recommendedAction,
+      primaryLink: withQuery(`/items/${entry.itemId}`, {
+        warehouseId,
+        locationId: entry.locationId,
+        type: 'uom_inconsistent',
+        observedUoms: observed,
+      }),
+    })
+  })
+
   return sortResolutionQueue(dedupeResolutionQueue(rows))
 }
 
@@ -642,6 +682,13 @@ export function buildDashboardSignals(input: {
       'A-items stale counts or large variance.',
       'A-item count policy breach by age and variance thresholds.',
       'Derived from /items and /items/metrics.',
+    ),
+    withCount(
+      'uom_inconsistent',
+      'UOM inconsistent',
+      'Multiple non-normalizable UOMs detected in the same item/location scope.',
+      'Flagged when item/location has conflicting UOM rows and cannot be safely aggregated.',
+      'Derived from /inventory-snapshot/summary diagnostics.uomNormalizationDiagnostics.',
     ),
     {
       key: 'fulfillment_reliability',

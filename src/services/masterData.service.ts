@@ -2,18 +2,26 @@ import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query, withTransaction } from '../db';
 import { getExchangeRate } from './currencies.service';
-import type { itemSchema, locationSchema, uomConversionSchema } from '../schemas/masterData.schema';
+import type {
+  itemSchema,
+  itemUomPolicyPatchSchema,
+  locationSchema,
+  uomConversionSchema
+} from '../schemas/masterData.schema';
 import { ItemLifecycleStatus } from '../types/item';
 import { ensureWarehouseDefaultsForWarehouse } from './warehouseDefaults.service';
 import {
   assertCanonicalFieldsPresent,
+  getCanonicalUomForDimension,
   getItemUomConfigIfPresent,
   validateConversionAgainstItemDimension
 } from './uomCanonical.service';
+import { convertQty } from './uomConvert.service';
 
 export type ItemInput = z.infer<typeof itemSchema>;
 export type LocationInput = z.infer<typeof locationSchema>;
 export type UomConversionInput = z.infer<typeof uomConversionSchema>;
+export type ItemUomPolicyPatchInput = z.infer<typeof itemUomPolicyPatchSchema>;
 
 const itemSelectColumns = `
   i.id,
@@ -682,41 +690,69 @@ export async function createStandardWarehouseTemplate(
 }
 
 export async function createUomConversion(tenantId: string, data: UomConversionInput) {
-  const now = new Date();
-  const id = uuidv4();
-  const itemConfig = await getItemUomConfigIfPresent(tenantId, data.itemId);
-  if (itemConfig) {
-    validateConversionAgainstItemDimension(itemConfig, data.fromUom, data.toUom);
-    if (itemConfig.uomDimension === 'count' && !Number.isInteger(data.factor)) {
-      const err = new Error('COUNT_CONVERSION_FACTOR_MUST_BE_INTEGER') as Error & { code?: string; status?: number };
-      err.code = 'COUNT_CONVERSION_FACTOR_MUST_BE_INTEGER';
-      err.status = 400;
-      throw err;
+  return withTransaction(async (client) => {
+    const now = new Date();
+    const id = uuidv4();
+    const fromUom = data.fromUom.trim().toLowerCase();
+    const toUom = data.toUom.trim().toLowerCase();
+    const itemConfig = await getItemUomConfigIfPresent(tenantId, data.itemId, client);
+    if (itemConfig) {
+      validateConversionAgainstItemDimension(itemConfig, fromUom, toUom);
+      if (itemConfig.uomDimension === 'count' && !Number.isInteger(data.factor)) {
+        const err = new Error('COUNT_CONVERSION_FACTOR_MUST_BE_INTEGER') as Error & { code?: string; status?: number };
+        err.code = 'COUNT_CONVERSION_FACTOR_MUST_BE_INTEGER';
+        err.status = 400;
+        throw err;
+      }
+      const fromKey = fromUom;
+      const toKey = toUom;
+      const canonicalKey = itemConfig.canonicalUom.toLowerCase();
+      if (fromKey !== canonicalKey && toKey !== canonicalKey) {
+        throw new Error('UOM_CONVERSION_CANONICAL_REQUIRED');
+      }
     }
-    const fromKey = data.fromUom.trim().toLowerCase();
-    const toKey = data.toUom.trim().toLowerCase();
-    const canonicalKey = itemConfig.canonicalUom.toLowerCase();
-    if (fromKey !== canonicalKey && toKey !== canonicalKey) {
-      throw new Error('UOM_CONVERSION_CANONICAL_REQUIRED');
-    }
-  }
-  await query(
-    `INSERT INTO uom_conversions (
-        id, tenant_id, item_id, from_uom, to_uom, factor, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
-    [
-      id,
-      tenantId,
-      data.itemId,
-      data.fromUom,
-      data.toUom,
-      data.factor,
-      now
-    ]
-  );
-  const created = await getUomConversion(tenantId, id);
-  if (!created) throw new Error('Failed to create UoM conversion.');
-  return created;
+
+    await client.query(
+      `INSERT INTO uom_conversions (
+          id, tenant_id, item_id, from_uom, to_uom, factor, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
+      [
+        id,
+        tenantId,
+        data.itemId,
+        fromUom,
+        toUom,
+        data.factor,
+        now
+      ]
+    );
+
+    await client.query(
+      `INSERT INTO item_uom_overrides (
+          id, tenant_id, item_id, from_uom, to_uom, multiplier, active, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $7)
+       ON CONFLICT (tenant_id, item_id, from_uom, to_uom) WHERE active = true
+       DO UPDATE
+         SET multiplier = EXCLUDED.multiplier,
+             updated_at = EXCLUDED.updated_at`,
+      [
+        uuidv4(),
+        tenantId,
+        data.itemId,
+        fromUom,
+        toUom,
+        data.factor,
+        now
+      ]
+    );
+
+    const createdRes = await client.query(
+      `SELECT * FROM uom_conversions WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId]
+    );
+    if (createdRes.rowCount === 0) throw new Error('Failed to create UoM conversion.');
+    return createdRes.rows[0];
+  });
 }
 
 export async function getUomConversion(tenantId: string, id: string) {
@@ -746,8 +782,8 @@ export async function deleteUomConversion(tenantId: string, id: string) {
       WHERE tenant_id = $1
         AND item_id = $2
         AND (
-          uom = $3 OR uom = $4
-          OR uom_entered = $3 OR uom_entered = $4
+          LOWER(uom) = LOWER($3) OR LOWER(uom) = LOWER($4)
+          OR LOWER(uom_entered) = LOWER($3) OR LOWER(uom_entered) = LOWER($4)
         )
       LIMIT 1`,
     [tenantId, conversion.item_id, conversion.from_uom, conversion.to_uom]
@@ -757,10 +793,20 @@ export async function deleteUomConversion(tenantId: string, id: string) {
     throw new Error('UOM_CONVERSION_IN_USE');
   }
 
-  await query(
-    `DELETE FROM uom_conversions WHERE id = $1 AND tenant_id = $2`,
-    [id, tenantId]
-  );
+  await withTransaction(async (client) => {
+    await client.query(
+      `DELETE FROM uom_conversions WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId]
+    );
+    await client.query(
+      `DELETE FROM item_uom_overrides
+        WHERE tenant_id = $1
+          AND item_id = $2
+          AND LOWER(from_uom) = LOWER($3)
+          AND LOWER(to_uom) = LOWER($4)`,
+      [tenantId, conversion.item_id, conversion.from_uom, conversion.to_uom]
+    );
+  });
 }
 
 export async function convertQuantity(
@@ -774,27 +820,43 @@ export async function convertQuantity(
   if (itemConfig) {
     validateConversionAgainstItemDimension(itemConfig, fromUom, toUom);
   }
-  if (fromUom === toUom) return quantity;
+  if (fromUom.trim().toLowerCase() === toUom.trim().toLowerCase()) return quantity;
 
-  // Try direct conversion
-  const direct = await query<{ factor: string }>(
-    `SELECT factor FROM uom_conversions 
-     WHERE tenant_id = $1 AND item_id = $2 AND from_uom = $3 AND to_uom = $4`,
-    [tenantId, itemId, fromUom, toUom]
-  );
-  if (direct.rowCount && direct.rowCount > 0) {
-    return quantity * Number(direct.rows[0].factor);
+  try {
+    const converted = await convertQty({
+      qty: quantity,
+      fromUom,
+      toUom,
+      roundingContext: 'transfer',
+      tenantId,
+      itemId
+    });
+    return Number(converted.exactQty);
+  } catch (error) {
+    if ((error as { code?: string })?.code === 'UOM_CONVERSION_MISSING') {
+      throw new Error(`UOM_CONVERSION_MISSING: ${fromUom} to ${toUom} for item ${itemId}`);
+    }
+    throw error;
   }
+}
 
-  // Try reverse conversion
-  const reverse = await query<{ factor: string }>(
-    `SELECT factor FROM uom_conversions 
-     WHERE tenant_id = $1 AND item_id = $2 AND from_uom = $4 AND to_uom = $3`,
-    [tenantId, itemId, fromUom, toUom]
+export async function updateItemUomPolicy(tenantId: string, itemId: string, data: ItemUomPolicyPatchInput) {
+  const canonicalUom = getCanonicalUomForDimension(data.uomDimension);
+  const defaultUom = data.defaultUom ?? data.stockingUom;
+
+  const updateResult = await query<{ id: string }>(
+    `UPDATE items
+        SET uom_dimension = $1,
+            canonical_uom = $2,
+            stocking_uom = $3,
+            default_uom = $4,
+            updated_at = now()
+      WHERE tenant_id = $5
+        AND id = $6
+      RETURNING id`,
+    [data.uomDimension, canonicalUom, data.stockingUom, defaultUom, tenantId, itemId]
   );
-  if (reverse.rowCount && reverse.rowCount > 0) {
-    return quantity / Number(reverse.rows[0].factor);
-  }
 
-  throw new Error(`UOM_CONVERSION_MISSING: ${fromUom} to ${toUom} for item ${itemId}`);
+  if (updateResult.rowCount === 0) return null;
+  return getItem(tenantId, itemId);
 }

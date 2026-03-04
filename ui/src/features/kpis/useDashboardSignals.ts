@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { ApiError } from '@api/types'
-import { useInventorySnapshotSummary } from '@features/inventory/queries'
+import { useInventorySnapshotSummaryDetailed } from '@features/inventory/queries'
 import { useItemsList, useItemsMetrics } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
 import { usePurchaseOrdersList } from '@features/purchaseOrders/queries'
@@ -9,8 +9,11 @@ import { formatDateTime } from './utils'
 import { buildDashboardExceptions, buildDashboardSignals, deriveCoverageState } from './dashboardMath'
 import { useFulfillmentFillRate, useReplenishmentPolicies, useReplenishmentRecommendations } from './queries'
 
+const ENABLE_DASHBOARD_UOM_INCONSISTENT =
+  import.meta.env.VITE_ENABLE_DASHBOARD_UOM_INCONSISTENT === 'true'
+
 export function useDashboardSignals() {
-  const inventorySummaryQuery = useInventorySnapshotSummary({ limit: 2000 }, { staleTime: 30_000 })
+  const inventorySummaryQuery = useInventorySnapshotSummaryDetailed({ limit: 2000 }, { staleTime: 30_000 })
   const itemsQuery = useItemsList({ limit: 500 }, { staleTime: 60_000 })
   const locationsQuery = useLocationsList({ limit: 1000, active: true }, { staleTime: 60_000 })
   const purchaseOrdersQuery = usePurchaseOrdersList({ limit: 1000 }, { staleTime: 30_000 })
@@ -63,6 +66,13 @@ export function useDashboardSignals() {
     return map
   }, [itemMetricsQuery.data])
 
+  const inventoryRows = inventorySummaryQuery.data?.data ?? []
+  const uomNormalizationDiagnostics = ENABLE_DASHBOARD_UOM_INCONSISTENT
+    ? inventorySummaryQuery.data?.diagnostics.uomNormalizationDiagnostics ??
+      inventorySummaryQuery.data?.diagnostics.uomInconsistencies ??
+      []
+    : []
+
   const asOfMs = useMemo(() => {
     const stamps = [
       inventorySummaryQuery.dataUpdatedAt,
@@ -89,7 +99,8 @@ export function useDashboardSignals() {
   const exceptions = useMemo(
     () =>
       buildDashboardExceptions({
-        inventoryRows: inventorySummaryQuery.data ?? [],
+        inventoryRows,
+        uomInconsistencies: uomNormalizationDiagnostics,
         recommendations: recommendationsQuery.data?.data ?? [],
         policyScopeSet,
         purchaseOrders: purchaseOrdersQuery.data?.data ?? [],
@@ -100,7 +111,8 @@ export function useDashboardSignals() {
         asOf: asOfIso,
       }),
     [
-      inventorySummaryQuery.data,
+      inventoryRows,
+      uomNormalizationDiagnostics,
       recommendationsQuery.data,
       policyScopeSet,
       purchaseOrdersQuery.data,
@@ -125,14 +137,14 @@ export function useDashboardSignals() {
   const coverage = useMemo(
     () =>
       deriveCoverageState({
-        inventoryRows: inventorySummaryQuery.data ?? [],
+        inventoryRows,
         policies: policiesQuery.data?.data ?? [],
         items: itemsQuery.data?.data ?? [],
         itemMetrics: itemMetricsQuery.data ?? [],
         fillRate: fillRateQuery.data ?? null,
       }),
     [
-      inventorySummaryQuery.data,
+      inventoryRows,
       policiesQuery.data,
       purchaseOrdersQuery.data,
       workOrdersQuery.data,
@@ -186,6 +198,9 @@ export function useDashboardSignals() {
       exceptions,
       signals,
       coverage,
+      uomNormalizationDiagnostics,
+      // Deprecated alias retained for existing consumers.
+      uomInconsistencies: uomNormalizationDiagnostics,
     },
     loading,
     error,

@@ -201,10 +201,11 @@ async function lookupConversionFactor(
   const executor = client ? client.query.bind(client) : query;
   const params = [tenantId, itemId, fromUom, toUom];
   const direct = await executor<{ factor: string }>(
-    `SELECT factor
-       FROM uom_conversions
+    `SELECT multiplier::text AS factor
+       FROM item_uom_overrides
       WHERE tenant_id = $1
         AND item_id = $2
+        AND active = true
         AND LOWER(from_uom) = LOWER($3)
         AND LOWER(to_uom) = LOWER($4)`,
     params
@@ -213,10 +214,11 @@ async function lookupConversionFactor(
     return Number(direct.rows[0].factor);
   }
   const reverse = await executor<{ factor: string }>(
-    `SELECT factor
-       FROM uom_conversions
+    `SELECT multiplier::text AS factor
+       FROM item_uom_overrides
       WHERE tenant_id = $1
         AND item_id = $2
+        AND active = true
         AND LOWER(from_uom) = LOWER($4)
         AND LOWER(to_uom) = LOWER($3)`,
     params

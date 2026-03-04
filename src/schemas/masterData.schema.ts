@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { uomSchema } from './shared/uom.schema';
+import { uomCodeSchema } from './shared/uomCode.schema';
 import { ItemLifecycleStatus } from '../types/item';
 
 const uomDimensionSchema = z.enum(['mass', 'volume', 'count', 'length', 'area', 'time']);
+const uomRegistryDimensionSchema = z.enum(['mass', 'volume', 'count', 'length']);
 const canonicalUomByDimension: Record<z.infer<typeof uomDimensionSchema>, string> = {
   mass: 'g',
   volume: 'L',
@@ -135,7 +137,22 @@ export const locationSchema = z.object({
 
 export const uomConversionSchema = z.object({
   itemId: z.string().uuid(),
-  fromUom: uomSchema.max(50),
-  toUom: uomSchema.max(50),
+  fromUom: uomCodeSchema,
+  toUom: uomCodeSchema,
   factor: z.number().positive(),
+});
+
+export const uomConvertPreviewSchema = z.object({
+  qty: z.union([z.number(), z.string().min(1)]),
+  fromUom: uomCodeSchema,
+  toUom: uomCodeSchema,
+  roundingContext: z.enum(['receipt', 'issue', 'count', 'transfer']).default('transfer'),
+  contextPrecision: z.number().int().min(0).max(12).optional(),
+  itemId: z.string().uuid().optional()
+});
+
+export const itemUomPolicyPatchSchema = z.object({
+  uomDimension: uomRegistryDimensionSchema,
+  stockingUom: uomCodeSchema,
+  defaultUom: uomCodeSchema.optional()
 });

@@ -26,6 +26,7 @@ const queueTypeOptions: Array<{ value: DashboardExceptionType | 'all'; label: st
   { value: 'inbound_aging', label: 'Inbound aging' },
   { value: 'work_order_risk', label: 'WO risk' },
   { value: 'cycle_count_hygiene', label: 'Cycle count' },
+  { value: 'uom_inconsistent', label: 'UOM inconsistent' },
 ]
 
 function typeLabel(type: DashboardExceptionType) {
@@ -44,6 +45,8 @@ function typeLabel(type: DashboardExceptionType) {
       return 'Open WO risk'
     case 'cycle_count_hygiene':
       return 'Cycle count hygiene'
+    case 'uom_inconsistent':
+      return 'UOM inconsistent'
     default:
       return type
   }

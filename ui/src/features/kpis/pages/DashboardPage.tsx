@@ -111,12 +111,16 @@ export default function DashboardPage() {
   const exceptionSignals = visibleSignals.filter((signal) => signal.type !== 'fulfillment_reliability')
   const allExceptionSignals = allSignals.filter((signal) => signal.type !== 'fulfillment_reliability')
   const exceptionCount = allExceptionSignals.reduce((total, signal) => total + signal.count, 0)
+  const blockingExceptionCount = allExceptionSignals
+    .filter((signal) => rankSeverity(signal.severity) >= rankSeverity('action'))
+    .reduce((total, signal) => total + signal.count, 0)
   const urgentExceptions = allExceptionSignals.filter(
     (signal) => signal.count > 0 && rankSeverity(signal.severity) >= rankSeverity('action'),
   )
   const attentionState = deriveAttentionState({
     coverage: data.coverage,
     exceptionCount,
+    blockingExceptionCount,
   })
 
   const allClear = attentionState === 'all_clear'

@@ -7,7 +7,7 @@ import {
   assertItemExists,
   assertLocationExists,
   getInventorySnapshot,
-  getInventorySnapshotSummary
+  getInventorySnapshotSummaryDetailed
 } from '../services/inventorySnapshot.service';
 
 const router = Router();
@@ -78,8 +78,8 @@ router.get('/inventory-snapshot/summary', async (req: Request, res: Response) =>
   }
 
   try {
-    const summary = await getInventorySnapshotSummary(req.auth!.tenantId, parsed.data);
-    return res.json({ data: summary });
+    const summary = await getInventorySnapshotSummaryDetailed(req.auth!.tenantId, parsed.data);
+    return res.json(summary);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Failed to load inventory snapshot summary.' });

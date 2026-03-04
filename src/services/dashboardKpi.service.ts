@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { query, withTransaction } from '../db';
-import { getInventorySnapshotSummary } from './inventorySnapshot.service';
+import { getInventorySnapshotSummaryDetailed } from './inventorySnapshot.service';
 import {
   computeFulfillmentFillRate,
   computeReplenishmentRecommendations,
@@ -35,6 +35,8 @@ type DashboardSnapshot = {
 
 const DEFAULT_WINDOW_DAYS = 90;
 const DEFAULT_RUNTIME_ESTIMATE_SECONDS = 20;
+const ENABLE_DASHBOARD_UOM_INCONSISTENT =
+  process.env.ENABLE_DASHBOARD_UOM_INCONSISTENT === 'true';
 
 function toFiniteNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -152,9 +154,9 @@ async function computeDashboardSnapshots(tenantId: string, warehouseId: string, 
   const windowStart = new Date(windowEnd.getTime() - windowDays * 24 * 60 * 60 * 1000);
   const asOf = windowEnd.toISOString();
 
-  const [snapshotRows, recommendations, policies, purchaseOrders, workOrdersResult, aItemsResult, fillRate] =
+  const [summaryDetailed, recommendations, policies, purchaseOrders, workOrdersResult, aItemsResult, fillRate] =
     await Promise.all([
-      getInventorySnapshotSummary(tenantId, {
+      getInventorySnapshotSummaryDetailed(tenantId, {
         warehouseId,
         limit: 5000,
         offset: 0,
@@ -176,6 +178,10 @@ async function computeDashboardSnapshots(tenantId: string, warehouseId: string, 
         to: windowEnd.toISOString(),
       }),
     ]);
+  const snapshotRows = summaryDetailed.data;
+  const uomInconsistencyCount =
+    summaryDetailed.diagnostics.uomNormalizationDiagnostics?.length ??
+    summaryDetailed.diagnostics.uomInconsistencies.length;
 
   const policyByScope = new Set(
     policies
@@ -254,6 +260,13 @@ async function computeDashboardSnapshots(tenantId: string, warehouseId: string, 
     { kpiName: 'dashboard.fill_rate', value: fillRateValue, units: 'ratio' },
     { kpiName: 'dashboard.unfilled_rate_proxy', value: unfilledRate, units: 'ratio' },
   ];
+  if (ENABLE_DASHBOARD_UOM_INCONSISTENT) {
+    snapshots.push({
+      kpiName: 'dashboard.uom_inconsistent',
+      value: uomInconsistencyCount,
+      units: 'count',
+    });
+  }
 
   return {
     asOf,

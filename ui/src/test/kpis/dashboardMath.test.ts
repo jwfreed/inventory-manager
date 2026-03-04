@@ -99,6 +99,7 @@ describe('dashboardMath', () => {
 
     const exceptions = buildDashboardExceptions({
       inventoryRows,
+      uomInconsistencies: [],
       recommendations: [],
       policyScopeSet: new Set(['item-a:loc-a']),
       purchaseOrders: [],
@@ -132,6 +133,7 @@ describe('dashboardMath', () => {
     ]
     const exceptions = buildDashboardExceptions({
       inventoryRows,
+      uomInconsistencies: [],
       recommendations: [],
       policyScopeSet: new Set(),
       purchaseOrders: [],
@@ -180,6 +182,7 @@ describe('dashboardMath', () => {
           inventoryPosition: -1,
         },
       ],
+      uomInconsistencies: [],
       recommendations: [],
       policyScopeSet: new Set(),
       purchaseOrders: [],
@@ -234,6 +237,7 @@ describe('dashboardMath', () => {
 
     const exceptions = buildDashboardExceptions({
       inventoryRows: [],
+      uomInconsistencies: [],
       recommendations: [],
       policyScopeSet: new Set(),
       purchaseOrders: pos,
@@ -251,6 +255,101 @@ describe('dashboardMath', () => {
 
     expect(submitted?.occurredAt).toBe('2026-02-20T08:00:00.000Z')
     expect(overdue?.occurredAt).toBe('2026-02-22T00:00:00.000Z')
+  })
+
+  it('builds uom_inconsistent queue rows from snapshot diagnostics', () => {
+    const exceptions = buildDashboardExceptions({
+      inventoryRows: [],
+      uomInconsistencies: [
+        {
+          itemId: 'item-1',
+          locationId: 'loc-1',
+          stockingUom: null,
+          observedUoms: ['g', 'kg'],
+          reason: 'STOCKING_UOM_UNSET',
+          status: 'INCONSISTENT',
+          severity: 'action',
+          canAggregate: false,
+          traces: [],
+        },
+      ],
+      recommendations: [],
+      policyScopeSet: new Set(),
+      purchaseOrders: [],
+      workOrders: [],
+      itemLookup: asLookup<Item>([
+        {
+          id: 'item-1',
+          sku: 'ITEM-1',
+          name: 'Demo item',
+          type: 'finished',
+          lifecycleStatus: 'Active',
+        },
+      ]),
+      locationLookup: asLookup<Location>([
+        {
+          id: 'loc-1',
+          code: 'FG',
+          name: 'Finished Goods',
+          type: 'storage',
+          active: true,
+        },
+      ]),
+      itemMetricsLookup: new Map<string, ItemMetrics>(),
+      asOf: '2026-03-03T10:00:00.000Z',
+    })
+
+    const row = exceptions.find((entry) => entry.type === 'uom_inconsistent')
+    expect(row).toBeTruthy()
+    expect(row?.severity).toBe('action')
+    expect(row?.recommendedAction).toContain('stock UOM')
+  })
+
+  it('preserves watch severity for legacy fallback UOM diagnostics', () => {
+    const exceptions = buildDashboardExceptions({
+      inventoryRows: [],
+      uomInconsistencies: [
+        {
+          itemId: 'item-1',
+          locationId: 'loc-1',
+          stockingUom: 'g',
+          observedUoms: ['legacy_uom', 'g'],
+          reason: 'LEGACY_FALLBACK_USED',
+          status: 'LEGACY_FALLBACK_USED',
+          severity: 'watch',
+          canAggregate: true,
+          traces: [],
+        },
+      ],
+      recommendations: [],
+      policyScopeSet: new Set(),
+      purchaseOrders: [],
+      workOrders: [],
+      itemLookup: asLookup<Item>([
+        {
+          id: 'item-1',
+          sku: 'ITEM-1',
+          name: 'Demo item',
+          type: 'finished',
+          lifecycleStatus: 'Active',
+        },
+      ]),
+      locationLookup: asLookup<Location>([
+        {
+          id: 'loc-1',
+          code: 'FG',
+          name: 'Finished Goods',
+          type: 'storage',
+          active: true,
+        },
+      ]),
+      itemMetricsLookup: new Map<string, ItemMetrics>(),
+      asOf: '2026-03-03T10:00:00.000Z',
+    })
+
+    const row = exceptions.find((entry) => entry.type === 'uom_inconsistent')
+    expect(row?.severity).toBe('watch')
+    expect(row?.recommendedAction).toContain('legacy conversion fallback')
   })
 
   it('sorts resolution queue by severity then impact then recency', () => {
@@ -338,6 +437,74 @@ describe('dashboardMath', () => {
     })
     expect(coverage.inventoryMonitoringConfigured).toBe(false)
     expect(deriveAttentionState({ coverage, exceptionCount: 0 })).toBe('not_configured')
+  })
+
+  it('treats watch-level UOM inconsistencies as visible but non-blocking', () => {
+    const coverage = deriveCoverageState({
+      inventoryRows: [
+        {
+          itemId: 'item-1',
+          locationId: 'loc-1',
+          uom: 'ea',
+          onHand: 10,
+          reserved: 0,
+          held: 0,
+          rejected: 0,
+          nonUsable: 0,
+          available: 10,
+          onOrder: 0,
+          inTransit: 0,
+          backordered: 0,
+          inventoryPosition: 10,
+        },
+      ],
+      policies: [],
+      items: [],
+      itemMetrics: [],
+      fillRate: null,
+    })
+
+    expect(
+      deriveAttentionState({
+        coverage,
+        exceptionCount: 1,
+        blockingExceptionCount: 0,
+      }),
+    ).toBe('all_clear')
+  })
+
+  it('treats action-level exceptions as blocking when blockingExceptionCount is provided', () => {
+    const coverage = deriveCoverageState({
+      inventoryRows: [
+        {
+          itemId: 'item-1',
+          locationId: 'loc-1',
+          uom: 'ea',
+          onHand: 10,
+          reserved: 0,
+          held: 0,
+          rejected: 0,
+          nonUsable: 0,
+          available: 10,
+          onOrder: 0,
+          inTransit: 0,
+          backordered: 0,
+          inventoryPosition: 10,
+        },
+      ],
+      policies: [],
+      items: [],
+      itemMetrics: [],
+      fillRate: null,
+    })
+
+    expect(
+      deriveAttentionState({
+        coverage,
+        exceptionCount: 1,
+        blockingExceptionCount: 1,
+      }),
+    ).toBe('exceptions_present')
   })
 
   it('tracks replenishment monitoring separately from inventory monitoring', () => {
@@ -618,5 +785,30 @@ describe('dashboardMath', () => {
     expect(reliability?.formula).toContain('Unfilled rate (proxy) = 1 - FillRate.')
     expect(reliability?.helper).not.toContain('Backorder rate = 1 - fill rate')
     expect(reliability?.formula).not.toContain('Backorder rate = 1 - fill rate')
+  })
+
+  it('builds uom_inconsistent signal counts from resolution queue', () => {
+    const signals = buildDashboardSignals({
+      exceptions: [
+        {
+          id: 'uom-1',
+          type: 'uom_inconsistent',
+          severity: 'action',
+          itemLabel: 'Item A',
+          itemId: 'item-a',
+          locationLabel: 'Loc A',
+          locationId: 'loc-a',
+          impactScore: 2,
+          occurredAt: '2026-03-03T10:00:00.000Z',
+          recommendedAction: 'Set stock UOM',
+          primaryLink: '/items/item-a',
+        },
+      ],
+      fillRate: null,
+      asOfLabel: 'Mar 3, 2026 10:00',
+    })
+    const uomSignal = signals.find((signal) => signal.type === 'uom_inconsistent')
+    expect(uomSignal?.value).toBe('1')
+    expect(uomSignal?.severity).toBe('action')
   })
 })

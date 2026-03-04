@@ -1,6 +1,12 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
-import type { ApiError, InventorySnapshotRow, MovementLotAllocation } from '../../api/types'
+import type {
+  ApiError,
+  InventorySnapshotRow,
+  InventorySnapshotSummaryDetailed,
+  MovementLotAllocation,
+} from '../../api/types'
 import {
+  listInventorySnapshotSummaryDetailed,
   listInventorySnapshotSummary,
   type InventorySnapshotSummaryParams,
 } from './api/inventorySnapshot'
@@ -10,6 +16,8 @@ export const inventoryQueryKeys = {
   all: ['inventory'] as const,
   snapshotSummary: (params: InventorySnapshotSummaryParams = {}) =>
     [...inventoryQueryKeys.all, 'snapshot-summary', params] as const,
+  snapshotSummaryDetailed: (params: InventorySnapshotSummaryParams = {}) =>
+    [...inventoryQueryKeys.all, 'snapshot-summary-detailed', params] as const,
 }
 
 export const lotsQueryKeys = {
@@ -23,6 +31,11 @@ export const lotsQueryKeys = {
 
 type InventorySummaryOptions = Omit<
   UseQueryOptions<InventorySnapshotRow[], ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type InventorySummaryDetailedOptions = Omit<
+  UseQueryOptions<InventorySnapshotSummaryDetailed, ApiError>,
   'queryKey' | 'queryFn'
 >
 
@@ -43,6 +56,18 @@ export function useInventorySnapshotSummary(
   return useQuery({
     queryKey: inventoryQueryKeys.snapshotSummary(params),
     queryFn: () => listInventorySnapshotSummary(params),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useInventorySnapshotSummaryDetailed(
+  params: InventorySnapshotSummaryParams = {},
+  options: InventorySummaryDetailedOptions = {},
+) {
+  return useQuery({
+    queryKey: inventoryQueryKeys.snapshotSummaryDetailed(params),
+    queryFn: () => listInventorySnapshotSummaryDetailed(params),
     retry: 1,
     ...options,
   })

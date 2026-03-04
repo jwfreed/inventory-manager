@@ -2,7 +2,15 @@ import { query } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { assertItemExists, assertLocationExists } from './inventorySummary.service';
 import { convertQuantity } from './masterData.service';
+import { convertQty } from './uomConvert.service';
+import { mapUomStatusToRouting, resolveTraceOutcome } from './uomSeverityRouting.service';
 import { getItemUomConfigIfPresent } from './uomCanonical.service';
+import type {
+  UomNormalizationDiagnostic,
+  UomNormalizationReason,
+  UomNormalizationStatus,
+  UomResolutionTrace
+} from '../types/uomNormalization';
 import {
   calculateAcceptedQuantity,
   loadPutawayTotals,
@@ -39,6 +47,23 @@ export type InventorySnapshotSummaryParams = {
   locationId?: string;
   limit?: number;
   offset?: number;
+};
+
+export type InventoryUomInconsistencyReason = 'STOCKING_UOM_UNSET' | 'NON_CONVERTIBLE_UOM';
+
+export type InventoryUomInconsistency = UomNormalizationDiagnostic & {
+  reason?: InventoryUomInconsistencyReason | UomNormalizationReason | 'LEGACY_FALLBACK_USED';
+};
+
+export type InventorySnapshotSummaryDiagnostics = {
+  uomNormalizationDiagnostics: InventoryUomInconsistency[];
+  // Deprecated compatibility alias.
+  uomInconsistencies: InventoryUomInconsistency[];
+};
+
+export type InventorySnapshotSummaryDetailed = {
+  data: InventorySnapshotRow[];
+  diagnostics: InventorySnapshotSummaryDiagnostics;
 };
 
 function normalizeQuantity(value: unknown): number {
@@ -280,15 +305,17 @@ async function loadQcBuckets(
               item_id,
               LOWER(from_uom) AS from_uom,
               LOWER(to_uom) AS to_uom,
-              factor
-         FROM uom_conversions
+              multiplier AS factor
+         FROM item_uom_overrides
+        WHERE active = true
         UNION ALL
        SELECT tenant_id,
               item_id,
               LOWER(to_uom) AS from_uom,
               LOWER(from_uom) AS to_uom,
-              1 / factor AS factor
-         FROM uom_conversions
+              1 / multiplier AS factor
+         FROM item_uom_overrides
+        WHERE active = true
      )
      SELECT i.canonical_uom AS uom,
             SUM(
@@ -426,10 +453,316 @@ export async function getInventorySnapshot(
 
 export { assertItemExists, assertLocationExists };
 
+type ItemStockingConfigRow = {
+  id: string;
+  stocking_uom: string | null;
+  uom_dimension: string | null;
+};
+
+function isSnapshotNormalizationEnabled() {
+  return process.env.ENABLE_SNAPSHOT_UOM_NORMALIZATION === 'true';
+}
+
+async function loadItemStockingConfigMap(tenantId: string, itemIds: string[]) {
+  if (itemIds.length === 0) return new Map<string, ItemStockingConfigRow>();
+  const result = await query<ItemStockingConfigRow>(
+    `SELECT id, stocking_uom, uom_dimension
+       FROM items
+      WHERE tenant_id = $1
+        AND id = ANY($2::uuid[])`,
+    [tenantId, itemIds]
+  );
+  return new Map(result.rows.map((row) => [row.id, row]));
+}
+
+function uniqueObservedUoms(rows: InventorySnapshotRow[]) {
+  const set = new Set<string>();
+  rows.forEach((row) => {
+    const normalized = row.uom.trim().toLowerCase();
+    if (normalized) set.add(normalized);
+  });
+  return Array.from(set).sort((left, right) => left.localeCompare(right));
+}
+
+function dedupeTraces(traces: UomResolutionTrace[]) {
+  const seen = new Set<string>();
+  const deduped: UomResolutionTrace[] = [];
+  traces.forEach((trace) => {
+    const key = [
+      trace.status,
+      trace.severity,
+      trace.canAggregate ? '1' : '0',
+      trace.source,
+      trace.inputUomCode,
+      trace.resolvedFromUom ?? '',
+      trace.resolvedToUom ?? '',
+      trace.itemId ?? '',
+      trace.mappingKey ?? '',
+      trace.detailCode ?? '',
+      trace.detail ?? ''
+    ].join('|');
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(trace);
+  });
+  return deduped;
+}
+
+function statusFromErrorCode(code: unknown): UomNormalizationStatus {
+  if (code === 'UOM_UNKNOWN') return 'UNKNOWN_UOM';
+  if (code === 'UOM_DIMENSION_MISMATCH') return 'DIMENSION_MISMATCH';
+  return 'INCONSISTENT';
+}
+
+function buildDiagnostic(input: {
+  itemId: string;
+  locationId: string;
+  stockingUom: string | null;
+  observedUoms: string[];
+  status: UomNormalizationStatus;
+  reason?: InventoryUomInconsistency['reason'];
+  traces: UomResolutionTrace[];
+}): InventoryUomInconsistency {
+  const routing = mapUomStatusToRouting(input.status);
+  return {
+    itemId: input.itemId,
+    locationId: input.locationId,
+    stockingUom: input.stockingUom,
+    observedUoms: input.observedUoms,
+    status: input.status,
+    severity: routing.severity,
+    canAggregate: routing.canAggregate,
+    ...(input.reason ? { reason: input.reason } : {}),
+    traces: dedupeTraces(input.traces)
+  };
+}
+
+async function convertRowToStockingUom(input: {
+  tenantId: string;
+  itemId: string;
+  row: InventorySnapshotRow;
+  stockingUom: string;
+}) {
+  const traces: UomResolutionTrace[] = [];
+  const convertField = async (value: number) => {
+    const result = await convertQty({
+      qty: value,
+      fromUom: input.row.uom,
+      toUom: input.stockingUom,
+      roundingContext: 'transfer',
+      analyticsPrecisionMode: true,
+      tenantId: input.tenantId,
+      itemId: input.itemId
+    });
+    traces.push(...result.traces);
+    return toNumber(result.exactQty);
+  };
+
+  const converted = {
+    onHand: await convertField(input.row.onHand),
+    reserved: await convertField(input.row.reserved),
+    available: await convertField(input.row.available),
+    held: await convertField(input.row.held),
+    rejected: await convertField(input.row.rejected),
+    nonUsable: await convertField(input.row.nonUsable),
+    onOrder: await convertField(input.row.onOrder),
+    inTransit: await convertField(input.row.inTransit),
+    backordered: await convertField(input.row.backordered),
+    inventoryPosition: await convertField(input.row.inventoryPosition)
+  };
+  const traceOutcome = resolveTraceOutcome(traces);
+
+  return {
+    ...converted,
+    traces: dedupeTraces(traces),
+    status: traceOutcome.status,
+    severity: traceOutcome.severity,
+    canAggregate: traceOutcome.canAggregate
+  };
+}
+
+async function normalizeSummaryRows(
+  tenantId: string,
+  rows: InventorySnapshotRow[]
+): Promise<InventorySnapshotSummaryDetailed> {
+  const grouped = new Map<string, InventorySnapshotRow[]>();
+  rows.forEach((row) => {
+    const key = `${row.itemId}:${row.locationId}`;
+    const list = grouped.get(key);
+    if (list) {
+      list.push(row);
+    } else {
+      grouped.set(key, [row]);
+    }
+  });
+
+  const itemIds = Array.from(new Set(rows.map((row) => row.itemId)));
+  const itemConfigMap = await loadItemStockingConfigMap(tenantId, itemIds);
+  const normalized: InventorySnapshotRow[] = [];
+  const diagnostics: InventoryUomInconsistency[] = [];
+  const enableNormalization = isSnapshotNormalizationEnabled();
+
+  for (const [groupKey, groupRows] of grouped.entries()) {
+    const [itemId, locationId] = groupKey.split(':');
+    const observedUoms = uniqueObservedUoms(groupRows);
+
+    if (observedUoms.length <= 1) {
+      normalized.push(...groupRows);
+      continue;
+    }
+
+    const config = itemConfigMap.get(itemId);
+    const stockingUom = config?.stocking_uom?.trim() || null;
+    if (!stockingUom) {
+      diagnostics.push(
+        buildDiagnostic({
+          itemId,
+          locationId,
+          stockingUom: null,
+          observedUoms,
+          status: 'INCONSISTENT',
+          reason: 'STOCKING_UOM_UNSET',
+          traces: []
+        })
+      );
+      normalized.push(...groupRows);
+      continue;
+    }
+
+    const convertedRows: Array<Awaited<ReturnType<typeof convertRowToStockingUom>>> = [];
+    const traceAccumulator: UomResolutionTrace[] = [];
+    let conversionFailureStatus: UomNormalizationStatus | null = null;
+    let conversionFailureCode: string | null = null;
+    let conversionFailureDetail: string | null = null;
+    for (const row of groupRows) {
+      try {
+        const convertedRow = await convertRowToStockingUom({
+          tenantId,
+          itemId,
+          row,
+          stockingUom
+        });
+        convertedRows.push(convertedRow);
+        traceAccumulator.push(...convertedRow.traces);
+      } catch (error) {
+        conversionFailureStatus = statusFromErrorCode((error as { code?: string })?.code);
+        conversionFailureCode = (error as { code?: string })?.code ?? null;
+        conversionFailureDetail = error instanceof Error ? error.message : null;
+        break;
+      }
+    }
+
+    if (conversionFailureStatus) {
+      const routing = mapUomStatusToRouting(conversionFailureStatus);
+      const failureTrace: UomResolutionTrace = {
+        status: conversionFailureStatus,
+        severity: routing.severity,
+        canAggregate: routing.canAggregate,
+        source: 'registry',
+        inputUomCode: groupRows[0]?.uom ?? '',
+        resolvedFromUom: groupRows[0]?.uom ?? undefined,
+        resolvedToUom: stockingUom ?? undefined,
+        itemId,
+        detailCode: conversionFailureCode ?? 'UOM_CONVERSION_FAILED',
+        detail: conversionFailureDetail ?? 'Unable to convert one or more UOM rows in group.'
+      };
+      diagnostics.push(
+        buildDiagnostic({
+          itemId,
+          locationId,
+          stockingUom,
+          observedUoms,
+          status: conversionFailureStatus,
+          reason: 'NON_CONVERTIBLE_UOM',
+          traces: [...traceAccumulator, failureTrace]
+        })
+      );
+      normalized.push(...groupRows);
+      continue;
+    }
+
+    const traceOutcome = resolveTraceOutcome(traceAccumulator);
+    if (traceOutcome.status !== 'OK') {
+      diagnostics.push(
+        buildDiagnostic({
+          itemId,
+          locationId,
+          stockingUom,
+          observedUoms,
+          status: traceOutcome.status,
+          reason:
+            traceOutcome.status === 'LEGACY_FALLBACK_USED'
+              ? 'LEGACY_FALLBACK_USED'
+              : traceOutcome.status === 'UNKNOWN_UOM'
+                ? 'UNKNOWN_UOM'
+                : traceOutcome.status === 'DIMENSION_MISMATCH'
+                  ? 'DIMENSION_MISMATCH'
+                  : 'NON_CONVERTIBLE_UOM',
+          traces: traceAccumulator
+        })
+      );
+    }
+
+    if (!enableNormalization) {
+      normalized.push(...groupRows);
+      continue;
+    }
+
+    if (!traceOutcome.canAggregate) {
+      normalized.push(...groupRows);
+      continue;
+    }
+
+    const sumConverted = <TKey extends keyof (typeof convertedRows)[number]>(key: TKey) =>
+      roundQuantity(
+        convertedRows.reduce((total, row) => total + toNumber(row[key] as unknown), 0)
+      );
+
+    const merged: InventorySnapshotRow = {
+      itemId,
+      locationId,
+      uom: stockingUom,
+      onHand: sumConverted('onHand'),
+      reserved: sumConverted('reserved'),
+      available: sumConverted('available'),
+      held: sumConverted('held'),
+      rejected: sumConverted('rejected'),
+      nonUsable: sumConverted('nonUsable'),
+      onOrder: sumConverted('onOrder'),
+      inTransit: sumConverted('inTransit'),
+      backordered: sumConverted('backordered'),
+      inventoryPosition: sumConverted('inventoryPosition')
+    };
+    normalized.push(merged);
+  }
+
+  const sortedRows = normalized.sort((left, right) => {
+    if (left.itemId !== right.itemId) return left.itemId.localeCompare(right.itemId);
+    if (left.locationId !== right.locationId) return left.locationId.localeCompare(right.locationId);
+    return left.uom.localeCompare(right.uom);
+  });
+
+  return {
+    data: sortedRows,
+    diagnostics: {
+      uomNormalizationDiagnostics: diagnostics,
+      uomInconsistencies: diagnostics
+    }
+  };
+}
+
 export async function getInventorySnapshotSummary(
   tenantId: string,
   params: InventorySnapshotSummaryParams
 ): Promise<InventorySnapshotRow[]> {
+  const detailed = await getInventorySnapshotSummaryDetailed(tenantId, params);
+  return detailed.data;
+}
+
+export async function getInventorySnapshotSummaryDetailed(
+  tenantId: string,
+  params: InventorySnapshotSummaryParams
+): Promise<InventorySnapshotSummaryDetailed> {
   const availabilityClauses: string[] = [];
   const qcClauses: string[] = [];
   const backorderClauses: string[] = [];
@@ -466,15 +799,17 @@ export async function getInventorySnapshotSummary(
               item_id,
               LOWER(from_uom) AS from_uom,
               LOWER(to_uom) AS to_uom,
-              factor
-         FROM uom_conversions
+              multiplier AS factor
+         FROM item_uom_overrides
+        WHERE active = true
         UNION ALL
        SELECT tenant_id,
               item_id,
               LOWER(to_uom) AS from_uom,
               LOWER(from_uom) AS to_uom,
-              1 / factor AS factor
-         FROM uom_conversions
+              1 / multiplier AS factor
+         FROM item_uom_overrides
+        WHERE active = true
      ),
      availability AS (
        SELECT v.item_id,
@@ -650,7 +985,7 @@ export async function getInventorySnapshotSummary(
     paramsList
   );
 
-  return rows.map((row: any) => ({
+  const mappedRows = rows.map((row: any) => ({
     itemId: row.item_id,
     locationId: row.location_id,
     uom: row.uom,
@@ -665,4 +1000,6 @@ export async function getInventorySnapshotSummary(
     backordered: normalizeQuantity(row.backordered),
     inventoryPosition: normalizeQuantity(row.inventory_position)
   }));
+
+  return normalizeSummaryRows(tenantId, mappedRows);
 }
