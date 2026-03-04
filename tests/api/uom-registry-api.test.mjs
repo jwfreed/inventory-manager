@@ -129,6 +129,7 @@ test('PATCH /items/:id/uom updates stock UOM policy and applies registry enforce
     assert.equal(unknownRes.res.status, 400, JSON.stringify(unknownRes.payload));
     assert.equal(unknownRes.payload?.error?.code, 'UOM_UNKNOWN');
     assert.ok(Array.isArray(unknownRes.payload?.error?.context?.suggestions));
+    assert.ok(Array.isArray(unknownRes.payload?.error?.context?.suggestedCodes));
   } else {
     assert.equal(unknownRes.res.status, 200, JSON.stringify(unknownRes.payload));
   }
@@ -150,6 +151,7 @@ test('POST /uoms/convert returns actionable unknown UOM context when enforcement
     assert.equal(response.res.status, 400, JSON.stringify(response.payload));
     assert.equal(response.payload?.error?.code, 'UOM_UNKNOWN');
     assert.ok(Array.isArray(response.payload?.error?.context?.suggestions));
+    assert.ok(Array.isArray(response.payload?.error?.context?.suggestedCodes));
   } else {
     assert.notEqual(response.res.status, 500, JSON.stringify(response.payload));
   }

@@ -3,10 +3,8 @@ import { z } from 'zod';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import {
   itemSchema,
-  itemUomPolicyPatchSchema,
   locationSchema,
-  uomConversionSchema,
-  uomConvertPreviewSchema
+  uomConversionSchema
 } from '../schemas/masterData.schema';
 import {
   createItem,
@@ -28,6 +26,7 @@ import { convertQty } from '../services/uomConvert.service';
 import { assertUomActive, listUoms } from '../services/uomRegistry.service';
 import { getUserBaseCurrency } from '../services/users.service';
 import { ItemLifecycleStatus } from '../types/item';
+import { createPatchItemUomHandler, createUomConvertHandler } from './masterData.uomHandlers';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -36,6 +35,19 @@ const ENFORCE_UOM_REGISTRY = process.env.ENFORCE_UOM_REGISTRY === 'true';
 function isAdminOrManager(role: string | null | undefined) {
   return role === 'admin' || role === 'manager';
 }
+
+const uomConvertHandler = createUomConvertHandler({
+  enforceUomRegistry: ENFORCE_UOM_REGISTRY,
+  assertUomActive,
+  convertQty,
+  warn: (event, meta) => console.warn(event, meta),
+});
+
+const patchItemUomHandler = createPatchItemUomHandler({
+  enforceUomRegistry: ENFORCE_UOM_REGISTRY,
+  assertUomActive,
+  updateItemUomPolicy,
+});
 
 router.post('/items', async (req: Request, res: Response) => {
   const parsed = itemSchema.safeParse(req.body);
@@ -331,102 +343,13 @@ router.get('/uoms', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/uoms/convert', async (req: Request, res: Response) => {
-  const parsed = uomConvertPreviewSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-
-  try {
-    if (ENFORCE_UOM_REGISTRY) {
-      await Promise.all([
-        assertUomActive(parsed.data.fromUom),
-        assertUomActive(parsed.data.toUom)
-      ]);
-    } else {
-      await Promise.all([
-        assertUomActive(parsed.data.fromUom).catch((error) => {
-          console.warn('uom_registry_warning_from', { code: (error as { code?: string })?.code, input: parsed.data.fromUom });
-        }),
-        assertUomActive(parsed.data.toUom).catch((error) => {
-          console.warn('uom_registry_warning_to', { code: (error as { code?: string })?.code, input: parsed.data.toUom });
-        })
-      ]);
-    }
-
-    const converted = await convertQty({
-      qty: parsed.data.qty,
-      fromUom: parsed.data.fromUom,
-      toUom: parsed.data.toUom,
-      roundingContext: parsed.data.roundingContext,
-      contextPrecision: parsed.data.contextPrecision,
-      tenantId: req.auth!.tenantId,
-      itemId: parsed.data.itemId
-    });
-    return res.json(converted);
-  } catch (error) {
-    const errorCode = (error as { code?: string })?.code;
-    if (errorCode && errorCode.startsWith('UOM_')) {
-      return res.status(400).json({
-        error: {
-          code: errorCode,
-          message: (error as Error).message,
-          context: (error as { context?: Record<string, unknown> }).context ?? undefined
-        }
-      });
-    }
-    console.error(error);
-    return res.status(500).json({ error: 'Failed to convert quantity.' });
-  }
-});
+router.post('/uoms/convert', uomConvertHandler);
 
 router.patch('/items/:id/uom', async (req: Request, res: Response) => {
   if (!isAdminOrManager(req.auth?.role)) {
     return res.status(403).json({ error: 'Only admin or manager can update item UOM policy.' });
   }
-
-  const { id } = req.params;
-  if (!uuidSchema.safeParse(id).success) {
-    return res.status(400).json({ error: 'Invalid item id.' });
-  }
-
-  const parsed = itemUomPolicyPatchSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-
-  try {
-    if (ENFORCE_UOM_REGISTRY) {
-      const resolved = await assertUomActive(parsed.data.stockingUom);
-      if (resolved.dimension !== parsed.data.uomDimension) {
-        return res.status(400).json({
-          error: {
-            code: 'UOM_DIMENSION_MISMATCH',
-            message: `Stocking UOM ${resolved.code} does not match dimension ${parsed.data.uomDimension}.`
-          }
-        });
-      }
-    }
-
-    const updated = await updateItemUomPolicy(req.auth!.tenantId, id, parsed.data);
-    if (!updated) {
-      return res.status(404).json({ error: 'Item not found.' });
-    }
-    return res.json(updated);
-  } catch (error) {
-    const errorCode = (error as { code?: string })?.code;
-    if (errorCode && errorCode.startsWith('UOM_')) {
-      return res.status(400).json({
-        error: {
-          code: errorCode,
-          message: (error as Error).message,
-          context: (error as { context?: Record<string, unknown> }).context ?? undefined
-        }
-      });
-    }
-    console.error(error);
-    return res.status(500).json({ error: 'Failed to update item UOM policy.' });
-  }
+  return patchItemUomHandler(req, res);
 });
 
 router.get('/items/:itemId/uom-conversions', async (req: Request, res: Response) => {

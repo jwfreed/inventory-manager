@@ -102,6 +102,11 @@ function baseSignalsResponse(overrides: Record<string, unknown> = {}) {
         cycleCountMonitoringConfigured: true,
         reliabilityMeasurable: true,
       },
+      uomDiagnosticGroupBuckets: {
+        actionGroups: 0,
+        watchGroups: 0,
+        totalGroups: 0,
+      },
       ...overrides,
     },
   }
@@ -242,6 +247,135 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('link', { name: 'Configure replenishment policies' })).toHaveAttribute('href', '/items')
     expect(screen.getByRole('link', { name: 'Set ABC / cycle count policy' })).toHaveAttribute('href', '/items')
     expect(screen.getByRole('link', { name: 'Select warehouse scope' })).toHaveAttribute('href', '/items')
+  })
+
+  it('keeps watch-level UOM diagnostics visible but non-blocking', () => {
+    useDashboardSignalsMock.mockReturnValue(
+      baseSignalsResponse({
+        exceptions: [
+          {
+            id: 'uom-watch-1',
+            type: 'uom_inconsistent',
+            severity: 'watch',
+            itemLabel: 'A-100 - Alpha',
+            itemId: 'item-1',
+            locationLabel: 'FG - Finished Goods',
+            locationId: 'loc-1',
+            warehouseId: 'warehouse-1',
+            impactScore: 2,
+            occurredAt: '2026-03-03T09:00:00.000Z',
+            recommendedAction: 'Review legacy conversion fallback.',
+            primaryLink: '/items/item-1?type=uom_inconsistent',
+          },
+        ],
+        signals: [
+          {
+            key: 'uom_inconsistent',
+            label: 'UOM inconsistent',
+            type: 'uom_inconsistent',
+            severity: 'watch',
+            value: '1',
+            helper: 'watch-only uom diagnostic',
+            count: 1,
+            drilldownTo: '/dashboard/resolution-queue?type=uom_inconsistent',
+            formula: 'x',
+            sources: [],
+            queryHint: 'x',
+          },
+          {
+            key: 'fulfillment_reliability',
+            label: 'Fulfillment reliability',
+            type: 'fulfillment_reliability',
+            severity: 'info',
+            value: '99.0%',
+            helper: 'stable',
+            count: 1,
+            drilldownTo: '/shipments',
+            formula: 'x',
+            sources: [],
+            queryHint: 'x',
+          },
+        ],
+        uomDiagnosticGroupBuckets: {
+          actionGroups: 0,
+          watchGroups: 1,
+          totalGroups: 1,
+        },
+      }),
+    )
+
+    renderWithQueryClient(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getAllByText('All clear').length).toBeGreaterThan(0)
+    expect(screen.getByText('A-100 - Alpha')).toBeInTheDocument()
+  })
+
+  it('treats action-level UOM diagnostics as blocking attention', () => {
+    useDashboardSignalsMock.mockReturnValue(
+      baseSignalsResponse({
+        exceptions: [
+          {
+            id: 'uom-action-1',
+            type: 'uom_inconsistent',
+            severity: 'action',
+            itemLabel: 'A-100 - Alpha',
+            itemId: 'item-1',
+            locationLabel: 'FG - Finished Goods',
+            locationId: 'loc-1',
+            warehouseId: 'warehouse-1',
+            impactScore: 3,
+            occurredAt: '2026-03-03T09:00:00.000Z',
+            recommendedAction: 'Set stock UOM and conversion policy.',
+            primaryLink: '/items/item-1?type=uom_inconsistent',
+          },
+        ],
+        signals: [
+          {
+            key: 'uom_inconsistent',
+            label: 'UOM inconsistent',
+            type: 'uom_inconsistent',
+            severity: 'action',
+            value: '1',
+            helper: 'blocking uom diagnostic',
+            count: 1,
+            drilldownTo: '/dashboard/resolution-queue?type=uom_inconsistent',
+            formula: 'x',
+            sources: [],
+            queryHint: 'x',
+          },
+          {
+            key: 'fulfillment_reliability',
+            label: 'Fulfillment reliability',
+            type: 'fulfillment_reliability',
+            severity: 'info',
+            value: '99.0%',
+            helper: 'stable',
+            count: 1,
+            drilldownTo: '/shipments',
+            formula: 'x',
+            sources: [],
+            queryHint: 'x',
+          },
+        ],
+        uomDiagnosticGroupBuckets: {
+          actionGroups: 1,
+          watchGroups: 0,
+          totalGroups: 1,
+        },
+      }),
+    )
+
+    renderWithQueryClient(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('link', { name: 'Resolve all' })).toBeInTheDocument()
   })
 
   it('invalidates dependent query-key prefixes after KPI run success', async () => {

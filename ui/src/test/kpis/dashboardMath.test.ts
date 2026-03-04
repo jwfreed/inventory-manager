@@ -8,6 +8,7 @@ import type {
 } from '@api/types'
 import type { ItemMetrics } from '@features/items/api/items'
 import {
+  bucketUomDiagnosticsByGroup,
   buildDashboardExceptions,
   buildDashboardSignals,
   computeAvailableQty,
@@ -505,6 +506,74 @@ describe('dashboardMath', () => {
         blockingExceptionCount: 1,
       }),
     ).toBe('exceptions_present')
+  })
+
+  it('counts UOM diagnostic groups distinctly by item/location', () => {
+    const buckets = bucketUomDiagnosticsByGroup([
+      {
+        itemId: 'item-1',
+        locationId: 'loc-1',
+        stockingUom: 'g',
+        observedUoms: ['kg', 'g'],
+        status: 'LEGACY_FALLBACK_USED',
+        severity: 'watch',
+        canAggregate: true,
+        traces: [],
+      },
+      {
+        itemId: 'item-1',
+        locationId: 'loc-1',
+        stockingUom: 'g',
+        observedUoms: ['kg', 'g'],
+        status: 'LEGACY_FALLBACK_USED',
+        severity: 'watch',
+        canAggregate: true,
+        traces: [],
+      },
+      {
+        itemId: 'item-2',
+        locationId: 'loc-2',
+        stockingUom: 'ea',
+        observedUoms: ['ea', 'box'],
+        status: 'INCONSISTENT',
+        severity: 'action',
+        canAggregate: false,
+        traces: [],
+      },
+    ])
+
+    expect(buckets.totalGroups).toBe(2)
+    expect(buckets.watchGroups).toBe(1)
+    expect(buckets.actionGroups).toBe(1)
+  })
+
+  it('treats mixed watch/action diagnostics in one group as action', () => {
+    const buckets = bucketUomDiagnosticsByGroup([
+      {
+        itemId: 'item-1',
+        locationId: 'loc-1',
+        stockingUom: 'g',
+        observedUoms: ['kg', 'g'],
+        status: 'LEGACY_FALLBACK_USED',
+        severity: 'watch',
+        canAggregate: true,
+        traces: [],
+      },
+      {
+        itemId: 'item-1',
+        locationId: 'loc-1',
+        stockingUom: 'g',
+        observedUoms: ['kg', 'ea'],
+        status: 'DIMENSION_MISMATCH',
+        severity: 'action',
+        canAggregate: false,
+        traces: [],
+      },
+    ])
+
+    expect(buckets.totalGroups).toBe(1)
+    expect(buckets.watchGroups).toBe(0)
+    expect(buckets.actionGroups).toBe(1)
   })
 
   it('tracks replenishment monitoring separately from inventory monitoring', () => {

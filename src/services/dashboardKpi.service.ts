@@ -9,6 +9,8 @@ import {
 import { listPurchaseOrders } from './purchaseOrders.service';
 import { listWorkOrders } from './workOrders.service';
 import { getItemMetrics } from './itemMetrics.service';
+import { mapUomStatusToRouting } from './uomSeverityRouting.service';
+import type { UomDiagnosticSeverity, UomNormalizationStatus } from '../types/uomNormalization';
 
 type DashboardKpiComputeParams = {
   warehouseId?: string;
@@ -31,12 +33,89 @@ type DashboardSnapshot = {
   kpiName: string;
   value: number | null;
   units: string;
+  dimensions?: Record<string, unknown>;
 };
 
 const DEFAULT_WINDOW_DAYS = 90;
 const DEFAULT_RUNTIME_ESTIMATE_SECONDS = 20;
 const ENABLE_DASHBOARD_UOM_INCONSISTENT =
   process.env.ENABLE_DASHBOARD_UOM_INCONSISTENT === 'true';
+
+export type UomDiagnosticGroupBucketCounts = {
+  actionGroups: number;
+  watchGroups: number;
+  totalGroups: number;
+};
+
+type UomDiagnosticGroupInput = {
+  itemId: string;
+  locationId: string;
+  status?: UomNormalizationStatus;
+  severity?: UomDiagnosticSeverity;
+};
+
+function severityRank(severity: UomDiagnosticSeverity) {
+  switch (severity) {
+    case 'critical':
+      return 4;
+    case 'action':
+      return 3;
+    case 'watch':
+      return 2;
+    case 'info':
+    default:
+      return 1;
+  }
+}
+
+function resolveDiagnosticSeverity(input: UomDiagnosticGroupInput): UomDiagnosticSeverity {
+  if (input.status) {
+    return mapUomStatusToRouting(input.status).severity;
+  }
+  return input.severity ?? 'action';
+}
+
+export function summarizeDistinctUomDiagnosticGroups(
+  diagnostics: UomDiagnosticGroupInput[]
+): UomDiagnosticGroupBucketCounts {
+  const byGroup = new Map<string, UomDiagnosticSeverity>();
+  for (const diagnostic of diagnostics) {
+    const key = `${diagnostic.itemId}:${diagnostic.locationId}`;
+    const severity = resolveDiagnosticSeverity(diagnostic);
+    const existing = byGroup.get(key);
+    if (!existing || severityRank(severity) > severityRank(existing)) {
+      byGroup.set(key, severity);
+    }
+  }
+
+  let actionGroups = 0;
+  let watchGroups = 0;
+  for (const severity of byGroup.values()) {
+    if (severityRank(severity) >= severityRank('action')) {
+      actionGroups += 1;
+      continue;
+    }
+    if (severity === 'watch') {
+      watchGroups += 1;
+    }
+  }
+
+  return {
+    actionGroups,
+    watchGroups,
+    totalGroups: byGroup.size
+  };
+}
+
+export function selectUomDiagnosticsForKpi(input: {
+  uomNormalizationDiagnostics?: UomDiagnosticGroupInput[];
+  uomInconsistencies?: UomDiagnosticGroupInput[];
+}) {
+  if ((input.uomNormalizationDiagnostics?.length ?? 0) > 0) {
+    return input.uomNormalizationDiagnostics ?? [];
+  }
+  return input.uomInconsistencies ?? [];
+}
 
 function toFiniteNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -179,9 +258,11 @@ async function computeDashboardSnapshots(tenantId: string, warehouseId: string, 
       }),
     ]);
   const snapshotRows = summaryDetailed.data;
-  const uomInconsistencyCount =
-    summaryDetailed.diagnostics.uomNormalizationDiagnostics?.length ??
-    summaryDetailed.diagnostics.uomInconsistencies.length;
+  const uomDiagnostics = selectUomDiagnosticsForKpi({
+    uomNormalizationDiagnostics: summaryDetailed.diagnostics.uomNormalizationDiagnostics,
+    uomInconsistencies: summaryDetailed.diagnostics.uomInconsistencies
+  });
+  const uomDiagnosticBuckets = summarizeDistinctUomDiagnosticGroups(uomDiagnostics);
 
   const policyByScope = new Set(
     policies
@@ -263,8 +344,19 @@ async function computeDashboardSnapshots(tenantId: string, warehouseId: string, 
   if (ENABLE_DASHBOARD_UOM_INCONSISTENT) {
     snapshots.push({
       kpiName: 'dashboard.uom_inconsistent',
-      value: uomInconsistencyCount,
+      value: uomDiagnosticBuckets.actionGroups,
       units: 'count',
+      dimensions: {
+        uomInconsistentCountMode: 'distinct_group_action'
+      }
+    });
+    snapshots.push({
+      kpiName: 'dashboard.uom_legacy_fallback',
+      value: uomDiagnosticBuckets.watchGroups,
+      units: 'count',
+      dimensions: {
+        uomLegacyFallbackCountMode: 'distinct_group_watch'
+      }
     });
   }
 
@@ -363,6 +455,7 @@ export async function computeDashboardKpis(
             warehouseId,
             formulaVersion: 'dashboard-v1',
             readOnlyInventory: true,
+            ...(snapshot.dimensions ?? {})
           },
           snapshot.value,
           snapshot.units,

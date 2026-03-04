@@ -11,6 +11,7 @@ require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 
 const { getInventorySnapshotSummaryDetailed } = require('../../src/services/inventorySnapshot.service.ts');
+const { invalidateUomRegistryCache } = require('../../src/services/uomRegistry.service.ts');
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -161,6 +162,75 @@ test('snapshot summary aggregates mixed convertible UOM rows when stock UOM is c
     );
     assert.deepEqual(summary.diagnostics.uomNormalizationDiagnostics, []);
     assert.deepEqual(summary.diagnostics.uomInconsistencies, []);
+  });
+});
+
+test('snapshot normalization keeps analytics precision before final output rounding', async () => {
+  await withSnapshotNormalizationEnabled(async () => {
+    const session = await ensureDbSession({
+      apiRequest,
+      adminEmail,
+      adminPassword,
+      tenantSlug: `${tenantSlug}-analytics-precision`,
+      tenantName: 'UOM Snapshot Analytics Precision Tenant',
+    });
+    const token = session.accessToken;
+    const tenantId = session.tenant?.id;
+    assert.ok(tenantId, 'tenant required');
+
+    const { warehouse, defaults } = await ensureStandardWarehouse({
+      token,
+      apiRequest,
+      scope: `${import.meta.url}:analytics-precision`,
+    });
+
+    const itemId = await createItem(token, defaults.SELLABLE.id, `${Date.now()}-precision`);
+    const microUomA = `micro_${randomUUID().slice(0, 8)}`;
+    const microUomB = `micro_${randomUUID().slice(0, 8)}`;
+
+    await session.pool.query(
+      `INSERT INTO uoms (code, name, dimension, base_code, to_base_factor, precision, active, created_at, updated_at)
+       VALUES
+        ($1, $2, 'mass', 'g', 0.000001, 6, true, now(), now()),
+        ($3, $4, 'mass', 'g', 0.000001, 6, true, now(), now())`,
+      [microUomA, `Micro A ${microUomA}`, microUomB, `Micro B ${microUomB}`]
+    );
+    invalidateUomRegistryCache();
+    try {
+      await seedStockLine(session.pool, {
+        tenantId,
+        itemId,
+        locationId: defaults.SELLABLE.id,
+        quantityDelta: 0.4,
+        uom: microUomA,
+      });
+      await seedStockLine(session.pool, {
+        tenantId,
+        itemId,
+        locationId: defaults.SELLABLE.id,
+        quantityDelta: 0.4,
+        uom: microUomB,
+      });
+
+      const summary = await getInventorySnapshotSummaryDetailed(tenantId, {
+        warehouseId: warehouse.id,
+        itemId,
+        locationId: defaults.SELLABLE.id,
+        limit: 100,
+        offset: 0,
+      });
+
+      const rows = summary.data.filter(
+        (row) => row.itemId === itemId && row.locationId === defaults.SELLABLE.id
+      );
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].uom.toLowerCase(), 'g');
+      assert.equal(rows[0].onHand, 0.000001);
+      assert.equal(rows[0].available, 0.000001);
+    } finally {
+      await session.pool.query(`DELETE FROM uoms WHERE code = ANY($1::text[])`, [[microUomA, microUomB]]);
+      invalidateUomRegistryCache();
+    }
   });
 });
 

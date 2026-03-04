@@ -111,9 +111,14 @@ export default function DashboardPage() {
   const exceptionSignals = visibleSignals.filter((signal) => signal.type !== 'fulfillment_reliability')
   const allExceptionSignals = allSignals.filter((signal) => signal.type !== 'fulfillment_reliability')
   const exceptionCount = allExceptionSignals.reduce((total, signal) => total + signal.count, 0)
-  const blockingExceptionCount = allExceptionSignals
-    .filter((signal) => rankSeverity(signal.severity) >= rankSeverity('action'))
+  const nonUomBlockingExceptionCount = allExceptionSignals
+    .filter((signal) => signal.type !== 'uom_inconsistent' && rankSeverity(signal.severity) >= rankSeverity('action'))
     .reduce((total, signal) => total + signal.count, 0)
+  const uomSignal = allExceptionSignals.find((signal) => signal.type === 'uom_inconsistent')
+  const uomBlockingExceptionCount =
+    data.uomDiagnosticGroupBuckets?.actionGroups ??
+    (uomSignal && rankSeverity(uomSignal.severity) >= rankSeverity('action') ? uomSignal.count : 0)
+  const blockingExceptionCount = nonUomBlockingExceptionCount + uomBlockingExceptionCount
   const urgentExceptions = allExceptionSignals.filter(
     (signal) => signal.count > 0 && rankSeverity(signal.severity) >= rankSeverity('action'),
   )

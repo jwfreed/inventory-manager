@@ -6,7 +6,12 @@ import { useLocationsList } from '@features/locations/queries'
 import { usePurchaseOrdersList } from '@features/purchaseOrders/queries'
 import { useWorkOrdersList } from '@features/workOrders/queries'
 import { formatDateTime } from './utils'
-import { buildDashboardExceptions, buildDashboardSignals, deriveCoverageState } from './dashboardMath'
+import {
+  bucketUomDiagnosticsByGroup,
+  buildDashboardExceptions,
+  buildDashboardSignals,
+  deriveCoverageState,
+} from './dashboardMath'
 import { useFulfillmentFillRate, useReplenishmentPolicies, useReplenishmentRecommendations } from './queries'
 
 const ENABLE_DASHBOARD_UOM_INCONSISTENT =
@@ -72,6 +77,10 @@ export function useDashboardSignals() {
       inventorySummaryQuery.data?.diagnostics.uomInconsistencies ??
       []
     : []
+  const uomDiagnosticGroupBuckets = useMemo(
+    () => bucketUomDiagnosticsByGroup(uomNormalizationDiagnostics),
+    [uomNormalizationDiagnostics],
+  )
 
   const asOfMs = useMemo(() => {
     const stamps = [
@@ -199,6 +208,7 @@ export function useDashboardSignals() {
       signals,
       coverage,
       uomNormalizationDiagnostics,
+      uomDiagnosticGroupBuckets,
       // Deprecated alias retained for existing consumers.
       uomInconsistencies: uomNormalizationDiagnostics,
     },

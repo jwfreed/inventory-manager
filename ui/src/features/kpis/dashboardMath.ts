@@ -78,6 +78,12 @@ export type MonitoringCoverage = {
 
 export type AttentionState = 'all_clear' | 'not_configured' | 'exceptions_present'
 
+export type UomDiagnosticGroupBuckets = {
+  actionGroups: number
+  watchGroups: number
+  totalGroups: number
+}
+
 export type BuildDashboardExceptionsInput = {
   inventoryRows: InventorySnapshotRow[]
   uomInconsistencies: InventoryUomInconsistency[]
@@ -108,6 +114,13 @@ function toFiniteNumber(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0
   }
   return 0
+}
+
+function rankSeverityValue(severity: Severity) {
+  if (severity === 'critical') return 4
+  if (severity === 'action') return 3
+  if (severity === 'watch') return 2
+  return 1
 }
 
 function roundQuantity(value: number) {
@@ -289,6 +302,36 @@ export function deriveAttentionState(input: {
   if (blockingExceptionCount > 0) return 'exceptions_present'
   if (!input.coverage.inventoryMonitoringConfigured) return 'not_configured'
   return 'all_clear'
+}
+
+export function bucketUomDiagnosticsByGroup(entries: InventoryUomInconsistency[]): UomDiagnosticGroupBuckets {
+  const byGroup = new Map<string, Severity>()
+  entries.forEach((entry) => {
+    const key = `${entry.itemId}:${entry.locationId}`
+    const severity: Severity = entry.severity ?? 'action'
+    const existing = byGroup.get(key)
+    if (!existing || rankSeverityValue(severity) > rankSeverityValue(existing)) {
+      byGroup.set(key, severity)
+    }
+  })
+
+  let actionGroups = 0
+  let watchGroups = 0
+  byGroup.forEach((severity) => {
+    if (rankSeverityValue(severity) >= rankSeverityValue('action')) {
+      actionGroups += 1
+      return
+    }
+    if (severity === 'watch') {
+      watchGroups += 1
+    }
+  })
+
+  return {
+    actionGroups,
+    watchGroups,
+    totalGroups: byGroup.size,
+  }
 }
 
 export function buildDashboardExceptions(input: BuildDashboardExceptionsInput): ResolutionQueueRow[] {

@@ -70,6 +70,48 @@ function normalizeQuantity(value: unknown): number {
   return roundQuantity(toNumber(value));
 }
 
+function toAnalyticsQuantity(value: unknown): number {
+  return toNumber(value);
+}
+
+function roundSnapshotRowForOutput(row: InventorySnapshotRow): InventorySnapshotRow {
+  return {
+    ...row,
+    onHand: roundQuantity(row.onHand),
+    reserved: roundQuantity(row.reserved),
+    available: roundQuantity(row.available),
+    held: roundQuantity(row.held),
+    rejected: roundQuantity(row.rejected),
+    nonUsable: roundQuantity(row.nonUsable),
+    onOrder: roundQuantity(row.onOrder),
+    inTransit: roundQuantity(row.inTransit),
+    backordered: roundQuantity(row.backordered),
+    inventoryPosition: roundQuantity(row.inventoryPosition)
+  };
+}
+
+function mapDbRowForAnalytics(row: any): InventorySnapshotRow {
+  return {
+    itemId: row.item_id,
+    locationId: row.location_id,
+    uom: row.uom,
+    onHand: toAnalyticsQuantity(row.on_hand),
+    reserved: toAnalyticsQuantity(row.reserved),
+    available: toAnalyticsQuantity(row.available),
+    held: toAnalyticsQuantity(row.held),
+    rejected: toAnalyticsQuantity(row.rejected),
+    nonUsable: toAnalyticsQuantity(row.non_usable),
+    onOrder: toAnalyticsQuantity(row.on_order),
+    inTransit: toAnalyticsQuantity(row.in_transit),
+    backordered: toAnalyticsQuantity(row.backordered),
+    inventoryPosition: toAnalyticsQuantity(row.inventory_position)
+  };
+}
+
+function mapDbRowForPosting(row: any): InventorySnapshotRow {
+  return roundSnapshotRowForOutput(mapDbRowForAnalytics(row));
+}
+
 function isSameUom(left: string | null | undefined, right: string | null | undefined): boolean {
   if (!left || !right) return false;
   return left.trim().toLowerCase() === right.trim().toLowerCase();
@@ -583,10 +625,19 @@ async function convertRowToStockingUom(input: {
 
 async function normalizeSummaryRows(
   tenantId: string,
-  rows: InventorySnapshotRow[]
+  analyticsRows: InventorySnapshotRow[],
+  postingRows: InventorySnapshotRow[]
 ): Promise<InventorySnapshotSummaryDetailed> {
+  const postingRowByKey = new Map<string, InventorySnapshotRow>(
+    postingRows.map((row) => [`${row.itemId}:${row.locationId}:${row.uom.toLowerCase()}`, row])
+  );
+  const postingViewRows = (rows: InventorySnapshotRow[]) =>
+    rows.map((row) =>
+      postingRowByKey.get(`${row.itemId}:${row.locationId}:${row.uom.toLowerCase()}`) ?? roundSnapshotRowForOutput(row)
+    );
+
   const grouped = new Map<string, InventorySnapshotRow[]>();
-  rows.forEach((row) => {
+  analyticsRows.forEach((row) => {
     const key = `${row.itemId}:${row.locationId}`;
     const list = grouped.get(key);
     if (list) {
@@ -596,7 +647,7 @@ async function normalizeSummaryRows(
     }
   });
 
-  const itemIds = Array.from(new Set(rows.map((row) => row.itemId)));
+  const itemIds = Array.from(new Set(analyticsRows.map((row) => row.itemId)));
   const itemConfigMap = await loadItemStockingConfigMap(tenantId, itemIds);
   const normalized: InventorySnapshotRow[] = [];
   const diagnostics: InventoryUomInconsistency[] = [];
@@ -607,7 +658,7 @@ async function normalizeSummaryRows(
     const observedUoms = uniqueObservedUoms(groupRows);
 
     if (observedUoms.length <= 1) {
-      normalized.push(...groupRows);
+      normalized.push(...postingViewRows(groupRows));
       continue;
     }
 
@@ -625,7 +676,7 @@ async function normalizeSummaryRows(
           traces: []
         })
       );
-      normalized.push(...groupRows);
+      normalized.push(...postingViewRows(groupRows));
       continue;
     }
 
@@ -677,7 +728,7 @@ async function normalizeSummaryRows(
           traces: [...traceAccumulator, failureTrace]
         })
       );
-      normalized.push(...groupRows);
+      normalized.push(...postingViewRows(groupRows));
       continue;
     }
 
@@ -704,19 +755,17 @@ async function normalizeSummaryRows(
     }
 
     if (!enableNormalization) {
-      normalized.push(...groupRows);
+      normalized.push(...postingViewRows(groupRows));
       continue;
     }
 
     if (!traceOutcome.canAggregate) {
-      normalized.push(...groupRows);
+      normalized.push(...postingViewRows(groupRows));
       continue;
     }
 
     const sumConverted = <TKey extends keyof (typeof convertedRows)[number]>(key: TKey) =>
-      roundQuantity(
-        convertedRows.reduce((total, row) => total + toNumber(row[key] as unknown), 0)
-      );
+      convertedRows.reduce((total, row) => total + toNumber(row[key] as unknown), 0);
 
     const merged: InventorySnapshotRow = {
       itemId,
@@ -733,7 +782,7 @@ async function normalizeSummaryRows(
       backordered: sumConverted('backordered'),
       inventoryPosition: sumConverted('inventoryPosition')
     };
-    normalized.push(merged);
+    normalized.push(roundSnapshotRowForOutput(merged));
   }
 
   const sortedRows = normalized.sort((left, right) => {
@@ -985,21 +1034,8 @@ export async function getInventorySnapshotSummaryDetailed(
     paramsList
   );
 
-  const mappedRows = rows.map((row: any) => ({
-    itemId: row.item_id,
-    locationId: row.location_id,
-    uom: row.uom,
-    onHand: normalizeQuantity(row.on_hand),
-    reserved: normalizeQuantity(row.reserved),
-    available: normalizeQuantity(row.available),
-    held: normalizeQuantity(row.held),
-    rejected: normalizeQuantity(row.rejected),
-    nonUsable: normalizeQuantity(row.non_usable),
-    onOrder: normalizeQuantity(row.on_order),
-    inTransit: normalizeQuantity(row.in_transit),
-    backordered: normalizeQuantity(row.backordered),
-    inventoryPosition: normalizeQuantity(row.inventory_position)
-  }));
+  const mappedRowsForAnalytics = rows.map((row: any) => mapDbRowForAnalytics(row));
+  const mappedRowsForPosting = rows.map((row: any) => mapDbRowForPosting(row));
 
-  return normalizeSummaryRows(tenantId, mappedRows);
+  return normalizeSummaryRows(tenantId, mappedRowsForAnalytics, mappedRowsForPosting);
 }
