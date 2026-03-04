@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { runDashboardKpis } from '../api/kpis'
-import { useKpiRuns } from '../queries'
+import { kpisQueryKeys, useKpiRuns } from '../queries'
 import { useAuth } from '@shared/auth'
 import { formatNumber } from '@shared/formatters'
+import { inventoryQueryKeys } from '@features/inventory/queries'
+import { itemsQueryKeys } from '@features/items/queries'
+import { purchaseOrdersQueryKeys } from '@features/purchaseOrders/queries'
+import { workOrdersQueryKeys } from '@features/workOrders/queries'
 import {
   Banner,
   Button,
@@ -21,26 +25,19 @@ import {
   Toggle,
   Tooltip,
 } from '@shared/ui'
+import { deriveAttentionState, filterResolutionQueue } from '../dashboardMath'
+import {
+  buildDashboardIdempotencyKey,
+  buildDashboardModeStorageKey,
+  medianRuntimeSeconds,
+  parseRunMeta,
+  readDashboardModeFromStorage,
+  resolveWarehouseScopeLabel,
+  selectLastSuccessfulRun,
+  type DashboardMode,
+} from '../dashboardPageUtils'
 import { useDashboardSignals } from '../useDashboardSignals'
-import { filterResolutionQueue } from '../dashboardMath'
 import { formatDateTime } from '../utils'
-
-type DashboardMode = 'actionable' | 'all'
-
-function parseRunMeta(note?: string | null) {
-  if (!note) return null
-  try {
-    const parsed = JSON.parse(note) as { fingerprint?: string; runtimeMs?: number }
-    const fingerprint = parsed.fingerprint ?? ''
-    const warehouseId = typeof fingerprint === 'string' ? fingerprint.split('|')[2] : undefined
-    return {
-      warehouseId,
-      runtimeMs: typeof parsed.runtimeMs === 'number' ? parsed.runtimeMs : undefined,
-    }
-  } catch {
-    return null
-  }
-}
 
 function rankSeverity(severity: 'info' | 'watch' | 'action' | 'critical') {
   if (severity === 'critical') return 4
@@ -62,59 +59,49 @@ function isActionableSignal(signal: {
   return false
 }
 
+const KPI_WINDOW_DAYS = 90
+const MONITORING_CTA_LINKS = {
+  replenishment: '/items',
+  cycleCount: '/items',
+  warehouseScope: '/items',
+} as const
+
 export default function DashboardPage() {
   const { user, tenant } = useAuth()
-  const { data, loading, error, queries } = useDashboardSignals()
+  const { data, loading, error } = useDashboardSignals()
+  const queryClient = useQueryClient()
   const runsQuery = useKpiRuns({ limit: 25 }, { staleTime: 60_000 })
   const [runToastOpen, setRunToastOpen] = useState(false)
+  const [copiedWarehouseId, setCopiedWarehouseId] = useState(false)
 
   const modeStorageKey = useMemo(
-    () => `dashboard:mode:${tenant?.id ?? 'tenant'}:${user?.id ?? 'user'}`,
+    () => buildDashboardModeStorageKey(tenant?.id, user?.id),
     [tenant?.id, user?.id],
   )
-  const [mode, setMode] = useState<DashboardMode>(() => {
-    if (typeof window === 'undefined') return 'actionable'
-    const stored = window.localStorage.getItem('dashboard:mode')
-    return stored === 'all' ? 'all' : 'actionable'
-  })
+  const [mode, setMode] = useState<DashboardMode>(() =>
+    readDashboardModeFromStorage(buildDashboardModeStorageKey(tenant?.id, user?.id)),
+  )
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const existing = window.localStorage.getItem(modeStorageKey)
-    if (existing === 'all' || existing === 'actionable') {
-      setMode(existing)
-    }
+    setMode(readDashboardModeFromStorage(modeStorageKey))
   }, [modeStorageKey])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     window.localStorage.setItem(modeStorageKey, mode)
-    window.localStorage.setItem('dashboard:mode', mode)
   }, [mode, modeStorageKey])
-
-  const runMutation = useMutation({
-    mutationFn: () =>
-      runDashboardKpis({
-        windowDays: 90,
-        idempotencyKey: `dashboard:${tenant?.id ?? 'tenant'}:${new Date().toISOString().slice(0, 16)}`,
-      }),
-    onSuccess: () => {
-      setRunToastOpen(true)
-      void runsQuery.refetch()
-      void queries.inventorySummaryQuery.refetch()
-      void queries.recommendationsQuery.refetch()
-      void queries.purchaseOrdersQuery.refetch()
-      void queries.workOrdersQuery.refetch()
-      void queries.itemMetricsQuery.refetch()
-      void queries.fillRateQuery.refetch()
-    },
-  })
 
   useEffect(() => {
     if (!runToastOpen) return
     const timer = window.setTimeout(() => setRunToastOpen(false), 5000)
     return () => window.clearTimeout(timer)
   }, [runToastOpen])
+
+  useEffect(() => {
+    if (!copiedWarehouseId) return
+    const timer = window.setTimeout(() => setCopiedWarehouseId(false), 1200)
+    return () => window.clearTimeout(timer)
+  }, [copiedWarehouseId])
 
   const allSignals = data.signals
   const visibleSignals = useMemo(
@@ -123,10 +110,20 @@ export default function DashboardPage() {
   )
   const exceptionSignals = visibleSignals.filter((signal) => signal.type !== 'fulfillment_reliability')
   const allExceptionSignals = allSignals.filter((signal) => signal.type !== 'fulfillment_reliability')
+  const exceptionCount = allExceptionSignals.reduce((total, signal) => total + signal.count, 0)
   const urgentExceptions = allExceptionSignals.filter(
     (signal) => signal.count > 0 && rankSeverity(signal.severity) >= rankSeverity('action'),
   )
-  const allClear = allExceptionSignals.every((signal) => signal.count === 0)
+  const attentionState = deriveAttentionState({
+    coverage: data.coverage,
+    exceptionCount,
+  })
+
+  const allClear = attentionState === 'all_clear'
+  const monitoringNotConfigured = attentionState === 'not_configured'
+  const reliabilityNotMeasurable = !data.coverage.reliabilityMeasurable
+  const showAllClearWithReplenishmentWarning =
+    allClear && !data.coverage.replenishmentMonitoringConfigured && !monitoringNotConfigured
 
   const resolutionQueue = useMemo(() => filterResolutionQueue(data.exceptions, 'all'), [data.exceptions])
   const queuePreview = resolutionQueue.slice(0, 8)
@@ -139,20 +136,60 @@ export default function DashboardPage() {
 
   const latestRun = useMemo(() => {
     const list = runsQuery.data?.type === 'success' ? runsQuery.data.data : []
-    const sorted = [...list].sort((left, right) => {
-      const leftTime = new Date(left.as_of ?? left.finished_at ?? left.started_at ?? '').getTime()
-      const rightTime = new Date(right.as_of ?? right.finished_at ?? right.started_at ?? '').getTime()
-      return rightTime - leftTime
-    })
-    return sorted[0]
+    return selectLastSuccessfulRun(list)
+  }, [runsQuery.data])
+  const latestRunMeta = parseRunMeta(latestRun?.notes)
+
+  const historicalRuntimeSeconds = useMemo(() => {
+    const list = runsQuery.data?.type === 'success' ? runsQuery.data.data : []
+    const runtimes = list
+      .map((run) => parseRunMeta(run.notes))
+      .map((meta) => meta?.runtimeMs)
+      .filter((runtime): runtime is number => typeof runtime === 'number' && runtime > 0)
+    return medianRuntimeSeconds(runtimes)
   }, [runsQuery.data])
 
-  const latestRunMeta = parseRunMeta(latestRun?.notes)
-  const runtimeEstimateSeconds = runMutation.data?.runtimeEstimateSeconds ??
-    (latestRunMeta?.runtimeMs ? Math.max(1, Math.round(latestRunMeta.runtimeMs / 1000)) : 20)
-  const lastRunTimestamp = runMutation.data?.computedAt ?? latestRun?.finished_at ?? latestRun?.started_at ?? null
+  const warehouseScopeId = latestRunMeta?.warehouseId ?? null
+
+  const runMutation = useMutation({
+    mutationFn: () =>
+      runDashboardKpis({
+        warehouseId: warehouseScopeId ?? undefined,
+        windowDays: KPI_WINDOW_DAYS,
+        idempotencyKey: buildDashboardIdempotencyKey({
+          tenantId: tenant?.id,
+          warehouseId: warehouseScopeId ?? undefined,
+          windowDays: KPI_WINDOW_DAYS,
+        }),
+      }),
+    onSuccess: () => {
+      setRunToastOpen(true)
+      void queryClient.invalidateQueries({ queryKey: kpisQueryKeys.runsPrefix() })
+      void queryClient.invalidateQueries({ queryKey: kpisQueryKeys.snapshotsPrefix() })
+      void queryClient.invalidateQueries({ queryKey: kpisQueryKeys.fulfillmentFillRatePrefix() })
+      void queryClient.invalidateQueries({ queryKey: kpisQueryKeys.replenishmentRecommendationsPrefix() })
+      void queryClient.invalidateQueries({ queryKey: kpisQueryKeys.replenishmentPoliciesPrefix() })
+      void queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.all })
+      void queryClient.invalidateQueries({ queryKey: purchaseOrdersQueryKeys.all })
+      void queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.all })
+      void queryClient.invalidateQueries({ queryKey: itemsQueryKeys.all })
+      void runsQuery.refetch()
+    },
+  })
+
+  const lastSuccessfulRunTimestamp =
+    runMutation.data?.computedAt ?? latestRun?.finished_at ?? latestRun?.started_at ?? null
   const asOfTimestamp = runMutation.data?.asOf ?? latestRun?.as_of ?? data.asOfIso
-  const warehouseScope = runMutation.data?.warehouseId ?? latestRunMeta?.warehouseId ?? 'default warehouse'
+  const displayWarehouseScope = useMemo(
+    () =>
+      resolveWarehouseScopeLabel({
+        warehouseId: runMutation.data?.warehouseId ?? warehouseScopeId,
+        warehouseLookup: data.warehouseLookup,
+      }),
+    [data.warehouseLookup, runMutation.data?.warehouseId, warehouseScopeId],
+  )
+
+  const hasReorderRisk = (allExceptionSignals.find((signal) => signal.type === 'reorder_risk')?.count ?? 0) > 0
 
   return (
     <div className="space-y-6">
@@ -162,7 +199,29 @@ export default function DashboardPage() {
         meta={
           <div className="space-y-1 text-xs text-slate-500">
             <div>As of {data.asOfLabel}</div>
-            <div>Warehouse scope: {warehouseScope}</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span>Warehouse scope: {displayWarehouseScope.label}</span>
+              {displayWarehouseScope.rawId && (
+                <>
+                  <Tooltip label={`Raw warehouse ID: ${displayWarehouseScope.rawId}`} />
+                  <button
+                    type="button"
+                    className="font-semibold text-brand-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                    onClick={() => {
+                      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return
+                      const rawId = displayWarehouseScope.rawId
+                      if (!rawId) return
+                      void navigator.clipboard
+                        .writeText(rawId)
+                        .then(() => setCopiedWarehouseId(true))
+                        .catch(() => undefined)
+                    }}
+                  >
+                    {copiedWarehouseId ? 'Copied' : 'Copy ID'}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         }
         action={
@@ -212,9 +271,9 @@ export default function DashboardPage() {
         <Card>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last run</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last successful run</p>
               <p className="mt-1 text-sm text-slate-800">
-                {lastRunTimestamp ? formatDateTime(lastRunTimestamp) : 'No run yet'}
+                {lastSuccessfulRunTimestamp ? formatDateTime(lastSuccessfulRunTimestamp) : 'No run yet'}
               </p>
             </div>
             <div>
@@ -223,7 +282,11 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Runtime estimate</p>
-              <p className="mt-1 text-sm text-slate-800">Typically under {runtimeEstimateSeconds} seconds</p>
+              <p className="mt-1 text-sm text-slate-800">
+                {historicalRuntimeSeconds
+                  ? `Typical runtime under ${historicalRuntimeSeconds} seconds`
+                  : 'Runtime varies by data volume.'}
+              </p>
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Workspace scope</p>
@@ -251,7 +314,11 @@ export default function DashboardPage() {
         <div
           className={[
             'space-y-3 rounded-xl border p-4',
-            urgentExceptions.length > 0 ? 'border-rose-300 bg-rose-50/60' : 'border-slate-200 bg-white',
+            urgentExceptions.length > 0
+              ? 'border-rose-300 bg-rose-50/60'
+              : monitoringNotConfigured
+                ? 'border-amber-300 bg-amber-50/70'
+                : 'border-slate-200 bg-white',
           ].join(' ')}
         >
           <SectionHeader
@@ -267,24 +334,68 @@ export default function DashboardPage() {
           />
           {loading && <LoadingSpinner label="Loading dashboard signals..." />}
           {!loading && error && <ErrorState error={error} />}
-          {!loading && !error && allClear && (
+          {!loading && !error && monitoringNotConfigured && (
             <Banner
-              severity="info"
-              title="All clear"
-              description="No pending approvals or exception breaches detected."
+              severity="watch"
+              title="Monitoring not configured"
+              description="Coverage is incomplete. Configure policy controls before treating this dashboard as green."
               action={
-                <div className="flex items-center gap-3 text-sm">
-                  <Link to="/purchase-orders/new" className="font-semibold text-sky-800 hover:underline">
-                    Create PO
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  <Link to={MONITORING_CTA_LINKS.replenishment} className="font-semibold text-brand-700 hover:underline">
+                    Configure replenishment policies
                   </Link>
-                  <Link to="/items" className="font-semibold text-sky-800 hover:underline">
-                    Browse items
+                  <Link to={MONITORING_CTA_LINKS.cycleCount} className="font-semibold text-brand-700 hover:underline">
+                    Set ABC / cycle count policy
+                  </Link>
+                  <Link to={MONITORING_CTA_LINKS.warehouseScope} className="font-semibold text-brand-700 hover:underline">
+                    Select warehouse scope
                   </Link>
                 </div>
               }
             />
           )}
-          {!loading && !error && !allClear && (
+          {!loading && !error && allClear && (
+            <>
+              {showAllClearWithReplenishmentWarning && (
+                <Banner
+                  severity="watch"
+                  title="Replenishment monitoring not configured"
+                  description="Exception monitoring is clear, but replenishment policy coverage is incomplete."
+                  action={
+                    <Link
+                      to={MONITORING_CTA_LINKS.replenishment}
+                      className="text-sm font-semibold text-brand-700 hover:underline"
+                    >
+                      Configure replenishment policies
+                    </Link>
+                  }
+                />
+              )}
+              <Banner
+                severity="info"
+                title="All clear"
+                description="No pending approvals or exception breaches detected."
+                action={
+                  <div className="flex items-center gap-3 text-sm">
+                    {hasReorderRisk ? (
+                      <Link to="/purchase-orders/new" className="font-semibold text-sky-800 hover:underline">
+                        Create PO
+                      </Link>
+                    ) : data.coverage.hasCycleCountProgram ? (
+                      <Link to="/items" className="font-semibold text-sky-800 hover:underline">
+                        Review cycle counts
+                      </Link>
+                    ) : (
+                      <Link to="/items" className="font-semibold text-sky-800 hover:underline">
+                        Browse items
+                      </Link>
+                    )}
+                  </div>
+                }
+              />
+            </>
+          )}
+          {!loading && !error && attentionState === 'exceptions_present' && (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {exceptionSignals.map((signal) => (
                 <MetricCard
@@ -299,7 +410,7 @@ export default function DashboardPage() {
                     asOf: data.asOfLabel,
                     queryHint: signal.queryHint,
                     sources: signal.sources,
-                    scope: warehouseScope,
+                    scope: displayWarehouseScope.label,
                   }}
                 />
               ))}
@@ -312,9 +423,23 @@ export default function DashboardPage() {
         <Section>
           <SectionHeader
             title="Flow Reliability"
-            description="Fill rate and backorder trend health."
-            action={<Tooltip label="Backorder rate = 1 - fill rate. If no shipments exist, reliability is not measurable yet." />}
+            description="Fill rate and unfilled-rate proxy health."
+            action={
+              <Tooltip label="Unfilled rate ≈ 1 - fill rate (proxy). True backorder rate requires backordered qty data." />
+            }
           />
+          {reliabilityNotMeasurable && (
+            <Banner
+              severity="info"
+              title="Reliability not measurable yet"
+              description="No shipped/requested quantity exists in this window, so unfilled rate remains a proxy only."
+              action={
+                <Link to="/shipments" className="text-sm font-semibold text-brand-700 hover:underline">
+                  Review shipments
+                </Link>
+              }
+            />
+          )}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {reliabilitySignals.map((signal) => (
               <MetricCard
@@ -329,7 +454,7 @@ export default function DashboardPage() {
                   asOf: data.asOfLabel,
                   queryHint: signal.queryHint,
                   sources: signal.sources,
-                  scope: warehouseScope,
+                  scope: displayWarehouseScope.label,
                 }}
               />
             ))}
@@ -337,7 +462,7 @@ export default function DashboardPage() {
               <Card>
                 <EmptyState
                   title="Not measurable yet"
-                  description="No shipment lines in the selected window, so fill and backorder rates are not measurable."
+                  description="No shipment lines in the selected window, so fill and unfilled rates are not measurable."
                   action={
                     <Link to="/shipments" className="text-sm font-semibold text-brand-700 hover:underline">
                       Review shipments
@@ -365,8 +490,12 @@ export default function DashboardPage() {
           {!loading && error && <ErrorState error={error} />}
           {!loading && !error && queuePreview.length === 0 && (
             <EmptyState
-              title="All clear"
-              description="No pending approvals and no exception breaches detected."
+              title={monitoringNotConfigured ? 'Monitoring not configured' : 'All clear'}
+              description={
+                monitoringNotConfigured
+                  ? 'Configure replenishment and cycle count policies before relying on this queue.'
+                  : 'No pending approvals and no exception breaches detected.'
+              }
             />
           )}
           {!loading && !error && queuePreview.length > 0 && (
@@ -397,10 +526,8 @@ export default function DashboardPage() {
                   id: 'location',
                   header: 'Location / Warehouse',
                   cell: (row) => {
-                    const location = row.locationId ? data.locationLookup.get(row.locationId) : null
-                    const warehouseId = location?.warehouseId ?? null
-                    const warehouse = warehouseId ? data.locationLookup.get(warehouseId) : null
-                    return warehouse?.code ? `${row.locationLabel} (${warehouse.code})` : row.locationLabel
+                    const warehouse = row.warehouseId ? data.warehouseLookup.get(row.warehouseId) : null
+                    return warehouse?.code ? `${row.locationLabel} — ${warehouse.code}` : row.locationLabel
                   },
                 },
                 {

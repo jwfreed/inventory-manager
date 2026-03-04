@@ -1,15 +1,23 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import type { ApiError, FulfillmentFillRate } from '../../api/types'
 import { listKpiRuns, listKpiSnapshots, getFulfillmentFillRate } from './api/kpis'
-import { listReplenishmentRecommendations } from './api/planning'
+import { listAllReplenishmentPolicies, listReplenishmentRecommendations } from './api/planning'
 
 type KpiSnapshotsResult = Awaited<ReturnType<typeof listKpiSnapshots>>
 
 type KpiRunsResult = Awaited<ReturnType<typeof listKpiRuns>>
 
 type ReplenishmentResult = Awaited<ReturnType<typeof listReplenishmentRecommendations>>
+type ReplenishmentPoliciesResult = Awaited<ReturnType<typeof listAllReplenishmentPolicies>>
 
 export const kpisQueryKeys = {
+  root: () => ['kpis'] as const,
+  planningRoot: () => ['planning'] as const,
+  runsPrefix: () => ['kpis', 'runs'] as const,
+  snapshotsPrefix: () => ['kpis', 'snapshots'] as const,
+  fulfillmentFillRatePrefix: () => ['kpis', 'fill-rate'] as const,
+  replenishmentRecommendationsPrefix: () => ['planning', 'replenishment'] as const,
+  replenishmentPoliciesPrefix: () => ['planning', 'replenishment-policies'] as const,
   snapshots: (params: Parameters<typeof listKpiSnapshots>[0] = {}) =>
     ['kpis', 'snapshots', params] as const,
   runs: (params: Parameters<typeof listKpiRuns>[0] = {}) => ['kpis', 'runs', params] as const,
@@ -17,6 +25,7 @@ export const kpisQueryKeys = {
     ['kpis', 'fill-rate', params] as const,
   replenishmentRecommendations: (params: { limit?: number; offset?: number } = {}) =>
     ['planning', 'replenishment', params] as const,
+  replenishmentPolicies: () => ['planning', 'replenishment-policies'] as const,
 }
 
 type KpiSnapshotsOptions = Omit<
@@ -33,6 +42,11 @@ type FulfillmentFillRateOptions = Omit<
 
 type ReplenishmentOptions = Omit<
   UseQueryOptions<ReplenishmentResult, ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type ReplenishmentPoliciesOptions = Omit<
+  UseQueryOptions<ReplenishmentPoliciesResult, ApiError>,
   'queryKey' | 'queryFn'
 >
 
@@ -79,6 +93,15 @@ export function useReplenishmentRecommendations(
   return useQuery({
     queryKey: kpisQueryKeys.replenishmentRecommendations(params),
     queryFn: () => listReplenishmentRecommendations(params),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useReplenishmentPolicies(options: ReplenishmentPoliciesOptions = {}) {
+  return useQuery({
+    queryKey: kpisQueryKeys.replenishmentPolicies(),
+    queryFn: () => listAllReplenishmentPolicies(),
     retry: 1,
     ...options,
   })

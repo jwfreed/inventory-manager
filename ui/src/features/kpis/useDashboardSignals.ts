@@ -6,8 +6,8 @@ import { useLocationsList } from '@features/locations/queries'
 import { usePurchaseOrdersList } from '@features/purchaseOrders/queries'
 import { useWorkOrdersList } from '@features/workOrders/queries'
 import { formatDateTime } from './utils'
-import { buildDashboardExceptions, buildDashboardSignals } from './dashboardMath'
-import { useFulfillmentFillRate, useReplenishmentRecommendations } from './queries'
+import { buildDashboardExceptions, buildDashboardSignals, deriveCoverageState } from './dashboardMath'
+import { useFulfillmentFillRate, useReplenishmentPolicies, useReplenishmentRecommendations } from './queries'
 
 export function useDashboardSignals() {
   const inventorySummaryQuery = useInventorySnapshotSummary({ limit: 2000 }, { staleTime: 30_000 })
@@ -16,6 +16,7 @@ export function useDashboardSignals() {
   const purchaseOrdersQuery = usePurchaseOrdersList({ limit: 1000 }, { staleTime: 30_000 })
   const workOrdersQuery = useWorkOrdersList({ limit: 1000 }, { staleTime: 30_000 })
   const recommendationsQuery = useReplenishmentRecommendations({ limit: 1000 }, { staleTime: 30_000 })
+  const policiesQuery = useReplenishmentPolicies({ staleTime: 60_000 })
   const fillRateQuery = useFulfillmentFillRate({}, { staleTime: 30_000 })
 
   const itemIds = useMemo(
@@ -37,6 +38,26 @@ export function useDashboardSignals() {
     return map
   }, [locationsQuery.data])
 
+  const warehouseLookup = useMemo(() => {
+    const map = new Map<string, { code?: string; name?: string }>()
+    ;(locationsQuery.data?.data ?? []).forEach((location) => {
+      if (location.type === 'warehouse') {
+        map.set(location.id, { code: location.code, name: location.name })
+      }
+    })
+    return map
+  }, [locationsQuery.data])
+
+  const policyScopeSet = useMemo(() => {
+    const set = new Set<string>()
+    ;(policiesQuery.data?.data ?? []).forEach((policy) => {
+      if (!policy.siteLocationId) return
+      if (String(policy.status ?? '').toLowerCase() === 'inactive') return
+      set.add(`${policy.itemId}:${policy.siteLocationId}`)
+    })
+    return set
+  }, [policiesQuery.data])
+
   const itemMetricsLookup = useMemo(() => {
     const map = new Map((itemMetricsQuery.data ?? []).map((metric) => [metric.itemId, metric]))
     return map
@@ -46,6 +67,7 @@ export function useDashboardSignals() {
     const stamps = [
       inventorySummaryQuery.dataUpdatedAt,
       recommendationsQuery.dataUpdatedAt,
+      policiesQuery.dataUpdatedAt,
       purchaseOrdersQuery.dataUpdatedAt,
       workOrdersQuery.dataUpdatedAt,
       itemMetricsQuery.dataUpdatedAt,
@@ -55,6 +77,7 @@ export function useDashboardSignals() {
   }, [
     inventorySummaryQuery.dataUpdatedAt,
     recommendationsQuery.dataUpdatedAt,
+    policiesQuery.dataUpdatedAt,
     purchaseOrdersQuery.dataUpdatedAt,
     workOrdersQuery.dataUpdatedAt,
     itemMetricsQuery.dataUpdatedAt,
@@ -68,6 +91,7 @@ export function useDashboardSignals() {
       buildDashboardExceptions({
         inventoryRows: inventorySummaryQuery.data ?? [],
         recommendations: recommendationsQuery.data?.data ?? [],
+        policyScopeSet,
         purchaseOrders: purchaseOrdersQuery.data?.data ?? [],
         workOrders: workOrdersQuery.data?.data ?? [],
         itemLookup,
@@ -78,6 +102,7 @@ export function useDashboardSignals() {
     [
       inventorySummaryQuery.data,
       recommendationsQuery.data,
+      policyScopeSet,
       purchaseOrdersQuery.data,
       workOrdersQuery.data,
       itemLookup,
@@ -97,9 +122,30 @@ export function useDashboardSignals() {
     [exceptions, fillRateQuery.data, asOfLabel],
   )
 
+  const coverage = useMemo(
+    () =>
+      deriveCoverageState({
+        inventoryRows: inventorySummaryQuery.data ?? [],
+        policies: policiesQuery.data?.data ?? [],
+        items: itemsQuery.data?.data ?? [],
+        itemMetrics: itemMetricsQuery.data ?? [],
+        fillRate: fillRateQuery.data ?? null,
+      }),
+    [
+      inventorySummaryQuery.data,
+      policiesQuery.data,
+      purchaseOrdersQuery.data,
+      workOrdersQuery.data,
+      itemsQuery.data,
+      itemMetricsQuery.data,
+      fillRateQuery.data,
+    ],
+  )
+
   const loading =
     inventorySummaryQuery.isLoading ||
     recommendationsQuery.isLoading ||
+    policiesQuery.isLoading ||
     purchaseOrdersQuery.isLoading ||
     workOrdersQuery.isLoading ||
     itemsQuery.isLoading ||
@@ -110,6 +156,7 @@ export function useDashboardSignals() {
   const error = [
     inventorySummaryQuery.error,
     recommendationsQuery.error,
+    policiesQuery.error,
     purchaseOrdersQuery.error,
     workOrdersQuery.error,
     itemsQuery.error,
@@ -122,6 +169,7 @@ export function useDashboardSignals() {
     queries: {
       inventorySummaryQuery,
       recommendationsQuery,
+      policiesQuery,
       purchaseOrdersQuery,
       workOrdersQuery,
       itemsQuery,
@@ -134,8 +182,10 @@ export function useDashboardSignals() {
       asOfLabel,
       itemLookup,
       locationLookup,
+      warehouseLookup,
       exceptions,
       signals,
+      coverage,
     },
     loading,
     error,

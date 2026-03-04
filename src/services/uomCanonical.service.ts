@@ -89,6 +89,14 @@ function normalizeUom(value: string): string {
   return value.trim();
 }
 
+export function canonicalizeRequiredUom(value: string): string {
+  const normalized = normalizeUom(value);
+  if (!normalized) {
+    throw new Error('UOM_REQUIRED');
+  }
+  return normalized;
+}
+
 function normalizeUomKey(value: string): string {
   return normalizeUom(value).toLowerCase();
 }
@@ -227,10 +235,7 @@ export async function convertToCanonical(
   client?: PoolClient
 ): Promise<CanonicalQuantity> {
   const config = await getItemUomConfig(tenantId, itemId, client);
-  const enteredUom = normalizeUom(fromUom);
-  if (!enteredUom) {
-    throw new Error('UOM_REQUIRED');
-  }
+  const enteredUom = canonicalizeRequiredUom(fromUom);
   assertUomMatchesDimension(enteredUom, config.uomDimension);
   if (normalizeUomKey(enteredUom) === normalizeUomKey(config.canonicalUom)) {
     return {
@@ -281,7 +286,7 @@ export async function getCanonicalMovementFields(
   });
   return {
     quantityDeltaEntered: quantityDelta,
-    uomEntered: normalizeUom(uom),
+    uomEntered: canonicalizeRequiredUom(uom),
     quantityDeltaCanonical: canonical.quantity,
     canonicalUom: canonical.canonicalUom,
     uomDimension: canonical.uomDimension

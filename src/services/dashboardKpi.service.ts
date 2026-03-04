@@ -1,7 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import { query, withTransaction } from '../db';
 import { getInventorySnapshotSummary } from './inventorySnapshot.service';
-import { computeFulfillmentFillRate, computeReplenishmentRecommendations } from './planning.service';
+import {
+  computeFulfillmentFillRate,
+  computeReplenishmentRecommendations,
+  listReplenishmentPolicies,
+} from './planning.service';
 import { listPurchaseOrders } from './purchaseOrders.service';
 import { listWorkOrders } from './workOrders.service';
 import { getItemMetrics } from './itemMetrics.service';
@@ -65,23 +69,24 @@ function computeAvailableQty(row: {
 function buildFingerprint(params: {
   tenantId: string;
   warehouseId: string;
-  windowStart: string;
-  windowEnd: string;
-  idempotencyKey?: string;
+  windowDays: number;
+  idempotencyScope: string;
 }) {
   return [
-    'dashboard-v1',
+    'dashboard-v2',
     params.tenantId,
     params.warehouseId,
-    params.windowStart,
-    params.windowEnd,
-    params.idempotencyKey ?? 'auto',
+    `window:${params.windowDays}`,
+    `scope:${params.idempotencyScope}`,
   ].join('|');
 }
 
 type DashboardRunNote = {
   source: 'dashboard_compute';
   fingerprint: string;
+  warehouseId?: string;
+  windowDays?: number;
+  idempotencyScope?: string;
   runtimeMs?: number;
   readOnlyInventory: true;
 };
@@ -147,30 +152,36 @@ async function computeDashboardSnapshots(tenantId: string, warehouseId: string, 
   const windowStart = new Date(windowEnd.getTime() - windowDays * 24 * 60 * 60 * 1000);
   const asOf = windowEnd.toISOString();
 
-  const [snapshotRows, recommendations, purchaseOrders, workOrdersResult, aItemsResult, fillRate] = await Promise.all([
-    getInventorySnapshotSummary(tenantId, {
-      warehouseId,
-      limit: 5000,
-      offset: 0,
-    }),
-    computeReplenishmentRecommendations(tenantId, 5000, 0),
-    listPurchaseOrders(tenantId, 5000, 0),
-    listWorkOrders(tenantId, { limit: 5000, offset: 0 }),
-    query<{ id: string }>(
-      `SELECT id
-         FROM items
-        WHERE tenant_id = $1
-          AND abc_class = 'A'
-        LIMIT 500`,
-      [tenantId],
-    ),
-    computeFulfillmentFillRate(tenantId, {
-      from: windowStart.toISOString(),
-      to: windowEnd.toISOString(),
-    }),
-  ]);
+  const [snapshotRows, recommendations, policies, purchaseOrders, workOrdersResult, aItemsResult, fillRate] =
+    await Promise.all([
+      getInventorySnapshotSummary(tenantId, {
+        warehouseId,
+        limit: 5000,
+        offset: 0,
+      }),
+      computeReplenishmentRecommendations(tenantId, 5000, 0),
+      listReplenishmentPolicies(tenantId, 5000, 0),
+      listPurchaseOrders(tenantId, 5000, 0),
+      listWorkOrders(tenantId, { limit: 5000, offset: 0 }),
+      query<{ id: string }>(
+        `SELECT id
+           FROM items
+          WHERE tenant_id = $1
+            AND abc_class = 'A'
+          LIMIT 500`,
+        [tenantId],
+      ),
+      computeFulfillmentFillRate(tenantId, {
+        from: windowStart.toISOString(),
+        to: windowEnd.toISOString(),
+      }),
+    ]);
 
-  const policyByScope = new Set(recommendations.map((rec) => `${rec.itemId}:${rec.locationId}`));
+  const policyByScope = new Set(
+    policies
+      .filter((policy) => String(policy.status ?? '').toLowerCase() !== 'inactive')
+      .map((policy) => `${policy.itemId}:${policy.siteLocationId}`),
+  );
   const availabilityBreaches = snapshotRows.filter((row) => {
     const availableQty = computeAvailableQty({
       onHand: row.onHand,
@@ -184,6 +195,19 @@ async function computeDashboardSnapshots(tenantId: string, warehouseId: string, 
   }).length;
 
   const negativeOnHand = snapshotRows.filter((row) => toFiniteNumber(row.onHand) < 0).length;
+  const allocationIntegrity = snapshotRows.filter((row) => {
+    const onHand = toFiniteNumber(row.onHand);
+    const allocated = toFiniteNumber(row.reserved);
+    const held = toFiniteNumber(row.held);
+    const rejected = toFiniteNumber(row.rejected);
+    const available = computeAvailableQty({
+      onHand: row.onHand,
+      reserved: row.reserved,
+      held: row.held,
+      rejected: row.rejected,
+    });
+    return allocated > onHand || (available < 0 && held <= 0 && rejected <= 0);
+  }).length;
   const reorderRisks = recommendations.filter((rec) => rec.recommendation.reorderNeeded).length;
 
   const inboundAging = purchaseOrders.filter((po) => {
@@ -217,17 +241,18 @@ async function computeDashboardSnapshots(tenantId: string, warehouseId: string, 
   }).length;
 
   const fillRateValue = fillRate.fillRate;
-  const backorderRate = fillRate.fillRate === null ? null : Math.max(0, 1 - fillRate.fillRate);
+  const unfilledRate = fillRate.fillRate === null ? null : Math.max(0, 1 - fillRate.fillRate);
 
   const snapshots: DashboardSnapshot[] = [
     { kpiName: 'dashboard.availability_breaches', value: availabilityBreaches, units: 'count' },
     { kpiName: 'dashboard.negative_on_hand', value: negativeOnHand, units: 'count' },
+    { kpiName: 'dashboard.allocation_integrity', value: allocationIntegrity, units: 'count' },
     { kpiName: 'dashboard.reorder_risks', value: reorderRisks, units: 'count' },
     { kpiName: 'dashboard.inbound_aging', value: inboundAging, units: 'count' },
     { kpiName: 'dashboard.work_order_risks', value: workOrderRisks, units: 'count' },
     { kpiName: 'dashboard.cycle_count_hygiene', value: cycleCountHygiene, units: 'count' },
     { kpiName: 'dashboard.fill_rate', value: fillRateValue, units: 'ratio' },
-    { kpiName: 'dashboard.backorder_rate', value: backorderRate, units: 'ratio' },
+    { kpiName: 'dashboard.unfilled_rate_proxy', value: unfilledRate, units: 'ratio' },
   ];
 
   return {
@@ -246,18 +271,19 @@ export async function computeDashboardKpis(
   const warehouseId = await resolveWarehouseScope(tenantId, params.warehouseId);
   const windowDays = Math.max(1, Math.min(365, Number(params.windowDays ?? DEFAULT_WINDOW_DAYS)));
   const now = new Date();
-  const windowStart = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000).toISOString();
-  const windowEnd = now.toISOString();
+  const idempotencyScope = params.idempotencyKey?.trim() || `auto-hour:${now.toISOString().slice(0, 13)}`;
   const fingerprint = buildFingerprint({
     tenantId,
     warehouseId,
-    windowStart,
-    windowEnd,
-    idempotencyKey: params.idempotencyKey,
+    windowDays,
+    idempotencyScope,
   });
   const notePrefix = JSON.stringify({
     source: 'dashboard_compute',
     fingerprint,
+    warehouseId,
+    windowDays,
+    idempotencyScope,
     readOnlyInventory: true,
   } satisfies DashboardRunNote);
   const noteFingerprintLike = `%\"fingerprint\":\"${fingerprint}\"%`;
@@ -349,6 +375,9 @@ export async function computeDashboardKpis(
     const noteWithRuntime = JSON.stringify({
       source: 'dashboard_compute',
       fingerprint,
+      warehouseId,
+      windowDays,
+      idempotencyScope,
       runtimeMs: finishedRuntimeMs,
       readOnlyInventory: true,
     } satisfies DashboardRunNote);

@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const adjustmentLineSchema = z.object({
   lineNumber: z.number().int().positive().optional(),
   itemId: z.string().uuid(),
   locationId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityDelta: z.number().refine((value) => value !== 0, { message: 'quantityDelta must be non-zero' }),
   reasonCode: z.string().min(1).max(255),
   notes: z.string().max(2000).optional()

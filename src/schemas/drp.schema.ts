@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -45,7 +46,7 @@ export const drpItemPoliciesCreateSchema = z.object({
         toNodeId: z.string().uuid(),
         preferredFromNodeId: z.string().uuid().optional(),
         itemId: z.string().uuid(),
-        uom: z.string().min(1),
+        uom: uomSchema,
         safetyStockQty: z.string().optional(),
         lotSizingMethod: z.enum(['l4l', 'foq']),
         foqQty: z.string().optional(),
@@ -60,7 +61,7 @@ export const drpGrossRequirementsCreateSchema = z.object({
       z.object({
         toNodeId: z.string().uuid(),
         itemId: z.string().uuid(),
-        uom: z.string().min(1),
+        uom: uomSchema,
         periodStart: isoDate,
         sourceType: z.enum(['forecast', 'sales_orders', 'dependent']),
         sourceRef: z.string().optional(),

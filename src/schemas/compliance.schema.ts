@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -18,7 +19,7 @@ export const movementLotAllocationsSchema = z.object({
     .array(
       z.object({
         lotId: z.string().uuid(),
-        uom: z.string().min(1),
+        uom: uomSchema,
         quantityDelta: z.string(),
       }),
     )
@@ -46,7 +47,7 @@ export const recallCaseTargetSchema = z.object({
         targetType: z.enum(['lot', 'item']),
         lotId: z.string().uuid().optional(),
         itemId: z.string().uuid().optional(),
-        uom: z.string().optional(),
+        uom: uomSchema.optional(),
       }),
     )
     .min(1),

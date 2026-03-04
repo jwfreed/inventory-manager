@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 const toDateString = (val: unknown) => {
   if (val instanceof Date) {
@@ -40,7 +41,7 @@ const isoDateString = z
 export const purchaseOrderLineSchema = z.object({
   lineNumber: z.number().int().positive().optional(),
   itemId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityOrdered: z.preprocess((val) => {
     const num = typeof val === 'string' ? Number(val) : val;
     return num;

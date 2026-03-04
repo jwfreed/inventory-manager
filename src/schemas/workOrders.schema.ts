@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const workOrderCreateSchema = z
   .object({
@@ -6,7 +7,7 @@ export const workOrderCreateSchema = z
     bomId: z.string().uuid().optional(),
     bomVersionId: z.string().uuid().optional(),
     outputItemId: z.string().uuid(),
-    outputUom: z.string().min(1).max(32),
+    outputUom: uomSchema.max(32),
     quantityPlanned: z.number().positive(),
     quantityCompleted: z.number().min(0).optional(),
     defaultConsumeLocationId: z.string().uuid().optional(),

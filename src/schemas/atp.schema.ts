@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const atpQuerySchema = z.object({
   warehouseId: z.string().uuid(),
@@ -12,13 +13,13 @@ export const atpDetailQuerySchema = z.object({
   warehouseId: z.string().uuid(),
   itemId: z.string().uuid(),
   locationId: z.string().uuid(),
-  uom: z.string().min(1).max(32).optional()
+  uom: uomSchema.max(32).optional()
 });
 
 export const atpCheckSchema = z.object({
   warehouseId: z.string().uuid(),
   itemId: z.string().uuid(),
   locationId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantity: z.number().positive()
 });

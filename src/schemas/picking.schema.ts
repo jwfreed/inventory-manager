@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const pickBatchSchema = z.object({
   status: z.enum(['draft', 'released', 'in_progress', 'completed', 'canceled']).optional(),
@@ -12,7 +13,7 @@ export const pickTaskSchema = z.object({
   inventoryReservationId: z.string().uuid().optional(),
   salesOrderLineId: z.string().uuid().optional(),
   itemId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   fromLocationId: z.string().uuid(),
   quantityRequested: z.number().positive(),
   quantityPicked: z.number().nonnegative().optional(),

@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const countLineSchema = z.object({
   lineNumber: z.number().int().positive().optional(),
   itemId: z.string().uuid(),
   locationId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   countedQuantity: z.number().min(0),
   unitCostForPositiveAdjustment: z.number().nonnegative().optional(),
   reasonCode: z.string().min(1).max(255).optional(),

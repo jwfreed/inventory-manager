@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 const isoDateString = z
   .string()
@@ -46,7 +47,7 @@ export const mrpRunSchema = z.object({
 
 export const mrpItemPolicySchema = z.object({
   itemId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   siteLocationId: z.string().uuid().nullable().optional(),
   planningLeadTimeDays: z.number().int().nonnegative().optional(),
   safetyStockQty: z.number().nonnegative().optional(),
@@ -62,7 +63,7 @@ export const mrpItemPoliciesCreateSchema = z.object({
 
 export const mrpGrossRequirementSchema = z.object({
   itemId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   siteLocationId: z.string().uuid().nullable().optional(),
   periodStart: isoDateString,
   sourceType: z.enum(['mps', 'bom_explosion']),
@@ -76,7 +77,7 @@ export const mrpGrossRequirementsCreateSchema = z.object({
 
 export const replenishmentPolicySchema = z.object({
   itemId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   siteLocationId: z.string().uuid().nullable().optional(),
   policyType: z.enum(['q_rop', 't_oul']),
   status: z.enum(['active', 'inactive']).optional(),

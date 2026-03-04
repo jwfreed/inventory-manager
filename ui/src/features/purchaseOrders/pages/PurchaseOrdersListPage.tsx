@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { getPurchaseOrder, createPurchaseOrder } from '../api/purchaseOrders'
 import { purchaseOrdersQueryKeys, usePurchaseOrdersList } from '../queries'
 import type { ApiError } from '@api/types'
-import { Alert, Button, LoadingSpinner, Section } from '@shared/ui'
+import { Alert, Banner, Button, EmptyState, LoadingSpinner, PageHeader, Section, SectionHeader } from '@shared/ui'
 import { formatNumber } from '@shared/formatters'
 import { PurchaseOrdersSummaryCards } from '../components/PurchaseOrdersSummaryCards'
 import { PurchaseOrdersGroupTable } from '../components/PurchaseOrdersGroupTable'
@@ -87,6 +87,9 @@ export default function PurchaseOrdersListPage() {
     rows,
     statusFilter,
   )
+  const visibleCount = statusFilterKey
+    ? grouped[statusFilterKey as keyof typeof grouped]?.length ?? 0
+    : rows.length
 
   const statusOptions = useMemo(() => {
     const base = [
@@ -123,18 +126,16 @@ export default function PurchaseOrdersListPage() {
 
   return (
     <div className="space-y-6">
-      <Section title="Purchase Orders" description="Drafts are intent; submitted POs are commitments.">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-slate-600">
-            <div>
-              Showing {formatNumber(statusFilterKey ? grouped[statusFilterKey]?.length ?? 0 : rows.length)} purchase
-              orders
-              {statusFilterKey ? '.' : ' across all states.'}
-            </div>
-            {statusFilter && (
-              <div className="text-xs text-slate-500">Filtered by: {statusFilter.replace(/_/g, ' ')}</div>
-            )}
-          </div>
+      <PageHeader
+        title="Purchase Orders"
+        subtitle="Drafts are intent; submitted purchase orders are commitments."
+        meta={
+          <p className="text-xs text-slate-500">
+            Showing {formatNumber(visibleCount)} purchase orders
+            {statusFilterKey ? '.' : ' across all states.'}
+          </p>
+        }
+        action={
           <div className="flex items-center gap-2">
             <Link to="/purchase-orders/new">
               <Button size="sm">Create PO</Button>
@@ -145,15 +146,29 @@ export default function PurchaseOrdersListPage() {
               </Button>
             </Link>
           </div>
+        }
+      />
+      <Section>
+        <SectionHeader
+          title="PO Queue"
+          description="Filter, review, and progress purchase orders from draft through receipt."
+        />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-slate-600">
+            <div>Submitted POs move inbound; receiving updates on-hand and in-transit balances.</div>
+            {statusFilter && (
+              <div className="text-xs text-slate-500">Filtered by: {statusFilter.replace(/_/g, ' ')}</div>
+            )}
+          </div>
         </div>
         {isReceivingMode && (
-          <Alert
-            variant="info"
+          <Banner
+            severity="info"
             title="Receiving mode"
-            message="Select a PO to open Receiving with the PO preselected."
+            description="Select a PO to open Receiving with the PO preselected."
             action={
               <button
-                className="text-xs font-semibold uppercase text-sky-700"
+                className="text-xs font-semibold uppercase text-sky-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
                 type="button"
                 onClick={clearReceivingMode}
               >
@@ -214,7 +229,7 @@ export default function PurchaseOrdersListPage() {
             <Alert variant="error" title="Error" message={(poQuery.error as ApiError).message} />
           )}
           {!poQuery.isLoading && rows.length === 0 && (
-            <div className="py-6 text-sm text-slate-600">{emptyMessage}</div>
+            <EmptyState title="No purchase orders found" description={emptyMessage} />
           )}
           {!poQuery.isLoading &&
             rows.length > 0 &&

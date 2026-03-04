@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const qcEventSchema = z.object({
   purchaseOrderReceiptLineId: z.string().uuid().optional(),
@@ -6,7 +7,7 @@ export const qcEventSchema = z.object({
   workOrderExecutionLineId: z.string().uuid().optional(),
   eventType: z.enum(['hold', 'accept', 'reject']),
   quantity: z.number().positive(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   overrideNegative: z.boolean().optional(),
   overrideReason: z.string().max(2000).optional(),
   reasonCode: z.string().max(255).optional(),
@@ -24,7 +25,7 @@ export const qcWarehouseDispositionSchema = z.object({
   warehouseId: z.string().min(1).max(64),
   itemId: z.string().uuid(),
   quantity: z.number().positive(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   occurredAt: z.string().datetime().optional(),
   notes: z.string().max(2000).optional(),
   idempotencyKey: z.string().min(1).max(255).optional(),

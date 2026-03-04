@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const componentCostSnapshotSchema = z.object({
   componentItemId: z.string().uuid(),
   componentSku: z.string(),
   componentName: z.string(),
   quantityPer: z.number().positive(),
-  uom: z.string(),
+  uom: uomSchema,
   unitCost: z.number().nonnegative(),
   extendedCost: z.number().nonnegative(),
   scrapFactor: z.number().nonnegative().optional()

@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 const receiptLineSchema = z.object({
   purchaseOrderLineId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityReceived: z.number().positive(),
   unitCost: z.preprocess(
     (val) => (typeof val === 'string' ? Number(val) : val),

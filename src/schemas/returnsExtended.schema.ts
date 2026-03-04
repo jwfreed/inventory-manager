@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const returnReceiptSchema = z.object({
   returnAuthorizationId: z.string().uuid(),
@@ -13,7 +14,7 @@ export const returnReceiptSchema = z.object({
       z.object({
         returnAuthorizationLineId: z.string().uuid().optional(),
         itemId: z.string().uuid(),
-        uom: z.string().min(1).max(32),
+        uom: uomSchema.max(32),
         quantityReceived: z.number().positive(),
         notes: z.string().max(2000).optional(),
       }),
@@ -24,7 +25,7 @@ export const returnReceiptSchema = z.object({
 export const returnReceiptLineSchema = z.object({
   returnAuthorizationLineId: z.string().uuid().optional(),
   itemId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityReceived: z.number().positive(),
   notes: z.string().max(2000).optional(),
 });
@@ -43,7 +44,7 @@ export const returnDispositionSchema = z.object({
       z.object({
         lineNumber: z.number().int().positive().optional(),
         itemId: z.string().uuid(),
-        uom: z.string().min(1).max(32),
+        uom: uomSchema.max(32),
         quantity: z.number().positive(),
         notes: z.string().max(2000).optional(),
       }),
@@ -54,7 +55,7 @@ export const returnDispositionSchema = z.object({
 export const returnDispositionLineSchema = z.object({
   lineNumber: z.number().int().positive().optional(),
   itemId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantity: z.number().positive(),
   notes: z.string().max(2000).optional(),
 });

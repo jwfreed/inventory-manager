@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 const toSingleString = (val: unknown) => {
   if (Array.isArray(val)) return val[0];
@@ -16,7 +17,7 @@ export const inventorySnapshotQuerySchema = z.object({
   warehouseId: z.preprocess(toUuidString, z.string().uuid()),
   itemId: z.preprocess(toUuidString, z.string().uuid()),
   locationId: z.preprocess(toUuidString, z.string().uuid()),
-  uom: z.preprocess(toSingleString, z.string().min(1).max(32)).optional()
+  uom: z.preprocess(toSingleString, uomSchema.max(32)).optional()
 });
 
 export type InventorySnapshotQuery = z.infer<typeof inventorySnapshotQuerySchema>;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const shippingContainerSchema = z.object({
   status: z.enum(['open', 'sealed', 'canceled']).optional(),
@@ -13,7 +14,7 @@ export const shippingContainerSchema = z.object({
         pickTaskId: z.string().uuid().optional(),
         salesOrderLineId: z.string().uuid(),
         itemId: z.string().uuid(),
-        uom: z.string().min(1).max(32),
+        uom: uomSchema.max(32),
         quantity: z.number().positive()
       }),
     )
@@ -24,6 +25,6 @@ export const shippingContainerItemSchema = z.object({
   pickTaskId: z.string().uuid().optional(),
   salesOrderLineId: z.string().uuid(),
   itemId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantity: z.number().positive(),
 });

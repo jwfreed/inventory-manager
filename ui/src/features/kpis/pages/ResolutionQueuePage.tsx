@@ -21,6 +21,7 @@ const queueTypeOptions: Array<{ value: DashboardExceptionType | 'all'; label: st
   { value: 'all', label: 'All' },
   { value: 'availability_breach', label: 'Availability' },
   { value: 'negative_on_hand', label: 'Negative on-hand' },
+  { value: 'allocation_integrity', label: 'Allocation integrity' },
   { value: 'reorder_risk', label: 'Reorder' },
   { value: 'inbound_aging', label: 'Inbound aging' },
   { value: 'work_order_risk', label: 'WO risk' },
@@ -33,6 +34,8 @@ function typeLabel(type: DashboardExceptionType) {
       return 'Availability breach'
     case 'negative_on_hand':
       return 'Negative on-hand'
+    case 'allocation_integrity':
+      return 'Allocation integrity'
     case 'reorder_risk':
       return 'Reorder risk'
     case 'inbound_aging':
@@ -50,7 +53,11 @@ export default function ResolutionQueuePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [page, setPage] = useState(1)
   const { data, loading, error } = useDashboardSignals()
-  const selectedType = (searchParams.get('type') as DashboardExceptionType | 'all' | null) ?? 'all'
+  const selectedTypeRaw = searchParams.get('type') as DashboardExceptionType | 'all' | null
+  const selectedType =
+    selectedTypeRaw && queueTypeOptions.some((option) => option.value === selectedTypeRaw)
+      ? selectedTypeRaw
+      : 'all'
   const queueRows = useMemo(
     () => filterResolutionQueue(data.exceptions, selectedType),
     [data.exceptions, selectedType],
@@ -140,8 +147,11 @@ export default function ResolutionQueuePage() {
                 },
                 {
                   id: 'location',
-                  header: 'Location',
-                  cell: (row) => row.locationLabel,
+                  header: 'Location / Warehouse',
+                  cell: (row) => {
+                    const warehouse = row.warehouseId ? data.warehouseLookup.get(row.warehouseId) : null
+                    return warehouse?.code ? `${row.locationLabel} — ${warehouse.code}` : row.locationLabel
+                  },
                 },
                 {
                   id: 'impact',

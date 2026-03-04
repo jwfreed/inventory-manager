@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useItemsList } from '@features/items/queries'
 import { useWorkOrdersList } from '../queries'
-import { Alert, Button, Card, EmptyState, LoadingSpinner, Section } from '@shared/ui'
+import { Alert, Button, Card, EmptyState, LoadingSpinner, PageHeader, Section, SectionHeader } from '@shared/ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { WorkOrdersFilters } from '../components/WorkOrdersFilters'
 import { WorkOrdersTable } from '../components/WorkOrdersTable'
@@ -39,18 +39,24 @@ export default function WorkOrdersListPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Work Orders</h2>}
-        <div className="max-w-3xl space-y-1 text-sm text-slate-600">
-          <p>Drafts do not affect inventory.</p>
-          <p>Posting issues creates issue movements; posting completions creates receive movements.</p>
-        </div>
+      {!hideTitle && (
+        <PageHeader
+          title="Work Orders"
+          subtitle="Drafts do not affect inventory. Posting issues and completions creates ledger movements."
+          action={
+            <Button size="sm" onClick={() => navigate('/work-orders/new')}>
+              New work order
+            </Button>
+          }
+        />
+      )}
+      {hideTitle && (
         <div>
           <Button size="sm" onClick={() => navigate('/work-orders/new')}>
             New work order
           </Button>
         </div>
-      </div>
+      )}
 
       <WorkOrdersFilters
         status={status}
@@ -65,7 +71,11 @@ export default function WorkOrdersListPage() {
         onRefresh={() => void refetch()}
       />
 
-      <Section title="Work orders">
+      <Section>
+        <SectionHeader
+          title="Execution Queue"
+          description="Prioritize active orders and resolve stalled production before due dates slip."
+        />
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
           <div>
             Showing {filtered.length} work orders

@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
+import { uomSchema } from '../schemas/shared/uom.schema';
 import {
   createVendorInvoice,
   listVendorInvoices,
@@ -21,7 +22,7 @@ const vendorInvoiceLineSchema = z.object({
   itemId: z.string().uuid().optional(),
   description: z.string().min(1).max(500),
   quantity: z.number().positive(),
-  uom: z.string().min(1).max(20),
+  uom: uomSchema.max(20),
   unitPrice: z.number().nonnegative(),
   taxAmount: z.number().nonnegative().optional(),
   notes: z.string().max(1000).optional(),

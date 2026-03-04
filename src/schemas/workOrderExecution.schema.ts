@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const workOrderIssueLineSchema = z.object({
   lineNumber: z.number().int().positive().optional(),
   componentItemId: z.string().uuid(),
   fromLocationId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityIssued: z.number().positive(),
   reasonCode: z.string().max(64).optional(),
   notes: z.string().max(2000).optional()
@@ -19,7 +20,7 @@ export const workOrderIssueCreateSchema = z.object({
 export const workOrderCompletionLineSchema = z.object({
   outputItemId: z.string().uuid(),
   toLocationId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityCompleted: z.number().positive(),
   packSize: z.number().positive().optional(),
   reasonCode: z.string().max(64).optional(),
@@ -41,7 +42,7 @@ export const workOrderBatchSchema = z.object({
     z.object({
       componentItemId: z.string().uuid(),
       fromLocationId: z.string().uuid(),
-      uom: z.string().min(1).max(32),
+      uom: uomSchema.max(32),
       quantity: z.number().positive(),
       reasonCode: z.string().max(64).optional(),
       notes: z.string().max(2000).optional()
@@ -51,7 +52,7 @@ export const workOrderBatchSchema = z.object({
     z.object({
       outputItemId: z.string().uuid(),
       toLocationId: z.string().uuid(),
-      uom: z.string().min(1).max(32),
+      uom: uomSchema.max(32),
       quantity: z.number().positive(),
       packSize: z.number().positive().optional(),
       reasonCode: z.string().max(64).optional(),
@@ -68,14 +69,14 @@ export const workOrderIssuePostSchema = z.object({
 export const workOrderReportProductionSchema = z.object({
   warehouseId: z.string().min(1).max(64).optional(),
   outputQty: z.number().positive(),
-  outputUom: z.string().min(1).max(32).optional(),
+  outputUom: uomSchema.max(32).optional(),
   outputLotId: z.string().uuid().optional(),
   outputLotCode: z.string().min(1).max(120).optional(),
   inputLots: z.array(
     z.object({
       componentItemId: z.string().uuid(),
       lotId: z.string().uuid(),
-      uom: z.string().min(1).max(32),
+      uom: uomSchema.max(32),
       quantity: z.number().positive()
     })
   ).optional(),
@@ -86,14 +87,14 @@ export const workOrderReportProductionSchema = z.object({
   consumptionOverrides: z.array(
     z.object({
       componentItemId: z.string().uuid(),
-      uom: z.string().min(1).max(32),
+      uom: uomSchema.max(32),
       quantity: z.number().min(0),
       reason: z.string().max(255).optional()
     })
   ).optional(),
   scrapOutputs: z.array(
     z.object({
-      uom: z.string().min(1).max(32),
+      uom: uomSchema.max(32),
       quantity: z.number().positive(),
       reason: z.string().max(255)
     })
@@ -111,7 +112,7 @@ export const workOrderReportScrapSchema = z.object({
   workOrderExecutionId: z.string().uuid(),
   outputItemId: z.string().uuid().optional(),
   quantity: z.number().positive(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   reasonCode: z.string().min(1).max(255),
   occurredAt: z.string().datetime().optional(),
   notes: z.string().max(2000).optional(),

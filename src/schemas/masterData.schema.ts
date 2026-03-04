@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 import { ItemLifecycleStatus } from '../types/item';
 
 const uomDimensionSchema = z.enum(['mass', 'volume', 'count', 'length', 'area', 'time']);
@@ -18,18 +19,18 @@ export const itemSchema = z.object({
   lifecycleStatus: z.nativeEnum(ItemLifecycleStatus).default(ItemLifecycleStatus.ACTIVE),
   type: z.enum(['raw', 'wip', 'finished', 'packaging']).default('raw'),
   isPhantom: z.boolean().default(false),
-  defaultUom: z.string().min(1).max(50).nullable().optional(),
+  defaultUom: uomSchema.max(50).nullable().optional(),
   uomDimension: uomDimensionSchema.nullable().optional(),
-  canonicalUom: z.string().min(1).max(32).nullable().optional(),
-  stockingUom: z.string().min(1).max(50).nullable().optional(),
+  canonicalUom: uomSchema.max(32).nullable().optional(),
+  stockingUom: uomSchema.max(50).nullable().optional(),
   defaultLocationId: z.string().uuid().nullable().optional(),
   requiresLot: z.boolean().optional(),
   requiresSerial: z.boolean().optional(),
   requiresQc: z.boolean().optional(),
   weight: z.number().positive().nullable().optional(),
-  weightUom: z.string().max(50).nullable().optional(),
+  weightUom: uomSchema.max(50).nullable().optional(),
   volume: z.number().positive().nullable().optional(),
-  volumeUom: z.string().max(50).nullable().optional(),
+  volumeUom: uomSchema.max(50).nullable().optional(),
   standardCost: z.preprocess((val) => {
     const num = typeof val === 'string' ? Number(val) : val;
     return num;
@@ -134,7 +135,7 @@ export const locationSchema = z.object({
 
 export const uomConversionSchema = z.object({
   itemId: z.string().uuid(),
-  fromUom: z.string().min(1).max(50),
-  toUom: z.string().min(1).max(50),
+  fromUom: uomSchema.max(50),
+  toUom: uomSchema.max(50),
   factor: z.number().positive(),
 });

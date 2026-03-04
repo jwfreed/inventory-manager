@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 const isoDateTimeString = z
   .string()
@@ -13,7 +14,7 @@ export const inventoryTransferCreateSchema = z.object({
   warehouseId: z.string().uuid().optional(),
   itemId: z.string().uuid(),
   quantity: z.number().positive(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   occurredAt: isoDateTimeString.optional(),
   reasonCode: z.string().max(255).optional(),
   notes: z.string().max(2000).optional(),

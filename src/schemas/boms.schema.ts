@@ -1,13 +1,14 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 export const bomComponentInputSchema = z.object({
   lineNumber: z.number().int().positive(),
   componentItemId: z.string().uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityPer: z.number().positive(),
   scrapFactor: z.number().min(0).optional(),
   usesPackSize: z.boolean().optional(),
-  variableUom: z.string().min(1).max(32).optional(),
+  variableUom: uomSchema.max(32).optional(),
   notes: z.string().max(2000).optional()
 });
 
@@ -17,7 +18,7 @@ export const bomVersionInputSchema = z
     effectiveFrom: z.string().datetime().optional(),
     effectiveTo: z.string().datetime().optional(),
     yieldQuantity: z.number().positive(),
-    yieldUom: z.string().min(1).max(32),
+    yieldUom: uomSchema.max(32),
     yieldFactor: z.number().gt(0).lte(1).default(1.0),
     notes: z.string().max(2000).optional(),
     components: z.array(bomComponentInputSchema).min(1)
@@ -47,7 +48,7 @@ export const bomVersionInputSchema = z
 export const bomCreateSchema = z.object({
   bomCode: z.string().min(1).max(64),
   outputItemId: z.string().uuid(),
-  defaultUom: z.string().min(1).max(32),
+  defaultUom: uomSchema.max(32),
   notes: z.string().max(2000).optional(),
   version: bomVersionInputSchema
 });

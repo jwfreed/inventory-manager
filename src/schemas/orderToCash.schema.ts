@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uomSchema } from './shared/uom.schema';
 
 const isoDateString = z
   .string()
@@ -16,7 +17,7 @@ const uuid = () => z.string().uuid();
 export const salesOrderLineSchema = z.object({
   lineNumber: z.number().int().positive().optional(),
   itemId: uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityOrdered: z.number().positive(),
   unitPrice: z.preprocess((val) => {
     if (val === null || val === undefined) return null;
@@ -63,7 +64,7 @@ export const reservationSchema = z.object({
   itemId: uuid(),
   locationId: uuid(),
   warehouseId: uuid().optional(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityReserved: z.number().positive(),
   quantityFulfilled: z.number().nonnegative().optional(),
   expiresAt: isoDateTimeString.optional(),
@@ -78,7 +79,7 @@ export const reservationsCreateSchema = z.object({
 
 export const shipmentLineSchema = z.object({
   salesOrderLineId: uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityShipped: z.number().positive(),
 });
 
@@ -95,7 +96,7 @@ export const returnLineSchema = z.object({
   lineNumber: z.number().int().positive().optional(),
   salesOrderLineId: uuid().optional(),
   itemId: uuid(),
-  uom: z.string().min(1).max(32),
+  uom: uomSchema.max(32),
   quantityAuthorized: z.number().positive(),
   reasonCode: z.string().max(255).optional(),
   notes: z.string().max(1000).optional(),
