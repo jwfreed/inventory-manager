@@ -7,3 +7,6 @@ dist
 docs/Refactoring UI.pdf
 docs/The Definitive Guide to Inventory Management.txt
 server.log
+playwright-report/
+test-results/
+playwright/.auth/*.json

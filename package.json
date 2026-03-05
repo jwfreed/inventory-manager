@@ -39,6 +39,11 @@
     "test:db": "node --test --test-reporter=spec --test-timeout=120000 --import ./tests/setup.mjs tests/db/*.test.mjs",
     "test:all": "node --test --test-reporter=spec --test-timeout=300000 --test-concurrency=1 --import ./tests/setup.mjs tests/api/*.test.mjs tests/ops/*.test.mjs tests/db/*.test.mjs",
     "test:all:ci": "node --test --test-reporter=spec --test-timeout=900000 --test-concurrency=1 --import ./tests/setup.mjs tests/api/*.test.mjs tests/ops/*.test.mjs tests/db/*.test.mjs",
+    "e2e": "playwright test",
+    "e2e:setup": "playwright test --project=setup",
+    "e2e:headed": "playwright test --headed",
+    "e2e:install": "playwright install chromium",
+    "e2e:report": "playwright show-report",
     "test:ak47": "node tests/helpers/runRepeated.mjs --cmd \"npm run test:ops:nomigrate\" --times 5",
     "test:ops:ak47": "node tests/helpers/runRepeated.mjs --cmd \"npm run test:ops:nomigrate\" --times 5",
     "test:lint:api": "bash -lc \"if grep -R -n -E '\\\\b(db|pool|client)\\\\.query\\\\b|from\\\\s+[\\\"\\x27]pg[\\\"\\x27]|new\\\\s+Pool\\\\(' tests/api; then echo 'test:lint:api failed: SQL usage detected in tests/api'; exit 1; else echo 'test:lint:api ok'; fi\"",
@@ -74,6 +79,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.7",
     "@types/express": "^4.17.21",
