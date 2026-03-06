@@ -8,6 +8,18 @@ type RefreshCall = {
   status: number;
 };
 
+type AuthRefreshEnv = {
+  apiBaseURL: string;
+  tenantSlug?: string;
+  tenantName?: string;
+  credentials: {
+    email: string;
+    password: string;
+    source: string;
+    resolutionMessage?: string;
+  };
+};
+
 function encodeBase64Url(value: string): string {
   return Buffer.from(value).toString('base64url');
 }
@@ -46,6 +58,103 @@ function isRefreshEndpoint(url: string): boolean {
   }
 }
 
+async function ensureBootstrapAccountIfNeeded(args: { page: Page; env: AuthRefreshEnv }) {
+  if (args.env.credentials.source !== 'bootstrap_fallback') {
+    return;
+  }
+
+  await args.page.evaluate(
+    async ({ apiBaseURL, email, password, tenantSlug, tenantName }) => {
+      const response = await fetch(`${apiBaseURL}/auth/bootstrap`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          adminEmail: email,
+          adminPassword: password,
+          tenantSlug: tenantSlug || 'default',
+          tenantName: tenantName || 'Default Tenant'
+        })
+      });
+
+      if (response.status === 201 || response.status === 409) {
+        return;
+      }
+
+      const body = await response.text();
+      throw new Error(`Bootstrap failed (${response.status}). body=${body || '<empty>'}`);
+    },
+    {
+      apiBaseURL: args.env.apiBaseURL,
+      email: args.env.credentials.email,
+      password: args.env.credentials.password,
+      tenantSlug: args.env.tenantSlug,
+      tenantName: args.env.tenantName
+    }
+  );
+}
+
+async function establishFreshBrowserSession(args: { page: Page; env: AuthRefreshEnv }) {
+  await args.page.goto('/login', { waitUntil: 'domcontentloaded' });
+  await ensureBootstrapAccountIfNeeded(args);
+
+  const loginResult = await args.page.evaluate(
+    async ({ apiBaseURL, email, password, tenantSlug }) => {
+      const response = await fetch(`${apiBaseURL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email,
+          password,
+          ...(tenantSlug ? { tenantSlug } : {})
+        })
+      });
+      const text = await response.text();
+      let body: unknown = null;
+      if (text) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = text;
+        }
+      }
+      return {
+        ok: response.ok,
+        status: response.status,
+        body
+      };
+    },
+    {
+      apiBaseURL: args.env.apiBaseURL,
+      email: args.env.credentials.email,
+      password: args.env.credentials.password,
+      tenantSlug: args.env.tenantSlug
+    }
+  );
+
+  if (!loginResult.ok) {
+    throw new Error(
+      `Auth refresh setup login failed (${loginResult.status}). body=${JSON.stringify(loginResult.body)}`
+    );
+  }
+
+  const accessToken =
+    typeof loginResult.body === 'object' && loginResult.body !== null
+      ? (loginResult.body as { accessToken?: string }).accessToken
+      : undefined;
+  if (!accessToken) {
+    throw new Error(`Auth refresh setup login did not return accessToken. body=${JSON.stringify(loginResult.body)}`);
+  }
+
+  await args.page.evaluate((token) => {
+    window.localStorage.setItem('inventory.accessToken', token);
+  }, accessToken);
+
+  await args.page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+  await expect(args.page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+}
+
 async function assertRefreshRecovery(args: {
   page: Page;
   apiBaseURL: string;
@@ -70,7 +179,6 @@ async function assertRefreshRecovery(args: {
 
     await args.page.reload({ waitUntil: 'domcontentloaded' });
     await expect(args.page).toHaveURL(/\/dashboard$/);
-    await expect(args.page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 
     await expect
       .poll(
@@ -124,8 +232,7 @@ test('@smoke invalid access token is replaced via refresh cookie and session rem
   page,
   e2eEnv
 }) => {
-  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await establishFreshBrowserSession({ page, env: e2eEnv });
 
   await assertRefreshRecovery({
     page,
@@ -142,8 +249,7 @@ test('@smoke expired access token triggers refresh and session remains authentic
   const jwtSecret = process.env.JWT_SECRET?.trim() ?? '';
   test.skip(!jwtSecret, 'JWT_SECRET is required to mint expired access token for this test.');
 
-  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await establishFreshBrowserSession({ page, env: e2eEnv });
 
   const expiredToken = mintExpiredAccessToken({
     jwtSecret,

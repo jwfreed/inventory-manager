@@ -16,9 +16,109 @@ type AuthMeResponse = {
   role?: string;
 };
 
+type BrowserAuthMeResult = {
+  ok: boolean;
+  status: number;
+  body: unknown;
+};
+
+type AuthUiState = {
+  url: string;
+  pathname: string;
+  hasAccessToken: boolean;
+  accessTokenLength: number;
+  hasSignOutButton: boolean;
+  hasLoginHeading: boolean;
+};
+
 const authDir = path.resolve(process.cwd(), 'playwright/.auth');
 const storageStatePath = path.resolve(authDir, 'user.json');
 const authMetaPath = path.resolve(authDir, 'meta.json');
+
+async function readAuthUiState(page: Page): Promise<AuthUiState> {
+  return page.evaluate(() => {
+    const accessToken = window.localStorage.getItem('inventory.accessToken');
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3'));
+
+    return {
+      url: window.location.href,
+      pathname: window.location.pathname,
+      hasAccessToken: Boolean(accessToken),
+      accessTokenLength: accessToken?.length ?? 0,
+      hasSignOutButton: buttons.some(
+        (button) => button.textContent?.trim().toLowerCase() === 'sign out'
+      ),
+      hasLoginHeading: headings.some(
+        (heading) => heading.textContent?.trim().toLowerCase() === 'sign in'
+      )
+    };
+  });
+}
+
+async function fetchAuthMeInBrowser(page: Page, apiBaseURL: string): Promise<BrowserAuthMeResult> {
+  return page.evaluate(async ({ baseUrl }) => {
+    const token = window.localStorage.getItem('inventory.accessToken');
+    if (!token) {
+      return { ok: false, status: 0, body: { error: 'missing access token in localStorage' } };
+    }
+
+    try {
+      const response = await fetch(`${baseUrl}/auth/me`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const rawBody = await response.text();
+      let parsedBody: unknown = null;
+      if (rawBody) {
+        try {
+          parsedBody = JSON.parse(rawBody);
+        } catch {
+          parsedBody = rawBody;
+        }
+      }
+      return {
+        ok: response.ok,
+        status: response.status,
+        body: parsedBody
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        status: 0,
+        body: { error: error instanceof Error ? error.message : String(error) }
+      };
+    }
+  }, { baseUrl: apiBaseURL });
+}
+
+async function assertAuthenticatedShellOnDashboard(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const state = await readAuthUiState(page);
+        return {
+          pathname: state.pathname,
+          hasSignOutButton: state.hasSignOutButton,
+          hasLoginHeading: state.hasLoginHeading
+        };
+      },
+      {
+        timeout: 12_000,
+        intervals: [300, 600, 1_000],
+        message:
+          'Expected authenticated app shell on /dashboard (stable route + sign out control).'
+      }
+    )
+    .toEqual({
+      pathname: '/dashboard',
+      hasSignOutButton: true,
+      hasLoginHeading: false
+    });
+}
 
 async function ensureBootstrapAccountIfNeeded(args: {
   page: Page;
@@ -178,9 +278,34 @@ setup('authenticate and persist storage state', async ({ page }) => {
     window.localStorage.setItem('inventory.accessToken', token);
   }, session.accessToken);
 
+  const browserMeBeforeNav = await fetchAuthMeInBrowser(page, env.apiBaseURL);
+  if (!browserMeBeforeNav.ok) {
+    throw new Error(
+      `E2E browser /auth/me failed before protected navigation (status=${browserMeBeforeNav.status}): ${JSON.stringify(browserMeBeforeNav.body)}`
+    );
+  }
+
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
-  await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await assertAuthenticatedShellOnDashboard(page);
+
+  // Ensure auth state survives a full navigation cycle before persisting storage state.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await assertAuthenticatedShellOnDashboard(page);
+
+  const finalAuthUiState = await readAuthUiState(page);
+  if (finalAuthUiState.pathname !== '/dashboard') {
+    throw new Error(
+      [
+        'E2E auth setup reached unexpected UI state after login.',
+        `url=${finalAuthUiState.url}`,
+        `pathname=${finalAuthUiState.pathname}`,
+        `hasAccessToken=${finalAuthUiState.hasAccessToken}`,
+        `accessTokenLength=${finalAuthUiState.accessTokenLength}`,
+        `hasSignOutButton=${finalAuthUiState.hasSignOutButton}`,
+        `hasLoginHeading=${finalAuthUiState.hasLoginHeading}`
+      ].join(' ')
+    );
+  }
 
   const storageState = await page.context().storageState({ path: storageStatePath });
   const hasRefreshCookie = storageState.cookies.some((cookie) => cookie.name === 'refresh_token');

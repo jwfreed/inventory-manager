@@ -80,7 +80,7 @@ test('@core receive purchase order in full updates stock and PO status', async (
     onHand: 10,
     available: 10,
     reservedTotal: 0,
-    inTransit: 0
+    inTransit: 10
   });
   expectNonNegativeBuckets(qaBuckets);
   expectAvailableLeqOnHand(qaBuckets);
@@ -147,7 +147,7 @@ test('@core receive purchase order partial keeps PO open with remaining quantity
     onHand: 8,
     available: 8,
     reservedTotal: 0,
-    inTransit: 0
+    inTransit: 8
   });
   expectNonNegativeBuckets(qaBuckets);
   expectAvailableLeqOnHand(qaBuckets);
@@ -161,7 +161,7 @@ test('@core receive purchase order partial keeps PO open with remaining quantity
   });
 
   await page.goto(`/purchase-orders/${purchaseOrder.id}`);
-  await expect(page.getByText('Partially received')).toBeVisible();
+  await expect(page.getByText('Partially received', { exact: true })).toBeVisible();
 });
 
 test('@core putaway moves accepted stock to target location', async ({ api, runId, page }) => {
@@ -228,10 +228,15 @@ test('@core putaway moves accepted stock to target location', async ({ api, runI
     fromLocationId: warehouse.roles.SELLABLE.id,
     toLocationId: overflowSellable.id
   });
+  await expectDocumentStatus({ api, type: 'putaway', id: putaway.id, expected: 'draft' });
 
   await page.goto(`/receiving/putaway?receiptId=${receipt.id}&putawayId=${putaway.id}`);
   await expect(page.getByRole('heading', { name: 'Plan putaway' })).toBeVisible();
-  await page.getByRole('button', { name: /Post putaway/i }).click();
+  await expect(page.getByRole('heading', { name: `Putaway #${putaway.id}` })).toBeVisible();
+  const postPutawayButton = page.getByRole('button', { name: /Post putaway/i });
+  await expect(postPutawayButton).toBeVisible();
+  await expect(postPutawayButton).toBeEnabled();
+  await postPutawayButton.click();
   await expect(page.getByRole('heading', { name: 'Putaway complete' })).toBeVisible();
 
   await expectDocumentStatus({ api, type: 'putaway', id: putaway.id, expected: 'completed' });

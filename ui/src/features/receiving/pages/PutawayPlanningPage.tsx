@@ -24,6 +24,7 @@ export default function PutawayPlanningPage() {
   const putaway = ctx.putawayQuery.data ?? ctx.postPutawayMutation.data
   const receipt = ctx.receiptQuery.data
   const isCompleted = putaway?.status === 'completed'
+  const hasExistingPutaway = Boolean(ctx.putawayId && ctx.putawayQuery.data)
   const showDraftForm = !isCompleted && (!ctx.putawayId || (ctx.putawayQuery.data && ['draft', 'in_progress'].includes(ctx.putawayQuery.data.status)))
 
   const summary = useMemo(() => {
@@ -277,7 +278,7 @@ export default function PutawayPlanningPage() {
                 </div>
               </div>
             </div>
-          ) : !ctx.putawayReady ? (
+          ) : !ctx.putawayReady && !hasExistingPutaway ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="text-slate-400 mb-4">
                 <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">

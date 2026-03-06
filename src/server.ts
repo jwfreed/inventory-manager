@@ -481,7 +481,7 @@ async function start() {
     scheduleFatalExit('server.listen', error);
   });
   httpServer.on('listening', () => {
-    console.log(`\n🚀 Inventory Manager API listening on ${HOST}:${PORT}`);
+    console.log(`\n🚀 Inventory Manager API listening on http://${HOST}:${PORT}`);
     console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`   Timezone: UTC (for scheduled jobs)\n`);
   });
@@ -519,11 +519,34 @@ function logFatalStartupError(context: string, error: unknown): void {
 
 let fatalExitScheduled = false;
 
+function logStartupHint(error: unknown): void {
+  const candidate = error as { code?: unknown; message?: unknown } | undefined;
+  const code = typeof candidate?.code === 'string' ? candidate.code : null;
+  const message = typeof candidate?.message === 'string' ? candidate.message : '';
+
+  if (code === 'EADDRINUSE') {
+    console.error(
+      `[startup.hint] Address ${HOST}:${PORT} is already in use. Stop the conflicting process or run with a different port (example: PORT=3101 npm run dev -- --repair-defaults).`
+    );
+    return;
+  }
+
+  if (message.includes('DATABASE_URL must be set')) {
+    console.error('[startup.hint] Set DATABASE_URL in your environment or .env before starting the API.');
+    return;
+  }
+
+  if (message.includes('JWT_SECRET must be set')) {
+    console.error('[startup.hint] Set JWT_SECRET in your environment or .env before starting the API.');
+  }
+}
+
 function scheduleFatalExit(context: string, error: unknown): void {
   if (fatalExitScheduled) return;
   fatalExitScheduled = true;
   logDbConnectionHint(error, context);
   logStructuredStartupFailure(error);
+  logStartupHint(error);
   logFatalStartupError(context, error);
   setTimeout(() => {
     process.exit(1);

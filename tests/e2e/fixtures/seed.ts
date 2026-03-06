@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import { E2EApiClient } from './apiClient';
 
 type Location = {
@@ -107,6 +108,16 @@ function normalizeToken(value: string): string {
     .slice(0, 24) || 'E2E';
 }
 
+function tokenForSeed(label: string, runId: string): string {
+  const labelToken = normalizeToken(label).slice(0, 12) || 'E2E';
+  const entropy = createHash('sha1')
+    .update(`${label}-${runId}`)
+    .digest('hex')
+    .slice(0, 10)
+    .toUpperCase();
+  return `${labelToken}-${entropy}`;
+}
+
 const REQUIRED_WAREHOUSE_ROLES: Array<keyof WarehouseRoleMap> = [
   'SELLABLE',
   'QA',
@@ -195,7 +206,7 @@ export async function createWarehouseSeed(args: {
   runId: string;
   label: string;
 }): Promise<WarehouseSeed> {
-  const token = normalizeToken(`${args.label}-${args.runId}`);
+  const token = tokenForSeed(args.label, args.runId);
   const code = `WH-${token}`.slice(0, 64);
 
   const root = await args.api.post<Location>('/locations', {
@@ -217,7 +228,7 @@ export async function createItemSeed(args: {
   defaultLocationId: string;
   requiresQc?: boolean;
 }): Promise<Item> {
-  const token = normalizeToken(`${args.label}-${args.runId}`);
+  const token = tokenForSeed(args.label, args.runId);
   const sku = `SKU-${token}`.slice(0, 64);
 
   return await args.api.post<Item>('/items', {
@@ -237,7 +248,7 @@ export async function createVendorSeed(args: {
   runId: string;
   label: string;
 }): Promise<Vendor> {
-  const token = normalizeToken(`${args.label}-${args.runId}`);
+  const token = tokenForSeed(args.label, args.runId);
   return await args.api.post<Vendor>('/vendors', {
     code: `V-${token}`.slice(0, 64),
     name: `Vendor ${args.label}`
@@ -254,7 +265,7 @@ export async function createApprovedPurchaseOrder(args: {
   receivingLocationId: string;
   quantity: number;
 }): Promise<PurchaseOrder> {
-  const token = normalizeToken(`${args.label}-${args.runId}`);
+  const token = tokenForSeed(args.label, args.runId);
   const today = new Date().toISOString().slice(0, 10);
 
   return await args.api.post<PurchaseOrder>('/purchase-orders', {
@@ -388,7 +399,7 @@ export async function createSalesOrderSeed(args: {
   itemId: string;
   quantity: number;
 }): Promise<SalesOrder> {
-  const token = normalizeToken(`${args.label}-${args.runId}`);
+  const token = tokenForSeed(args.label, args.runId);
   return await args.api.post<SalesOrder>('/sales-orders', {
     soNumber: `SO-${token}`.slice(0, 64),
     customerId: args.customerId,

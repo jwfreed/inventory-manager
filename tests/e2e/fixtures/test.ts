@@ -24,7 +24,7 @@ type E2EFixtures = {
 const authMetaPath = path.resolve(process.cwd(), 'playwright/.auth/meta.json');
 const runNonce =
   process.env.E2E_RUN_ID?.trim() ||
-  new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+  new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 17);
 
 function shortHash(value: string): string {
   return createHash('sha1').update(value).digest('hex').slice(0, 8);
