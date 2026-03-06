@@ -107,6 +107,20 @@ function normalizeToken(value: string): string {
     .slice(0, 24) || 'E2E';
 }
 
+const REQUIRED_WAREHOUSE_ROLES: Array<keyof WarehouseRoleMap> = [
+  'SELLABLE',
+  'QA',
+  'HOLD',
+  'REJECT',
+  'SCRAP'
+];
+const WAREHOUSE_ROLE_MAX_ATTEMPTS = 30;
+const WAREHOUSE_ROLE_RETRY_MS = 300;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function must<T>(value: T | null | undefined, message: string): T {
   if (value === null || value === undefined) {
     throw new Error(message);
@@ -122,21 +136,58 @@ async function listLocations(api: E2EApiClient): Promise<Location[]> {
 }
 
 async function resolveWarehouseRoles(api: E2EApiClient, warehouseId: string): Promise<WarehouseRoleMap> {
-  const all = await listLocations(api);
-  const inWarehouse = all.filter((location) => location.warehouseId === warehouseId);
+  let inWarehouse: Location[] = [];
 
-  const pickRole = (role: keyof WarehouseRoleMap): Location => {
-    const match = inWarehouse.find((location) => location.role === role);
-    return must(match, `Missing ${role} location in warehouse ${warehouseId}.`);
-  };
+  for (let attempt = 1; attempt <= WAREHOUSE_ROLE_MAX_ATTEMPTS; attempt += 1) {
+    const all = await listLocations(api);
+    inWarehouse = all.filter((location) => location.warehouseId === warehouseId);
 
-  return {
-    SELLABLE: pickRole('SELLABLE'),
-    QA: pickRole('QA'),
-    HOLD: pickRole('HOLD'),
-    REJECT: pickRole('REJECT'),
-    SCRAP: pickRole('SCRAP')
-  };
+    const missingRoles = REQUIRED_WAREHOUSE_ROLES.filter(
+      (role) => !inWarehouse.some((location) => location.role === role)
+    );
+    if (missingRoles.length === 0) {
+      const pickRole = (role: keyof WarehouseRoleMap): Location => {
+        const match = inWarehouse.find((location) => location.role === role);
+        return must(match, `Missing ${role} location in warehouse ${warehouseId}.`);
+      };
+
+      return {
+        SELLABLE: pickRole('SELLABLE'),
+        QA: pickRole('QA'),
+        HOLD: pickRole('HOLD'),
+        REJECT: pickRole('REJECT'),
+        SCRAP: pickRole('SCRAP')
+      };
+    }
+
+    if (attempt < WAREHOUSE_ROLE_MAX_ATTEMPTS) {
+      await sleep(WAREHOUSE_ROLE_RETRY_MS);
+    }
+  }
+
+  const foundRoles = REQUIRED_WAREHOUSE_ROLES.filter((role) =>
+    inWarehouse.some((location) => location.role === role)
+  );
+  const missingRoles = REQUIRED_WAREHOUSE_ROLES.filter(
+    (role) => !inWarehouse.some((location) => location.role === role)
+  );
+  const locationSample =
+    inWarehouse
+      .slice(0, 12)
+      .map((location) => `${location.code}:${location.role ?? 'null'}`)
+      .join(', ') || '<none>';
+  const totalWaitMs = (WAREHOUSE_ROLE_MAX_ATTEMPTS - 1) * WAREHOUSE_ROLE_RETRY_MS;
+
+  throw new Error(
+    [
+      `Warehouse role locations did not become ready for warehouseId=${warehouseId}.`,
+      `Attempts=${WAREHOUSE_ROLE_MAX_ATTEMPTS}.`,
+      `TotalWaitMs=${totalWaitMs}.`,
+      `FoundRoles=${foundRoles.length ? foundRoles.join(',') : '<none>'}.`,
+      `MissingRoles=${missingRoles.join(',')}.`,
+      `LocationSample=${locationSample}.`
+    ].join(' ')
+  );
 }
 
 export async function createWarehouseSeed(args: {
@@ -219,7 +270,10 @@ export async function createApprovedPurchaseOrder(args: {
         lineNumber: 1,
         itemId: args.itemId,
         uom: 'each',
-        quantityOrdered: args.quantity
+        quantityOrdered: args.quantity,
+        // Receipt posting creates FIFO cost layers only when a line unit cost/price is present.
+        // QC accept/reject transfers consume those layers from QA.
+        unitPrice: 1
       }
     ]
   });
@@ -269,7 +323,31 @@ export async function createAndPostPutaway(args: {
   fromLocationId: string;
   toLocationId: string;
 }): Promise<Putaway> {
-  const created = await args.api.post<Putaway>('/putaways', {
+  const created = await createPutawayDraft({
+    api: args.api,
+    receiptId: args.receiptId,
+    receiptLineId: args.receiptLineId,
+    quantity: args.quantity,
+    fromLocationId: args.fromLocationId,
+    toLocationId: args.toLocationId
+  });
+
+  return await postPutawayDraft({
+    api: args.api,
+    runId: args.runId,
+    putawayId: created.id
+  });
+}
+
+export async function createPutawayDraft(args: {
+  api: E2EApiClient;
+  receiptId: string;
+  receiptLineId: string;
+  quantity: number;
+  fromLocationId: string;
+  toLocationId: string;
+}): Promise<Putaway> {
+  return await args.api.post<Putaway>('/putaways', {
     sourceType: 'purchase_order_receipt',
     purchaseOrderReceiptId: args.receiptId,
     lines: [
@@ -282,8 +360,22 @@ export async function createAndPostPutaway(args: {
       }
     ]
   });
+}
 
-  return await args.api.post<Putaway>(`/putaways/${created.id}/post`, {});
+export async function postPutawayDraft(args: {
+  api: E2EApiClient;
+  runId: string;
+  putawayId: string;
+}): Promise<Putaway> {
+  return await args.api.post<Putaway>(
+    `/putaways/${args.putawayId}/post`,
+    {},
+    {
+      headers: {
+        'Idempotency-Key': args.api.nextIdempotencyKey(`putaway-post-${args.runId}`)
+      }
+    }
+  );
 }
 
 export async function createSalesOrderSeed(args: {

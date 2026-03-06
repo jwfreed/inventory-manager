@@ -58,6 +58,18 @@ npm run e2e
 npx playwright test tests/e2e/workflows/outbound-fulfillment.spec.ts -g "cancel allocated reservation"
 ```
 
+## Test Tags
+
+- `@smoke`: fast confidence checks
+- `@core`: core inventory workflow correctness checks
+
+Run by tag:
+
+```bash
+npx playwright test --grep @smoke
+npx playwright test --grep @core
+```
+
 ## Regenerate Auth State
 
 Delete `playwright/.auth/user.json` and `playwright/.auth/meta.json`, then run:
@@ -82,3 +94,11 @@ npm run e2e:report
 - No new production seed endpoint is added.
 - DB is used only for deterministic test-customer creation (`customers`) because no customer create API exists.
 - Customer cleanup is optional (`E2E_DB_CLEANUP=true`) and dependency-safe (deletes only unreferenced rows).
+
+## CI Scope Selection
+
+The Playwright GitHub workflow runs the full suite by default.  
+For manual `workflow_dispatch`, you can choose:
+
+- `scope=all` (default): runs all tests
+- `scope=smoke`: runs only tests tagged `@smoke`

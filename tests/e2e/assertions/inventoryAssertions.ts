@@ -53,8 +53,42 @@ export type ReservationCommitmentExpectation = {
   expectedAllocatedOpen?: number;
 };
 
+const ASSERTION_POLL_TIMEOUT_MS = 15_000;
+const ASSERTION_POLL_INTERVALS_MS = [300, 600];
+
 function normalize(value: number): number {
   return Number(value.toFixed(6));
+}
+
+type SnapshotPollResult = {
+  ready: boolean;
+  onHand: number;
+  available: number;
+  reserved: number;
+  inTransit: number;
+  uom: string;
+};
+
+function snapshotNotReady(uom?: string): SnapshotPollResult {
+  return {
+    ready: false,
+    onHand: Number.NaN,
+    available: Number.NaN,
+    reserved: Number.NaN,
+    inTransit: Number.NaN,
+    uom: uom ?? ''
+  };
+}
+
+function snapshotReady(row: SnapshotRow): SnapshotPollResult {
+  return {
+    ready: true,
+    onHand: normalize(Number(row.onHand)),
+    available: normalize(Number(row.available)),
+    reserved: normalize(Number(row.reserved)),
+    inTransit: normalize(Number(row.inTransit)),
+    uom: row.uom
+  };
 }
 
 async function findItemBySku(api: E2EApiClient, sku: string): Promise<ItemRecord> {
@@ -142,6 +176,36 @@ async function listReservations(api: E2EApiClient, warehouseId: string): Promise
   return response.data ?? [];
 }
 
+function openQuantity(reservation: ReservationRow): number {
+  const reserved = normalize(Number(reservation.quantityReserved ?? 0));
+  const fulfilled = normalize(Number(reservation.quantityFulfilled ?? 0));
+  return normalize(Math.max(0, reserved - fulfilled));
+}
+
+async function computeReservationCommitments(args: {
+  api: E2EApiClient;
+  warehouseId: string;
+  itemId: string;
+  locationId: string;
+}) {
+  const reservations = await listReservations(args.api, args.warehouseId).then((rows) =>
+    rows.filter((row) => row.itemId === args.itemId && row.locationId === args.locationId)
+  );
+
+  const reservedOpen = reservations
+    .filter((reservation) => reservation.status === 'RESERVED')
+    .reduce((total, reservation) => total + openQuantity(reservation), 0);
+
+  const allocatedOpen = reservations
+    .filter((reservation) => reservation.status === 'ALLOCATED')
+    .reduce((total, reservation) => total + openQuantity(reservation), 0);
+
+  return {
+    reservedOpen: normalize(reservedOpen),
+    allocatedOpen: normalize(allocatedOpen)
+  };
+}
+
 export async function expectInventoryBuckets(input: InventoryBucketExpectation) {
   const item = await findItemBySku(input.api, input.sku);
   const locationId = await resolveLocationId({
@@ -151,25 +215,64 @@ export async function expectInventoryBuckets(input: InventoryBucketExpectation) 
     locationRole: input.locationRole
   });
 
-  const row = await getSnapshotRow({
-    api: input.api,
-    itemId: item.id,
-    warehouseId: input.warehouseId,
-    locationId,
-    uom: input.uom
-  });
+  const expected: Partial<SnapshotPollResult> = { ready: true };
+  if (input.onHand !== undefined) expected.onHand = normalize(input.onHand);
+  if (input.available !== undefined) expected.available = normalize(input.available);
+  if (input.inTransit !== undefined) expected.inTransit = normalize(input.inTransit);
+  if (input.reservedTotal !== undefined) expected.reserved = normalize(input.reservedTotal);
+  if (input.uom !== undefined) expected.uom = input.uom;
 
-  if (input.onHand !== undefined) {
-    expect(normalize(row.onHand)).toBe(normalize(input.onHand));
+  let row: SnapshotRow | null = null;
+  let lastObserved: SnapshotPollResult = snapshotNotReady(input.uom);
+  try {
+    await expect
+      .poll(
+        async () => {
+          try {
+            row = await getSnapshotRow({
+              api: input.api,
+              itemId: item.id,
+              warehouseId: input.warehouseId,
+              locationId,
+              uom: input.uom
+            });
+            lastObserved = snapshotReady(row);
+            return lastObserved;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const retriable =
+              message.startsWith('Inventory snapshot returned no rows')
+              || message.startsWith('Inventory snapshot did not include requested uom=');
+            if (!retriable) {
+              throw error;
+            }
+            row = null;
+            lastObserved = snapshotNotReady(input.uom);
+            return lastObserved;
+          }
+        },
+        {
+          timeout: ASSERTION_POLL_TIMEOUT_MS,
+          intervals: ASSERTION_POLL_INTERVALS_MS,
+          message: `Inventory buckets did not converge for sku=${input.sku}, warehouse=${input.warehouseId}, location=${locationId}`
+        }
+      )
+      .toMatchObject(expected);
+  } catch (error) {
+    throw new Error(
+      [
+        `Inventory bucket assertion failed for sku=${input.sku}, warehouse=${input.warehouseId}, location=${locationId}.`,
+        `Expected=${JSON.stringify(expected)}.`,
+        `LastObserved=${JSON.stringify(lastObserved)}.`,
+        `OriginalError=${error instanceof Error ? error.message : String(error)}`
+      ].join(' ')
+    );
   }
-  if (input.available !== undefined) {
-    expect(normalize(row.available)).toBe(normalize(input.available));
-  }
-  if (input.inTransit !== undefined) {
-    expect(normalize(row.inTransit)).toBe(normalize(input.inTransit));
-  }
-  if (input.reservedTotal !== undefined) {
-    expect(normalize(row.reserved)).toBe(normalize(input.reservedTotal));
+
+  if (!row) {
+    throw new Error(
+      `Inventory snapshot remained unavailable for sku=${input.sku}, warehouse=${input.warehouseId}, location=${locationId}.`
+    );
   }
 
   return row;
@@ -177,48 +280,83 @@ export async function expectInventoryBuckets(input: InventoryBucketExpectation) 
 
 export async function expectAllocatedCommitment(input: AllocatedExpectation) {
   const item = await findItemBySku(input.api, input.sku);
-  const reservations = await listReservations(input.api, input.warehouseId);
+  let allocatedOpen = 0;
 
-  // Allocated semantics are derived from reservation documents, not snapshot.reserved.
-  const allocatedOpen = reservations
-    .filter((reservation) => reservation.status === 'ALLOCATED')
-    .filter((reservation) => reservation.itemId === item.id)
-    .filter((reservation) => reservation.locationId === input.locationId)
-    .reduce((total, reservation) => {
-      const openQty = Number(reservation.quantityReserved) - Number(reservation.quantityFulfilled || 0);
-      return total + Math.max(0, openQty);
-    }, 0);
+  try {
+    await expect
+      .poll(
+        async () => {
+          const commitments = await computeReservationCommitments({
+            api: input.api,
+            warehouseId: input.warehouseId,
+            itemId: item.id,
+            locationId: input.locationId
+          });
+          allocatedOpen = commitments.allocatedOpen;
+          return normalize(allocatedOpen);
+        },
+        {
+          timeout: ASSERTION_POLL_TIMEOUT_MS,
+          intervals: ASSERTION_POLL_INTERVALS_MS,
+          message: `Allocated commitment did not converge for sku=${input.sku}, warehouse=${input.warehouseId}, location=${input.locationId}`
+        }
+      )
+      .toBe(normalize(input.expectedAllocated));
+  } catch (error) {
+    throw new Error(
+      [
+        `Allocated commitment assertion failed for sku=${input.sku}, warehouse=${input.warehouseId}, location=${input.locationId}.`,
+        `ExpectedAllocated=${normalize(input.expectedAllocated)}.`,
+        `LastObservedAllocated=${normalize(allocatedOpen)}.`,
+        `OriginalError=${error instanceof Error ? error.message : String(error)}`
+      ].join(' ')
+    );
+  }
 
-  expect(normalize(allocatedOpen)).toBe(normalize(input.expectedAllocated));
   return allocatedOpen;
 }
 
 export async function expectReservationCommitments(input: ReservationCommitmentExpectation) {
   const item = await findItemBySku(input.api, input.sku);
-  const reservations = await listReservations(input.api, input.warehouseId).then((rows) =>
-    rows.filter((row) => row.itemId === item.id && row.locationId === input.locationId)
-  );
+  const expected: Partial<{ reservedOpen: number; allocatedOpen: number }> = {};
+  if (input.expectedReservedOpen !== undefined) expected.reservedOpen = normalize(input.expectedReservedOpen);
+  if (input.expectedAllocatedOpen !== undefined) expected.allocatedOpen = normalize(input.expectedAllocatedOpen);
 
-  const reservedOpen = reservations
-    .filter((reservation) => reservation.status === 'RESERVED')
-    .reduce((total, reservation) => {
-      const openQty = Number(reservation.quantityReserved) - Number(reservation.quantityFulfilled || 0);
-      return total + Math.max(0, openQty);
-    }, 0);
-
-  const allocatedOpen = reservations
-    .filter((reservation) => reservation.status === 'ALLOCATED')
-    .reduce((total, reservation) => {
-      const openQty = Number(reservation.quantityReserved) - Number(reservation.quantityFulfilled || 0);
-      return total + Math.max(0, openQty);
-    }, 0);
-
-  if (input.expectedReservedOpen !== undefined) {
-    expect(normalize(reservedOpen)).toBe(normalize(input.expectedReservedOpen));
+  let commitments = { reservedOpen: 0, allocatedOpen: 0 };
+  let lastObserved = { reservedOpen: 0, allocatedOpen: 0 };
+  try {
+    await expect
+      .poll(
+        async () => {
+          commitments = await computeReservationCommitments({
+            api: input.api,
+            warehouseId: input.warehouseId,
+            itemId: item.id,
+            locationId: input.locationId
+          });
+          lastObserved = {
+            reservedOpen: normalize(commitments.reservedOpen),
+            allocatedOpen: normalize(commitments.allocatedOpen)
+          };
+          return lastObserved;
+        },
+        {
+          timeout: ASSERTION_POLL_TIMEOUT_MS,
+          intervals: ASSERTION_POLL_INTERVALS_MS,
+          message: `Reservation commitments did not converge for sku=${input.sku}, warehouse=${input.warehouseId}, location=${input.locationId}`
+        }
+      )
+      .toMatchObject(expected);
+  } catch (error) {
+    throw new Error(
+      [
+        `Reservation commitment assertion failed for sku=${input.sku}, warehouse=${input.warehouseId}, location=${input.locationId}.`,
+        `Expected=${JSON.stringify(expected)}.`,
+        `LastObserved=${JSON.stringify(lastObserved)}.`,
+        `OriginalError=${error instanceof Error ? error.message : String(error)}`
+      ].join(' ')
+    );
   }
-  if (input.expectedAllocatedOpen !== undefined) {
-    expect(normalize(allocatedOpen)).toBe(normalize(input.expectedAllocatedOpen));
-  }
 
-  return { reservedOpen, allocatedOpen };
+  return commitments;
 }

@@ -4,6 +4,15 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Playwright scope
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - smoke
 
 jobs:
   e2e:
@@ -40,6 +49,7 @@ jobs:
       API_BASE_URL: http://127.0.0.1:3000
       E2E_BASE_URL: http://127.0.0.1:4173
       E2E_API_BASE_URL: http://127.0.0.1:3000
+      CORS_ORIGIN: http://127.0.0.1:4173
       SEED_ADMIN_EMAIL: ci-admin@test.local
       SEED_ADMIN_PASSWORD: ci-admin-password
 
@@ -149,7 +159,15 @@ jobs:
           exit 1
 
       - name: Run Playwright tests
-        run: npx playwright test
+        env:
+          E2E_SCOPE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.scope || 'all' }}
+        run: |
+          set -euo pipefail
+          if [[ "$E2E_SCOPE" == "smoke" ]]; then
+            npx playwright test --grep @smoke
+          else
+            npx playwright test
+          fi
 
       - name: Upload Playwright artifacts
         if: always()

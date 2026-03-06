@@ -69,6 +69,11 @@ router.post('/qc/accept', async (req: Request, res: Response) => {
         error: { code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON', message: error.details?.message, details: error.details }
       });
     }
+    if (error?.message === 'TRANSFER_INSUFFICIENT_COST_LAYERS') {
+      return res.status(409).json({
+        error: 'Insufficient source cost layers for QC accept. Ensure receipt lines include unit cost/price before QC disposition.'
+      });
+    }
     if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
       return res.status(400).json({ error: error.message });
     }
@@ -122,6 +127,11 @@ router.post('/qc/reject', async (req: Request, res: Response) => {
     if (error?.code === 'NEGATIVE_OVERRIDE_REQUIRES_REASON') {
       return res.status(409).json({
         error: { code: 'NEGATIVE_OVERRIDE_REQUIRES_REASON', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.message === 'TRANSFER_INSUFFICIENT_COST_LAYERS') {
+      return res.status(409).json({
+        error: 'Insufficient source cost layers for QC reject. Ensure receipt lines include unit cost/price before QC disposition.'
       });
     }
     if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
@@ -237,6 +247,11 @@ router.post('/qc-events', async (req: Request, res: Response) => {
     }
     if (error?.message === 'TRANSFER_SOURCE_NOT_FOUND') {
       return res.status(400).json({ error: 'Source location not found.' });
+    }
+    if (error?.message === 'TRANSFER_INSUFFICIENT_COST_LAYERS') {
+      return res.status(409).json({
+        error: 'QC disposition requires available FIFO cost layers at source. Ensure receipt lines include unit cost/price before QC.'
+      });
     }
     if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
       return res.status(409).json({ error: 'Idempotency key reused with a different request payload.' });

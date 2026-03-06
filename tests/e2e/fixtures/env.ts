@@ -1,6 +1,8 @@
 export type E2ECredentials = {
   email: string;
   password: string;
+  source: 'direct_env' | 'seed_env' | 'bootstrap_fallback';
+  resolutionMessage?: string;
 };
 
 export type E2EEnv = {
@@ -44,7 +46,8 @@ function resolveCredentialPair(primaryUser: string, primaryPass: string): E2ECre
 
   return {
     email: user,
-    password: pass
+    password: pass,
+    source: primaryUser === 'E2E_USER' ? 'direct_env' : 'seed_env'
   };
 }
 
@@ -59,13 +62,12 @@ export function resolveCredentials(): E2ECredentials {
     return seeded;
   }
 
-  throw new Error(
-    [
-      'Missing E2E credentials.',
-      'Set E2E_USER + E2E_PASS, or set SEED_ADMIN_EMAIL + SEED_ADMIN_PASSWORD.',
-      'No personal credential defaults are allowed.'
-    ].join(' ')
-  );
+  return {
+    email: 'e2e-admin@test.local',
+    password: 'e2e-admin-password',
+    source: 'bootstrap_fallback',
+    resolutionMessage: 'No credentials provided. Using bootstrap fallback account for E2E tests.'
+  };
 }
 
 export function requireDatabaseUrl(): string {

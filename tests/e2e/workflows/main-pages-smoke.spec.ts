@@ -5,7 +5,7 @@ async function expectHealthyPage(shell: AppShellPage) {
   await shell.expectNoCrashFallback();
 }
 
-test('main navigation pages render without obvious breakage', async ({ page }) => {
+test('@smoke main navigation pages render without obvious breakage', async ({ page }) => {
   const shell = new AppShellPage(page);
 
   await shell.goto('/dashboard');

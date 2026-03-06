@@ -1,13 +1,19 @@
 import { test, expect } from '../fixtures/test';
 import { expectDocumentStatus } from '../assertions/documentAssertions';
+import { expectMovementLineNetDelta } from '../assertions/fulfillmentAssertions';
 import { expectInventoryBuckets } from '../assertions/inventoryAssertions';
+import {
+  expectAvailableLeqOnHand,
+  expectConservationDelta,
+  expectNonNegativeBuckets
+} from '../assertions/invariants';
 import {
   createWarehouseSeed,
   postInventoryTransfer,
   seedSellableStockViaInbound
 } from '../fixtures/seed';
 
-test('transfer between warehouses posts movement and updates bucket deltas', async ({
+test('@core transfer between warehouses posts immediately with no in-transit state', async ({
   api,
   runId,
   page
@@ -25,6 +31,19 @@ test('transfer between warehouses posts movement and updates bucket deltas', asy
     label: 'XFER-DST'
   });
 
+  const sourceBefore = await expectInventoryBuckets({
+    api,
+    sku: source.item.sku,
+    warehouseId: source.warehouse.root.id,
+    locationId: source.warehouse.roles.SELLABLE.id,
+    onHand: 20,
+    available: 20,
+    reservedTotal: 0,
+    inTransit: 0
+  });
+  expectNonNegativeBuckets(sourceBefore);
+  expectAvailableLeqOnHand(sourceBefore);
+
   const transfer = await postInventoryTransfer({
     api,
     runId,
@@ -34,12 +53,13 @@ test('transfer between warehouses posts movement and updates bucket deltas', asy
     quantity: 8
   });
 
-  await expectDocumentStatus({
+  const movement = await expectDocumentStatus({
     api,
     type: 'movement',
     id: transfer.movementId,
     expected: 'posted'
   });
+  expect(movement.movementType).toBe('transfer');
 
   const movementLines = await api.get<{
     data: Array<{ locationId: string; itemId: string; quantityDelta: number }>;
@@ -58,7 +78,25 @@ test('transfer between warehouses posts movement and updates bucket deltas', asy
   expect(Number(sourceLine?.quantityDelta)).toBe(-8);
   expect(Number(destinationLine?.quantityDelta)).toBe(8);
 
-  await expectInventoryBuckets({
+  await expectMovementLineNetDelta({
+    api,
+    movementId: transfer.movementId,
+    expectedNetDelta: 0,
+    expectedLineDeltas: [
+      {
+        itemId: source.item.id,
+        locationId: source.warehouse.roles.SELLABLE.id,
+        expectedDelta: -8
+      },
+      {
+        itemId: source.item.id,
+        locationId: destination.roles.SELLABLE.id,
+        expectedDelta: 8
+      }
+    ]
+  });
+
+  const sourceAfter = await expectInventoryBuckets({
     api,
     sku: source.item.sku,
     warehouseId: source.warehouse.root.id,
@@ -68,8 +106,10 @@ test('transfer between warehouses posts movement and updates bucket deltas', asy
     reservedTotal: 0,
     inTransit: 0
   });
+  expectNonNegativeBuckets(sourceAfter);
+  expectAvailableLeqOnHand(sourceAfter);
 
-  await expectInventoryBuckets({
+  const destinationAfter = await expectInventoryBuckets({
     api,
     sku: source.item.sku,
     warehouseId: destination.root.id,
@@ -78,6 +118,15 @@ test('transfer between warehouses posts movement and updates bucket deltas', asy
     available: 8,
     reservedTotal: 0,
     inTransit: 0
+  });
+  expectNonNegativeBuckets(destinationAfter);
+  expectAvailableLeqOnHand(destinationAfter);
+  expectConservationDelta({
+    sourceBefore: sourceBefore.onHand,
+    sourceAfter: sourceAfter.onHand,
+    destBefore: 0,
+    destAfter: destinationAfter.onHand,
+    qty: 8
   });
 
   await page.goto(`/movements/${transfer.movementId}`);
