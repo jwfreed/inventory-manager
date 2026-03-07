@@ -4,6 +4,7 @@ import { movementListQuerySchema, movementWindowQuerySchema } from '../schemas/l
 import { getMovement, getMovementLines, getMovementWindow, listMovements } from '../services/ledger.service';
 import { voidTransferMovement } from '../services/transfers.service';
 import { getIdempotencyKey } from '../lib/idempotency';
+import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -105,13 +106,17 @@ router.post('/inventory-movements/:id/void-transfer', async (req: Request, res: 
     });
     return res.status(201).json(result);
   } catch (error: any) {
-    if (error?.code === 'TX_RETRY_EXHAUSTED') {
-      return res.status(409).json({
-        error: {
-          code: 'TX_RETRY_EXHAUSTED',
-          message: 'High write contention detected. Please retry.'
-        }
-      });
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({ error: 'Transfer void already in progress for this idempotency key.' });
+    }
+    if (error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS') {
+      return res.status(409).json({ error: 'Idempotency key was already used for a different endpoint.' });
+    }
+    if (error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD') {
+      return res.status(409).json({ error: 'Transfer void idempotency key was reused with a different payload.' });
     }
     if (error?.message === 'TRANSFER_NOT_FOUND') {
       return res.status(404).json({ error: 'Transfer movement not found.' });

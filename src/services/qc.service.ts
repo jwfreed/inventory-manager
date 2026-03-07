@@ -1,10 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
-import { query, withTransaction, withTransactionRetry } from '../db';
+import { query, withTransaction } from '../db';
 import { qcEventSchema, qcWarehouseDispositionSchema } from '../schemas/qc.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { recordAuditLog } from '../lib/audit';
 import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
+import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import { createNcr } from './ncr.service';
 import { resolveDefaultLocationForRole } from './warehouseDefaults.service';
 import { transferInventory } from './transfers.service';
@@ -365,84 +366,92 @@ export async function postQcWarehouseDisposition(
     throw new Error('QC_INVALID_OCCURRED_AT');
   }
   const idempotencyKey = options?.idempotencyKey?.trim() || data.idempotencyKey?.trim() || null;
+  const warehouseId = await resolveWarehouseRootIdByRef(tenantId, data.warehouseId, {
+    query: (sql, params) => query(sql, params)
+  });
+  if (!warehouseId) {
+    throw new Error('QC_WAREHOUSE_NOT_FOUND');
+  }
 
-  return withTransactionRetry(async (client) => {
-    const warehouseId = await resolveWarehouseRootIdByRef(tenantId, data.warehouseId, client);
-    if (!warehouseId) {
-      throw new Error('QC_WAREHOUSE_NOT_FOUND');
-    }
+  const sourceLocationId = await getQaLocation(tenantId, warehouseId);
+  if (!sourceLocationId) {
+    throw new Error('QC_QA_LOCATION_REQUIRED');
+  }
+  const destinationLocationId = action === 'accept'
+    ? await getDefaultSellableLocation(tenantId, warehouseId)
+    : await getHoldLocation(tenantId, warehouseId);
+  if (!destinationLocationId) {
+    throw new Error(action === 'accept' ? 'QC_ACCEPT_LOCATION_REQUIRED' : 'QC_HOLD_LOCATION_REQUIRED');
+  }
 
-    const sourceLocationId = await getQaLocation(tenantId, warehouseId, client);
-    if (!sourceLocationId) {
-      throw new Error('QC_QA_LOCATION_REQUIRED');
-    }
-    const destinationLocationId = action === 'accept'
-      ? await getDefaultSellableLocation(tenantId, warehouseId, client)
-      : await getHoldLocation(tenantId, warehouseId, client);
-    if (!destinationLocationId) {
-      throw new Error(action === 'accept' ? 'QC_ACCEPT_LOCATION_REQUIRED' : 'QC_HOLD_LOCATION_REQUIRED');
-    }
-
-    const sourceId = idempotencyKey
-      ? `qc_wrapper:${action}:${idempotencyKey}`
-      : `qc_wrapper:${action}:${uuidv4()}`;
-    const transfer = await transferInventory(
-      {
-        tenantId,
-        sourceLocationId,
-        destinationLocationId,
-        itemId: data.itemId,
-        quantity,
-        uom: data.uom,
-        sourceType: 'qc_event',
-        sourceId,
-        movementType: 'transfer',
-        qcAction: action === 'accept' ? 'accept' : 'hold',
-        reasonCode: action === 'accept' ? 'QC_ACCEPT' : 'QC_REJECT',
-        notes: data.notes?.trim() || `QC ${action} warehouse disposition`,
-        occurredAt,
-        actorId: actor.id ?? null,
-        overrideNegative: data.overrideNegative,
-        overrideReason: data.overrideReason ?? null,
-        idempotencyKey
-      },
-      client
-    );
-
-    await recordAuditLog(
-      {
-        tenantId,
-        actorType: actor.type,
-        actorId: actor.id ?? null,
-        action: 'create',
-        entityType: action === 'accept' ? 'qc_accept' : 'qc_reject',
-        entityId: transfer.movementId,
-        occurredAt,
-        metadata: {
-          warehouseId,
-          sourceLocationId,
-          destinationLocationId,
-          itemId: data.itemId,
-          quantity,
-          uom: data.uom
-        }
-      },
-      client
-    );
-
-    return {
+  const sourceId = idempotencyKey
+    ? `qc_wrapper:${action}:${idempotencyKey}`
+    : `qc_wrapper:${action}:${uuidv4()}`;
+  const transfer = await transferInventory({
+    tenantId,
+    warehouseId,
+    sourceLocationId,
+    destinationLocationId,
+    itemId: data.itemId,
+    quantity,
+    uom: data.uom,
+    sourceType: 'qc_event',
+    sourceId,
+    movementType: 'transfer',
+    qcAction: action === 'accept' ? 'accept' : 'hold',
+    reasonCode: action === 'accept' ? 'QC_ACCEPT' : 'QC_REJECT',
+    notes: data.notes?.trim() || `QC ${action} warehouse disposition`,
+    occurredAt,
+    actorId: actor.id ?? null,
+    overrideNegative: data.overrideNegative,
+    overrideReason: data.overrideReason ?? null,
+    idempotencyKey,
+    inventoryCommandEndpoint:
+      action === 'accept' ? IDEMPOTENCY_ENDPOINTS.QC_WAREHOUSE_ACCEPT : IDEMPOTENCY_ENDPOINTS.QC_WAREHOUSE_REJECT,
+    inventoryCommandOperation: action === 'accept' ? 'qc_accept_disposition' : 'qc_reject_disposition',
+    inventoryCommandRequestBody: {
       action,
-      movementId: transfer.movementId,
+      warehouseId: data.warehouseId,
+      itemId: data.itemId,
+      quantity: roundQuantity(quantity),
+      uom: data.uom,
+      notes: data.notes?.trim() || null,
+      overrideNegative: data.overrideNegative ?? false,
+      overrideReason: data.overrideReason ?? null,
+      occurredAt: data.occurredAt ? new Date(data.occurredAt) : undefined
+    }
+  });
+
+  await recordAuditLog({
+    tenantId,
+    actorType: actor.type,
+    actorId: actor.id ?? null,
+    action: 'create',
+    entityType: action === 'accept' ? 'qc_accept' : 'qc_reject',
+    entityId: transfer.movementId,
+    occurredAt,
+    metadata: {
       warehouseId,
       sourceLocationId,
       destinationLocationId,
       itemId: data.itemId,
-      quantity: roundQuantity(quantity),
-      uom: data.uom,
-      idempotencyKey,
-      replayed: !transfer.created
-    };
-  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
+      quantity,
+      uom: data.uom
+    }
+  });
+
+  return {
+    action,
+    movementId: transfer.movementId,
+    warehouseId,
+    sourceLocationId,
+    destinationLocationId,
+    itemId: data.itemId,
+    quantity: roundQuantity(quantity),
+    uom: data.uom,
+    idempotencyKey,
+    replayed: transfer.replayed
+  };
 }
 
 export async function listQcEventsForLine(tenantId: string, lineId: string) {

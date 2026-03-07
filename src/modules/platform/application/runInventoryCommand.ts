@@ -16,6 +16,7 @@ import {
 } from '../infrastructure/inventoryEvents';
 
 export type InventoryCommandEvent = {
+  tenantId?: string;
   aggregateType: string;
   aggregateId: string;
   eventType: string;
@@ -46,6 +47,10 @@ export async function runInventoryCommand<T>(params: {
   requestHash?: string | null;
   lockTargets?: InventoryCommandLockTargets;
   retryOptions?: Parameters<typeof withTransactionRetry>[1];
+  onReplay?: (context: {
+    client: PoolClient;
+    responseBody: T;
+  }) => Promise<T> | T;
   execute: (context: {
     client: PoolClient;
     lockContext: AtpLockContext;
@@ -80,7 +85,9 @@ export async function runInventoryCommand<T>(params: {
         requestHash
       });
       if (claim.replayed) {
-        return claim.responseBody;
+        return params.onReplay
+          ? await params.onReplay({ client, responseBody: claim.responseBody })
+          : claim.responseBody;
       }
     }
 
@@ -100,7 +107,7 @@ export async function runInventoryCommand<T>(params: {
     await appendInventoryEventsWithDispatch(
       client,
       (execution.events ?? []).map((event) => ({
-        tenantId: params.tenantId,
+        tenantId: event.tenantId ?? params.tenantId,
         aggregateType: event.aggregateType,
         aggregateId: event.aggregateId,
         eventType: event.eventType,

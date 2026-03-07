@@ -105,6 +105,30 @@ export function mapAtpInsufficientAvailable(error: any, res: Response): boolean 
 }
 
 export function handlePostShipmentConflict(error: any, res: Response): boolean {
+  if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+    jsonConflict(
+      res,
+      'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+      'Shipment post already in progress.'
+    );
+    return true;
+  }
+  if (error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD') {
+    jsonConflict(
+      res,
+      'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD',
+      'Idempotency key reused with a different shipment payload.'
+    );
+    return true;
+  }
+  if (error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS') {
+    jsonConflict(
+      res,
+      'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS',
+      'Idempotency key was already used for a different endpoint.'
+    );
+    return true;
+  }
   if (mapAtpConcurrencyExhausted(error, res)) {
     return true;
   }

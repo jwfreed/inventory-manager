@@ -12,6 +12,7 @@ import {
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { getIdempotencyKey } from '../lib/idempotency';
 import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
+import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -39,6 +40,18 @@ router.post('/qc/accept', async (req: Request, res: Response) => {
     );
     return res.status(result.replayed ? 200 : 201).json(result);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({ error: 'QC accept already in progress for this idempotency key.' });
+    }
+    if (error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS') {
+      return res.status(409).json({ error: 'Idempotency key was already used for a different endpoint.' });
+    }
+    if (error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD') {
+      return res.status(409).json({ error: 'QC accept idempotency key was reused with a different payload.' });
+    }
     if (error?.message === 'QC_WAREHOUSE_NOT_FOUND') {
       return res.status(404).json({ error: 'Warehouse not found.' });
     }
@@ -99,6 +112,18 @@ router.post('/qc/reject', async (req: Request, res: Response) => {
     );
     return res.status(result.replayed ? 200 : 201).json(result);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({ error: 'QC reject already in progress for this idempotency key.' });
+    }
+    if (error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS') {
+      return res.status(409).json({ error: 'Idempotency key was already used for a different endpoint.' });
+    }
+    if (error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD') {
+      return res.status(409).json({ error: 'QC reject idempotency key was reused with a different payload.' });
+    }
     if (error?.message === 'QC_WAREHOUSE_NOT_FOUND') {
       return res.status(404).json({ error: 'Warehouse not found.' });
     }

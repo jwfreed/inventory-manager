@@ -5,6 +5,7 @@ import { createPutaway, fetchPutawayById, postPutaway } from '../services/putawa
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
+import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -128,6 +129,9 @@ router.post('/putaways/:id/post', async (req: Request, res: Response) => {
     });
     return res.json(putaway);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({
         error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }

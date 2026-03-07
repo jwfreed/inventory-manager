@@ -87,6 +87,17 @@ test('ATP mutation entrypoints acquire advisory locks and canonical availability
   }
 
   assert.match(
+    extractFunctionBody(source, 'export async function', 'expireReservationsJob'),
+    /\brunInventoryCommand(?:<[^>]+>)?\(/,
+    'expireReservationsJob must use runInventoryCommand()'
+  );
+  assert.match(
+    extractFunctionBody(source, 'export async function', 'postShipment'),
+    /\brunInventoryCommand(?:<[^>]+>)?\(/,
+    'postShipment must use runInventoryCommand()'
+  );
+
+  assert.match(
     wrapperSource,
     /\bacquireAtpLocks\(/,
     'runInventoryCommand() must acquire ATP locks before executing inventory mutations'
