@@ -492,6 +492,7 @@ export async function transferInventory(
     occurredAt,
     [
       {
+        warehouseId: sourceWarehouseId,
         itemId,
         locationId: sourceLocationId,
         uom,

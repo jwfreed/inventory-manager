@@ -45,7 +45,7 @@ export function registerRepeatableJobs() {
 export function startWorkers() {
   const criticalConcurrency = Number(process.env.WORKER_CONCURRENCY_CRITICAL ?? 2);
   const heavyConcurrency = Number(process.env.WORKER_CONCURRENCY_HEAVY ?? 1);
-  const outboxConcurrency = Number(process.env.WORKER_CONCURRENCY_OUTBOX ?? 4);
+  const outboxConcurrency = Number(process.env.WORKER_CONCURRENCY_OUTBOX ?? 1);
 
   const criticalWorker = new Worker(
     QUEUE_NAMES.critical,

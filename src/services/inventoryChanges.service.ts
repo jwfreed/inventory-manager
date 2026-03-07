@@ -18,7 +18,7 @@ export type InventoryChangesResponse = {
   resetRequired?: boolean;
 };
 
-type OutboxChangeRow = {
+type InventoryEventRow = {
   event_seq: string;
   event_type: string;
   aggregate_id: string;
@@ -76,9 +76,9 @@ export async function getInventoryChanges(
   const since = params.since ?? '0';
   const limit = Math.min(params.limit ?? 200, 500);
 
-  const outboxRes = await query<OutboxChangeRow>(
+  const inventoryEventRes = await query<InventoryEventRow>(
     `SELECT event_seq, event_type, aggregate_id, payload, created_at
-       FROM outbox_events
+       FROM inventory_events
       WHERE tenant_id = $1
         AND event_seq > $2::bigint
         AND event_type = ANY($3)
@@ -87,7 +87,7 @@ export async function getInventoryChanges(
     [tenantId, since, INVENTORY_EVENT_TYPES, limit]
   );
 
-  const rows = outboxRes.rows;
+  const rows = inventoryEventRes.rows;
   const movementIds = Array.from(
     new Set(
       rows
@@ -152,7 +152,7 @@ export async function getInventoryChanges(
   if (since !== '0' && rows.length === 0) {
     const minRes = await query<{ event_seq: string }>(
       `SELECT event_seq
-         FROM outbox_events
+         FROM inventory_events
         WHERE tenant_id = $1
         ORDER BY event_seq ASC
         LIMIT 1`,

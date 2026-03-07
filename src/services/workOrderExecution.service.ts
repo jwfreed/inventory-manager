@@ -1048,12 +1048,21 @@ export async function postWorkOrderIssue(
     }
     const linesForPosting = [...linesResult.rows].sort(compareIssueLineLockKey);
 
+    const warehouseIdsByLocation = new Map<string, string>();
+    for (const line of linesForPosting) {
+      if (!warehouseIdsByLocation.has(line.from_location_id)) {
+        const warehouseId = await resolveWarehouseIdForLocation(tenantId, line.from_location_id, client);
+        warehouseIdsByLocation.set(line.from_location_id, warehouseId);
+      }
+    }
+
     const now = new Date();
     const occurredAt = new Date(issue.occurred_at);
     const validation = await validateSufficientStock(
       tenantId,
       occurredAt,
       linesForPosting.map((line) => ({
+        warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
         itemId: line.component_item_id,
         locationId: line.from_location_id,
         uom: line.uom,
@@ -2972,6 +2981,7 @@ export async function recordWorkOrderBatch(
       }
     }
 
+    const warehouseByLocationId = new Map<string, string>();
     if (locationIds.length > 0) {
       const locRes = await client.query<{
         id: string;
@@ -2988,7 +2998,11 @@ export async function recordWorkOrderBatch(
         throw new Error(`WO_BATCH_LOCATIONS_MISSING:${missingLocs.join(',')}`);
       }
       const locationById = new Map(locRes.rows.map((row) => [row.id, row]));
-      const warehouseByLocationId = new Map(locRes.rows.map((row) => [row.id, row.warehouse_id]));
+      for (const row of locRes.rows) {
+        if (row.warehouse_id) {
+          warehouseByLocationId.set(row.id, row.warehouse_id);
+        }
+      }
       const advisoryTargets = [
         ...consumeLinesOrdered.map((line) => ({
           tenantId,
@@ -3046,6 +3060,7 @@ export async function recordWorkOrderBatch(
       tenantId,
       occurredAt,
       consumeLinesOrdered.map((line) => ({
+        warehouseId: warehouseByLocationId.get(line.fromLocationId) ?? '',
         itemId: line.componentItemId,
         locationId: line.fromLocationId,
         uom: line.uom,

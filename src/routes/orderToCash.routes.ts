@@ -62,6 +62,42 @@ function requireWarehouseId(
   return false;
 }
 
+function handleReservationIdempotencyError(
+  error: unknown,
+  res: Response,
+  inProgressMessage: string
+): boolean {
+  const code = (error as Error & { code?: string })?.code;
+  if (code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+    res.status(409).json({
+      error: {
+        code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+        message: inProgressMessage
+      }
+    });
+    return true;
+  }
+  if (code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD') {
+    res.status(409).json({
+      error: {
+        code: 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD',
+        message: 'Idempotency key reused with a different reservation payload.'
+      }
+    });
+    return true;
+  }
+  if (code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS') {
+    res.status(409).json({
+      error: {
+        code: 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS',
+        message: 'Idempotency key was already used for a different endpoint.'
+      }
+    });
+    return true;
+  }
+  return false;
+}
+
 router.post('/sales-orders', async (req: Request, res: Response) => {
   if (!req.body?.warehouseId) {
     return res.status(400).json({
@@ -166,29 +202,8 @@ router.post('/reservations', async (req: Request, res: Response) => {
     });
     return res.status(201).json({ data: results });
   } catch (error) {
-    if ((error as Error & { code?: string })?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
-      return res.status(409).json({
-        error: {
-          code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
-          message: 'Reservation request is already in progress for this idempotency key.'
-        }
-      });
-    }
-    if ((error as Error & { code?: string })?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD') {
-      return res.status(409).json({
-        error: {
-          code: 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD',
-          message: 'Idempotency key reused with a different reservation payload.'
-        }
-      });
-    }
-    if ((error as Error & { code?: string })?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS') {
-      return res.status(409).json({
-        error: {
-          code: 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS',
-          message: 'Idempotency key was already used for a different endpoint.'
-        }
-      });
+    if (handleReservationIdempotencyError(error, res, 'Reservation request is already in progress for this idempotency key.')) {
+      return;
     }
     if (mapAtpConcurrencyExhausted(error, res)) {
       return;
@@ -268,6 +283,9 @@ router.post('/reservations/:id/allocate', async (req: Request, res: Response) =>
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error: any) {
+    if (handleReservationIdempotencyError(error, res, 'Reservation allocation already in progress.')) {
+      return;
+    }
     if (mapAtpConcurrencyExhausted(error, res)) {
       return;
     }
@@ -320,6 +338,9 @@ router.post('/reservations/:id/cancel', async (req: Request, res: Response) => {
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error: any) {
+    if (handleReservationIdempotencyError(error, res, 'Reservation cancel already in progress.')) {
+      return;
+    }
     if (mapAtpConcurrencyExhausted(error, res)) {
       return;
     }
@@ -365,6 +386,9 @@ router.post('/reservations/:id/fulfill', async (req: Request, res: Response) => 
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     return res.json(reservation);
   } catch (error: any) {
+    if (handleReservationIdempotencyError(error, res, 'Reservation fulfill already in progress.')) {
+      return;
+    }
     if (mapAtpConcurrencyExhausted(error, res)) {
       return;
     }

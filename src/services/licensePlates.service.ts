@@ -5,6 +5,7 @@ import { recordAuditLog } from '../lib/audit';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { validateSufficientStock } from './stockValidation.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
   createInventoryMovement,
   createInventoryMovementLine,
@@ -403,11 +404,13 @@ export async function moveLicensePlate(
     }
 
     const qty = roundQuantity(toNumber(lpn.quantity));
+    const sourceWarehouseId = await resolveWarehouseIdForLocation(tenantId, data.fromLocationId, client);
     const validation = await validateSufficientStock(
       tenantId,
       now,
       [
         {
+          warehouseId: sourceWarehouseId,
           itemId: lpn.itemId,
           locationId: data.fromLocationId,
           uom: lpn.uom,

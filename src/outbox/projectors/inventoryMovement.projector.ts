@@ -4,6 +4,7 @@ import { calculateMovementCost, getItemStandardCost } from '../../services/costi
 import { MetricsService } from '../../services/metrics.service';
 import { cacheAdapter } from '../../lib/redis';
 import { publishEvent } from '../../lib/eventBus';
+import { refreshItemCostSummaryProjection } from '../../modules/costing/infrastructure/itemCostSummary.projector';
 
 type MovementRow = {
   id: string;
@@ -193,6 +194,12 @@ export async function projectInventoryMovement(
         });
       }
     }
+  }
+
+  // Compatibility summaries remain derived projections and must be rebuilt
+  // from authoritative ledger/cost-layer state after movement events.
+  for (const itemId of itemIds) {
+    await refreshItemCostSummaryProjection(tenantId, itemId, client);
   }
 
   try {

@@ -7,6 +7,7 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock, validateLocationCapacity } from './stockValidation.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
+import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
   createInventoryMovement,
   createInventoryMovementLine,
@@ -454,10 +455,19 @@ export async function postPutaway(
       }
     }
 
+    const warehouseIdsByLocation = new Map<string, string>();
+    for (const line of pendingLines) {
+      if (!warehouseIdsByLocation.has(line.from_location_id)) {
+        const warehouseId = await resolveWarehouseIdForLocation(tenantId, line.from_location_id, client);
+        warehouseIdsByLocation.set(line.from_location_id, warehouseId);
+      }
+    }
+
     const validation = await validateSufficientStock(
       tenantId,
       now,
       pendingLines.map((line) => ({
+        warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
         itemId: line.item_id,
         locationId: line.from_location_id,
         uom: line.uom,

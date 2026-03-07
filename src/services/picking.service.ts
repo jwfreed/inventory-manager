@@ -127,9 +127,11 @@ export async function createWave(tenantId: string, salesOrderIds: string[]) {
        FROM inventory_reservations r
        JOIN sales_order_lines sol ON r.demand_id = sol.id
        WHERE sol.sales_order_id = ANY($1)
+       AND r.tenant_id = $2
+       AND sol.tenant_id = $2
        AND r.demand_type = 'sales_order_line'
-       AND r.status = 'RESERVED'`,
-      [salesOrderIds]
+       AND r.status = 'ALLOCATED'`,
+      [salesOrderIds, tenantId]
     );
 
     // 3. Create Pick Tasks for each reservation

@@ -1,5 +1,11 @@
 import { query } from '../db';
 import { PoolClient } from 'pg';
+import {
+  getItemCostSummaryProjection,
+  projectMovingAverageReceiptSummary,
+  refreshItemCostSummaryProjection,
+  type ItemCostSummaryProjection
+} from '../modules/costing/infrastructure/itemCostSummary.projector';
 
 /**
  * Costing Service
@@ -53,25 +59,8 @@ export async function getItemCostInfo(
   itemId: string,
   client?: PoolClient
 ): Promise<ItemCostInfo> {
-  const executor = client ? client.query.bind(client) : query;
-  const result = await executor(
-    `SELECT
-       COALESCE(standard_cost_base, standard_cost) AS standard_cost,
-       average_cost,
-       quantity_on_hand
-     FROM items
-     WHERE id = $1 AND tenant_id = $2`,
-    [itemId, tenantId]
-  );
-  if (result.rowCount === 0) {
-    return { standardCost: null, averageCost: null, quantityOnHand: 0 };
-  }
-  const row = result.rows[0];
-  return {
-    standardCost: row.standard_cost != null ? Number(row.standard_cost) : null,
-    averageCost: row.average_cost != null ? Number(row.average_cost) : null,
-    quantityOnHand: row.quantity_on_hand != null ? Number(row.quantity_on_hand) : 0
-  };
+  const projection: ItemCostSummaryProjection = await getItemCostSummaryProjection(tenantId, itemId, client);
+  return projection;
 }
 
 /**
@@ -91,64 +80,30 @@ export async function updateMovingAverageCost(
   unitCostAtReceipt: number,
   client: PoolClient
 ): Promise<number> {
-  const costInfo = await getItemCostInfo(tenantId, itemId, client);
-  
-  const oldQty = costInfo.quantityOnHand;
-  const oldAvgCost = costInfo.averageCost ?? 0; // If no average cost yet, treat as 0
-  const newQty = receivedQuantity;
-  const newUnitCost = unitCostAtReceipt;
-  
-  // Calculate weighted average
-  let newAverageCost: number;
-  
-  if (oldQty <= 0) {
-    // No existing inventory, average cost is simply the new unit cost
-    newAverageCost = newUnitCost;
-  } else {
-    // Weighted average: (old value + new value) / total quantity
-    const oldValue = oldQty * oldAvgCost;
-    const newValue = newQty * newUnitCost;
-    const totalQty = oldQty + newQty;
-    newAverageCost = (oldValue + newValue) / totalQty;
-  }
-  
-  // Round to 6 decimal places
-  newAverageCost = Math.round(newAverageCost * 1000000) / 1000000;
-  
-  // Update item with new average cost and quantity
-  await client.query(
-    `UPDATE items 
-     SET average_cost = $1,
-         quantity_on_hand = quantity_on_hand + $2,
-         updated_at = now()
-     WHERE id = $3 AND tenant_id = $4`,
-    [newAverageCost, receivedQuantity, itemId, tenantId]
+  return projectMovingAverageReceiptSummary(
+    tenantId,
+    itemId,
+    receivedQuantity,
+    unitCostAtReceipt,
+    client
   );
-  
-  return newAverageCost;
 }
 
 /**
- * Update item's quantity on hand (for issues/adjustments)
- * Does not change average cost, only tracks quantity
+ * Refresh derived item summaries after authoritative stock/cost mutations.
+ * The quantity delta parameter remains for compatibility with legacy callers.
  * @param tenantId - Tenant ID
  * @param itemId - Item ID
- * @param quantityDelta - Change in quantity (can be negative)
+ * @param quantityDelta - Legacy compatibility input, not used as authority
  * @param client - Database client (must be in transaction)
  */
 export async function updateItemQuantityOnHand(
   tenantId: string,
   itemId: string,
-  quantityDelta: number,
+  _quantityDelta: number,
   client: PoolClient
 ): Promise<void> {
-  await client.query(
-    `UPDATE items 
-     SET quantity_on_hand = quantity_on_hand + $1,
-         updated_at = now()
-     WHERE id = $2 AND tenant_id = $3`,
-    [quantityDelta, itemId, tenantId]
-  );
+  await refreshItemCostSummaryProjection(tenantId, itemId, client);
 }
 
 /**

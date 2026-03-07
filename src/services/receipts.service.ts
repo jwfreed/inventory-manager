@@ -677,14 +677,6 @@ export async function createPurchaseOrderReceipt(
 
       // Valuation note: receipts create the initial layer at QA; transfer posting relocates FIFO layers in-tx.
       if (unitCost !== null && unitCost !== undefined) {
-        await updateMovingAverageCost(
-          tenantId,
-          poLine.item_id,
-          canonicalQty,
-          unitCost,
-          client
-        );
-
         await createReceiptCostLayerOnce({
           tenant_id: tenantId,
           item_id: poLine.item_id,
@@ -699,6 +691,14 @@ export async function createPurchaseOrderReceipt(
           notes: `Receipt from PO line ${line.purchaseOrderLineId}`,
           client
         });
+
+        await updateMovingAverageCost(
+          tenantId,
+          poLine.item_id,
+          canonicalQty,
+          unitCost,
+          client
+        );
       }
     }
 
@@ -1429,11 +1429,6 @@ export async function voidReceipt(
       });
     }
 
-    for (const [itemId, quantityDelta] of itemQtyDeltaById.entries()) {
-      if (Math.abs(quantityDelta) <= STATUS_EPSILON) continue;
-      await updateItemQuantityOnHand(tenantId, itemId, quantityDelta, client);
-    }
-
     if (reversibleLayerIds.length > 0) {
       await client.query(
         `UPDATE inventory_cost_layers
@@ -1444,6 +1439,11 @@ export async function voidReceipt(
             AND id = ANY($2::uuid[])`,
         [tenantId, reversibleLayerIds, now, `receipt_void:${id}`]
       );
+    }
+
+    for (const [itemId, quantityDelta] of itemQtyDeltaById.entries()) {
+      if (Math.abs(quantityDelta) <= STATUS_EPSILON) continue;
+      await updateItemQuantityOnHand(tenantId, itemId, quantityDelta, client);
     }
 
     await client.query(

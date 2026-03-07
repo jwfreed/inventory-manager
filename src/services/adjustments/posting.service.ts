@@ -7,6 +7,7 @@ import { validateSufficientStock } from '../stockValidation.service';
 import { calculateMovementCost, updateItemQuantityOnHand } from '../costing.service';
 import { consumeCostLayers, createCostLayer } from '../costLayers.service';
 import { getCanonicalMovementFields } from '../uomCanonical.service';
+import { resolveWarehouseIdForLocation } from '../warehouseDefaults.service';
 import { fetchInventoryAdjustmentById } from './core.service';
 import type { InventoryAdjustmentRow, InventoryAdjustmentLineRow, PostingContext } from './types';
 import { createInventoryMovement, createInventoryMovementLine, enqueueInventoryMovementPosted } from '../../domains/inventory';
@@ -56,12 +57,23 @@ export async function postInventoryAdjustment(
       })
       .filter(Boolean) as { itemId: string; locationId: string; uom: string; quantityToConsume: number }[];
 
+    const warehouseIdsByLocation = new Map<string, string>();
+    for (const line of negativeLines) {
+      if (!warehouseIdsByLocation.has(line.locationId)) {
+        const warehouseId = await resolveWarehouseIdForLocation(tenantId, line.locationId, client);
+        warehouseIdsByLocation.set(line.locationId, warehouseId);
+      }
+    }
+
     // Validate sufficient stock for negative adjustments
     const validation = negativeLines.length
       ? await validateSufficientStock(
           tenantId,
           new Date(adjustmentRow.occurred_at),
-          negativeLines,
+          negativeLines.map((line) => ({
+            warehouseId: warehouseIdsByLocation.get(line.locationId) ?? '',
+            ...line
+          })),
           {
             actorId: context?.actor?.id ?? null,
             actorRole: context?.actor?.role ?? null,
@@ -175,7 +187,7 @@ export async function postInventoryAdjustment(
         lineNotes: line.notes ?? `Adjustment ${id} line ${line.line_number}`
       });
 
-      // Update item quantity on hand for average cost tracking
+      // Refresh compatibility item summaries from ledger + cost layers.
       await updateItemQuantityOnHand(tenantId, line.item_id, canonicalQty, client);
 
       await applyInventoryBalanceDelta(client, {

@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const ORDER_TO_CASH_SERVICE = path.resolve(process.cwd(), 'src/services/orderToCash.service.ts');
+const INVENTORY_COMMAND_WRAPPER = path.resolve(process.cwd(), 'src/modules/platform/application/runInventoryCommand.ts');
 
 function extractFunctionBody(source, signaturePrefix, functionName) {
   const marker = `${signaturePrefix} ${functionName}`;
@@ -45,15 +46,19 @@ function extractFunctionBody(source, signaturePrefix, functionName) {
   throw new Error(`failed to parse function body for ${functionName}`);
 }
 
-function assertContainsAcquireAtpLocks(body, functionName) {
-  assert.match(
-    body,
-    /\bacquireAtpAdvisoryLocks\(/,
-    `expected acquireAtpAdvisoryLocks() in ${functionName}`
+function assertUsesMutationLocking(body, functionName) {
+  const usesDirectLocks = /\bacquireAtpAdvisoryLocks\(/.test(body);
+  const usesWrapper = /\brunInventoryCommand(?:<[^>]+>)?\(/.test(body);
+  assert.ok(
+    usesDirectLocks || usesWrapper,
+    `expected ${functionName} to use runInventoryCommand() or acquireAtpAdvisoryLocks()`
   );
 }
 
 function assertAcquireBeforeAvailability(body, functionName) {
+  if (body.includes('runInventoryCommand')) {
+    return;
+  }
   const acquireIndex = body.indexOf('acquireAtpAdvisoryLocks(');
   const availabilityIndex = body.indexOf('getCanonicalAvailability(');
   assert.notEqual(availabilityIndex, -1, `${functionName} must use canonical availability helper`);
@@ -66,6 +71,7 @@ function assertAcquireBeforeAvailability(body, functionName) {
 
 test('ATP mutation entrypoints acquire advisory locks and canonical availability stays lock-guarded', async () => {
   const source = await readFile(ORDER_TO_CASH_SERVICE, 'utf8');
+  const wrapperSource = await readFile(INVENTORY_COMMAND_WRAPPER, 'utf8');
 
   const mutationEntrypoints = [
     'createReservations',
@@ -77,8 +83,14 @@ test('ATP mutation entrypoints acquire advisory locks and canonical availability
   ];
   for (const fnName of mutationEntrypoints) {
     const body = extractFunctionBody(source, 'export async function', fnName);
-    assertContainsAcquireAtpLocks(body, fnName);
+    assertUsesMutationLocking(body, fnName);
   }
+
+  assert.match(
+    wrapperSource,
+    /\bacquireAtpLocks\(/,
+    'runInventoryCommand() must acquire ATP locks before executing inventory mutations'
+  );
 
   assertAcquireBeforeAvailability(
     extractFunctionBody(source, 'export async function', 'createReservations'),

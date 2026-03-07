@@ -748,6 +748,7 @@ export async function postInventoryCount(
     const negativeLines = deltas
       .filter((delta) => delta.variance < 0)
       .map((delta) => ({
+        warehouseId: cycleCount.warehouse_id,
         itemId: delta.line.item_id,
         locationId: delta.line.location_id,
         uom: delta.line.uom,

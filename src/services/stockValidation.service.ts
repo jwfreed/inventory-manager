@@ -1,13 +1,12 @@
 import { getInventoryNegativePolicy } from '../config/inventoryPolicy';
-import { getInventorySnapshot, getInventorySnapshotSummary } from './inventorySnapshot.service';
-import { getInventoryBalance, getInventoryBalanceForUpdate } from '../domains/inventory';
 import type { PoolClient } from 'pg';
 import { toNumber } from '../lib/numbers';
+import { getAvailableQuantity } from '../modules/availability/application/queries/getAvailableQuantity.query';
 import { getLocation, getItem, convertQuantity } from './masterData.service';
 import { convertToCanonical } from './uomCanonical.service';
-import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 
 export type StockValidationLine = {
+  warehouseId: string;
   itemId: string;
   locationId: string;
   uom: string;
@@ -67,12 +66,13 @@ export async function validateSufficientStock(
     const qty = toNumber(line.quantityToConsume);
     if (qty <= 0) continue;
     const canonical = await convertToCanonical(tenantId, line.itemId, qty, line.uom);
-    const key = `${line.itemId}:${line.locationId}:${canonical.canonicalUom}`;
+    const key = `${line.warehouseId}:${line.itemId}:${line.locationId}:${canonical.canonicalUom}`;
     const existing = grouped.get(key);
     if (existing) {
       existing.quantityToConsume = existing.quantityToConsume + canonical.quantity;
     } else {
       grouped.set(key, {
+        warehouseId: line.warehouseId,
         itemId: line.itemId,
         locationId: line.locationId,
         uom: canonical.canonicalUom,
@@ -88,26 +88,14 @@ export async function validateSufficientStock(
   const shortages: StockShortageDetail[] = [];
 
   for (const line of grouped.values()) {
-    const balance = options?.client
-      ? await getInventoryBalanceForUpdate(options.client, tenantId, line.itemId, line.locationId, line.uom)
-      : await getInventoryBalance(tenantId, line.itemId, line.locationId, line.uom);
-    const balanceAvailable =
-      balance && typeof (balance as any).available === 'number'
-        ? toNumber((balance as any).available)
-        : null;
-    let available: number | null = balance ? balanceAvailable : null;
-    if (available === null) {
-      const warehouseId = await resolveWarehouseIdForLocation(tenantId, line.locationId, options?.client);
-      // TODO: inventory snapshot is current-state only; extend to historical as needed for occurredAt fidelity.
-      const snapshot = await getInventorySnapshot(tenantId, {
-        warehouseId,
-        itemId: line.itemId,
-        locationId: line.locationId,
-        uom: line.uom
-      });
-      const availableRow = snapshot.find((row) => row.uom === line.uom);
-      available = toNumber(availableRow?.available ?? 0);
-    }
+    const available = await getAvailableQuantity({
+      tenantId,
+      warehouseId: line.warehouseId,
+      itemId: line.itemId,
+      locationId: line.locationId,
+      uom: line.uom,
+      client: options?.client
+    });
     const requested = line.quantityToConsume;
     if (requested - available > 1e-6) {
       shortages.push({
