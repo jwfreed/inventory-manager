@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import { pool } from '../../../db';
 import { enqueueOutboxEvent } from '../../../outbox/outbox.service';
+import { validateInventoryEventRegistryInput } from '../application/inventoryEventRegistry';
 
 export type InventoryEventDispatch = false | {
   aggregateType?: string;
@@ -59,6 +60,7 @@ export async function appendInventoryEvent(
   if (!Number.isInteger(input.eventVersion) || input.eventVersion <= 0) {
     throw new Error('INVENTORY_EVENT_VERSION_INVALID');
   }
+  validateInventoryEventRegistryInput(input);
 
   const eventId = uuidv4();
   await client.query(

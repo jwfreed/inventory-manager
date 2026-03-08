@@ -21,12 +21,13 @@ import {
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
 import {
-  authoritativeMovementReady,
+  buildPostedDocumentReplayResult,
   buildInventoryBalanceProjectionOp,
   buildMovementPostedEvent,
   buildRefreshItemCostSummaryProjectionOp,
-  inventoryEventVersionExists
+  sortDeterministicMovementLines,
 } from '../modules/platform/application/inventoryMutationSupport';
+import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
 
 type InventoryCountInput = z.infer<typeof inventoryCountSchema>;
 type InventoryCountUpdateInput = z.infer<typeof inventoryCountUpdateSchema>;
@@ -375,17 +376,13 @@ function buildInventoryCountPostedEvent(
   movementId: string,
   producerIdempotencyKey: string
 ): InventoryCommandEvent {
-  return {
-    aggregateType: 'inventory_count',
-    aggregateId: countId,
-    eventType: 'inventory.count.posted',
-    eventVersion: 1,
+  return buildInventoryRegistryEvent('inventoryCountPosted', {
     producerIdempotencyKey,
     payload: {
       countId,
       movementId
     }
-  };
+  });
 }
 
 async function buildInventoryCountReplayResult(params: {
@@ -395,38 +392,25 @@ async function buildInventoryCountReplayResult(params: {
   idempotencyKey: string;
   client: PoolClient;
 }) {
-  const movementState = await authoritativeMovementReady(
-    params.client,
-    params.tenantId,
-    params.movementId
-  );
-  if (!movementState.ready) {
-    throw inventoryCountPostIncompleteError(params.countId, {
-      movementId: params.movementId,
-      reason: movementState.movementExists
-        ? 'authoritative_movement_missing_lines'
-        : 'authoritative_movement_missing'
-    });
-  }
-
-  const count = await fetchCycleCountById(params.tenantId, params.countId, params.client);
-  if (!count) {
-    throw new Error('COUNT_NOT_FOUND');
-  }
-
-  const events: InventoryCommandEvent[] = [];
-  if (!await inventoryEventVersionExists(params.client, params.tenantId, 'inventory_movement', params.movementId, 1)) {
-    events.push(buildMovementPostedEvent(params.movementId, params.idempotencyKey));
-  }
-  if (!await inventoryEventVersionExists(params.client, params.tenantId, 'inventory_count', params.countId, 1)) {
-    events.push(buildInventoryCountPostedEvent(params.countId, params.movementId, params.idempotencyKey));
-  }
-
-  return {
-    responseBody: count,
-    responseStatus: 200,
-    events
-  };
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovementIds: [params.movementId],
+    client: params.client,
+    fetchAggregateView: () => fetchCycleCountById(params.tenantId, params.countId, params.client),
+    aggregateNotFoundError: new Error('COUNT_NOT_FOUND'),
+    movementNotReadyError: (movementId, movementState) =>
+      inventoryCountPostIncompleteError(params.countId, {
+        movementId,
+        reason: movementState.movementExists
+          ? 'authoritative_movement_missing_lines'
+          : 'authoritative_movement_missing'
+      }),
+    authoritativeEvents: [
+      buildMovementPostedEvent(params.movementId, params.idempotencyKey),
+      buildInventoryCountPostedEvent(params.countId, params.movementId, params.idempotencyKey)
+    ],
+    responseStatus: 200
+  });
 }
 
 export async function createInventoryCount(
@@ -914,9 +898,10 @@ export async function postInventoryCount(
         const lineCheck = await client.query(
           `SELECT 1
              FROM inventory_movement_lines
-            WHERE movement_id = $1
+            WHERE tenant_id = $1
+              AND movement_id = $2
             LIMIT 1`,
-          [movement.id]
+          [tenantId, movement.id]
         );
         if (lineCheck.rowCount === 0) {
           throw inventoryCountPostIncompleteError(id, {
@@ -953,6 +938,10 @@ export async function postInventoryCount(
 
       const projectionOps: InventoryCommandProjectionOp[] = [];
       const itemsToRefresh = new Set<string>();
+      const preparedDeltas: Array<{
+        delta: typeof deltas[number];
+        canonicalFields: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
+      }> = [];
       for (const delta of deltas) {
         await client.query(
           `UPDATE cycle_count_lines
@@ -974,6 +963,26 @@ export async function postInventoryCount(
           delta.line.uom,
           client
         );
+        preparedDeltas.push({
+          delta,
+          canonicalFields
+        });
+      }
+
+      const sortedPreparedDeltas = sortDeterministicMovementLines(
+        preparedDeltas,
+        (entry) => ({
+          tenantId,
+          warehouseId: cycleCount.warehouse_id,
+          locationId: entry.delta.line.location_id,
+          itemId: entry.delta.line.item_id,
+          canonicalUom: entry.canonicalFields.canonicalUom,
+          sourceLineId: entry.delta.line.id
+        })
+      );
+
+      for (const preparedDelta of sortedPreparedDeltas) {
+        const { delta, canonicalFields } = preparedDelta;
         const canonicalQty = canonicalFields.quantityDeltaCanonical;
         let unitCost: number | null = null;
         let extendedCost: number | null = null;

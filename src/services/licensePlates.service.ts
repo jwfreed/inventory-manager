@@ -2,6 +2,8 @@ import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
 import { recordAuditLog } from '../lib/audit';
+import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
+import { hashTransactionalIdempotencyRequest } from '../lib/transactionalIdempotency';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { validateSufficientStock } from './stockValidation.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
@@ -9,10 +11,16 @@ import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
   createInventoryMovement,
   createInventoryMovementLine,
-  applyInventoryBalanceDelta,
-  enqueueInventoryMovementPosted
 } from '../domains/inventory';
 import { relocateTransferCostLayersInTx } from './transferCosting.service';
+import { runInventoryCommand, type InventoryCommandProjectionOp } from '../modules/platform/application/runInventoryCommand';
+import {
+  buildInventoryBalanceProjectionOp,
+  buildMovementPostedEvent,
+  buildPostedDocumentReplayResult,
+  sortDeterministicMovementLines
+} from '../modules/platform/application/inventoryMutationSupport';
+import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
 
 export type LpnStatus = 'active' | 'consumed' | 'shipped' | 'damaged' | 'quarantine' | 'expired';
 
@@ -49,6 +57,24 @@ export interface LpnMovementInput {
   overrideNegative?: boolean;
   overrideReason?: string | null;
   idempotencyKey?: string | null;
+}
+
+function buildLicensePlateMovedEvent(params: {
+  licensePlateId: string;
+  movementId: string;
+  fromLocationId: string;
+  toLocationId: string;
+  producerIdempotencyKey?: string | null;
+}) {
+  return buildInventoryRegistryEvent('licensePlateMoved', {
+    producerIdempotencyKey: params.producerIdempotencyKey,
+    payload: {
+      licensePlateId: params.licensePlateId,
+      movementId: params.movementId,
+      fromLocationId: params.fromLocationId,
+      toLocationId: params.toLocationId
+    }
+  });
 }
 
 /**
@@ -386,229 +412,417 @@ export async function moveLicensePlate(
   data: LpnMovementInput,
   actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null }
 ) {
-  return withTransaction(async (client) => {
-    const now = new Date();
-    
-    // Get LPN details
-    const lpn = await getLicensePlateById(tenantId, data.licensePlateId, client);
-    if (!lpn) {
-      throw new Error('LPN_NOT_FOUND');
-    }
+  const idempotencyKey = data.idempotencyKey?.trim() ? data.idempotencyKey.trim() : null;
+  const requestHash = idempotencyKey
+    ? hashTransactionalIdempotencyRequest({
+      method: 'POST',
+      endpoint: IDEMPOTENCY_ENDPOINTS.LICENSE_PLATES_MOVE,
+      body: {
+        licensePlateId: data.licensePlateId,
+        fromLocationId: data.fromLocationId,
+        toLocationId: data.toLocationId,
+        notes: data.notes ?? null,
+        overrideNegative: data.overrideNegative ?? false,
+        overrideReason: data.overrideReason ?? null
+      }
+    })
+    : null;
 
-    if (lpn.locationId !== data.fromLocationId) {
-      throw new Error('LPN_LOCATION_MISMATCH');
-    }
+  let lpn: Awaited<ReturnType<typeof getLicensePlateById>> = null;
+  let sourceWarehouseId = '';
+  let destinationWarehouseId = '';
 
-    if (lpn.status !== 'active') {
-      throw new Error('LPN_NOT_ACTIVE');
-    }
-
-    const qty = roundQuantity(toNumber(lpn.quantity));
-    const sourceWarehouseId = await resolveWarehouseIdForLocation(tenantId, data.fromLocationId, client);
-    const validation = await validateSufficientStock(
-      tenantId,
-      now,
-      [
-        {
-          warehouseId: sourceWarehouseId,
-          itemId: lpn.itemId,
-          locationId: data.fromLocationId,
-          uom: lpn.uom,
-          quantityToConsume: qty
-        }
-      ],
-      {
-        actorId: actor?.id ?? null,
-        actorRole: actor?.role ?? null,
-        overrideRequested: data.overrideNegative,
-        overrideReason: data.overrideReason ?? null,
-        overrideReference: `lpn_move:${lpn.lpn}`
-      },
-      { client }
-    );
-
-    // Create inventory movement for the LPN transfer
-    const movementId = uuidv4();
-    const movement = await createInventoryMovement(client, {
-      id: movementId,
-      tenantId,
-      movementType: 'transfer',
-      status: 'posted',
-      externalRef: `lpn_move:${lpn.lpn}:${data.idempotencyKey}`,
-      idempotencyKey: data.idempotencyKey ?? null,
-      sourceType: 'lpn_move',
-      sourceId: data.idempotencyKey ?? movementId,
-      occurredAt: now,
-      postedAt: now,
-      notes: data.notes ?? `LPN ${lpn.lpn} moved from ${lpn.locationCode} to new location`,
-      metadata: validation.overrideMetadata ?? null,
-      createdAt: now,
-      updatedAt: now
-    });
-
-    if (!movement.created) {
-      await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-      return getLicensePlateById(tenantId, data.licensePlateId, client);
-    }
-
-    // Create movement lines (negative from source, positive to destination)
-    const lineIdOut = uuidv4();
-    const lineIdIn = uuidv4();
-
-    const canonicalOut = await getCanonicalMovementFields(
-      tenantId,
-      lpn.itemId,
-      -qty,
-      lpn.uom,
-      client
-    );
-    await createInventoryMovementLine(client, {
-      id: lineIdOut,
-      tenantId,
-      movementId: movement.id,
-      itemId: lpn.itemId,
-      locationId: data.fromLocationId,
-      quantityDelta: canonicalOut.quantityDeltaCanonical,
-      uom: canonicalOut.canonicalUom,
-      quantityDeltaEntered: canonicalOut.quantityDeltaEntered,
-      uomEntered: canonicalOut.uomEntered,
-      quantityDeltaCanonical: canonicalOut.quantityDeltaCanonical,
-      canonicalUom: canonicalOut.canonicalUom,
-      uomDimension: canonicalOut.uomDimension,
-      reasonCode: 'lpn_transfer',
-      lineNotes: `LPN ${lpn.lpn} out`
-    });
-
-    await applyInventoryBalanceDelta(client, {
-      tenantId,
-      itemId: lpn.itemId,
-      locationId: data.fromLocationId,
-      uom: canonicalOut.canonicalUom,
-      deltaOnHand: canonicalOut.quantityDeltaCanonical
-    });
-
-    const canonicalIn = await getCanonicalMovementFields(
-      tenantId,
-      lpn.itemId,
-      qty,
-      lpn.uom,
-      client
-    );
-    if (
-      canonicalOut.canonicalUom !== canonicalIn.canonicalUom
-      || Math.abs(Math.abs(canonicalOut.quantityDeltaCanonical) - canonicalIn.quantityDeltaCanonical) > 1e-6
-    ) {
-      throw new Error('TRANSFER_CANONICAL_MISMATCH');
-    }
-    await createInventoryMovementLine(client, {
-      id: lineIdIn,
-      tenantId,
-      movementId: movement.id,
-      itemId: lpn.itemId,
-      locationId: data.toLocationId,
-      quantityDelta: canonicalIn.quantityDeltaCanonical,
-      uom: canonicalIn.canonicalUom,
-      quantityDeltaEntered: canonicalIn.quantityDeltaEntered,
-      uomEntered: canonicalIn.uomEntered,
-      quantityDeltaCanonical: canonicalIn.quantityDeltaCanonical,
-      canonicalUom: canonicalIn.canonicalUom,
-      uomDimension: canonicalIn.uomDimension,
-      reasonCode: 'lpn_transfer',
-      lineNotes: `LPN ${lpn.lpn} in`
-    });
-
-    await applyInventoryBalanceDelta(client, {
-      tenantId,
-      itemId: lpn.itemId,
-      locationId: data.toLocationId,
-      uom: canonicalIn.canonicalUom,
-      deltaOnHand: canonicalIn.quantityDeltaCanonical
-    });
-
-    await relocateTransferCostLayersInTx({
-      client,
-      tenantId,
-      transferMovementId: movement.id,
-      occurredAt: now,
-      notes: data.notes ?? `LPN ${lpn.lpn} moved from ${lpn.locationCode} to new location`,
-      pairs: [
-        {
-          itemId: lpn.itemId,
-          sourceLocationId: data.fromLocationId,
-          destinationLocationId: data.toLocationId,
-          outLineId: lineIdOut,
-          inLineId: lineIdIn,
-          quantity: canonicalIn.quantityDeltaCanonical,
-          uom: canonicalIn.canonicalUom
-        }
-      ]
-    });
-
-    // Link the LPN to the movement
-    await client.query(
-      `INSERT INTO inventory_movement_lpns (
-        id, tenant_id, inventory_movement_line_id, license_plate_id, quantity_delta, uom
-      ) VALUES ($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)`,
-      [
-        uuidv4(), tenantId, lineIdOut, data.licensePlateId, canonicalOut.quantityDeltaCanonical, canonicalOut.canonicalUom,
-        uuidv4(), tenantId, lineIdIn, data.licensePlateId, canonicalIn.quantityDeltaCanonical, canonicalIn.canonicalUom
-      ]
-    );
-
-    if (validation.overrideMetadata && actor) {
-      await recordAuditLog(
-        {
+  return runInventoryCommand<any>({
+    tenantId,
+    endpoint: IDEMPOTENCY_ENDPOINTS.LICENSE_PLATES_MOVE,
+    operation: 'license_plate_move',
+    idempotencyKey,
+    requestHash,
+    retryOptions: { isolationLevel: 'SERIALIZABLE', retries: 2 },
+    onReplay: async ({ client }) => {
+      const movementResult = await client.query<{ id: string }>(
+        `SELECT id
+           FROM inventory_movements
+          WHERE tenant_id = $1
+            AND source_type = 'lpn_move'
+            AND idempotency_key = $2
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+          FOR UPDATE`,
+        [tenantId, idempotencyKey]
+      );
+      if (!movementResult.rows[0]?.id) {
+        throw new Error('LPN_MOVE_REPLAY_MOVEMENT_MISSING');
+      }
+      return (
+        await buildPostedDocumentReplayResult({
           tenantId,
-          actorType: actor.type,
-          actorId: actor.id ?? null,
-          action: 'negative_override',
-          entityType: 'inventory_movement',
-          entityId: movement.id,
-          occurredAt: now,
-          metadata: {
-            reason: validation.overrideMetadata.override_reason ?? null,
-            reference: validation.overrideMetadata.override_reference ?? null,
-            lpnId: data.licensePlateId,
-            itemId: lpn.itemId,
+          authoritativeMovementIds: [movementResult.rows[0].id],
+          client,
+          fetchAggregateView: () => getLicensePlateById(tenantId, data.licensePlateId, client),
+          aggregateNotFoundError: new Error('LPN_NOT_FOUND'),
+          movementNotReadyError: (movementId, readiness) => {
+            const error = new Error('LPN_MOVE_INCOMPLETE') as Error & {
+              code?: string;
+              details?: Record<string, unknown>;
+            };
+            error.code = 'LPN_MOVE_INCOMPLETE';
+            error.details = {
+              movementId,
+              reason: readiness.movementExists
+                ? 'authoritative_movement_missing_lines'
+                : 'authoritative_movement_missing'
+            };
+            return error;
+          },
+          authoritativeEvents: [
+            buildMovementPostedEvent(movementResult.rows[0].id, idempotencyKey),
+            buildLicensePlateMovedEvent({
+              licensePlateId: data.licensePlateId,
+              movementId: movementResult.rows[0].id,
+              fromLocationId: data.fromLocationId,
+              toLocationId: data.toLocationId,
+              producerIdempotencyKey: idempotencyKey
+            })
+          ]
+        })
+      ).responseBody;
+    },
+    lockTargets: async (client) => {
+      const lpnLock = await client.query(
+        `SELECT id
+           FROM license_plates
+          WHERE tenant_id = $1
+            AND id = $2
+          FOR UPDATE`,
+        [tenantId, data.licensePlateId]
+      );
+      if (lpnLock.rowCount === 0) {
+        throw new Error('LPN_NOT_FOUND');
+      }
+      lpn = await getLicensePlateById(tenantId, data.licensePlateId, client);
+      if (!lpn) {
+        throw new Error('LPN_NOT_FOUND');
+      }
+      if (lpn.locationId !== data.fromLocationId) {
+        throw new Error('LPN_LOCATION_MISMATCH');
+      }
+      if (lpn.status !== 'active') {
+        throw new Error('LPN_NOT_ACTIVE');
+      }
+
+      sourceWarehouseId = await resolveWarehouseIdForLocation(tenantId, data.fromLocationId, client);
+      destinationWarehouseId = await resolveWarehouseIdForLocation(tenantId, data.toLocationId, client);
+      return [
+        { tenantId, warehouseId: sourceWarehouseId, itemId: lpn.itemId },
+        { tenantId, warehouseId: destinationWarehouseId, itemId: lpn.itemId }
+      ];
+    },
+    execute: async ({ client }) => {
+      if (!lpn) {
+        throw new Error('LPN_NOT_FOUND');
+      }
+      const currentLpn = lpn;
+      const now = new Date();
+      const qty = roundQuantity(toNumber(currentLpn.quantity));
+      const validation = await validateSufficientStock(
+        tenantId,
+        now,
+        [
+          {
+            warehouseId: sourceWarehouseId,
+            itemId: currentLpn.itemId,
             locationId: data.fromLocationId,
-            uom: lpn.uom,
-            quantity: qty
+            uom: currentLpn.uom,
+            quantityToConsume: qty
           }
+        ],
+        {
+          actorId: actor?.id ?? null,
+          actorRole: actor?.role ?? null,
+          overrideRequested: data.overrideNegative,
+          overrideReason: data.overrideReason ?? null,
+          overrideReference: `lpn_move:${currentLpn.lpn}`
         },
+        { client }
+      );
+
+      const movementId = uuidv4();
+      const movement = await createInventoryMovement(client, {
+        id: movementId,
+        tenantId,
+        movementType: 'transfer',
+        status: 'posted',
+        externalRef: `lpn_move:${currentLpn.lpn}:${idempotencyKey}`,
+        idempotencyKey,
+        sourceType: 'lpn_move',
+        sourceId: idempotencyKey ?? movementId,
+        occurredAt: now,
+        postedAt: now,
+        notes: data.notes ?? `LPN ${currentLpn.lpn} moved from ${currentLpn.locationCode} to new location`,
+        metadata: validation.overrideMetadata ?? null,
+        createdAt: now,
+        updatedAt: now
+      });
+
+      if (!movement.created) {
+        return buildPostedDocumentReplayResult({
+          tenantId,
+          authoritativeMovementIds: [movement.id],
+          client,
+          fetchAggregateView: () => getLicensePlateById(tenantId, data.licensePlateId, client),
+          aggregateNotFoundError: new Error('LPN_NOT_FOUND'),
+          movementNotReadyError: (movementId, readiness) => {
+            const error = new Error('LPN_MOVE_INCOMPLETE') as Error & {
+              code?: string;
+              details?: Record<string, unknown>;
+            };
+            error.code = 'LPN_MOVE_INCOMPLETE';
+            error.details = {
+              movementId,
+              reason: readiness.movementExists
+                ? 'authoritative_movement_missing_lines'
+                : 'authoritative_movement_missing'
+            };
+            return error;
+          },
+          authoritativeEvents: [
+            buildMovementPostedEvent(movement.id, idempotencyKey),
+            buildLicensePlateMovedEvent({
+              licensePlateId: data.licensePlateId,
+              movementId: movement.id,
+              fromLocationId: data.fromLocationId,
+              toLocationId: data.toLocationId,
+              producerIdempotencyKey: idempotencyKey
+            })
+          ]
+        });
+      }
+
+      const canonicalOut = await getCanonicalMovementFields(
+        tenantId,
+        currentLpn.itemId,
+        -qty,
+        currentLpn.uom,
         client
       );
-    }
+      const canonicalIn = await getCanonicalMovementFields(
+        tenantId,
+        currentLpn.itemId,
+        qty,
+        currentLpn.uom,
+        client
+      );
+      if (
+        canonicalOut.canonicalUom !== canonicalIn.canonicalUom
+        || Math.abs(Math.abs(canonicalOut.quantityDeltaCanonical) - canonicalIn.quantityDeltaCanonical) > 1e-6
+      ) {
+        throw new Error('TRANSFER_CANONICAL_MISMATCH');
+      }
 
-    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-
-    // Update LPN location
-    await client.query(
-      'UPDATE license_plates SET location_id = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4',
-      [data.toLocationId, now, data.licensePlateId, tenantId]
-    );
-
-    if (actor) {
-      await recordAuditLog(
-        {
+      const preparedLines = sortDeterministicMovementLines(
+        [
+          {
+            id: uuidv4(),
+            warehouseId: sourceWarehouseId,
+            itemId: currentLpn.itemId,
+            locationId: data.fromLocationId,
+            sourceLineId: `${data.licensePlateId}:out`,
+            reasonCode: 'lpn_transfer_out',
+            lineNotes: `LPN ${currentLpn.lpn} out`,
+            canonicalFields: canonicalOut
+          },
+          {
+            id: uuidv4(),
+            warehouseId: destinationWarehouseId,
+            itemId: currentLpn.itemId,
+            locationId: data.toLocationId,
+            sourceLineId: `${data.licensePlateId}:in`,
+            reasonCode: 'lpn_transfer_in',
+            lineNotes: `LPN ${currentLpn.lpn} in`,
+            canonicalFields: canonicalIn
+          }
+        ],
+        (line) => ({
           tenantId,
-          actorType: actor.type,
-          actorId: actor.id ?? null,
-          action: 'update',
-          entityType: 'license_plate',
-          entityId: data.licensePlateId,
-          occurredAt: now,
-          metadata: {
-            lpn: lpn.lpn,
+          warehouseId: line.warehouseId,
+          locationId: line.locationId,
+          itemId: line.itemId,
+          canonicalUom: line.canonicalFields.canonicalUom,
+          sourceLineId: line.sourceLineId
+        })
+      );
+
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      const lineIdsByDirection = new Map<'out' | 'in', string>();
+
+      for (const preparedLine of preparedLines) {
+        await createInventoryMovementLine(client, {
+          id: preparedLine.id,
+          tenantId,
+          movementId: movement.id,
+          itemId: preparedLine.itemId,
+          locationId: preparedLine.locationId,
+          quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
+          uom: preparedLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: preparedLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: preparedLine.canonicalFields.canonicalUom,
+          uomDimension: preparedLine.canonicalFields.uomDimension,
+          reasonCode: preparedLine.reasonCode,
+          lineNotes: preparedLine.lineNotes
+        });
+
+        projectionOps.push(
+          buildInventoryBalanceProjectionOp({
+            tenantId,
+            itemId: preparedLine.itemId,
+            locationId: preparedLine.locationId,
+            uom: preparedLine.canonicalFields.canonicalUom,
+            deltaOnHand: preparedLine.canonicalFields.quantityDeltaCanonical
+          })
+        );
+
+        lineIdsByDirection.set(
+          preparedLine.canonicalFields.quantityDeltaCanonical < 0 ? 'out' : 'in',
+          preparedLine.id
+        );
+      }
+
+      const outLineId = lineIdsByDirection.get('out');
+      const inLineId = lineIdsByDirection.get('in');
+      if (!outLineId || !inLineId) {
+        throw new Error('LPN_MOVE_LINE_DIRECTIONS_MISSING');
+      }
+
+      await relocateTransferCostLayersInTx({
+        client,
+        tenantId,
+        transferMovementId: movement.id,
+        occurredAt: now,
+        notes: data.notes ?? `LPN ${currentLpn.lpn} moved from ${currentLpn.locationCode} to new location`,
+        pairs: [
+          {
+            itemId: currentLpn.itemId,
+            sourceLocationId: data.fromLocationId,
+            destinationLocationId: data.toLocationId,
+            outLineId,
+            inLineId,
+            quantity: canonicalIn.quantityDeltaCanonical,
+            uom: canonicalIn.canonicalUom
+          }
+        ]
+      });
+
+      await client.query(
+        `INSERT INTO inventory_movement_lpns (
+          id, tenant_id, inventory_movement_line_id, license_plate_id, quantity_delta, uom
+        ) VALUES ($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)`,
+        [
+          uuidv4(),
+          tenantId,
+          outLineId,
+          data.licensePlateId,
+          canonicalOut.quantityDeltaCanonical,
+          canonicalOut.canonicalUom,
+          uuidv4(),
+          tenantId,
+          inLineId,
+          data.licensePlateId,
+          canonicalIn.quantityDeltaCanonical,
+          canonicalIn.canonicalUom
+        ]
+      );
+
+      projectionOps.push(async (projectionClient) => {
+        if (validation.overrideMetadata && actor) {
+          await recordAuditLog(
+            {
+              tenantId,
+              actorType: actor.type,
+              actorId: actor.id ?? null,
+              action: 'negative_override',
+              entityType: 'inventory_movement',
+              entityId: movement.id,
+              occurredAt: now,
+              metadata: {
+                reason: validation.overrideMetadata.override_reason ?? null,
+                reference: validation.overrideMetadata.override_reference ?? null,
+                lpnId: data.licensePlateId,
+                itemId: currentLpn.itemId,
+                locationId: data.fromLocationId,
+                uom: currentLpn.uom,
+                quantity: qty
+              }
+            },
+            projectionClient
+          );
+        }
+        await projectionClient.query(
+          `UPDATE license_plates
+              SET location_id = $1,
+                  updated_at = $2
+            WHERE id = $3
+              AND tenant_id = $4`,
+          [data.toLocationId, now, data.licensePlateId, tenantId]
+        );
+        if (actor) {
+          await recordAuditLog(
+            {
+              tenantId,
+              actorType: actor.type,
+              actorId: actor.id ?? null,
+              action: 'update',
+              entityType: 'license_plate',
+              entityId: data.licensePlateId,
+              occurredAt: now,
+              metadata: {
+                lpn: currentLpn.lpn,
+                fromLocationId: data.fromLocationId,
+                toLocationId: data.toLocationId,
+                movementId: movement.id
+              }
+            },
+            projectionClient
+          );
+        }
+      });
+
+      const destinationLocationResult = await client.query<{
+        code: string;
+        name: string;
+      }>(
+        `SELECT code, name
+           FROM locations
+          WHERE tenant_id = $1
+            AND id = $2`,
+        [tenantId, data.toLocationId]
+      );
+      const destinationLocation = destinationLocationResult.rows[0];
+
+      return {
+        responseBody: {
+          ...currentLpn,
+          locationId: data.toLocationId,
+          locationCode: destinationLocation?.code ?? currentLpn.locationCode,
+          locationName: destinationLocation?.name ?? currentLpn.locationName,
+          updatedAt: now.toISOString()
+        },
+        responseStatus: 200,
+        events: [
+          buildMovementPostedEvent(movement.id, idempotencyKey),
+          buildLicensePlateMovedEvent({
+            licensePlateId: data.licensePlateId,
+            movementId: movement.id,
             fromLocationId: data.fromLocationId,
             toLocationId: data.toLocationId,
-            movementId: movement.id
-          }
-        },
-        client
-      );
+            producerIdempotencyKey: idempotencyKey
+          })
+        ],
+        projectionOps
+      };
     }
-
-    return getLicensePlateById(tenantId, data.licensePlateId, client);
   });
 }
 

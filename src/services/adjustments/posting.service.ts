@@ -17,27 +17,24 @@ import {
   type InventoryCommandProjectionOp
 } from '../../modules/platform/application/runInventoryCommand';
 import {
-  authoritativeMovementReady,
+  buildPostedDocumentReplayResult,
   buildInventoryBalanceProjectionOp,
   buildMovementPostedEvent,
   buildRefreshItemCostSummaryProjectionOp,
-  inventoryEventVersionExists
+  sortDeterministicMovementLines,
 } from '../../modules/platform/application/inventoryMutationSupport';
+import { buildInventoryRegistryEvent } from '../../modules/platform/application/inventoryEventRegistry';
 
 function buildInventoryAdjustmentPostedEvent(
   adjustmentId: string,
   movementId: string
 ): InventoryCommandEvent {
-  return {
-    aggregateType: 'inventory_adjustment',
-    aggregateId: adjustmentId,
-    eventType: 'inventory.adjustment.posted',
-    eventVersion: 1,
+  return buildInventoryRegistryEvent('inventoryAdjustmentPosted', {
     payload: {
       adjustmentId,
       movementId
     }
-  };
+  });
 }
 
 function inventoryAdjustmentPostIncompleteError(
@@ -63,38 +60,26 @@ async function buildInventoryAdjustmentReplayResult(params: {
   movementId: string;
   client: PoolClient;
 }) {
-  const movementState = await authoritativeMovementReady(
-    params.client,
-    params.tenantId,
-    params.movementId
-  );
-  if (!movementState.ready) {
-    throw inventoryAdjustmentPostIncompleteError(params.adjustmentId, {
-      movementId: params.movementId,
-      reason: movementState.movementExists
-        ? 'authoritative_movement_missing_lines'
-        : 'authoritative_movement_missing'
-    });
-  }
-
-  const adjustment = await fetchInventoryAdjustmentById(params.tenantId, params.adjustmentId, params.client);
-  if (!adjustment) {
-    throw new Error('ADJUSTMENT_NOT_FOUND');
-  }
-
-  const events: InventoryCommandEvent[] = [];
-  if (!await inventoryEventVersionExists(params.client, params.tenantId, 'inventory_movement', params.movementId, 1)) {
-    events.push(buildMovementPostedEvent(params.movementId));
-  }
-  if (!await inventoryEventVersionExists(params.client, params.tenantId, 'inventory_adjustment', params.adjustmentId, 1)) {
-    events.push(buildInventoryAdjustmentPostedEvent(params.adjustmentId, params.movementId));
-  }
-
-  return {
-    responseBody: adjustment,
-    responseStatus: 200,
-    events
-  };
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovementIds: [params.movementId],
+    client: params.client,
+    fetchAggregateView: () =>
+      fetchInventoryAdjustmentById(params.tenantId, params.adjustmentId, params.client),
+    aggregateNotFoundError: new Error('ADJUSTMENT_NOT_FOUND'),
+    movementNotReadyError: (movementId, movementState) =>
+      inventoryAdjustmentPostIncompleteError(params.adjustmentId, {
+        movementId,
+        reason: movementState.movementExists
+          ? 'authoritative_movement_missing_lines'
+          : 'authoritative_movement_missing'
+      }),
+    authoritativeEvents: [
+      buildMovementPostedEvent(params.movementId),
+      buildInventoryAdjustmentPostedEvent(params.adjustmentId, params.movementId)
+    ],
+    responseStatus: 200
+  });
 }
 
 export async function postInventoryAdjustment(
@@ -233,8 +218,12 @@ export async function postInventoryAdjustment(
 
         if (!movement.created) {
           const lineCheck = await client.query(
-            `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
-            [movement.id]
+            `SELECT 1
+               FROM inventory_movement_lines
+              WHERE tenant_id = $1
+                AND movement_id = $2
+              LIMIT 1`,
+            [tenantId, movement.id]
           );
           if (lineCheck.rowCount > 0) {
             await client.query(
@@ -260,6 +249,12 @@ export async function postInventoryAdjustment(
 
         const projectionOps: InventoryCommandProjectionOp[] = [];
         const itemsToRefresh = new Set<string>();
+        const preparedLines: Array<{
+          line: InventoryAdjustmentLineRow;
+          qty: number;
+          warehouseId: string;
+          canonicalFields: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
+        }> = [];
         for (const line of adjustmentLines) {
           const qty = toNumber(line.quantity_delta);
           if (qty === 0) {
@@ -272,6 +267,28 @@ export async function postInventoryAdjustment(
             line.uom,
             client
           );
+          preparedLines.push({
+            line,
+            qty,
+            warehouseId: warehouseIdsByLocation.get(line.location_id) ?? '',
+            canonicalFields
+          });
+        }
+
+        const sortedPreparedLines = sortDeterministicMovementLines(
+          preparedLines,
+          (entry) => ({
+            tenantId,
+            warehouseId: entry.warehouseId,
+            locationId: entry.line.location_id,
+            itemId: entry.line.item_id,
+            canonicalUom: entry.canonicalFields.canonicalUom,
+            sourceLineId: entry.line.id
+          })
+        );
+
+        for (const preparedLine of sortedPreparedLines) {
+          const { line, qty, canonicalFields } = preparedLine;
           const canonicalQty = canonicalFields.quantityDeltaCanonical;
           const costData = await calculateMovementCost(tenantId, line.item_id, canonicalQty, client);
 

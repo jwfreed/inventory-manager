@@ -12,13 +12,8 @@ import { consumeCostLayers, createCostLayer } from './costLayers.service';
 import { getCanonicalMovementFields, type CanonicalMovementFields } from './uomCanonical.service';
 import { getWarehouseDefaultLocationId, resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
-  acquireAtpLocks,
-  assertAtpLockHeldOrThrow,
-  createAtpLockContext,
   createInventoryMovement,
-  createInventoryMovementLine,
-  applyInventoryBalanceDelta,
-  enqueueInventoryMovementPosted
+  createInventoryMovementLine
 } from '../domains/inventory';
 import {
   workOrderCompletionCreateSchema,
@@ -35,6 +30,18 @@ import {
   hashTransactionalIdempotencyRequest
 } from '../lib/transactionalIdempotency';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
+import {
+  runInventoryCommand,
+  type InventoryCommandEvent,
+  type InventoryCommandProjectionOp
+} from '../modules/platform/application/runInventoryCommand';
+import {
+  buildInventoryBalanceProjectionOp,
+  buildMovementPostedEvent,
+  buildPostedDocumentReplayResult,
+  sortDeterministicMovementLines
+} from '../modules/platform/application/inventoryMutationSupport';
+import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
 // (never inventory_adjustments). External refs include work order ids for traceability.
@@ -63,6 +70,165 @@ function domainError(code: string, details?: Record<string, unknown>): DomainErr
     error.details = details;
   }
   return error;
+}
+
+type ManufacturingMutationState =
+  | 'planned_issue'
+  | 'posted_issue'
+  | 'planned_completion'
+  | 'reported_production'
+  | 'posted_completion'
+  | 'reversal';
+
+type WipValuationType =
+  | 'issue'
+  | 'completion'
+  | 'report'
+  | 'reversal_to_wip'
+  | 'reversal_from_wip';
+
+function assertManufacturingTransition(params: {
+  flow: string;
+  currentState: ManufacturingMutationState;
+  allowedFrom: ManufacturingMutationState[];
+  targetState: ManufacturingMutationState;
+  workOrderId: string;
+  executionOrDocumentId: string;
+}) {
+  if (params.allowedFrom.includes(params.currentState)) {
+    return;
+  }
+  throw domainError('WO_INVALID_STATE', {
+    flow: params.flow,
+    workOrderId: params.workOrderId,
+    executionOrDocumentId: params.executionOrDocumentId,
+    currentState: params.currentState,
+    allowedFrom: params.allowedFrom,
+    targetState: params.targetState
+  });
+}
+
+function deriveIssueMutationState(issue: WorkOrderMaterialIssueRow): ManufacturingMutationState {
+  if (issue.status === 'draft') {
+    return 'planned_issue';
+  }
+  if (issue.status === 'posted' && issue.inventory_movement_id) {
+    return 'posted_issue';
+  }
+  throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+    flow: 'issue',
+    issueId: issue.id,
+    reason: issue.status === 'posted'
+      ? 'posted_issue_missing_authoritative_movement'
+      : 'issue_state_unrecognized'
+  });
+}
+
+function deriveCompletionMutationState(params: {
+  execution: WorkOrderExecutionRow | LockedExecutionRow;
+  flow: 'completion' | 'report';
+}): ManufacturingMutationState {
+  if (params.execution.status === 'draft') {
+    return 'planned_completion';
+  }
+  if (params.execution.status === 'posted' && params.execution.production_movement_id) {
+    return params.flow === 'report' ? 'reported_production' : 'posted_completion';
+  }
+  throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+    flow: params.flow,
+    executionId: params.execution.id,
+    reason: params.execution.status === 'posted'
+      ? 'posted_completion_missing_authoritative_movement'
+      : 'completion_state_unrecognized'
+  });
+}
+
+function buildWorkOrderIssuePostedEvent(params: {
+  issueId: string;
+  workOrderId: string;
+  movementId: string;
+  producerIdempotencyKey?: string | null;
+}): InventoryCommandEvent {
+  return buildInventoryRegistryEvent('workOrderIssuePosted', {
+    producerIdempotencyKey: params.producerIdempotencyKey,
+    payload: {
+      issueId: params.issueId,
+      workOrderId: params.workOrderId,
+      movementId: params.movementId
+    }
+  });
+}
+
+function buildWorkOrderCompletionPostedEvent(params: {
+  executionId: string;
+  workOrderId: string;
+  movementId: string;
+  producerIdempotencyKey?: string | null;
+}) {
+  return buildInventoryRegistryEvent('workOrderCompletionPosted', {
+    producerIdempotencyKey: params.producerIdempotencyKey,
+    payload: {
+      executionId: params.executionId,
+      workOrderId: params.workOrderId,
+      movementId: params.movementId
+    }
+  });
+}
+
+function buildWorkOrderProductionReportedEvent(params: {
+  executionId: string;
+  workOrderId: string;
+  issueMovementId: string;
+  receiveMovementId: string;
+  producerIdempotencyKey?: string | null;
+}) {
+  return buildInventoryRegistryEvent('workOrderProductionReported', {
+    producerIdempotencyKey: params.producerIdempotencyKey,
+    payload: {
+      executionId: params.executionId,
+      workOrderId: params.workOrderId,
+      issueMovementId: params.issueMovementId,
+      receiveMovementId: params.receiveMovementId
+    }
+  });
+}
+
+function buildWorkOrderProductionReversedEvent(params: {
+  executionId: string;
+  workOrderId: string;
+  componentReturnMovementId: string;
+  outputReversalMovementId: string;
+  producerIdempotencyKey?: string | null;
+}) {
+  return buildInventoryRegistryEvent('workOrderProductionReversed', {
+    producerIdempotencyKey: params.producerIdempotencyKey,
+    payload: {
+      executionId: params.executionId,
+      workOrderId: params.workOrderId,
+      componentReturnMovementId: params.componentReturnMovementId,
+      outputReversalMovementId: params.outputReversalMovementId
+    }
+  });
+}
+
+function buildWorkOrderWipValuationRecordedEvent(params: {
+  executionId?: string | null;
+  workOrderId: string;
+  movementId: string;
+  valuationType: WipValuationType;
+  valueDelta: number;
+  producerIdempotencyKey?: string | null;
+}) {
+  return buildInventoryRegistryEvent('workOrderWipValuationRecorded', {
+    producerIdempotencyKey: params.producerIdempotencyKey,
+    payload: {
+      executionId: params.executionId ?? null,
+      workOrderId: params.workOrderId,
+      movementId: params.movementId,
+      valuationType: params.valuationType,
+      valueDelta: roundQuantity(params.valueDelta)
+    }
+  });
 }
 
 function compareNullableText(a: string | null | undefined, b: string | null | undefined) {
@@ -401,13 +567,116 @@ async function ensurePostedMovementReady(
   const lineRes = await client.query(
     `SELECT 1
        FROM inventory_movement_lines
-      WHERE movement_id = $1
+      WHERE tenant_id = $1
+        AND movement_id = $2
       LIMIT 1`,
-    [movementId]
+    [tenantId, movementId]
   );
   if (lineRes.rowCount === 0) {
     throw new Error('WO_POSTING_IDEMPOTENCY_INCOMPLETE');
   }
+}
+
+type WorkOrderWipValuationRecordRow = {
+  id: string;
+  tenant_id: string;
+  work_order_id: string;
+  work_order_execution_id: string | null;
+  inventory_movement_id: string;
+  valuation_type: WipValuationType;
+  value_delta: string | number;
+  quantity_canonical: string | number | null;
+  canonical_uom: string | null;
+  cost_method: string | null;
+  reversal_of_valuation_record_id: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+async function createWorkOrderWipValuationRecord(
+  client: PoolClient,
+  params: {
+    tenantId: string;
+    workOrderId: string;
+    executionId?: string | null;
+    movementId: string;
+    valuationType: WipValuationType;
+    valueDelta: number;
+    quantityCanonical?: number | null;
+    canonicalUom?: string | null;
+    reversalOfValuationRecordId?: string | null;
+    notes?: string | null;
+  }
+) {
+  const insertResult = await client.query<WorkOrderWipValuationRecordRow>(
+    `INSERT INTO work_order_wip_valuation_records (
+        id,
+        tenant_id,
+        work_order_id,
+        work_order_execution_id,
+        inventory_movement_id,
+        valuation_type,
+        value_delta,
+        quantity_canonical,
+        canonical_uom,
+        cost_method,
+        reversal_of_valuation_record_id,
+        notes,
+        created_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     ON CONFLICT (tenant_id, inventory_movement_id, valuation_type) DO NOTHING
+     RETURNING *`,
+    [
+      uuidv4(),
+      params.tenantId,
+      params.workOrderId,
+      params.executionId ?? null,
+      params.movementId,
+      params.valuationType,
+      roundQuantity(params.valueDelta),
+      params.quantityCanonical != null ? roundQuantity(params.quantityCanonical) : null,
+      params.canonicalUom ?? null,
+      WIP_COST_METHOD,
+      params.reversalOfValuationRecordId ?? null,
+      params.notes ?? null,
+      new Date()
+    ]
+  );
+  if ((insertResult.rowCount ?? 0) > 0) {
+    return insertResult.rows[0];
+  }
+  const existing = await client.query<WorkOrderWipValuationRecordRow>(
+    `SELECT *
+       FROM work_order_wip_valuation_records
+      WHERE tenant_id = $1
+        AND inventory_movement_id = $2
+        AND valuation_type = $3
+      LIMIT 1`,
+    [params.tenantId, params.movementId, params.valuationType]
+  );
+  if (existing.rowCount === 0) {
+    throw new Error('WO_WIP_VALUATION_RECORD_MISSING');
+  }
+  return existing.rows[0];
+}
+
+async function loadWorkOrderWipValuationRecordsByMovementIds(
+  client: PoolClient,
+  tenantId: string,
+  movementIds: string[]
+) {
+  if (movementIds.length === 0) {
+    return [];
+  }
+  const result = await client.query<WorkOrderWipValuationRecordRow>(
+    `SELECT *
+       FROM work_order_wip_valuation_records
+      WHERE tenant_id = $1
+        AND inventory_movement_id = ANY($2::uuid[])
+      ORDER BY valuation_type ASC, inventory_movement_id ASC, created_at ASC, id ASC`,
+    [tenantId, movementIds]
+  );
+  return result.rows;
 }
 
 async function findPostedBatchByIdempotencyKey(
@@ -1014,248 +1283,366 @@ export async function postWorkOrderIssue(
   issueId: string,
   context: NegativeOverrideContext = {}
 ) {
-  return withTransactionRetry(async (client) => {
-    const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
-    if (!workOrder) {
-      throw new Error('WO_NOT_FOUND');
-    }
-    const isDisassembly = workOrder.kind === 'disassembly';
-    if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
-      throw new Error('WO_INVALID_STATE');
-    }
+  let workOrder: WorkOrderRow | null = null;
+  let issue: WorkOrderMaterialIssueRow | null = null;
+  let issueState: ManufacturingMutationState | null = null;
+  let linesForPosting: WorkOrderMaterialIssueLineRow[] = [];
+  let warehouseIdsByLocation = new Map<string, string>();
 
-    const issueResult = await client.query<WorkOrderMaterialIssueRow>(
-      'SELECT * FROM work_order_material_issues WHERE id = $1 AND work_order_id = $2 AND tenant_id = $3 FOR UPDATE',
-      [issueId, workOrderId, tenantId]
-    );
-    if (issueResult.rowCount === 0) {
-      throw new Error('WO_ISSUE_NOT_FOUND');
-    }
-    const issue = issueResult.rows[0];
-    if (issue.status === 'posted') {
-      return fetchWorkOrderIssue(tenantId, workOrderId, issueId, client);
-    }
-    if (issue.status === 'canceled') {
-      throw new Error('WO_ISSUE_CANCELED');
-    }
-
-    const linesResult = await client.query<WorkOrderMaterialIssueLineRow>(
-      'SELECT * FROM work_order_material_issue_lines WHERE work_order_material_issue_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
-      [issueId, tenantId]
-    );
-    if (linesResult.rowCount === 0) {
-      throw new Error('WO_ISSUE_NO_LINES');
-    }
-    const linesForPosting = [...linesResult.rows].sort(compareIssueLineLockKey);
-
-    const warehouseIdsByLocation = new Map<string, string>();
-    for (const line of linesForPosting) {
-      if (!warehouseIdsByLocation.has(line.from_location_id)) {
-        const warehouseId = await resolveWarehouseIdForLocation(tenantId, line.from_location_id, client);
-        warehouseIdsByLocation.set(line.from_location_id, warehouseId);
+  return runInventoryCommand<any>({
+    tenantId,
+    endpoint: 'wo.issue.post',
+    operation: 'work_order_issue_post',
+    retryOptions: WORK_ORDER_POST_RETRY_OPTIONS,
+    lockTargets: async (client) => {
+      workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
+      if (!workOrder) {
+        throw new Error('WO_NOT_FOUND');
       }
-    }
+      if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
+        throw new Error('WO_INVALID_STATE');
+      }
 
-    const now = new Date();
-    const occurredAt = new Date(issue.occurred_at);
-    const validation = await validateSufficientStock(
-      tenantId,
-      occurredAt,
-      linesForPosting.map((line) => ({
-        warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
-        itemId: line.component_item_id,
-        locationId: line.from_location_id,
-        uom: line.uom,
-        quantityToConsume: roundQuantity(toNumber(line.quantity_issued))
-      })),
-      {
-        actorId: context.actor?.id ?? null,
-        actorRole: context.actor?.role ?? null,
-        overrideRequested: context.overrideRequested,
-        overrideReason: context.overrideReason ?? null,
-        overrideReference: `work_order_issue:${issueId}`
-      },
-      { client }
-    );
-    const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
-    const movementMetadata = {
-      workOrderId,
-      workOrderNumber,
-      ...(validation.overrideMetadata ?? {})
-    };
-    const movementId = uuidv4();
-    const movement = await createInventoryMovement(client, {
-      id: movementId,
-      tenantId,
-      movementType: 'issue',
-      status: 'posted',
-      externalRef: isDisassembly
-        ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
-        : `work_order_issue:${issueId}:${workOrderId}`,
-      sourceType: 'work_order_issue_post',
-      sourceId: issueId,
-      idempotencyKey: `wo-issue-post:${issueId}`,
-      occurredAt,
-      postedAt: now,
-      notes: issue.notes ?? null,
-      metadata: movementMetadata,
-      createdAt: now,
-      updatedAt: now
-    });
-
-    if (!movement.created) {
-      await ensurePostedMovementReady(client, tenantId, movement.id);
-      await client.query(
-        `UPDATE work_order_material_issues
-            SET status = 'posted',
-                inventory_movement_id = $1,
-                updated_at = $2
-          WHERE id = $3 AND tenant_id = $4`,
-        [movement.id, now, issueId, tenantId]
+      const issueResult = await client.query<WorkOrderMaterialIssueRow>(
+        `SELECT *
+           FROM work_order_material_issues
+          WHERE id = $1
+            AND work_order_id = $2
+            AND tenant_id = $3
+          FOR UPDATE`,
+        [issueId, workOrderId, tenantId]
       );
-      await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-      return fetchWorkOrderIssue(tenantId, workOrderId, issueId, client);
-    }
-
-    const issuedTotal = linesForPosting.reduce((sum, line) => {
-      const qty = toNumber(line.quantity_issued);
-      return sum + qty;
-    }, 0);
-
-    for (const line of linesForPosting) {
-      if (isDisassembly && line.component_item_id !== workOrder.output_item_id) {
-        throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
+      if (issueResult.rowCount === 0) {
+        throw new Error('WO_ISSUE_NOT_FOUND');
       }
-      const qty = toNumber(line.quantity_issued);
-      if (qty <= 0) {
-        throw new Error('WO_ISSUE_INVALID_QUANTITY');
+      issue = issueResult.rows[0];
+      if (issue.status === 'canceled') {
+        throw new Error('WO_ISSUE_CANCELED');
       }
-      const reasonCode = line.reason_code ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue');
-      
-      const canonicalFields = await getCanonicalMovementFields(
+      issueState = deriveIssueMutationState(issue);
+      if (issueState === 'posted_issue') {
+        if (!issue.inventory_movement_id) {
+          throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+            flow: 'issue',
+            issueId,
+            reason: 'posted_issue_missing_authoritative_movement'
+          });
+        }
+        return [];
+      }
+
+      const linesResult = await client.query<WorkOrderMaterialIssueLineRow>(
+        `SELECT *
+           FROM work_order_material_issue_lines
+          WHERE work_order_material_issue_id = $1
+            AND tenant_id = $2
+          ORDER BY line_number ASC`,
+        [issueId, tenantId]
+      );
+      if (linesResult.rowCount === 0) {
+        throw new Error('WO_ISSUE_NO_LINES');
+      }
+      linesForPosting = [...linesResult.rows].sort(compareIssueLineLockKey);
+      warehouseIdsByLocation = new Map<string, string>();
+      for (const line of linesForPosting) {
+        if (!warehouseIdsByLocation.has(line.from_location_id)) {
+          warehouseIdsByLocation.set(
+            line.from_location_id,
+            await resolveWarehouseIdForLocation(tenantId, line.from_location_id, client)
+          );
+        }
+      }
+      return linesForPosting.map((line) => ({
         tenantId,
-        line.component_item_id,
-        -qty,
-        line.uom,
-        client
-      );
-      const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
-      
-      // Consume from cost layers for material issue
-      let issueCost = null as number | null;
-      try {
-        const consumption = await consumeCostLayers({
-          tenant_id: tenantId,
-          item_id: line.component_item_id,
-          location_id: line.from_location_id,
-          quantity: canonicalQty,
-          consumption_type: 'production_input',
-          consumption_document_id: issueId,
-          movement_id: movement.id,
+        warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
+        itemId: line.component_item_id
+      }));
+    },
+    execute: async ({ client }) => {
+      if (!workOrder || !issue || !issueState) {
+        throw new Error('WO_ISSUE_NOT_FOUND');
+      }
+      if (issueState === 'posted_issue') {
+        return buildWorkOrderIssueReplayResult({
+          tenantId,
+          workOrderId,
+          issueId,
+          movementId: issue.inventory_movement_id!,
           client
         });
-        issueCost = consumption.total_cost;
-      } catch {
-        throw new Error('WO_WIP_COST_LAYERS_MISSING');
       }
-      const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
-      const extendedCost = issueCost !== null ? -issueCost : null;
-      
-      await createInventoryMovementLine(client, {
-        tenantId,
-        movementId: movement.id,
-        itemId: line.component_item_id,
-        locationId: line.from_location_id,
-        quantityDelta: canonicalFields.quantityDeltaCanonical,
-        uom: canonicalFields.canonicalUom,
-        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-        uomEntered: canonicalFields.uomEntered,
-        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-        canonicalUom: canonicalFields.canonicalUom,
-        uomDimension: canonicalFields.uomDimension,
-        unitCost,
-        extendedCost,
-        reasonCode,
-        lineNotes: line.notes ?? `Work order issue ${issueId} line ${line.line_number}`
+
+      const isDisassembly = workOrder.kind === 'disassembly';
+      assertManufacturingTransition({
+        flow: 'issue',
+        currentState: issueState,
+        allowedFrom: ['planned_issue'],
+        targetState: 'posted_issue',
+        workOrderId,
+        executionOrDocumentId: issueId
       });
 
-      await applyInventoryBalanceDelta(client, {
+      const now = new Date();
+      const occurredAt = new Date(issue.occurred_at);
+      const validation = await validateSufficientStock(
         tenantId,
-        itemId: line.component_item_id,
-        locationId: line.from_location_id,
-        uom: canonicalFields.canonicalUom,
-        deltaOnHand: canonicalFields.quantityDeltaCanonical
-      });
-    }
-
-    await client.query(
-      `UPDATE work_order_material_issues
-          SET status = 'posted',
-              inventory_movement_id = $1,
-              updated_at = $2
-        WHERE id = $3 AND tenant_id = $4`,
-      [movement.id, now, issueId, tenantId]
-    );
-
-    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-
-    if (workOrder.status === 'draft') {
-      await client.query(
-        `UPDATE work_orders SET status = 'in_progress', updated_at = $2 WHERE id = $1 AND tenant_id = $3`,
-        [workOrderId, now, tenantId]
-      );
-    }
-
-    if (isDisassembly) {
-      const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
-      const newCompleted = currentCompleted + issuedTotal;
-      const planned = toNumber(workOrder.quantity_planned);
-      const completedAt = newCompleted >= planned ? now : null;
-      const nextStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
-      await client.query(
-        `UPDATE work_orders
-            SET quantity_completed = $2,
-                status = $3,
-                completed_at = COALESCE(completed_at, $4),
-                updated_at = $5
-          WHERE id = $1 AND tenant_id = $6`,
-        [workOrderId, newCompleted, nextStatus, completedAt, now, tenantId]
-      );
-    }
-
-    if (validation.overrideMetadata && context.actor) {
-      await recordAuditLog(
+        occurredAt,
+        linesForPosting.map((line) => ({
+          warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
+          itemId: line.component_item_id,
+          locationId: line.from_location_id,
+          uom: line.uom,
+          quantityToConsume: roundQuantity(toNumber(line.quantity_issued))
+        })),
         {
-          tenantId,
-          actorType: context.actor.type,
-          actorId: context.actor.id ?? null,
-          action: 'negative_override',
-          entityType: 'inventory_movement',
-          entityId: movement.id,
-          occurredAt: now,
-          metadata: {
-            reason: validation.overrideMetadata.override_reason ?? null,
-            workOrderId,
-            issueId,
-            reference: validation.overrideMetadata.override_reference ?? null,
-            lines: linesForPosting.map((line) => ({
-              itemId: line.component_item_id,
-              locationId: line.from_location_id,
-              uom: line.uom,
-              quantity: roundQuantity(toNumber(line.quantity_issued))
-            }))
-          }
+          actorId: context.actor?.id ?? null,
+          actorRole: context.actor?.role ?? null,
+          overrideRequested: context.overrideRequested,
+          overrideReason: context.overrideReason ?? null,
+          overrideReference: `work_order_issue:${issueId}`
         },
-        client
+        { client }
       );
-    }
 
-    const posted = await fetchWorkOrderIssue(tenantId, workOrderId, issueId, client);
-    if (!posted) {
-      throw new Error('WO_ISSUE_NOT_FOUND_AFTER_POST');
+      const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
+      const movement = await createInventoryMovement(client, {
+        id: uuidv4(),
+        tenantId,
+        movementType: 'issue',
+        status: 'posted',
+        externalRef: isDisassembly
+          ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
+          : `work_order_issue:${issueId}:${workOrderId}`,
+        sourceType: 'work_order_issue_post',
+        sourceId: issueId,
+        idempotencyKey: `wo-issue-post:${issueId}`,
+        occurredAt,
+        postedAt: now,
+        notes: issue.notes ?? null,
+        metadata: {
+          workOrderId,
+          workOrderNumber,
+          ...(validation.overrideMetadata ?? {})
+        },
+        createdAt: now,
+        updatedAt: now
+      });
+
+      if (!movement.created) {
+        return buildWorkOrderIssueReplayResult({
+          tenantId,
+          workOrderId,
+          issueId,
+          movementId: movement.id,
+          client
+        });
+      }
+
+      const preparedLines: Array<{
+        sourceLineId: string;
+        warehouseId: string;
+        line: WorkOrderMaterialIssueLineRow;
+        canonicalFields: CanonicalMovementFields;
+        unitCost: number | null;
+        extendedCost: number | null;
+        reasonCode: string;
+      }> = [];
+      let totalIssueCost = 0;
+      const issuedTotal = linesForPosting.reduce(
+        (sum, line) => sum + toNumber(line.quantity_issued),
+        0
+      );
+
+      for (const line of linesForPosting) {
+        if (isDisassembly && line.component_item_id !== workOrder.output_item_id) {
+          throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
+        }
+        const qty = toNumber(line.quantity_issued);
+        if (qty <= 0) {
+          throw new Error('WO_ISSUE_INVALID_QUANTITY');
+        }
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          line.component_item_id,
+          -qty,
+          line.uom,
+          client
+        );
+        const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
+        let issueCost: number | null = null;
+        try {
+          const consumption = await consumeCostLayers({
+            tenant_id: tenantId,
+            item_id: line.component_item_id,
+            location_id: line.from_location_id,
+            quantity: canonicalQty,
+            consumption_type: 'production_input',
+            consumption_document_id: issueId,
+            movement_id: movement.id,
+            client
+          });
+          issueCost = consumption.total_cost;
+        } catch {
+          throw new Error('WO_WIP_COST_LAYERS_MISSING');
+        }
+        totalIssueCost += issueCost ?? 0;
+        preparedLines.push({
+          sourceLineId: line.id,
+          warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
+          line,
+          canonicalFields,
+          unitCost: issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null,
+          extendedCost: issueCost !== null ? -issueCost : null,
+          reasonCode: line.reason_code ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue')
+        });
+      }
+
+      const sortedMovementLines = sortDeterministicMovementLines(preparedLines, (entry) => ({
+        tenantId,
+        warehouseId: entry.warehouseId,
+        locationId: entry.line.from_location_id,
+        itemId: entry.line.component_item_id,
+        canonicalUom: entry.canonicalFields.canonicalUom,
+        sourceLineId: entry.sourceLineId
+      }));
+
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      for (const preparedLine of sortedMovementLines) {
+        await createInventoryMovementLine(client, {
+          tenantId,
+          movementId: movement.id,
+          itemId: preparedLine.line.component_item_id,
+          locationId: preparedLine.line.from_location_id,
+          quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
+          uom: preparedLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: preparedLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: preparedLine.canonicalFields.canonicalUom,
+          uomDimension: preparedLine.canonicalFields.uomDimension,
+          unitCost: preparedLine.unitCost,
+          extendedCost: preparedLine.extendedCost,
+          reasonCode: preparedLine.reasonCode,
+          lineNotes:
+            preparedLine.line.notes ?? `Work order issue ${issueId} line ${preparedLine.line.line_number}`
+        });
+        projectionOps.push(
+          buildInventoryBalanceProjectionOp({
+            tenantId,
+            itemId: preparedLine.line.component_item_id,
+            locationId: preparedLine.line.from_location_id,
+            uom: preparedLine.canonicalFields.canonicalUom,
+            deltaOnHand: preparedLine.canonicalFields.quantityDeltaCanonical
+          })
+        );
+      }
+
+      await createWorkOrderWipValuationRecord(client, {
+        tenantId,
+        workOrderId,
+        executionId: null,
+        movementId: movement.id,
+        valuationType: 'issue',
+        valueDelta: totalIssueCost,
+        notes: `Work-order issue WIP valuation for issue ${issueId}`
+      });
+
+      projectionOps.push(async (projectionClient) => {
+        await projectionClient.query(
+          `UPDATE work_order_material_issues
+              SET status = 'posted',
+                  inventory_movement_id = $1,
+                  updated_at = $2
+            WHERE id = $3
+              AND tenant_id = $4`,
+          [movement.id, now, issueId, tenantId]
+        );
+
+        if (workOrder!.status === 'draft') {
+          await projectionClient.query(
+            `UPDATE work_orders
+                SET status = 'in_progress',
+                    updated_at = $2
+              WHERE id = $1
+                AND tenant_id = $3`,
+            [workOrderId, now, tenantId]
+          );
+        }
+
+        if (isDisassembly) {
+          const currentCompleted = toNumber(workOrder!.quantity_completed ?? 0);
+          const newCompleted = currentCompleted + issuedTotal;
+          const planned = toNumber(workOrder!.quantity_planned);
+          const completedAt = newCompleted >= planned ? now : null;
+          const nextStatus =
+            newCompleted >= planned
+              ? 'completed'
+              : workOrder!.status === 'draft'
+                ? 'in_progress'
+                : workOrder!.status;
+          await projectionClient.query(
+            `UPDATE work_orders
+                SET quantity_completed = $2,
+                    status = $3,
+                    completed_at = COALESCE(completed_at, $4),
+                    updated_at = $5
+              WHERE id = $1
+                AND tenant_id = $6`,
+            [workOrderId, newCompleted, nextStatus, completedAt, now, tenantId]
+          );
+        }
+
+        if (validation.overrideMetadata && context.actor) {
+          await recordAuditLog(
+            {
+              tenantId,
+              actorType: context.actor.type,
+              actorId: context.actor.id ?? null,
+              action: 'negative_override',
+              entityType: 'inventory_movement',
+              entityId: movement.id,
+              occurredAt: now,
+              metadata: {
+                reason: validation.overrideMetadata.override_reason ?? null,
+                workOrderId,
+                issueId,
+                reference: validation.overrideMetadata.override_reference ?? null,
+                lines: linesForPosting.map((line) => ({
+                  itemId: line.component_item_id,
+                  locationId: line.from_location_id,
+                  uom: line.uom,
+                  quantity: roundQuantity(toNumber(line.quantity_issued))
+                }))
+              }
+            },
+            projectionClient
+          );
+        }
+      });
+
+      return {
+        responseBody: mapMaterialIssue(
+          {
+            ...issue,
+            status: 'posted',
+            inventory_movement_id: movement.id,
+            updated_at: now.toISOString()
+          },
+          linesForPosting
+        ),
+        responseStatus: 200,
+        events: [
+          buildMovementPostedEvent(movement.id),
+          buildWorkOrderIssuePostedEvent({
+            issueId,
+            workOrderId,
+            movementId: movement.id
+          })
+        ],
+        projectionOps
+      };
     }
-    return posted;
-  }, WORK_ORDER_POST_RETRY_OPTIONS);
+  });
 }
 
 export async function createWorkOrderCompletion(
@@ -1353,297 +1740,428 @@ export async function postWorkOrderCompletion(
   workOrderId: string,
   completionId: string
 ) {
-  return withTransactionRetry(async (client) => {
-    const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
-    if (!workOrder) {
-      throw new Error('WO_NOT_FOUND');
-    }
-    const isDisassembly = workOrder.kind === 'disassembly';
-    if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
-      throw new Error('WO_INVALID_STATE');
-    }
+  let workOrder: WorkOrderRow | null = null;
+  let execution: WorkOrderExecutionRow | null = null;
+  let completionState: ManufacturingMutationState | null = null;
+  let linesForPosting: WorkOrderExecutionLineRow[] = [];
+  let warehouseIdsByLocation = new Map<string, string>();
 
-    const execResult = await client.query<WorkOrderExecutionRow>(
-      'SELECT * FROM work_order_executions WHERE id = $1 AND work_order_id = $2 AND tenant_id = $3 FOR UPDATE',
-      [completionId, workOrderId, tenantId]
-    );
-    if (execResult.rowCount === 0) {
-      throw new Error('WO_COMPLETION_NOT_FOUND');
-    }
-    const execution = execResult.rows[0];
-    if (execution.status === 'posted') {
-      return fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client);
-    }
-    if (execution.status === 'canceled') {
-      throw new Error('WO_COMPLETION_CANCELED');
-    }
-
-    const linesResult = await client.query<WorkOrderExecutionLineRow>(
-      'SELECT * FROM work_order_execution_lines WHERE work_order_execution_id = $1 AND tenant_id = $2 ORDER BY created_at ASC',
-      [completionId, tenantId]
-    );
-    if (linesResult.rowCount === 0) {
-      throw new Error('WO_COMPLETION_NO_LINES');
-    }
-    const linesForPosting = [...linesResult.rows].sort(compareProduceLineLockKey);
-
-    for (const line of linesForPosting) {
-      if (line.line_type !== 'produce') {
-        throw new Error('WO_COMPLETION_INVALID_LINE_TYPE');
+  return runInventoryCommand<any>({
+    tenantId,
+    endpoint: 'wo.completion.post',
+    operation: 'work_order_completion_post',
+    retryOptions: WORK_ORDER_POST_RETRY_OPTIONS,
+    lockTargets: async (client) => {
+      workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
+      if (!workOrder) {
+        throw new Error('WO_NOT_FOUND');
       }
-      if (!isDisassembly && line.item_id !== workOrder.output_item_id) {
-        throw new Error('WO_COMPLETION_ITEM_MISMATCH');
+      if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
+        throw new Error('WO_INVALID_STATE');
       }
-      if (!line.to_location_id) {
-        throw new Error('WO_COMPLETION_LOCATION_REQUIRED');
-      }
-      const qty = toNumber(line.quantity);
-      if (qty <= 0) {
-        throw new Error('WO_COMPLETION_INVALID_QUANTITY');
-      }
-    }
 
-    const now = new Date();
-    const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
-    const movementId = uuidv4();
-    const movement = await createInventoryMovement(client, {
-      id: movementId,
-      tenantId,
-      movementType: 'receive',
-      status: 'posted',
-      externalRef: isDisassembly
-        ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
-        : `work_order_completion:${completionId}:${workOrderId}`,
-      sourceType: 'work_order_completion_post',
-      sourceId: completionId,
-      idempotencyKey: `wo-completion-post:${completionId}`,
-      occurredAt: execution.occurred_at,
-      postedAt: now,
-      notes: execution.notes ?? null,
-      metadata: { workOrderId, workOrderNumber },
-      createdAt: now,
-      updatedAt: now
-    });
-
-    if (!movement.created) {
-      await ensurePostedMovementReady(client, tenantId, movement.id);
-      await client.query(
-        `UPDATE work_order_executions
-            SET status = 'posted',
-                production_movement_id = $1
-          WHERE id = $2 AND tenant_id = $3`,
-        [movement.id, completionId, tenantId]
+      const execResult = await client.query<WorkOrderExecutionRow>(
+        `SELECT *
+           FROM work_order_executions
+          WHERE id = $1
+            AND work_order_id = $2
+            AND tenant_id = $3
+          FOR UPDATE`,
+        [completionId, workOrderId, tenantId]
       );
-      await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-      return fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client);
-    }
+      if (execResult.rowCount === 0) {
+        throw new Error('WO_COMPLETION_NOT_FOUND');
+      }
+      execution = execResult.rows[0];
+      if (execution.status === 'canceled') {
+        throw new Error('WO_COMPLETION_CANCELED');
+      }
+      completionState = deriveCompletionMutationState({
+        execution,
+        flow: 'completion'
+      });
+      if (completionState === 'posted_completion') {
+        if (!execution.production_movement_id) {
+          throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+            flow: 'completion',
+            completionId,
+            reason: 'posted_completion_missing_authoritative_movement'
+          });
+        }
+        return [];
+      }
 
-    const preparedLines: Array<{
-      line: WorkOrderExecutionLineRow;
-      qty: number;
-      canonicalFields: CanonicalMovementFields;
-    }> = [];
-    let totalProduced = 0;
-    let totalProducedCanonical = 0;
-
-    for (const line of linesForPosting) {
-      const qty = toNumber(line.quantity);
-      const canonicalFields = await getCanonicalMovementFields(
+      const linesResult = await client.query<WorkOrderExecutionLineRow>(
+        `SELECT *
+           FROM work_order_execution_lines
+          WHERE work_order_execution_id = $1
+            AND tenant_id = $2
+          ORDER BY created_at ASC`,
+        [completionId, tenantId]
+      );
+      if (linesResult.rowCount === 0) {
+        throw new Error('WO_COMPLETION_NO_LINES');
+      }
+      linesForPosting = [...linesResult.rows].sort(compareProduceLineLockKey);
+      const isDisassembly = workOrder.kind === 'disassembly';
+      warehouseIdsByLocation = new Map<string, string>();
+      for (const line of linesForPosting) {
+        if (line.line_type !== 'produce') {
+          throw new Error('WO_COMPLETION_INVALID_LINE_TYPE');
+        }
+        if (!isDisassembly && line.item_id !== workOrder.output_item_id) {
+          throw new Error('WO_COMPLETION_ITEM_MISMATCH');
+        }
+        if (!line.to_location_id) {
+          throw new Error('WO_COMPLETION_LOCATION_REQUIRED');
+        }
+        const qty = toNumber(line.quantity);
+        if (qty <= 0) {
+          throw new Error('WO_COMPLETION_INVALID_QUANTITY');
+        }
+        if (!warehouseIdsByLocation.has(line.to_location_id)) {
+          warehouseIdsByLocation.set(
+            line.to_location_id,
+            await resolveWarehouseIdForLocation(tenantId, line.to_location_id, client)
+          );
+        }
+      }
+      return linesForPosting.map((line) => ({
         tenantId,
-        line.item_id,
-        qty,
-        line.uom,
-        client
+        warehouseId: warehouseIdsByLocation.get(line.to_location_id!) ?? '',
+        itemId: line.item_id
+      }));
+    },
+    execute: async ({ client }) => {
+      if (!workOrder || !execution || !completionState) {
+        throw new Error('WO_COMPLETION_NOT_FOUND');
+      }
+      if (completionState === 'posted_completion') {
+        return buildWorkOrderCompletionReplayResult({
+          tenantId,
+          workOrderId,
+          completionId,
+          movementId: execution.production_movement_id!,
+          client
+        });
+      }
+
+      assertManufacturingTransition({
+        flow: 'completion',
+        currentState: completionState,
+        allowedFrom: ['planned_completion'],
+        targetState: 'posted_completion',
+        workOrderId,
+        executionOrDocumentId: completionId
+      });
+
+      const isDisassembly = workOrder.kind === 'disassembly';
+      const now = new Date();
+      const movement = await createInventoryMovement(client, {
+        id: uuidv4(),
+        tenantId,
+        movementType: 'receive',
+        status: 'posted',
+        externalRef: isDisassembly
+          ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
+          : `work_order_completion:${completionId}:${workOrderId}`,
+        sourceType: 'work_order_completion_post',
+        sourceId: completionId,
+        idempotencyKey: `wo-completion-post:${completionId}`,
+        occurredAt: execution.occurred_at,
+        postedAt: now,
+        notes: execution.notes ?? null,
+        metadata: {
+          workOrderId,
+          workOrderNumber: workOrder.number ?? workOrder.work_order_number
+        },
+        createdAt: now,
+        updatedAt: now
+      });
+
+      if (!movement.created) {
+        return buildWorkOrderCompletionReplayResult({
+          tenantId,
+          workOrderId,
+          completionId,
+          movementId: movement.id,
+          client
+        });
+      }
+
+      const preparedLines: Array<{
+        sourceLineId: string;
+        warehouseId: string;
+        line: WorkOrderExecutionLineRow;
+        canonicalFields: CanonicalMovementFields;
+        unitCost: number | null;
+        extendedCost: number;
+      }> = [];
+      let totalProduced = 0;
+      let totalProducedCanonical = 0;
+
+      for (const line of linesForPosting) {
+        const qty = toNumber(line.quantity);
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          line.item_id,
+          qty,
+          line.uom,
+          client
+        );
+        totalProduced += qty;
+        totalProducedCanonical += canonicalFields.quantityDeltaCanonical;
+        preparedLines.push({
+          sourceLineId: line.id,
+          warehouseId: warehouseIdsByLocation.get(line.to_location_id!) ?? '',
+          line,
+          canonicalFields,
+          unitCost: null,
+          extendedCost: 0
+        });
+      }
+
+      if (totalProducedCanonical <= 0) {
+        throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
+      }
+
+      const totalIssueCost = await allocateWipCostFromWorkOrderIssues(
+        client,
+        tenantId,
+        workOrderId,
+        completionId,
+        now
       );
-      totalProduced += qty;
-      totalProducedCanonical += canonicalFields.quantityDeltaCanonical;
-      preparedLines.push({ line, qty, canonicalFields });
-    }
+      const wipUnitCostCanonical = totalIssueCost / totalProducedCanonical;
 
-    if (totalProducedCanonical <= 0) {
-      throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
-    }
+      for (const preparedLine of preparedLines) {
+        const allocationRatio = preparedLine.canonicalFields.quantityDeltaCanonical / totalProducedCanonical;
+        const allocatedCost = totalIssueCost * allocationRatio;
+        preparedLine.extendedCost = allocatedCost;
+        preparedLine.unitCost =
+          preparedLine.canonicalFields.quantityDeltaCanonical !== 0
+            ? allocatedCost / preparedLine.canonicalFields.quantityDeltaCanonical
+            : null;
+      }
 
-    const totalIssueCost = await allocateWipCostFromWorkOrderIssues(
-      client,
-      tenantId,
-      workOrderId,
-      completionId,
-      now
-    );
-    const wipUnitCostCanonical = totalIssueCost / totalProducedCanonical;
+      const sortedMovementLines = sortDeterministicMovementLines(preparedLines, (entry) => ({
+        tenantId,
+        warehouseId: entry.warehouseId,
+        locationId: entry.line.to_location_id!,
+        itemId: entry.line.item_id,
+        canonicalUom: entry.canonicalFields.canonicalUom,
+        sourceLineId: entry.sourceLineId
+      }));
 
-    for (const { line, qty, canonicalFields } of preparedLines) {
-      const reasonCode = line.reason_code ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion');
-      const allocationRatio = canonicalFields.quantityDeltaCanonical / totalProducedCanonical;
-      const allocatedCost = totalIssueCost * allocationRatio;
-      const unitCost =
-        canonicalFields.quantityDeltaCanonical !== 0
-          ? allocatedCost / canonicalFields.quantityDeltaCanonical
-          : null;
-      const extendedCost = allocatedCost;
-
-      // Create cost layer for completed production output
-      if (line.to_location_id) {
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      for (const preparedLine of sortedMovementLines) {
         await createCostLayer({
           tenant_id: tenantId,
-          item_id: line.item_id,
-          location_id: line.to_location_id,
-          uom: canonicalFields.canonicalUom,
-          quantity: canonicalFields.quantityDeltaCanonical,
-          unit_cost: unitCost ?? 0,
+          item_id: preparedLine.line.item_id,
+          location_id: preparedLine.line.to_location_id!,
+          uom: preparedLine.canonicalFields.canonicalUom,
+          quantity: preparedLine.canonicalFields.quantityDeltaCanonical,
+          unit_cost: preparedLine.unitCost ?? 0,
           source_type: 'production',
           source_document_id: completionId,
           movement_id: movement.id,
           notes: `Production output from work order ${workOrderId}`,
           client
         });
+
+        await createInventoryMovementLine(client, {
+          tenantId,
+          movementId: movement.id,
+          itemId: preparedLine.line.item_id,
+          locationId: preparedLine.line.to_location_id!,
+          quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
+          uom: preparedLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: preparedLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: preparedLine.canonicalFields.canonicalUom,
+          uomDimension: preparedLine.canonicalFields.uomDimension,
+          unitCost: preparedLine.unitCost,
+          extendedCost: preparedLine.extendedCost,
+          reasonCode:
+            preparedLine.line.reason_code
+            ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion'),
+          lineNotes: preparedLine.line.notes ?? `Work order completion ${completionId}`
+        });
+        projectionOps.push(
+          buildInventoryBalanceProjectionOp({
+            tenantId,
+            itemId: preparedLine.line.item_id,
+            locationId: preparedLine.line.to_location_id!,
+            uom: preparedLine.canonicalFields.canonicalUom,
+            deltaOnHand: preparedLine.canonicalFields.quantityDeltaCanonical
+          })
+        );
       }
 
-      await createInventoryMovementLine(client, {
+      const completionUomSet = new Set(
+        preparedLines.map((line) => line.canonicalFields.canonicalUom)
+      );
+      const completionCanonicalUom =
+        completionUomSet.size === 1 ? preparedLines[0]?.canonicalFields.canonicalUom ?? null : null;
+      await createWorkOrderWipValuationRecord(client, {
         tenantId,
+        workOrderId,
+        executionId: completionId,
         movementId: movement.id,
-        itemId: line.item_id,
-        locationId: line.to_location_id,
-        quantityDelta: canonicalFields.quantityDeltaCanonical,
-        uom: canonicalFields.canonicalUom,
-        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-        uomEntered: canonicalFields.uomEntered,
-        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-        canonicalUom: canonicalFields.canonicalUom,
-        uomDimension: canonicalFields.uomDimension,
-        unitCost,
-        extendedCost,
-        reasonCode,
-        lineNotes: line.notes ?? `Work order completion ${completionId}`
+        valuationType: 'completion',
+        valueDelta: -totalIssueCost,
+        quantityCanonical: completionCanonicalUom ? totalProducedCanonical : null,
+        canonicalUom: completionCanonicalUom,
+        notes: `Work-order completion WIP capitalization for execution ${completionId}`
       });
 
-      await applyInventoryBalanceDelta(client, {
-        tenantId,
-        itemId: line.item_id,
-        locationId: line.to_location_id,
-        uom: canonicalFields.canonicalUom,
-        deltaOnHand: canonicalFields.quantityDeltaCanonical
+      projectionOps.push(async (projectionClient) => {
+        await projectionClient.query(
+          `UPDATE work_order_executions
+              SET status = 'posted',
+                  production_movement_id = $1,
+                  wip_total_cost = $2,
+                  wip_unit_cost = $3,
+                  wip_quantity_canonical = $4,
+                  wip_cost_method = $5,
+                  wip_costed_at = $6
+            WHERE id = $7
+              AND tenant_id = $8`,
+          [
+            movement.id,
+            totalIssueCost,
+            wipUnitCostCanonical,
+            totalProducedCanonical,
+            WIP_COST_METHOD,
+            now,
+            completionId,
+            tenantId
+          ]
+        );
+
+        if (!isDisassembly) {
+          const currentCompleted = toNumber(workOrder!.quantity_completed ?? 0);
+          const newCompleted = currentCompleted + totalProduced;
+          const planned = toNumber(workOrder!.quantity_planned);
+          const completedAt = newCompleted >= planned ? now : null;
+          const newStatus =
+            newCompleted >= planned
+              ? 'completed'
+              : workOrder!.status === 'draft'
+                ? 'in_progress'
+                : workOrder!.status;
+          await projectionClient.query(
+            `UPDATE work_orders
+                SET quantity_completed = $2,
+                    status = $3,
+                    completed_at = COALESCE(completed_at, $4),
+                    wip_total_cost = COALESCE(wip_total_cost, 0) + $5,
+                    wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $6,
+                    wip_unit_cost = CASE
+                      WHEN (COALESCE(wip_quantity_canonical, 0) + $6) > 0
+                      THEN (COALESCE(wip_total_cost, 0) + $5) / (COALESCE(wip_quantity_canonical, 0) + $6)
+                      ELSE NULL
+                    END,
+                    wip_cost_method = $7,
+                    wip_costed_at = $8,
+                    updated_at = $9
+              WHERE id = $1
+                AND tenant_id = $10`,
+            [
+              workOrderId,
+              newCompleted,
+              newStatus,
+              completedAt,
+              totalIssueCost,
+              totalProducedCanonical,
+              WIP_COST_METHOD,
+              now,
+              now,
+              tenantId
+            ]
+          );
+        } else if (workOrder!.status === 'draft') {
+          await projectionClient.query(
+            `UPDATE work_orders
+                SET status = 'in_progress',
+                    wip_total_cost = COALESCE(wip_total_cost, 0) + $2,
+                    wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $3,
+                    wip_unit_cost = CASE
+                      WHEN (COALESCE(wip_quantity_canonical, 0) + $3) > 0
+                      THEN (COALESCE(wip_total_cost, 0) + $2) / (COALESCE(wip_quantity_canonical, 0) + $3)
+                      ELSE NULL
+                    END,
+                    wip_cost_method = $4,
+                    wip_costed_at = $5,
+                    updated_at = $6
+              WHERE id = $1
+                AND tenant_id = $7`,
+            [
+              workOrderId,
+              totalIssueCost,
+              totalProducedCanonical,
+              WIP_COST_METHOD,
+              now,
+              now,
+              tenantId
+            ]
+          );
+        } else {
+          await projectionClient.query(
+            `UPDATE work_orders
+                SET wip_total_cost = COALESCE(wip_total_cost, 0) + $2,
+                    wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $3,
+                    wip_unit_cost = CASE
+                      WHEN (COALESCE(wip_quantity_canonical, 0) + $3) > 0
+                      THEN (COALESCE(wip_total_cost, 0) + $2) / (COALESCE(wip_quantity_canonical, 0) + $3)
+                      ELSE NULL
+                    END,
+                    wip_cost_method = $4,
+                    wip_costed_at = $5,
+                    updated_at = $6
+              WHERE id = $1
+                AND tenant_id = $7`,
+            [
+              workOrderId,
+              totalIssueCost,
+              totalProducedCanonical,
+              WIP_COST_METHOD,
+              now,
+              now,
+              tenantId
+            ]
+          );
+        }
       });
+
+      return {
+        responseBody: mapExecution(
+          {
+            ...execution,
+            status: 'posted',
+            production_movement_id: movement.id,
+            wip_total_cost: totalIssueCost,
+            wip_unit_cost: wipUnitCostCanonical,
+            wip_quantity_canonical: totalProducedCanonical,
+            wip_cost_method: WIP_COST_METHOD,
+            wip_costed_at: now.toISOString()
+          },
+          linesForPosting
+        ),
+        responseStatus: 200,
+        events: [
+          buildMovementPostedEvent(movement.id),
+          buildWorkOrderCompletionPostedEvent({
+            executionId: completionId,
+            workOrderId,
+            movementId: movement.id
+          })
+        ],
+        projectionOps
+      };
     }
-
-    await client.query(
-      `UPDATE work_order_executions
-          SET status = 'posted',
-              production_movement_id = $1,
-              wip_total_cost = $2,
-              wip_unit_cost = $3,
-              wip_quantity_canonical = $4,
-              wip_cost_method = $5,
-              wip_costed_at = $6
-        WHERE id = $7 AND tenant_id = $8`,
-      [
-        movement.id,
-        totalIssueCost,
-        wipUnitCostCanonical,
-        totalProducedCanonical,
-        WIP_COST_METHOD,
-        now,
-        completionId,
-        tenantId
-      ]
-    );
-
-    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-
-    if (!isDisassembly) {
-      const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
-      const newCompleted = currentCompleted + totalProduced;
-      const planned = toNumber(workOrder.quantity_planned);
-      const completedAt = newCompleted >= planned ? now : null;
-      const newStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
-
-      await client.query(
-        `UPDATE work_orders
-            SET quantity_completed = $2,
-                status = $3,
-                completed_at = COALESCE(completed_at, $4),
-                wip_total_cost = COALESCE(wip_total_cost, 0) + $5,
-                wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $6,
-                wip_unit_cost = CASE
-                  WHEN (COALESCE(wip_quantity_canonical, 0) + $6) > 0
-                  THEN (COALESCE(wip_total_cost, 0) + $5) / (COALESCE(wip_quantity_canonical, 0) + $6)
-                  ELSE NULL
-                END,
-                wip_cost_method = $7,
-                wip_costed_at = $8,
-                updated_at = $9
-          WHERE id = $1 AND tenant_id = $10`,
-        [
-          workOrderId,
-          newCompleted,
-          newStatus,
-          completedAt,
-          totalIssueCost,
-          totalProducedCanonical,
-          WIP_COST_METHOD,
-          now,
-          now,
-          tenantId
-        ]
-      );
-    } else if (workOrder.status === 'draft') {
-      await client.query(
-        `UPDATE work_orders
-            SET status = 'in_progress',
-                wip_total_cost = COALESCE(wip_total_cost, 0) + $2,
-                wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $3,
-                wip_unit_cost = CASE
-                  WHEN (COALESCE(wip_quantity_canonical, 0) + $3) > 0
-                  THEN (COALESCE(wip_total_cost, 0) + $2) / (COALESCE(wip_quantity_canonical, 0) + $3)
-                  ELSE NULL
-                END,
-                wip_cost_method = $4,
-                wip_costed_at = $5,
-                updated_at = $6
-          WHERE id = $1 AND tenant_id = $7`,
-        [
-          workOrderId,
-          totalIssueCost,
-          totalProducedCanonical,
-          WIP_COST_METHOD,
-          now,
-          now,
-          tenantId
-        ]
-      );
-    } else {
-      await client.query(
-        `UPDATE work_orders
-            SET wip_total_cost = COALESCE(wip_total_cost, 0) + $2,
-                wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $3,
-                wip_unit_cost = CASE
-                  WHEN (COALESCE(wip_quantity_canonical, 0) + $3) > 0
-                  THEN (COALESCE(wip_total_cost, 0) + $2) / (COALESCE(wip_quantity_canonical, 0) + $3)
-                  ELSE NULL
-                END,
-                wip_cost_method = $4,
-                wip_costed_at = $5,
-                updated_at = $6
-          WHERE id = $1 AND tenant_id = $7`,
-        [
-          workOrderId,
-          totalIssueCost,
-          totalProducedCanonical,
-          WIP_COST_METHOD,
-          now,
-          now,
-          tenantId
-        ]
-      );
-    }
-
-    const posted = await fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client);
-    if (!posted) {
-      throw new Error('WO_COMPLETION_NOT_FOUND_AFTER_POST');
-    }
-    return posted;
-  }, WORK_ORDER_POST_RETRY_OPTIONS);
+  });
 }
 
 export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId: string) {
@@ -1904,6 +2422,199 @@ async function fetchVoidMovementPair(
   };
 }
 
+async function buildWorkOrderIssueReplayResult(params: {
+  tenantId: string;
+  workOrderId: string;
+  issueId: string;
+  movementId: string;
+  client: PoolClient;
+  idempotencyKey?: string | null;
+}) {
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovementIds: [params.movementId],
+    client: params.client,
+    fetchAggregateView: () =>
+      fetchWorkOrderIssue(params.tenantId, params.workOrderId, params.issueId, params.client),
+    aggregateNotFoundError: new Error('WO_ISSUE_NOT_FOUND'),
+    movementNotReadyError: (movementId, readiness) =>
+      domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+        flow: 'issue',
+        issueId: params.issueId,
+        movementId,
+        reason: readiness.movementExists
+          ? 'authoritative_movement_missing_lines'
+          : 'authoritative_movement_missing'
+      }),
+    authoritativeEvents: [
+      buildMovementPostedEvent(params.movementId, params.idempotencyKey ?? null),
+      buildWorkOrderIssuePostedEvent({
+        issueId: params.issueId,
+        workOrderId: params.workOrderId,
+        movementId: params.movementId,
+        producerIdempotencyKey: params.idempotencyKey ?? null
+      })
+    ]
+  });
+}
+
+async function buildWorkOrderCompletionReplayResult(params: {
+  tenantId: string;
+  workOrderId: string;
+  completionId: string;
+  movementId: string;
+  client: PoolClient;
+  idempotencyKey?: string | null;
+}) {
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovementIds: [params.movementId],
+    client: params.client,
+    fetchAggregateView: () =>
+      fetchWorkOrderCompletion(params.tenantId, params.workOrderId, params.completionId, params.client),
+    aggregateNotFoundError: new Error('WO_COMPLETION_NOT_FOUND'),
+    movementNotReadyError: (movementId, readiness) =>
+      domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+        flow: 'completion',
+        completionId: params.completionId,
+        movementId,
+        reason: readiness.movementExists
+          ? 'authoritative_movement_missing_lines'
+          : 'authoritative_movement_missing'
+      }),
+    authoritativeEvents: [
+      buildMovementPostedEvent(params.movementId, params.idempotencyKey ?? null),
+      buildWorkOrderCompletionPostedEvent({
+        executionId: params.completionId,
+        workOrderId: params.workOrderId,
+        movementId: params.movementId,
+        producerIdempotencyKey: params.idempotencyKey ?? null
+      })
+    ]
+  });
+}
+
+async function buildWorkOrderBatchReplayResult(params: {
+  tenantId: string;
+  workOrderId: string;
+  executionId: string;
+  issueMovementId: string;
+  receiveMovementId: string;
+  client: PoolClient;
+  idempotencyKey?: string | null;
+}) {
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovementIds: [params.issueMovementId, params.receiveMovementId],
+    client: params.client,
+    fetchAggregateView: async () => {
+      const res = await params.client.query<{
+        execution_id: string;
+        work_order_id: string;
+        quantity_completed: string | number | null;
+        work_order_status: string;
+      }>(
+        `SELECT e.id AS execution_id,
+                e.work_order_id,
+                w.quantity_completed,
+                w.status AS work_order_status
+           FROM work_order_executions e
+           JOIN work_orders w
+             ON w.id = e.work_order_id
+            AND w.tenant_id = e.tenant_id
+          WHERE e.tenant_id = $1
+            AND e.id = $2
+            AND e.work_order_id = $3
+          FOR UPDATE OF e`,
+        [params.tenantId, params.executionId, params.workOrderId]
+      );
+      const row = res.rows[0];
+      if (!row) {
+        return null;
+      }
+      return {
+        workOrderId: row.work_order_id,
+        executionId: row.execution_id,
+        issueMovementId: params.issueMovementId,
+        receiveMovementId: params.receiveMovementId,
+        quantityCompleted: roundQuantity(toNumber(row.quantity_completed ?? 0)),
+        workOrderStatus: row.work_order_status,
+        idempotencyKey: params.idempotencyKey ?? null,
+        replayed: true
+      };
+    },
+    aggregateNotFoundError: new Error('WO_EXECUTION_NOT_FOUND'),
+    movementNotReadyError: (movementId, readiness) =>
+      domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+        flow: 'report',
+        executionId: params.executionId,
+        movementId,
+        reason: readiness.movementExists
+          ? 'authoritative_movement_missing_lines'
+          : 'authoritative_movement_missing'
+      }),
+    authoritativeEvents: [
+      buildMovementPostedEvent(params.issueMovementId, params.idempotencyKey ?? null),
+      buildMovementPostedEvent(params.receiveMovementId, params.idempotencyKey ?? null),
+      buildWorkOrderProductionReportedEvent({
+        executionId: params.executionId,
+        workOrderId: params.workOrderId,
+        issueMovementId: params.issueMovementId,
+        receiveMovementId: params.receiveMovementId,
+        producerIdempotencyKey: params.idempotencyKey ?? null
+      })
+    ]
+  });
+}
+
+async function buildWorkOrderVoidReplayResult(params: {
+  tenantId: string;
+  workOrderId: string;
+  executionId: string;
+  componentReturnMovementId: string;
+  outputReversalMovementId: string;
+  client: PoolClient;
+  idempotencyKey?: string | null;
+}) {
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovementIds: [
+      params.componentReturnMovementId,
+      params.outputReversalMovementId
+    ],
+    client: params.client,
+    fetchAggregateView: async () => ({
+      workOrderId: params.workOrderId,
+      workOrderExecutionId: params.executionId,
+      componentReturnMovementId: params.componentReturnMovementId,
+      outputReversalMovementId: params.outputReversalMovementId,
+      idempotencyKey: params.idempotencyKey ?? null,
+      replayed: true
+    }),
+    aggregateNotFoundError: new Error('WO_VOID_EXECUTION_NOT_FOUND'),
+    movementNotReadyError: (movementId, readiness) =>
+      domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+        flow: 'reversal',
+        executionId: params.executionId,
+        movementId,
+        reason: readiness.movementExists
+          ? 'authoritative_movement_missing_lines'
+          : 'authoritative_movement_missing'
+      }),
+    authoritativeEvents: [
+      buildMovementPostedEvent(params.componentReturnMovementId, params.idempotencyKey ?? null),
+      buildMovementPostedEvent(params.outputReversalMovementId, params.idempotencyKey ?? null),
+      buildWorkOrderProductionReversedEvent({
+        executionId: params.executionId,
+        workOrderId: params.workOrderId,
+        componentReturnMovementId: params.componentReturnMovementId,
+        outputReversalMovementId: params.outputReversalMovementId,
+        producerIdempotencyKey: params.idempotencyKey ?? null
+      })
+    ]
+  });
+}
+
 async function loadMovementLineScopes(
   client: PoolClient,
   tenantId: string,
@@ -1975,7 +2686,7 @@ async function assertVoidOutputStillInQa(
       LIMIT 1`,
     [tenantId, layerRows.rows.map((row) => row.id)]
   );
-  if (consumedRows.rowCount > 0) {
+  if ((consumedRows.rowCount ?? 0) > 0) {
     throw domainError('WO_VOID_OUTPUT_ALREADY_MOVED', {
       workOrderExecutionId: executionId
     });
@@ -2278,337 +2989,465 @@ export async function voidWorkOrderProductionReport(
     })
     : null;
 
-  return withTransactionRetry(async (client) => {
-    if (idempotencyKey && idempotencyRequestHash) {
-      const claim = await claimTransactionalIdempotency<WorkOrderVoidReportResult>(client, {
-        tenantId,
-        key: idempotencyKey,
-        endpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_VOID_REPORT_PRODUCTION,
-        requestHash: idempotencyRequestHash
-      });
-      if (claim.replayed) {
-        return {
-          ...claim.responseBody,
-          idempotencyKey,
-          replayed: true
-        };
-      }
-    }
+  let execution: LockedExecutionRow | null = null;
+  let componentLines: MovementLineScopeRow[] = [];
+  let outputLines: MovementLineScopeRow[] = [];
 
-    const executionRes = await client.query<LockedExecutionRow>(
-      `SELECT id,
-              work_order_id,
-              status,
-              occurred_at,
-              consumption_movement_id,
-              production_movement_id
-         FROM work_order_executions
-        WHERE tenant_id = $1
-          AND id = $2
-          AND work_order_id = $3
-        FOR UPDATE`,
-      [tenantId, data.workOrderExecutionId, workOrderId]
-    );
-    if (executionRes.rowCount === 0) {
-      throw new Error('WO_VOID_EXECUTION_NOT_FOUND');
-    }
-    const execution = executionRes.rows[0];
-    assertSameWorkOrderExecution(workOrderId, execution);
-    if (execution.status !== 'posted') {
-      throw new Error('WO_VOID_EXECUTION_NOT_POSTED');
-    }
-    if (!execution.consumption_movement_id || !execution.production_movement_id) {
-      throw new Error('WO_VOID_EXECUTION_MOVEMENTS_MISSING');
-    }
-
-    const existingPair = await fetchVoidMovementPair(client, tenantId, execution.id);
-    if (existingPair) {
-      const replayResponse: WorkOrderVoidReportResult = {
-        workOrderId,
-        workOrderExecutionId: execution.id,
-        componentReturnMovementId: existingPair.componentReturnMovementId,
-        outputReversalMovementId: existingPair.outputReversalMovementId,
-        idempotencyKey,
-        replayed: true
-      };
-      if (idempotencyKey) {
-        await finalizeTransactionalIdempotency(client, {
+  return runInventoryCommand<WorkOrderVoidReportResult>({
+    tenantId,
+    endpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_VOID_REPORT_PRODUCTION,
+    operation: 'work_order_batch_void',
+    idempotencyKey,
+    requestHash: idempotencyRequestHash,
+    retryOptions: WORK_ORDER_POST_RETRY_OPTIONS,
+    onReplay: async ({ client, responseBody }) => {
+      return (
+        await buildWorkOrderVoidReplayResult({
           tenantId,
-          key: idempotencyKey,
-          responseStatus: 200,
-          responseBody: replayResponse
+          workOrderId: responseBody.workOrderId,
+          executionId: responseBody.workOrderExecutionId,
+          componentReturnMovementId: responseBody.componentReturnMovementId,
+          outputReversalMovementId: responseBody.outputReversalMovementId,
+          client,
+          idempotencyKey
+        })
+      ).responseBody;
+    },
+    lockTargets: async (client) => {
+      const executionRes = await client.query<LockedExecutionRow>(
+        `SELECT id,
+                work_order_id,
+                status,
+                occurred_at,
+                consumption_movement_id,
+                production_movement_id
+           FROM work_order_executions
+          WHERE tenant_id = $1
+            AND id = $2
+            AND work_order_id = $3
+          FOR UPDATE`,
+        [tenantId, data.workOrderExecutionId, workOrderId]
+      );
+      if (executionRes.rowCount === 0) {
+        throw new Error('WO_VOID_EXECUTION_NOT_FOUND');
+      }
+      execution = executionRes.rows[0];
+      assertSameWorkOrderExecution(workOrderId, execution);
+      const currentState =
+        execution.status === 'posted' && execution.production_movement_id && execution.consumption_movement_id
+          ? 'reported_production'
+          : execution.status === 'posted'
+            ? 'posted_completion'
+            : 'planned_completion';
+      assertManufacturingTransition({
+        flow: 'reversal',
+        currentState,
+        allowedFrom: ['reported_production'],
+        targetState: 'reversal',
+        workOrderId,
+        executionOrDocumentId: execution.id
+      });
+      if (!execution.consumption_movement_id || !execution.production_movement_id) {
+        throw new Error('WO_VOID_EXECUTION_MOVEMENTS_MISSING');
+      }
+
+      const existingPair = await fetchVoidMovementPair(client, tenantId, execution.id);
+      if (existingPair) {
+        return [];
+      }
+
+      const originalMovements = await client.query<{
+        id: string;
+        movement_type: string;
+        status: string;
+      }>(
+        `SELECT id, movement_type, status
+           FROM inventory_movements
+          WHERE tenant_id = $1
+            AND id = ANY($2::uuid[])
+          FOR UPDATE`,
+        [tenantId, [execution.consumption_movement_id, execution.production_movement_id]]
+      );
+      const currentExecution = execution;
+      if (!currentExecution) {
+        throw new Error('WO_VOID_EXECUTION_NOT_FOUND');
+      }
+      const originalIssue = originalMovements.rows.find(
+        (row) => row.id === currentExecution.consumption_movement_id
+      );
+      const originalProduction = originalMovements.rows.find(
+        (row) => row.id === currentExecution.production_movement_id
+      );
+      if (!originalIssue || !originalProduction) {
+        throw new Error('WO_VOID_EXECUTION_MOVEMENTS_MISSING');
+      }
+      if (originalIssue.status !== 'posted' || originalProduction.status !== 'posted') {
+        throw new Error('WO_VOID_EXECUTION_NOT_POSTED');
+      }
+      if (originalIssue.movement_type !== 'issue' || originalProduction.movement_type !== 'receive') {
+        throw new Error('WO_VOID_EXECUTION_MOVEMENT_TYPE_INVALID');
+      }
+
+      componentLines = await loadMovementLineScopes(
+        client,
+        tenantId,
+        execution.consumption_movement_id,
+        'negative'
+      );
+      outputLines = await loadMovementLineScopes(
+        client,
+        tenantId,
+        execution.production_movement_id,
+        'positive'
+      );
+      if (componentLines.length === 0 || outputLines.length === 0) {
+        throw new Error('WO_VOID_EXECUTION_MOVEMENTS_MISSING');
+      }
+
+      await assertVoidOutputStillInQa(
+        client,
+        tenantId,
+        execution.id,
+        execution.production_movement_id
+      );
+
+      const missingWarehouseBindings = [
+        ...componentLines.filter((line) => !line.warehouse_id).map((line) => line.location_id),
+        ...outputLines.filter((line) => !line.warehouse_id).map((line) => line.location_id)
+      ];
+      if (missingWarehouseBindings.length > 0) {
+        throw new Error(
+          `WO_VOID_LOCATION_WAREHOUSE_MISSING:${Array.from(new Set(missingWarehouseBindings)).join(',')}`
+        );
+      }
+
+      return [
+        ...componentLines.map((line) => ({
+          tenantId,
+          warehouseId: line.warehouse_id ?? '',
+          itemId: line.item_id
+        })),
+        ...outputLines.map((line) => ({
+          tenantId,
+          warehouseId: line.warehouse_id ?? '',
+          itemId: line.item_id
+        }))
+      ];
+    },
+    execute: async ({ client }) => {
+      if (!execution) {
+        throw new Error('WO_VOID_EXECUTION_NOT_FOUND');
+      }
+
+      const existingPair = await fetchVoidMovementPair(client, tenantId, execution.id);
+      if (existingPair) {
+        return buildWorkOrderVoidReplayResult({
+          tenantId,
+          workOrderId,
+          executionId: execution.id,
+          componentReturnMovementId: existingPair.componentReturnMovementId,
+          outputReversalMovementId: existingPair.outputReversalMovementId,
+          client,
+          idempotencyKey
         });
       }
-      return replayResponse;
-    }
 
-    const originalMovements = await client.query<{
-      id: string;
-      movement_type: string;
-      status: string;
-    }>(
-      `SELECT id, movement_type, status
-         FROM inventory_movements
-        WHERE tenant_id = $1
-          AND id = ANY($2::uuid[])
-        FOR UPDATE`,
-      [tenantId, [execution.consumption_movement_id, execution.production_movement_id]]
-    );
-    const originalIssue = originalMovements.rows.find((row) => row.id === execution.consumption_movement_id);
-    const originalProduction = originalMovements.rows.find((row) => row.id === execution.production_movement_id);
-    if (!originalIssue || !originalProduction) {
-      throw new Error('WO_VOID_EXECUTION_MOVEMENTS_MISSING');
-    }
-    if (originalIssue.status !== 'posted' || originalProduction.status !== 'posted') {
-      throw new Error('WO_VOID_EXECUTION_NOT_POSTED');
-    }
-    if (originalIssue.movement_type !== 'issue' || originalProduction.movement_type !== 'receive') {
-      throw new Error('WO_VOID_EXECUTION_MOVEMENT_TYPE_INVALID');
-    }
-
-    const componentLines = await loadMovementLineScopes(
-      client,
-      tenantId,
-      execution.consumption_movement_id,
-      'negative'
-    );
-    const outputLines = await loadMovementLineScopes(
-      client,
-      tenantId,
-      execution.production_movement_id,
-      'positive'
-    );
-    if (componentLines.length === 0 || outputLines.length === 0) {
-      throw new Error('WO_VOID_EXECUTION_MOVEMENTS_MISSING');
-    }
-
-    await assertVoidOutputStillInQa(
-      client,
-      tenantId,
-      execution.id,
-      execution.production_movement_id
-    );
-
-    const missingWarehouseBindings = [
-      ...componentLines.filter((line) => !line.warehouse_id).map((line) => line.location_id),
-      ...outputLines.filter((line) => !line.warehouse_id).map((line) => line.location_id)
-    ];
-    if (missingWarehouseBindings.length > 0) {
-      throw new Error(
-        `WO_VOID_LOCATION_WAREHOUSE_MISSING:${Array.from(new Set(missingWarehouseBindings)).join(',')}`
-      );
-    }
-
-    const advisoryTargets = [
-      ...componentLines.map((line) => ({
+      const now = new Date();
+      const outputMovement = await createInventoryMovement(client, {
         tenantId,
-        warehouseId: line.warehouse_id ?? '',
-        itemId: line.item_id
-      })),
-      ...outputLines.map((line) => ({
-        tenantId,
-        warehouseId: line.warehouse_id ?? '',
-        itemId: line.item_id
-      }))
-    ];
-    const lockContext = createAtpLockContext({
-      operation: 'work_order_batch_void',
-      tenantId
-    });
-    await acquireAtpLocks(client, advisoryTargets, { lockContext });
-    assertAtpLockHeldOrThrow(lockContext, { workOrderId, workOrderExecutionId: execution.id });
-
-    const now = new Date();
-    const outputMovement = await createInventoryMovement(client, {
-      tenantId,
-      movementType: 'issue',
-      status: 'posted',
-      externalRef: `${WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE}:${execution.id}:${workOrderId}`,
-      sourceType: WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE,
-      sourceId: execution.id,
-      idempotencyKey: idempotencyKey ? `${idempotencyKey}:output` : null,
-      occurredAt: now,
-      postedAt: now,
-      notes: data.notes ?? `Void production output for execution ${execution.id}: ${reason}`,
-      metadata: {
-        workOrderId,
-        workOrderExecutionId: execution.id,
-        reason
-      },
-      createdAt: now,
-      updatedAt: now
-    });
-    if (!outputMovement.created) {
-      await ensurePostedMovementReady(client, tenantId, outputMovement.id);
-      throw new Error('WO_VOID_INCOMPLETE');
-    }
-
-    const componentMovement = await createInventoryMovement(client, {
-      tenantId,
-      movementType: 'receive',
-      status: 'posted',
-      externalRef: `${WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE}:${execution.id}:${workOrderId}`,
-      sourceType: WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE,
-      sourceId: execution.id,
-      idempotencyKey: idempotencyKey ? `${idempotencyKey}:components` : null,
-      occurredAt: now,
-      postedAt: now,
-      notes: data.notes ?? `Void component return for execution ${execution.id}: ${reason}`,
-      metadata: {
-        workOrderId,
-        workOrderExecutionId: execution.id,
-        reason
-      },
-      createdAt: now,
-      updatedAt: now
-    });
-    if (!componentMovement.created) {
-      await ensurePostedMovementReady(client, tenantId, componentMovement.id);
-      throw new Error('WO_VOID_INCOMPLETE');
-    }
-
-    for (const line of outputLines) {
-      const quantityToReverse = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
-      const canonicalFields = await getCanonicalMovementFields(
-        tenantId,
-        line.item_id,
-        -quantityToReverse,
-        line.balance_uom,
-        client
-      );
-      const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
-      const consumption = await consumeCostLayers({
-        tenant_id: tenantId,
-        item_id: line.item_id,
-        location_id: line.location_id,
-        quantity: canonicalQty,
-        consumption_type: 'scrap',
-        consumption_document_id: execution.id,
-        movement_id: outputMovement.id,
-        client,
-        notes: `work_order_void_output:${execution.id}`
-      });
-      const unitCost = canonicalQty > 0 ? consumption.total_cost / canonicalQty : null;
-      const extendedCost = -consumption.total_cost;
-
-      await createInventoryMovementLine(client, {
-        tenantId,
-        movementId: outputMovement.id,
-        itemId: line.item_id,
-        locationId: line.location_id,
-        quantityDelta: canonicalFields.quantityDeltaCanonical,
-        uom: canonicalFields.canonicalUom,
-        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-        uomEntered: canonicalFields.uomEntered,
-        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-        canonicalUom: canonicalFields.canonicalUom,
-        uomDimension: canonicalFields.uomDimension,
-        unitCost,
-        extendedCost,
-        reasonCode: 'work_order_void_output',
-        lineNotes: `Void output reversal for work order execution ${execution.id}`
-      });
-      await applyInventoryBalanceDelta(client, {
-        tenantId,
-        itemId: line.item_id,
-        locationId: line.location_id,
-        uom: canonicalFields.canonicalUom,
-        deltaOnHand: canonicalFields.quantityDeltaCanonical
-      });
-    }
-
-    for (const line of componentLines) {
-      const quantityToReturn = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
-      const canonicalFields = await getCanonicalMovementFields(
-        tenantId,
-        line.item_id,
-        quantityToReturn,
-        line.balance_uom,
-        client
-      );
-      const unitCost = movementLineUnitCost(line);
-      const extendedCost = roundQuantity(canonicalFields.quantityDeltaCanonical * unitCost);
-
-      await createInventoryMovementLine(client, {
-        tenantId,
-        movementId: componentMovement.id,
-        itemId: line.item_id,
-        locationId: line.location_id,
-        quantityDelta: canonicalFields.quantityDeltaCanonical,
-        uom: canonicalFields.canonicalUom,
-        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-        uomEntered: canonicalFields.uomEntered,
-        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-        canonicalUom: canonicalFields.canonicalUom,
-        uomDimension: canonicalFields.uomDimension,
-        unitCost,
-        extendedCost,
-        reasonCode: 'work_order_void_component_return',
-        lineNotes: `Void component return for work order execution ${execution.id}`
-      });
-      await applyInventoryBalanceDelta(client, {
-        tenantId,
-        itemId: line.item_id,
-        locationId: line.location_id,
-        uom: canonicalFields.canonicalUom,
-        deltaOnHand: canonicalFields.quantityDeltaCanonical
-      });
-      await createCostLayer({
-        tenant_id: tenantId,
-        item_id: line.item_id,
-        location_id: line.location_id,
-        uom: canonicalFields.canonicalUom,
-        quantity: canonicalFields.quantityDeltaCanonical,
-        unit_cost: unitCost,
-        source_type: 'adjustment',
-        source_document_id: execution.id,
-        movement_id: componentMovement.id,
-        notes: `Work-order void component return for execution ${execution.id}`,
-        client
-      });
-    }
-
-    await enqueueInventoryMovementPosted(client, tenantId, outputMovement.id);
-    await enqueueInventoryMovementPosted(client, tenantId, componentMovement.id);
-
-    await recordAuditLog(
-      {
-        tenantId,
-        actorType: actor.type,
-        actorId: actor.id ?? null,
-        action: 'update',
-        entityType: 'work_order_execution',
-        entityId: execution.id,
+        movementType: 'issue',
+        status: 'posted',
+        externalRef: `${WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE}:${execution.id}:${workOrderId}`,
+        sourceType: WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE,
+        sourceId: execution.id,
+        idempotencyKey: idempotencyKey ? `${idempotencyKey}:output` : null,
         occurredAt: now,
+        postedAt: now,
+        notes: data.notes ?? `Void production output for execution ${execution.id}: ${reason}`,
         metadata: {
           workOrderId,
           workOrderExecutionId: execution.id,
-          outputReversalMovementId: outputMovement.id,
-          componentReturnMovementId: componentMovement.id,
           reason
-        }
-      },
-      client
-    );
-
-    const response: WorkOrderVoidReportResult = {
-      workOrderId,
-      workOrderExecutionId: execution.id,
-      componentReturnMovementId: componentMovement.id,
-      outputReversalMovementId: outputMovement.id,
-      idempotencyKey,
-      replayed: false
-    };
-    if (idempotencyKey) {
-      await finalizeTransactionalIdempotency(client, {
-        tenantId,
-        key: idempotencyKey,
-        responseStatus: 201,
-        responseBody: response
+        },
+        createdAt: now,
+        updatedAt: now
       });
+      const componentMovement = await createInventoryMovement(client, {
+        tenantId,
+        movementType: 'receive',
+        status: 'posted',
+        externalRef: `${WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE}:${execution.id}:${workOrderId}`,
+        sourceType: WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE,
+        sourceId: execution.id,
+        idempotencyKey: idempotencyKey ? `${idempotencyKey}:components` : null,
+        occurredAt: now,
+        postedAt: now,
+        notes: data.notes ?? `Void component return for execution ${execution.id}: ${reason}`,
+        metadata: {
+          workOrderId,
+          workOrderExecutionId: execution.id,
+          reason
+        },
+        createdAt: now,
+        updatedAt: now
+      });
+
+      if (!outputMovement.created || !componentMovement.created) {
+        const replayPair = await fetchVoidMovementPair(client, tenantId, execution.id);
+        if (replayPair) {
+          return buildWorkOrderVoidReplayResult({
+            tenantId,
+            workOrderId,
+            executionId: execution.id,
+            componentReturnMovementId: replayPair.componentReturnMovementId,
+            outputReversalMovementId: replayPair.outputReversalMovementId,
+            client,
+            idempotencyKey
+          });
+        }
+        throw new Error('WO_VOID_INCOMPLETE');
+      }
+
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      let totalOutputReversalCost = 0;
+      let totalComponentReturnCost = 0;
+
+      const preparedOutputLines: Array<{
+        sourceLineId: string;
+        warehouseId: string;
+        line: MovementLineScopeRow;
+        canonicalFields: CanonicalMovementFields;
+        unitCost: number | null;
+        extendedCost: number;
+      }> = [];
+      for (const line of outputLines) {
+        const quantityToReverse = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          line.item_id,
+          -quantityToReverse,
+          line.balance_uom,
+          client
+        );
+        const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
+        const consumption = await consumeCostLayers({
+          tenant_id: tenantId,
+          item_id: line.item_id,
+          location_id: line.location_id,
+          quantity: canonicalQty,
+          consumption_type: 'scrap',
+          consumption_document_id: execution.id,
+          movement_id: outputMovement.id,
+          client,
+          notes: `work_order_void_output:${execution.id}`
+        });
+        const unitCost = canonicalQty > 0 ? consumption.total_cost / canonicalQty : null;
+        const extendedCost = -consumption.total_cost;
+        totalOutputReversalCost += consumption.total_cost;
+        preparedOutputLines.push({
+          sourceLineId: `${line.item_id}:${line.location_id}:${line.balance_uom}:${quantityToReverse}`,
+          warehouseId: line.warehouse_id ?? '',
+          line,
+          canonicalFields,
+          unitCost,
+          extendedCost
+        });
+      }
+
+      const sortedOutputLines = sortDeterministicMovementLines(preparedOutputLines, (entry) => ({
+        tenantId,
+        warehouseId: entry.warehouseId,
+        locationId: entry.line.location_id,
+        itemId: entry.line.item_id,
+        canonicalUom: entry.canonicalFields.canonicalUom,
+        sourceLineId: entry.sourceLineId
+      }));
+      for (const preparedOutputLine of sortedOutputLines) {
+        await createInventoryMovementLine(client, {
+          tenantId,
+          movementId: outputMovement.id,
+          itemId: preparedOutputLine.line.item_id,
+          locationId: preparedOutputLine.line.location_id,
+          quantityDelta: preparedOutputLine.canonicalFields.quantityDeltaCanonical,
+          uom: preparedOutputLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: preparedOutputLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: preparedOutputLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: preparedOutputLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: preparedOutputLine.canonicalFields.canonicalUom,
+          uomDimension: preparedOutputLine.canonicalFields.uomDimension,
+          unitCost: preparedOutputLine.unitCost,
+          extendedCost: preparedOutputLine.extendedCost,
+          reasonCode: 'work_order_void_output',
+          lineNotes: `Void output reversal for work order execution ${execution.id}`
+        });
+        projectionOps.push(
+          buildInventoryBalanceProjectionOp({
+            tenantId,
+            itemId: preparedOutputLine.line.item_id,
+            locationId: preparedOutputLine.line.location_id,
+            uom: preparedOutputLine.canonicalFields.canonicalUom,
+            deltaOnHand: preparedOutputLine.canonicalFields.quantityDeltaCanonical
+          })
+        );
+      }
+
+      const preparedComponentLines: Array<{
+        sourceLineId: string;
+        warehouseId: string;
+        line: MovementLineScopeRow;
+        canonicalFields: CanonicalMovementFields;
+        unitCost: number;
+        extendedCost: number;
+      }> = [];
+      for (const line of componentLines) {
+        const quantityToReturn = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          line.item_id,
+          quantityToReturn,
+          line.balance_uom,
+          client
+        );
+        const unitCost = movementLineUnitCost(line);
+        const extendedCost = roundQuantity(canonicalFields.quantityDeltaCanonical * unitCost);
+        totalComponentReturnCost += extendedCost;
+        preparedComponentLines.push({
+          sourceLineId: `${line.item_id}:${line.location_id}:${line.balance_uom}:${quantityToReturn}`,
+          warehouseId: line.warehouse_id ?? '',
+          line,
+          canonicalFields,
+          unitCost,
+          extendedCost
+        });
+      }
+
+      const sortedComponentLines = sortDeterministicMovementLines(preparedComponentLines, (entry) => ({
+        tenantId,
+        warehouseId: entry.warehouseId,
+        locationId: entry.line.location_id,
+        itemId: entry.line.item_id,
+        canonicalUom: entry.canonicalFields.canonicalUom,
+        sourceLineId: entry.sourceLineId
+      }));
+      for (const preparedComponentLine of sortedComponentLines) {
+        await createInventoryMovementLine(client, {
+          tenantId,
+          movementId: componentMovement.id,
+          itemId: preparedComponentLine.line.item_id,
+          locationId: preparedComponentLine.line.location_id,
+          quantityDelta: preparedComponentLine.canonicalFields.quantityDeltaCanonical,
+          uom: preparedComponentLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: preparedComponentLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: preparedComponentLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: preparedComponentLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: preparedComponentLine.canonicalFields.canonicalUom,
+          uomDimension: preparedComponentLine.canonicalFields.uomDimension,
+          unitCost: preparedComponentLine.unitCost,
+          extendedCost: preparedComponentLine.extendedCost,
+          reasonCode: 'work_order_void_component_return',
+          lineNotes: `Void component return for work order execution ${execution.id}`
+        });
+        projectionOps.push(
+          buildInventoryBalanceProjectionOp({
+            tenantId,
+            itemId: preparedComponentLine.line.item_id,
+            locationId: preparedComponentLine.line.location_id,
+            uom: preparedComponentLine.canonicalFields.canonicalUom,
+            deltaOnHand: preparedComponentLine.canonicalFields.quantityDeltaCanonical
+          })
+        );
+        await createCostLayer({
+          tenant_id: tenantId,
+          item_id: preparedComponentLine.line.item_id,
+          location_id: preparedComponentLine.line.location_id,
+          uom: preparedComponentLine.canonicalFields.canonicalUom,
+          quantity: preparedComponentLine.canonicalFields.quantityDeltaCanonical,
+          unit_cost: preparedComponentLine.unitCost,
+          source_type: 'adjustment',
+          source_document_id: execution.id,
+          movement_id: componentMovement.id,
+          notes: `Work-order void component return for execution ${execution.id}`,
+          client
+        });
+      }
+
+      const originalValuationRecords = await loadWorkOrderWipValuationRecordsByMovementIds(
+        client,
+        tenantId,
+        [execution.consumption_movement_id!, execution.production_movement_id!]
+      );
+      const originalIssueValuation = originalValuationRecords.find((row) => row.valuation_type === 'issue');
+      const originalReportValuation = originalValuationRecords.find((row) =>
+        row.valuation_type === 'report' || row.valuation_type === 'completion'
+      );
+      await createWorkOrderWipValuationRecord(client, {
+        tenantId,
+        workOrderId,
+        executionId: execution.id,
+        movementId: outputMovement.id,
+        valuationType: 'reversal_to_wip',
+        valueDelta: totalOutputReversalCost,
+        reversalOfValuationRecordId: originalReportValuation?.id ?? null,
+        notes: `Work-order reversal moves finished-goods value back into WIP for execution ${execution.id}`
+      });
+      await createWorkOrderWipValuationRecord(client, {
+        tenantId,
+        workOrderId,
+        executionId: execution.id,
+        movementId: componentMovement.id,
+        valuationType: 'reversal_from_wip',
+        valueDelta: -totalComponentReturnCost,
+        reversalOfValuationRecordId: originalIssueValuation?.id ?? null,
+        notes: `Work-order reversal returns component value out of WIP for execution ${execution.id}`
+      });
+
+      projectionOps.push(async (projectionClient) => {
+        await recordAuditLog(
+          {
+            tenantId,
+            actorType: actor.type,
+            actorId: actor.id ?? null,
+            action: 'update',
+            entityType: 'work_order_execution',
+            entityId: execution!.id,
+            occurredAt: now,
+            metadata: {
+              workOrderId,
+              workOrderExecutionId: execution!.id,
+              outputReversalMovementId: outputMovement.id,
+              componentReturnMovementId: componentMovement.id,
+              reason
+            }
+          },
+          projectionClient
+        );
+      });
+
+      return {
+        responseBody: {
+          workOrderId,
+          workOrderExecutionId: execution.id,
+          componentReturnMovementId: componentMovement.id,
+          outputReversalMovementId: outputMovement.id,
+          idempotencyKey,
+          replayed: false
+        },
+        responseStatus: 201,
+        events: [
+          buildMovementPostedEvent(componentMovement.id, idempotencyKey),
+          buildMovementPostedEvent(outputMovement.id, idempotencyKey),
+          buildWorkOrderProductionReversedEvent({
+            executionId: execution.id,
+            workOrderId,
+            componentReturnMovementId: componentMovement.id,
+            outputReversalMovementId: outputMovement.id,
+            producerIdempotencyKey: idempotencyKey
+          })
+        ],
+        projectionOps
+      };
     }
-    return response;
-  }, WORK_ORDER_POST_RETRY_OPTIONS);
+  });
 }
 
 export async function reportWorkOrderScrap(
@@ -2759,19 +3598,6 @@ export async function reportWorkOrderScrap(
       });
     }
 
-    const lockContext = createAtpLockContext({
-      operation: 'work_order_scrap',
-      tenantId
-    });
-    await acquireAtpLocks(
-      client,
-      [
-        { tenantId, warehouseId, itemId }
-      ],
-      { lockContext }
-    );
-    assertAtpLockHeldOrThrow(lockContext, { workOrderId, workOrderExecutionId: execution.id });
-
     const sourceId = idempotencyKey ? `idempotency:${idempotencyKey}` : `execution:${execution.id}:${uuidv4()}`;
     const transfer = await transferInventory(
       {
@@ -2838,7 +3664,14 @@ export async function recordWorkOrderBatch(
     if (quantity <= 0) {
       throw new Error('WO_BATCH_INVALID_CONSUME_QTY');
     }
-    return { ...line, quantity, uom: line.uom, reasonCode: line.reasonCode ?? null, notes: line.notes ?? null };
+    return {
+      componentItemId: line.componentItemId,
+      fromLocationId: line.fromLocationId,
+      quantity,
+      uom: line.uom,
+      reasonCode: line.reasonCode ?? null,
+      notes: line.notes ?? null
+    };
   });
   const normalizedProduces: NormalizedBatchProduceLine[] = data.produceLines.map((line) => {
     const quantity = toNumber(line.quantity);
@@ -2846,7 +3679,8 @@ export async function recordWorkOrderBatch(
       throw new Error('WO_BATCH_INVALID_PRODUCE_QTY');
     }
     return {
-      ...line,
+      outputItemId: line.outputItemId,
+      toLocationId: line.toLocationId,
       quantity,
       uom: line.uom,
       reasonCode: line.reasonCode ?? null,
@@ -2872,138 +3706,161 @@ export async function recordWorkOrderBatch(
       body: normalizedRequestPayload
     })
     : null;
+  let workOrder: WorkOrderRow | null = null;
+  let existingBatchReplay: Awaited<ReturnType<typeof findPostedBatchByIdempotencyKey>> | null = null;
+  let warehouseByLocationId = new Map<string, string>();
+  let consumeLinesOrdered: NormalizedBatchConsumeLine[] = [];
+  let produceLinesOrdered: NormalizedBatchProduceLine[] = [];
 
-  return withTransactionRetry(async (client) => {
-    if (batchIdempotencyKey && transactionalRequestHash) {
-      const claim = await claimTransactionalIdempotency<{
-        workOrderId: string;
-        executionId: string;
-        issueMovementId: string;
-        receiveMovementId: string;
-        quantityCompleted: number;
-        workOrderStatus: string;
-        idempotencyKey: string | null;
-        replayed: boolean;
-      }>(client, {
-        tenantId,
-        key: batchIdempotencyKey,
-        endpoint: idempotencyEndpoint,
-        requestHash: transactionalRequestHash
-      });
-      if (claim.replayed) {
-        return {
-          ...claim.responseBody,
-          idempotencyKey: batchIdempotencyKey,
-          replayed: true
-        };
-      }
-    }
-
-    if (batchIdempotencyKey) {
-      const existingBatch = await findPostedBatchByIdempotencyKey(
-        client,
-        tenantId,
-        batchIdempotencyKey,
-        requestHash
-      );
-      if (existingBatch) {
-        const { executionId, ...replayPayload } = existingBatch;
-        if (existingBatch.workOrderId !== workOrderId) {
-          throw domainError('WO_POSTING_IDEMPOTENCY_CONFLICT', {
-            reason: 'work_order_mismatch',
-            executionId
-          });
-        }
-        const replayResponse = {
-          ...replayPayload,
-          executionId,
-          idempotencyKey: batchIdempotencyKey,
-          replayed: true
-        };
-        await finalizeTransactionalIdempotency(client, {
+  return runInventoryCommand<{
+    workOrderId: string;
+    executionId: string;
+    issueMovementId: string;
+    receiveMovementId: string;
+    quantityCompleted: number;
+    workOrderStatus: string;
+    idempotencyKey: string | null;
+    replayed: boolean;
+  }>({
+    tenantId,
+    endpoint: idempotencyEndpoint,
+    operation: 'work_order_batch_post',
+    idempotencyKey: batchIdempotencyKey,
+    requestHash: transactionalRequestHash,
+    retryOptions: WORK_ORDER_POST_RETRY_OPTIONS,
+    onReplay: async ({ client, responseBody }) => {
+      return (
+        await buildWorkOrderBatchReplayResult({
           tenantId,
-          key: batchIdempotencyKey,
-          responseStatus: 200,
-          responseBody: replayResponse
-        });
-        return replayResponse;
-      }
-    }
-
-    const workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
-    if (!workOrder) {
-      throw new Error('WO_NOT_FOUND');
-    }
-    const isDisassembly = workOrder.kind === 'disassembly';
-    if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
-      throw new Error('WO_INVALID_STATE');
-    }
-    const consumeLinesOrdered = [...normalizedConsumes].sort(compareBatchConsumeKey);
-    const produceLinesOrdered = [...normalizedProduces].sort(compareBatchProduceKey);
-
-    if (!isDisassembly) {
-      for (const line of produceLinesOrdered) {
-        if (line.outputItemId !== workOrder.output_item_id) {
-          throw new Error('WO_BATCH_ITEM_MISMATCH');
+          workOrderId: responseBody.workOrderId,
+          executionId: responseBody.executionId,
+          issueMovementId: responseBody.issueMovementId,
+          receiveMovementId: responseBody.receiveMovementId,
+          client,
+          idempotencyKey: batchIdempotencyKey
+        })
+      ).responseBody;
+    },
+    lockTargets: async (client) => {
+      existingBatchReplay = null;
+      if (batchIdempotencyKey) {
+        existingBatchReplay = await findPostedBatchByIdempotencyKey(
+          client,
+          tenantId,
+          batchIdempotencyKey,
+          requestHash
+        );
+        if (existingBatchReplay) {
+          return [];
         }
       }
-    } else {
-      for (const line of consumeLinesOrdered) {
-        if (line.componentItemId !== workOrder.output_item_id) {
-          throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
+
+      workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
+      if (!workOrder) {
+        throw new Error('WO_NOT_FOUND');
+      }
+      if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
+        throw new Error('WO_INVALID_STATE');
+      }
+      consumeLinesOrdered = [...normalizedConsumes].sort(compareBatchConsumeKey);
+      produceLinesOrdered = [...normalizedProduces].sort(compareBatchProduceKey);
+      const isDisassembly = workOrder.kind === 'disassembly';
+
+      if (!isDisassembly) {
+        for (const line of produceLinesOrdered) {
+          if (line.outputItemId !== workOrder.output_item_id) {
+            throw new Error('WO_BATCH_ITEM_MISMATCH');
+          }
+        }
+      } else {
+        for (const line of consumeLinesOrdered) {
+          if (line.componentItemId !== workOrder.output_item_id) {
+            throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
+          }
         }
       }
-    }
 
-    // Pre-validate items and locations to avoid foreign key failures
-    const itemIds = Array.from(
-      new Set([
-        ...consumeLinesOrdered.map((l) => l.componentItemId),
-        ...produceLinesOrdered.map((l) => l.outputItemId)
-      ])
-    );
-    const locationIds = Array.from(
-      new Set([
-        ...consumeLinesOrdered.map((l) => l.fromLocationId),
-        ...produceLinesOrdered.map((l) => l.toLocationId)
-      ])
-    );
-
-    if (itemIds.length > 0) {
-      const itemRes = await client.query<{ id: string }>(
-        'SELECT id FROM items WHERE id = ANY($1) AND tenant_id = $2',
-        [itemIds, tenantId]
+      const itemIds = Array.from(
+        new Set([
+          ...consumeLinesOrdered.map((line) => line.componentItemId),
+          ...produceLinesOrdered.map((line) => line.outputItemId)
+        ])
       );
-      const found = new Set(itemRes.rows.map((r) => r.id));
-      const missingItems = itemIds.filter((id) => !found.has(id));
-      if (missingItems.length > 0) {
-        throw new Error(`WO_BATCH_ITEMS_MISSING:${missingItems.join(',')}`);
-      }
-    }
-
-    const warehouseByLocationId = new Map<string, string>();
-    if (locationIds.length > 0) {
-      const locRes = await client.query<{
-        id: string;
-        warehouse_id: string | null;
-        role: string | null;
-        is_sellable: boolean;
-      }>(
-        'SELECT id, warehouse_id, role, is_sellable FROM locations WHERE id = ANY($1) AND tenant_id = $2',
-        [locationIds, tenantId]
+      const locationIds = Array.from(
+        new Set([
+          ...consumeLinesOrdered.map((line) => line.fromLocationId),
+          ...produceLinesOrdered.map((line) => line.toLocationId)
+        ])
       );
-      const found = new Set(locRes.rows.map((r) => r.id));
-      const missingLocs = locationIds.filter((id) => !found.has(id));
-      if (missingLocs.length > 0) {
-        throw new Error(`WO_BATCH_LOCATIONS_MISSING:${missingLocs.join(',')}`);
-      }
-      const locationById = new Map(locRes.rows.map((row) => [row.id, row]));
-      for (const row of locRes.rows) {
-        if (row.warehouse_id) {
-          warehouseByLocationId.set(row.id, row.warehouse_id);
+      if (itemIds.length > 0) {
+        const itemRes = await client.query<{ id: string }>(
+          `SELECT id
+             FROM items
+            WHERE id = ANY($1)
+              AND tenant_id = $2`,
+          [itemIds, tenantId]
+        );
+        const found = new Set(itemRes.rows.map((row) => row.id));
+        const missingItems = itemIds.filter((id) => !found.has(id));
+        if (missingItems.length > 0) {
+          throw new Error(`WO_BATCH_ITEMS_MISSING:${missingItems.join(',')}`);
         }
       }
-      const advisoryTargets = [
+
+      warehouseByLocationId = new Map<string, string>();
+      if (locationIds.length > 0) {
+        const locRes = await client.query<{
+          id: string;
+          warehouse_id: string | null;
+          role: string | null;
+          is_sellable: boolean;
+        }>(
+          `SELECT id, warehouse_id, role, is_sellable
+             FROM locations
+            WHERE id = ANY($1)
+              AND tenant_id = $2`,
+          [locationIds, tenantId]
+        );
+        const found = new Set(locRes.rows.map((row) => row.id));
+        const missingLocs = locationIds.filter((id) => !found.has(id));
+        if (missingLocs.length > 0) {
+          throw new Error(`WO_BATCH_LOCATIONS_MISSING:${missingLocs.join(',')}`);
+        }
+        const locationById = new Map(locRes.rows.map((row) => [row.id, row]));
+        for (const row of locRes.rows) {
+          if (row.warehouse_id) {
+            warehouseByLocationId.set(row.id, row.warehouse_id);
+          }
+        }
+        const missingWarehouseBindings = [
+          ...consumeLinesOrdered
+            .filter((line) => !warehouseByLocationId.get(line.fromLocationId))
+            .map((line) => line.fromLocationId),
+          ...produceLinesOrdered
+            .filter((line) => !warehouseByLocationId.get(line.toLocationId))
+            .map((line) => line.toLocationId)
+        ];
+        if (missingWarehouseBindings.length > 0) {
+          throw new Error(
+            `WO_BATCH_LOCATION_WAREHOUSE_MISSING:${Array.from(new Set(missingWarehouseBindings)).join(',')}`
+          );
+        }
+        if (!isDisassembly) {
+          for (const line of consumeLinesOrdered) {
+            const sourceLocation = locationById.get(line.fromLocationId);
+            if (!sourceLocation || sourceLocation.is_sellable !== true) {
+              throw domainError('MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE', {
+                workOrderId,
+                locationId: line.fromLocationId,
+                componentItemId: line.componentItemId,
+                role: sourceLocation?.role ?? null,
+                isSellable: sourceLocation?.is_sellable ?? null
+              });
+            }
+          }
+        }
+      }
+      return [
         ...consumeLinesOrdered.map((line) => ({
           tenantId,
           warehouseId: warehouseByLocationId.get(line.fromLocationId) ?? '',
@@ -3015,259 +3872,251 @@ export async function recordWorkOrderBatch(
           itemId: line.outputItemId
         }))
       ];
-      const missingWarehouseBindings = [
-        ...consumeLinesOrdered
-          .filter((line) => !warehouseByLocationId.get(line.fromLocationId))
-          .map((line) => line.fromLocationId),
-        ...produceLinesOrdered
-          .filter((line) => !warehouseByLocationId.get(line.toLocationId))
-          .map((line) => line.toLocationId)
-      ];
-      if (missingWarehouseBindings.length > 0) {
-        throw new Error(`WO_BATCH_LOCATION_WAREHOUSE_MISSING:${Array.from(new Set(missingWarehouseBindings)).join(',')}`);
+    },
+    execute: async ({ client }) => {
+      if (existingBatchReplay) {
+        return buildWorkOrderBatchReplayResult({
+          tenantId,
+          workOrderId: existingBatchReplay.workOrderId,
+          executionId: existingBatchReplay.executionId,
+          issueMovementId: existingBatchReplay.issueMovementId,
+          receiveMovementId: existingBatchReplay.receiveMovementId,
+          client,
+          idempotencyKey: batchIdempotencyKey
+        });
       }
-      if (!isDisassembly) {
-        for (const line of consumeLinesOrdered) {
-          const sourceLocation = locationById.get(line.fromLocationId);
-          if (!sourceLocation || sourceLocation.is_sellable !== true) {
-            throw domainError('MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE', {
+      if (!workOrder) {
+        throw new Error('WO_NOT_FOUND');
+      }
+      const executionId = uuidv4();
+      assertManufacturingTransition({
+        flow: 'report',
+        currentState: 'planned_completion',
+        allowedFrom: ['planned_completion'],
+        targetState: 'reported_production',
+        workOrderId,
+        executionOrDocumentId: executionId
+      });
+
+      const isDisassembly = workOrder.kind === 'disassembly';
+      const issueId = uuidv4();
+      const now = new Date();
+      const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
+      const validation = await validateSufficientStock(
+        tenantId,
+        occurredAt,
+        consumeLinesOrdered.map((line) => ({
+          warehouseId: warehouseByLocationId.get(line.fromLocationId) ?? '',
+          itemId: line.componentItemId,
+          locationId: line.fromLocationId,
+          uom: line.uom,
+          quantityToConsume: roundQuantity(line.quantity)
+        })),
+        {
+          actorId: context.actor?.id ?? null,
+          actorRole: context.actor?.role ?? null,
+          overrideRequested: context.overrideRequested,
+          overrideReason: context.overrideReason ?? null,
+          overrideReference: `work_order_batch_issue:${issueId}`
+        },
+        { client }
+      );
+
+      const issueMovement = await createInventoryMovement(client, {
+        id: uuidv4(),
+        tenantId,
+        movementType: 'issue',
+        status: 'posted',
+        externalRef: isDisassembly
+          ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
+          : `work_order_batch_issue:${issueId}:${workOrderId}`,
+        sourceType: 'work_order_batch_post_issue',
+        sourceId: executionId,
+        idempotencyKey: batchIdempotencyKey ? `${batchIdempotencyKey}:issue` : `wo-batch-issue-post:${executionId}`,
+        occurredAt,
+        postedAt: now,
+        notes: data.notes ?? null,
+        metadata: {
+          workOrderId,
+          workOrderNumber,
+          ...(validation.overrideMetadata ?? {})
+        },
+        createdAt: now,
+        updatedAt: now
+      });
+      const receiveMovement = await createInventoryMovement(client, {
+        id: uuidv4(),
+        tenantId,
+        movementType: 'receive',
+        status: 'posted',
+        externalRef: isDisassembly
+          ? `work_order_disassembly_completion:${executionId}:${workOrderId}`
+          : `work_order_batch_completion:${executionId}:${workOrderId}`,
+        sourceType: 'work_order_batch_post_completion',
+        sourceId: executionId,
+        idempotencyKey: batchIdempotencyKey
+          ? `${batchIdempotencyKey}:completion`
+          : `wo-batch-completion-post:${executionId}`,
+        occurredAt,
+        postedAt: now,
+        notes: data.notes ?? null,
+        metadata: { workOrderId, workOrderNumber },
+        createdAt: now,
+        updatedAt: now
+      });
+
+      if (!issueMovement.created || !receiveMovement.created) {
+        if (batchIdempotencyKey) {
+          const replay = await findPostedBatchByIdempotencyKey(
+            client,
+            tenantId,
+            batchIdempotencyKey,
+            requestHash
+          );
+          if (replay) {
+            return buildWorkOrderBatchReplayResult({
+              tenantId,
               workOrderId,
-              locationId: line.fromLocationId,
-              componentItemId: line.componentItemId,
-              role: sourceLocation?.role ?? null,
-              isSellable: sourceLocation?.is_sellable ?? null
+              executionId: replay.executionId,
+              issueMovementId: replay.issueMovementId,
+              receiveMovementId: replay.receiveMovementId,
+              client,
+              idempotencyKey: batchIdempotencyKey
             });
           }
         }
+        throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+          reason: !issueMovement.created
+            ? 'issue_movement_already_exists_without_replayable_execution'
+            : 'completion_movement_already_exists_without_replayable_execution',
+          missingExecutionIds: [],
+          hint: 'Retry with the same Idempotency-Key or contact admin'
+        });
       }
-      // Manufacturing posting touches multiple item scopes; acquire warehouse/item advisory locks
-      // in deterministic order before stock validation and movement posting to prevent cross-item races.
-      const lockContext = createAtpLockContext({
-        operation: 'work_order_batch_post',
-        tenantId
-      });
-      await acquireAtpLocks(client, advisoryTargets, { lockContext });
-      assertAtpLockHeldOrThrow(lockContext, { workOrderId });
-    }
 
-    const issueId = uuidv4();
-    const executionId = uuidv4();
-    const issueMovementCandidateId = uuidv4();
-    const receiveMovementCandidateId = uuidv4();
-    const now = new Date();
-    const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
-    const validation = await validateSufficientStock(
-      tenantId,
-      occurredAt,
-      consumeLinesOrdered.map((line) => ({
-        warehouseId: warehouseByLocationId.get(line.fromLocationId) ?? '',
-        itemId: line.componentItemId,
-        locationId: line.fromLocationId,
-        uom: line.uom,
-        quantityToConsume: roundQuantity(line.quantity)
-      })),
-      {
-        actorId: context.actor?.id ?? null,
-        actorRole: context.actor?.role ?? null,
-        overrideRequested: context.overrideRequested,
-        overrideReason: context.overrideReason ?? null,
-        overrideReference: `work_order_batch_issue:${issueId}`
-      },
-      { client }
-    );
-
-    // Create movements first to satisfy FKs
-    const issueMovement = await createInventoryMovement(client, {
-      id: issueMovementCandidateId,
-      tenantId,
-      movementType: 'issue',
-      status: 'posted',
-      externalRef: isDisassembly
-        ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
-        : `work_order_batch_issue:${issueId}:${workOrderId}`,
-      sourceType: 'work_order_batch_post_issue',
-      sourceId: executionId,
-      idempotencyKey: batchIdempotencyKey ? `${batchIdempotencyKey}:issue` : `wo-batch-issue-post:${executionId}`,
-      occurredAt,
-      postedAt: now,
-      notes: data.notes ?? null,
-      metadata: {
-        workOrderId,
-        workOrderNumber,
-        ...(validation.overrideMetadata ?? {})
-      },
-      createdAt: now,
-      updatedAt: now
-    });
-    if (!issueMovement.created) {
-      await ensurePostedMovementReady(client, tenantId, issueMovement.id);
-      if (batchIdempotencyKey) {
-        const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
-        if (replay) {
-          const replayResponse = {
-            ...replay,
-            idempotencyKey: batchIdempotencyKey,
-            replayed: true
-          };
-          await finalizeTransactionalIdempotency(client, {
-            tenantId,
-            key: batchIdempotencyKey,
-            responseStatus: 200,
-            responseBody: replayResponse
-          });
-          return replayResponse;
-        }
-      }
-      throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-        reason: 'issue_movement_already_exists_without_replayable_execution',
-        missingExecutionIds: [],
-        hint: 'Retry with the same Idempotency-Key or contact admin'
-      });
-    }
-    const issueMovementId = issueMovement.id;
-    const receiveMovement = await createInventoryMovement(client, {
-      id: receiveMovementCandidateId,
-      tenantId,
-      movementType: 'receive',
-      status: 'posted',
-      externalRef: isDisassembly
-        ? `work_order_disassembly_completion:${executionId}:${workOrderId}`
-        : `work_order_batch_completion:${executionId}:${workOrderId}`,
-      sourceType: 'work_order_batch_post_completion',
-      sourceId: executionId,
-      idempotencyKey: batchIdempotencyKey ? `${batchIdempotencyKey}:completion` : `wo-batch-completion-post:${executionId}`,
-      occurredAt,
-      postedAt: now,
-      notes: data.notes ?? null,
-      metadata: { workOrderId, workOrderNumber },
-      createdAt: now,
-      updatedAt: now
-    });
-    if (!receiveMovement.created) {
-      await ensurePostedMovementReady(client, tenantId, receiveMovement.id);
-      if (batchIdempotencyKey) {
-        const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
-        if (replay) {
-          const replayResponse = {
-            ...replay,
-            idempotencyKey: batchIdempotencyKey,
-            replayed: true
-          };
-          await finalizeTransactionalIdempotency(client, {
-            tenantId,
-            key: batchIdempotencyKey,
-            responseStatus: 200,
-            responseBody: replayResponse
-          });
-          return replayResponse;
-        }
-      }
-      throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-        reason: 'completion_movement_already_exists_without_replayable_execution',
-        missingExecutionIds: [],
-        hint: 'Retry with the same Idempotency-Key or contact admin'
-      });
-    }
-    const receiveMovementId = receiveMovement.id;
-
-    // Material issue header + lines
-    await client.query(
-      `INSERT INTO work_order_material_issues (
-          id, tenant_id, work_order_id, status, occurred_at, inventory_movement_id, notes, idempotency_key, created_at, updated_at
-       ) VALUES ($1, $2, $3, 'posted', $4, $5, $6, $7, $8, $8)`,
-      [
-        issueId,
-        tenantId,
-        workOrderId,
-        occurredAt,
-        issueMovementId,
-        data.notes ?? null,
-        batchIdempotencyKey ? `${batchIdempotencyKey}:issue-doc` : null,
-        now
-      ]
-    );
-    for (let i = 0; i < consumeLinesOrdered.length; i++) {
-      const line = consumeLinesOrdered[i];
       await client.query(
-        `INSERT INTO work_order_material_issue_lines (
-            id, tenant_id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, reason_code, notes, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        `INSERT INTO work_order_material_issues (
+            id, tenant_id, work_order_id, status, occurred_at, inventory_movement_id, notes, idempotency_key, created_at, updated_at
+         ) VALUES ($1, $2, $3, 'posted', $4, $5, $6, $7, $8, $8)`,
         [
-          uuidv4(),
-          tenantId,
           issueId,
-          i + 1,
-          line.componentItemId,
-          line.uom,
-          line.quantity,
-          line.fromLocationId,
-          line.reasonCode,
-          line.notes ?? null,
+          tenantId,
+          workOrderId,
+          occurredAt,
+          issueMovement.id,
+          data.notes ?? null,
+          batchIdempotencyKey ? `${batchIdempotencyKey}:issue-doc` : null,
           now
         ]
       );
-    }
-    for (const line of consumeLinesOrdered) {
-      const reasonCode = line.reasonCode ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue');
-      
-      const canonicalFields = await getCanonicalMovementFields(
-        tenantId,
-        line.componentItemId,
-        -line.quantity,
-        line.uom,
-        client
-      );
-      const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
-      
-      // Consume from cost layers for backflush material consumption
-      let issueCost = null as number | null;
-      try {
-        const consumption = await consumeCostLayers({
-          tenant_id: tenantId,
-          item_id: line.componentItemId,
-          location_id: line.fromLocationId,
-          quantity: canonicalQty,
-          consumption_type: 'production_input',
-          consumption_document_id: issueId,
-          movement_id: issueMovementId,
-          client
-        });
-        issueCost = consumption.total_cost;
-      } catch {
-        throw new Error('WO_WIP_COST_LAYERS_MISSING');
+      for (let i = 0; i < consumeLinesOrdered.length; i += 1) {
+        const line = consumeLinesOrdered[i];
+        await client.query(
+          `INSERT INTO work_order_material_issue_lines (
+              id, tenant_id, work_order_material_issue_id, line_number, component_item_id, uom, quantity_issued, from_location_id, reason_code, notes, created_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            uuidv4(),
+            tenantId,
+            issueId,
+            i + 1,
+            line.componentItemId,
+            line.uom,
+            line.quantity,
+            line.fromLocationId,
+            line.reasonCode,
+            line.notes ?? null,
+            now
+          ]
+        );
       }
-      const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
-      const extendedCost = issueCost !== null ? -issueCost : null;
-      
-      await createInventoryMovementLine(client, {
-        tenantId,
-        movementId: issueMovementId,
-        itemId: line.componentItemId,
-        locationId: line.fromLocationId,
-        quantityDelta: canonicalFields.quantityDeltaCanonical,
-        uom: canonicalFields.canonicalUom,
-        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-        uomEntered: canonicalFields.uomEntered,
-        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-        canonicalUom: canonicalFields.canonicalUom,
-        uomDimension: canonicalFields.uomDimension,
-        unitCost,
-        extendedCost,
-        reasonCode,
-        lineNotes: line.notes ?? null
-      });
 
-      await applyInventoryBalanceDelta(client, {
-        tenantId,
-        itemId: line.componentItemId,
-        locationId: line.fromLocationId,
-        uom: canonicalFields.canonicalUom,
-        deltaOnHand: canonicalFields.quantityDeltaCanonical
-      });
-    }
+      const preparedConsumes: Array<{
+        sourceLineId: string;
+        warehouseId: string;
+        line: NormalizedBatchConsumeLine;
+        canonicalFields: CanonicalMovementFields;
+        unitCost: number | null;
+        extendedCost: number | null;
+        reasonCode: string;
+      }> = [];
+      let totalConsumedCost = 0;
+      for (const line of consumeLinesOrdered) {
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          line.componentItemId,
+          -line.quantity,
+          line.uom,
+          client
+        );
+        const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
+        let issueCost: number | null = null;
+        try {
+          const consumption = await consumeCostLayers({
+            tenant_id: tenantId,
+            item_id: line.componentItemId,
+            location_id: line.fromLocationId,
+            quantity: canonicalQty,
+            consumption_type: 'production_input',
+            consumption_document_id: issueId,
+            movement_id: issueMovement.id,
+            client
+          });
+          issueCost = consumption.total_cost;
+        } catch {
+          throw new Error('WO_WIP_COST_LAYERS_MISSING');
+        }
+        totalConsumedCost += issueCost ?? 0;
+        preparedConsumes.push({
+          sourceLineId: `${line.componentItemId}:${line.fromLocationId}:${line.uom}:${line.quantity}`,
+          warehouseId: warehouseByLocationId.get(line.fromLocationId) ?? '',
+          line,
+          canonicalFields,
+          unitCost: issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null,
+          extendedCost: issueCost !== null ? -issueCost : null,
+          reasonCode: line.reasonCode ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue')
+        });
+      }
 
-    // Execution header + produce lines
-    try {
+      const sortedConsumes = sortDeterministicMovementLines(preparedConsumes, (entry) => ({
+        tenantId,
+        warehouseId: entry.warehouseId,
+        locationId: entry.line.fromLocationId,
+        itemId: entry.line.componentItemId,
+        canonicalUom: entry.canonicalFields.canonicalUom,
+        sourceLineId: entry.sourceLineId
+      }));
+
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      for (const preparedConsume of sortedConsumes) {
+        await createInventoryMovementLine(client, {
+          tenantId,
+          movementId: issueMovement.id,
+          itemId: preparedConsume.line.componentItemId,
+          locationId: preparedConsume.line.fromLocationId,
+          quantityDelta: preparedConsume.canonicalFields.quantityDeltaCanonical,
+          uom: preparedConsume.canonicalFields.canonicalUom,
+          quantityDeltaEntered: preparedConsume.canonicalFields.quantityDeltaEntered,
+          uomEntered: preparedConsume.canonicalFields.uomEntered,
+          quantityDeltaCanonical: preparedConsume.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: preparedConsume.canonicalFields.canonicalUom,
+          uomDimension: preparedConsume.canonicalFields.uomDimension,
+          unitCost: preparedConsume.unitCost,
+          extendedCost: preparedConsume.extendedCost,
+          reasonCode: preparedConsume.reasonCode,
+          lineNotes: preparedConsume.line.notes ?? null
+        });
+        projectionOps.push(
+          buildInventoryBalanceProjectionOp({
+            tenantId,
+            itemId: preparedConsume.line.componentItemId,
+            locationId: preparedConsume.line.fromLocationId,
+            uom: preparedConsume.canonicalFields.canonicalUom,
+            deltaOnHand: preparedConsume.canonicalFields.quantityDeltaCanonical
+          })
+        );
+      }
+
       await client.query(
         `INSERT INTO work_order_executions (
             id, tenant_id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id,
@@ -3278,259 +4127,292 @@ export async function recordWorkOrderBatch(
           tenantId,
           workOrderId,
           occurredAt,
-          issueMovementId,
-          receiveMovementId,
+          issueMovement.id,
+          receiveMovement.id,
           data.notes ?? null,
           batchIdempotencyKey,
           batchIdempotencyKey ? requestHash : null,
           batchIdempotencyKey
             ? JSON.stringify({
-                workOrderId,
-                consumeLineCount: normalizedConsumes.length,
-                produceLineCount: normalizedProduces.length,
-                executionIds: [executionId]
-              })
+              workOrderId,
+              consumeLineCount: normalizedConsumes.length,
+              produceLineCount: normalizedProduces.length,
+              executionIds: [executionId]
+            })
             : null,
           now
         ]
       );
-    } catch (error: any) {
-      if (batchIdempotencyKey && error?.code === '23505') {
-        const replay = await findPostedBatchByIdempotencyKey(client, tenantId, batchIdempotencyKey, requestHash);
-        if (replay) {
-          const replayResponse = {
-            ...replay,
-            idempotencyKey: batchIdempotencyKey,
-            replayed: true
-          };
-          await finalizeTransactionalIdempotency(client, {
+      for (let i = 0; i < produceLinesOrdered.length; i += 1) {
+        const line = produceLinesOrdered[i];
+        await client.query(
+          `INSERT INTO work_order_execution_lines (
+              id, tenant_id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, reason_code, notes, created_at
+           ) VALUES ($1, $2, $3, 'produce', $4, $5, $6, $7, NULL, $8, $9, $10, $11)`,
+          [
+            uuidv4(),
             tenantId,
-            key: batchIdempotencyKey,
-            responseStatus: 200,
-            responseBody: replayResponse
-          });
-          return replayResponse;
-        }
-        throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-          reason: 'execution_insert_conflict_before_batch_finalization',
-          missingExecutionIds: [],
-          hint: 'Retry with the same Idempotency-Key or contact admin'
+            executionId,
+            line.outputItemId,
+            line.uom,
+            line.quantity,
+            line.packSize ?? null,
+            line.toLocationId,
+            line.reasonCode,
+            line.notes ?? null,
+            now
+          ]
+        );
+      }
+
+      const preparedProduces: Array<{
+        sourceLineId: string;
+        warehouseId: string;
+        line: NormalizedBatchProduceLine;
+        canonicalFields: CanonicalMovementFields;
+        unitCost: number | null;
+        extendedCost: number;
+      }> = [];
+      let producedTotal = 0;
+      let producedCanonicalTotal = 0;
+      for (const line of produceLinesOrdered) {
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          line.outputItemId,
+          line.quantity,
+          line.uom,
+          client
+        );
+        producedTotal += line.quantity;
+        producedCanonicalTotal += canonicalFields.quantityDeltaCanonical;
+        preparedProduces.push({
+          sourceLineId: `${line.outputItemId}:${line.toLocationId}:${line.uom}:${line.quantity}`,
+          warehouseId: warehouseByLocationId.get(line.toLocationId) ?? '',
+          line,
+          canonicalFields,
+          unitCost: null,
+          extendedCost: 0
         });
       }
-      throw error;
-    }
-    for (let i = 0; i < produceLinesOrdered.length; i++) {
-      const line = produceLinesOrdered[i];
-      await client.query(
-        `INSERT INTO work_order_execution_lines (
-            id, tenant_id, work_order_execution_id, line_type, item_id, uom, quantity, pack_size, from_location_id, to_location_id, reason_code, notes, created_at
-         ) VALUES ($1, $2, $3, 'produce', $4, $5, $6, $7, NULL, $8, $9, $10, $11)`,
-        [
-          uuidv4(),
-          tenantId,
-          executionId,
-          line.outputItemId,
-          line.uom,
-          line.quantity,
-          line.packSize ?? null,
-          line.toLocationId,
-          line.reasonCode,
-          line.notes ?? null,
-          now
-        ]
-      );
-    }
-    const preparedProduces: Array<{
-      line: (typeof normalizedProduces)[number];
-      canonicalFields: CanonicalMovementFields;
-    }> = [];
-    let producedTotal = 0;
-    let producedCanonicalTotal = 0;
 
-    for (const line of produceLinesOrdered) {
-      const canonicalFields = await getCanonicalMovementFields(
+      if (producedCanonicalTotal <= 0) {
+        throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
+      }
+
+      const totalIssueCost = await allocateWipCostFromMovement(
+        client,
         tenantId,
-        line.outputItemId,
-        line.quantity,
-        line.uom,
-        client
-      );
-      producedTotal += line.quantity;
-      producedCanonicalTotal += canonicalFields.quantityDeltaCanonical;
-      preparedProduces.push({ line, canonicalFields });
-    }
-
-    if (producedCanonicalTotal <= 0) {
-      throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
-    }
-
-    const totalIssueCost = await allocateWipCostFromMovement(
-      client,
-      tenantId,
-      executionId,
-      issueMovementId,
-      now
-    );
-    const wipUnitCostCanonical = totalIssueCost / producedCanonicalTotal;
-
-    for (const { line, canonicalFields } of preparedProduces) {
-      const reasonCode = line.reasonCode ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion');
-      const allocationRatio = canonicalFields.quantityDeltaCanonical / producedCanonicalTotal;
-      const allocatedCost = totalIssueCost * allocationRatio;
-      const unitCost =
-        canonicalFields.quantityDeltaCanonical !== 0
-          ? allocatedCost / canonicalFields.quantityDeltaCanonical
-          : null;
-      const extendedCost = allocatedCost;
-
-      // Create cost layer for backflush production output
-      await createCostLayer({
-        tenant_id: tenantId,
-        item_id: line.outputItemId,
-        location_id: line.toLocationId,
-        uom: canonicalFields.canonicalUom,
-        quantity: canonicalFields.quantityDeltaCanonical,
-        unit_cost: unitCost ?? 0,
-        source_type: 'production',
-        source_document_id: issueId,
-        movement_id: receiveMovementId,
-        notes: `Backflush production from work order ${workOrderId}`,
-        client
-      });
-
-      await createInventoryMovementLine(client, {
-        tenantId,
-        movementId: receiveMovementId,
-        itemId: line.outputItemId,
-        locationId: line.toLocationId,
-        quantityDelta: canonicalFields.quantityDeltaCanonical,
-        uom: canonicalFields.canonicalUom,
-        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-        uomEntered: canonicalFields.uomEntered,
-        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-        canonicalUom: canonicalFields.canonicalUom,
-        uomDimension: canonicalFields.uomDimension,
-        unitCost,
-        extendedCost,
-        reasonCode,
-        lineNotes: line.notes ?? null
-      });
-
-      await applyInventoryBalanceDelta(client, {
-        tenantId,
-        itemId: line.outputItemId,
-        locationId: line.toLocationId,
-        uom: canonicalFields.canonicalUom,
-        deltaOnHand: canonicalFields.quantityDeltaCanonical
-      });
-    }
-
-    await client.query(
-      `UPDATE work_order_executions
-          SET wip_total_cost = $1,
-              wip_unit_cost = $2,
-              wip_quantity_canonical = $3,
-              wip_cost_method = $4,
-              wip_costed_at = $5
-        WHERE id = $6 AND tenant_id = $7`,
-      [
-        totalIssueCost,
-        wipUnitCostCanonical,
-        producedCanonicalTotal,
-        WIP_COST_METHOD,
-        now,
         executionId,
-        tenantId
-      ]
-    );
-
-    // Update work order progress
-    const consumedTotal = consumeLinesOrdered.reduce((sum, line) => sum + line.quantity, 0);
-    const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
-    const progressQty = isDisassembly ? consumedTotal : producedTotal;
-    const newCompleted = currentCompleted + progressQty;
-    const planned = toNumber(workOrder.quantity_planned);
-    const completedAt = newCompleted >= planned ? now : null;
-    const newStatus = newCompleted >= planned ? 'completed' : workOrder.status === 'draft' ? 'in_progress' : workOrder.status;
-
-    await client.query(
-      `UPDATE work_orders
-          SET quantity_completed = $2,
-              status = $3,
-              completed_at = COALESCE(completed_at, $4),
-              wip_total_cost = COALESCE(wip_total_cost, 0) + $5,
-              wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $6,
-              wip_unit_cost = CASE
-                WHEN (COALESCE(wip_quantity_canonical, 0) + $6) > 0
-                THEN (COALESCE(wip_total_cost, 0) + $5) / (COALESCE(wip_quantity_canonical, 0) + $6)
-                ELSE NULL
-              END,
-              wip_cost_method = $7,
-              wip_costed_at = $8,
-              updated_at = $9
-        WHERE id = $1 AND tenant_id = $10`,
-      [
-        workOrderId,
-        newCompleted,
-        newStatus,
-        completedAt,
-        totalIssueCost,
-        producedCanonicalTotal,
-        WIP_COST_METHOD,
-        now,
-        now,
-        tenantId
-      ]
-    );
-
-    await enqueueInventoryMovementPosted(client, tenantId, issueMovementId);
-    await enqueueInventoryMovementPosted(client, tenantId, receiveMovementId);
-
-    if (validation.overrideMetadata && context.actor) {
-      await recordAuditLog(
-        {
-          tenantId,
-          actorType: context.actor.type,
-          actorId: context.actor.id ?? null,
-          action: 'negative_override',
-          entityType: 'inventory_movement',
-          entityId: issueMovementId,
-          occurredAt: now,
-          metadata: {
-            reason: validation.overrideMetadata.override_reason ?? null,
-            workOrderId,
-            executionId,
-            reference: validation.overrideMetadata.override_reference ?? null,
-            lines: consumeLinesOrdered.map((line) => ({
-              itemId: line.componentItemId,
-              locationId: line.fromLocationId,
-              uom: line.uom,
-              quantity: roundQuantity(line.quantity)
-            }))
-          }
-        },
-        client
+        issueMovement.id,
+        now
       );
-    }
+      const wipUnitCostCanonical = totalIssueCost / producedCanonicalTotal;
+      for (const preparedProduce of preparedProduces) {
+        const allocationRatio = preparedProduce.canonicalFields.quantityDeltaCanonical / producedCanonicalTotal;
+        const allocatedCost = totalIssueCost * allocationRatio;
+        preparedProduce.extendedCost = allocatedCost;
+        preparedProduce.unitCost =
+          preparedProduce.canonicalFields.quantityDeltaCanonical !== 0
+            ? allocatedCost / preparedProduce.canonicalFields.quantityDeltaCanonical
+            : null;
+      }
 
-    const response = {
-      workOrderId,
-      executionId,
-      issueMovementId,
-      receiveMovementId,
-      quantityCompleted: newCompleted,
-      workOrderStatus: newStatus,
-      idempotencyKey: batchIdempotencyKey,
-      replayed: false
-    };
-    if (batchIdempotencyKey) {
-      await finalizeTransactionalIdempotency(client, {
+      const sortedProduces = sortDeterministicMovementLines(preparedProduces, (entry) => ({
         tenantId,
-        key: batchIdempotencyKey,
-        responseStatus: 201,
-        responseBody: response
+        warehouseId: entry.warehouseId,
+        locationId: entry.line.toLocationId,
+        itemId: entry.line.outputItemId,
+        canonicalUom: entry.canonicalFields.canonicalUom,
+        sourceLineId: entry.sourceLineId
+      }));
+
+      for (const preparedProduce of sortedProduces) {
+        await createCostLayer({
+          tenant_id: tenantId,
+          item_id: preparedProduce.line.outputItemId,
+          location_id: preparedProduce.line.toLocationId,
+          uom: preparedProduce.canonicalFields.canonicalUom,
+          quantity: preparedProduce.canonicalFields.quantityDeltaCanonical,
+          unit_cost: preparedProduce.unitCost ?? 0,
+          source_type: 'production',
+          source_document_id: issueId,
+          movement_id: receiveMovement.id,
+          notes: `Backflush production from work order ${workOrderId}`,
+          client
+        });
+        await createInventoryMovementLine(client, {
+          tenantId,
+          movementId: receiveMovement.id,
+          itemId: preparedProduce.line.outputItemId,
+          locationId: preparedProduce.line.toLocationId,
+          quantityDelta: preparedProduce.canonicalFields.quantityDeltaCanonical,
+          uom: preparedProduce.canonicalFields.canonicalUom,
+          quantityDeltaEntered: preparedProduce.canonicalFields.quantityDeltaEntered,
+          uomEntered: preparedProduce.canonicalFields.uomEntered,
+          quantityDeltaCanonical: preparedProduce.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: preparedProduce.canonicalFields.canonicalUom,
+          uomDimension: preparedProduce.canonicalFields.uomDimension,
+          unitCost: preparedProduce.unitCost,
+          extendedCost: preparedProduce.extendedCost,
+          reasonCode:
+            preparedProduce.line.reasonCode
+            ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion'),
+          lineNotes: preparedProduce.line.notes ?? null
+        });
+        projectionOps.push(
+          buildInventoryBalanceProjectionOp({
+            tenantId,
+            itemId: preparedProduce.line.outputItemId,
+            locationId: preparedProduce.line.toLocationId,
+            uom: preparedProduce.canonicalFields.canonicalUom,
+            deltaOnHand: preparedProduce.canonicalFields.quantityDeltaCanonical
+          })
+        );
+      }
+
+      await createWorkOrderWipValuationRecord(client, {
+        tenantId,
+        workOrderId,
+        executionId,
+        movementId: issueMovement.id,
+        valuationType: 'issue',
+        valueDelta: totalConsumedCost,
+        notes: `Work-order batch issue WIP valuation for execution ${executionId}`
       });
+      const outputUomSet = new Set(
+        preparedProduces.map((line) => line.canonicalFields.canonicalUom)
+      );
+      const outputCanonicalUom =
+        outputUomSet.size === 1 ? preparedProduces[0]?.canonicalFields.canonicalUom ?? null : null;
+      await createWorkOrderWipValuationRecord(client, {
+        tenantId,
+        workOrderId,
+        executionId,
+        movementId: receiveMovement.id,
+        valuationType: 'report',
+        valueDelta: -totalIssueCost,
+        quantityCanonical: outputCanonicalUom ? producedCanonicalTotal : null,
+        canonicalUom: outputCanonicalUom,
+        notes: `Work-order production report WIP capitalization for execution ${executionId}`
+      });
+
+      const consumedTotal = consumeLinesOrdered.reduce((sum, line) => sum + line.quantity, 0);
+      const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
+      const progressQty = isDisassembly ? consumedTotal : producedTotal;
+      const newCompleted = currentCompleted + progressQty;
+      const planned = toNumber(workOrder.quantity_planned);
+      const completedAt = newCompleted >= planned ? now : null;
+      const newStatus =
+        newCompleted >= planned
+          ? 'completed'
+          : workOrder.status === 'draft'
+            ? 'in_progress'
+            : workOrder.status;
+
+      projectionOps.push(async (projectionClient) => {
+        await projectionClient.query(
+          `UPDATE work_order_executions
+              SET wip_total_cost = $1,
+                  wip_unit_cost = $2,
+                  wip_quantity_canonical = $3,
+                  wip_cost_method = $4,
+                  wip_costed_at = $5
+            WHERE id = $6
+              AND tenant_id = $7`,
+          [
+            totalIssueCost,
+            wipUnitCostCanonical,
+            producedCanonicalTotal,
+            WIP_COST_METHOD,
+            now,
+            executionId,
+            tenantId
+          ]
+        );
+        await projectionClient.query(
+          `UPDATE work_orders
+              SET quantity_completed = $2,
+                  status = $3,
+                  completed_at = COALESCE(completed_at, $4),
+                  wip_total_cost = COALESCE(wip_total_cost, 0) + $5,
+                  wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $6,
+                  wip_unit_cost = CASE
+                    WHEN (COALESCE(wip_quantity_canonical, 0) + $6) > 0
+                    THEN (COALESCE(wip_total_cost, 0) + $5) / (COALESCE(wip_quantity_canonical, 0) + $6)
+                    ELSE NULL
+                  END,
+                  wip_cost_method = $7,
+                  wip_costed_at = $8,
+                  updated_at = $9
+            WHERE id = $1
+              AND tenant_id = $10`,
+          [
+            workOrderId,
+            newCompleted,
+            newStatus,
+            completedAt,
+            totalIssueCost,
+            producedCanonicalTotal,
+            WIP_COST_METHOD,
+            now,
+            now,
+            tenantId
+          ]
+        );
+
+        if (validation.overrideMetadata && context.actor) {
+          await recordAuditLog(
+            {
+              tenantId,
+              actorType: context.actor.type,
+              actorId: context.actor.id ?? null,
+              action: 'negative_override',
+              entityType: 'inventory_movement',
+              entityId: issueMovement.id,
+              occurredAt: now,
+              metadata: {
+                reason: validation.overrideMetadata.override_reason ?? null,
+                workOrderId,
+                executionId,
+                reference: validation.overrideMetadata.override_reference ?? null,
+                lines: consumeLinesOrdered.map((line) => ({
+                  itemId: line.componentItemId,
+                  locationId: line.fromLocationId,
+                  uom: line.uom,
+                  quantity: roundQuantity(line.quantity)
+                }))
+              }
+            },
+            projectionClient
+          );
+        }
+      });
+
+      return {
+        responseBody: {
+          workOrderId,
+          executionId,
+          issueMovementId: issueMovement.id,
+          receiveMovementId: receiveMovement.id,
+          quantityCompleted: newCompleted,
+          workOrderStatus: newStatus,
+          idempotencyKey: batchIdempotencyKey,
+          replayed: false
+        },
+        responseStatus: 201,
+        events: [
+          buildMovementPostedEvent(issueMovement.id, batchIdempotencyKey),
+          buildMovementPostedEvent(receiveMovement.id, batchIdempotencyKey),
+          buildWorkOrderProductionReportedEvent({
+            executionId,
+            workOrderId,
+            issueMovementId: issueMovement.id,
+            receiveMovementId: receiveMovement.id,
+            producerIdempotencyKey: batchIdempotencyKey
+          })
+        ],
+        projectionOps
+      };
     }
-    return response;
-  }, WORK_ORDER_POST_RETRY_OPTIONS);
+  });
 }

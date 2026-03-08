@@ -2,19 +2,16 @@ import type { PoolClient } from 'pg';
 import { applyInventoryBalanceDelta } from '../../../domains/inventory';
 import { refreshItemCostSummaryProjection } from '../../costing/infrastructure/itemCostSummary.projector';
 import type { InventoryCommandEvent, InventoryCommandProjectionOp } from './runInventoryCommand';
+import { buildInventoryRegistryEvent } from './inventoryEventRegistry';
 
 export function buildMovementPostedEvent(
   movementId: string,
   producerIdempotencyKey?: string | null
 ): InventoryCommandEvent {
-  return {
-    aggregateType: 'inventory_movement',
-    aggregateId: movementId,
-    eventType: 'inventory.movement.posted',
-    eventVersion: 1,
-    producerIdempotencyKey: producerIdempotencyKey ?? null,
+  return buildInventoryRegistryEvent('inventoryMovementPosted', {
+    producerIdempotencyKey,
     payload: { movementId }
-  };
+  });
 }
 
 export async function inventoryEventVersionExists(
@@ -22,6 +19,7 @@ export async function inventoryEventVersionExists(
   tenantId: string,
   aggregateType: string,
   aggregateId: string,
+  eventType: string,
   eventVersion: number
 ) {
   const res = await client.query(
@@ -30,11 +28,12 @@ export async function inventoryEventVersionExists(
       WHERE tenant_id = $1
         AND aggregate_type = $2
         AND aggregate_id = $3
-        AND event_version = $4
+        AND event_type = $4
+        AND event_version = $5
       LIMIT 1`,
-    [tenantId, aggregateType, aggregateId, eventVersion]
+    [tenantId, aggregateType, aggregateId, eventType, eventVersion]
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 export async function authoritativeMovementExists(
@@ -50,7 +49,7 @@ export async function authoritativeMovementExists(
       LIMIT 1`,
     [tenantId, movementId]
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 export async function authoritativeMovementReady(
@@ -79,6 +78,85 @@ export async function authoritativeMovementReady(
     hasLines: !!row.has_lines,
     ready: !!row.movement_exists && !!row.has_lines
   };
+}
+
+export async function buildPostedDocumentReplayResult<T>(params: {
+  tenantId: string;
+  authoritativeMovementIds: string[];
+  client: PoolClient;
+  fetchAggregateView: () => Promise<T | null>;
+  aggregateNotFoundError: Error;
+  movementNotReadyError: (movementId: string, readiness: {
+    movementExists: boolean;
+    hasLines: boolean;
+    ready: boolean;
+  }) => Error;
+  authoritativeEvents: InventoryCommandEvent[];
+  responseStatus?: number;
+}) {
+  for (const movementId of params.authoritativeMovementIds) {
+    const readiness = await authoritativeMovementReady(params.client, params.tenantId, movementId);
+    if (!readiness.ready) {
+      throw params.movementNotReadyError(movementId, readiness);
+    }
+  }
+
+  const aggregateView = await params.fetchAggregateView();
+  if (!aggregateView) {
+    throw params.aggregateNotFoundError;
+  }
+
+  const events: InventoryCommandEvent[] = [];
+  for (const event of params.authoritativeEvents) {
+    if (!await inventoryEventVersionExists(
+      params.client,
+      params.tenantId,
+      event.aggregateType,
+      event.aggregateId,
+      event.eventType,
+      event.eventVersion
+    )) {
+      events.push(event);
+    }
+  }
+
+  return {
+    responseBody: aggregateView,
+    responseStatus: params.responseStatus ?? 200,
+    events
+  };
+}
+
+type DeterministicMovementLineIdentity = {
+  tenantId: string;
+  warehouseId: string;
+  locationId: string;
+  itemId: string;
+  canonicalUom: string;
+  sourceLineId: string;
+};
+
+function compareDeterministicMovementLineIdentity(
+  left: DeterministicMovementLineIdentity,
+  right: DeterministicMovementLineIdentity
+) {
+  return (
+    left.tenantId.localeCompare(right.tenantId)
+    || left.warehouseId.localeCompare(right.warehouseId)
+    || left.locationId.localeCompare(right.locationId)
+    || left.itemId.localeCompare(right.itemId)
+    || left.canonicalUom.localeCompare(right.canonicalUom)
+    || left.sourceLineId.localeCompare(right.sourceLineId)
+  );
+}
+
+export function sortDeterministicMovementLines<T>(
+  lines: T[],
+  getIdentity: (line: T) => DeterministicMovementLineIdentity
+) {
+  return [...lines].sort((left, right) =>
+    compareDeterministicMovementLineIdentity(getIdentity(left), getIdentity(right))
+  );
 }
 
 export function buildInventoryBalanceProjectionOp(params: {
