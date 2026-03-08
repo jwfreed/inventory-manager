@@ -1,6 +1,8 @@
 export const IDEMPOTENCY_ENDPOINTS = Object.freeze({
   PURCHASE_ORDER_RECEIPTS_CREATE: 'receipts.post',
   PURCHASE_ORDER_RECEIPTS_VOID: 'receipts.void',
+  INVENTORY_COUNTS_POST: 'inventory_counts.post',
+  INVENTORY_ADJUSTMENTS_POST: 'inventory_adjustments.post',
   INVENTORY_TRANSFERS_CREATE: 'transfers.post',
   INVENTORY_TRANSFERS_VOID: 'transfers.void',
   QC_WAREHOUSE_ACCEPT: 'qc.accept_warehouse_disposition',

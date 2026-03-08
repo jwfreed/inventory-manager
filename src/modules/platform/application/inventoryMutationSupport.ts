@@ -37,6 +37,50 @@ export async function inventoryEventVersionExists(
   return res.rowCount > 0;
 }
 
+export async function authoritativeMovementExists(
+  client: PoolClient,
+  tenantId: string,
+  movementId: string
+) {
+  const res = await client.query(
+    `SELECT 1
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND id = $2
+      LIMIT 1`,
+    [tenantId, movementId]
+  );
+  return res.rowCount > 0;
+}
+
+export async function authoritativeMovementReady(
+  client: PoolClient,
+  tenantId: string,
+  movementId: string
+) {
+  const res = await client.query(
+    `SELECT EXISTS (
+         SELECT 1
+           FROM inventory_movements m
+          WHERE m.tenant_id = $1
+            AND m.id = $2
+       ) AS movement_exists,
+       EXISTS (
+         SELECT 1
+           FROM inventory_movement_lines ml
+          WHERE ml.tenant_id = $1
+            AND ml.movement_id = $2
+       ) AS has_lines`,
+    [tenantId, movementId]
+  );
+  const row = res.rows[0] ?? {};
+  return {
+    movementExists: !!row.movement_exists,
+    hasLines: !!row.has_lines,
+    ready: !!row.movement_exists && !!row.has_lines
+  };
+}
+
 export function buildInventoryBalanceProjectionOp(params: {
   tenantId: string;
   itemId: string;

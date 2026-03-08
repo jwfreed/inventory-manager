@@ -12,6 +12,7 @@ import { adjustmentListQuerySchema, inventoryAdjustmentSchema } from '../schemas
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
+import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -233,6 +234,9 @@ router.post('/inventory-adjustments/:id/post', async (req: Request, res: Respons
     });
     return res.json(adjustment);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.code === 'INSUFFICIENT_STOCK') {
       return res.status(409).json({
         error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
@@ -279,6 +283,15 @@ router.post('/inventory-adjustments/:id/post', async (req: Request, res: Respons
     }
     if (error?.message === 'ADJUSTMENT_LINE_ZERO') {
       return res.status(400).json({ error: 'Inventory adjustment lines must have non-zero quantity.' });
+    }
+    if (error?.code === 'ADJUSTMENT_POST_INCOMPLETE' || error?.message === 'ADJUSTMENT_POST_INCOMPLETE') {
+      return res.status(409).json({
+        error: {
+          code: 'ADJUSTMENT_POST_INCOMPLETE',
+          message: 'Inventory adjustment posting is incomplete or inconsistent with authoritative movement state.',
+          details: error?.details
+        }
+      });
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post inventory adjustment.' });

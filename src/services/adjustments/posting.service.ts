@@ -1,257 +1,401 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
-import { withTransaction } from '../../db';
 import { recordAuditLog } from '../../lib/audit';
+import { IDEMPOTENCY_ENDPOINTS } from '../../lib/idempotencyEndpoints';
 import { toNumber } from '../../lib/numbers';
 import { validateSufficientStock } from '../stockValidation.service';
-import { calculateMovementCost, updateItemQuantityOnHand } from '../costing.service';
+import { calculateMovementCost } from '../costing.service';
 import { consumeCostLayers, createCostLayer } from '../costLayers.service';
 import { getCanonicalMovementFields } from '../uomCanonical.service';
 import { resolveWarehouseIdForLocation } from '../warehouseDefaults.service';
 import { fetchInventoryAdjustmentById } from './core.service';
 import type { InventoryAdjustmentRow, InventoryAdjustmentLineRow, PostingContext } from './types';
-import { createInventoryMovement, createInventoryMovementLine, enqueueInventoryMovementPosted } from '../../domains/inventory';
-import { applyInventoryBalanceDelta } from '../../domains/inventory';
+import { createInventoryMovement, createInventoryMovementLine } from '../../domains/inventory';
+import {
+  runInventoryCommand,
+  type InventoryCommandEvent,
+  type InventoryCommandProjectionOp
+} from '../../modules/platform/application/runInventoryCommand';
+import {
+  authoritativeMovementReady,
+  buildInventoryBalanceProjectionOp,
+  buildMovementPostedEvent,
+  buildRefreshItemCostSummaryProjectionOp,
+  inventoryEventVersionExists
+} from '../../modules/platform/application/inventoryMutationSupport';
+
+function buildInventoryAdjustmentPostedEvent(
+  adjustmentId: string,
+  movementId: string
+): InventoryCommandEvent {
+  return {
+    aggregateType: 'inventory_adjustment',
+    aggregateId: adjustmentId,
+    eventType: 'inventory.adjustment.posted',
+    eventVersion: 1,
+    payload: {
+      adjustmentId,
+      movementId
+    }
+  };
+}
+
+function inventoryAdjustmentPostIncompleteError(
+  adjustmentId: string,
+  details?: Record<string, unknown>
+) {
+  const error = new Error('ADJUSTMENT_POST_INCOMPLETE') as Error & {
+    code?: string;
+    details?: Record<string, unknown>;
+  };
+  error.code = 'ADJUSTMENT_POST_INCOMPLETE';
+  error.details = {
+    adjustmentId,
+    hint: 'Inventory adjustment status is inconsistent with authoritative movement state.',
+    ...(details ?? {})
+  };
+  return error;
+}
+
+async function buildInventoryAdjustmentReplayResult(params: {
+  tenantId: string;
+  adjustmentId: string;
+  movementId: string;
+  client: PoolClient;
+}) {
+  const movementState = await authoritativeMovementReady(
+    params.client,
+    params.tenantId,
+    params.movementId
+  );
+  if (!movementState.ready) {
+    throw inventoryAdjustmentPostIncompleteError(params.adjustmentId, {
+      movementId: params.movementId,
+      reason: movementState.movementExists
+        ? 'authoritative_movement_missing_lines'
+        : 'authoritative_movement_missing'
+    });
+  }
+
+  const adjustment = await fetchInventoryAdjustmentById(params.tenantId, params.adjustmentId, params.client);
+  if (!adjustment) {
+    throw new Error('ADJUSTMENT_NOT_FOUND');
+  }
+
+  const events: InventoryCommandEvent[] = [];
+  if (!await inventoryEventVersionExists(params.client, params.tenantId, 'inventory_movement', params.movementId, 1)) {
+    events.push(buildMovementPostedEvent(params.movementId));
+  }
+  if (!await inventoryEventVersionExists(params.client, params.tenantId, 'inventory_adjustment', params.adjustmentId, 1)) {
+    events.push(buildInventoryAdjustmentPostedEvent(params.adjustmentId, params.movementId));
+  }
+
+  return {
+    responseBody: adjustment,
+    responseStatus: 200,
+    events
+  };
+}
 
 export async function postInventoryAdjustment(
   tenantId: string,
   id: string,
   context?: PostingContext
 ) {
-  const adjustment = await withTransaction(async (client: PoolClient) => {
-    const now = new Date();
-    const adjustmentResult = await client.query<InventoryAdjustmentRow>(
-      'SELECT * FROM inventory_adjustments WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
-      [id, tenantId]
-    );
-    if (adjustmentResult.rowCount === 0) {
-      throw new Error('ADJUSTMENT_NOT_FOUND');
-    }
-    const adjustmentRow = adjustmentResult.rows[0];
-    if (adjustmentRow.status === 'posted') {
-      return fetchInventoryAdjustmentById(tenantId, id, client);
-    }
-    if (adjustmentRow.status === 'canceled') {
-      throw new Error('ADJUSTMENT_CANCELED');
-    }
+  let adjustmentRow: InventoryAdjustmentRow | null = null;
+  let adjustmentLines: InventoryAdjustmentLineRow[] = [];
+  let warehouseIdsByLocation = new Map<string, string>();
 
-    const linesResult = await client.query<InventoryAdjustmentLineRow>(
-      'SELECT * FROM inventory_adjustment_lines WHERE inventory_adjustment_id = $1 AND tenant_id = $2 ORDER BY line_number ASC',
-      [id, tenantId]
-    );
-    if (linesResult.rowCount === 0) {
-      throw new Error('ADJUSTMENT_NO_LINES');
-    }
+  return runInventoryCommand<any>({
+    tenantId,
+    endpoint: IDEMPOTENCY_ENDPOINTS.INVENTORY_ADJUSTMENTS_POST,
+    operation: 'inventory_adjustment_post',
+    retryOptions: { isolationLevel: 'SERIALIZABLE', retries: 2 },
+    lockTargets: async (client) => {
+        const adjustmentResult = await client.query<InventoryAdjustmentRow>(
+          'SELECT * FROM inventory_adjustments WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+          [id, tenantId]
+        );
+        if (adjustmentResult.rowCount === 0) {
+          throw new Error('ADJUSTMENT_NOT_FOUND');
+        }
+        adjustmentRow = adjustmentResult.rows[0];
+        if (adjustmentRow.status === 'canceled') {
+          throw new Error('ADJUSTMENT_CANCELED');
+        }
 
-    // Collect negative lines for stock validation
-    const negativeLines = linesResult.rows
-      .map((line) => {
-        const qty = toNumber(line.quantity_delta);
-        if (qty >= 0) return null;
-        return {
-          itemId: line.item_id,
-          locationId: line.location_id,
-          uom: line.uom,
-          quantityToConsume: Math.abs(qty)
-        };
-      })
-      .filter(Boolean) as { itemId: string; locationId: string; uom: string; quantityToConsume: number }[];
+        const linesResult = await client.query<InventoryAdjustmentLineRow>(
+          `SELECT *
+             FROM inventory_adjustment_lines
+            WHERE inventory_adjustment_id = $1
+              AND tenant_id = $2
+            ORDER BY line_number ASC
+            FOR UPDATE`,
+          [id, tenantId]
+        );
+        if (linesResult.rowCount === 0) {
+          throw new Error('ADJUSTMENT_NO_LINES');
+        }
+        adjustmentLines = linesResult.rows;
 
-    const warehouseIdsByLocation = new Map<string, string>();
-    for (const line of negativeLines) {
-      if (!warehouseIdsByLocation.has(line.locationId)) {
-        const warehouseId = await resolveWarehouseIdForLocation(tenantId, line.locationId, client);
-        warehouseIdsByLocation.set(line.locationId, warehouseId);
-      }
-    }
+        if (adjustmentRow.status === 'posted' && adjustmentRow.inventory_movement_id) {
+          return [];
+        }
+        if (adjustmentRow.status === 'posted' && !adjustmentRow.inventory_movement_id) {
+          throw inventoryAdjustmentPostIncompleteError(id, {
+            reason: 'adjustment_posted_without_movement'
+          });
+        }
 
-    // Validate sufficient stock for negative adjustments
-    const validation = negativeLines.length
-      ? await validateSufficientStock(
+        warehouseIdsByLocation = new Map<string, string>();
+        for (const line of adjustmentLines) {
+          if (!warehouseIdsByLocation.has(line.location_id)) {
+            warehouseIdsByLocation.set(
+              line.location_id,
+              await resolveWarehouseIdForLocation(tenantId, line.location_id, client)
+            );
+          }
+        }
+        return adjustmentLines.map((line) => ({
           tenantId,
-          new Date(adjustmentRow.occurred_at),
-          negativeLines.map((line) => ({
-            warehouseId: warehouseIdsByLocation.get(line.locationId) ?? '',
-            ...line
-          })),
-          {
-            actorId: context?.actor?.id ?? null,
-            actorRole: context?.actor?.role ?? null,
-            overrideRequested: context?.overrideRequested,
-            overrideReason: context?.overrideReason ?? null,
-            overrideReference: `inventory_adjustment:${id}`
-          },
-          { client }
-        )
-      : {};
+          warehouseId: warehouseIdsByLocation.get(line.location_id) ?? '',
+          itemId: line.item_id
+        }));
+      },
+    execute: async ({ client }) => {
+        if (!adjustmentRow) {
+          throw new Error('ADJUSTMENT_NOT_FOUND');
+        }
 
-    // Create inventory movement
-    const movementId = uuidv4();
-    const movement = await createInventoryMovement(client, {
-      id: movementId,
-      tenantId,
-      movementType: 'adjustment',
-      status: 'posted',
-      externalRef: `inventory_adjustment:${id}`,
-      sourceType: 'inventory_adjustment_post',
-      sourceId: id,
-      occurredAt: adjustmentRow.occurred_at,
-      postedAt: now,
-      notes: adjustmentRow.notes ?? null,
-      metadata: validation.overrideMetadata ?? null,
-      createdAt: now,
-      updatedAt: now
-    });
+        if (adjustmentRow.status === 'posted') {
+          if (!adjustmentRow.inventory_movement_id) {
+            throw inventoryAdjustmentPostIncompleteError(id, {
+              reason: 'adjustment_posted_without_movement'
+            });
+          }
+          return buildInventoryAdjustmentReplayResult({
+            tenantId,
+            adjustmentId: id,
+            movementId: adjustmentRow.inventory_movement_id,
+            client
+          });
+        }
 
-    if (!movement.created) {
-      const lineCheck = await client.query(
-        `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
-        [movement.id]
-      );
-      if (lineCheck.rowCount > 0) {
+        const now = new Date();
+        const negativeLines = adjustmentLines
+          .map((line) => {
+            const qty = toNumber(line.quantity_delta);
+            if (qty >= 0) return null;
+            return {
+              itemId: line.item_id,
+              locationId: line.location_id,
+              uom: line.uom,
+              quantityToConsume: Math.abs(qty)
+            };
+          })
+          .filter(Boolean) as { itemId: string; locationId: string; uom: string; quantityToConsume: number }[];
+
+        const validation = negativeLines.length
+          ? await validateSufficientStock(
+              tenantId,
+              new Date(adjustmentRow.occurred_at),
+              negativeLines.map((line) => ({
+                warehouseId: warehouseIdsByLocation.get(line.locationId) ?? '',
+                ...line
+              })),
+              {
+                actorId: context?.actor?.id ?? null,
+                actorRole: context?.actor?.role ?? null,
+                overrideRequested: context?.overrideRequested,
+                overrideReason: context?.overrideReason ?? null,
+                overrideReference: `inventory_adjustment:${id}`
+              },
+              { client }
+            )
+          : {};
+
+        const movementId = uuidv4();
+        const movement = await createInventoryMovement(client, {
+          id: movementId,
+          tenantId,
+          movementType: 'adjustment',
+          status: 'posted',
+          externalRef: `inventory_adjustment:${id}`,
+          sourceType: 'inventory_adjustment_post',
+          sourceId: id,
+          occurredAt: adjustmentRow.occurred_at,
+          postedAt: now,
+          notes: adjustmentRow.notes ?? null,
+          metadata: validation.overrideMetadata ?? null,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        if (!movement.created) {
+          const lineCheck = await client.query(
+            `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
+            [movement.id]
+          );
+          if (lineCheck.rowCount > 0) {
+            await client.query(
+              `UPDATE inventory_adjustments
+                  SET status = 'posted',
+                      inventory_movement_id = $1,
+                      updated_at = $2
+                WHERE id = $3 AND tenant_id = $4`,
+              [movement.id, now, id, tenantId]
+            );
+            return buildInventoryAdjustmentReplayResult({
+              tenantId,
+              adjustmentId: id,
+              movementId: movement.id,
+              client
+            });
+          }
+          throw inventoryAdjustmentPostIncompleteError(id, {
+            movementId: movement.id,
+            reason: 'movement_exists_without_lines'
+          });
+        }
+
+        const projectionOps: InventoryCommandProjectionOp[] = [];
+        const itemsToRefresh = new Set<string>();
+        for (const line of adjustmentLines) {
+          const qty = toNumber(line.quantity_delta);
+          if (qty === 0) {
+            throw new Error('ADJUSTMENT_LINE_ZERO');
+          }
+          const canonicalFields = await getCanonicalMovementFields(
+            tenantId,
+            line.item_id,
+            qty,
+            line.uom,
+            client
+          );
+          const canonicalQty = canonicalFields.quantityDeltaCanonical;
+          const costData = await calculateMovementCost(tenantId, line.item_id, canonicalQty, client);
+
+          if (qty > 0) {
+            await createCostLayer({
+              tenant_id: tenantId,
+              item_id: line.item_id,
+              location_id: line.location_id,
+              uom: canonicalFields.canonicalUom,
+              quantity: canonicalQty,
+              unit_cost: costData.unitCost || 0,
+              source_type: 'adjustment',
+              source_document_id: line.id,
+              movement_id: movement.id,
+              notes: `Adjustment increase: ${line.reason_code || 'unspecified'}`,
+              client
+            });
+          } else {
+            await consumeCostLayers({
+              tenant_id: tenantId,
+              item_id: line.item_id,
+              location_id: line.location_id,
+              quantity: Math.abs(canonicalQty),
+              consumption_type: 'adjustment',
+              consumption_document_id: line.id,
+              movement_id: movement.id,
+              notes: `Adjustment decrease: ${line.reason_code || 'unspecified'}`,
+              client
+            });
+          }
+
+          await createInventoryMovementLine(client, {
+            tenantId,
+            movementId: movement.id,
+            itemId: line.item_id,
+            locationId: line.location_id,
+            quantityDelta: canonicalQty,
+            uom: canonicalFields.canonicalUom,
+            quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+            uomEntered: canonicalFields.uomEntered,
+            quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+            canonicalUom: canonicalFields.canonicalUom,
+            uomDimension: canonicalFields.uomDimension,
+            unitCost: costData.unitCost,
+            extendedCost: costData.extendedCost,
+            reasonCode: line.reason_code,
+            lineNotes: line.notes ?? `Adjustment ${id} line ${line.line_number}`
+          });
+
+          projectionOps.push(
+            buildInventoryBalanceProjectionOp({
+              tenantId,
+              itemId: line.item_id,
+              locationId: line.location_id,
+              uom: canonicalFields.canonicalUom,
+              deltaOnHand: canonicalQty
+            })
+          );
+          itemsToRefresh.add(line.item_id);
+        }
+
+        for (const itemId of itemsToRefresh.values()) {
+          projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, itemId));
+        }
+
         await client.query(
           `UPDATE inventory_adjustments
               SET status = 'posted',
                   inventory_movement_id = $1,
                   updated_at = $2
-            WHERE id = $3 AND tenant_id = $4`,
+           WHERE id = $3 AND tenant_id = $4`,
           [movement.id, now, id, tenantId]
         );
-        await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-        return fetchInventoryAdjustmentById(tenantId, id, client);
-      }
+
+        if (context?.actor) {
+          await recordAuditLog(
+            {
+              tenantId,
+              actorType: context.actor.type,
+              actorId: context.actor.id ?? null,
+              action: 'post',
+              entityType: 'inventory_adjustment',
+              entityId: id,
+              occurredAt: now,
+              metadata: { movementId: movement.id }
+            },
+            client
+          );
+        }
+
+        if (validation.overrideMetadata && context?.actor) {
+          await recordAuditLog(
+            {
+              tenantId,
+              actorType: context.actor.type,
+              actorId: context.actor.id ?? null,
+              action: 'negative_override',
+              entityType: 'inventory_movement',
+              entityId: movement.id,
+              occurredAt: now,
+              metadata: {
+                reason: validation.overrideMetadata.override_reason ?? null,
+                adjustmentId: id,
+                lines: negativeLines,
+                reference: validation.overrideMetadata.override_reference ?? null
+              }
+            },
+            client
+          );
+        }
+
+        const adjustment = await fetchInventoryAdjustmentById(tenantId, id, client);
+        if (!adjustment) {
+          throw new Error('ADJUSTMENT_NOT_FOUND');
+        }
+        return {
+          responseBody: adjustment,
+          responseStatus: 200,
+          events: [
+            buildMovementPostedEvent(movement.id),
+            buildInventoryAdjustmentPostedEvent(id, movement.id)
+          ],
+          projectionOps
+        };
     }
-
-    // Create movement lines with costing
-    for (const line of linesResult.rows) {
-      const qty = toNumber(line.quantity_delta);
-      if (qty === 0) {
-        throw new Error('ADJUSTMENT_LINE_ZERO');
-      }
-      const canonicalFields = await getCanonicalMovementFields(
-        tenantId,
-        line.item_id,
-        qty,
-        line.uom,
-        client
-      );
-      const canonicalQty = canonicalFields.quantityDeltaCanonical;
-      
-      // Calculate cost for adjustment movement
-      const costData = await calculateMovementCost(tenantId, line.item_id, canonicalQty, client);
-      
-      // Handle cost layers for adjustment
-      if (qty > 0) {
-        await createCostLayer({
-          tenant_id: tenantId,
-          item_id: line.item_id,
-          location_id: line.location_id,
-          uom: canonicalFields.canonicalUom,
-          quantity: canonicalQty,
-          unit_cost: costData.unitCost || 0,
-          source_type: 'adjustment',
-          source_document_id: line.id,
-          movement_id: movement.id,
-          notes: `Adjustment increase: ${line.reason_code || 'unspecified'}`,
-          client
-        });
-      } else {
-        await consumeCostLayers({
-          tenant_id: tenantId,
-          item_id: line.item_id,
-          location_id: line.location_id,
-          quantity: Math.abs(canonicalQty),
-          consumption_type: 'adjustment',
-          consumption_document_id: line.id,
-          movement_id: movement.id,
-          notes: `Adjustment decrease: ${line.reason_code || 'unspecified'}`,
-          client
-        });
-      }
-      
-      await createInventoryMovementLine(client, {
-        tenantId,
-        movementId: movement.id,
-        itemId: line.item_id,
-        locationId: line.location_id,
-        quantityDelta: canonicalQty,
-        uom: canonicalFields.canonicalUom,
-        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-        uomEntered: canonicalFields.uomEntered,
-        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-        canonicalUom: canonicalFields.canonicalUom,
-        uomDimension: canonicalFields.uomDimension,
-        unitCost: costData.unitCost,
-        extendedCost: costData.extendedCost,
-        reasonCode: line.reason_code,
-        lineNotes: line.notes ?? `Adjustment ${id} line ${line.line_number}`
-      });
-
-      // Refresh compatibility item summaries from ledger + cost layers.
-      await updateItemQuantityOnHand(tenantId, line.item_id, canonicalQty, client);
-
-      await applyInventoryBalanceDelta(client, {
-        tenantId,
-        itemId: line.item_id,
-        locationId: line.location_id,
-        uom: canonicalFields.canonicalUom,
-        deltaOnHand: canonicalQty
-      });
-    }
-
-    // Update adjustment status
-    await client.query(
-      `UPDATE inventory_adjustments
-          SET status = 'posted',
-              inventory_movement_id = $1,
-              updated_at = $2
-       WHERE id = $3 AND tenant_id = $4`,
-      [movement.id, now, id, tenantId]
-    );
-
-    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-
-    // Audit logging
-    if (context?.actor) {
-      await recordAuditLog(
-        {
-          tenantId,
-          actorType: context.actor.type,
-          actorId: context.actor.id ?? null,
-          action: 'post',
-          entityType: 'inventory_adjustment',
-          entityId: id,
-          occurredAt: now,
-          metadata: { movementId: movement.id }
-        },
-        client
-      );
-    }
-
-    // Log override if applicable
-    if (validation.overrideMetadata && context?.actor) {
-      await recordAuditLog(
-        {
-          tenantId,
-          actorType: context.actor.type,
-          actorId: context.actor.id ?? null,
-          action: 'negative_override',
-          entityType: 'inventory_movement',
-          entityId: movement.id,
-          occurredAt: now,
-          metadata: {
-            reason: validation.overrideMetadata.override_reason ?? null,
-            adjustmentId: id,
-            lines: negativeLines,
-            reference: validation.overrideMetadata.override_reference ?? null
-          }
-        },
-        client
-      );
-    }
-
-    return fetchInventoryAdjustmentById(tenantId, id, client);
   });
-
-  return adjustment;
 }

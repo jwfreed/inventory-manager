@@ -2,20 +2,31 @@ import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
 import type { z } from 'zod';
-import { pool, withTransaction, withTransactionRetry } from '../db';
+import { pool, withTransaction } from '../db';
 import { inventoryCountSchema, inventoryCountUpdateSchema } from '../schemas/counts.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { recordAuditLog } from '../lib/audit';
+import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import { validateSufficientStock } from './stockValidation.service';
 import { consumeCostLayers, createCostLayer } from './costLayers.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
   createInventoryMovement,
-  createInventoryMovementLine,
-  applyInventoryBalanceDelta,
-  enqueueInventoryMovementPosted
+  createInventoryMovementLine
 } from '../domains/inventory';
+import {
+  runInventoryCommand,
+  type InventoryCommandEvent,
+  type InventoryCommandProjectionOp
+} from '../modules/platform/application/runInventoryCommand';
+import {
+  authoritativeMovementReady,
+  buildInventoryBalanceProjectionOp,
+  buildMovementPostedEvent,
+  buildRefreshItemCostSummaryProjectionOp,
+  inventoryEventVersionExists
+} from '../modules/platform/application/inventoryMutationSupport';
 
 type InventoryCountInput = z.infer<typeof inventoryCountSchema>;
 type InventoryCountUpdateInput = z.infer<typeof inventoryCountUpdateSchema>;
@@ -333,6 +344,91 @@ function normalizeCycleCountPostingPayload(params: {
   return { normalized, hash };
 }
 
+function inventoryCountPostIncompleteError(
+  cycleCountId: string,
+  details?: Record<string, unknown>
+) {
+  const error = new Error('INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE') as Error & {
+    code?: string;
+    details?: Record<string, unknown>;
+  };
+  error.code = 'INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE';
+  error.details = {
+    missingMovementId: true,
+    cycleCountId,
+    hint: 'Retry with the same Idempotency-Key or contact admin',
+    ...(details ?? {})
+  };
+  return error;
+}
+
+type CycleCountPostExecutionRow = {
+  id: string;
+  cycle_count_id: string;
+  request_hash: string;
+  status: string;
+  inventory_movement_id: string | null;
+};
+
+function buildInventoryCountPostedEvent(
+  countId: string,
+  movementId: string,
+  producerIdempotencyKey: string
+): InventoryCommandEvent {
+  return {
+    aggregateType: 'inventory_count',
+    aggregateId: countId,
+    eventType: 'inventory.count.posted',
+    eventVersion: 1,
+    producerIdempotencyKey,
+    payload: {
+      countId,
+      movementId
+    }
+  };
+}
+
+async function buildInventoryCountReplayResult(params: {
+  tenantId: string;
+  countId: string;
+  movementId: string;
+  idempotencyKey: string;
+  client: PoolClient;
+}) {
+  const movementState = await authoritativeMovementReady(
+    params.client,
+    params.tenantId,
+    params.movementId
+  );
+  if (!movementState.ready) {
+    throw inventoryCountPostIncompleteError(params.countId, {
+      movementId: params.movementId,
+      reason: movementState.movementExists
+        ? 'authoritative_movement_missing_lines'
+        : 'authoritative_movement_missing'
+    });
+  }
+
+  const count = await fetchCycleCountById(params.tenantId, params.countId, params.client);
+  if (!count) {
+    throw new Error('COUNT_NOT_FOUND');
+  }
+
+  const events: InventoryCommandEvent[] = [];
+  if (!await inventoryEventVersionExists(params.client, params.tenantId, 'inventory_movement', params.movementId, 1)) {
+    events.push(buildMovementPostedEvent(params.movementId, params.idempotencyKey));
+  }
+  if (!await inventoryEventVersionExists(params.client, params.tenantId, 'inventory_count', params.countId, 1)) {
+    events.push(buildInventoryCountPostedEvent(params.countId, params.movementId, params.idempotencyKey));
+  }
+
+  return {
+    responseBody: count,
+    responseStatus: 200,
+    events
+  };
+}
+
 export async function createInventoryCount(
   tenantId: string,
   data: InventoryCountInput,
@@ -571,253 +667,414 @@ export async function postInventoryCount(
   if (!idempotencyKey) {
     throw new Error('IDEMPOTENCY_KEY_REQUIRED');
   }
-  const count = await withTransactionRetry(async (client: PoolClient) => {
-    const now = new Date();
-    const countResult = await client.query<CycleCountRow>(
-      'SELECT * FROM cycle_counts WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
-      [id, tenantId]
-    );
-    if (countResult.rowCount === 0) {
-      throw new Error('COUNT_NOT_FOUND');
-    }
-    const cycleCount = countResult.rows[0];
-    if (
-      context?.expectedWarehouseId
-      && context.expectedWarehouseId !== cycleCount.warehouse_id
-    ) {
-      const error = new Error('WAREHOUSE_SCOPE_MISMATCH') as Error & {
-        code?: string;
-        details?: Record<string, unknown>;
-      };
-      error.code = 'WAREHOUSE_SCOPE_MISMATCH';
-      error.details = {
-        providedWarehouseId: context.expectedWarehouseId,
-        derivedWarehouseId: cycleCount.warehouse_id
-      };
-      throw error;
-    }
+  let cycleCount: CycleCountRow | null = null;
+  let countLines: CycleCountLineRow[] = [];
+  let execution: CycleCountPostExecutionRow | null = null;
+  let replayMovementId: string | null = null;
 
-    const linesResult = await client.query<CycleCountLineRow>(
-      `SELECT *
-         FROM cycle_count_lines
-        WHERE cycle_count_id = $1
-          AND tenant_id = $2
-        ORDER BY location_id ASC, item_id ASC, uom ASC, line_number ASC
-        FOR UPDATE`,
-      [id, tenantId]
-    );
-    if (linesResult.rowCount === 0) {
-      throw new Error('COUNT_NO_LINES');
-    }
-
-    const { normalized: normalizedRequestSummary, hash: requestHash } = normalizeCycleCountPostingPayload({
-      countId: id,
-      warehouseId: cycleCount.warehouse_id,
-      occurredAt: cycleCount.counted_at,
-      lines: linesResult.rows.map((line) => ({
-        itemId: line.item_id,
-        locationId: line.location_id,
-        uom: line.uom,
-        countedQuantity: toNumber(line.counted_quantity),
-        unitCostForPositiveAdjustment:
-          line.unit_cost_for_positive_adjustment !== null
-            ? toNumber(line.unit_cost_for_positive_adjustment)
-            : null
-      }))
-    });
-
-    const executionInsert = await client.query<{ id: string }>(
-      `INSERT INTO cycle_count_post_executions (
-          id, tenant_id, cycle_count_id, idempotency_key, request_hash, request_summary, status, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'IN_PROGRESS', $7, $7)
-       ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
-       RETURNING id`,
-      [uuidv4(), tenantId, id, idempotencyKey, requestHash, JSON.stringify(normalizedRequestSummary), now]
-    );
-
-    const executionResult = await client.query<{
-      id: string;
-      cycle_count_id: string;
-      request_hash: string;
-      status: string;
-      inventory_movement_id: string | null;
-    }>(
-      `SELECT id, cycle_count_id, request_hash, status, inventory_movement_id
-         FROM cycle_count_post_executions
-        WHERE tenant_id = $1
-          AND idempotency_key = $2
-        FOR UPDATE`,
-      [tenantId, idempotencyKey]
-    );
-    if (executionResult.rowCount === 0) {
-      throw new Error('INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE');
-    }
-    const execution = executionResult.rows[0];
-    const executionCreated = executionInsert.rowCount > 0;
-    if (execution.cycle_count_id !== id || execution.request_hash !== requestHash) {
-      const error = new Error('INV_COUNT_POST_IDEMPOTENCY_CONFLICT') as Error & {
-        code?: string;
-        details?: Record<string, unknown>;
-      };
-      error.code = 'INV_COUNT_POST_IDEMPOTENCY_CONFLICT';
-      error.details = {
-        cycleCountId: execution.cycle_count_id,
-        expectedCycleCountId: id
-      };
-      throw error;
-    }
-    if (execution.status === 'SUCCEEDED' && execution.inventory_movement_id) {
-      return fetchCycleCountById(tenantId, id, client);
-    }
-    if (execution.status === 'SUCCEEDED' && !execution.inventory_movement_id) {
-      const incompleteError = new Error('INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE') as Error & {
-        code?: string;
-        details?: Record<string, unknown>;
-      };
-      incompleteError.code = 'INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE';
-      incompleteError.details = {
-        missingMovementId: true,
-        cycleCountId: id,
-        hint: 'Retry with the same Idempotency-Key or contact admin'
-      };
-      throw incompleteError;
-    }
-    if (!executionCreated && execution.status === 'IN_PROGRESS') {
-      const incompleteError = new Error('INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE') as Error & {
-        code?: string;
-        details?: Record<string, unknown>;
-      };
-      incompleteError.code = 'INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE';
-      incompleteError.details = {
-        missingMovementId: true,
-        cycleCountId: id,
-        hint: 'Retry with the same Idempotency-Key or contact admin'
-      };
-      throw incompleteError;
-    }
-
-    if (cycleCount.status === 'posted' && cycleCount.inventory_movement_id) {
-      await client.query(
-        `UPDATE cycle_count_post_executions
-            SET status = 'SUCCEEDED',
-                inventory_movement_id = $1,
-                updated_at = $2
-          WHERE id = $3`,
-        [cycleCount.inventory_movement_id, now, execution.id]
+  return runInventoryCommand<any>({
+    tenantId,
+    endpoint: IDEMPOTENCY_ENDPOINTS.INVENTORY_COUNTS_POST,
+    operation: 'inventory_count_post',
+    retryOptions: { isolationLevel: 'SERIALIZABLE', retries: 2 },
+    lockTargets: async (client) => {
+      const now = new Date();
+      const countResult = await client.query<CycleCountRow>(
+        'SELECT * FROM cycle_counts WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+        [id, tenantId]
       );
-      return fetchCycleCountById(tenantId, id, client);
-    }
-    if (cycleCount.status === 'canceled') {
-      throw new Error('COUNT_CANCELED');
-    }
-
-    const systemMap = await loadSystemOnHandForLines(
-      tenantId,
-      now.toISOString(),
-      linesResult.rows.map((line) => ({
-        itemId: line.item_id,
-        locationId: line.location_id,
-        uom: line.uom
-      })),
-      client
-    );
-
-    const deltas = linesResult.rows.map((line) => {
-      const countedQty = toNumber(line.counted_quantity);
-      const systemQty = systemMap.get(makeOnHandKey(line.item_id, line.location_id, line.uom)) ?? 0;
-      return {
-        line,
-        countedQty,
-        systemQty,
-        variance: roundQuantity(countedQty - systemQty)
-      };
-    });
-
-    const missingReason = deltas.find((delta) => delta.variance !== 0 && !delta.line.reason_code);
-    if (missingReason) {
-      throw new Error('COUNT_REASON_REQUIRED');
-    }
-
-    const missingPositiveCost = deltas.find(
-      (delta) => delta.variance > 0 && delta.line.unit_cost_for_positive_adjustment === null
-    );
-    if (missingPositiveCost) {
-      throw new Error('CYCLE_COUNT_UNIT_COST_REQUIRED');
-    }
-
-    const negativeLines = deltas
-      .filter((delta) => delta.variance < 0)
-      .map((delta) => ({
-        warehouseId: cycleCount.warehouse_id,
-        itemId: delta.line.item_id,
-        locationId: delta.line.location_id,
-        uom: delta.line.uom,
-        quantityToConsume: Math.abs(delta.variance)
-      }));
-    const validation = negativeLines.length
-      ? await validateSufficientStock(
-          tenantId,
-          now,
-          negativeLines,
-          {
-            actorId: context?.actor?.id ?? null,
-            actorRole: context?.actor?.role ?? null,
-            overrideRequested: context?.overrideRequested,
-            overrideReason: context?.overrideReason ?? null,
-            overrideReference: `cycle_count:${id}`
-          },
-          { client }
-        )
-      : {};
-
-    const movement = await createInventoryMovement(client, {
-      id: uuidv4(),
-      tenantId,
-      movementType: 'adjustment',
-      status: 'posted',
-      externalRef: `cycle_count:${id}`,
-      sourceType: 'cycle_count_post',
-      sourceId: id,
-      idempotencyKey: `cycle-count-post:${id}:${idempotencyKey}`,
-      occurredAt: now,
-      postedAt: now,
-      notes: cycleCount.notes ?? null,
-      metadata: validation.overrideMetadata ?? null,
-      createdAt: now,
-      updatedAt: now
-    });
-
-    if (!movement.created) {
-      const lineCheck = await client.query(
-        `SELECT 1
-           FROM inventory_movement_lines
-          WHERE movement_id = $1
-          LIMIT 1`,
-        [movement.id]
-      );
-      if (lineCheck.rowCount === 0) {
-        const incompleteError = new Error('INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE') as Error & {
+      if (countResult.rowCount === 0) {
+        throw new Error('COUNT_NOT_FOUND');
+      }
+      cycleCount = countResult.rows[0];
+      if (
+        context?.expectedWarehouseId
+        && context.expectedWarehouseId !== cycleCount.warehouse_id
+      ) {
+        const error = new Error('WAREHOUSE_SCOPE_MISMATCH') as Error & {
           code?: string;
           details?: Record<string, unknown>;
         };
-        incompleteError.code = 'INV_COUNT_POST_IDEMPOTENCY_INCOMPLETE';
-        incompleteError.details = {
-          missingMovementId: true,
-          cycleCountId: id,
-          hint: 'Retry with the same Idempotency-Key or contact admin'
+        error.code = 'WAREHOUSE_SCOPE_MISMATCH';
+        error.details = {
+          providedWarehouseId: context.expectedWarehouseId,
+          derivedWarehouseId: cycleCount.warehouse_id
         };
-        throw incompleteError;
+        throw error;
       }
+
+      const linesResult = await client.query<CycleCountLineRow>(
+        `SELECT *
+           FROM cycle_count_lines
+          WHERE cycle_count_id = $1
+            AND tenant_id = $2
+          ORDER BY location_id ASC, item_id ASC, uom ASC, line_number ASC
+          FOR UPDATE`,
+        [id, tenantId]
+      );
+      if (linesResult.rowCount === 0) {
+        throw new Error('COUNT_NO_LINES');
+      }
+      countLines = linesResult.rows;
+
+      const { normalized: normalizedRequestSummary, hash: requestHash } = normalizeCycleCountPostingPayload({
+        countId: id,
+        warehouseId: cycleCount.warehouse_id,
+        occurredAt: cycleCount.counted_at,
+        lines: countLines.map((line) => ({
+          itemId: line.item_id,
+          locationId: line.location_id,
+          uom: line.uom,
+          countedQuantity: toNumber(line.counted_quantity),
+          unitCostForPositiveAdjustment:
+            line.unit_cost_for_positive_adjustment !== null
+              ? toNumber(line.unit_cost_for_positive_adjustment)
+              : null
+        }))
+      });
+
+      const executionInsert = await client.query<{ id: string }>(
+        `INSERT INTO cycle_count_post_executions (
+            id, tenant_id, cycle_count_id, idempotency_key, request_hash, request_summary, status, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'IN_PROGRESS', $7, $7)
+         ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+         RETURNING id`,
+        [uuidv4(), tenantId, id, idempotencyKey, requestHash, JSON.stringify(normalizedRequestSummary), now]
+      );
+
+      const executionResult = await client.query<CycleCountPostExecutionRow>(
+        `SELECT id, cycle_count_id, request_hash, status, inventory_movement_id
+           FROM cycle_count_post_executions
+          WHERE tenant_id = $1
+            AND idempotency_key = $2
+          FOR UPDATE`,
+        [tenantId, idempotencyKey]
+      );
+      if (executionResult.rowCount === 0) {
+        throw inventoryCountPostIncompleteError(id, {
+          reason: 'execution_row_missing'
+        });
+      }
+      execution = executionResult.rows[0];
+      const executionCreated = executionInsert.rowCount > 0;
+      if (execution.cycle_count_id !== id || execution.request_hash !== requestHash) {
+        const error = new Error('INV_COUNT_POST_IDEMPOTENCY_CONFLICT') as Error & {
+          code?: string;
+          details?: Record<string, unknown>;
+        };
+        error.code = 'INV_COUNT_POST_IDEMPOTENCY_CONFLICT';
+        error.details = {
+          cycleCountId: execution.cycle_count_id,
+          expectedCycleCountId: id
+        };
+        throw error;
+      }
+      if (execution.status === 'SUCCEEDED' && !execution.inventory_movement_id) {
+        throw inventoryCountPostIncompleteError(id, {
+          reason: 'execution_succeeded_without_movement'
+        });
+      }
+      if (!executionCreated && execution.status === 'IN_PROGRESS') {
+        throw inventoryCountPostIncompleteError(id, {
+          reason: 'execution_still_in_progress'
+        });
+      }
+
+      if (cycleCount.status === 'canceled') {
+        throw new Error('COUNT_CANCELED');
+      }
+
+      if (execution.status === 'SUCCEEDED' && execution.inventory_movement_id) {
+        replayMovementId = execution.inventory_movement_id;
+        return [];
+      }
+
+      if (cycleCount.status === 'posted' && cycleCount.inventory_movement_id) {
+        await client.query(
+          `UPDATE cycle_count_post_executions
+              SET status = 'SUCCEEDED',
+                  inventory_movement_id = $1,
+                  updated_at = $2
+            WHERE id = $3`,
+          [cycleCount.inventory_movement_id, now, execution.id]
+        );
+        replayMovementId = cycleCount.inventory_movement_id;
+        return [];
+      }
+      if (cycleCount.status === 'posted' && !cycleCount.inventory_movement_id) {
+        throw inventoryCountPostIncompleteError(id, {
+          reason: 'cycle_count_posted_without_movement'
+        });
+      }
+
+      return countLines.map((line) => ({
+        tenantId,
+        warehouseId: cycleCount.warehouse_id,
+        itemId: line.item_id
+      }));
+    },
+    execute: async ({ client }) => {
+      if (!cycleCount) {
+        throw new Error('COUNT_NOT_FOUND');
+      }
+      if (!execution) {
+        throw inventoryCountPostIncompleteError(id, {
+          reason: 'execution_row_missing'
+        });
+      }
+
+      if (replayMovementId) {
+        return buildInventoryCountReplayResult({
+          tenantId,
+          countId: id,
+          movementId: replayMovementId,
+          idempotencyKey,
+          client
+        });
+      }
+
+      const now = new Date();
+      const systemMap = await loadSystemOnHandForLines(
+        tenantId,
+        now.toISOString(),
+        countLines.map((line) => ({
+          itemId: line.item_id,
+          locationId: line.location_id,
+          uom: line.uom
+        })),
+        client
+      );
+
+      const deltas = countLines.map((line) => {
+        const countedQty = toNumber(line.counted_quantity);
+        const systemQty = systemMap.get(makeOnHandKey(line.item_id, line.location_id, line.uom)) ?? 0;
+        return {
+          line,
+          countedQty,
+          systemQty,
+          variance: roundQuantity(countedQty - systemQty)
+        };
+      });
+
+      const missingReason = deltas.find((delta) => delta.variance !== 0 && !delta.line.reason_code);
+      if (missingReason) {
+        throw new Error('COUNT_REASON_REQUIRED');
+      }
+
+      const missingPositiveCost = deltas.find(
+        (delta) => delta.variance > 0 && delta.line.unit_cost_for_positive_adjustment === null
+      );
+      if (missingPositiveCost) {
+        throw new Error('CYCLE_COUNT_UNIT_COST_REQUIRED');
+      }
+
+      const negativeLines = deltas
+        .filter((delta) => delta.variance < 0)
+        .map((delta) => ({
+          warehouseId: cycleCount.warehouse_id,
+          itemId: delta.line.item_id,
+          locationId: delta.line.location_id,
+          uom: delta.line.uom,
+          quantityToConsume: Math.abs(delta.variance)
+        }));
+      const validation = negativeLines.length
+        ? await validateSufficientStock(
+            tenantId,
+            now,
+            negativeLines,
+            {
+              actorId: context?.actor?.id ?? null,
+              actorRole: context?.actor?.role ?? null,
+              overrideRequested: context?.overrideRequested,
+              overrideReason: context?.overrideReason ?? null,
+              overrideReference: `cycle_count:${id}`
+            },
+            { client }
+          )
+        : {};
+
+      const movement = await createInventoryMovement(client, {
+        id: uuidv4(),
+        tenantId,
+        movementType: 'adjustment',
+        status: 'posted',
+        externalRef: `cycle_count:${id}`,
+        sourceType: 'cycle_count_post',
+        sourceId: id,
+        idempotencyKey: `cycle-count-post:${id}:${idempotencyKey}`,
+        occurredAt: now,
+        postedAt: now,
+        notes: cycleCount.notes ?? null,
+        metadata: validation.overrideMetadata ?? null,
+        createdAt: now,
+        updatedAt: now
+      });
+
+      if (!movement.created) {
+        const lineCheck = await client.query(
+          `SELECT 1
+             FROM inventory_movement_lines
+            WHERE movement_id = $1
+            LIMIT 1`,
+          [movement.id]
+        );
+        if (lineCheck.rowCount === 0) {
+          throw inventoryCountPostIncompleteError(id, {
+            movementId: movement.id,
+            reason: 'movement_exists_without_lines'
+          });
+        }
+        await client.query(
+          `UPDATE cycle_counts
+              SET status = 'posted',
+                  inventory_movement_id = $1,
+                  posted_at = COALESCE(posted_at, $2),
+                  updated_at = $2
+            WHERE id = $3
+              AND tenant_id = $4`,
+          [movement.id, now, id, tenantId]
+        );
+        await client.query(
+          `UPDATE cycle_count_post_executions
+              SET status = 'SUCCEEDED',
+                  inventory_movement_id = $1,
+                  updated_at = $2
+            WHERE id = $3`,
+          [movement.id, now, execution.id]
+        );
+        return buildInventoryCountReplayResult({
+          tenantId,
+          countId: id,
+          movementId: movement.id,
+          idempotencyKey,
+          client
+        });
+      }
+
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      const itemsToRefresh = new Set<string>();
+      for (const delta of deltas) {
+        await client.query(
+          `UPDATE cycle_count_lines
+              SET system_quantity = $1,
+                  variance_quantity = $2
+           WHERE id = $3
+             AND tenant_id = $4`,
+          [delta.systemQty, delta.variance, delta.line.id, tenantId]
+        );
+
+        if (Math.abs(delta.variance) <= 1e-6) {
+          continue;
+        }
+
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          delta.line.item_id,
+          delta.variance,
+          delta.line.uom,
+          client
+        );
+        const canonicalQty = canonicalFields.quantityDeltaCanonical;
+        let unitCost: number | null = null;
+        let extendedCost: number | null = null;
+
+        if (delta.variance < 0) {
+          const consumption = await consumeCostLayers({
+            tenant_id: tenantId,
+            item_id: delta.line.item_id,
+            location_id: delta.line.location_id,
+            quantity: Math.abs(canonicalQty),
+            consumption_type: 'adjustment',
+            consumption_document_id: id,
+            movement_id: movement.id,
+            notes: `Cycle count shrink ${id} line ${delta.line.line_number}`,
+            client
+          });
+          unitCost = Math.abs(canonicalQty) > 0 ? consumption.total_cost / Math.abs(canonicalQty) : null;
+          extendedCost = consumption.total_cost !== null ? -consumption.total_cost : null;
+        } else {
+          unitCost = toNumber(delta.line.unit_cost_for_positive_adjustment ?? 0);
+          extendedCost = roundQuantity(canonicalQty * unitCost);
+          await createCostLayer({
+            tenant_id: tenantId,
+            item_id: delta.line.item_id,
+            location_id: delta.line.location_id,
+            uom: canonicalFields.canonicalUom,
+            quantity: canonicalQty,
+            unit_cost: unitCost,
+            source_type: 'adjustment',
+            source_document_id: id,
+            movement_id: movement.id,
+            notes: `Cycle count found ${id} line ${delta.line.line_number}`,
+            client
+          });
+        }
+
+        await createInventoryMovementLine(client, {
+          tenantId,
+          movementId: movement.id,
+          itemId: delta.line.item_id,
+          locationId: delta.line.location_id,
+          quantityDelta: canonicalQty,
+          uom: canonicalFields.canonicalUom,
+          quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+          uomEntered: canonicalFields.uomEntered,
+          quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+          canonicalUom: canonicalFields.canonicalUom,
+          uomDimension: canonicalFields.uomDimension,
+          unitCost,
+          extendedCost,
+          reasonCode: delta.line.reason_code ?? 'cycle_count_adjustment',
+          lineNotes: delta.line.notes ?? `Cycle count ${id} line ${delta.line.line_number}`
+        });
+
+        projectionOps.push(
+          buildInventoryBalanceProjectionOp({
+            tenantId,
+            itemId: delta.line.item_id,
+            locationId: delta.line.location_id,
+            uom: canonicalFields.canonicalUom,
+            deltaOnHand: canonicalQty
+          })
+        );
+        itemsToRefresh.add(delta.line.item_id);
+      }
+
+      for (const itemId of itemsToRefresh.values()) {
+        projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, itemId));
+      }
+
+      const postReconcileMap = await loadSystemOnHandForLines(
+        tenantId,
+        now.toISOString(),
+        deltas.map((delta) => ({
+          itemId: delta.line.item_id,
+          locationId: delta.line.location_id,
+          uom: delta.line.uom
+        })),
+        client
+      );
+      const mismatch = deltas.find((delta) => {
+        const finalOnHand = postReconcileMap.get(
+          makeOnHandKey(delta.line.item_id, delta.line.location_id, delta.line.uom)
+        ) ?? 0;
+        return Math.abs(finalOnHand - delta.countedQty) > 1e-6;
+      });
+      if (mismatch) {
+        throw new Error('CYCLE_COUNT_RECONCILIATION_FAILED');
+      }
+
       await client.query(
         `UPDATE cycle_counts
             SET status = 'posted',
                 inventory_movement_id = $1,
-                posted_at = COALESCE(posted_at, $2),
+                posted_at = $2,
                 updated_at = $2
-          WHERE id = $3
-            AND tenant_id = $4`,
+         WHERE id = $3
+           AND tenant_id = $4`,
         [movement.id, now, id, tenantId]
       );
+
       await client.query(
         `UPDATE cycle_count_post_executions
             SET status = 'SUCCEEDED',
@@ -826,159 +1083,41 @@ export async function postInventoryCount(
           WHERE id = $3`,
         [movement.id, now, execution.id]
       );
-      await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-      return fetchCycleCountById(tenantId, id, client);
-    }
 
-    for (const delta of deltas) {
-      await client.query(
-        `UPDATE cycle_count_lines
-            SET system_quantity = $1,
-                variance_quantity = $2
-         WHERE id = $3
-           AND tenant_id = $4`,
-        [delta.systemQty, delta.variance, delta.line.id, tenantId]
-      );
-
-      if (Math.abs(delta.variance) <= 1e-6) {
-        continue;
+      if (validation.overrideMetadata && context?.actor) {
+        await recordAuditLog(
+          {
+            tenantId,
+            actorType: context.actor.type,
+            actorId: context.actor.id ?? null,
+            action: 'negative_override',
+            entityType: 'inventory_movement',
+            entityId: movement.id,
+            occurredAt: now,
+            metadata: {
+              reason: validation.overrideMetadata.override_reason ?? null,
+              cycleCountId: id,
+              lines: negativeLines,
+              reference: validation.overrideMetadata.override_reference ?? null
+            }
+          },
+          client
+        );
       }
 
-      const canonicalFields = await getCanonicalMovementFields(
-        tenantId,
-        delta.line.item_id,
-        delta.variance,
-        delta.line.uom,
-        client
-      );
-      const canonicalQty = canonicalFields.quantityDeltaCanonical;
-      let unitCost: number | null = null;
-      let extendedCost: number | null = null;
-
-      if (delta.variance < 0) {
-        const consumption = await consumeCostLayers({
-          tenant_id: tenantId,
-          item_id: delta.line.item_id,
-          location_id: delta.line.location_id,
-          quantity: Math.abs(canonicalQty),
-          consumption_type: 'adjustment',
-          consumption_document_id: id,
-          movement_id: movement.id,
-          notes: `Cycle count shrink ${id} line ${delta.line.line_number}`,
-          client
-        });
-        unitCost = Math.abs(canonicalQty) > 0 ? consumption.total_cost / Math.abs(canonicalQty) : null;
-        extendedCost = consumption.total_cost !== null ? -consumption.total_cost : null;
-      } else {
-        unitCost = toNumber(delta.line.unit_cost_for_positive_adjustment ?? 0);
-        extendedCost = roundQuantity(canonicalQty * unitCost);
-        await createCostLayer({
-          tenant_id: tenantId,
-          item_id: delta.line.item_id,
-          location_id: delta.line.location_id,
-          uom: canonicalFields.canonicalUom,
-          quantity: canonicalQty,
-          unit_cost: unitCost,
-          source_type: 'adjustment',
-          source_document_id: id,
-          movement_id: movement.id,
-          notes: `Cycle count found ${id} line ${delta.line.line_number}`,
-          client
-        });
+      const count = await fetchCycleCountById(tenantId, id, client);
+      if (!count) {
+        throw new Error('COUNT_NOT_FOUND');
       }
-
-      await createInventoryMovementLine(client, {
-        tenantId,
-        movementId: movement.id,
-        itemId: delta.line.item_id,
-        locationId: delta.line.location_id,
-        quantityDelta: canonicalQty,
-        uom: canonicalFields.canonicalUom,
-        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-        uomEntered: canonicalFields.uomEntered,
-        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-        canonicalUom: canonicalFields.canonicalUom,
-        uomDimension: canonicalFields.uomDimension,
-        unitCost,
-        extendedCost,
-        reasonCode: delta.line.reason_code ?? 'cycle_count_adjustment',
-        lineNotes: delta.line.notes ?? `Cycle count ${id} line ${delta.line.line_number}`
-      });
-
-      await applyInventoryBalanceDelta(client, {
-        tenantId,
-        itemId: delta.line.item_id,
-        locationId: delta.line.location_id,
-        uom: canonicalFields.canonicalUom,
-        deltaOnHand: canonicalQty
-      });
+      return {
+        responseBody: count,
+        responseStatus: 200,
+        events: [
+          buildMovementPostedEvent(movement.id, idempotencyKey),
+          buildInventoryCountPostedEvent(id, movement.id, idempotencyKey)
+        ],
+        projectionOps
+      };
     }
-
-    const postReconcileMap = await loadSystemOnHandForLines(
-      tenantId,
-      now.toISOString(),
-      deltas.map((delta) => ({
-        itemId: delta.line.item_id,
-        locationId: delta.line.location_id,
-        uom: delta.line.uom
-      })),
-      client
-    );
-    const mismatch = deltas.find((delta) => {
-      const finalOnHand = postReconcileMap.get(
-        makeOnHandKey(delta.line.item_id, delta.line.location_id, delta.line.uom)
-      ) ?? 0;
-      return Math.abs(finalOnHand - delta.countedQty) > 1e-6;
-    });
-    if (mismatch) {
-      throw new Error('CYCLE_COUNT_RECONCILIATION_FAILED');
-    }
-
-    await client.query(
-      `UPDATE cycle_counts
-          SET status = 'posted',
-              inventory_movement_id = $1,
-              posted_at = $2,
-              updated_at = $2
-       WHERE id = $3
-         AND tenant_id = $4`,
-      [movement.id, now, id, tenantId]
-    );
-
-    await client.query(
-      `UPDATE cycle_count_post_executions
-          SET status = 'SUCCEEDED',
-              inventory_movement_id = $1,
-              updated_at = $2
-        WHERE id = $3`,
-      [movement.id, now, execution.id]
-    );
-
-    await enqueueInventoryMovementPosted(client, tenantId, movement.id);
-
-    if (validation.overrideMetadata && context?.actor) {
-      await recordAuditLog(
-        {
-          tenantId,
-          actorType: context.actor.type,
-          actorId: context.actor.id ?? null,
-          action: 'negative_override',
-          entityType: 'inventory_movement',
-          entityId: movement.id,
-          occurredAt: now,
-          metadata: {
-            reason: validation.overrideMetadata.override_reason ?? null,
-            cycleCountId: id,
-            lines: negativeLines,
-            reference: validation.overrideMetadata.override_reference ?? null
-          }
-        },
-        client
-      );
-    }
-
-    return fetchCycleCountById(tenantId, id, client);
-  }, { isolationLevel: 'SERIALIZABLE', retries: 2 });
-
-  return count;
+  });
 }

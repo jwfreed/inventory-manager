@@ -39,6 +39,17 @@ type InventoryCommandLockTargets =
   | AtpLockTarget[]
   | ((client: PoolClient) => Promise<AtpLockTarget[]>);
 
+function compareInventoryCommandLockTarget(
+  left: AtpLockTarget,
+  right: AtpLockTarget
+) {
+  const warehouseCompare = left.warehouseId.localeCompare(right.warehouseId);
+  if (warehouseCompare !== 0) return warehouseCompare;
+  const itemCompare = left.itemId.localeCompare(right.itemId);
+  if (itemCompare !== 0) return itemCompare;
+  return left.tenantId.localeCompare(right.tenantId);
+}
+
 export async function runInventoryCommand<T>(params: {
   tenantId: string;
   endpoint: string;
@@ -101,7 +112,8 @@ export async function runInventoryCommand<T>(params: {
       : params.lockTargets
         ? await params.lockTargets(client)
         : [];
-    await acquireAtpLocks(client, lockTargets, { lockContext });
+    const sortedLockTargets = [...lockTargets].sort(compareInventoryCommandLockTarget);
+    await acquireAtpLocks(client, sortedLockTargets, { lockContext });
 
     const execution = await params.execute({ client, lockContext });
     await appendInventoryEventsWithDispatch(

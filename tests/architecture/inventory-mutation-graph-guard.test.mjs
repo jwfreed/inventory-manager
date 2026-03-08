@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 
-const SERVICES_ROOT = path.resolve(process.cwd(), 'src/services');
+const SRC_ROOT = path.resolve(process.cwd(), 'src');
 const WRAPPER_SOURCE = path.resolve(
   process.cwd(),
   'src/modules/platform/application/runInventoryCommand.ts'
@@ -12,6 +12,8 @@ const TRANSFERS_SERVICE = path.resolve(process.cwd(), 'src/services/transfers.se
 const PUTAWAYS_SERVICE = path.resolve(process.cwd(), 'src/services/putaways.service.ts');
 const ORDER_TO_CASH_SERVICE = path.resolve(process.cwd(), 'src/services/orderToCash.service.ts');
 const RECEIPTS_SERVICE = path.resolve(process.cwd(), 'src/services/receipts.service.ts');
+const COUNTS_SERVICE = path.resolve(process.cwd(), 'src/services/counts.service.ts');
+const ADJUSTMENTS_POSTING_SERVICE = path.resolve(process.cwd(), 'src/services/adjustments/posting.service.ts');
 
 const MUTATION_PATTERNS = [
   /\bcreateInventoryMovement\(/,
@@ -23,19 +25,20 @@ const MUTATION_PATTERNS = [
 const WRAPPER_MANAGED_FILES = new Map([
   [ORDER_TO_CASH_SERVICE, /\brunInventoryCommand(?:<[^>]+>)?\(/],
   [RECEIPTS_SERVICE, /\brunInventoryCommand(?:<[^>]+>)?\(/],
+  [COUNTS_SERVICE, /\brunInventoryCommand(?:<[^>]+>)?\(/],
+  [ADJUSTMENTS_POSTING_SERVICE, /\brunInventoryCommand(?:<[^>]+>)?\(/],
   [PUTAWAYS_SERVICE, /\brunInventoryCommand(?:<[^>]+>)?\(/],
   [TRANSFERS_SERVICE, /\brunInventoryCommand(?:<[^>]+>)?\(/]
 ]);
 
 const DOCUMENTED_PENDING_EXCEPTIONS = new Set([
-  path.resolve(process.cwd(), 'src/services/counts.service.ts'),
   path.resolve(process.cwd(), 'src/services/licensePlates.service.ts'),
-  path.resolve(process.cwd(), 'src/services/workOrderExecution.service.ts'),
-  path.resolve(process.cwd(), 'src/services/adjustments/posting.service.ts')
+  path.resolve(process.cwd(), 'src/services/workOrderExecution.service.ts')
 ]);
 
 const HELPER_IMPLEMENTATION_FILES = new Set([
-  path.resolve(process.cwd(), 'src/services/transferCosting.service.ts')
+  path.resolve(process.cwd(), 'src/services/transferCosting.service.ts'),
+  path.resolve(process.cwd(), 'src/domains/inventory/internal/ledgerWriter.ts')
 ]);
 
 async function walkTsFiles(dir) {
@@ -55,7 +58,7 @@ async function walkTsFiles(dir) {
 }
 
 test('inventory mutation graph is constrained to wrapper-managed files or documented backlog exceptions', async () => {
-  const files = await walkTsFiles(SERVICES_ROOT);
+  const files = await walkTsFiles(SRC_ROOT);
   const violations = [];
 
   for (const filePath of files) {
@@ -130,6 +133,11 @@ test('transfer replay responses are reconstructed from authoritative movement da
 
 test('runInventoryCommand keeps authoritative event append before projection ops', async () => {
   const source = await fs.readFile(WRAPPER_SOURCE, 'utf8');
+  assert.match(
+    source,
+    /const sortedLockTargets = \[\.\.\.lockTargets\]\.sort\(compareInventoryCommandLockTarget\)/,
+    'runInventoryCommand must sort lock targets deterministically before acquiring advisory locks'
+  );
   const appendIndex = source.indexOf('appendInventoryEventsWithDispatch(');
   const projectionIndex = source.indexOf('for (const projectionOp of execution.projectionOps ?? [])');
 
