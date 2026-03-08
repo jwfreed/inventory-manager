@@ -181,14 +181,19 @@ test('shared posted-document replay hardening anchors counts and adjustments to 
   ]);
 
   const replayHelperBody = extractFunctionBody(supportSource, 'buildPostedDocumentReplayResult');
-  const readinessIndex = replayHelperBody.indexOf('authoritativeMovementReady(');
+  const readinessIndex = replayHelperBody.indexOf('verifyAuthoritativeMovementReplayIntegrity(');
   const aggregateFetchIndex = replayHelperBody.indexOf('fetchAggregateView()');
 
-  assert.notEqual(readinessIndex, -1, 'buildPostedDocumentReplayResult must verify authoritative movement readiness');
+  assert.notEqual(readinessIndex, -1, 'buildPostedDocumentReplayResult must verify authoritative movement integrity');
   assert.notEqual(aggregateFetchIndex, -1, 'buildPostedDocumentReplayResult must fetch the aggregate view');
   assert.ok(
     readinessIndex < aggregateFetchIndex,
-    'buildPostedDocumentReplayResult must verify authoritative movement readiness before fetching aggregate state'
+    'buildPostedDocumentReplayResult must verify authoritative movement integrity before fetching aggregate state'
+  );
+  assert.match(
+    supportSource,
+    /REPLAY_CORRUPTION_DETECTED/,
+    'shared replay hardening must fail closed with REPLAY_CORRUPTION_DETECTED'
   );
   assert.match(
     replayHelperBody,
@@ -216,6 +221,11 @@ test('shared posted-document replay hardening anchors counts and adjustments to 
     /\bsortDeterministicMovementLines\(/,
     'counts must create movement lines in deterministic order'
   );
+  assert.match(
+    countsSource,
+    /\bbuildMovementDeterministicHash\(/,
+    'counts must persist deterministic movement hashes'
+  );
 
   assert.match(
     adjustmentsSource,
@@ -226,6 +236,11 @@ test('shared posted-document replay hardening anchors counts and adjustments to 
     adjustmentsSource,
     /\badjustmentRow\.status === 'posted' && adjustmentRow\.inventory_movement_id\b/,
     'adjustments must only treat posted state as authoritative when a movement id exists'
+  );
+  assert.match(
+    adjustmentsSource,
+    /\bbuildMovementDeterministicHash\(/,
+    'adjustments must persist deterministic movement hashes'
   );
   assert.match(
     adjustmentsSource,

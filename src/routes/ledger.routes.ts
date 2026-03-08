@@ -142,6 +142,15 @@ router.post('/inventory-movements/:id/void-transfer', async (req: Request, res: 
     if (error?.message === 'TRANSFER_VOID_CONFLICT') {
       return res.status(409).json({ error: 'Transfer void conflict.' });
     }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Replay repair detected corrupted authoritative transfer movement state.',
+          details: error?.details
+        }
+      });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to void transfer movement.' });
   }

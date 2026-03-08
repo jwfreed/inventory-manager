@@ -14,6 +14,7 @@ export type InventoryMovementInput = {
   postedAt?: Date | string | null;
   notes?: string | null;
   metadata?: Record<string, unknown> | null;
+  movementDeterministicHash?: string | null;
   reversalOfMovementId?: string | null;
   reversedByMovementId?: string | null;
   reversalReason?: string | null;
@@ -83,8 +84,8 @@ export async function createInventoryMovement(
     await client.query(
       `INSERT INTO inventory_movements (
           id, tenant_id, movement_type, status, external_ref, source_type, source_id, idempotency_key, occurred_at, posted_at, notes, metadata,
-          reversal_of_movement_id, reversed_by_movement_id, reversal_reason, created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+          movement_deterministic_hash, reversal_of_movement_id, reversed_by_movement_id, reversal_reason, created_at, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
       [
         id,
         input.tenantId,
@@ -98,6 +99,7 @@ export async function createInventoryMovement(
         input.postedAt ?? null,
         input.notes ?? null,
         input.metadata ?? null,
+        input.movementDeterministicHash ?? null,
         input.reversalOfMovementId ?? null,
         input.reversedByMovementId ?? null,
         input.reversalReason ?? null,

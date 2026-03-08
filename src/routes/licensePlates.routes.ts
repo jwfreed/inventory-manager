@@ -161,6 +161,24 @@ router.post('/lpns/:id/move', async (req: Request, res: Response) => {
         }
       })
     }
+    if ((error as any)?.code === 'LICENSE_PLATE_INTEGRITY_FAILED') {
+      return res.status(409).json({
+        error: {
+          code: 'LICENSE_PLATE_INTEGRITY_FAILED',
+          message: 'License plate authoritative movement state failed integrity checks.',
+          details: (error as any).details
+        }
+      })
+    }
+    if ((error as any)?.code === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Replay repair detected corrupted authoritative license plate movement state.',
+          details: (error as any).details
+        }
+      })
+    }
     console.error('Error moving license plate:', error)
     res.status(500).json({ error: 'Failed to move license plate' })
   }

@@ -21,6 +21,7 @@ import {
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
 import {
+  buildMovementDeterministicHash,
   buildPostedDocumentReplayResult,
   buildInventoryBalanceProjectionOp,
   buildMovementPostedEvent,
@@ -385,26 +386,31 @@ function buildInventoryCountPostedEvent(
   });
 }
 
+function countExpectedInventoryCountMovementLines(lines: CycleCountLineRow[]) {
+  return lines.filter((line) => Math.abs(toNumber(line.variance_quantity ?? 0)) > 1e-6).length;
+}
+
 async function buildInventoryCountReplayResult(params: {
   tenantId: string;
   countId: string;
   movementId: string;
   idempotencyKey: string;
+  expectedLineCount: number;
+  expectedDeterministicHash?: string | null;
   client: PoolClient;
 }) {
   return buildPostedDocumentReplayResult({
     tenantId: params.tenantId,
-    authoritativeMovementIds: [params.movementId],
+    authoritativeMovements: [
+      {
+        movementId: params.movementId,
+        expectedLineCount: params.expectedLineCount,
+        expectedDeterministicHash: params.expectedDeterministicHash ?? null
+      }
+    ],
     client: params.client,
     fetchAggregateView: () => fetchCycleCountById(params.tenantId, params.countId, params.client),
     aggregateNotFoundError: new Error('COUNT_NOT_FOUND'),
-    movementNotReadyError: (movementId, movementState) =>
-      inventoryCountPostIncompleteError(params.countId, {
-        movementId,
-        reason: movementState.movementExists
-          ? 'authoritative_movement_missing_lines'
-          : 'authoritative_movement_missing'
-      }),
     authoritativeEvents: [
       buildMovementPostedEvent(params.movementId, params.idempotencyKey),
       buildInventoryCountPostedEvent(params.countId, params.movementId, params.idempotencyKey)
@@ -813,6 +819,7 @@ export async function postInventoryCount(
           countId: id,
           movementId: replayMovementId,
           idempotencyKey,
+          expectedLineCount: countExpectedInventoryCountMovementLines(countLines),
           client
         });
       }
@@ -877,65 +884,6 @@ export async function postInventoryCount(
           )
         : {};
 
-      const movement = await createInventoryMovement(client, {
-        id: uuidv4(),
-        tenantId,
-        movementType: 'adjustment',
-        status: 'posted',
-        externalRef: `cycle_count:${id}`,
-        sourceType: 'cycle_count_post',
-        sourceId: id,
-        idempotencyKey: `cycle-count-post:${id}:${idempotencyKey}`,
-        occurredAt: now,
-        postedAt: now,
-        notes: cycleCount.notes ?? null,
-        metadata: validation.overrideMetadata ?? null,
-        createdAt: now,
-        updatedAt: now
-      });
-
-      if (!movement.created) {
-        const lineCheck = await client.query(
-          `SELECT 1
-             FROM inventory_movement_lines
-            WHERE tenant_id = $1
-              AND movement_id = $2
-            LIMIT 1`,
-          [tenantId, movement.id]
-        );
-        if (lineCheck.rowCount === 0) {
-          throw inventoryCountPostIncompleteError(id, {
-            movementId: movement.id,
-            reason: 'movement_exists_without_lines'
-          });
-        }
-        await client.query(
-          `UPDATE cycle_counts
-              SET status = 'posted',
-                  inventory_movement_id = $1,
-                  posted_at = COALESCE(posted_at, $2),
-                  updated_at = $2
-            WHERE id = $3
-              AND tenant_id = $4`,
-          [movement.id, now, id, tenantId]
-        );
-        await client.query(
-          `UPDATE cycle_count_post_executions
-              SET status = 'SUCCEEDED',
-                  inventory_movement_id = $1,
-                  updated_at = $2
-            WHERE id = $3`,
-          [movement.id, now, execution.id]
-        );
-        return buildInventoryCountReplayResult({
-          tenantId,
-          countId: id,
-          movementId: movement.id,
-          idempotencyKey,
-          client
-        });
-      }
-
       const projectionOps: InventoryCommandProjectionOp[] = [];
       const itemsToRefresh = new Set<string>();
       const preparedDeltas: Array<{
@@ -980,6 +928,80 @@ export async function postInventoryCount(
           sourceLineId: entry.delta.line.id
         })
       );
+      const movementId = uuidv4();
+      const movementDeterministicHash = buildMovementDeterministicHash(
+        sortedPreparedDeltas.map(({ delta, canonicalFields }) => ({
+          itemId: delta.line.item_id,
+          locationId: delta.line.location_id,
+          quantityDelta: canonicalFields.quantityDeltaCanonical,
+          uom: canonicalFields.canonicalUom,
+          quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+          uomEntered: canonicalFields.uomEntered,
+          quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
+          canonicalUom: canonicalFields.canonicalUom,
+          reasonCode: delta.line.reason_code ?? 'cycle_count_adjustment'
+        }))
+      );
+      const movement = await createInventoryMovement(client, {
+        id: movementId,
+        tenantId,
+        movementType: 'adjustment',
+        status: 'posted',
+        externalRef: `cycle_count:${id}`,
+        sourceType: 'cycle_count_post',
+        sourceId: id,
+        idempotencyKey: `cycle-count-post:${id}:${idempotencyKey}`,
+        occurredAt: now,
+        postedAt: now,
+        notes: cycleCount.notes ?? null,
+        metadata: validation.overrideMetadata ?? null,
+        movementDeterministicHash,
+        createdAt: now,
+        updatedAt: now
+      });
+      if (!movement.created) {
+        const lineCheck = await client.query(
+          `SELECT 1
+             FROM inventory_movement_lines
+            WHERE tenant_id = $1
+              AND movement_id = $2
+            LIMIT 1`,
+          [tenantId, movement.id]
+        );
+        if (lineCheck.rowCount === 0) {
+          throw inventoryCountPostIncompleteError(id, {
+            movementId: movement.id,
+            reason: 'movement_exists_without_lines'
+          });
+        }
+        await client.query(
+          `UPDATE cycle_counts
+              SET status = 'posted',
+                  inventory_movement_id = $1,
+                  posted_at = COALESCE(posted_at, $2),
+                  updated_at = $2
+            WHERE id = $3
+              AND tenant_id = $4`,
+          [movement.id, now, id, tenantId]
+        );
+        await client.query(
+          `UPDATE cycle_count_post_executions
+              SET status = 'SUCCEEDED',
+                  inventory_movement_id = $1,
+                  updated_at = $2
+            WHERE id = $3`,
+          [movement.id, now, execution.id]
+        );
+        return buildInventoryCountReplayResult({
+          tenantId,
+          countId: id,
+          movementId: movement.id,
+          idempotencyKey,
+          expectedLineCount: sortedPreparedDeltas.length,
+          expectedDeterministicHash: movementDeterministicHash,
+          client
+        });
+      }
 
       for (const preparedDelta of sortedPreparedDeltas) {
         const { delta, canonicalFields } = preparedDelta;

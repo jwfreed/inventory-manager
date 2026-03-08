@@ -235,6 +235,15 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
     if (error?.message === 'WO_WIP_COST_LAYERS_MISSING') {
       return res.status(409).json({ error: 'FIFO cost layers required to post work order issues.' });
     }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Replay repair detected corrupted authoritative work-order movement state.',
+          details: error?.details
+        }
+      });
+    }
     if (
       error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
       error?.message === 'WO_POSTING_IDEMPOTENCY_CONFLICT' ||
@@ -373,6 +382,24 @@ router.post('/work-orders/:id/completions/:completionId/post', async (req: Reque
     }
     if (error?.message === 'WO_WIP_COST_INVALID_OUTPUT_QTY') {
       return res.status(400).json({ error: 'Completion quantities could not be canonicalized for WIP valuation.' });
+    }
+    if (error?.code === 'WO_WIP_INTEGRITY_FAILED' || error?.message === 'WO_WIP_INTEGRITY_FAILED') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_WIP_INTEGRITY_FAILED',
+          message: 'Work-order WIP valuation integrity check failed.',
+          details: error?.details
+        }
+      });
+    }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Replay repair detected corrupted authoritative work-order movement state.',
+          details: error?.details
+        }
+      });
     }
     if (
       error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
@@ -561,6 +588,24 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
     }
     if (error?.message === 'WO_WIP_COST_INVALID_OUTPUT_QTY') {
       return res.status(400).json({ error: 'Produced quantities could not be canonicalized for WIP valuation.' });
+    }
+    if (error?.code === 'WO_WIP_INTEGRITY_FAILED' || error?.message === 'WO_WIP_INTEGRITY_FAILED') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_WIP_INTEGRITY_FAILED',
+          message: 'Work-order WIP valuation integrity check failed.',
+          details: error?.details
+        }
+      });
+    }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Replay repair detected corrupted authoritative work-order movement state.',
+          details: error?.details
+        }
+      });
     }
     if (
       error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
@@ -759,6 +804,24 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
     if (error?.message === 'WO_REPORT_OVERRIDE_DUPLICATE_COMPONENT') {
       return res.status(400).json({ error: 'consumptionOverrides cannot include duplicate componentItemId values.' });
     }
+    if (error?.code === 'WO_WIP_INTEGRITY_FAILED' || error?.message === 'WO_WIP_INTEGRITY_FAILED') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_WIP_INTEGRITY_FAILED',
+          message: 'Work-order WIP valuation integrity check failed.',
+          details: error?.details
+        }
+      });
+    }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Replay repair detected corrupted authoritative work-order movement state.',
+          details: error?.details
+        }
+      });
+    }
     if (
       error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS'
       || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS'
@@ -930,6 +993,24 @@ router.post('/work-orders/:id/void-report-production', async (req: Request, res:
     }
     if (error?.message === 'WO_VOID_INCOMPLETE') {
       return res.status(409).json({ error: 'Void movements are present but incomplete. Retry with the same idempotency key.' });
+    }
+    if (error?.code === 'WO_WIP_INTEGRITY_FAILED' || error?.message === 'WO_WIP_INTEGRITY_FAILED') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_WIP_INTEGRITY_FAILED',
+          message: 'Work-order WIP valuation integrity check failed.',
+          details: error?.details
+        }
+      });
+    }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Replay repair detected corrupted authoritative work-order movement state.',
+          details: error?.details
+        }
+      });
     }
     if (error?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
       return res.status(400).json({

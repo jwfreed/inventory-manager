@@ -8,6 +8,7 @@ const TRANSFERS_SERVICE = path.resolve(process.cwd(), 'src/services/transfers.se
 const QC_SERVICE = path.resolve(process.cwd(), 'src/services/qc.service.ts');
 const INVENTORY_COMMAND_WRAPPER = path.resolve(process.cwd(), 'src/modules/platform/application/runInventoryCommand.ts');
 const MUTATION_SUPPORT = path.resolve(process.cwd(), 'src/modules/platform/application/inventoryMutationSupport.ts');
+const EVENT_REGISTRY = path.resolve(process.cwd(), 'src/modules/platform/application/inventoryEventRegistry.ts');
 
 function extractFunctionBody(source, signaturePrefix, functionName) {
   const marker = `${signaturePrefix} ${functionName}`;
@@ -106,12 +107,76 @@ test('authoritative events must append before compatibility projection ops', asy
 });
 
 test('movement events must preserve stable aggregate identity', async () => {
-  const helperSource = await readFile(MUTATION_SUPPORT, 'utf8');
+  const [helperSource, registrySource] = await Promise.all([
+    readFile(MUTATION_SUPPORT, 'utf8'),
+    readFile(EVENT_REGISTRY, 'utf8')
+  ]);
   assert.match(
     helperSource,
-    /aggregateType:\s*'inventory_movement'[\s\S]*aggregateId:\s*movementId/,
-    'movement events must use stable movementId aggregate ids'
+    /buildInventoryRegistryEvent\('inventoryMovementPosted'/,
+    'movement posted events must route through the central registry'
   );
+  assert.match(
+    registrySource,
+    /inventoryMovementPosted:[\s\S]*aggregateIdPayloadKey:\s*'movementId'/,
+    'movement registry identity must anchor on stable movementId aggregate ids'
+  );
+});
+
+test('transfer replay hardening requires deterministic line plans and transfer registry events', async () => {
+  const [transfersSource, helperSource, registrySource] = await Promise.all([
+    readFile(TRANSFERS_SERVICE, 'utf8'),
+    readFile(MUTATION_SUPPORT, 'utf8'),
+    readFile(EVENT_REGISTRY, 'utf8')
+  ]);
+
+  const buildPlanBody = extractFunctionBody(transfersSource, 'async function', 'buildTransferMovementPlan');
+  assert.match(
+    buildPlanBody,
+    /\bsortDeterministicMovementLines\(/,
+    'transfer movement planning must sort authoritative movement lines deterministically'
+  );
+  assert.match(
+    buildPlanBody,
+    /\bbuildMovementDeterministicHash\(/,
+    'transfer movement planning must compute deterministic movement hashes'
+  );
+
+  for (const functionName of ['executeTransferInventoryWrapperMutation', 'voidTransferMovement']) {
+    const body = extractFunctionBody(
+      transfersSource,
+      functionName === 'voidTransferMovement' ? 'export async function' : 'async function',
+      functionName
+    );
+    assert.match(
+      body,
+      /\bbuildPostedDocumentReplayResult\(|\bbuildTransferReplayResult\(/,
+      `${functionName} must delegate replay repair to the shared corruption-aware helper`
+    );
+  }
+
+  assert.match(
+    transfersSource,
+    /\bbuildPostedDocumentReplayResult\(/,
+    'transfer replay must delegate to the shared posted-document replay helper'
+  );
+  assert.match(
+    helperSource,
+    /REPLAY_CORRUPTION_DETECTED/,
+    'shared replay hardening must fail closed with REPLAY_CORRUPTION_DETECTED'
+  );
+  for (const registryEntry of [
+    'inventoryTransferCreated',
+    'inventoryTransferIssued',
+    'inventoryTransferReceived',
+    'inventoryTransferVoided'
+  ]) {
+    assert.match(
+      registrySource,
+      new RegExp(`\\b${registryEntry}:`),
+      `inventory event registry must define ${registryEntry}`
+    );
+  }
 });
 
 test('internal relocation lock scope must include both movement sides', async () => {

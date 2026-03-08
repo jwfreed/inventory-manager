@@ -5,6 +5,7 @@ type InventoryEventRegistryDefinition = {
   aggregateType: string;
   eventType: string;
   eventVersion: number;
+  aggregateIdSource: string;
   aggregateIdPayloadKey: string;
 };
 
@@ -13,54 +14,98 @@ export const INVENTORY_EVENT_REGISTRY = Object.freeze({
     aggregateType: 'inventory_movement',
     eventType: 'inventory.movement.posted',
     eventVersion: 1,
+    aggregateIdSource: 'inventory_movements.id',
     aggregateIdPayloadKey: 'movementId'
+  },
+  inventoryReservationChanged: {
+    aggregateType: 'inventory_reservation',
+    eventType: 'inventory.reservation.changed',
+    eventVersion: 1,
+    aggregateIdSource: 'inventory_reservations.id',
+    aggregateIdPayloadKey: 'reservationId'
   },
   inventoryCountPosted: {
     aggregateType: 'inventory_count',
     eventType: 'inventory.count.posted',
     eventVersion: 1,
+    aggregateIdSource: 'cycle_counts.id',
     aggregateIdPayloadKey: 'countId'
   },
   inventoryAdjustmentPosted: {
     aggregateType: 'inventory_adjustment',
     eventType: 'inventory.adjustment.posted',
     eventVersion: 1,
+    aggregateIdSource: 'inventory_adjustments.id',
     aggregateIdPayloadKey: 'adjustmentId'
+  },
+  inventoryTransferCreated: {
+    aggregateType: 'inventory_transfer',
+    eventType: 'inventory.transfer.created',
+    eventVersion: 1,
+    aggregateIdSource: 'inventory_transfer.id',
+    aggregateIdPayloadKey: 'transferId'
+  },
+  inventoryTransferIssued: {
+    aggregateType: 'inventory_transfer',
+    eventType: 'inventory.transfer.issued',
+    eventVersion: 1,
+    aggregateIdSource: 'inventory_transfer.id',
+    aggregateIdPayloadKey: 'transferId'
+  },
+  inventoryTransferReceived: {
+    aggregateType: 'inventory_transfer',
+    eventType: 'inventory.transfer.received',
+    eventVersion: 1,
+    aggregateIdSource: 'inventory_transfer.id',
+    aggregateIdPayloadKey: 'transferId'
+  },
+  inventoryTransferVoided: {
+    aggregateType: 'inventory_transfer',
+    eventType: 'inventory.transfer.voided',
+    eventVersion: 1,
+    aggregateIdSource: 'inventory_transfer.id',
+    aggregateIdPayloadKey: 'transferId'
   },
   licensePlateMoved: {
     aggregateType: 'license_plate',
     eventType: 'inventory.license_plate.moved',
     eventVersion: 1,
+    aggregateIdSource: 'license_plates.id',
     aggregateIdPayloadKey: 'licensePlateId'
   },
   workOrderIssuePosted: {
     aggregateType: 'work_order_issue',
     eventType: 'inventory.work_order.issue.posted',
     eventVersion: 1,
+    aggregateIdSource: 'work_order_material_issues.id',
     aggregateIdPayloadKey: 'issueId'
   },
   workOrderCompletionPosted: {
     aggregateType: 'work_order_execution',
     eventType: 'inventory.work_order.completion.posted',
     eventVersion: 1,
+    aggregateIdSource: 'work_order_executions.id',
     aggregateIdPayloadKey: 'executionId'
   },
   workOrderProductionReported: {
     aggregateType: 'work_order_execution',
     eventType: 'inventory.work_order.production.reported',
     eventVersion: 1,
+    aggregateIdSource: 'work_order_executions.id',
     aggregateIdPayloadKey: 'executionId'
   },
   workOrderProductionReversed: {
     aggregateType: 'work_order_execution',
     eventType: 'inventory.work_order.production.reversed',
     eventVersion: 1,
+    aggregateIdSource: 'work_order_executions.id',
     aggregateIdPayloadKey: 'executionId'
   },
   workOrderWipValuationRecorded: {
     aggregateType: 'work_order_execution',
     eventType: 'inventory.work_order.wip_valuation.recorded',
     eventVersion: 1,
+    aggregateIdSource: 'inventory_movements.id',
     aggregateIdPayloadKey: 'movementId'
   }
 } as const satisfies Record<string, InventoryEventRegistryDefinition>);
@@ -117,6 +162,11 @@ export function validateInventoryEventRegistryInput(
   if (!definition) {
     throw new Error(
       `INVENTORY_EVENT_REGISTRY_MISSING:${input.aggregateType}:${input.eventType}:v${input.eventVersion}`
+    );
+  }
+  if (!definition.aggregateIdSource.trim()) {
+    throw new Error(
+      `INVENTORY_EVENT_AGGREGATE_ID_SOURCE_REQUIRED:${input.aggregateType}:${input.eventType}:v${input.eventVersion}`
     );
   }
   const expectedAggregateId = resolveAggregateIdFromPayload(

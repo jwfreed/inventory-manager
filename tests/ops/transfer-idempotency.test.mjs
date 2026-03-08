@@ -194,6 +194,58 @@ test('inventory transfer idempotency: replay, conflict, incomplete detection', a
   assert.equal(first.payload.idempotency_key, idempotencyKey);
   assert.equal(first.payload.replayed, false);
 
+  const movementHashRes = await db.query(
+    `SELECT movement_deterministic_hash
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, firstMovementId]
+  );
+  assert.equal(movementHashRes.rowCount, 1);
+  assert.ok(movementHashRes.rows[0]?.movement_deterministic_hash, 'transfer movement hash must persist');
+
+  const transferEventRes = await db.query(
+    `SELECT aggregate_type, aggregate_id, event_type, event_version
+       FROM inventory_events
+      WHERE tenant_id = $1
+        AND aggregate_id = $2
+        AND aggregate_type IN ('inventory_transfer', 'inventory_movement')
+      ORDER BY aggregate_type ASC, event_type ASC`,
+    [tenantId, firstMovementId]
+  );
+  assert.deepEqual(
+    transferEventRes.rows.map((row) => `${row.aggregate_type}:${row.event_type}:v${row.event_version}`),
+    [
+      'inventory_movement:inventory.movement.posted:v1',
+      'inventory_transfer:inventory.transfer.created:v1',
+      'inventory_transfer:inventory.transfer.issued:v1',
+      'inventory_transfer:inventory.transfer.received:v1'
+    ]
+  );
+
+  await assert.rejects(
+    db.query(
+      `INSERT INTO inventory_events (
+          event_id,
+          tenant_id,
+          aggregate_type,
+          aggregate_id,
+          event_type,
+          event_version,
+          payload,
+          created_at,
+          producer_idempotency_key
+       ) VALUES ($1, $2, 'inventory_transfer', $3, 'inventory.transfer.created', 1, $4::jsonb, now(), NULL)`,
+      [
+        randomUUID(),
+        tenantId,
+        firstMovementId,
+        JSON.stringify({ transferId: firstMovementId, movementId: firstMovementId })
+      ]
+    ),
+    (error) => error?.code === '23505'
+  );
+
   const replay = await apiRequest('POST', '/inventory-transfers', {
     token,
     headers: { 'Idempotency-Key': idempotencyKey },
@@ -271,4 +323,87 @@ test('inventory transfer idempotency: replay, conflict, incomplete detection', a
   assert.equal(incompleteReplay.res.status, 200, JSON.stringify(incompleteReplay.payload));
   assert.equal(incompleteReplay.payload?.movementId, incompleteFirst.payload?.movementId);
   assert.equal(incompleteReplay.payload?.replayed, true);
+});
+
+test('inventory transfer replay fails closed when authoritative movement lines drift', async () => {
+  const session = await getSession();
+  const token = session.accessToken;
+  const db = session.pool;
+  const tenantId = session.tenant.id;
+  const actorId = session.user?.id ?? null;
+
+  const factory = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:replay-corruption` });
+  const store = await createWarehouseWithSellable(token, `STORE-${randomUUID().slice(0, 6)}`);
+  const vendorId = await createVendor(token);
+  const itemId = await createItem(token, factory.defaults.SELLABLE.id);
+
+  const receiptLineId = await createReceipt({
+    token,
+    vendorId,
+    itemId,
+    locationId: factory.defaults.SELLABLE.id,
+    quantity: 10,
+    unitCost: 5
+  });
+  await qcAccept(token, receiptLineId, 10, actorId);
+
+  const payload = {
+    sourceLocationId: factory.defaults.SELLABLE.id,
+    destinationLocationId: store.sellable.id,
+    itemId,
+    quantity: 2,
+    uom: 'each',
+    reasonCode: 'distribution',
+    notes: 'Transfer replay corruption test'
+  };
+  const idempotencyKey = `transfer-corruption-${randomUUID()}`;
+
+  const first = await apiRequest('POST', '/inventory-transfers', {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: payload
+  });
+  assert.equal(first.res.status, 201, JSON.stringify(first.payload));
+  const movementId = first.payload.movementId;
+
+  await db.query(
+    `INSERT INTO inventory_movement_lines (
+        id,
+        tenant_id,
+        movement_id,
+        item_id,
+        location_id,
+        quantity_delta,
+        uom,
+        quantity_delta_entered,
+        uom_entered,
+        quantity_delta_canonical,
+        canonical_uom,
+        uom_dimension,
+        unit_cost,
+        extended_cost,
+        reason_code,
+        line_notes,
+        created_at
+      ) VALUES
+      ($1, $2, $3, $4, $5, -1, 'each', -1, 'each', -1, 'each', 'count', 0, 0, 'tamper_out', 'tamper', now()),
+      ($6, $2, $3, $4, $7, 1, 'each', 1, 'each', 1, 'each', 'count', 0, 0, 'tamper_in', 'tamper', now())`,
+    [
+      randomUUID(),
+      tenantId,
+      movementId,
+      itemId,
+      factory.defaults.SELLABLE.id,
+      randomUUID(),
+      store.sellable.id
+    ]
+  );
+
+  const replay = await apiRequest('POST', '/inventory-transfers', {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: payload
+  });
+  assert.equal(replay.res.status, 409, JSON.stringify(replay.payload));
+  assert.equal(replay.payload?.error?.code, 'REPLAY_CORRUPTION_DETECTED');
 });

@@ -37,6 +37,7 @@ import {
 } from '../modules/platform/application/runInventoryCommand';
 import {
   buildInventoryBalanceProjectionOp,
+  buildMovementDeterministicHash,
   buildMovementPostedEvent,
   buildPostedDocumentReplayResult,
   sortDeterministicMovementLines
@@ -55,6 +56,7 @@ type WorkOrderVoidReportProductionInput = z.infer<typeof workOrderVoidReportProd
 type WorkOrderReportScrapInput = z.infer<typeof workOrderReportScrapSchema>;
 
 const WIP_COST_METHOD = 'fifo';
+const WIP_INTEGRITY_EPSILON = 1e-6;
 const WORK_ORDER_POST_RETRY_OPTIONS = { isolationLevel: 'SERIALIZABLE' as const, retries: 8 };
 const FORCED_LOT_LINK_FAILURE_KEYS = new Set<string>();
 
@@ -86,6 +88,16 @@ type WipValuationType =
   | 'report'
   | 'reversal_to_wip'
   | 'reversal_from_wip';
+
+function workOrderWipIntegrityError(details: Record<string, unknown>) {
+  const error = new Error('WO_WIP_INTEGRITY_FAILED') as Error & {
+    code?: string;
+    details?: Record<string, unknown>;
+  };
+  error.code = 'WO_WIP_INTEGRITY_FAILED';
+  error.details = details;
+  return error;
+}
 
 function assertManufacturingTransition(params: {
   flow: string;
@@ -677,6 +689,131 @@ async function loadWorkOrderWipValuationRecordsByMovementIds(
     [tenantId, movementIds]
   );
   return result.rows;
+}
+
+async function verifyWorkOrderWipIntegrity(
+  client: PoolClient,
+  tenantId: string,
+  workOrderId: string
+) {
+  const result = await client.query<Pick<WorkOrderWipValuationRecordRow, 'valuation_type' | 'value_delta'>>(
+    `SELECT valuation_type, value_delta
+       FROM work_order_wip_valuation_records
+      WHERE tenant_id = $1
+        AND work_order_id = $2
+      ORDER BY created_at ASC, id ASC
+      FOR UPDATE`,
+    [tenantId, workOrderId]
+  );
+
+  let issueValue = 0;
+  let completionConsumptionValue = 0;
+  let reversalToWipValue = 0;
+  let reversalFromWipValue = 0;
+  let signedLedgerBalance = 0;
+
+  for (const row of result.rows) {
+    const valueDelta = roundQuantity(toNumber(row.value_delta));
+    signedLedgerBalance += valueDelta;
+    switch (row.valuation_type) {
+      case 'issue':
+        if (valueDelta < -WIP_INTEGRITY_EPSILON) {
+          throw workOrderWipIntegrityError({
+            tenantId,
+            workOrderId,
+            reason: 'issue_value_delta_negative',
+            valuationType: row.valuation_type,
+            valueDelta
+          });
+        }
+        issueValue += valueDelta;
+        break;
+      case 'completion':
+      case 'report':
+        if (valueDelta > WIP_INTEGRITY_EPSILON) {
+          throw workOrderWipIntegrityError({
+            tenantId,
+            workOrderId,
+            reason: 'completion_value_delta_positive',
+            valuationType: row.valuation_type,
+            valueDelta
+          });
+        }
+        completionConsumptionValue += Math.abs(valueDelta);
+        break;
+      case 'reversal_to_wip':
+        if (valueDelta < -WIP_INTEGRITY_EPSILON) {
+          throw workOrderWipIntegrityError({
+            tenantId,
+            workOrderId,
+            reason: 'reversal_to_wip_negative',
+            valuationType: row.valuation_type,
+            valueDelta
+          });
+        }
+        reversalToWipValue += valueDelta;
+        break;
+      case 'reversal_from_wip':
+        if (valueDelta > WIP_INTEGRITY_EPSILON) {
+          throw workOrderWipIntegrityError({
+            tenantId,
+            workOrderId,
+            reason: 'reversal_from_wip_positive',
+            valuationType: row.valuation_type,
+            valueDelta
+          });
+        }
+        reversalFromWipValue += Math.abs(valueDelta);
+        break;
+      default:
+        throw workOrderWipIntegrityError({
+          tenantId,
+          workOrderId,
+          reason: 'valuation_type_unrecognized',
+          valuationType: row.valuation_type
+        });
+    }
+  }
+
+  const expectedWipBalance = roundQuantity(
+    issueValue + reversalToWipValue - completionConsumptionValue - reversalFromWipValue
+  );
+  const normalizedSignedLedgerBalance = roundQuantity(signedLedgerBalance);
+  if (
+    Math.abs(expectedWipBalance - normalizedSignedLedgerBalance) > WIP_INTEGRITY_EPSILON
+  ) {
+    throw workOrderWipIntegrityError({
+      tenantId,
+      workOrderId,
+      reason: 'signed_wip_balance_mismatch',
+      expectedWipBalance,
+      actualWipBalance: normalizedSignedLedgerBalance,
+      issueValue,
+      completionConsumptionValue,
+      reversalToWipValue,
+      reversalFromWipValue
+    });
+  }
+  if (normalizedSignedLedgerBalance < -WIP_INTEGRITY_EPSILON) {
+    throw workOrderWipIntegrityError({
+      tenantId,
+      workOrderId,
+      reason: 'negative_wip_balance',
+      actualWipBalance: normalizedSignedLedgerBalance,
+      issueValue,
+      completionConsumptionValue,
+      reversalToWipValue,
+      reversalFromWipValue
+    });
+  }
+
+  return {
+    issueValue,
+    completionConsumptionValue,
+    reversalToWipValue,
+    reversalFromWipValue,
+    wipBalance: normalizedSignedLedgerBalance
+  };
 }
 
 async function findPostedBatchByIdempotencyKey(
@@ -1362,17 +1499,77 @@ export async function postWorkOrderIssue(
       if (!workOrder || !issue || !issueState) {
         throw new Error('WO_ISSUE_NOT_FOUND');
       }
+
+      const isDisassembly = workOrder.kind === 'disassembly';
+      const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
+      const issuedTotal = linesForPosting.reduce(
+        (sum, line) => sum + toNumber(line.quantity_issued),
+        0
+      );
+      const preparedLines: Array<{
+        sourceLineId: string;
+        warehouseId: string;
+        line: WorkOrderMaterialIssueLineRow;
+        canonicalFields: CanonicalMovementFields;
+        reasonCode: string;
+      }> = [];
+      for (const line of linesForPosting) {
+        if (isDisassembly && line.component_item_id !== workOrder.output_item_id) {
+          throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
+        }
+        const qty = toNumber(line.quantity_issued);
+        if (qty <= 0) {
+          throw new Error('WO_ISSUE_INVALID_QUANTITY');
+        }
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          line.component_item_id,
+          -qty,
+          line.uom,
+          client
+        );
+        preparedLines.push({
+          sourceLineId: line.id,
+          warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
+          line,
+          canonicalFields,
+          reasonCode: line.reason_code ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue')
+        });
+      }
+
+      const sortedMovementLines = sortDeterministicMovementLines(preparedLines, (entry) => ({
+        tenantId,
+        warehouseId: entry.warehouseId,
+        locationId: entry.line.from_location_id,
+        itemId: entry.line.component_item_id,
+        canonicalUom: entry.canonicalFields.canonicalUom,
+        sourceLineId: entry.sourceLineId
+      }));
+      const movementDeterministicHash = buildMovementDeterministicHash(
+        sortedMovementLines.map((entry) => ({
+          itemId: entry.line.component_item_id,
+          locationId: entry.line.from_location_id,
+          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
+          uom: entry.canonicalFields.canonicalUom,
+          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
+          uomEntered: entry.canonicalFields.uomEntered,
+          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: entry.canonicalFields.canonicalUom,
+          reasonCode: entry.reasonCode
+        }))
+      );
       if (issueState === 'posted_issue') {
         return buildWorkOrderIssueReplayResult({
           tenantId,
           workOrderId,
           issueId,
           movementId: issue.inventory_movement_id!,
+          expectedLineCount: sortedMovementLines.length,
+          expectedDeterministicHash: movementDeterministicHash,
           client
         });
       }
 
-      const isDisassembly = workOrder.kind === 'disassembly';
       assertManufacturingTransition({
         flow: 'issue',
         currentState: issueState,
@@ -1404,9 +1601,9 @@ export async function postWorkOrderIssue(
         { client }
       );
 
-      const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
+      const movementId = uuidv4();
       const movement = await createInventoryMovement(client, {
-        id: uuidv4(),
+        id: movementId,
         tenantId,
         movementType: 'issue',
         status: 'posted',
@@ -1424,6 +1621,7 @@ export async function postWorkOrderIssue(
           workOrderNumber,
           ...(validation.overrideMetadata ?? {})
         },
+        movementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -1434,47 +1632,22 @@ export async function postWorkOrderIssue(
           workOrderId,
           issueId,
           movementId: movement.id,
+          expectedLineCount: sortedMovementLines.length,
+          expectedDeterministicHash: movementDeterministicHash,
           client
         });
       }
 
-      const preparedLines: Array<{
-        sourceLineId: string;
-        warehouseId: string;
-        line: WorkOrderMaterialIssueLineRow;
-        canonicalFields: CanonicalMovementFields;
-        unitCost: number | null;
-        extendedCost: number | null;
-        reasonCode: string;
-      }> = [];
       let totalIssueCost = 0;
-      const issuedTotal = linesForPosting.reduce(
-        (sum, line) => sum + toNumber(line.quantity_issued),
-        0
-      );
-
-      for (const line of linesForPosting) {
-        if (isDisassembly && line.component_item_id !== workOrder.output_item_id) {
-          throw new Error('WO_DISASSEMBLY_INPUT_MISMATCH');
-        }
-        const qty = toNumber(line.quantity_issued);
-        if (qty <= 0) {
-          throw new Error('WO_ISSUE_INVALID_QUANTITY');
-        }
-        const canonicalFields = await getCanonicalMovementFields(
-          tenantId,
-          line.component_item_id,
-          -qty,
-          line.uom,
-          client
-        );
-        const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      for (const preparedLine of sortedMovementLines) {
+        const canonicalQty = Math.abs(preparedLine.canonicalFields.quantityDeltaCanonical);
         let issueCost: number | null = null;
         try {
           const consumption = await consumeCostLayers({
             tenant_id: tenantId,
-            item_id: line.component_item_id,
-            location_id: line.from_location_id,
+            item_id: preparedLine.line.component_item_id,
+            location_id: preparedLine.line.from_location_id,
             quantity: canonicalQty,
             consumption_type: 'production_input',
             consumption_document_id: issueId,
@@ -1486,28 +1659,9 @@ export async function postWorkOrderIssue(
           throw new Error('WO_WIP_COST_LAYERS_MISSING');
         }
         totalIssueCost += issueCost ?? 0;
-        preparedLines.push({
-          sourceLineId: line.id,
-          warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
-          line,
-          canonicalFields,
-          unitCost: issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null,
-          extendedCost: issueCost !== null ? -issueCost : null,
-          reasonCode: line.reason_code ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue')
-        });
-      }
+        const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
+        const extendedCost = issueCost !== null ? -issueCost : null;
 
-      const sortedMovementLines = sortDeterministicMovementLines(preparedLines, (entry) => ({
-        tenantId,
-        warehouseId: entry.warehouseId,
-        locationId: entry.line.from_location_id,
-        itemId: entry.line.component_item_id,
-        canonicalUom: entry.canonicalFields.canonicalUom,
-        sourceLineId: entry.sourceLineId
-      }));
-
-      const projectionOps: InventoryCommandProjectionOp[] = [];
-      for (const preparedLine of sortedMovementLines) {
         await createInventoryMovementLine(client, {
           tenantId,
           movementId: movement.id,
@@ -1520,8 +1674,8 @@ export async function postWorkOrderIssue(
           quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
           canonicalUom: preparedLine.canonicalFields.canonicalUom,
           uomDimension: preparedLine.canonicalFields.uomDimension,
-          unitCost: preparedLine.unitCost,
-          extendedCost: preparedLine.extendedCost,
+          unitCost,
+          extendedCost,
           reasonCode: preparedLine.reasonCode,
           lineNotes:
             preparedLine.line.notes ?? `Work order issue ${issueId} line ${preparedLine.line.line_number}`
@@ -1836,70 +1990,16 @@ export async function postWorkOrderCompletion(
       if (!workOrder || !execution || !completionState) {
         throw new Error('WO_COMPLETION_NOT_FOUND');
       }
-      if (completionState === 'posted_completion') {
-        return buildWorkOrderCompletionReplayResult({
-          tenantId,
-          workOrderId,
-          completionId,
-          movementId: execution.production_movement_id!,
-          client
-        });
-      }
-
-      assertManufacturingTransition({
-        flow: 'completion',
-        currentState: completionState,
-        allowedFrom: ['planned_completion'],
-        targetState: 'posted_completion',
-        workOrderId,
-        executionOrDocumentId: completionId
-      });
-
       const isDisassembly = workOrder.kind === 'disassembly';
-      const now = new Date();
-      const movement = await createInventoryMovement(client, {
-        id: uuidv4(),
-        tenantId,
-        movementType: 'receive',
-        status: 'posted',
-        externalRef: isDisassembly
-          ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
-          : `work_order_completion:${completionId}:${workOrderId}`,
-        sourceType: 'work_order_completion_post',
-        sourceId: completionId,
-        idempotencyKey: `wo-completion-post:${completionId}`,
-        occurredAt: execution.occurred_at,
-        postedAt: now,
-        notes: execution.notes ?? null,
-        metadata: {
-          workOrderId,
-          workOrderNumber: workOrder.number ?? workOrder.work_order_number
-        },
-        createdAt: now,
-        updatedAt: now
-      });
-
-      if (!movement.created) {
-        return buildWorkOrderCompletionReplayResult({
-          tenantId,
-          workOrderId,
-          completionId,
-          movementId: movement.id,
-          client
-        });
-      }
-
       const preparedLines: Array<{
         sourceLineId: string;
         warehouseId: string;
         line: WorkOrderExecutionLineRow;
         canonicalFields: CanonicalMovementFields;
-        unitCost: number | null;
-        extendedCost: number;
+        reasonCode: string;
       }> = [];
       let totalProduced = 0;
       let totalProducedCanonical = 0;
-
       for (const line of linesForPosting) {
         const qty = toNumber(line.quantity);
         const canonicalFields = await getCanonicalMovementFields(
@@ -1916,8 +2016,86 @@ export async function postWorkOrderCompletion(
           warehouseId: warehouseIdsByLocation.get(line.to_location_id!) ?? '',
           line,
           canonicalFields,
-          unitCost: null,
-          extendedCost: 0
+          reasonCode: line.reason_code ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion')
+        });
+      }
+
+      const sortedMovementLines = sortDeterministicMovementLines(preparedLines, (entry) => ({
+        tenantId,
+        warehouseId: entry.warehouseId,
+        locationId: entry.line.to_location_id!,
+        itemId: entry.line.item_id,
+        canonicalUom: entry.canonicalFields.canonicalUom,
+        sourceLineId: entry.sourceLineId
+      }));
+      const movementDeterministicHash = buildMovementDeterministicHash(
+        sortedMovementLines.map((entry) => ({
+          itemId: entry.line.item_id,
+          locationId: entry.line.to_location_id!,
+          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
+          uom: entry.canonicalFields.canonicalUom,
+          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
+          uomEntered: entry.canonicalFields.uomEntered,
+          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: entry.canonicalFields.canonicalUom,
+          reasonCode: entry.reasonCode
+        }))
+      );
+      if (completionState === 'posted_completion') {
+        return buildWorkOrderCompletionReplayResult({
+          tenantId,
+          workOrderId,
+          completionId,
+          movementId: execution.production_movement_id!,
+          expectedLineCount: sortedMovementLines.length,
+          expectedDeterministicHash: movementDeterministicHash,
+          client
+        });
+      }
+
+      assertManufacturingTransition({
+        flow: 'completion',
+        currentState: completionState,
+        allowedFrom: ['planned_completion'],
+        targetState: 'posted_completion',
+        workOrderId,
+        executionOrDocumentId: completionId
+      });
+
+      const now = new Date();
+      const movementId = uuidv4();
+      const movement = await createInventoryMovement(client, {
+        id: movementId,
+        tenantId,
+        movementType: 'receive',
+        status: 'posted',
+        externalRef: isDisassembly
+          ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
+          : `work_order_completion:${completionId}:${workOrderId}`,
+        sourceType: 'work_order_completion_post',
+        sourceId: completionId,
+        idempotencyKey: `wo-completion-post:${completionId}`,
+        occurredAt: execution.occurred_at,
+        postedAt: now,
+        notes: execution.notes ?? null,
+        metadata: {
+          workOrderId,
+          workOrderNumber: workOrder.number ?? workOrder.work_order_number
+        },
+        movementDeterministicHash,
+        createdAt: now,
+        updatedAt: now
+      });
+
+      if (!movement.created) {
+        return buildWorkOrderCompletionReplayResult({
+          tenantId,
+          workOrderId,
+          completionId,
+          movementId: movement.id,
+          expectedLineCount: sortedMovementLines.length,
+          expectedDeterministicHash: movementDeterministicHash,
+          client
         });
       }
 
@@ -1934,34 +2112,21 @@ export async function postWorkOrderCompletion(
       );
       const wipUnitCostCanonical = totalIssueCost / totalProducedCanonical;
 
-      for (const preparedLine of preparedLines) {
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      for (const preparedLine of sortedMovementLines) {
         const allocationRatio = preparedLine.canonicalFields.quantityDeltaCanonical / totalProducedCanonical;
         const allocatedCost = totalIssueCost * allocationRatio;
-        preparedLine.extendedCost = allocatedCost;
-        preparedLine.unitCost =
+        const unitCost =
           preparedLine.canonicalFields.quantityDeltaCanonical !== 0
             ? allocatedCost / preparedLine.canonicalFields.quantityDeltaCanonical
             : null;
-      }
-
-      const sortedMovementLines = sortDeterministicMovementLines(preparedLines, (entry) => ({
-        tenantId,
-        warehouseId: entry.warehouseId,
-        locationId: entry.line.to_location_id!,
-        itemId: entry.line.item_id,
-        canonicalUom: entry.canonicalFields.canonicalUom,
-        sourceLineId: entry.sourceLineId
-      }));
-
-      const projectionOps: InventoryCommandProjectionOp[] = [];
-      for (const preparedLine of sortedMovementLines) {
         await createCostLayer({
           tenant_id: tenantId,
           item_id: preparedLine.line.item_id,
           location_id: preparedLine.line.to_location_id!,
           uom: preparedLine.canonicalFields.canonicalUom,
           quantity: preparedLine.canonicalFields.quantityDeltaCanonical,
-          unit_cost: preparedLine.unitCost ?? 0,
+          unit_cost: unitCost ?? 0,
           source_type: 'production',
           source_document_id: completionId,
           movement_id: movement.id,
@@ -1981,11 +2146,9 @@ export async function postWorkOrderCompletion(
           quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
           canonicalUom: preparedLine.canonicalFields.canonicalUom,
           uomDimension: preparedLine.canonicalFields.uomDimension,
-          unitCost: preparedLine.unitCost,
-          extendedCost: preparedLine.extendedCost,
-          reasonCode:
-            preparedLine.line.reason_code
-            ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion'),
+          unitCost,
+          extendedCost: allocatedCost,
+          reasonCode: preparedLine.reasonCode,
           lineNotes: preparedLine.line.notes ?? `Work order completion ${completionId}`
         });
         projectionOps.push(
@@ -2000,10 +2163,10 @@ export async function postWorkOrderCompletion(
       }
 
       const completionUomSet = new Set(
-        preparedLines.map((line) => line.canonicalFields.canonicalUom)
+        sortedMovementLines.map((line) => line.canonicalFields.canonicalUom)
       );
       const completionCanonicalUom =
-        completionUomSet.size === 1 ? preparedLines[0]?.canonicalFields.canonicalUom ?? null : null;
+        completionUomSet.size === 1 ? sortedMovementLines[0]?.canonicalFields.canonicalUom ?? null : null;
       await createWorkOrderWipValuationRecord(client, {
         tenantId,
         workOrderId,
@@ -2015,6 +2178,7 @@ export async function postWorkOrderCompletion(
         canonicalUom: completionCanonicalUom,
         notes: `Work-order completion WIP capitalization for execution ${completionId}`
       });
+      await verifyWorkOrderWipIntegrity(client, tenantId, workOrderId);
 
       projectionOps.push(async (projectionClient) => {
         await projectionClient.query(
@@ -2427,25 +2591,24 @@ async function buildWorkOrderIssueReplayResult(params: {
   workOrderId: string;
   issueId: string;
   movementId: string;
+  expectedLineCount?: number;
+  expectedDeterministicHash?: string | null;
   client: PoolClient;
   idempotencyKey?: string | null;
 }) {
   return buildPostedDocumentReplayResult({
     tenantId: params.tenantId,
-    authoritativeMovementIds: [params.movementId],
+    authoritativeMovements: [
+      {
+        movementId: params.movementId,
+        expectedLineCount: params.expectedLineCount,
+        expectedDeterministicHash: params.expectedDeterministicHash ?? null
+      }
+    ],
     client: params.client,
     fetchAggregateView: () =>
       fetchWorkOrderIssue(params.tenantId, params.workOrderId, params.issueId, params.client),
     aggregateNotFoundError: new Error('WO_ISSUE_NOT_FOUND'),
-    movementNotReadyError: (movementId, readiness) =>
-      domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-        flow: 'issue',
-        issueId: params.issueId,
-        movementId,
-        reason: readiness.movementExists
-          ? 'authoritative_movement_missing_lines'
-          : 'authoritative_movement_missing'
-      }),
     authoritativeEvents: [
       buildMovementPostedEvent(params.movementId, params.idempotencyKey ?? null),
       buildWorkOrderIssuePostedEvent({
@@ -2463,25 +2626,27 @@ async function buildWorkOrderCompletionReplayResult(params: {
   workOrderId: string;
   completionId: string;
   movementId: string;
+  expectedLineCount?: number;
+  expectedDeterministicHash?: string | null;
   client: PoolClient;
   idempotencyKey?: string | null;
 }) {
   return buildPostedDocumentReplayResult({
     tenantId: params.tenantId,
-    authoritativeMovementIds: [params.movementId],
+    authoritativeMovements: [
+      {
+        movementId: params.movementId,
+        expectedLineCount: params.expectedLineCount,
+        expectedDeterministicHash: params.expectedDeterministicHash ?? null
+      }
+    ],
     client: params.client,
+    preFetchIntegrityCheck: async () => {
+      await verifyWorkOrderWipIntegrity(params.client, params.tenantId, params.workOrderId);
+    },
     fetchAggregateView: () =>
       fetchWorkOrderCompletion(params.tenantId, params.workOrderId, params.completionId, params.client),
     aggregateNotFoundError: new Error('WO_COMPLETION_NOT_FOUND'),
-    movementNotReadyError: (movementId, readiness) =>
-      domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-        flow: 'completion',
-        completionId: params.completionId,
-        movementId,
-        reason: readiness.movementExists
-          ? 'authoritative_movement_missing_lines'
-          : 'authoritative_movement_missing'
-      }),
     authoritativeEvents: [
       buildMovementPostedEvent(params.movementId, params.idempotencyKey ?? null),
       buildWorkOrderCompletionPostedEvent({
@@ -2500,13 +2665,31 @@ async function buildWorkOrderBatchReplayResult(params: {
   executionId: string;
   issueMovementId: string;
   receiveMovementId: string;
+  expectedIssueLineCount?: number;
+  expectedReceiveLineCount?: number;
+  expectedIssueDeterministicHash?: string | null;
+  expectedReceiveDeterministicHash?: string | null;
   client: PoolClient;
   idempotencyKey?: string | null;
 }) {
   return buildPostedDocumentReplayResult({
     tenantId: params.tenantId,
-    authoritativeMovementIds: [params.issueMovementId, params.receiveMovementId],
+    authoritativeMovements: [
+      {
+        movementId: params.issueMovementId,
+        expectedLineCount: params.expectedIssueLineCount,
+        expectedDeterministicHash: params.expectedIssueDeterministicHash ?? null
+      },
+      {
+        movementId: params.receiveMovementId,
+        expectedLineCount: params.expectedReceiveLineCount,
+        expectedDeterministicHash: params.expectedReceiveDeterministicHash ?? null
+      }
+    ],
     client: params.client,
+    preFetchIntegrityCheck: async () => {
+      await verifyWorkOrderWipIntegrity(params.client, params.tenantId, params.workOrderId);
+    },
     fetchAggregateView: async () => {
       const res = await params.client.query<{
         execution_id: string;
@@ -2544,15 +2727,6 @@ async function buildWorkOrderBatchReplayResult(params: {
       };
     },
     aggregateNotFoundError: new Error('WO_EXECUTION_NOT_FOUND'),
-    movementNotReadyError: (movementId, readiness) =>
-      domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-        flow: 'report',
-        executionId: params.executionId,
-        movementId,
-        reason: readiness.movementExists
-          ? 'authoritative_movement_missing_lines'
-          : 'authoritative_movement_missing'
-      }),
     authoritativeEvents: [
       buildMovementPostedEvent(params.issueMovementId, params.idempotencyKey ?? null),
       buildMovementPostedEvent(params.receiveMovementId, params.idempotencyKey ?? null),
@@ -2573,34 +2747,54 @@ async function buildWorkOrderVoidReplayResult(params: {
   executionId: string;
   componentReturnMovementId: string;
   outputReversalMovementId: string;
+  expectedComponentLineCount?: number;
+  expectedOutputLineCount?: number;
+  expectedComponentDeterministicHash?: string | null;
+  expectedOutputDeterministicHash?: string | null;
   client: PoolClient;
   idempotencyKey?: string | null;
 }) {
   return buildPostedDocumentReplayResult({
     tenantId: params.tenantId,
-    authoritativeMovementIds: [
-      params.componentReturnMovementId,
-      params.outputReversalMovementId
+    authoritativeMovements: [
+      {
+        movementId: params.componentReturnMovementId,
+        expectedLineCount: params.expectedComponentLineCount,
+        expectedDeterministicHash: params.expectedComponentDeterministicHash ?? null
+      },
+      {
+        movementId: params.outputReversalMovementId,
+        expectedLineCount: params.expectedOutputLineCount,
+        expectedDeterministicHash: params.expectedOutputDeterministicHash ?? null
+      }
     ],
     client: params.client,
-    fetchAggregateView: async () => ({
-      workOrderId: params.workOrderId,
-      workOrderExecutionId: params.executionId,
-      componentReturnMovementId: params.componentReturnMovementId,
-      outputReversalMovementId: params.outputReversalMovementId,
-      idempotencyKey: params.idempotencyKey ?? null,
-      replayed: true
-    }),
+    preFetchIntegrityCheck: async () => {
+      await verifyWorkOrderWipIntegrity(params.client, params.tenantId, params.workOrderId);
+    },
+    fetchAggregateView: async () => {
+      const res = await params.client.query<{ id: string; work_order_id: string }>(
+        `SELECT id, work_order_id
+           FROM work_order_executions
+          WHERE tenant_id = $1
+            AND id = $2
+            AND work_order_id = $3
+          FOR UPDATE`,
+        [params.tenantId, params.executionId, params.workOrderId]
+      );
+      if (res.rowCount === 0) {
+        return null;
+      }
+      return {
+        workOrderId: params.workOrderId,
+        workOrderExecutionId: params.executionId,
+        componentReturnMovementId: params.componentReturnMovementId,
+        outputReversalMovementId: params.outputReversalMovementId,
+        idempotencyKey: params.idempotencyKey ?? null,
+        replayed: true
+      };
+    },
     aggregateNotFoundError: new Error('WO_VOID_EXECUTION_NOT_FOUND'),
-    movementNotReadyError: (movementId, readiness) =>
-      domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-        flow: 'reversal',
-        executionId: params.executionId,
-        movementId,
-        reason: readiness.movementExists
-          ? 'authoritative_movement_missing_lines'
-          : 'authoritative_movement_missing'
-      }),
     authoritativeEvents: [
       buildMovementPostedEvent(params.componentReturnMovementId, params.idempotencyKey ?? null),
       buildMovementPostedEvent(params.outputReversalMovementId, params.idempotencyKey ?? null),
@@ -3139,6 +3333,111 @@ export async function voidWorkOrderProductionReport(
         throw new Error('WO_VOID_EXECUTION_NOT_FOUND');
       }
 
+      if (
+        componentLines.length === 0
+        && outputLines.length === 0
+        && execution.consumption_movement_id
+        && execution.production_movement_id
+      ) {
+        componentLines = await loadMovementLineScopes(
+          client,
+          tenantId,
+          execution.consumption_movement_id,
+          'negative'
+        );
+        outputLines = await loadMovementLineScopes(
+          client,
+          tenantId,
+          execution.production_movement_id,
+          'positive'
+        );
+      }
+      const currentExecution = execution;
+
+      const plannedOutputLines = sortDeterministicMovementLines(
+        await Promise.all(outputLines.map(async (line) => {
+          const quantityToReverse = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
+          const canonicalFields = await getCanonicalMovementFields(
+            tenantId,
+            line.item_id,
+            -quantityToReverse,
+            line.balance_uom,
+            client
+          );
+          return {
+            sourceLineId: `${line.item_id}:${line.location_id}:${line.balance_uom}:${quantityToReverse}`,
+            warehouseId: line.warehouse_id ?? '',
+            line,
+            canonicalFields,
+            reasonCode: 'work_order_void_output',
+            lineNotes: `Void output reversal for work order execution ${currentExecution.id}`
+          };
+        })),
+        (entry) => ({
+          tenantId,
+          warehouseId: entry.warehouseId,
+          locationId: entry.line.location_id,
+          itemId: entry.line.item_id,
+          canonicalUom: entry.canonicalFields.canonicalUom,
+          sourceLineId: entry.sourceLineId
+        })
+      );
+      const outputMovementDeterministicHash = buildMovementDeterministicHash(
+        plannedOutputLines.map((entry) => ({
+          itemId: entry.line.item_id,
+          locationId: entry.line.location_id,
+          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
+          uom: entry.canonicalFields.canonicalUom,
+          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
+          uomEntered: entry.canonicalFields.uomEntered,
+          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: entry.canonicalFields.canonicalUom,
+          reasonCode: entry.reasonCode
+        }))
+      );
+
+      const plannedComponentLines = sortDeterministicMovementLines(
+        await Promise.all(componentLines.map(async (line) => {
+          const quantityToReturn = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
+          const canonicalFields = await getCanonicalMovementFields(
+            tenantId,
+            line.item_id,
+            quantityToReturn,
+            line.balance_uom,
+            client
+          );
+          return {
+            sourceLineId: `${line.item_id}:${line.location_id}:${line.balance_uom}:${quantityToReturn}`,
+            warehouseId: line.warehouse_id ?? '',
+            line,
+            canonicalFields,
+            reasonCode: 'work_order_void_component_return',
+            lineNotes: `Void component return for work order execution ${currentExecution.id}`
+          };
+        })),
+        (entry) => ({
+          tenantId,
+          warehouseId: entry.warehouseId,
+          locationId: entry.line.location_id,
+          itemId: entry.line.item_id,
+          canonicalUom: entry.canonicalFields.canonicalUom,
+          sourceLineId: entry.sourceLineId
+        })
+      );
+      const componentMovementDeterministicHash = buildMovementDeterministicHash(
+        plannedComponentLines.map((entry) => ({
+          itemId: entry.line.item_id,
+          locationId: entry.line.location_id,
+          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
+          uom: entry.canonicalFields.canonicalUom,
+          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
+          uomEntered: entry.canonicalFields.uomEntered,
+          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: entry.canonicalFields.canonicalUom,
+          reasonCode: entry.reasonCode
+        }))
+      );
+
       const existingPair = await fetchVoidMovementPair(client, tenantId, execution.id);
       if (existingPair) {
         return buildWorkOrderVoidReplayResult({
@@ -3147,13 +3446,20 @@ export async function voidWorkOrderProductionReport(
           executionId: execution.id,
           componentReturnMovementId: existingPair.componentReturnMovementId,
           outputReversalMovementId: existingPair.outputReversalMovementId,
+          expectedComponentLineCount: plannedComponentLines.length,
+          expectedOutputLineCount: plannedOutputLines.length,
+          expectedComponentDeterministicHash: componentMovementDeterministicHash,
+          expectedOutputDeterministicHash: outputMovementDeterministicHash,
           client,
           idempotencyKey
         });
       }
 
       const now = new Date();
+      const outputMovementId = uuidv4();
+      const componentMovementId = uuidv4();
       const outputMovement = await createInventoryMovement(client, {
+        id: outputMovementId,
         tenantId,
         movementType: 'issue',
         status: 'posted',
@@ -3169,10 +3475,12 @@ export async function voidWorkOrderProductionReport(
           workOrderExecutionId: execution.id,
           reason
         },
+        movementDeterministicHash: outputMovementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
       const componentMovement = await createInventoryMovement(client, {
+        id: componentMovementId,
         tenantId,
         movementType: 'receive',
         status: 'posted',
@@ -3188,6 +3496,7 @@ export async function voidWorkOrderProductionReport(
           workOrderExecutionId: execution.id,
           reason
         },
+        movementDeterministicHash: componentMovementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -3201,6 +3510,10 @@ export async function voidWorkOrderProductionReport(
             executionId: execution.id,
             componentReturnMovementId: replayPair.componentReturnMovementId,
             outputReversalMovementId: replayPair.outputReversalMovementId,
+            expectedComponentLineCount: plannedComponentLines.length,
+            expectedOutputLineCount: plannedOutputLines.length,
+            expectedComponentDeterministicHash: componentMovementDeterministicHash,
+            expectedOutputDeterministicHash: outputMovementDeterministicHash,
             client,
             idempotencyKey
           });
@@ -3212,160 +3525,92 @@ export async function voidWorkOrderProductionReport(
       let totalOutputReversalCost = 0;
       let totalComponentReturnCost = 0;
 
-      const preparedOutputLines: Array<{
-        sourceLineId: string;
-        warehouseId: string;
-        line: MovementLineScopeRow;
-        canonicalFields: CanonicalMovementFields;
-        unitCost: number | null;
-        extendedCost: number;
-      }> = [];
-      for (const line of outputLines) {
-        const quantityToReverse = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
-        const canonicalFields = await getCanonicalMovementFields(
-          tenantId,
-          line.item_id,
-          -quantityToReverse,
-          line.balance_uom,
-          client
-        );
-        const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
+      for (const plannedOutputLine of plannedOutputLines) {
+        const canonicalQty = Math.abs(plannedOutputLine.canonicalFields.quantityDeltaCanonical);
         const consumption = await consumeCostLayers({
           tenant_id: tenantId,
-          item_id: line.item_id,
-          location_id: line.location_id,
+          item_id: plannedOutputLine.line.item_id,
+          location_id: plannedOutputLine.line.location_id,
           quantity: canonicalQty,
           consumption_type: 'scrap',
           consumption_document_id: execution.id,
-          movement_id: outputMovement.id,
+          movement_id: outputMovementId,
           client,
           notes: `work_order_void_output:${execution.id}`
         });
         const unitCost = canonicalQty > 0 ? consumption.total_cost / canonicalQty : null;
         const extendedCost = -consumption.total_cost;
         totalOutputReversalCost += consumption.total_cost;
-        preparedOutputLines.push({
-          sourceLineId: `${line.item_id}:${line.location_id}:${line.balance_uom}:${quantityToReverse}`,
-          warehouseId: line.warehouse_id ?? '',
-          line,
-          canonicalFields,
-          unitCost,
-          extendedCost
-        });
-      }
-
-      const sortedOutputLines = sortDeterministicMovementLines(preparedOutputLines, (entry) => ({
-        tenantId,
-        warehouseId: entry.warehouseId,
-        locationId: entry.line.location_id,
-        itemId: entry.line.item_id,
-        canonicalUom: entry.canonicalFields.canonicalUom,
-        sourceLineId: entry.sourceLineId
-      }));
-      for (const preparedOutputLine of sortedOutputLines) {
         await createInventoryMovementLine(client, {
           tenantId,
-          movementId: outputMovement.id,
-          itemId: preparedOutputLine.line.item_id,
-          locationId: preparedOutputLine.line.location_id,
-          quantityDelta: preparedOutputLine.canonicalFields.quantityDeltaCanonical,
-          uom: preparedOutputLine.canonicalFields.canonicalUom,
-          quantityDeltaEntered: preparedOutputLine.canonicalFields.quantityDeltaEntered,
-          uomEntered: preparedOutputLine.canonicalFields.uomEntered,
-          quantityDeltaCanonical: preparedOutputLine.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: preparedOutputLine.canonicalFields.canonicalUom,
-          uomDimension: preparedOutputLine.canonicalFields.uomDimension,
-          unitCost: preparedOutputLine.unitCost,
-          extendedCost: preparedOutputLine.extendedCost,
-          reasonCode: 'work_order_void_output',
-          lineNotes: `Void output reversal for work order execution ${execution.id}`
+          movementId: outputMovementId,
+          itemId: plannedOutputLine.line.item_id,
+          locationId: plannedOutputLine.line.location_id,
+          quantityDelta: plannedOutputLine.canonicalFields.quantityDeltaCanonical,
+          uom: plannedOutputLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: plannedOutputLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: plannedOutputLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: plannedOutputLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: plannedOutputLine.canonicalFields.canonicalUom,
+          uomDimension: plannedOutputLine.canonicalFields.uomDimension,
+          unitCost,
+          extendedCost,
+          reasonCode: plannedOutputLine.reasonCode,
+          lineNotes: plannedOutputLine.lineNotes
         });
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
-            itemId: preparedOutputLine.line.item_id,
-            locationId: preparedOutputLine.line.location_id,
-            uom: preparedOutputLine.canonicalFields.canonicalUom,
-            deltaOnHand: preparedOutputLine.canonicalFields.quantityDeltaCanonical
+            itemId: plannedOutputLine.line.item_id,
+            locationId: plannedOutputLine.line.location_id,
+            uom: plannedOutputLine.canonicalFields.canonicalUom,
+            deltaOnHand: plannedOutputLine.canonicalFields.quantityDeltaCanonical
           })
         );
       }
 
-      const preparedComponentLines: Array<{
-        sourceLineId: string;
-        warehouseId: string;
-        line: MovementLineScopeRow;
-        canonicalFields: CanonicalMovementFields;
-        unitCost: number;
-        extendedCost: number;
-      }> = [];
-      for (const line of componentLines) {
-        const quantityToReturn = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
-        const canonicalFields = await getCanonicalMovementFields(
-          tenantId,
-          line.item_id,
-          quantityToReturn,
-          line.balance_uom,
-          client
+      for (const plannedComponentLine of plannedComponentLines) {
+        const unitCost = movementLineUnitCost(plannedComponentLine.line);
+        const extendedCost = roundQuantity(
+          plannedComponentLine.canonicalFields.quantityDeltaCanonical * unitCost
         );
-        const unitCost = movementLineUnitCost(line);
-        const extendedCost = roundQuantity(canonicalFields.quantityDeltaCanonical * unitCost);
         totalComponentReturnCost += extendedCost;
-        preparedComponentLines.push({
-          sourceLineId: `${line.item_id}:${line.location_id}:${line.balance_uom}:${quantityToReturn}`,
-          warehouseId: line.warehouse_id ?? '',
-          line,
-          canonicalFields,
-          unitCost,
-          extendedCost
-        });
-      }
-
-      const sortedComponentLines = sortDeterministicMovementLines(preparedComponentLines, (entry) => ({
-        tenantId,
-        warehouseId: entry.warehouseId,
-        locationId: entry.line.location_id,
-        itemId: entry.line.item_id,
-        canonicalUom: entry.canonicalFields.canonicalUom,
-        sourceLineId: entry.sourceLineId
-      }));
-      for (const preparedComponentLine of sortedComponentLines) {
         await createInventoryMovementLine(client, {
           tenantId,
-          movementId: componentMovement.id,
-          itemId: preparedComponentLine.line.item_id,
-          locationId: preparedComponentLine.line.location_id,
-          quantityDelta: preparedComponentLine.canonicalFields.quantityDeltaCanonical,
-          uom: preparedComponentLine.canonicalFields.canonicalUom,
-          quantityDeltaEntered: preparedComponentLine.canonicalFields.quantityDeltaEntered,
-          uomEntered: preparedComponentLine.canonicalFields.uomEntered,
-          quantityDeltaCanonical: preparedComponentLine.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: preparedComponentLine.canonicalFields.canonicalUom,
-          uomDimension: preparedComponentLine.canonicalFields.uomDimension,
-          unitCost: preparedComponentLine.unitCost,
-          extendedCost: preparedComponentLine.extendedCost,
-          reasonCode: 'work_order_void_component_return',
-          lineNotes: `Void component return for work order execution ${execution.id}`
+          movementId: componentMovementId,
+          itemId: plannedComponentLine.line.item_id,
+          locationId: plannedComponentLine.line.location_id,
+          quantityDelta: plannedComponentLine.canonicalFields.quantityDeltaCanonical,
+          uom: plannedComponentLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: plannedComponentLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: plannedComponentLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: plannedComponentLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: plannedComponentLine.canonicalFields.canonicalUom,
+          uomDimension: plannedComponentLine.canonicalFields.uomDimension,
+          unitCost,
+          extendedCost,
+          reasonCode: plannedComponentLine.reasonCode,
+          lineNotes: plannedComponentLine.lineNotes
         });
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
-            itemId: preparedComponentLine.line.item_id,
-            locationId: preparedComponentLine.line.location_id,
-            uom: preparedComponentLine.canonicalFields.canonicalUom,
-            deltaOnHand: preparedComponentLine.canonicalFields.quantityDeltaCanonical
+            itemId: plannedComponentLine.line.item_id,
+            locationId: plannedComponentLine.line.location_id,
+            uom: plannedComponentLine.canonicalFields.canonicalUom,
+            deltaOnHand: plannedComponentLine.canonicalFields.quantityDeltaCanonical
           })
         );
         await createCostLayer({
           tenant_id: tenantId,
-          item_id: preparedComponentLine.line.item_id,
-          location_id: preparedComponentLine.line.location_id,
-          uom: preparedComponentLine.canonicalFields.canonicalUom,
-          quantity: preparedComponentLine.canonicalFields.quantityDeltaCanonical,
-          unit_cost: preparedComponentLine.unitCost,
+          item_id: plannedComponentLine.line.item_id,
+          location_id: plannedComponentLine.line.location_id,
+          uom: plannedComponentLine.canonicalFields.canonicalUom,
+          quantity: plannedComponentLine.canonicalFields.quantityDeltaCanonical,
+          unit_cost: unitCost,
           source_type: 'adjustment',
           source_document_id: execution.id,
-          movement_id: componentMovement.id,
+          movement_id: componentMovementId,
           notes: `Work-order void component return for execution ${execution.id}`,
           client
         });
@@ -3384,7 +3629,7 @@ export async function voidWorkOrderProductionReport(
         tenantId,
         workOrderId,
         executionId: execution.id,
-        movementId: outputMovement.id,
+        movementId: outputMovementId,
         valuationType: 'reversal_to_wip',
         valueDelta: totalOutputReversalCost,
         reversalOfValuationRecordId: originalReportValuation?.id ?? null,
@@ -3394,12 +3639,13 @@ export async function voidWorkOrderProductionReport(
         tenantId,
         workOrderId,
         executionId: execution.id,
-        movementId: componentMovement.id,
+        movementId: componentMovementId,
         valuationType: 'reversal_from_wip',
         valueDelta: -totalComponentReturnCost,
         reversalOfValuationRecordId: originalIssueValuation?.id ?? null,
         notes: `Work-order reversal returns component value out of WIP for execution ${execution.id}`
       });
+      await verifyWorkOrderWipIntegrity(client, tenantId, workOrderId);
 
       projectionOps.push(async (projectionClient) => {
         await recordAuditLog(
@@ -3414,8 +3660,8 @@ export async function voidWorkOrderProductionReport(
             metadata: {
               workOrderId,
               workOrderExecutionId: execution!.id,
-              outputReversalMovementId: outputMovement.id,
-              componentReturnMovementId: componentMovement.id,
+              outputReversalMovementId: outputMovementId,
+              componentReturnMovementId: componentMovementId,
               reason
             }
           },
@@ -3427,20 +3673,20 @@ export async function voidWorkOrderProductionReport(
         responseBody: {
           workOrderId,
           workOrderExecutionId: execution.id,
-          componentReturnMovementId: componentMovement.id,
-          outputReversalMovementId: outputMovement.id,
+          componentReturnMovementId: componentMovementId,
+          outputReversalMovementId: outputMovementId,
           idempotencyKey,
           replayed: false
         },
         responseStatus: 201,
         events: [
-          buildMovementPostedEvent(componentMovement.id, idempotencyKey),
-          buildMovementPostedEvent(outputMovement.id, idempotencyKey),
+          buildMovementPostedEvent(componentMovementId, idempotencyKey),
+          buildMovementPostedEvent(outputMovementId, idempotencyKey),
           buildWorkOrderProductionReversedEvent({
             executionId: execution.id,
             workOrderId,
-            componentReturnMovementId: componentMovement.id,
-            outputReversalMovementId: outputMovement.id,
+            componentReturnMovementId: componentMovementId,
+            outputReversalMovementId: outputMovementId,
             producerIdempotencyKey: idempotencyKey
           })
         ],
@@ -3736,6 +3982,8 @@ export async function recordWorkOrderBatch(
           executionId: responseBody.executionId,
           issueMovementId: responseBody.issueMovementId,
           receiveMovementId: responseBody.receiveMovementId,
+          expectedIssueLineCount: normalizedConsumes.length,
+          expectedReceiveLineCount: normalizedProduces.length,
           client,
           idempotencyKey: batchIdempotencyKey
         })
@@ -3874,6 +4122,103 @@ export async function recordWorkOrderBatch(
       ];
     },
     execute: async ({ client }) => {
+      if (!workOrder) {
+        throw new Error('WO_NOT_FOUND');
+      }
+      const isDisassembly = workOrder.kind === 'disassembly';
+      const preparedConsumes: Array<{
+        sourceLineId: string;
+        warehouseId: string;
+        line: NormalizedBatchConsumeLine;
+        canonicalFields: CanonicalMovementFields;
+        reasonCode: string;
+      }> = [];
+      for (const line of consumeLinesOrdered) {
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          line.componentItemId,
+          -line.quantity,
+          line.uom,
+          client
+        );
+        preparedConsumes.push({
+          sourceLineId: `${line.componentItemId}:${line.fromLocationId}:${line.uom}:${line.quantity}`,
+          warehouseId: warehouseByLocationId.get(line.fromLocationId) ?? '',
+          line,
+          canonicalFields,
+          reasonCode: line.reasonCode ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue')
+        });
+      }
+      const sortedConsumes = sortDeterministicMovementLines(preparedConsumes, (entry) => ({
+        tenantId,
+        warehouseId: entry.warehouseId,
+        locationId: entry.line.fromLocationId,
+        itemId: entry.line.componentItemId,
+        canonicalUom: entry.canonicalFields.canonicalUom,
+        sourceLineId: entry.sourceLineId
+      }));
+      const issueMovementDeterministicHash = buildMovementDeterministicHash(
+        sortedConsumes.map((entry) => ({
+          itemId: entry.line.componentItemId,
+          locationId: entry.line.fromLocationId,
+          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
+          uom: entry.canonicalFields.canonicalUom,
+          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
+          uomEntered: entry.canonicalFields.uomEntered,
+          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: entry.canonicalFields.canonicalUom,
+          reasonCode: entry.reasonCode
+        }))
+      );
+
+      const preparedProduces: Array<{
+        sourceLineId: string;
+        warehouseId: string;
+        line: NormalizedBatchProduceLine;
+        canonicalFields: CanonicalMovementFields;
+        reasonCode: string;
+      }> = [];
+      let producedTotal = 0;
+      let producedCanonicalTotal = 0;
+      for (const line of produceLinesOrdered) {
+        const canonicalFields = await getCanonicalMovementFields(
+          tenantId,
+          line.outputItemId,
+          line.quantity,
+          line.uom,
+          client
+        );
+        producedTotal += line.quantity;
+        producedCanonicalTotal += canonicalFields.quantityDeltaCanonical;
+        preparedProduces.push({
+          sourceLineId: `${line.outputItemId}:${line.toLocationId}:${line.uom}:${line.quantity}`,
+          warehouseId: warehouseByLocationId.get(line.toLocationId) ?? '',
+          line,
+          canonicalFields,
+          reasonCode: line.reasonCode ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion')
+        });
+      }
+      const sortedProduces = sortDeterministicMovementLines(preparedProduces, (entry) => ({
+        tenantId,
+        warehouseId: entry.warehouseId,
+        locationId: entry.line.toLocationId,
+        itemId: entry.line.outputItemId,
+        canonicalUom: entry.canonicalFields.canonicalUom,
+        sourceLineId: entry.sourceLineId
+      }));
+      const receiveMovementDeterministicHash = buildMovementDeterministicHash(
+        sortedProduces.map((entry) => ({
+          itemId: entry.line.outputItemId,
+          locationId: entry.line.toLocationId,
+          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
+          uom: entry.canonicalFields.canonicalUom,
+          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
+          uomEntered: entry.canonicalFields.uomEntered,
+          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: entry.canonicalFields.canonicalUom,
+          reasonCode: entry.reasonCode
+        }))
+      );
       if (existingBatchReplay) {
         return buildWorkOrderBatchReplayResult({
           tenantId,
@@ -3881,12 +4226,13 @@ export async function recordWorkOrderBatch(
           executionId: existingBatchReplay.executionId,
           issueMovementId: existingBatchReplay.issueMovementId,
           receiveMovementId: existingBatchReplay.receiveMovementId,
+          expectedIssueLineCount: sortedConsumes.length,
+          expectedReceiveLineCount: sortedProduces.length,
+          expectedIssueDeterministicHash: issueMovementDeterministicHash,
+          expectedReceiveDeterministicHash: receiveMovementDeterministicHash,
           client,
           idempotencyKey: batchIdempotencyKey
         });
-      }
-      if (!workOrder) {
-        throw new Error('WO_NOT_FOUND');
       }
       const executionId = uuidv4();
       assertManufacturingTransition({
@@ -3898,7 +4244,6 @@ export async function recordWorkOrderBatch(
         executionOrDocumentId: executionId
       });
 
-      const isDisassembly = workOrder.kind === 'disassembly';
       const issueId = uuidv4();
       const now = new Date();
       const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
@@ -3922,8 +4267,10 @@ export async function recordWorkOrderBatch(
         { client }
       );
 
+      const issueMovementId = uuidv4();
+      const receiveMovementId = uuidv4();
       const issueMovement = await createInventoryMovement(client, {
-        id: uuidv4(),
+        id: issueMovementId,
         tenantId,
         movementType: 'issue',
         status: 'posted',
@@ -3941,11 +4288,12 @@ export async function recordWorkOrderBatch(
           workOrderNumber,
           ...(validation.overrideMetadata ?? {})
         },
+        movementDeterministicHash: issueMovementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
       const receiveMovement = await createInventoryMovement(client, {
-        id: uuidv4(),
+        id: receiveMovementId,
         tenantId,
         movementType: 'receive',
         status: 'posted',
@@ -3961,6 +4309,7 @@ export async function recordWorkOrderBatch(
         postedAt: now,
         notes: data.notes ?? null,
         metadata: { workOrderId, workOrderNumber },
+        movementDeterministicHash: receiveMovementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -3980,6 +4329,10 @@ export async function recordWorkOrderBatch(
               executionId: replay.executionId,
               issueMovementId: replay.issueMovementId,
               receiveMovementId: replay.receiveMovementId,
+              expectedIssueLineCount: sortedConsumes.length,
+              expectedReceiveLineCount: sortedProduces.length,
+              expectedIssueDeterministicHash: issueMovementDeterministicHash,
+              expectedReceiveDeterministicHash: receiveMovementDeterministicHash,
               client,
               idempotencyKey: batchIdempotencyKey
             });
@@ -4003,7 +4356,7 @@ export async function recordWorkOrderBatch(
           tenantId,
           workOrderId,
           occurredAt,
-          issueMovement.id,
+          issueMovementId,
           data.notes ?? null,
           batchIdempotencyKey ? `${batchIdempotencyKey}:issue-doc` : null,
           now
@@ -4031,35 +4384,20 @@ export async function recordWorkOrderBatch(
         );
       }
 
-      const preparedConsumes: Array<{
-        sourceLineId: string;
-        warehouseId: string;
-        line: NormalizedBatchConsumeLine;
-        canonicalFields: CanonicalMovementFields;
-        unitCost: number | null;
-        extendedCost: number | null;
-        reasonCode: string;
-      }> = [];
       let totalConsumedCost = 0;
-      for (const line of consumeLinesOrdered) {
-        const canonicalFields = await getCanonicalMovementFields(
-          tenantId,
-          line.componentItemId,
-          -line.quantity,
-          line.uom,
-          client
-        );
-        const canonicalQty = Math.abs(canonicalFields.quantityDeltaCanonical);
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      for (const preparedConsume of sortedConsumes) {
+        const canonicalQty = Math.abs(preparedConsume.canonicalFields.quantityDeltaCanonical);
         let issueCost: number | null = null;
         try {
           const consumption = await consumeCostLayers({
             tenant_id: tenantId,
-            item_id: line.componentItemId,
-            location_id: line.fromLocationId,
+            item_id: preparedConsume.line.componentItemId,
+            location_id: preparedConsume.line.fromLocationId,
             quantity: canonicalQty,
             consumption_type: 'production_input',
             consumption_document_id: issueId,
-            movement_id: issueMovement.id,
+            movement_id: issueMovementId,
             client
           });
           issueCost = consumption.total_cost;
@@ -4067,31 +4405,11 @@ export async function recordWorkOrderBatch(
           throw new Error('WO_WIP_COST_LAYERS_MISSING');
         }
         totalConsumedCost += issueCost ?? 0;
-        preparedConsumes.push({
-          sourceLineId: `${line.componentItemId}:${line.fromLocationId}:${line.uom}:${line.quantity}`,
-          warehouseId: warehouseByLocationId.get(line.fromLocationId) ?? '',
-          line,
-          canonicalFields,
-          unitCost: issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null,
-          extendedCost: issueCost !== null ? -issueCost : null,
-          reasonCode: line.reasonCode ?? (isDisassembly ? 'disassembly_issue' : 'work_order_issue')
-        });
-      }
-
-      const sortedConsumes = sortDeterministicMovementLines(preparedConsumes, (entry) => ({
-        tenantId,
-        warehouseId: entry.warehouseId,
-        locationId: entry.line.fromLocationId,
-        itemId: entry.line.componentItemId,
-        canonicalUom: entry.canonicalFields.canonicalUom,
-        sourceLineId: entry.sourceLineId
-      }));
-
-      const projectionOps: InventoryCommandProjectionOp[] = [];
-      for (const preparedConsume of sortedConsumes) {
+        const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
+        const extendedCost = issueCost !== null ? -issueCost : null;
         await createInventoryMovementLine(client, {
           tenantId,
-          movementId: issueMovement.id,
+          movementId: issueMovementId,
           itemId: preparedConsume.line.componentItemId,
           locationId: preparedConsume.line.fromLocationId,
           quantityDelta: preparedConsume.canonicalFields.quantityDeltaCanonical,
@@ -4101,8 +4419,8 @@ export async function recordWorkOrderBatch(
           quantityDeltaCanonical: preparedConsume.canonicalFields.quantityDeltaCanonical,
           canonicalUom: preparedConsume.canonicalFields.canonicalUom,
           uomDimension: preparedConsume.canonicalFields.uomDimension,
-          unitCost: preparedConsume.unitCost,
-          extendedCost: preparedConsume.extendedCost,
+          unitCost,
+          extendedCost,
           reasonCode: preparedConsume.reasonCode,
           lineNotes: preparedConsume.line.notes ?? null
         });
@@ -4127,8 +4445,8 @@ export async function recordWorkOrderBatch(
           tenantId,
           workOrderId,
           occurredAt,
-          issueMovement.id,
-          receiveMovement.id,
+          issueMovementId,
+          receiveMovementId,
           data.notes ?? null,
           batchIdempotencyKey,
           batchIdempotencyKey ? requestHash : null,
@@ -4165,36 +4483,6 @@ export async function recordWorkOrderBatch(
         );
       }
 
-      const preparedProduces: Array<{
-        sourceLineId: string;
-        warehouseId: string;
-        line: NormalizedBatchProduceLine;
-        canonicalFields: CanonicalMovementFields;
-        unitCost: number | null;
-        extendedCost: number;
-      }> = [];
-      let producedTotal = 0;
-      let producedCanonicalTotal = 0;
-      for (const line of produceLinesOrdered) {
-        const canonicalFields = await getCanonicalMovementFields(
-          tenantId,
-          line.outputItemId,
-          line.quantity,
-          line.uom,
-          client
-        );
-        producedTotal += line.quantity;
-        producedCanonicalTotal += canonicalFields.quantityDeltaCanonical;
-        preparedProduces.push({
-          sourceLineId: `${line.outputItemId}:${line.toLocationId}:${line.uom}:${line.quantity}`,
-          warehouseId: warehouseByLocationId.get(line.toLocationId) ?? '',
-          line,
-          canonicalFields,
-          unitCost: null,
-          extendedCost: 0
-        });
-      }
-
       if (producedCanonicalTotal <= 0) {
         throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
       }
@@ -4203,46 +4491,33 @@ export async function recordWorkOrderBatch(
         client,
         tenantId,
         executionId,
-        issueMovement.id,
+        issueMovementId,
         now
       );
       const wipUnitCostCanonical = totalIssueCost / producedCanonicalTotal;
-      for (const preparedProduce of preparedProduces) {
+      for (const preparedProduce of sortedProduces) {
         const allocationRatio = preparedProduce.canonicalFields.quantityDeltaCanonical / producedCanonicalTotal;
         const allocatedCost = totalIssueCost * allocationRatio;
-        preparedProduce.extendedCost = allocatedCost;
-        preparedProduce.unitCost =
+        const unitCost =
           preparedProduce.canonicalFields.quantityDeltaCanonical !== 0
             ? allocatedCost / preparedProduce.canonicalFields.quantityDeltaCanonical
             : null;
-      }
-
-      const sortedProduces = sortDeterministicMovementLines(preparedProduces, (entry) => ({
-        tenantId,
-        warehouseId: entry.warehouseId,
-        locationId: entry.line.toLocationId,
-        itemId: entry.line.outputItemId,
-        canonicalUom: entry.canonicalFields.canonicalUom,
-        sourceLineId: entry.sourceLineId
-      }));
-
-      for (const preparedProduce of sortedProduces) {
         await createCostLayer({
           tenant_id: tenantId,
           item_id: preparedProduce.line.outputItemId,
           location_id: preparedProduce.line.toLocationId,
           uom: preparedProduce.canonicalFields.canonicalUom,
           quantity: preparedProduce.canonicalFields.quantityDeltaCanonical,
-          unit_cost: preparedProduce.unitCost ?? 0,
+          unit_cost: unitCost ?? 0,
           source_type: 'production',
           source_document_id: issueId,
-          movement_id: receiveMovement.id,
+          movement_id: receiveMovementId,
           notes: `Backflush production from work order ${workOrderId}`,
           client
         });
         await createInventoryMovementLine(client, {
           tenantId,
-          movementId: receiveMovement.id,
+          movementId: receiveMovementId,
           itemId: preparedProduce.line.outputItemId,
           locationId: preparedProduce.line.toLocationId,
           quantityDelta: preparedProduce.canonicalFields.quantityDeltaCanonical,
@@ -4252,11 +4527,9 @@ export async function recordWorkOrderBatch(
           quantityDeltaCanonical: preparedProduce.canonicalFields.quantityDeltaCanonical,
           canonicalUom: preparedProduce.canonicalFields.canonicalUom,
           uomDimension: preparedProduce.canonicalFields.uomDimension,
-          unitCost: preparedProduce.unitCost,
-          extendedCost: preparedProduce.extendedCost,
-          reasonCode:
-            preparedProduce.line.reasonCode
-            ?? (isDisassembly ? 'disassembly_completion' : 'work_order_completion'),
+          unitCost,
+          extendedCost: allocatedCost,
+          reasonCode: preparedProduce.reasonCode,
           lineNotes: preparedProduce.line.notes ?? null
         });
         projectionOps.push(
@@ -4274,27 +4547,28 @@ export async function recordWorkOrderBatch(
         tenantId,
         workOrderId,
         executionId,
-        movementId: issueMovement.id,
+        movementId: issueMovementId,
         valuationType: 'issue',
         valueDelta: totalConsumedCost,
         notes: `Work-order batch issue WIP valuation for execution ${executionId}`
       });
       const outputUomSet = new Set(
-        preparedProduces.map((line) => line.canonicalFields.canonicalUom)
+        sortedProduces.map((line) => line.canonicalFields.canonicalUom)
       );
       const outputCanonicalUom =
-        outputUomSet.size === 1 ? preparedProduces[0]?.canonicalFields.canonicalUom ?? null : null;
+        outputUomSet.size === 1 ? sortedProduces[0]?.canonicalFields.canonicalUom ?? null : null;
       await createWorkOrderWipValuationRecord(client, {
         tenantId,
         workOrderId,
         executionId,
-        movementId: receiveMovement.id,
+        movementId: receiveMovementId,
         valuationType: 'report',
         valueDelta: -totalIssueCost,
         quantityCanonical: outputCanonicalUom ? producedCanonicalTotal : null,
         canonicalUom: outputCanonicalUom,
         notes: `Work-order production report WIP capitalization for execution ${executionId}`
       });
+      await verifyWorkOrderWipIntegrity(client, tenantId, workOrderId);
 
       const consumedTotal = consumeLinesOrdered.reduce((sum, line) => sum + line.quantity, 0);
       const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
@@ -4368,7 +4642,7 @@ export async function recordWorkOrderBatch(
               actorId: context.actor.id ?? null,
               action: 'negative_override',
               entityType: 'inventory_movement',
-              entityId: issueMovement.id,
+              entityId: issueMovementId,
               occurredAt: now,
               metadata: {
                 reason: validation.overrideMetadata.override_reason ?? null,
@@ -4392,8 +4666,8 @@ export async function recordWorkOrderBatch(
         responseBody: {
           workOrderId,
           executionId,
-          issueMovementId: issueMovement.id,
-          receiveMovementId: receiveMovement.id,
+          issueMovementId,
+          receiveMovementId,
           quantityCompleted: newCompleted,
           workOrderStatus: newStatus,
           idempotencyKey: batchIdempotencyKey,
@@ -4401,13 +4675,13 @@ export async function recordWorkOrderBatch(
         },
         responseStatus: 201,
         events: [
-          buildMovementPostedEvent(issueMovement.id, batchIdempotencyKey),
-          buildMovementPostedEvent(receiveMovement.id, batchIdempotencyKey),
+          buildMovementPostedEvent(issueMovementId, batchIdempotencyKey),
+          buildMovementPostedEvent(receiveMovementId, batchIdempotencyKey),
           buildWorkOrderProductionReportedEvent({
             executionId,
             workOrderId,
-            issueMovementId: issueMovement.id,
-            receiveMovementId: receiveMovement.id,
+            issueMovementId,
+            receiveMovementId,
             producerIdempotencyKey: batchIdempotencyKey
           })
         ],

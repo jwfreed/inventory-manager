@@ -821,6 +821,160 @@ test('record-batch idempotency key reports incomplete executions with missing id
   assert.deepEqual(second.payload?.error?.details?.missingExecutionIds, [executionId]);
 });
 
+test('record-batch replay fails closed when authoritative movement lines drift', async () => {
+  const session = await getSession();
+  const token = session.accessToken;
+  const tenantId = session.tenant.id;
+  const db = session.pool;
+  const actorId = session.user?.id ?? null;
+  const { defaults } = await ensureStandardWarehouse({
+    token,
+    apiRequest,
+    scope: `${import.meta.url}:batch-replay-corruption`
+  });
+  const sellable = defaults.SELLABLE;
+
+  const vendorId = await createVendor(token);
+  const componentItemId = await createItem(token, sellable.id, 'WO-BATCH-REPLAY-COMP');
+  const fgItemId = await createItem(token, sellable.id, 'WO-BATCH-REPLAY-FG');
+  const receipt = await createReceipt({
+    token,
+    vendorId,
+    itemId: componentItemId,
+    locationId: sellable.id,
+    quantity: 6,
+    unitCost: 4
+  });
+  await qcAccept(token, receipt.lines[0].id, 6, actorId);
+
+  const workOrderId = await createDisassemblyWorkOrder(token, {
+    outputItemId: componentItemId,
+    quantityPlanned: 6
+  });
+  const idempotencyKey = `wo-batch-replay-corruption-${randomUUID()}`;
+  const occurredAt = new Date().toISOString();
+  const requestBody = {
+    consumeItemId: componentItemId,
+    consumeLocationId: sellable.id,
+    consumeQty: 6,
+    produceLines: [{ outputItemId: fgItemId, toLocationId: sellable.id, uom: 'each', quantity: 6 }],
+    headers: { 'Idempotency-Key': idempotencyKey },
+    occurredAt
+  };
+
+  const first = await recordBatch(token, workOrderId, requestBody);
+  assert.equal(first.res.status, 201, JSON.stringify(first.payload));
+
+  await db.query(
+    `INSERT INTO inventory_movement_lines (
+        id,
+        tenant_id,
+        movement_id,
+        item_id,
+        location_id,
+        quantity_delta,
+        uom,
+        quantity_delta_entered,
+        uom_entered,
+        quantity_delta_canonical,
+        canonical_uom,
+        uom_dimension,
+        unit_cost,
+        extended_cost,
+        reason_code,
+        line_notes,
+        created_at
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        -1,
+        'each',
+        -1,
+        'each',
+        -1,
+        'each',
+        'count',
+        0,
+        0,
+        'tamper_issue',
+        'tamper',
+        now()
+      )`,
+    [
+      randomUUID(),
+      tenantId,
+      first.payload.issueMovementId,
+      componentItemId,
+      sellable.id
+    ]
+  );
+
+  const replay = await recordBatch(token, workOrderId, requestBody);
+  assert.equal(replay.res.status, 409, JSON.stringify(replay.payload));
+  assert.equal(replay.payload?.error?.code, 'REPLAY_CORRUPTION_DETECTED');
+});
+
+test('record-batch replay fails when WIP valuation ledger integrity is broken', async () => {
+  const session = await getSession();
+  const token = session.accessToken;
+  const tenantId = session.tenant.id;
+  const db = session.pool;
+  const actorId = session.user?.id ?? null;
+  const { defaults } = await ensureStandardWarehouse({
+    token,
+    apiRequest,
+    scope: `${import.meta.url}:batch-wip-integrity`
+  });
+  const sellable = defaults.SELLABLE;
+
+  const vendorId = await createVendor(token);
+  const componentItemId = await createItem(token, sellable.id, 'WO-BATCH-WIP-COMP');
+  const fgItemId = await createItem(token, sellable.id, 'WO-BATCH-WIP-FG');
+  const receipt = await createReceipt({
+    token,
+    vendorId,
+    itemId: componentItemId,
+    locationId: sellable.id,
+    quantity: 6,
+    unitCost: 4
+  });
+  await qcAccept(token, receipt.lines[0].id, 6, actorId);
+
+  const workOrderId = await createDisassemblyWorkOrder(token, {
+    outputItemId: componentItemId,
+    quantityPlanned: 6
+  });
+  const idempotencyKey = `wo-batch-wip-integrity-${randomUUID()}`;
+  const occurredAt = new Date().toISOString();
+  const requestBody = {
+    consumeItemId: componentItemId,
+    consumeLocationId: sellable.id,
+    consumeQty: 6,
+    produceLines: [{ outputItemId: fgItemId, toLocationId: sellable.id, uom: 'each', quantity: 6 }],
+    headers: { 'Idempotency-Key': idempotencyKey },
+    occurredAt
+  };
+
+  const first = await recordBatch(token, workOrderId, requestBody);
+  assert.equal(first.res.status, 201, JSON.stringify(first.payload));
+
+  await db.query(
+    `UPDATE work_order_wip_valuation_records
+        SET value_delta = ABS(value_delta)
+      WHERE tenant_id = $1
+        AND inventory_movement_id = $2
+        AND valuation_type = 'report'`,
+    [tenantId, first.payload.receiveMovementId]
+  );
+
+  const replay = await recordBatch(token, workOrderId, requestBody);
+  assert.equal(replay.res.status, 409, JSON.stringify(replay.payload));
+  assert.equal(replay.payload?.error?.code, 'WO_WIP_INTEGRITY_FAILED');
+});
+
 test('yield transformation without explicit scrap conserves value by increasing FG unit cost', async () => {
   const session = await getSession();
   const token = session.accessToken;

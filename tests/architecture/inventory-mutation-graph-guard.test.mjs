@@ -20,6 +20,8 @@ const EVENT_APPEND_SOURCE = path.resolve(
   'src/modules/platform/infrastructure/inventoryEvents.ts'
 );
 const LICENSE_PLATES_SERVICE = path.resolve(process.cwd(), 'src/services/licensePlates.service.ts');
+const COUNTS_SERVICE = path.resolve(process.cwd(), 'src/services/counts.service.ts');
+const ADJUSTMENTS_POSTING_SERVICE = path.resolve(process.cwd(), 'src/services/adjustments/posting.service.ts');
 const WORK_ORDER_EXECUTION_SERVICE = path.resolve(
   process.cwd(),
   'src/services/workOrderExecution.service.ts'
@@ -113,6 +115,8 @@ function extractFunctionBody(source, functionName) {
 
 const DAG_NODES = [
   { file: LICENSE_PLATES_SERVICE, functionName: 'moveLicensePlate', label: 'moveLicensePlate' },
+  { file: COUNTS_SERVICE, functionName: 'postInventoryCount', label: 'postInventoryCount' },
+  { file: ADJUSTMENTS_POSTING_SERVICE, functionName: 'postInventoryAdjustment', label: 'postInventoryAdjustment' },
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'postWorkOrderIssue', label: 'postWorkOrderIssue' },
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'postWorkOrderCompletion', label: 'postWorkOrderCompletion' },
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'recordWorkOrderBatch', label: 'recordWorkOrderBatch' },
@@ -158,6 +162,27 @@ test('license plate and manufacturing mutation dag entrypoints stay wrapper-mana
   }
 });
 
+test('migrated mutation entrypoints do not create authoritative movement rows outside runInventoryCommand', async () => {
+  const uniqueFiles = [...new Set(DAG_NODES.map((node) => node.file))];
+  const sourceEntries = await Promise.all(
+    uniqueFiles.map(async (filePath) => [filePath, await readFile(filePath, 'utf8')])
+  );
+  const sources = new Map(sourceEntries);
+
+  for (const node of DAG_NODES) {
+    const source = sources.get(node.file);
+    assert.ok(source, `missing source for ${node.label}`);
+    const body = extractFunctionBody(source, node.functionName);
+    if (/\bcreateInventoryMovement(?:Line)?\(/.test(body)) {
+      assert.match(
+        body,
+        /\brunInventoryCommand(?:<[^>]+>)?\(/,
+        `${node.label} must not create authoritative movement rows outside runInventoryCommand()`
+      );
+    }
+  }
+});
+
 test('license plate and manufacturing movement lines are deterministic and replay from authoritative movements', async () => {
   const [licenseSource, workOrderSource] = await Promise.all([
     readFile(LICENSE_PLATES_SERVICE, 'utf8'),
@@ -171,14 +196,20 @@ test('license plate and manufacturing movement lines are deterministic and repla
     'recordWorkOrderBatch',
     'voidWorkOrderProductionReport'
   ]) {
-    const body = extractFunctionBody(
-      functionName === 'moveLicensePlate' ? licenseSource : workOrderSource,
-      functionName
-    );
+    const source =
+      functionName === 'moveLicensePlate'
+        ? licenseSource
+        : workOrderSource;
+    const body = extractFunctionBody(source, functionName);
     assert.match(
       body,
       /\bsortDeterministicMovementLines\(/,
       `${functionName} must create movement lines in deterministic order`
+    );
+    assert.match(
+      body,
+      /\bbuildMovementDeterministicHash\(/,
+      `${functionName} must compute a deterministic movement hash before movement insert`
     );
     assert.match(
       body,
@@ -211,13 +242,18 @@ test('shared replay helper keys event repair by aggregate identity, event type, 
   const source = await readFile(REPLAY_SUPPORT_SOURCE, 'utf8');
   const body = extractFunctionBody(source, 'buildPostedDocumentReplayResult');
 
-  const readinessIndex = body.indexOf('authoritativeMovementReady(');
+  const readinessIndex = body.indexOf('verifyAuthoritativeMovementReplayIntegrity(');
   const aggregateFetchIndex = body.indexOf('fetchAggregateView()');
-  assert.notEqual(readinessIndex, -1, 'buildPostedDocumentReplayResult must verify authoritative movement readiness');
+  assert.notEqual(readinessIndex, -1, 'buildPostedDocumentReplayResult must verify authoritative movement integrity');
   assert.notEqual(aggregateFetchIndex, -1, 'buildPostedDocumentReplayResult must fetch the aggregate view');
   assert.ok(
     readinessIndex < aggregateFetchIndex,
-    'buildPostedDocumentReplayResult must verify authoritative movement readiness before fetching aggregate state'
+    'buildPostedDocumentReplayResult must verify authoritative movement integrity before fetching aggregate state'
+  );
+  assert.match(
+    source,
+    /REPLAY_CORRUPTION_DETECTED/,
+    'replay helper must fail closed with REPLAY_CORRUPTION_DETECTED on authoritative corruption'
   );
 
   assert.match(
@@ -235,6 +271,11 @@ test('event registry validation stays wired into migrated mutation events', asyn
 
   for (const registryEntry of [
     'inventoryMovementPosted',
+    'inventoryReservationChanged',
+    'inventoryTransferCreated',
+    'inventoryTransferIssued',
+    'inventoryTransferReceived',
+    'inventoryTransferVoided',
     'licensePlateMoved',
     'workOrderIssuePosted',
     'workOrderCompletionPosted',
@@ -249,6 +290,11 @@ test('event registry validation stays wired into migrated mutation events', asyn
     );
   }
 
+  assert.match(
+    registrySource,
+    /aggregateIdSource:\s*'inventory_transfer\.id'/,
+    'transfer registry identities must declare their authoritative aggregate source'
+  );
   assert.match(
     registrySource,
     /workOrderWipValuationRecorded:[\s\S]*aggregateIdPayloadKey:\s*'movementId'/,
