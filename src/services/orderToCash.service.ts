@@ -26,6 +26,8 @@ import {
   type InventoryCommandEvent,
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
+import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
+import { buildMovementPostedEvent } from '../modules/platform/application/inventoryMutationSupport';
 import { upsertBackorder } from './backorders.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { ItemLifecycleStatus } from '../types/item';
@@ -345,10 +347,7 @@ function buildReservationChangedEvent(
   eventVersion: number,
   producerIdempotencyKey?: string | null
 ): InventoryCommandEvent {
-  return {
-    aggregateType: 'inventory_reservation',
-    aggregateId: reservation.id,
-    eventType: 'inventory.reservation.changed',
+  return buildInventoryRegistryEvent('inventoryReservationChanged', {
     eventVersion,
     producerIdempotencyKey: producerIdempotencyKey ?? null,
     payload: {
@@ -363,21 +362,7 @@ function buildReservationChangedEvent(
       aggregateType: 'inventory_reservation_change',
       aggregateId: uuidv4()
     }
-  };
-}
-
-function buildMovementPostedEvent(
-  movementId: string,
-  producerIdempotencyKey?: string | null
-): InventoryCommandEvent {
-  return {
-    aggregateType: 'inventory_movement',
-    aggregateId: movementId,
-    eventType: 'inventory.movement.posted',
-    eventVersion: 1,
-    producerIdempotencyKey: producerIdempotencyKey ?? null,
-    payload: { movementId }
-  };
+  });
 }
 
 function buildInventoryBalanceProjectionOp(params: {

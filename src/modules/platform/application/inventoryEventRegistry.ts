@@ -5,6 +5,7 @@ type InventoryEventRegistryDefinition = {
   aggregateType: string;
   eventType: string;
   eventVersion: number;
+  allowAnyPositiveVersion?: boolean;
   aggregateIdSource: string;
   aggregateIdPayloadKey: string;
 };
@@ -21,6 +22,7 @@ export const INVENTORY_EVENT_REGISTRY = Object.freeze({
     aggregateType: 'inventory_reservation',
     eventType: 'inventory.reservation.changed',
     eventVersion: 1,
+    allowAnyPositiveVersion: true,
     aggregateIdSource: 'inventory_reservations.id',
     aggregateIdPayloadKey: 'reservationId'
   },
@@ -127,10 +129,29 @@ function resolveAggregateIdFromPayload(
   return aggregateId;
 }
 
+function resolveRegistryEventVersion(
+  definition: InventoryEventRegistryDefinition,
+  eventVersion?: number
+) {
+  const resolvedEventVersion = eventVersion ?? definition.eventVersion;
+  if (!Number.isInteger(resolvedEventVersion) || resolvedEventVersion <= 0) {
+    throw new Error(
+      `INVENTORY_EVENT_VERSION_INVALID:${definition.aggregateType}:${definition.eventType}:${resolvedEventVersion}`
+    );
+  }
+  if (!definition.allowAnyPositiveVersion && resolvedEventVersion !== definition.eventVersion) {
+    throw new Error(
+      `INVENTORY_EVENT_VERSION_NOT_ALLOWED:${definition.aggregateType}:${definition.eventType}:expected=${definition.eventVersion}:received=${resolvedEventVersion}`
+    );
+  }
+  return resolvedEventVersion;
+}
+
 export function buildInventoryRegistryEvent(
   name: InventoryEventRegistryName,
   params: {
     payload: Record<string, unknown>;
+    eventVersion?: number;
     producerIdempotencyKey?: string | null;
     dispatch?: InventoryEventDispatch;
   }
@@ -139,8 +160,9 @@ export function buildInventoryRegistryEvent(
   return {
     aggregateType: definition.aggregateType,
     aggregateId: resolveAggregateIdFromPayload(params.payload, definition.aggregateIdPayloadKey),
+    aggregateIdSource: definition.aggregateIdSource,
     eventType: definition.eventType,
-    eventVersion: definition.eventVersion,
+    eventVersion: resolveRegistryEventVersion(definition, params.eventVersion),
     payload: params.payload,
     producerIdempotencyKey: params.producerIdempotencyKey ?? null,
     dispatch: params.dispatch
@@ -150,14 +172,18 @@ export function buildInventoryRegistryEvent(
 export function validateInventoryEventRegistryInput(
   input: Pick<
     InventoryEventInput,
-    'aggregateType' | 'aggregateId' | 'eventType' | 'eventVersion' | 'payload'
+    'aggregateType' | 'aggregateId' | 'aggregateIdSource' | 'eventType' | 'eventVersion' | 'payload'
   >
 ): InventoryEventRegistryDefinition {
   const definition = Object.values(INVENTORY_EVENT_REGISTRY).find(
     (candidate) =>
       candidate.aggregateType === input.aggregateType
       && candidate.eventType === input.eventType
-      && candidate.eventVersion === input.eventVersion
+      && (
+        candidate.allowAnyPositiveVersion
+        ? Number.isInteger(input.eventVersion) && input.eventVersion > 0
+        : candidate.eventVersion === input.eventVersion
+      )
   );
   if (!definition) {
     throw new Error(
@@ -167,6 +193,11 @@ export function validateInventoryEventRegistryInput(
   if (!definition.aggregateIdSource.trim()) {
     throw new Error(
       `INVENTORY_EVENT_AGGREGATE_ID_SOURCE_REQUIRED:${input.aggregateType}:${input.eventType}:v${input.eventVersion}`
+    );
+  }
+  if (input.aggregateIdSource !== definition.aggregateIdSource) {
+    throw new Error(
+      `INVENTORY_EVENT_AGGREGATE_ID_SOURCE_MISMATCH:${input.eventType}:expected=${definition.aggregateIdSource}:received=${input.aggregateIdSource}`
     );
   }
   const expectedAggregateId = resolveAggregateIdFromPayload(

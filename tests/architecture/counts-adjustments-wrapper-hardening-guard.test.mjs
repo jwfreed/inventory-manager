@@ -223,7 +223,7 @@ test('shared posted-document replay hardening anchors counts and adjustments to 
   );
   assert.match(
     countsSource,
-    /\bbuildMovementDeterministicHash\(/,
+    /\bpersistMovementDeterministicHashFromLedger\(/,
     'counts must persist deterministic movement hashes'
   );
 
@@ -239,7 +239,7 @@ test('shared posted-document replay hardening anchors counts and adjustments to 
   );
   assert.match(
     adjustmentsSource,
-    /\bbuildMovementDeterministicHash\(/,
+    /\bpersistMovementDeterministicHashFromLedger\(/,
     'adjustments must persist deterministic movement hashes'
   );
   assert.match(
@@ -251,6 +251,16 @@ test('shared posted-document replay hardening anchors counts and adjustments to 
     adjustmentsSource,
     /\bsortDeterministicMovementLines\(/,
     'adjustments must create movement lines in deterministic order'
+  );
+  assert.match(
+    supportSource,
+    /MOVEMENT_HASH_REQUIRED_AFTER_MIGRATION_TS/,
+    'replay helper must define the post-migration movement-hash cutoff'
+  );
+  assert.match(
+    supportSource,
+    /authoritative_movement_hash_missing_post_migration/,
+    'replay helper must reject post-migration rows with missing movement hashes'
   );
 });
 

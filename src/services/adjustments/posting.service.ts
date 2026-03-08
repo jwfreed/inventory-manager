@@ -17,11 +17,11 @@ import {
   type InventoryCommandProjectionOp
 } from '../../modules/platform/application/runInventoryCommand';
 import {
-  buildMovementDeterministicHash,
   buildPostedDocumentReplayResult,
   buildInventoryBalanceProjectionOp,
   buildMovementPostedEvent,
   buildRefreshItemCostSummaryProjectionOp,
+  persistMovementDeterministicHashFromLedger,
   sortDeterministicMovementLines,
 } from '../../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../../modules/platform/application/inventoryEventRegistry';
@@ -254,19 +254,6 @@ export async function postInventoryAdjustment(
           postedAt: now,
           notes: adjustmentRow.notes ?? null,
           metadata: validation.overrideMetadata ?? null,
-          movementDeterministicHash: buildMovementDeterministicHash(
-            sortedPreparedLines.map(({ line, canonicalFields }) => ({
-              itemId: line.item_id,
-              locationId: line.location_id,
-              quantityDelta: canonicalFields.quantityDeltaCanonical,
-              uom: canonicalFields.canonicalUom,
-              quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-              uomEntered: canonicalFields.uomEntered,
-              quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-              canonicalUom: canonicalFields.canonicalUom,
-              reasonCode: line.reason_code
-            }))
-          ),
           createdAt: now,
           updatedAt: now
         });
@@ -294,19 +281,6 @@ export async function postInventoryAdjustment(
               adjustmentId: id,
               movementId: movement.id,
               expectedLineCount: sortedPreparedLines.length,
-              expectedDeterministicHash: buildMovementDeterministicHash(
-                sortedPreparedLines.map(({ line, canonicalFields }) => ({
-                  itemId: line.item_id,
-                  locationId: line.location_id,
-                  quantityDelta: canonicalFields.quantityDeltaCanonical,
-                  uom: canonicalFields.canonicalUom,
-                  quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-                  uomEntered: canonicalFields.uomEntered,
-                  quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-                  canonicalUom: canonicalFields.canonicalUom,
-                  reasonCode: line.reason_code
-                }))
-              ),
               client
             });
           }
@@ -378,6 +352,7 @@ export async function postInventoryAdjustment(
           );
           itemsToRefresh.add(line.item_id);
         }
+        await persistMovementDeterministicHashFromLedger(client, tenantId, movement.id);
 
         for (const itemId of itemsToRefresh.values()) {
           projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, itemId));

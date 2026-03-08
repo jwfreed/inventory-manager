@@ -15,10 +15,10 @@ import {
 import { relocateTransferCostLayersInTx } from './transferCosting.service';
 import { runInventoryCommand, type InventoryCommandProjectionOp } from '../modules/platform/application/runInventoryCommand';
 import {
-  buildMovementDeterministicHash,
   buildInventoryBalanceProjectionOp,
   buildMovementPostedEvent,
   buildPostedDocumentReplayResult,
+  persistMovementDeterministicHashFromLedger,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
@@ -729,19 +729,6 @@ export async function moveLicensePlate(
             sourceLineId: line.sourceLineId
         })
       );
-      const movementDeterministicHash = buildMovementDeterministicHash(
-        preparedLines.map((line) => ({
-          itemId: line.itemId,
-          locationId: line.locationId,
-          quantityDelta: line.canonicalFields.quantityDeltaCanonical,
-          uom: line.canonicalFields.canonicalUom,
-          quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,
-          uomEntered: line.canonicalFields.uomEntered,
-          quantityDeltaCanonical: line.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: line.canonicalFields.canonicalUom,
-          reasonCode: line.reasonCode
-        }))
-      );
       const movementId = uuidv4();
       const movement = await createInventoryMovement(client, {
         id: movementId,
@@ -756,7 +743,6 @@ export async function moveLicensePlate(
         postedAt: now,
         notes: data.notes ?? `LPN ${currentLpn.lpn} moved from ${currentLpn.locationCode} to new location`,
         metadata: validation.overrideMetadata ?? null,
-        movementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -768,7 +754,6 @@ export async function moveLicensePlate(
           movementId: movement.id,
           fromLocationId: data.fromLocationId,
           toLocationId: data.toLocationId,
-          expectedDeterministicHash: movementDeterministicHash,
           producerIdempotencyKey: idempotencyKey,
           client
         });
@@ -810,6 +795,7 @@ export async function moveLicensePlate(
           preparedLine.id
         );
       }
+      await persistMovementDeterministicHashFromLedger(client, tenantId, movement.id);
 
       const outLineId = lineIdsByDirection.get('out');
       const inLineId = lineIdsByDirection.get('in');

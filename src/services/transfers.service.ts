@@ -7,8 +7,7 @@ import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
   createInventoryMovement,
   createInventoryMovementLine,
-  applyInventoryBalanceDelta,
-  enqueueInventoryMovementPosted
+  applyInventoryBalanceDelta
 } from '../domains/inventory';
 import { relocateTransferCostLayersInTx, reverseTransferCostLayersInTx } from './transferCosting.service';
 import { hashTransactionalIdempotencyRequest } from '../lib/transactionalIdempotency';
@@ -23,6 +22,7 @@ import {
   buildMovementDeterministicHash,
   buildMovementPostedEvent,
   buildPostedDocumentReplayResult,
+  persistMovementDeterministicHashFromLedger,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
@@ -145,13 +145,13 @@ type MovementLineRow = {
   line_notes: string | null;
 };
 
-type PreparedTransferMutation = TransferInventoryInput & {
+export type PreparedTransferMutation = TransferInventoryInput & {
   enteredQty: number;
   sourceWarehouseId: string;
   destinationWarehouseId: string;
 };
 
-type TransferMutationExecution = {
+export type TransferMutationExecution = {
   result: TransferInventoryResult;
   events: InventoryCommandEvent[];
   projectionOps: InventoryCommandProjectionOp[];
@@ -199,7 +199,7 @@ function compareInventoryLockTarget(
   return left.itemId.localeCompare(right.itemId);
 }
 
-async function prepareTransferMutation(
+export async function prepareTransferMutation(
   input: TransferInventoryInput,
   client: PoolClient
 ): Promise<PreparedTransferMutation> {
@@ -283,7 +283,7 @@ async function prepareTransferMutation(
   };
 }
 
-function buildTransferLockTargets(prepared: PreparedTransferMutation) {
+export function buildTransferLockTargets(prepared: PreparedTransferMutation) {
   return [
     {
       tenantId: prepared.tenantId,
@@ -402,6 +402,9 @@ function buildTransferEvents(params: {
   destinationWarehouseId: string;
   producerIdempotencyKey?: string | null;
 }) {
+  // Immediate transfers do not model an in-transit lifecycle. These aggregate
+  // events are appended in the same runInventoryCommand transaction as a single
+  // posted stock relocation.
   return [
     buildMovementPostedEvent(params.movementId, params.producerIdempotencyKey),
     buildTransferCreatedEvent(params),
@@ -418,6 +421,25 @@ function buildTransferEvents(params: {
       producerIdempotencyKey: params.producerIdempotencyKey
     })
   ];
+}
+
+function buildTransferReversalBalanceProjectionOp(params: {
+  tenantId: string;
+  itemId: string;
+  locationId: string;
+  uom: string;
+  deltaOnHand: number;
+}): InventoryCommandProjectionOp {
+  return async (client) => {
+    try {
+      await applyInventoryBalanceDelta(client, params);
+    } catch (error: any) {
+      if (error?.code === '23514' && error?.constraint === 'chk_inventory_balance_nonneg') {
+        throw new Error('TRANSFER_REVERSAL_NOT_POSSIBLE_CONSUMED');
+      }
+      throw error;
+    }
+  };
 }
 
 async function buildTransferMovementPlan(
@@ -484,19 +506,21 @@ async function buildTransferMovementPlan(
     lines,
     outLineId: lines.find((line) => line.direction === 'out')?.id ?? null,
     inLineId: lines.find((line) => line.direction === 'in')?.id ?? null,
-    movementDeterministicHash: buildMovementDeterministicHash(
-      lines.map((line) => ({
+    movementDeterministicHash: buildMovementDeterministicHash({
+      tenantId: prepared.tenantId,
+      movementType: prepared.movementType ?? 'transfer',
+      occurredAt: prepared.occurredAt ?? new Date(),
+      sourceType: prepared.sourceType,
+      sourceId: prepared.sourceId,
+      lines: lines.map((line) => ({
         itemId: line.itemId,
         locationId: line.locationId,
         quantityDelta: line.canonicalFields.quantityDeltaCanonical,
-        uom: line.canonicalFields.canonicalUom,
-        quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,
-        uomEntered: line.canonicalFields.uomEntered,
-        quantityDeltaCanonical: line.canonicalFields.quantityDeltaCanonical,
         canonicalUom: line.canonicalFields.canonicalUom,
+        unitCost: null,
         reasonCode: line.reasonCode
       }))
-    )
+    })
   };
 }
 
@@ -534,22 +558,7 @@ function buildTransferReversalPlan(params: {
       sourceLineId: line.sourceLineId
     })
   );
-  return {
-    lines,
-    movementDeterministicHash: buildMovementDeterministicHash(
-      lines.map((line) => ({
-        itemId: line.itemId,
-        locationId: line.locationId,
-        quantityDelta: line.quantityDelta,
-        uom: line.canonicalUom ?? line.effectiveUom,
-        quantityDeltaEntered: line.quantityDeltaEntered,
-        uomEntered: line.uomEntered,
-        quantityDeltaCanonical: line.quantityDeltaCanonical,
-        canonicalUom: line.canonicalUom,
-        reasonCode: line.reasonCode
-      }))
-    )
-  };
+  return { lines };
 }
 
 async function fetchTransferReplayView(
@@ -590,13 +599,19 @@ async function fetchTransferReplayView(
   };
 }
 
-async function buildTransferReplayResult(params: {
+export async function buildTransferReplayResult(params: {
   tenantId: string;
   movementId: string;
   normalizedIdempotencyKey: string | null;
   replayed: boolean;
   client: PoolClient;
-  authoritativeEvents: InventoryCommandEvent[];
+  sourceLocationId: string;
+  destinationLocationId: string;
+  itemId: string;
+  quantity: number;
+  uom: string;
+  sourceWarehouseId: string;
+  destinationWarehouseId: string;
   expectedLineCount?: number;
   expectedDeterministicHash?: string | null;
 }) {
@@ -619,11 +634,22 @@ async function buildTransferReplayResult(params: {
         params.client
       ),
     aggregateNotFoundError: new Error('TRANSFER_REPLAY_SCOPE_UNRESOLVED'),
-    authoritativeEvents: params.authoritativeEvents
+    authoritativeEvents: buildTransferEvents({
+      transferId: params.movementId,
+      movementId: params.movementId,
+      sourceLocationId: params.sourceLocationId,
+      destinationLocationId: params.destinationLocationId,
+      itemId: params.itemId,
+      quantity: params.quantity,
+      uom: params.uom,
+      sourceWarehouseId: params.sourceWarehouseId,
+      destinationWarehouseId: params.destinationWarehouseId,
+      producerIdempotencyKey: params.normalizedIdempotencyKey
+    })
   });
 }
 
-async function executeTransferInventoryWrapperMutation(
+export async function executeTransferInventoryMutation(
   prepared: PreparedTransferMutation,
   client: PoolClient
 ): Promise<TransferMutationExecution> {
@@ -687,20 +713,14 @@ async function executeTransferInventoryWrapperMutation(
       normalizedIdempotencyKey: prepared.idempotencyKey ?? null,
       replayed: false,
       client,
-      authoritativeEvents: buildTransferEvents({
-        transferId: movementResult.id,
-        movementId: movementResult.id,
-        sourceLocationId: prepared.sourceLocationId,
-        destinationLocationId: prepared.destinationLocationId,
-        itemId: prepared.itemId,
-        quantity: prepared.enteredQty,
-        uom: prepared.uom,
-        sourceWarehouseId: prepared.sourceWarehouseId,
-        destinationWarehouseId: prepared.destinationWarehouseId,
-        producerIdempotencyKey: prepared.idempotencyKey ?? null
-      }),
-      expectedLineCount: movementPlan.lines.length,
-      expectedDeterministicHash: movementPlan.movementDeterministicHash
+      sourceLocationId: prepared.sourceLocationId,
+      destinationLocationId: prepared.destinationLocationId,
+      itemId: prepared.itemId,
+      quantity: prepared.enteredQty,
+      uom: prepared.uom,
+      sourceWarehouseId: prepared.sourceWarehouseId,
+      destinationWarehouseId: prepared.destinationWarehouseId,
+      expectedLineCount: movementPlan.lines.length
     });
     return {
       result: {
@@ -730,6 +750,7 @@ async function executeTransferInventoryWrapperMutation(
       lineNotes: line.lineNotes
     });
   }
+  await persistMovementDeterministicHashFromLedger(client, prepared.tenantId, movementResult.id);
 
   await relocateTransferCostLayersInTx({
     client,
@@ -836,313 +857,73 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
 }
 
 export async function transferInventory(
-  input: TransferInventoryInput,
-  client?: PoolClient
+  input: TransferInventoryInput
 ): Promise<TransferInventoryResult> {
-  if (!client) {
-    const endpoint = input.inventoryCommandEndpoint ?? IDEMPOTENCY_ENDPOINTS.INVENTORY_TRANSFERS_CREATE;
-    const operation = input.inventoryCommandOperation ?? 'inventory_transfer';
-    const normalizedIdempotencyKey = input.idempotencyKey?.trim() ? input.idempotencyKey.trim() : null;
-    const requestHash = normalizedIdempotencyKey
-      ? hashTransactionalIdempotencyRequest({
-          method: 'POST',
-          endpoint,
-          body: input.inventoryCommandRequestBody ?? buildTransferInventoryRequestBody(input)
+  const endpoint = input.inventoryCommandEndpoint ?? IDEMPOTENCY_ENDPOINTS.INVENTORY_TRANSFERS_CREATE;
+  const operation = input.inventoryCommandOperation ?? 'inventory_transfer';
+  const normalizedIdempotencyKey = input.idempotencyKey?.trim() ? input.idempotencyKey.trim() : null;
+  const requestHash = normalizedIdempotencyKey
+    ? hashTransactionalIdempotencyRequest({
+        method: 'POST',
+        endpoint,
+        body: input.inventoryCommandRequestBody ?? buildTransferInventoryRequestBody(input)
+      })
+    : null;
+  let prepared: PreparedTransferMutation | null = null;
+
+  return runInventoryCommand<TransferInventoryResult>({
+    tenantId: input.tenantId,
+    endpoint,
+    operation,
+    idempotencyKey: normalizedIdempotencyKey,
+    requestHash,
+    retryOptions: { isolationLevel: 'SERIALIZABLE', retries: 2 },
+    onReplay: async ({ client: txClient, responseBody }) => {
+      const movementId = responseBody.movementId;
+      if (!movementId) {
+        throw new Error('TRANSFER_REPLAY_MOVEMENT_ID_REQUIRED');
+      }
+      return (
+        await buildTransferReplayResult({
+          tenantId: input.tenantId,
+          movementId,
+          normalizedIdempotencyKey,
+          replayed: true,
+          client: txClient,
+          sourceLocationId: input.sourceLocationId,
+          destinationLocationId: input.destinationLocationId,
+          itemId: input.itemId,
+          quantity: roundQuantity(toNumber(input.quantity)),
+          uom: input.uom,
+          sourceWarehouseId: responseBody.sourceWarehouseId,
+          destinationWarehouseId: responseBody.destinationWarehouseId,
+          expectedLineCount: 2
         })
-      : null;
-    let prepared: PreparedTransferMutation | null = null;
-
-    return runInventoryCommand<TransferInventoryResult>({
-      tenantId: input.tenantId,
-      endpoint,
-      operation,
-      idempotencyKey: normalizedIdempotencyKey,
-      requestHash,
-      retryOptions: { isolationLevel: 'SERIALIZABLE', retries: 2 },
-      onReplay: async ({ client: txClient, responseBody }) => {
-        const movementId = responseBody.movementId;
-        if (!movementId) {
-          throw new Error('TRANSFER_REPLAY_MOVEMENT_ID_REQUIRED');
-        }
-        const replayPlan = await buildTransferMovementPlan(
-          {
-            ...input,
-            warehouseId: input.warehouseId?.trim() ? input.warehouseId.trim() : null,
-            idempotencyKey: normalizedIdempotencyKey,
-            enteredQty: roundQuantity(toNumber(input.quantity)),
-            sourceWarehouseId: responseBody.sourceWarehouseId,
-            destinationWarehouseId: responseBody.destinationWarehouseId
-          },
-          txClient
-        );
-        return (
-          await buildTransferReplayResult({
-            tenantId: input.tenantId,
-            movementId,
-            normalizedIdempotencyKey,
-            replayed: true,
-            client: txClient,
-            authoritativeEvents: buildTransferEvents({
-              transferId: movementId,
-              movementId,
-              sourceLocationId: input.sourceLocationId,
-              destinationLocationId: input.destinationLocationId,
-              itemId: input.itemId,
-              quantity: roundQuantity(toNumber(input.quantity)),
-              uom: input.uom,
-              sourceWarehouseId: responseBody.sourceWarehouseId,
-              destinationWarehouseId: responseBody.destinationWarehouseId,
-              producerIdempotencyKey: normalizedIdempotencyKey
-            }),
-            expectedLineCount: replayPlan.lines.length,
-            expectedDeterministicHash: replayPlan.movementDeterministicHash
-          })
-        ).responseBody;
-      },
-      lockTargets: async (tx) => {
-        prepared = await prepareTransferMutation(
-          {
-            ...input,
-            idempotencyKey: normalizedIdempotencyKey
-          },
-          tx
-        );
-        return buildTransferLockTargets(prepared);
-      },
-      execute: async ({ client: txClient }) => {
-        if (!prepared) {
-          throw new Error('TRANSFER_PREPARE_REQUIRED');
-        }
-        const execution = await executeTransferInventoryWrapperMutation(prepared, txClient);
-        return {
-          responseBody: execution.result,
-          responseStatus: execution.result.created ? 201 : 200,
-          events: execution.events,
-          projectionOps: execution.projectionOps
-        };
-      }
-    });
-  }
-
-  const {
-    tenantId,
-    sourceLocationId,
-    destinationLocationId,
-    warehouseId,
-    itemId,
-    quantity,
-    uom,
-    sourceType,
-    sourceId,
-    movementType = 'transfer',
-    qcAction,
-    reasonCode = 'transfer',
-    notes = 'Inventory transfer',
-    occurredAt = new Date(),
-    actorId = null,
-    overrideNegative = false,
-    overrideReason = null,
-    idempotencyKey = null
-  } = input;
-
-  const sourceWarehouseId = await resolveWarehouseIdForLocation(tenantId, sourceLocationId, client);
-  const destinationWarehouseId = await resolveWarehouseIdForLocation(tenantId, destinationLocationId, client);
-  const requestedWarehouseId = warehouseId?.trim() ? warehouseId.trim() : null;
-  if (requestedWarehouseId) {
-    if (sourceWarehouseId !== destinationWarehouseId || requestedWarehouseId !== sourceWarehouseId) {
-      throw domainError('WAREHOUSE_SCOPE_MISMATCH', {
-        providedWarehouseId: requestedWarehouseId,
-        sourceWarehouseId,
-        destinationWarehouseId
-      });
-    }
-  }
-
-  if (sourceLocationId === destinationLocationId) {
-    throw new Error('TRANSFER_SAME_LOCATION');
-  }
-
-  const enteredQty = roundQuantity(toNumber(quantity));
-  if (enteredQty <= 0) {
-    throw new Error('TRANSFER_INVALID_QUANTITY');
-  }
-
-  const destCheck = await client.query(
-    `SELECT role, is_sellable FROM locations WHERE id = $1 AND tenant_id = $2`,
-    [destinationLocationId, tenantId]
-  );
-  if (destCheck.rowCount === 0) {
-    throw new Error('TRANSFER_DESTINATION_NOT_FOUND');
-  }
-  const destLocation = destCheck.rows[0];
-
-  if (sourceType === 'qc_event') {
-    if (!qcAction) {
-      throw new Error('QC_ACTION_REQUIRED');
-    }
-    const sourceCheck = await client.query(
-      `SELECT role, is_sellable FROM locations WHERE id = $1 AND tenant_id = $2`,
-      [sourceLocationId, tenantId]
-    );
-    if (sourceCheck.rowCount === 0) {
-      throw new Error('TRANSFER_SOURCE_NOT_FOUND');
-    }
-    const sourceLocation = sourceCheck.rows[0];
-    if (sourceLocation.role !== 'QA' || sourceLocation.is_sellable) {
-      throw new Error('QC_SOURCE_MUST_BE_QA');
-    }
-
-    if (qcAction === 'accept') {
-      if (destLocation.role !== 'SELLABLE') {
-        throw new Error('QC_ACCEPT_REQUIRES_SELLABLE_ROLE');
-      }
-      if (!destLocation.is_sellable) {
-        throw new Error('QC_ACCEPT_REQUIRES_SELLABLE_FLAG');
-      }
-    } else if (qcAction === 'hold') {
-      if (destLocation.role !== 'HOLD') {
-        throw new Error('QC_HOLD_REQUIRES_HOLD_ROLE');
-      }
-      if (destLocation.is_sellable) {
-        throw new Error('QC_HOLD_MUST_NOT_BE_SELLABLE');
-      }
-    } else if (qcAction === 'reject') {
-      if (destLocation.role !== 'REJECT') {
-        throw new Error('QC_REJECT_REQUIRES_REJECT_ROLE');
-      }
-      if (destLocation.is_sellable) {
-        throw new Error('QC_REJECT_MUST_NOT_BE_SELLABLE');
-      }
-    }
-  }
-
-  const validation = await validateSufficientStock(
-    tenantId,
-    occurredAt,
-    [
-      {
-        warehouseId: sourceWarehouseId,
-        itemId,
-        locationId: sourceLocationId,
-        uom,
-        quantityToConsume: enteredQty
-      }
-    ],
-    {
-      actorId,
-      overrideRequested: overrideNegative,
-      overrideReason,
-      overrideReference: `${sourceType}:${sourceId}`
+      ).responseBody;
     },
-    { client }
-  );
-
-  const movementId = uuidv4();
-  const prepared: PreparedTransferMutation = {
-    ...input,
-    warehouseId: requestedWarehouseId,
-    idempotencyKey,
-    enteredQty,
-    sourceWarehouseId,
-    destinationWarehouseId,
-    reasonCode,
-    notes,
-    occurredAt,
-    actorId,
-    overrideNegative,
-    overrideReason
-  };
-  const movementPlan = await buildTransferMovementPlan(prepared, client);
-  if (!movementPlan.outLineId || !movementPlan.inLineId) {
-    throw new Error('TRANSFER_LINE_DIRECTIONS_MISSING');
-  }
-  const externalRef = `${sourceType}:${sourceId}`;
-
-  const movementResult = await createInventoryMovement(client, {
-    id: movementId,
-    tenantId,
-    movementType,
-    status: 'posted',
-    externalRef,
-    sourceType,
-    sourceId,
-    idempotencyKey,
-    occurredAt,
-    postedAt: occurredAt,
-    notes,
-    metadata: validation.overrideMetadata ?? null,
-    movementDeterministicHash: movementPlan.movementDeterministicHash,
-    createdAt: occurredAt,
-    updatedAt: occurredAt
-  });
-
-  if (!movementResult.created) {
-    return {
-      movementId: movementResult.id,
-      created: false,
-      replayed: false,
-      idempotencyKey,
-      sourceWarehouseId,
-      destinationWarehouseId
-    };
-  }
-
-  for (const line of movementPlan.lines) {
-    await createInventoryMovementLine(client, {
-      id: line.id,
-      tenantId,
-      movementId,
-      itemId: line.itemId,
-      locationId: line.locationId,
-      quantityDelta: line.canonicalFields.quantityDeltaCanonical,
-      uom: line.canonicalFields.canonicalUom,
-      quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,
-      uomEntered: line.canonicalFields.uomEntered,
-      quantityDeltaCanonical: line.canonicalFields.quantityDeltaCanonical,
-      canonicalUom: line.canonicalFields.canonicalUom,
-      uomDimension: line.canonicalFields.uomDimension,
-      reasonCode: line.reasonCode,
-      lineNotes: line.lineNotes
-    });
-
-    await applyInventoryBalanceDelta(client, {
-      tenantId,
-      itemId: line.itemId,
-      locationId: line.locationId,
-      uom: line.canonicalFields.canonicalUom,
-      deltaOnHand: line.canonicalFields.quantityDeltaCanonical
-    });
-  }
-
-  await relocateTransferCostLayersInTx({
-    client,
-    tenantId,
-    transferMovementId: movementId,
-    occurredAt,
-    notes,
-    pairs: [
-      {
-        itemId,
-        sourceLocationId,
-        destinationLocationId,
-        outLineId: movementPlan.outLineId,
-        inLineId: movementPlan.inLineId,
-        quantity: movementPlan.lines.find((line) => line.direction === 'in')!.canonicalFields.quantityDeltaCanonical,
-        uom: movementPlan.lines.find((line) => line.direction === 'in')!.canonicalFields.canonicalUom
+    lockTargets: async (tx) => {
+      prepared = await prepareTransferMutation(
+        {
+          ...input,
+          idempotencyKey: normalizedIdempotencyKey
+        },
+        tx
+      );
+      return buildTransferLockTargets(prepared);
+    },
+    execute: async ({ client: txClient }) => {
+      if (!prepared) {
+        throw new Error('TRANSFER_PREPARE_REQUIRED');
       }
-    ]
+      const execution = await executeTransferInventoryMutation(prepared, txClient);
+      return {
+        responseBody: execution.result,
+        responseStatus: execution.result.created ? 201 : 200,
+        events: execution.events,
+        projectionOps: execution.projectionOps
+      };
+    }
   });
-
-  await enqueueInventoryMovementPosted(client, tenantId, movementId);
-
-  return {
-    movementId,
-    created: true,
-    replayed: false,
-    idempotencyKey,
-    sourceWarehouseId,
-    destinationWarehouseId
-  };
 }
 
 export async function voidTransferMovement(
@@ -1219,8 +1000,7 @@ export async function voidTransferMovement(
           authoritativeMovements: [
             {
               movementId: responseBody.reversalMovementId,
-              expectedLineCount: reversalPlan.lines.length,
-              expectedDeterministicHash: reversalPlan.movementDeterministicHash
+              expectedLineCount: reversalPlan.lines.length
             }
           ],
           client,
@@ -1348,7 +1128,6 @@ export async function voidTransferMovement(
         notes: `Transfer void reversal ${movementId}: ${reason}`,
         reversalOfMovementId: movementId,
         reversalReason: reason,
-        movementDeterministicHash: reversalPlan.movementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -1405,23 +1184,17 @@ export async function voidTransferMovement(
         if (Math.abs(line.effectiveQty) <= 1e-6) {
           continue;
         }
-        projectionOps.push(async (txClient) => {
-          try {
-            await applyInventoryBalanceDelta(txClient, {
-              tenantId,
-              itemId: line.itemId,
-              locationId: line.locationId,
-              uom: line.effectiveUom,
-              deltaOnHand: roundQuantity(-line.effectiveQty)
-            });
-          } catch (error: any) {
-            if (error?.code === '23514' && error?.constraint === 'chk_inventory_balance_nonneg') {
-              throw new Error('TRANSFER_REVERSAL_NOT_POSSIBLE_CONSUMED');
-            }
-            throw error;
-          }
-        });
+        projectionOps.push(
+          buildTransferReversalBalanceProjectionOp({
+            tenantId,
+            itemId: line.itemId,
+            locationId: line.locationId,
+            uom: line.effectiveUom,
+            deltaOnHand: roundQuantity(-line.effectiveQty)
+          })
+        );
       }
+      await persistMovementDeterministicHashFromLedger(client, tenantId, reversalMovement.id);
 
       await reverseTransferCostLayersInTx({
         client,

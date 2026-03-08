@@ -75,6 +75,136 @@ async function createItem(token, defaultLocationId, skuPrefix, options = {}) {
   return res.payload.id;
 }
 
+async function seedPostedStock({ db, tenantId, itemId, locationId, quantity, unitCost, uom = 'each' }) {
+  const movementId = randomUUID();
+  const movementLineId = randomUUID();
+  const layerId = randomUUID();
+  const sourceDocumentId = randomUUID();
+  const createdAt = '2026-01-01T00:00:00.000Z';
+
+  await db.query(
+    `INSERT INTO inventory_movements (
+        id,
+        tenant_id,
+        movement_type,
+        status,
+        external_ref,
+        source_type,
+        source_id,
+        occurred_at,
+        posted_at,
+        notes,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1,
+        $2,
+        'receive',
+        'posted',
+        $3,
+        'test_seed',
+        $4,
+        $5,
+        $5,
+        'seed',
+        $5,
+        $5
+      )`,
+    [movementId, tenantId, `seed:${movementId}`, sourceDocumentId, createdAt]
+  );
+  await db.query(
+    `INSERT INTO inventory_movement_lines (
+        id,
+        tenant_id,
+        movement_id,
+        item_id,
+        location_id,
+        quantity_delta,
+        uom,
+        quantity_delta_entered,
+        uom_entered,
+        quantity_delta_canonical,
+        canonical_uom,
+        uom_dimension,
+        unit_cost,
+        extended_cost,
+        reason_code,
+        line_notes,
+        created_at
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        $6,
+        $7,
+        $6,
+        $7,
+        'count',
+        $8,
+        $9,
+        'seed_receive',
+        'seed',
+        $10
+      )`,
+    [movementLineId, tenantId, movementId, itemId, locationId, quantity, uom, unitCost, quantity * unitCost, createdAt]
+  );
+  await db.query(
+    `INSERT INTO inventory_balance (
+        tenant_id, item_id, location_id, uom, on_hand, reserved, allocated, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $6)
+      ON CONFLICT (tenant_id, item_id, location_id, uom)
+      DO UPDATE SET on_hand = EXCLUDED.on_hand,
+                    reserved = EXCLUDED.reserved,
+                    allocated = EXCLUDED.allocated,
+                    updated_at = EXCLUDED.updated_at`,
+    [tenantId, itemId, locationId, uom, quantity, createdAt]
+  );
+  await db.query(
+    `INSERT INTO inventory_cost_layers (
+        id,
+        tenant_id,
+        item_id,
+        location_id,
+        uom,
+        layer_date,
+        layer_sequence,
+        original_quantity,
+        remaining_quantity,
+        unit_cost,
+        extended_cost,
+        source_type,
+        source_document_id,
+        movement_id,
+        notes,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        1,
+        $7,
+        $7,
+        $8,
+        $9,
+        'adjustment',
+        $10,
+        $11,
+        'seed',
+        $6,
+        $6
+      )`,
+    [layerId, tenantId, itemId, locationId, uom, createdAt, quantity, unitCost, quantity * unitCost, sourceDocumentId, movementId]
+  );
+}
+
 async function createReceipt({
   token,
   vendorId,
@@ -826,7 +956,6 @@ test('record-batch replay fails closed when authoritative movement lines drift',
   const token = session.accessToken;
   const tenantId = session.tenant.id;
   const db = session.pool;
-  const actorId = session.user?.id ?? null;
   const { defaults } = await ensureStandardWarehouse({
     token,
     apiRequest,
@@ -834,18 +963,16 @@ test('record-batch replay fails closed when authoritative movement lines drift',
   });
   const sellable = defaults.SELLABLE;
 
-  const vendorId = await createVendor(token);
   const componentItemId = await createItem(token, sellable.id, 'WO-BATCH-REPLAY-COMP');
   const fgItemId = await createItem(token, sellable.id, 'WO-BATCH-REPLAY-FG');
-  const receipt = await createReceipt({
-    token,
-    vendorId,
+  await seedPostedStock({
+    db,
+    tenantId,
     itemId: componentItemId,
     locationId: sellable.id,
     quantity: 6,
     unitCost: 4
   });
-  await qcAccept(token, receipt.lines[0].id, 6, actorId);
 
   const workOrderId = await createDisassemblyWorkOrder(token, {
     outputItemId: componentItemId,
@@ -922,7 +1049,6 @@ test('record-batch replay fails when WIP valuation ledger integrity is broken', 
   const token = session.accessToken;
   const tenantId = session.tenant.id;
   const db = session.pool;
-  const actorId = session.user?.id ?? null;
   const { defaults } = await ensureStandardWarehouse({
     token,
     apiRequest,
@@ -930,18 +1056,16 @@ test('record-batch replay fails when WIP valuation ledger integrity is broken', 
   });
   const sellable = defaults.SELLABLE;
 
-  const vendorId = await createVendor(token);
   const componentItemId = await createItem(token, sellable.id, 'WO-BATCH-WIP-COMP');
   const fgItemId = await createItem(token, sellable.id, 'WO-BATCH-WIP-FG');
-  const receipt = await createReceipt({
-    token,
-    vendorId,
+  await seedPostedStock({
+    db,
+    tenantId,
     itemId: componentItemId,
     locationId: sellable.id,
     quantity: 6,
     unitCost: 4
   });
-  await qcAccept(token, receipt.lines[0].id, 6, actorId);
 
   const workOrderId = await createDisassemblyWorkOrder(token, {
     outputItemId: componentItemId,

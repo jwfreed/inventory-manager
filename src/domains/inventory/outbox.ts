@@ -4,6 +4,7 @@ import {
   appendInventoryEventWithDispatch,
   getNextInventoryEventVersion
 } from '../../modules/platform/infrastructure/inventoryEvents';
+import { buildInventoryRegistryEvent } from '../../modules/platform/application/inventoryEventRegistry';
 
 export async function enqueueInventoryMovementPosted(
   client: PoolClient,
@@ -11,14 +12,20 @@ export async function enqueueInventoryMovementPosted(
   movementId: string,
   options?: { producerIdempotencyKey?: string | null }
 ) {
+  const event = buildInventoryRegistryEvent('inventoryMovementPosted', {
+    producerIdempotencyKey: options?.producerIdempotencyKey ?? null,
+    payload: { movementId }
+  });
   await appendInventoryEventWithDispatch(client, {
     tenantId,
-    aggregateType: 'inventory_movement',
-    aggregateId: movementId,
-    eventType: 'inventory.movement.posted',
-    eventVersion: 1,
-    payload: { movementId },
-    producerIdempotencyKey: options?.producerIdempotencyKey ?? null
+    aggregateType: event.aggregateType,
+    aggregateId: event.aggregateId,
+    aggregateIdSource: event.aggregateIdSource,
+    eventType: event.eventType,
+    eventVersion: event.eventVersion,
+    payload: event.payload,
+    producerIdempotencyKey: event.producerIdempotencyKey,
+    dispatch: event.dispatch
   });
 }
 
@@ -35,17 +42,24 @@ export async function enqueueInventoryReservationChanged(
     'inventory_reservation',
     reservationId
   );
-  await appendInventoryEventWithDispatch(client, {
-    tenantId,
-    aggregateType: 'inventory_reservation',
-    aggregateId: reservationId,
-    eventType: 'inventory.reservation.changed',
+  const event = buildInventoryRegistryEvent('inventoryReservationChanged', {
     eventVersion,
-    payload: { reservationId, ...payload },
     producerIdempotencyKey: options?.producerIdempotencyKey ?? null,
+    payload: { reservationId, ...payload },
     dispatch: {
       aggregateType: 'inventory_reservation_change',
       aggregateId: uuidv4()
     }
+  });
+  await appendInventoryEventWithDispatch(client, {
+    tenantId,
+    aggregateType: event.aggregateType,
+    aggregateId: event.aggregateId,
+    aggregateIdSource: event.aggregateIdSource,
+    eventType: event.eventType,
+    eventVersion: event.eventVersion,
+    payload: event.payload,
+    producerIdempotencyKey: event.producerIdempotencyKey,
+    dispatch: event.dispatch
   });
 }

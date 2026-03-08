@@ -1135,6 +1135,15 @@ router.post('/work-orders/:id/report-scrap', async (req: Request, res: Response)
         }
       });
     }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Replay repair detected corrupted authoritative work-order scrap movement state.',
+          details: error?.details
+        }
+      });
+    }
     if (error?.message?.startsWith('ITEM_CANONICAL_UOM') || error?.message?.startsWith('UOM_')) {
       return res.status(400).json({ error: error.message });
     }

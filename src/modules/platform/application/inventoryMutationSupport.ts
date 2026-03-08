@@ -6,6 +6,8 @@ import { toNumber } from '../../../lib/numbers';
 import type { InventoryCommandEvent, InventoryCommandProjectionOp } from './runInventoryCommand';
 import { buildInventoryRegistryEvent } from './inventoryEventRegistry';
 
+export const MOVEMENT_HASH_REQUIRED_AFTER_MIGRATION_TS = 1774900000000;
+
 export function buildMovementPostedEvent(
   movementId: string,
   producerIdempotencyKey?: string | null
@@ -86,12 +88,19 @@ export type MovementDeterministicHashLineInput = {
   itemId: string;
   locationId: string;
   quantityDelta: number | string;
-  uom: string;
-  quantityDeltaEntered?: number | string | null;
-  uomEntered?: string | null;
-  quantityDeltaCanonical?: number | string | null;
+  uom?: string | null;
   canonicalUom?: string | null;
+  unitCost?: number | string | null;
   reasonCode?: string | null;
+};
+
+export type MovementDeterministicHashInput = {
+  tenantId: string;
+  movementType: string;
+  occurredAt: Date | string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  lines: MovementDeterministicHashLineInput[];
 };
 
 export type AuthoritativeMovementReplayExpectation = {
@@ -104,10 +113,18 @@ type NormalizedMovementDeterministicHashLine = {
   itemId: string;
   locationId: string;
   canonicalUom: string;
-  quantityDeltaCanonical: string;
-  quantityDeltaEntered: string;
-  uomEntered: string;
+  quantityDelta: string;
+  unitCost: string | null;
   reasonCode: string;
+};
+
+type NormalizedMovementDeterministicHashEnvelope = {
+  tenantId: string;
+  movementType: string;
+  occurredAt: string;
+  sourceType: string;
+  sourceId: string;
+  lines: NormalizedMovementDeterministicHashLine[];
 };
 
 function normalizeMovementHashNumber(value: unknown): string {
@@ -124,14 +141,11 @@ function normalizeMovementDeterministicHashLine(
   return {
     itemId: line.itemId,
     locationId: line.locationId,
-    canonicalUom: line.canonicalUom ?? line.uom,
-    quantityDeltaCanonical: normalizeMovementHashNumber(
-      line.quantityDeltaCanonical ?? line.quantityDelta
-    ),
-    quantityDeltaEntered: normalizeMovementHashNumber(
-      line.quantityDeltaEntered ?? line.quantityDelta
-    ),
-    uomEntered: line.uomEntered ?? line.uom,
+    canonicalUom: line.canonicalUom ?? line.uom ?? '',
+    quantityDelta: normalizeMovementHashNumber(line.quantityDelta),
+    unitCost: line.unitCost === null || line.unitCost === undefined
+      ? null
+      : normalizeMovementHashNumber(line.unitCost),
     reasonCode: line.reasonCode ?? ''
   };
 }
@@ -144,23 +158,30 @@ function compareMovementDeterministicHashLine(
     left.itemId.localeCompare(right.itemId)
     || left.locationId.localeCompare(right.locationId)
     || left.canonicalUom.localeCompare(right.canonicalUom)
-    || left.quantityDeltaCanonical.localeCompare(right.quantityDeltaCanonical)
-    || left.quantityDeltaEntered.localeCompare(right.quantityDeltaEntered)
-    || left.uomEntered.localeCompare(right.uomEntered)
+    || left.quantityDelta.localeCompare(right.quantityDelta)
+    || String(left.unitCost ?? '').localeCompare(String(right.unitCost ?? ''))
     || left.reasonCode.localeCompare(right.reasonCode)
   );
 }
 
 export function buildMovementDeterministicHash(
-  lines: MovementDeterministicHashLineInput[]
+  input: MovementDeterministicHashInput
 ): string {
-  const normalizedLines = lines
+  const normalizedLines = input.lines
     .map(normalizeMovementDeterministicHashLine)
     .sort(compareMovementDeterministicHashLine);
-  return createHash('sha256').update(JSON.stringify(normalizedLines)).digest('hex');
+  const normalizedEnvelope: NormalizedMovementDeterministicHashEnvelope = {
+    tenantId: input.tenantId,
+    movementType: input.movementType,
+    occurredAt: new Date(input.occurredAt).toISOString(),
+    sourceType: input.sourceType?.trim() ?? '',
+    sourceId: input.sourceId?.trim() ?? '',
+    lines: normalizedLines
+  };
+  return createHash('sha256').update(JSON.stringify(normalizedEnvelope)).digest('hex');
 }
 
-function buildReplayCorruptionError(details: Record<string, unknown>) {
+export function buildReplayCorruptionError(details: Record<string, unknown>) {
   const error = new Error('REPLAY_CORRUPTION_DETECTED') as Error & {
     code?: string;
     details?: Record<string, unknown>;
@@ -170,43 +191,118 @@ function buildReplayCorruptionError(details: Record<string, unknown>) {
   return error;
 }
 
+type PersistedMovementDeterministicHashRow = {
+  created_at: Date | string;
+  movement_type: string;
+  occurred_at: Date | string;
+  source_type: string | null;
+  source_id: string | null;
+  movement_deterministic_hash: string | null;
+};
+
+type PersistedMovementDeterministicHashLineRow = MovementDeterministicHashLineInput;
+
+async function loadPersistedMovementDeterministicHashState(
+  client: PoolClient,
+  tenantId: string,
+  movementId: string
+) {
+  const movementResult = await client.query<PersistedMovementDeterministicHashRow>(
+    `SELECT created_at,
+            movement_type,
+            occurred_at,
+            source_type,
+            source_id,
+            movement_deterministic_hash
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND id = $2
+      LIMIT 1`,
+    [tenantId, movementId]
+  );
+  if ((movementResult.rowCount ?? 0) === 0) {
+    throw buildReplayCorruptionError({
+      tenantId,
+      movementId,
+      reason: 'authoritative_movement_missing'
+    });
+  }
+
+  const lineResult = await client.query<PersistedMovementDeterministicHashLineRow>(
+    `SELECT item_id AS "itemId",
+            location_id AS "locationId",
+            quantity_delta AS "quantityDelta",
+            uom,
+            canonical_uom AS "canonicalUom",
+            unit_cost AS "unitCost",
+            reason_code AS "reasonCode"
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2`,
+    [tenantId, movementId]
+  );
+
+  return {
+    movement: movementResult.rows[0],
+    lines: lineResult.rows,
+    lineCount: lineResult.rowCount ?? 0
+  };
+}
+
+function computePersistedMovementDeterministicHash(params: {
+  tenantId: string;
+  movement: PersistedMovementDeterministicHashRow;
+  lines: PersistedMovementDeterministicHashLineRow[];
+}) {
+  return buildMovementDeterministicHash({
+    tenantId: params.tenantId,
+    movementType: params.movement.movement_type,
+    occurredAt: params.movement.occurred_at,
+    sourceType: params.movement.source_type,
+    sourceId: params.movement.source_id,
+    lines: params.lines
+  });
+}
+
+export async function persistMovementDeterministicHashFromLedger(
+  client: PoolClient,
+  tenantId: string,
+  movementId: string
+) {
+  const state = await loadPersistedMovementDeterministicHashState(client, tenantId, movementId);
+  if (state.lineCount === 0) {
+    throw buildReplayCorruptionError({
+      tenantId,
+      movementId,
+      reason: 'authoritative_movement_missing_lines'
+    });
+  }
+  const movementDeterministicHash = computePersistedMovementDeterministicHash({
+    tenantId,
+    movement: state.movement,
+    lines: state.lines
+  });
+  await client.query(
+    `UPDATE inventory_movements
+        SET movement_deterministic_hash = $3
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, movementId, movementDeterministicHash]
+  );
+  return movementDeterministicHash;
+}
+
 async function verifyAuthoritativeMovementReplayIntegrity(
   client: PoolClient,
   tenantId: string,
   expectation: AuthoritativeMovementReplayExpectation
 ) {
-  const movementResult = await client.query<{ movement_deterministic_hash: string | null }>(
-    `SELECT movement_deterministic_hash
-       FROM inventory_movements
-      WHERE tenant_id = $1
-        AND id = $2
-      LIMIT 1`,
-    [tenantId, expectation.movementId]
+  const state = await loadPersistedMovementDeterministicHashState(
+    client,
+    tenantId,
+    expectation.movementId
   );
-  if ((movementResult.rowCount ?? 0) === 0) {
-    throw buildReplayCorruptionError({
-      tenantId,
-      movementId: expectation.movementId,
-      reason: 'authoritative_movement_missing'
-    });
-  }
-
-  const lineResult = await client.query<MovementDeterministicHashLineInput>(
-    `SELECT item_id AS "itemId",
-            location_id AS "locationId",
-            quantity_delta AS "quantityDelta",
-            uom,
-            quantity_delta_entered AS "quantityDeltaEntered",
-            uom_entered AS "uomEntered",
-            quantity_delta_canonical AS "quantityDeltaCanonical",
-            canonical_uom AS "canonicalUom",
-            reason_code AS "reasonCode"
-       FROM inventory_movement_lines
-      WHERE tenant_id = $1
-        AND movement_id = $2`,
-    [tenantId, expectation.movementId]
-  );
-  if ((lineResult.rowCount ?? 0) === 0) {
+  if (state.lineCount === 0) {
     throw buildReplayCorruptionError({
       tenantId,
       movementId: expectation.movementId,
@@ -214,7 +310,7 @@ async function verifyAuthoritativeMovementReplayIntegrity(
     });
   }
 
-  const lineCount = lineResult.rowCount ?? 0;
+  const lineCount = state.lineCount;
   if (
     typeof expectation.expectedLineCount === 'number'
     && expectation.expectedLineCount !== lineCount
@@ -228,8 +324,25 @@ async function verifyAuthoritativeMovementReplayIntegrity(
     });
   }
 
-  const computedDeterministicHash = buildMovementDeterministicHash(lineResult.rows);
-  const storedDeterministicHash = movementResult.rows[0]?.movement_deterministic_hash ?? null;
+  const storedDeterministicHash = state.movement.movement_deterministic_hash ?? null;
+  const movementCreatedAtMs = new Date(state.movement.created_at).getTime();
+  if (
+    movementCreatedAtMs >= MOVEMENT_HASH_REQUIRED_AFTER_MIGRATION_TS
+    && !storedDeterministicHash
+  ) {
+    throw buildReplayCorruptionError({
+      tenantId,
+      movementId: expectation.movementId,
+      reason: 'authoritative_movement_hash_missing_post_migration',
+      createdAt: new Date(state.movement.created_at).toISOString()
+    });
+  }
+
+  const computedDeterministicHash = computePersistedMovementDeterministicHash({
+    tenantId,
+    movement: state.movement,
+    lines: state.lines
+  });
   if (storedDeterministicHash && storedDeterministicHash !== computedDeterministicHash) {
     throw buildReplayCorruptionError({
       tenantId,

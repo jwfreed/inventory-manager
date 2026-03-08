@@ -23,10 +23,14 @@ import {
   workOrderReportScrapSchema,
   workOrderVoidReportProductionSchema
 } from '../schemas/workOrderExecution.schema';
-import { transferInventory } from './transfers.service';
 import {
-  claimTransactionalIdempotency,
-  finalizeTransactionalIdempotency,
+  buildTransferLockTargets,
+  buildTransferReplayResult,
+  executeTransferInventoryMutation,
+  prepareTransferMutation,
+  type PreparedTransferMutation
+} from './transfers.service';
+import {
   hashTransactionalIdempotencyRequest
 } from '../lib/transactionalIdempotency';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
@@ -37,9 +41,10 @@ import {
 } from '../modules/platform/application/runInventoryCommand';
 import {
   buildInventoryBalanceProjectionOp,
-  buildMovementDeterministicHash,
+  buildReplayCorruptionError,
   buildMovementPostedEvent,
   buildPostedDocumentReplayResult,
+  persistMovementDeterministicHashFromLedger,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
@@ -1545,19 +1550,6 @@ export async function postWorkOrderIssue(
         canonicalUom: entry.canonicalFields.canonicalUom,
         sourceLineId: entry.sourceLineId
       }));
-      const movementDeterministicHash = buildMovementDeterministicHash(
-        sortedMovementLines.map((entry) => ({
-          itemId: entry.line.component_item_id,
-          locationId: entry.line.from_location_id,
-          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
-          uom: entry.canonicalFields.canonicalUom,
-          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
-          uomEntered: entry.canonicalFields.uomEntered,
-          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: entry.canonicalFields.canonicalUom,
-          reasonCode: entry.reasonCode
-        }))
-      );
       if (issueState === 'posted_issue') {
         return buildWorkOrderIssueReplayResult({
           tenantId,
@@ -1565,7 +1557,6 @@ export async function postWorkOrderIssue(
           issueId,
           movementId: issue.inventory_movement_id!,
           expectedLineCount: sortedMovementLines.length,
-          expectedDeterministicHash: movementDeterministicHash,
           client
         });
       }
@@ -1621,7 +1612,6 @@ export async function postWorkOrderIssue(
           workOrderNumber,
           ...(validation.overrideMetadata ?? {})
         },
-        movementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -1633,7 +1623,6 @@ export async function postWorkOrderIssue(
           issueId,
           movementId: movement.id,
           expectedLineCount: sortedMovementLines.length,
-          expectedDeterministicHash: movementDeterministicHash,
           client
         });
       }
@@ -1690,6 +1679,7 @@ export async function postWorkOrderIssue(
           })
         );
       }
+      await persistMovementDeterministicHashFromLedger(client, tenantId, movement.id);
 
       await createWorkOrderWipValuationRecord(client, {
         tenantId,
@@ -2028,19 +2018,6 @@ export async function postWorkOrderCompletion(
         canonicalUom: entry.canonicalFields.canonicalUom,
         sourceLineId: entry.sourceLineId
       }));
-      const movementDeterministicHash = buildMovementDeterministicHash(
-        sortedMovementLines.map((entry) => ({
-          itemId: entry.line.item_id,
-          locationId: entry.line.to_location_id!,
-          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
-          uom: entry.canonicalFields.canonicalUom,
-          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
-          uomEntered: entry.canonicalFields.uomEntered,
-          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: entry.canonicalFields.canonicalUom,
-          reasonCode: entry.reasonCode
-        }))
-      );
       if (completionState === 'posted_completion') {
         return buildWorkOrderCompletionReplayResult({
           tenantId,
@@ -2048,7 +2025,6 @@ export async function postWorkOrderCompletion(
           completionId,
           movementId: execution.production_movement_id!,
           expectedLineCount: sortedMovementLines.length,
-          expectedDeterministicHash: movementDeterministicHash,
           client
         });
       }
@@ -2082,7 +2058,6 @@ export async function postWorkOrderCompletion(
           workOrderId,
           workOrderNumber: workOrder.number ?? workOrder.work_order_number
         },
-        movementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -2094,7 +2069,6 @@ export async function postWorkOrderCompletion(
           completionId,
           movementId: movement.id,
           expectedLineCount: sortedMovementLines.length,
-          expectedDeterministicHash: movementDeterministicHash,
           client
         });
       }
@@ -2161,6 +2135,7 @@ export async function postWorkOrderCompletion(
           })
         );
       }
+      await persistMovementDeterministicHashFromLedger(client, tenantId, movement.id);
 
       const completionUomSet = new Set(
         sortedMovementLines.map((line) => line.canonicalFields.canonicalUom)
@@ -3382,20 +3357,6 @@ export async function voidWorkOrderProductionReport(
           sourceLineId: entry.sourceLineId
         })
       );
-      const outputMovementDeterministicHash = buildMovementDeterministicHash(
-        plannedOutputLines.map((entry) => ({
-          itemId: entry.line.item_id,
-          locationId: entry.line.location_id,
-          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
-          uom: entry.canonicalFields.canonicalUom,
-          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
-          uomEntered: entry.canonicalFields.uomEntered,
-          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: entry.canonicalFields.canonicalUom,
-          reasonCode: entry.reasonCode
-        }))
-      );
-
       const plannedComponentLines = sortDeterministicMovementLines(
         await Promise.all(componentLines.map(async (line) => {
           const quantityToReturn = Math.abs(roundQuantity(toNumber(line.qty_canonical)));
@@ -3424,20 +3385,6 @@ export async function voidWorkOrderProductionReport(
           sourceLineId: entry.sourceLineId
         })
       );
-      const componentMovementDeterministicHash = buildMovementDeterministicHash(
-        plannedComponentLines.map((entry) => ({
-          itemId: entry.line.item_id,
-          locationId: entry.line.location_id,
-          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
-          uom: entry.canonicalFields.canonicalUom,
-          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
-          uomEntered: entry.canonicalFields.uomEntered,
-          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: entry.canonicalFields.canonicalUom,
-          reasonCode: entry.reasonCode
-        }))
-      );
-
       const existingPair = await fetchVoidMovementPair(client, tenantId, execution.id);
       if (existingPair) {
         return buildWorkOrderVoidReplayResult({
@@ -3448,8 +3395,6 @@ export async function voidWorkOrderProductionReport(
           outputReversalMovementId: existingPair.outputReversalMovementId,
           expectedComponentLineCount: plannedComponentLines.length,
           expectedOutputLineCount: plannedOutputLines.length,
-          expectedComponentDeterministicHash: componentMovementDeterministicHash,
-          expectedOutputDeterministicHash: outputMovementDeterministicHash,
           client,
           idempotencyKey
         });
@@ -3475,7 +3420,6 @@ export async function voidWorkOrderProductionReport(
           workOrderExecutionId: execution.id,
           reason
         },
-        movementDeterministicHash: outputMovementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -3496,7 +3440,6 @@ export async function voidWorkOrderProductionReport(
           workOrderExecutionId: execution.id,
           reason
         },
-        movementDeterministicHash: componentMovementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -3512,8 +3455,6 @@ export async function voidWorkOrderProductionReport(
             outputReversalMovementId: replayPair.outputReversalMovementId,
             expectedComponentLineCount: plannedComponentLines.length,
             expectedOutputLineCount: plannedOutputLines.length,
-            expectedComponentDeterministicHash: componentMovementDeterministicHash,
-            expectedOutputDeterministicHash: outputMovementDeterministicHash,
             client,
             idempotencyKey
           });
@@ -3615,6 +3556,8 @@ export async function voidWorkOrderProductionReport(
           client
         });
       }
+      await persistMovementDeterministicHashFromLedger(client, tenantId, outputMovementId);
+      await persistMovementDeterministicHashFromLedger(client, tenantId, componentMovementId);
 
       const originalValuationRecords = await loadWorkOrderWipValuationRecordsByMovementIds(
         client,
@@ -3713,6 +3656,9 @@ export async function reportWorkOrderScrap(
   }
   const reasonCode = assertScrapReasonCode(data.reasonCode);
   const idempotencyKey = normalizedOptionalIdempotencyKey(options?.idempotencyKey ?? data.idempotencyKey ?? null);
+  const scrapSourceId = idempotencyKey
+    ? `idempotency:${idempotencyKey}`
+    : `execution:${data.workOrderExecutionId}:scrap:${uuidv4()}`;
   const occurredAtForHash = data.occurredAt ? new Date(data.occurredAt).toISOString() : null;
   const idempotencyRequestHash = idempotencyKey
     ? hashTransactionalIdempotencyRequest({
@@ -3731,160 +3677,264 @@ export async function reportWorkOrderScrap(
     })
     : null;
 
-  return withTransactionRetry(async (client) => {
-    if (idempotencyKey && idempotencyRequestHash) {
-      const claim = await claimTransactionalIdempotency<WorkOrderScrapReportResult>(client, {
-        tenantId,
-        key: idempotencyKey,
-        endpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_REPORT_SCRAP,
-        requestHash: idempotencyRequestHash
-      });
-      if (claim.replayed) {
-        return {
-          ...claim.responseBody,
-          idempotencyKey,
-          replayed: true
-        };
+  let execution: LockedExecutionRow | null = null;
+  let itemId = '';
+  let sourceLocationId = '';
+  let warehouseId = '';
+  let scrapLocationId = '';
+  let preparedTransfer: PreparedTransferMutation | null = null;
+
+  return runInventoryCommand<WorkOrderScrapReportResult>({
+    tenantId,
+    endpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_REPORT_SCRAP,
+    operation: 'work_order_report_scrap',
+    idempotencyKey,
+    requestHash: idempotencyRequestHash,
+    retryOptions: WORK_ORDER_POST_RETRY_OPTIONS,
+    onReplay: async ({ client, responseBody }) => {
+      const executionRes = await client.query<LockedExecutionRow>(
+        `SELECT id,
+                work_order_id,
+                status,
+                occurred_at,
+                consumption_movement_id,
+                production_movement_id
+           FROM work_order_executions
+          WHERE tenant_id = $1
+            AND id = $2
+            AND work_order_id = $3
+          FOR UPDATE`,
+        [tenantId, responseBody.workOrderExecutionId, workOrderId]
+      );
+      if (executionRes.rowCount === 0) {
+        throw buildReplayCorruptionError({
+          tenantId,
+          aggregateType: 'work_order_execution',
+          aggregateId: responseBody.workOrderExecutionId,
+          reason: 'work_order_scrap_execution_missing'
+        });
       }
-    }
+      const currentExecution = executionRes.rows[0];
+      if (!currentExecution.production_movement_id) {
+        throw buildReplayCorruptionError({
+          tenantId,
+          aggregateType: 'work_order_execution',
+          aggregateId: responseBody.workOrderExecutionId,
+          reason: 'work_order_scrap_execution_movement_missing'
+        });
+      }
 
-    const executionRes = await client.query<LockedExecutionRow>(
-      `SELECT id,
-              work_order_id,
-              status,
-              occurred_at,
-              consumption_movement_id,
-              production_movement_id
-         FROM work_order_executions
-        WHERE tenant_id = $1
-          AND id = $2
-          AND work_order_id = $3
-        FOR UPDATE`,
-      [tenantId, data.workOrderExecutionId, workOrderId]
-    );
-    if (executionRes.rowCount === 0) {
-      throw new Error('WO_SCRAP_EXECUTION_NOT_FOUND');
-    }
-    const execution = executionRes.rows[0];
-    assertSameWorkOrderExecution(workOrderId, execution);
-    if (execution.status !== 'posted' || !execution.production_movement_id) {
-      throw new Error('WO_SCRAP_EXECUTION_NOT_POSTED');
-    }
-
-    const outputItemRes = await client.query<{ output_item_id: string }>(
-      `SELECT output_item_id
-         FROM work_orders
-        WHERE tenant_id = $1
-          AND id = $2`,
-      [tenantId, workOrderId]
-    );
-    if (outputItemRes.rowCount === 0) {
-      throw new Error('WO_NOT_FOUND');
-    }
-    const outputItemId = outputItemRes.rows[0].output_item_id;
-    const itemId = data.outputItemId ?? outputItemId;
-    if (itemId !== outputItemId) {
-      throw new Error('WO_SCRAP_OUTPUT_ITEM_MISMATCH');
-    }
-
-    const qaSourceRows = await client.query<{
-      location_id: string;
-      warehouse_id: string | null;
-      role: string | null;
-      total_qty: string | number;
-    }>(
-      `SELECT iml.location_id,
-              l.warehouse_id,
-              l.role,
-              SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta))::numeric AS total_qty
-         FROM inventory_movement_lines iml
-         JOIN locations l
-           ON l.id = iml.location_id
-          AND l.tenant_id = iml.tenant_id
-        WHERE iml.tenant_id = $1
-          AND iml.movement_id = $2
-          AND iml.item_id = $3
-          AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
-        GROUP BY iml.location_id, l.warehouse_id, l.role
-       HAVING l.role = 'QA'`,
-      [tenantId, execution.production_movement_id, itemId]
-    );
-    if (qaSourceRows.rowCount !== 1) {
-      throw new Error('WO_SCRAP_QA_SOURCE_AMBIGUOUS');
-    }
-    const qaSource = qaSourceRows.rows[0];
-    if (!qaSource.warehouse_id) {
-      throw new Error('WO_SCRAP_QA_SOURCE_WAREHOUSE_MISSING');
-    }
-    const sourceLocationId = qaSource.location_id;
-    const warehouseId = qaSource.warehouse_id;
-    const scrapLocationId = await getWarehouseDefaultLocationId(tenantId, warehouseId, 'SCRAP', client);
-    if (!scrapLocationId) {
-      throw new Error('WO_SCRAP_LOCATION_REQUIRED');
-    }
-
-    const availableRes = await client.query<{ qty: string | number }>(
-      `SELECT COALESCE(SUM(remaining_quantity), 0)::numeric AS qty
-         FROM inventory_cost_layers
-        WHERE tenant_id = $1
-          AND movement_id = $2
-          AND source_type = 'production'
-          AND item_id = $3
-          AND location_id = $4
-          AND voided_at IS NULL`,
-      [tenantId, execution.production_movement_id, itemId, sourceLocationId]
-    );
-    const availableQty = roundQuantity(toNumber(availableRes.rows[0]?.qty ?? 0));
-    if (quantity - availableQty > 1e-6) {
-      throw domainError('WO_SCRAP_EXCEEDS_EXECUTION_QA_AVAILABLE', {
-        workOrderExecutionId: execution.id,
-        itemId,
-        requestedQty: quantity,
-        availableQty
-      });
-    }
-
-    const sourceId = idempotencyKey ? `idempotency:${idempotencyKey}` : `execution:${execution.id}:${uuidv4()}`;
-    const transfer = await transferInventory(
-      {
+      const qaSourceRows = await client.query<{
+        location_id: string;
+        warehouse_id: string | null;
+      }>(
+        `SELECT iml.location_id,
+                l.warehouse_id
+           FROM inventory_movement_lines iml
+           JOIN locations l
+             ON l.id = iml.location_id
+            AND l.tenant_id = iml.tenant_id
+          WHERE iml.tenant_id = $1
+            AND iml.movement_id = $2
+            AND iml.item_id = $3
+            AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+            AND l.role = 'QA'
+          GROUP BY iml.location_id, l.warehouse_id`,
+        [tenantId, currentExecution.production_movement_id, responseBody.itemId]
+      );
+      if (qaSourceRows.rowCount !== 1 || !qaSourceRows.rows[0]?.warehouse_id) {
+        throw buildReplayCorruptionError({
+          tenantId,
+          aggregateType: 'work_order_execution',
+          aggregateId: responseBody.workOrderExecutionId,
+          reason: 'work_order_scrap_replay_scope_unresolved'
+        });
+      }
+      const replaySourceLocationId = qaSourceRows.rows[0].location_id;
+      const replayWarehouseId = qaSourceRows.rows[0].warehouse_id;
+      const replayScrapLocationId = await getWarehouseDefaultLocationId(
         tenantId,
-        sourceLocationId,
-        destinationLocationId: scrapLocationId,
-        itemId,
-        quantity,
-        uom: data.uom,
-        sourceType: WORK_ORDER_SCRAP_SOURCE_TYPE,
-        sourceId,
-        movementType: 'transfer',
-        reasonCode,
-        notes: data.notes ?? `Work-order scrap for execution ${execution.id}`,
-        occurredAt,
-        actorId: actor.id ?? null,
-        idempotencyKey
-      },
-      client
-    );
+        replayWarehouseId,
+        'SCRAP',
+        client
+      );
+      if (!replayScrapLocationId) {
+        throw buildReplayCorruptionError({
+          tenantId,
+          aggregateType: 'work_order_execution',
+          aggregateId: responseBody.workOrderExecutionId,
+          reason: 'work_order_scrap_location_missing'
+        });
+      }
 
-    const response: WorkOrderScrapReportResult = {
-      workOrderId,
-      workOrderExecutionId: execution.id,
-      scrapMovementId: transfer.movementId,
-      itemId,
-      quantity,
-      uom: data.uom,
-      idempotencyKey,
-      replayed: !transfer.created
-    };
-    if (idempotencyKey) {
-      await finalizeTransactionalIdempotency(client, {
+      await buildTransferReplayResult({
         tenantId,
-        key: idempotencyKey,
-        responseStatus: response.replayed ? 200 : 201,
-        responseBody: response
+        movementId: responseBody.scrapMovementId,
+        normalizedIdempotencyKey: idempotencyKey ? `${idempotencyKey}:transfer` : null,
+        replayed: true,
+        client,
+        sourceLocationId: replaySourceLocationId,
+        destinationLocationId: replayScrapLocationId,
+        itemId: responseBody.itemId,
+        quantity: responseBody.quantity,
+        uom: responseBody.uom,
+        sourceWarehouseId: replayWarehouseId,
+        destinationWarehouseId: replayWarehouseId,
+        expectedLineCount: 2
       });
+      return {
+        ...responseBody,
+        replayed: true
+      };
+    },
+    lockTargets: async (client) => {
+      execution = null;
+      itemId = '';
+      sourceLocationId = '';
+      warehouseId = '';
+      scrapLocationId = '';
+      preparedTransfer = null;
+
+      const executionRes = await client.query<LockedExecutionRow>(
+        `SELECT id,
+                work_order_id,
+                status,
+                occurred_at,
+                consumption_movement_id,
+                production_movement_id
+           FROM work_order_executions
+          WHERE tenant_id = $1
+            AND id = $2
+            AND work_order_id = $3
+          FOR UPDATE`,
+        [tenantId, data.workOrderExecutionId, workOrderId]
+      );
+      if (executionRes.rowCount === 0) {
+        throw new Error('WO_SCRAP_EXECUTION_NOT_FOUND');
+      }
+      execution = executionRes.rows[0];
+      assertSameWorkOrderExecution(workOrderId, execution);
+      if (execution.status !== 'posted' || !execution.production_movement_id) {
+        throw new Error('WO_SCRAP_EXECUTION_NOT_POSTED');
+      }
+
+      const outputItemRes = await client.query<{ output_item_id: string }>(
+        `SELECT output_item_id
+           FROM work_orders
+          WHERE tenant_id = $1
+            AND id = $2`,
+        [tenantId, workOrderId]
+      );
+      if (outputItemRes.rowCount === 0) {
+        throw new Error('WO_NOT_FOUND');
+      }
+      const outputItemId = outputItemRes.rows[0].output_item_id;
+      itemId = data.outputItemId ?? outputItemId;
+      if (itemId !== outputItemId) {
+        throw new Error('WO_SCRAP_OUTPUT_ITEM_MISMATCH');
+      }
+
+      const qaSourceRows = await client.query<{
+        location_id: string;
+        warehouse_id: string | null;
+        role: string | null;
+        total_qty: string | number;
+      }>(
+        `SELECT iml.location_id,
+                l.warehouse_id,
+                l.role,
+                SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta))::numeric AS total_qty
+           FROM inventory_movement_lines iml
+           JOIN locations l
+             ON l.id = iml.location_id
+            AND l.tenant_id = iml.tenant_id
+          WHERE iml.tenant_id = $1
+            AND iml.movement_id = $2
+            AND iml.item_id = $3
+            AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
+          GROUP BY iml.location_id, l.warehouse_id, l.role
+         HAVING l.role = 'QA'`,
+        [tenantId, execution.production_movement_id, itemId]
+      );
+      if (qaSourceRows.rowCount !== 1) {
+        throw new Error('WO_SCRAP_QA_SOURCE_AMBIGUOUS');
+      }
+      const qaSource = qaSourceRows.rows[0];
+      if (!qaSource.warehouse_id) {
+        throw new Error('WO_SCRAP_QA_SOURCE_WAREHOUSE_MISSING');
+      }
+      sourceLocationId = qaSource.location_id;
+      warehouseId = qaSource.warehouse_id;
+      scrapLocationId = await getWarehouseDefaultLocationId(tenantId, warehouseId, 'SCRAP', client);
+      if (!scrapLocationId) {
+        throw new Error('WO_SCRAP_LOCATION_REQUIRED');
+      }
+
+      const availableRes = await client.query<{ qty: string | number }>(
+        `SELECT COALESCE(SUM(remaining_quantity), 0)::numeric AS qty
+           FROM inventory_cost_layers
+          WHERE tenant_id = $1
+            AND movement_id = $2
+            AND source_type = 'production'
+            AND item_id = $3
+            AND location_id = $4
+            AND voided_at IS NULL`,
+        [tenantId, execution.production_movement_id, itemId, sourceLocationId]
+      );
+      const availableQty = roundQuantity(toNumber(availableRes.rows[0]?.qty ?? 0));
+      if (quantity - availableQty > 1e-6) {
+        throw domainError('WO_SCRAP_EXCEEDS_EXECUTION_QA_AVAILABLE', {
+          workOrderExecutionId: execution.id,
+          itemId,
+          requestedQty: quantity,
+          availableQty
+        });
+      }
+
+      preparedTransfer = await prepareTransferMutation(
+        {
+          tenantId,
+          sourceLocationId,
+          destinationLocationId: scrapLocationId,
+          warehouseId,
+          itemId,
+          quantity,
+          uom: data.uom,
+          sourceType: WORK_ORDER_SCRAP_SOURCE_TYPE,
+          sourceId: scrapSourceId,
+          movementType: 'transfer',
+          reasonCode,
+          notes: data.notes ?? `Work-order scrap for execution ${execution.id}`,
+          occurredAt,
+          actorId: actor.id ?? null,
+          idempotencyKey: idempotencyKey ? `${idempotencyKey}:transfer` : null
+        },
+        client
+      );
+      return buildTransferLockTargets(preparedTransfer);
+    },
+    execute: async ({ client }) => {
+      if (!execution || !preparedTransfer || !itemId || !sourceLocationId || !scrapLocationId || !warehouseId) {
+        throw new Error('WO_SCRAP_PREPARE_REQUIRED');
+      }
+      const transferExecution = await executeTransferInventoryMutation(preparedTransfer, client);
+      return {
+        responseBody: {
+          workOrderId,
+          workOrderExecutionId: execution.id,
+          scrapMovementId: transferExecution.result.movementId,
+          itemId,
+          quantity,
+          uom: data.uom,
+          idempotencyKey,
+          replayed: !transferExecution.result.created
+        },
+        responseStatus: transferExecution.result.created ? 201 : 200,
+        events: transferExecution.events,
+        projectionOps: transferExecution.projectionOps
+      };
     }
-    return response;
-  }, WORK_ORDER_POST_RETRY_OPTIONS);
+  });
 }
 
 export async function recordWorkOrderBatch(
@@ -4157,19 +4207,6 @@ export async function recordWorkOrderBatch(
         canonicalUom: entry.canonicalFields.canonicalUom,
         sourceLineId: entry.sourceLineId
       }));
-      const issueMovementDeterministicHash = buildMovementDeterministicHash(
-        sortedConsumes.map((entry) => ({
-          itemId: entry.line.componentItemId,
-          locationId: entry.line.fromLocationId,
-          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
-          uom: entry.canonicalFields.canonicalUom,
-          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
-          uomEntered: entry.canonicalFields.uomEntered,
-          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: entry.canonicalFields.canonicalUom,
-          reasonCode: entry.reasonCode
-        }))
-      );
 
       const preparedProduces: Array<{
         sourceLineId: string;
@@ -4206,19 +4243,6 @@ export async function recordWorkOrderBatch(
         canonicalUom: entry.canonicalFields.canonicalUom,
         sourceLineId: entry.sourceLineId
       }));
-      const receiveMovementDeterministicHash = buildMovementDeterministicHash(
-        sortedProduces.map((entry) => ({
-          itemId: entry.line.outputItemId,
-          locationId: entry.line.toLocationId,
-          quantityDelta: entry.canonicalFields.quantityDeltaCanonical,
-          uom: entry.canonicalFields.canonicalUom,
-          quantityDeltaEntered: entry.canonicalFields.quantityDeltaEntered,
-          uomEntered: entry.canonicalFields.uomEntered,
-          quantityDeltaCanonical: entry.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: entry.canonicalFields.canonicalUom,
-          reasonCode: entry.reasonCode
-        }))
-      );
       if (existingBatchReplay) {
         return buildWorkOrderBatchReplayResult({
           tenantId,
@@ -4228,8 +4252,6 @@ export async function recordWorkOrderBatch(
           receiveMovementId: existingBatchReplay.receiveMovementId,
           expectedIssueLineCount: sortedConsumes.length,
           expectedReceiveLineCount: sortedProduces.length,
-          expectedIssueDeterministicHash: issueMovementDeterministicHash,
-          expectedReceiveDeterministicHash: receiveMovementDeterministicHash,
           client,
           idempotencyKey: batchIdempotencyKey
         });
@@ -4288,7 +4310,6 @@ export async function recordWorkOrderBatch(
           workOrderNumber,
           ...(validation.overrideMetadata ?? {})
         },
-        movementDeterministicHash: issueMovementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -4309,7 +4330,6 @@ export async function recordWorkOrderBatch(
         postedAt: now,
         notes: data.notes ?? null,
         metadata: { workOrderId, workOrderNumber },
-        movementDeterministicHash: receiveMovementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -4331,8 +4351,6 @@ export async function recordWorkOrderBatch(
               receiveMovementId: replay.receiveMovementId,
               expectedIssueLineCount: sortedConsumes.length,
               expectedReceiveLineCount: sortedProduces.length,
-              expectedIssueDeterministicHash: issueMovementDeterministicHash,
-              expectedReceiveDeterministicHash: receiveMovementDeterministicHash,
               client,
               idempotencyKey: batchIdempotencyKey
             });
@@ -4542,6 +4560,8 @@ export async function recordWorkOrderBatch(
           })
         );
       }
+      await persistMovementDeterministicHashFromLedger(client, tenantId, issueMovementId);
+      await persistMovementDeterministicHashFromLedger(client, tenantId, receiveMovementId);
 
       await createWorkOrderWipValuationRecord(client, {
         tenantId,

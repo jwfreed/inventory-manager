@@ -22,6 +22,8 @@ const EVENT_APPEND_SOURCE = path.resolve(
 const LICENSE_PLATES_SERVICE = path.resolve(process.cwd(), 'src/services/licensePlates.service.ts');
 const COUNTS_SERVICE = path.resolve(process.cwd(), 'src/services/counts.service.ts');
 const ADJUSTMENTS_POSTING_SERVICE = path.resolve(process.cwd(), 'src/services/adjustments/posting.service.ts');
+const TRANSFERS_SERVICE = path.resolve(process.cwd(), 'src/services/transfers.service.ts');
+const QC_SERVICE = path.resolve(process.cwd(), 'src/services/qc.service.ts');
 const WORK_ORDER_EXECUTION_SERVICE = path.resolve(
   process.cwd(),
   'src/services/workOrderExecution.service.ts'
@@ -114,11 +116,15 @@ function extractFunctionBody(source, functionName) {
 }
 
 const DAG_NODES = [
+  { file: TRANSFERS_SERVICE, functionName: 'transferInventory', label: 'transferInventory' },
+  { file: TRANSFERS_SERVICE, functionName: 'voidTransferMovement', label: 'voidTransferMovement' },
+  { file: QC_SERVICE, functionName: 'createQcEvent', label: 'createQcEvent' },
   { file: LICENSE_PLATES_SERVICE, functionName: 'moveLicensePlate', label: 'moveLicensePlate' },
   { file: COUNTS_SERVICE, functionName: 'postInventoryCount', label: 'postInventoryCount' },
   { file: ADJUSTMENTS_POSTING_SERVICE, functionName: 'postInventoryAdjustment', label: 'postInventoryAdjustment' },
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'postWorkOrderIssue', label: 'postWorkOrderIssue' },
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'postWorkOrderCompletion', label: 'postWorkOrderCompletion' },
+  { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'reportWorkOrderScrap', label: 'reportWorkOrderScrap' },
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'recordWorkOrderBatch', label: 'recordWorkOrderBatch' },
   {
     file: WORK_ORDER_EXECUTION_SERVICE,
@@ -183,37 +189,38 @@ test('migrated mutation entrypoints do not create authoritative movement rows ou
   }
 });
 
-test('license plate and manufacturing movement lines are deterministic and replay from authoritative movements', async () => {
-  const [licenseSource, workOrderSource] = await Promise.all([
+test('migrated movement writers persist deterministic hashes from authoritative movements', async () => {
+  const [transferSource, licenseSource, workOrderSource] = await Promise.all([
+    readFile(TRANSFERS_SERVICE, 'utf8'),
     readFile(LICENSE_PLATES_SERVICE, 'utf8'),
     readFile(WORK_ORDER_EXECUTION_SERVICE, 'utf8')
   ]);
 
-  for (const functionName of [
-    'moveLicensePlate',
-    'postWorkOrderIssue',
-    'postWorkOrderCompletion',
-    'recordWorkOrderBatch',
-    'voidWorkOrderProductionReport'
+  for (const [source, functionName] of [
+    [transferSource, 'executeTransferInventoryMutation'],
+    [transferSource, 'voidTransferMovement'],
+    [licenseSource, 'moveLicensePlate'],
+    [workOrderSource, 'postWorkOrderIssue'],
+    [workOrderSource, 'postWorkOrderCompletion'],
+    [workOrderSource, 'recordWorkOrderBatch'],
+    [workOrderSource, 'voidWorkOrderProductionReport']
   ]) {
-    const source =
-      functionName === 'moveLicensePlate'
-        ? licenseSource
-        : workOrderSource;
     const body = extractFunctionBody(source, functionName);
+    if (/\bsortDeterministicMovementLines\(/.test(body)) {
+      assert.match(
+        body,
+        /\bsortDeterministicMovementLines\(/,
+        `${functionName} must create movement lines in deterministic order`
+      );
+    }
     assert.match(
       body,
-      /\bsortDeterministicMovementLines\(/,
-      `${functionName} must create movement lines in deterministic order`
+      /\bpersistMovementDeterministicHashFromLedger\(|\bbuildMovementDeterministicHash\(/,
+      `${functionName} must persist a deterministic movement hash`
     );
     assert.match(
       body,
-      /\bbuildMovementDeterministicHash\(/,
-      `${functionName} must compute a deterministic movement hash before movement insert`
-    );
-    assert.match(
-      body,
-      /\bbuildInventoryBalanceProjectionOp\(/,
+      /\bbuildInventoryBalanceProjectionOp\(|\bbuildTransferReversalBalanceProjectionOp\(/,
       `${functionName} must express inventory_balance compatibility writes through projection ops`
     );
   }
@@ -222,6 +229,11 @@ test('license plate and manufacturing movement lines are deterministic and repla
     licenseSource,
     /\bbuildPostedDocumentReplayResult\(/,
     'license plate replay handling must rebuild from authoritative movement readiness'
+  );
+  assert.match(
+    transferSource,
+    /\bbuildTransferReplayResult\(/,
+    'transfer replay handling must rebuild from authoritative movement readiness'
   );
   for (const helperName of [
     'buildWorkOrderIssueReplayResult',
@@ -254,6 +266,16 @@ test('shared replay helper keys event repair by aggregate identity, event type, 
     source,
     /REPLAY_CORRUPTION_DETECTED/,
     'replay helper must fail closed with REPLAY_CORRUPTION_DETECTED on authoritative corruption'
+  );
+  assert.match(
+    source,
+    /MOVEMENT_HASH_REQUIRED_AFTER_MIGRATION_TS/,
+    'replay helper must define the post-migration hash cutoff'
+  );
+  assert.match(
+    source,
+    /authoritative_movement_hash_missing_post_migration/,
+    'replay helper must reject missing movement hashes for post-migration rows'
   );
 
   assert.match(
@@ -299,6 +321,21 @@ test('event registry validation stays wired into migrated mutation events', asyn
     registrySource,
     /workOrderWipValuationRecorded:[\s\S]*aggregateIdPayloadKey:\s*'movementId'/,
     'WIP valuation registry identity must anchor on movementId so issue/report/reversal variants remain stable'
+  );
+  assert.match(
+    registrySource,
+    /aggregateIdSource:\s*'inventory_movements\.id'/,
+    'registry entries must declare aggregateIdSource for movement-scoped events'
+  );
+  assert.match(
+    registrySource,
+    /aggregateIdSource:\s*'work_order_executions\.id'/,
+    'registry entries must declare aggregateIdSource for work-order execution events'
+  );
+  assert.match(
+    registrySource,
+    /aggregateIdSource:\s*'license_plates\.id'/,
+    'registry entries must declare aggregateIdSource for license-plate events'
   );
   assert.match(
     appendSource,

@@ -21,11 +21,11 @@ import {
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
 import {
-  buildMovementDeterministicHash,
   buildPostedDocumentReplayResult,
   buildInventoryBalanceProjectionOp,
   buildMovementPostedEvent,
   buildRefreshItemCostSummaryProjectionOp,
+  persistMovementDeterministicHashFromLedger,
   sortDeterministicMovementLines,
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
@@ -929,19 +929,6 @@ export async function postInventoryCount(
         })
       );
       const movementId = uuidv4();
-      const movementDeterministicHash = buildMovementDeterministicHash(
-        sortedPreparedDeltas.map(({ delta, canonicalFields }) => ({
-          itemId: delta.line.item_id,
-          locationId: delta.line.location_id,
-          quantityDelta: canonicalFields.quantityDeltaCanonical,
-          uom: canonicalFields.canonicalUom,
-          quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-          uomEntered: canonicalFields.uomEntered,
-          quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-          canonicalUom: canonicalFields.canonicalUom,
-          reasonCode: delta.line.reason_code ?? 'cycle_count_adjustment'
-        }))
-      );
       const movement = await createInventoryMovement(client, {
         id: movementId,
         tenantId,
@@ -955,7 +942,6 @@ export async function postInventoryCount(
         postedAt: now,
         notes: cycleCount.notes ?? null,
         metadata: validation.overrideMetadata ?? null,
-        movementDeterministicHash,
         createdAt: now,
         updatedAt: now
       });
@@ -998,7 +984,6 @@ export async function postInventoryCount(
           movementId: movement.id,
           idempotencyKey,
           expectedLineCount: sortedPreparedDeltas.length,
-          expectedDeterministicHash: movementDeterministicHash,
           client
         });
       }
@@ -1070,6 +1055,7 @@ export async function postInventoryCount(
         );
         itemsToRefresh.add(delta.line.item_id);
       }
+      await persistMovementDeterministicHashFromLedger(client, tenantId, movement.id);
 
       for (const itemId of itemsToRefresh.values()) {
         projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, itemId));

@@ -19,6 +19,7 @@ export type InventoryCommandEvent = {
   tenantId?: string;
   aggregateType: string;
   aggregateId: string;
+  aggregateIdSource: string;
   eventType: string;
   eventVersion: number;
   payload?: Record<string, unknown>;
@@ -122,6 +123,7 @@ export async function runInventoryCommand<T>(params: {
         tenantId: event.tenantId ?? params.tenantId,
         aggregateType: event.aggregateType,
         aggregateId: event.aggregateId,
+        aggregateIdSource: event.aggregateIdSource,
         eventType: event.eventType,
         eventVersion: event.eventVersion,
         payload: event.payload,

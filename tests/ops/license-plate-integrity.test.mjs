@@ -53,54 +53,134 @@ async function createItem(token, defaultLocationId) {
   return res.payload.id;
 }
 
-async function createReceipt({ token, vendorId, itemId, locationId, quantity, unitCost }) {
-  const poRes = await apiRequest('POST', '/purchase-orders', {
-    token,
-    body: {
-      vendorId,
-      shipToLocationId: locationId,
-      receivingLocationId: locationId,
-      expectedDate: new Date().toISOString().slice(0, 10),
-      status: 'approved',
-      lines: [{ itemId, uom: 'each', quantityOrdered: quantity, unitCost, currencyCode: 'THB' }]
-    }
-  });
-  assert.equal(poRes.res.status, 201, JSON.stringify(poRes.payload));
+async function seedPostedStock({ db, tenantId, itemId, locationId, quantity, unitCost, uom = 'each' }) {
+  const movementId = randomUUID();
+  const movementLineId = randomUUID();
+  const layerId = randomUUID();
+  const sourceDocumentId = randomUUID();
+  const createdAt = '2026-01-01T00:00:00.000Z';
 
-  const receiptRes = await apiRequest('POST', '/purchase-order-receipts', {
-    token,
-    headers: { 'Idempotency-Key': `lpn-receipt-${randomUUID()}` },
-    body: {
-      purchaseOrderId: poRes.payload.id,
-      receivedAt: new Date().toISOString(),
-      lines: [
-        {
-          purchaseOrderLineId: poRes.payload.lines[0].id,
-          uom: 'each',
-          quantityReceived: quantity,
-          unitCost
-        }
-      ]
-    }
-  });
-  assert.equal(receiptRes.res.status, 201, JSON.stringify(receiptRes.payload));
-  return receiptRes.payload.lines[0].id;
-}
-
-async function qcAccept(token, receiptLineId, quantity, actorId) {
-  const res = await apiRequest('POST', '/qc-events', {
-    token,
-    headers: { 'Idempotency-Key': `lpn-qc-${randomUUID()}` },
-    body: {
-      purchaseOrderReceiptLineId: receiptLineId,
-      eventType: 'accept',
-      quantity,
-      uom: 'each',
-      actorType: 'user',
-      actorId
-    }
-  });
-  assert.equal(res.res.status, 201, JSON.stringify(res.payload));
+  await db.query(
+    `INSERT INTO inventory_movements (
+        id,
+        tenant_id,
+        movement_type,
+        status,
+        external_ref,
+        source_type,
+        source_id,
+        occurred_at,
+        posted_at,
+        notes,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1,
+        $2,
+        'receive',
+        'posted',
+        $3,
+        'test_seed',
+        $4,
+        $5,
+        $5,
+        'seed',
+        $5,
+        $5
+      )`,
+    [movementId, tenantId, `seed:${movementId}`, sourceDocumentId, createdAt]
+  );
+  await db.query(
+    `INSERT INTO inventory_movement_lines (
+        id,
+        tenant_id,
+        movement_id,
+        item_id,
+        location_id,
+        quantity_delta,
+        uom,
+        quantity_delta_entered,
+        uom_entered,
+        quantity_delta_canonical,
+        canonical_uom,
+        uom_dimension,
+        unit_cost,
+        extended_cost,
+        reason_code,
+        line_notes,
+        created_at
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        $6,
+        $7,
+        $6,
+        $7,
+        'count',
+        $8,
+        $9,
+        'seed_receive',
+        'seed',
+        $10
+      )`,
+    [movementLineId, tenantId, movementId, itemId, locationId, quantity, uom, unitCost, quantity * unitCost, createdAt]
+  );
+  await db.query(
+    `INSERT INTO inventory_balance (
+        tenant_id, item_id, location_id, uom, on_hand, reserved, allocated, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $6)
+      ON CONFLICT (tenant_id, item_id, location_id, uom)
+      DO UPDATE SET on_hand = EXCLUDED.on_hand,
+                    reserved = EXCLUDED.reserved,
+                    allocated = EXCLUDED.allocated,
+                    updated_at = EXCLUDED.updated_at`,
+    [tenantId, itemId, locationId, uom, quantity, createdAt]
+  );
+  await db.query(
+    `INSERT INTO inventory_cost_layers (
+        id,
+        tenant_id,
+        item_id,
+        location_id,
+        uom,
+        layer_date,
+        layer_sequence,
+        original_quantity,
+        remaining_quantity,
+        unit_cost,
+        extended_cost,
+        source_type,
+        source_document_id,
+        movement_id,
+        notes,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        1,
+        $7,
+        $7,
+        $8,
+        $9,
+        'adjustment',
+        $10,
+        $11,
+        'seed',
+        $6,
+        $6
+      )`,
+    [layerId, tenantId, itemId, locationId, uom, createdAt, quantity, unitCost, quantity * unitCost, sourceDocumentId, movementId]
+  );
 }
 
 test('license plate move replay detects movement-link corruption', async () => {
@@ -115,20 +195,17 @@ test('license plate move replay detects movement-link corruption', async () => {
   const token = session.accessToken;
   const db = session.pool;
   const tenantId = session.tenant.id;
-  const actorId = session.user?.id ?? null;
 
   const { defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url });
-  const vendorId = await createVendor(token);
   const itemId = await createItem(token, defaults.SELLABLE.id);
-  const receiptLineId = await createReceipt({
-    token,
-    vendorId,
+  await seedPostedStock({
+    db,
+    tenantId,
     itemId,
     locationId: defaults.SELLABLE.id,
     quantity: 5,
     unitCost: 3
   });
-  await qcAccept(token, receiptLineId, 5, actorId);
 
   const createLpnRes = await apiRequest('POST', '/lpns', {
     token,

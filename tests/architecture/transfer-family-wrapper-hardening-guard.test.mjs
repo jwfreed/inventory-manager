@@ -6,9 +6,14 @@ import path from 'node:path';
 const PUTAWAYS_SERVICE = path.resolve(process.cwd(), 'src/services/putaways.service.ts');
 const TRANSFERS_SERVICE = path.resolve(process.cwd(), 'src/services/transfers.service.ts');
 const QC_SERVICE = path.resolve(process.cwd(), 'src/services/qc.service.ts');
+const WORK_ORDER_EXECUTION_SERVICE = path.resolve(process.cwd(), 'src/services/workOrderExecution.service.ts');
 const INVENTORY_COMMAND_WRAPPER = path.resolve(process.cwd(), 'src/modules/platform/application/runInventoryCommand.ts');
 const MUTATION_SUPPORT = path.resolve(process.cwd(), 'src/modules/platform/application/inventoryMutationSupport.ts');
 const EVENT_REGISTRY = path.resolve(process.cwd(), 'src/modules/platform/application/inventoryEventRegistry.ts');
+const EVENT_APPEND_SOURCE = path.resolve(
+  process.cwd(),
+  'src/modules/platform/infrastructure/inventoryEvents.ts'
+);
 
 function extractFunctionBody(source, signaturePrefix, functionName) {
   const marker = `${signaturePrefix} ${functionName}`;
@@ -55,6 +60,7 @@ test('transfer-family orchestration must use the canonical mutation shell', asyn
   const putawaysSource = await readFile(PUTAWAYS_SERVICE, 'utf8');
   const transfersSource = await readFile(TRANSFERS_SERVICE, 'utf8');
   const qcSource = await readFile(QC_SERVICE, 'utf8');
+  const workOrderSource = await readFile(WORK_ORDER_EXECUTION_SERVICE, 'utf8');
 
   const postPutawayBody = extractFunctionBody(putawaysSource, 'export async function', 'postPutaway');
   assert.match(postPutawayBody, /\brunInventoryCommand(?:<[^>]+>)?\(/, 'postPutaway must use runInventoryCommand()');
@@ -66,14 +72,27 @@ test('transfer-family orchestration must use the canonical mutation shell', asyn
 
   const transferInventoryBody = extractFunctionBody(transfersSource, 'export async function', 'transferInventory');
   assert.match(transferInventoryBody, /\brunInventoryCommand(?:<[^>]+>)?\(/, 'transferInventory must use runInventoryCommand() when it owns orchestration');
+  assert.doesNotMatch(transfersSource, /client\?:\s*PoolClient/, 'transferInventory must not expose a client-owned fallback signature');
+  assert.doesNotMatch(transferInventoryBody, /\bif\s*\(!client\)/, 'transferInventory must not branch on client-owned orchestration');
 
   const voidTransferBody = extractFunctionBody(transfersSource, 'export async function', 'voidTransferMovement');
   assert.match(voidTransferBody, /\brunInventoryCommand(?:<[^>]+>)?\(/, 'voidTransferMovement must use runInventoryCommand()');
   assert.doesNotMatch(voidTransferBody, /\bwithTransactionRetry\(/, 'voidTransferMovement must not own a manual retry shell');
 
+  const qcCreateBody = extractFunctionBody(qcSource, 'export async function', 'createQcEvent');
+  assert.match(qcCreateBody, /\brunInventoryCommand(?:<[^>]+>)?\(/, 'createQcEvent must use runInventoryCommand()');
+  assert.doesNotMatch(qcCreateBody, /\bwithTransaction(?:Retry)?\(/, 'createQcEvent must not own a manual transaction shell');
+
+  const scrapBody = extractFunctionBody(workOrderSource, 'export async function', 'reportWorkOrderScrap');
+  assert.match(scrapBody, /\brunInventoryCommand(?:<[^>]+>)?\(/, 'reportWorkOrderScrap must use runInventoryCommand()');
+  assert.doesNotMatch(scrapBody, /\bwithTransactionRetry\(/, 'reportWorkOrderScrap must not own a manual retry shell');
+
   const qcDispositionBody = extractFunctionBody(qcSource, 'export async function', 'postQcWarehouseDisposition');
   assert.match(qcDispositionBody, /\btransferInventory\(/, 'QC warehouse disposition must use the migrated transfer shell');
   assert.doesNotMatch(qcDispositionBody, /\bwithTransactionRetry\(/, 'QC warehouse disposition must not own a manual retry shell');
+
+  assert.doesNotMatch(qcSource, /\btransferInventory\([\s\S]*,\s*client\)/, 'QC flows must not call transferInventory with a client-owned executor');
+  assert.doesNotMatch(workOrderSource, /\btransferInventory\([\s\S]*,\s*client\)/, 'work-order scrap must not call transferInventory with a client-owned executor');
 });
 
 test('transfer-family flows must not read derived projections for correctness', async () => {
@@ -123,11 +142,12 @@ test('movement events must preserve stable aggregate identity', async () => {
   );
 });
 
-test('transfer replay hardening requires deterministic line plans and transfer registry events', async () => {
-  const [transfersSource, helperSource, registrySource] = await Promise.all([
+test('transfer replay hardening requires deterministic line plans, post-cutoff hashes, and transfer registry events', async () => {
+  const [transfersSource, helperSource, registrySource, appendSource] = await Promise.all([
     readFile(TRANSFERS_SERVICE, 'utf8'),
     readFile(MUTATION_SUPPORT, 'utf8'),
-    readFile(EVENT_REGISTRY, 'utf8')
+    readFile(EVENT_REGISTRY, 'utf8'),
+    readFile(EVENT_APPEND_SOURCE, 'utf8')
   ]);
 
   const buildPlanBody = extractFunctionBody(transfersSource, 'async function', 'buildTransferMovementPlan');
@@ -142,10 +162,10 @@ test('transfer replay hardening requires deterministic line plans and transfer r
     'transfer movement planning must compute deterministic movement hashes'
   );
 
-  for (const functionName of ['executeTransferInventoryWrapperMutation', 'voidTransferMovement']) {
+  for (const functionName of ['executeTransferInventoryMutation', 'voidTransferMovement']) {
     const body = extractFunctionBody(
       transfersSource,
-      functionName === 'voidTransferMovement' ? 'export async function' : 'async function',
+      'export async function',
       functionName
     );
     assert.match(
@@ -164,6 +184,31 @@ test('transfer replay hardening requires deterministic line plans and transfer r
     helperSource,
     /REPLAY_CORRUPTION_DETECTED/,
     'shared replay hardening must fail closed with REPLAY_CORRUPTION_DETECTED'
+  );
+  assert.match(
+    helperSource,
+    /MOVEMENT_HASH_REQUIRED_AFTER_MIGRATION_TS/,
+    'replay helper must define the post-migration hash cutoff'
+  );
+  assert.match(
+    helperSource,
+    /authoritative_movement_hash_missing_post_migration/,
+    'replay helper must reject missing hashes for post-migration movements'
+  );
+  assert.match(
+    transfersSource,
+    /\bpersistMovementDeterministicHashFromLedger\(/,
+    'transfer-family mutations must persist deterministic hashes from authoritative ledger rows'
+  );
+  assert.match(
+    appendSource,
+    /\bvalidateInventoryEventRegistryInput\(input\)/,
+    'inventory event append must validate registry input before insert'
+  );
+  assert.match(
+    registrySource,
+    /aggregateIdSource:\s*'inventory_transfer\.id'/,
+    'transfer registry identities must declare their authoritative aggregate id source'
   );
   for (const registryEntry of [
     'inventoryTransferCreated',

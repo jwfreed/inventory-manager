@@ -6,6 +6,7 @@ export const IDEMPOTENCY_ENDPOINTS = Object.freeze({
   LICENSE_PLATES_MOVE: 'license_plates.move',
   INVENTORY_TRANSFERS_CREATE: 'transfers.post',
   INVENTORY_TRANSFERS_VOID: 'transfers.void',
+  QC_EVENTS_CREATE: 'qc.events.post',
   QC_WAREHOUSE_ACCEPT: 'qc.accept_warehouse_disposition',
   QC_WAREHOUSE_REJECT: 'qc.reject_warehouse_disposition',
   RESERVATIONS_CREATE: 'otc.create_reservations',

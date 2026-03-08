@@ -16,6 +16,7 @@ export type InventoryEventInput = {
   tenantId: string;
   aggregateType: string;
   aggregateId: string;
+  aggregateIdSource: string;
   eventType: string;
   eventVersion: number;
   payload?: Record<string, unknown>;

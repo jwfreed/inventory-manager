@@ -11,7 +11,6 @@ import {
 } from '../services/qc.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { getIdempotencyKey } from '../lib/idempotency';
-import { beginIdempotency, completeIdempotency, hashRequestBody } from '../lib/idempotencyStore';
 import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
 
 const router = Router();
@@ -174,35 +173,37 @@ router.post('/qc-events', async (req: Request, res: Response) => {
   }
 
   const idempotencyKey = getIdempotencyKey(req);
-  let idempotencyStarted = false;
 
   try {
-    if (idempotencyKey) {
-      const record = await beginIdempotency(idempotencyKey, hashRequestBody(req.body));
-      if (record.status === 'SUCCEEDED' && record.responseRef) {
-        const [kind, id] = record.responseRef.split(':');
-        if (kind === 'qc_event') {
-          const existing = await getQcEventById(req.auth!.tenantId, id);
-          if (existing) {
-            return res.status(200).json(existing);
-          }
-        }
-        return res.status(409).json({ error: 'QC event already processed for this request.' });
-      }
-      // Only reject if it's an EXISTING in-progress operation (not our new insert)
-      if (record.status === 'IN_PROGRESS' && !record.isNew) {
-        return res.status(409).json({ error: 'QC event already in progress for this key.' });
-      }
-      idempotencyStarted = true;
-    }
-    const event = await createQcEvent(req.auth!.tenantId, parsed.data);
-    if (idempotencyKey && idempotencyStarted) {
-      await completeIdempotency(idempotencyKey, 'SUCCEEDED', `qc_event:${event.id}`);
-    }
-    return res.status(201).json(event);
+    const result = await createQcEvent(req.auth!.tenantId, parsed.data, { idempotencyKey });
+    return res.status(result.replayed ? 200 : 201).json(result.event);
   } catch (error: any) {
-    if (idempotencyKey && idempotencyStarted) {
-      await completeIdempotency(idempotencyKey, 'FAILED', null);
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({ error: 'QC event already in progress for this key.' });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+    ) {
+      return res.status(409).json({ error: 'QC event idempotency key was reused with a different payload.' });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+    ) {
+      return res.status(409).json({ error: 'Idempotency key was already used for a different endpoint.' });
+    }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Replay repair detected corrupted authoritative QC transfer movement state.',
+          details: error?.details
+        }
+      });
     }
     if (error?.message === 'QC_LINE_NOT_FOUND') {
       return res.status(404).json({ error: 'Receipt line not found.' });
@@ -277,9 +278,6 @@ router.post('/qc-events', async (req: Request, res: Response) => {
       return res.status(409).json({
         error: 'QC disposition requires available FIFO cost layers at source. Ensure receipt lines include unit cost/price before QC.'
       });
-    }
-    if (error?.message === 'IDEMPOTENCY_HASH_MISMATCH') {
-      return res.status(409).json({ error: 'Idempotency key reused with a different request payload.' });
     }
     if (error?.message === 'QC_SOURCE_REQUIRED') {
       return res.status(400).json({ error: 'A valid source (receipt line, work order, or execution line) is required.' });
