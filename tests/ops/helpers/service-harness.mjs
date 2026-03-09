@@ -32,6 +32,20 @@ const {
 const { createQcEvent, postQcWarehouseDisposition } = require('../../../src/services/qc.service.ts');
 const { postInventoryTransfer } = require('../../../src/services/transfers.service.ts');
 const { createInventoryCount, postInventoryCount } = require('../../../src/services/counts.service.ts');
+const {
+  compareBalances,
+  repairBalancesFromLedger,
+  compareItemQuantitySummaries,
+  repairItemQuantitySummaries,
+  compareItemValuationSummaries,
+  repairItemValuationSummaries
+} = require('../../../src/services/inventoryLedgerReconcile.service.ts');
+const {
+  validatePersistedInventoryEventRegistryRow
+} = require('../../../src/modules/platform/application/inventoryEventRegistry.ts');
+const {
+  auditMovementHashCoverage
+} = require('../../../src/modules/platform/application/inventoryMutationSupport.ts');
 
 function buildTenantSlug(prefix = 'ops') {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
@@ -364,6 +378,181 @@ export async function createServiceHarness(options = {}) {
     );
   }
 
+  async function snapshotInventoryBalance() {
+    const result = await pool.query(
+      `SELECT item_id AS "itemId",
+              location_id AS "locationId",
+              uom,
+              COALESCE(on_hand, 0)::numeric AS "onHand",
+              COALESCE(reserved, 0)::numeric AS reserved,
+              COALESCE(allocated, 0)::numeric AS allocated
+         FROM inventory_balance
+        WHERE tenant_id = $1
+        ORDER BY item_id ASC, location_id ASC, uom ASC`,
+      [tenantId]
+    );
+    return result.rows.map((row) => ({
+      itemId: row.itemId,
+      locationId: row.locationId,
+      uom: row.uom,
+      onHand: Number(row.onHand ?? 0),
+      reserved: Number(row.reserved ?? 0),
+      allocated: Number(row.allocated ?? 0)
+    }));
+  }
+
+  async function snapshotItemSummaries() {
+    const result = await pool.query(
+      `SELECT id,
+              COALESCE(quantity_on_hand, 0)::numeric AS quantity_on_hand,
+              average_cost
+         FROM items
+        WHERE tenant_id = $1
+        ORDER BY id ASC`,
+      [tenantId]
+    );
+    return result.rows.map((row) => ({
+      itemId: row.id,
+      quantityOnHand: Number(row.quantity_on_hand ?? 0),
+      averageCost: row.average_cost === null ? null : Number(row.average_cost)
+    }));
+  }
+
+  async function snapshotDerivedProjections() {
+    return {
+      inventoryBalance: await snapshotInventoryBalance(),
+      itemSummaries: await snapshotItemSummaries()
+    };
+  }
+
+  async function clearDerivedProjections() {
+    await pool.query(`DELETE FROM inventory_balance WHERE tenant_id = $1`, [tenantId]);
+    await pool.query(
+      `UPDATE items
+          SET quantity_on_hand = 0,
+              average_cost = NULL,
+              updated_at = now()
+        WHERE tenant_id = $1`,
+      [tenantId]
+    );
+  }
+
+  async function rebuildDerivedProjections() {
+    const balanceMismatches = await compareBalances(tenantId);
+    const balanceRepair = await repairBalancesFromLedger(tenantId, balanceMismatches, {
+      actor: 'service-harness'
+    });
+    const quantityMismatches = await compareItemQuantitySummaries(tenantId);
+    const quantityRepaired = await repairItemQuantitySummaries(tenantId, quantityMismatches);
+    const valuationMismatches = await compareItemValuationSummaries(tenantId);
+    const valuationRepaired = await repairItemValuationSummaries(tenantId, valuationMismatches);
+
+    return {
+      balanceMismatches,
+      repairedBalanceCount: balanceRepair.repairedCount,
+      quantityMismatches,
+      repairedQuantityCount: quantityRepaired,
+      valuationMismatches,
+      repairedValuationCount: valuationRepaired
+    };
+  }
+
+  async function findQuantityConservationMismatches() {
+    const mismatches = await compareBalances(tenantId);
+    return mismatches.map((row) => ({
+      itemId: row.itemId,
+      locationId: row.locationId,
+      uom: row.uom,
+      projectedOnHand: row.balanceQty,
+      authoritativeOnHand: row.ledgerQty,
+      delta: row.delta
+    }));
+  }
+
+  async function findCostLayerConsistencyMismatches() {
+    const result = await pool.query(
+      `WITH layer_value AS (
+         SELECT item_id,
+                COALESCE(SUM(remaining_quantity * unit_cost), 0)::numeric AS layer_value
+           FROM inventory_cost_layers
+          WHERE tenant_id = $1
+            AND voided_at IS NULL
+          GROUP BY item_id
+       ),
+       summary_value AS (
+         SELECT id AS item_id,
+                COALESCE(quantity_on_hand, 0)::numeric AS quantity_on_hand,
+                average_cost,
+                CASE
+                  WHEN average_cost IS NULL THEN 0::numeric
+                  ELSE (COALESCE(quantity_on_hand, 0) * average_cost)::numeric
+                END AS summary_value
+           FROM items
+          WHERE tenant_id = $1
+       )
+       SELECT COALESCE(s.item_id, l.item_id) AS item_id,
+              COALESCE(s.summary_value, 0)::numeric AS summary_value,
+              COALESCE(l.layer_value, 0)::numeric AS layer_value,
+              (COALESCE(l.layer_value, 0) - COALESCE(s.summary_value, 0))::numeric AS delta
+         FROM summary_value s
+         FULL OUTER JOIN layer_value l
+           ON l.item_id = s.item_id
+        WHERE ABS(COALESCE(l.layer_value, 0) - COALESCE(s.summary_value, 0)) > 0.000001
+        ORDER BY COALESCE(s.item_id, l.item_id) ASC`,
+      [tenantId]
+    );
+    return result.rows.map((row) => ({
+      itemId: row.item_id,
+      summaryValue: Number(row.summary_value ?? 0),
+      layerValue: Number(row.layer_value ?? 0),
+      delta: Number(row.delta ?? 0)
+    }));
+  }
+
+  async function auditReplayDeterminism(sampleLimit = 25) {
+    const movementAudit = await auditMovementHashCoverage(pool, { tenantId, sampleLimit });
+    const eventRows = await pool.query(
+      `SELECT aggregate_type,
+              aggregate_id,
+              event_type,
+              event_version,
+              payload
+         FROM inventory_events
+        WHERE tenant_id = $1
+        ORDER BY event_seq ASC`,
+      [tenantId]
+    );
+
+    const registryFailures = [];
+    for (const row of eventRows.rows) {
+      try {
+        validatePersistedInventoryEventRegistryRow({
+          aggregateType: row.aggregate_type,
+          aggregateId: row.aggregate_id,
+          eventType: row.event_type,
+          eventVersion: row.event_version,
+          payload: row.payload ?? {}
+        });
+      } catch (error) {
+        registryFailures.push({
+          aggregateType: row.aggregate_type,
+          aggregateId: row.aggregate_id,
+          eventType: row.event_type,
+          eventVersion: row.event_version,
+          reason: (error?.message ?? 'INVENTORY_EVENT_REGISTRY_VALIDATION_FAILED')
+        });
+      }
+    }
+
+    return {
+      movementAudit,
+      eventRegistryFailures: {
+        count: registryFailures.length,
+        sample: registryFailures.slice(0, sampleLimit)
+      }
+    };
+  }
+
   return {
     pool,
     tenantId,
@@ -430,6 +619,14 @@ export async function createServiceHarness(options = {}) {
       );
       return Number(result.rows[0]?.on_hand ?? 0);
     },
+    snapshotInventoryBalance,
+    snapshotItemSummaries,
+    snapshotDerivedProjections,
+    clearDerivedProjections,
+    rebuildDerivedProjections,
+    findQuantityConservationMismatches,
+    findCostLayerConsistencyMismatches,
+    auditReplayDeterminism,
     runStrictInvariants
   };
 }

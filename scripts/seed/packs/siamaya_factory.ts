@@ -5,10 +5,7 @@ import path from 'node:path';
 import { v5 as uuidv5 } from 'uuid';
 import type { PoolClient } from 'pg';
 import bcrypt from 'bcryptjs';
-import {
-  createInventoryMovement,
-  createInventoryMovementLine
-} from '../../../src/domains/inventory/internal/ledgerWriter';
+import { persistInventoryMovement } from '../../../src/domains/inventory';
 import { createOpeningBalanceCostLayerOnce } from '../../../src/services/costLayers.service';
 import {
   importBomDatasetFromFile,
@@ -2024,57 +2021,33 @@ async function seedInitialStockMovement(
   }
 
   const locationCodes = Array.from(new Set(seedLines.map((line) => line.locationCode)));
-  const locationRows = await client.query<{ id: string; code: string }>(
+  const locationRows = await client.query<{ id: string; code: string; warehouse_id: string | null }>(
     `SELECT id, code
+            , warehouse_id
        FROM locations
       WHERE tenant_id = $1
         AND code = ANY($2::text[])`,
     [args.tenantId, locationCodes]
   );
-  const locationIdByCode = new Map(locationRows.rows.map((row) => [row.code, row.id]));
+  const locationByCode = new Map(
+    locationRows.rows.map((row) => [
+      row.code,
+      {
+        id: row.id,
+        warehouseId: row.warehouse_id ?? row.id
+      }
+    ])
+  );
   for (const code of locationCodes) {
-    if (!locationIdByCode.has(code)) {
+    if (!locationByCode.has(code)) {
       throw new Error(`SEED_INITIAL_STOCK_LOCATION_MISSING code=${code}`);
     }
   }
 
   const movementExternalRef = `seed:${args.pack}:initial-stock:${args.tenantSlug}:v${args.spec.version}`;
   const movementSourceId = deterministicId('seed-source', args.tenantId, movementExternalRef);
-  const movementResult = await createInventoryMovement(client, {
-    id: deterministicId('movement', args.tenantId, movementExternalRef),
-    tenantId: args.tenantId,
-    movementType: 'receive',
-    status: 'posted',
-    externalRef: movementExternalRef,
-    sourceType: 'opening_balance',
-    sourceId: movementSourceId,
-    idempotencyKey: movementExternalRef,
-    occurredAt: args.spec.stockDate,
-    postedAt: args.spec.stockDate,
-    notes: 'Seeded initial stock'
-  });
-
-  const movementId = movementResult.id;
+  const movementId = deterministicId('movement', args.tenantId, movementExternalRef);
   const expectedLotCount = new Set(seedLines.filter((line) => !!line.lotCode).map((line) => line.lotCode)).size;
-  if (!movementResult.created) {
-    const lineCountRes = await client.query<{ count: string }>(
-      `SELECT COUNT(*)::int::text AS count
-         FROM inventory_movement_lines
-        WHERE tenant_id = $1
-          AND movement_id = $2`,
-      [args.tenantId, movementId]
-    );
-    const expected = seedLines.length;
-    const actual = Number(lineCountRes.rows[0]?.count ?? 0);
-    if (actual !== expected) {
-      throw new Error(`SEED_INITIAL_STOCK_MOVEMENT_LINE_COUNT_MISMATCH expected=${expected} actual=${actual}`);
-    }
-  }
-
-  let linesCreated = 0;
-  let costLayersCreated = 0;
-  let lotsCreated = 0;
-  const expectedLayers: SeedOpeningBalanceExpectedLayer[] = [];
   const itemIdsInSeed = Array.from(new Set(seedLines.map((line) => args.itemIdByKey.get(line.itemKey)).filter((id): id is string => !!id)));
   const itemRequiresLotRows = await client.query<{ id: string; requires_lot: boolean }>(
     `SELECT id, requires_lot
@@ -2084,6 +2057,19 @@ async function seedInitialStockMovement(
     [args.tenantId, itemIdsInSeed]
   );
   const requiresLotByItemId = new Map(itemRequiresLotRows.rows.map((row) => [row.id, row.requires_lot]));
+  let lotsCreated = 0;
+  const preparedSeedLines: Array<{
+    line: (typeof seedLines)[number];
+    itemId: string;
+    lotId: string | null;
+    locationId: string;
+    warehouseId: string;
+    lineId: string;
+    lineNumber: number;
+    canonicalFields: ReturnType<typeof canonicalMovementFields>;
+    canonicalQty: number;
+    canonicalUnitCost: number;
+  }> = [];
 
   for (let index = 0; index < seedLines.length; index += 1) {
     const line = seedLines[index];
@@ -2122,87 +2108,130 @@ async function seedInitialStockMovement(
       );
     }
     const canonicalUnitCost = canonicalUnitCostFromEnteredCost(line.quantity, line.unitCost, canonicalQty);
-    const locationId = locationIdByCode.get(line.locationCode);
-    if (!locationId) {
+    const location = locationByCode.get(line.locationCode);
+    if (!location) {
       throw new Error(`SEED_INITIAL_STOCK_LOCATION_UNRESOLVED code=${line.locationCode}`);
     }
+    const locationId = location.id;
     const lineId = deterministicId('movement-line', movementId, String(index + 1), itemId, locationId);
-    if (movementResult.created) {
-      await createInventoryMovementLine(client, {
-        id: lineId,
-        tenantId: args.tenantId,
-        movementId,
-        itemId,
-        locationId,
-        quantityDelta: line.quantity,
-        uom: line.uom,
-        quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-        uomEntered: canonicalFields.uomEntered,
-        quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-        canonicalUom: canonicalFields.canonicalUom,
-        uomDimension: canonicalFields.uomDimension,
-        unitCost: line.unitCost,
-        extendedCost: line.quantity * line.unitCost,
-        reasonCode: 'seed_initial_stock',
-        lineNotes: 'Seeded opening stock',
-        createdAt: args.spec.stockDate
-      });
-      linesCreated += 1;
+    preparedSeedLines.push({
+      line,
+      itemId,
+      lotId,
+      locationId,
+      warehouseId: location.warehouseId,
+      lineId,
+      lineNumber: index + 1,
+      canonicalFields,
+      canonicalQty,
+      canonicalUnitCost
+    });
+  }
+
+  const movementResult = await persistInventoryMovement(client, {
+    id: movementId,
+    tenantId: args.tenantId,
+    movementType: 'receive',
+    status: 'posted',
+    externalRef: movementExternalRef,
+    sourceType: 'opening_balance',
+    sourceId: movementSourceId,
+    idempotencyKey: movementExternalRef,
+    occurredAt: args.spec.stockDate,
+    postedAt: args.spec.stockDate,
+    notes: 'Seeded initial stock',
+    lines: preparedSeedLines.map((preparedLine) => ({
+      id: preparedLine.lineId,
+      warehouseId: preparedLine.warehouseId,
+      sourceLineId: `${movementId}:${preparedLine.lineNumber}`,
+      itemId: preparedLine.itemId,
+      locationId: preparedLine.locationId,
+      quantityDelta: preparedLine.line.quantity,
+      uom: preparedLine.line.uom,
+      quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
+      uomEntered: preparedLine.canonicalFields.uomEntered,
+      quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
+      canonicalUom: preparedLine.canonicalFields.canonicalUom,
+      uomDimension: preparedLine.canonicalFields.uomDimension,
+      unitCost: preparedLine.line.unitCost,
+      extendedCost: preparedLine.line.quantity * preparedLine.line.unitCost,
+      reasonCode: 'seed_initial_stock',
+      lineNotes: 'Seeded opening stock',
+      createdAt: args.spec.stockDate
+    }))
+  });
+
+  if (!movementResult.created) {
+    const lineCountRes = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::int::text AS count
+         FROM inventory_movement_lines
+        WHERE tenant_id = $1
+          AND movement_id = $2`,
+      [args.tenantId, movementId]
+    );
+    const expected = seedLines.length;
+    const actual = Number(lineCountRes.rows[0]?.count ?? 0);
+    if (actual !== expected) {
+      throw new Error(`SEED_INITIAL_STOCK_MOVEMENT_LINE_COUNT_MISMATCH expected=${expected} actual=${actual}`);
+    }
+  }
+
+  let linesCreated = movementResult.created ? preparedSeedLines.length : 0;
+  let costLayersCreated = 0;
+  const expectedLayers: SeedOpeningBalanceExpectedLayer[] = [];
+
+  for (const preparedLine of preparedSeedLines) {
+    if (preparedLine.lotId && movementResult.created) {
+      await client.query(
+        `INSERT INTO inventory_movement_lots (
+            id,
+            tenant_id,
+            inventory_movement_line_id,
+            lot_id,
+            uom,
+            quantity_delta,
+            created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          deterministicId('movement-lot', args.tenantId, preparedLine.lineId, preparedLine.lotId),
+          args.tenantId,
+          preparedLine.lineId,
+          preparedLine.lotId,
+          preparedLine.line.uom,
+          preparedLine.line.quantity,
+          args.spec.stockDate
+        ]
+      );
     }
 
-    if (lotId) {
-      if (movementResult.created) {
-        await client.query(
-          `INSERT INTO inventory_movement_lots (
-              id,
-              tenant_id,
-              inventory_movement_line_id,
-              lot_id,
-              uom,
-              quantity_delta,
-              created_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (id) DO NOTHING`,
-          [
-            deterministicId('movement-lot', args.tenantId, lineId, lotId),
-            args.tenantId,
-            lineId,
-            lotId,
-            line.uom,
-            line.quantity,
-            args.spec.stockDate
-          ]
-        );
-      }
-    }
-
-    const legacyLayerId = deterministicId('seed-opening-layer', args.tenantId, movementId, lineId);
-    const canonicalLayerId = deterministicId('seed-opening-layer-v2', args.tenantId, movementId, lineId);
+    const legacyLayerId = deterministicId('seed-opening-layer', args.tenantId, movementId, preparedLine.lineId);
+    const canonicalLayerId = deterministicId('seed-opening-layer-v2', args.tenantId, movementId, preparedLine.lineId);
     expectedLayers.push({
       legacyLayerId,
       canonicalLayerId,
-      sequence: index + 1,
-      itemId,
-      locationId,
-      uom: canonicalFields.canonicalUom,
-      quantity: canonicalQty,
-      unitCost: canonicalUnitCost,
-      lotId
+      sequence: preparedLine.lineNumber,
+      itemId: preparedLine.itemId,
+      locationId: preparedLine.locationId,
+      uom: preparedLine.canonicalFields.canonicalUom,
+      quantity: preparedLine.canonicalQty,
+      unitCost: preparedLine.canonicalUnitCost,
+      lotId: preparedLine.lotId
     });
     if (movementResult.created) {
       const layer = await createOpeningBalanceCostLayerOnce({
         id: canonicalLayerId,
         tenant_id: args.tenantId,
-        item_id: itemId,
-        location_id: locationId,
-        uom: canonicalFields.canonicalUom,
-        quantity: canonicalQty,
-        unit_cost: canonicalUnitCost,
-        layer_sequence: index + 1,
+        item_id: preparedLine.itemId,
+        location_id: preparedLine.locationId,
+        uom: preparedLine.canonicalFields.canonicalUom,
+        quantity: preparedLine.canonicalQty,
+        unit_cost: preparedLine.canonicalUnitCost,
+        layer_sequence: preparedLine.lineNumber,
         source_type: 'opening_balance',
         source_document_id: movementId,
         movement_id: movementId,
-        lot_id: lotId ?? undefined,
+        lot_id: preparedLine.lotId ?? undefined,
         layer_date: new Date(args.spec.stockDate),
         notes: 'Seeded opening stock',
         client

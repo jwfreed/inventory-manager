@@ -437,7 +437,7 @@ test('inventory transfer replay fails closed when authoritative movement lines d
   );
 });
 
-test('inventory transfer replay fails closed when the persisted movement hash is missing or mismatched', async () => {
+test('inventory transfer schema rejects missing hashes and replay fails closed on mismatches', async () => {
   const { harness, factory, store, itemId } = await createTransferFixture('transfer-hash');
   const { pool: db, tenantId } = harness;
   const basePayload = {
@@ -450,35 +450,24 @@ test('inventory transfer replay fails closed when the persisted movement hash is
     notes: 'Transfer replay hash test'
   };
 
-  const missingHashKey = `transfer-hash-missing-${randomUUID()}`;
-  const missingHashTransfer = await harness.postTransfer({
-    ...basePayload,
-    idempotencyKey: missingHashKey,
-    occurredAt: FIXED_OCCURRED_AT
-  });
-  const missingHashFixtureId = await insertTransferReplayFixture({
-    db,
-    tenantId,
-    itemId,
-    sourceLocationId: factory.defaults.SELLABLE.id,
-    destinationLocationId: store.sellable.id,
-    occurredAt: FIXED_OCCURRED_AT,
-    movementHash: null
-  });
-  await retargetTransferReplayMovement(db, tenantId, missingHashKey, missingHashFixtureId);
-  await expectServiceError(
-    () =>
-      harness.postTransfer({
-        ...basePayload,
-        occurredAt: FIXED_OCCURRED_AT,
-        idempotencyKey: missingHashKey
-      }),
-    'REPLAY_CORRUPTION_DETECTED',
-    'authoritative_movement_hash_missing'
+  await assert.rejects(
+    insertTransferReplayFixture({
+      db,
+      tenantId,
+      itemId,
+      sourceLocationId: factory.defaults.SELLABLE.id,
+      destinationLocationId: store.sellable.id,
+      occurredAt: FIXED_OCCURRED_AT,
+      movementHash: null
+    }),
+    (error) => {
+      assert.equal(error?.code, '23502');
+      return true;
+    }
   );
 
   const mismatchHashKey = `transfer-hash-mismatch-${randomUUID()}`;
-  const mismatchHashTransfer = await harness.postTransfer({
+  await harness.postTransfer({
     ...basePayload,
     idempotencyKey: mismatchHashKey,
     occurredAt: FIXED_OCCURRED_AT

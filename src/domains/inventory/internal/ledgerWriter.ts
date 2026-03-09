@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { buildMovementDeterministicHash, sortDeterministicMovementLines } from '../../../modules/platform/application/inventoryMovementDeterminism';
 
-export type InventoryMovementInput = {
+type InventoryMovementInput = {
   id?: string;
   tenantId: string;
   movementType: string;
@@ -23,7 +23,7 @@ export type InventoryMovementInput = {
   updatedAt?: Date | string;
 };
 
-export type InventoryMovementLineInput = {
+type InventoryMovementLineInput = {
   id?: string;
   tenantId: string;
   movementId: string;
@@ -52,7 +52,7 @@ export type PersistInventoryMovementInput = Omit<InventoryMovementInput, 'moveme
   lines: PersistInventoryMovementLineInput[];
 };
 
-export type InventoryMovementResult = {
+type InventoryMovementResult = {
   id: string;
   created: boolean;
 };
@@ -66,7 +66,7 @@ export type PersistInventoryMovementResult = {
 
 const ENFORCE_EXTERNAL_REF = process.env.ENFORCE_INVENTORY_MOVEMENT_EXTERNAL_REF === 'true';
 
-export async function createInventoryMovement(
+async function createInventoryMovement(
   client: PoolClient,
   input: InventoryMovementInput
 ): Promise<InventoryMovementResult> {
@@ -236,7 +236,7 @@ export async function persistInventoryMovement(
   };
 }
 
-export async function createInventoryMovementLine(
+async function createInventoryMovementLine(
   client: PoolClient,
   input: InventoryMovementLineInput
 ): Promise<string> {
@@ -288,18 +288,6 @@ export async function createInventoryMovementLine(
   );
 
   return id;
-}
-
-export async function createInventoryMovementLines(
-  client: PoolClient,
-  inputs: InventoryMovementLineInput[]
-): Promise<string[]> {
-  const ids: string[] = [];
-  for (const input of inputs) {
-    const id = await createInventoryMovementLine(client, input);
-    ids.push(id);
-  }
-  return ids;
 }
 
 async function findMovementByExternalRef(

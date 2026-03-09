@@ -9,8 +9,18 @@ require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 
 const SRC_ROOT = path.resolve(process.cwd(), 'src');
+const SCRIPTS_ROOT = path.resolve(process.cwd(), 'scripts');
+const MIGRATIONS_ROOT = path.resolve(process.cwd(), 'src/migrations');
 const LEDGER_WRITER = path.resolve(process.cwd(), 'src/domains/inventory/internal/ledgerWriter.ts');
 const INVENTORY_DOMAIN_INDEX = path.resolve(process.cwd(), 'src/domains/inventory/index.ts');
+const MOVEMENT_HASH_NOT_NULL_MIGRATION = path.resolve(
+  process.cwd(),
+  'src/migrations/1774950000000_enforce_movement_hash_not_null.ts'
+);
+const MOVEMENT_HASH_FORMAT_MIGRATION = path.resolve(
+  process.cwd(),
+  'src/migrations/1774950001000_enforce_movement_hash_format.ts'
+);
 const INVENTORY_EVENTS = path.resolve(
   process.cwd(),
   'src/modules/platform/infrastructure/inventoryEvents.ts'
@@ -135,7 +145,7 @@ async function collectSourceFiles(root) {
       files.push(...await collectSourceFiles(resolved));
       continue;
     }
-    if (entry.isFile() && resolved.endsWith('.ts')) {
+    if (entry.isFile() && (resolved.endsWith('.ts') || resolved.endsWith('.mjs'))) {
       files.push(resolved);
     }
   }
@@ -201,12 +211,67 @@ test('production source only uses the canonical movement writer helper', async (
   );
 });
 
+test('low-level movement writer primitives stay private to ledgerWriter.ts', async () => {
+  const source = await readFile(LEDGER_WRITER, 'utf8');
+  assert.doesNotMatch(
+    source,
+    /\bexport\s+(?:async\s+function\s+)?createInventoryMovement(?:Line|Lines)?\b/,
+    'ledgerWriter.ts must not export raw movement writer primitives'
+  );
+});
+
 test('inventory domain surface does not re-export low-level movement writer primitives', async () => {
   const source = await readFile(INVENTORY_DOMAIN_INDEX, 'utf8');
   assert.doesNotMatch(
     source,
     /\bcreateInventoryMovement(?:Line|Lines)?\b/,
     'inventory domain barrel must not expose low-level movement writer primitives'
+  );
+});
+
+test('repository code does not import internal ledger writers outside the approved surface', async () => {
+  const files = [
+    ...(await collectSourceFiles(SRC_ROOT)),
+    ...(await collectSourceFiles(SCRIPTS_ROOT))
+  ];
+  const allowedImporters = new Set([LEDGER_WRITER, INVENTORY_DOMAIN_INDEX]);
+  const violations = [];
+
+  for (const filePath of files) {
+    if (allowedImporters.has(filePath)) {
+      continue;
+    }
+    const source = await readFile(filePath, 'utf8');
+    if (/from\s+['"][^'"]*internal\/ledgerWriter['"]/.test(source)) {
+      violations.push(path.relative(process.cwd(), filePath));
+    }
+  }
+
+  assert.deepEqual(
+    violations,
+    [],
+    `unexpected internal ledgerWriter imports outside approved surface:\n${violations.join('\n')}`
+  );
+});
+
+test('tooling source does not write authoritative ledger rows directly', async () => {
+  const files = await collectSourceFiles(SCRIPTS_ROOT);
+  const violations = [];
+
+  for (const filePath of files) {
+    const source = await readFile(filePath, 'utf8');
+    if (/\b(?:INSERT INTO|UPDATE|DELETE FROM)\s+inventory_movements\b/.test(source)) {
+      violations.push(`${path.relative(process.cwd(), filePath)} => inventory_movements`);
+    }
+    if (/\b(?:INSERT INTO|UPDATE|DELETE FROM)\s+inventory_movement_lines\b/.test(source)) {
+      violations.push(`${path.relative(process.cwd(), filePath)} => inventory_movement_lines`);
+    }
+  }
+
+  assert.deepEqual(
+    violations,
+    [],
+    `unexpected authoritative ledger writes in tooling source:\n${violations.join('\n')}`
   );
 });
 
@@ -228,6 +293,34 @@ test('production source only appends authoritative inventory events through cano
     violations,
     [],
     `unexpected authoritative inventory event append usage outside canonical infrastructure:\n${violations.join('\n')}`
+  );
+});
+
+test('migration graph enforces movement_deterministic_hash as NOT NULL', async () => {
+  const migrationSource = await readFile(MOVEMENT_HASH_NOT_NULL_MIGRATION, 'utf8');
+  assert.match(
+    migrationSource,
+    /ALTER TABLE inventory_movements[\s\S]*ALTER COLUMN movement_deterministic_hash SET NOT NULL/i,
+    'movement hash migration must enforce NOT NULL at the schema level'
+  );
+});
+
+test('migration graph enforces movement_deterministic_hash format as 64 lowercase hex characters', async () => {
+  const migrationSource = await readFile(MOVEMENT_HASH_FORMAT_MIGRATION, 'utf8');
+  assert.match(
+    migrationSource,
+    /const\s+HASH_REGEX\s*=\s*'?\^\[0-9a-f\]\{64\}\$'?/i,
+    'movement hash format migration must define the 64-character lowercase hex regex'
+  );
+  assert.match(
+    migrationSource,
+    /movement_deterministic_hash\s*!~\s*'\$\{HASH_REGEX\}'/i,
+    'movement hash format migration must precheck invalid hashes'
+  );
+  assert.match(
+    migrationSource,
+    /CHECK\s*\(\s*movement_deterministic_hash\s*~\s*'\$\{HASH_REGEX\}'\s*\)/i,
+    'movement hash format migration must enforce a 64-character lowercase hex check constraint'
   );
 });
 
