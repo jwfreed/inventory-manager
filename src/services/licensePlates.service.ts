@@ -9,8 +9,7 @@ import { validateSufficientStock } from './stockValidation.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
-  createInventoryMovement,
-  createInventoryMovementLine,
+  persistInventoryMovement,
 } from '../domains/inventory';
 import { relocateTransferCostLayersInTx } from './transferCosting.service';
 import { runInventoryCommand, type InventoryCommandProjectionOp } from '../modules/platform/application/runInventoryCommand';
@@ -18,7 +17,6 @@ import {
   buildInventoryBalanceProjectionOp,
   buildMovementPostedEvent,
   buildPostedDocumentReplayResult,
-  persistMovementDeterministicHashFromLedger,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
@@ -730,7 +728,7 @@ export async function moveLicensePlate(
         })
       );
       const movementId = uuidv4();
-      const movement = await createInventoryMovement(client, {
+      const movement = await persistInventoryMovement(client, {
         id: movementId,
         tenantId,
         movementType: 'transfer',
@@ -744,14 +742,31 @@ export async function moveLicensePlate(
         notes: data.notes ?? `LPN ${currentLpn.lpn} moved from ${currentLpn.locationCode} to new location`,
         metadata: validation.overrideMetadata ?? null,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        lines: preparedLines.map((preparedLine) => ({
+          id: preparedLine.id,
+          warehouseId: preparedLine.warehouseId,
+          sourceLineId: preparedLine.sourceLineId,
+          itemId: preparedLine.itemId,
+          locationId: preparedLine.locationId,
+          quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
+          uom: preparedLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: preparedLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: preparedLine.canonicalFields.canonicalUom,
+          uomDimension: preparedLine.canonicalFields.uomDimension,
+          reasonCode: preparedLine.reasonCode,
+          lineNotes: preparedLine.lineNotes,
+          createdAt: now
+        }))
       });
 
       if (!movement.created) {
         return buildLicensePlateMoveReplayResult({
           tenantId,
           licensePlateId: data.licensePlateId,
-          movementId: movement.id,
+          movementId: movement.movementId,
           fromLocationId: data.fromLocationId,
           toLocationId: data.toLocationId,
           producerIdempotencyKey: idempotencyKey,
@@ -763,23 +778,6 @@ export async function moveLicensePlate(
       const lineIdsByDirection = new Map<'out' | 'in', string>();
 
       for (const preparedLine of preparedLines) {
-        await createInventoryMovementLine(client, {
-          id: preparedLine.id,
-          tenantId,
-          movementId: movement.id,
-          itemId: preparedLine.itemId,
-          locationId: preparedLine.locationId,
-          quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
-          uom: preparedLine.canonicalFields.canonicalUom,
-          quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
-          uomEntered: preparedLine.canonicalFields.uomEntered,
-          quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: preparedLine.canonicalFields.canonicalUom,
-          uomDimension: preparedLine.canonicalFields.uomDimension,
-          reasonCode: preparedLine.reasonCode,
-          lineNotes: preparedLine.lineNotes
-        });
-
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
@@ -795,7 +793,6 @@ export async function moveLicensePlate(
           preparedLine.id
         );
       }
-      await persistMovementDeterministicHashFromLedger(client, tenantId, movement.id);
 
       const outLineId = lineIdsByDirection.get('out');
       const inLineId = lineIdsByDirection.get('in');
@@ -806,7 +803,7 @@ export async function moveLicensePlate(
       await relocateTransferCostLayersInTx({
         client,
         tenantId,
-        transferMovementId: movement.id,
+        transferMovementId: movement.movementId,
         occurredAt: now,
         notes: data.notes ?? `LPN ${currentLpn.lpn} moved from ${currentLpn.locationCode} to new location`,
         pairs: [
@@ -851,7 +848,7 @@ export async function moveLicensePlate(
               actorId: actor.id ?? null,
               action: 'negative_override',
               entityType: 'inventory_movement',
-              entityId: movement.id,
+              entityId: movement.movementId,
               occurredAt: now,
               metadata: {
                 reason: validation.overrideMetadata.override_reason ?? null,
@@ -876,7 +873,7 @@ export async function moveLicensePlate(
         );
         await verifyLicensePlateInventoryIntegrity({
           tenantId,
-          movementId: movement.id,
+          movementId: movement.movementId,
           licensePlateId: data.licensePlateId,
           expectedLocationId: data.toLocationId,
           expectedQuantity: qty,
@@ -897,7 +894,7 @@ export async function moveLicensePlate(
                 lpn: currentLpn.lpn,
                 fromLocationId: data.fromLocationId,
                 toLocationId: data.toLocationId,
-                movementId: movement.id
+                movementId: movement.movementId
               }
             },
             projectionClient
@@ -927,10 +924,10 @@ export async function moveLicensePlate(
         },
         responseStatus: 200,
         events: [
-          buildMovementPostedEvent(movement.id, idempotencyKey),
+          buildMovementPostedEvent(movement.movementId, idempotencyKey),
           buildLicensePlateMovedEvent({
             licensePlateId: data.licensePlateId,
-            movementId: movement.id,
+            movementId: movement.movementId,
             fromLocationId: data.fromLocationId,
             toLocationId: data.toLocationId,
             producerIdempotencyKey: idempotencyKey

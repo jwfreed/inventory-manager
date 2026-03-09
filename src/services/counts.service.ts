@@ -8,12 +8,15 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { recordAuditLog } from '../lib/audit';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import { validateSufficientStock } from './stockValidation.service';
-import { consumeCostLayers, createCostLayer } from './costLayers.service';
+import {
+  applyPlannedCostLayerConsumption,
+  createCostLayer,
+  planCostLayerConsumption
+} from './costLayers.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
-  createInventoryMovement,
-  createInventoryMovementLine
+  persistInventoryMovement
 } from '../domains/inventory';
 import {
   runInventoryCommand,
@@ -25,7 +28,6 @@ import {
   buildInventoryBalanceProjectionOp,
   buildMovementPostedEvent,
   buildRefreshItemCostSummaryProjectionOp,
-  persistMovementDeterministicHashFromLedger,
   sortDeterministicMovementLines,
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
@@ -929,7 +931,49 @@ export async function postInventoryCount(
         })
       );
       const movementId = uuidv4();
-      const movement = await createInventoryMovement(client, {
+      const plannedMovementLines: Array<{
+        delta: (typeof sortedPreparedDeltas)[number]['delta'];
+        canonicalFields: (typeof sortedPreparedDeltas)[number]['canonicalFields'];
+        unitCost: number | null;
+        extendedCost: number | null;
+        consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>> | null;
+      }> = [];
+      for (const preparedDelta of sortedPreparedDeltas) {
+        const { delta, canonicalFields } = preparedDelta;
+        const canonicalQty = canonicalFields.quantityDeltaCanonical;
+        let unitCost: number | null = null;
+        let extendedCost: number | null = null;
+        let consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>> | null = null;
+
+        if (delta.variance < 0) {
+          consumptionPlan = await planCostLayerConsumption({
+            tenant_id: tenantId,
+            item_id: delta.line.item_id,
+            location_id: delta.line.location_id,
+            quantity: Math.abs(canonicalQty),
+            consumption_type: 'adjustment',
+            consumption_document_id: id,
+            movement_id: movementId,
+            notes: `Cycle count shrink ${id} line ${delta.line.line_number}`,
+            client
+          });
+          unitCost = Math.abs(canonicalQty) > 0 ? consumptionPlan.total_cost / Math.abs(canonicalQty) : null;
+          extendedCost = consumptionPlan.total_cost !== null ? -consumptionPlan.total_cost : null;
+        } else {
+          unitCost = toNumber(delta.line.unit_cost_for_positive_adjustment ?? 0);
+          extendedCost = roundQuantity(canonicalQty * unitCost);
+        }
+
+        plannedMovementLines.push({
+          delta,
+          canonicalFields,
+          unitCost,
+          extendedCost,
+          consumptionPlan
+        });
+      }
+
+      const movement = await persistInventoryMovement(client, {
         id: movementId,
         tenantId,
         movementType: 'adjustment',
@@ -943,7 +987,27 @@ export async function postInventoryCount(
         notes: cycleCount.notes ?? null,
         metadata: validation.overrideMetadata ?? null,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        lines: plannedMovementLines.map((plannedLine) => ({
+          warehouseId: cycleCount.warehouse_id,
+          sourceLineId: plannedLine.delta.line.id,
+          itemId: plannedLine.delta.line.item_id,
+          locationId: plannedLine.delta.line.location_id,
+          quantityDelta: plannedLine.canonicalFields.quantityDeltaCanonical,
+          uom: plannedLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: plannedLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: plannedLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: plannedLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: plannedLine.canonicalFields.canonicalUom,
+          uomDimension: plannedLine.canonicalFields.uomDimension,
+          unitCost: plannedLine.unitCost,
+          extendedCost: plannedLine.extendedCost,
+          reasonCode: plannedLine.delta.line.reason_code ?? 'cycle_count_adjustment',
+          lineNotes:
+            plannedLine.delta.line.notes
+            ?? `Cycle count ${id} line ${plannedLine.delta.line.line_number}`,
+          createdAt: now
+        }))
       });
       if (!movement.created) {
         const lineCheck = await client.query(
@@ -952,11 +1016,11 @@ export async function postInventoryCount(
             WHERE tenant_id = $1
               AND movement_id = $2
             LIMIT 1`,
-          [tenantId, movement.id]
+          [tenantId, movement.movementId]
         );
         if (lineCheck.rowCount === 0) {
           throw inventoryCountPostIncompleteError(id, {
-            movementId: movement.id,
+            movementId: movement.movementId,
             reason: 'movement_exists_without_lines'
           });
         }
@@ -968,7 +1032,7 @@ export async function postInventoryCount(
                   updated_at = $2
             WHERE id = $3
               AND tenant_id = $4`,
-          [movement.id, now, id, tenantId]
+          [movement.movementId, now, id, tenantId]
         );
         await client.query(
           `UPDATE cycle_count_post_executions
@@ -976,73 +1040,53 @@ export async function postInventoryCount(
                   inventory_movement_id = $1,
                   updated_at = $2
             WHERE id = $3`,
-          [movement.id, now, execution.id]
+          [movement.movementId, now, execution.id]
         );
         return buildInventoryCountReplayResult({
           tenantId,
           countId: id,
-          movementId: movement.id,
+          movementId: movement.movementId,
           idempotencyKey,
           expectedLineCount: sortedPreparedDeltas.length,
           client
         });
       }
 
-      for (const preparedDelta of sortedPreparedDeltas) {
-        const { delta, canonicalFields } = preparedDelta;
+      for (const plannedLine of plannedMovementLines) {
+        const { delta, canonicalFields, unitCost, consumptionPlan } = plannedLine;
         const canonicalQty = canonicalFields.quantityDeltaCanonical;
-        let unitCost: number | null = null;
-        let extendedCost: number | null = null;
 
         if (delta.variance < 0) {
-          const consumption = await consumeCostLayers({
+          if (!consumptionPlan) {
+            throw new Error('INV_COUNT_COST_PLAN_REQUIRED');
+          }
+          await applyPlannedCostLayerConsumption({
             tenant_id: tenantId,
             item_id: delta.line.item_id,
             location_id: delta.line.location_id,
             quantity: Math.abs(canonicalQty),
             consumption_type: 'adjustment',
             consumption_document_id: id,
-            movement_id: movement.id,
+            movement_id: movement.movementId,
             notes: `Cycle count shrink ${id} line ${delta.line.line_number}`,
-            client
+            client,
+            plan: consumptionPlan
           });
-          unitCost = Math.abs(canonicalQty) > 0 ? consumption.total_cost / Math.abs(canonicalQty) : null;
-          extendedCost = consumption.total_cost !== null ? -consumption.total_cost : null;
         } else {
-          unitCost = toNumber(delta.line.unit_cost_for_positive_adjustment ?? 0);
-          extendedCost = roundQuantity(canonicalQty * unitCost);
           await createCostLayer({
             tenant_id: tenantId,
             item_id: delta.line.item_id,
             location_id: delta.line.location_id,
             uom: canonicalFields.canonicalUom,
             quantity: canonicalQty,
-            unit_cost: unitCost,
+            unit_cost: unitCost ?? 0,
             source_type: 'adjustment',
             source_document_id: id,
-            movement_id: movement.id,
+            movement_id: movement.movementId,
             notes: `Cycle count found ${id} line ${delta.line.line_number}`,
             client
           });
         }
-
-        await createInventoryMovementLine(client, {
-          tenantId,
-          movementId: movement.id,
-          itemId: delta.line.item_id,
-          locationId: delta.line.location_id,
-          quantityDelta: canonicalQty,
-          uom: canonicalFields.canonicalUom,
-          quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-          uomEntered: canonicalFields.uomEntered,
-          quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-          canonicalUom: canonicalFields.canonicalUom,
-          uomDimension: canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
-          reasonCode: delta.line.reason_code ?? 'cycle_count_adjustment',
-          lineNotes: delta.line.notes ?? `Cycle count ${id} line ${delta.line.line_number}`
-        });
 
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
@@ -1055,7 +1099,6 @@ export async function postInventoryCount(
         );
         itemsToRefresh.add(delta.line.item_id);
       }
-      await persistMovementDeterministicHashFromLedger(client, tenantId, movement.id);
 
       for (const itemId of itemsToRefresh.values()) {
         projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, itemId));
@@ -1089,7 +1132,7 @@ export async function postInventoryCount(
                 updated_at = $2
          WHERE id = $3
            AND tenant_id = $4`,
-        [movement.id, now, id, tenantId]
+        [movement.movementId, now, id, tenantId]
       );
 
       await client.query(
@@ -1098,7 +1141,7 @@ export async function postInventoryCount(
                 inventory_movement_id = $1,
                 updated_at = $2
           WHERE id = $3`,
-        [movement.id, now, execution.id]
+        [movement.movementId, now, execution.id]
       );
 
       if (validation.overrideMetadata && context?.actor) {
@@ -1109,7 +1152,7 @@ export async function postInventoryCount(
             actorId: context.actor.id ?? null,
             action: 'negative_override',
             entityType: 'inventory_movement',
-            entityId: movement.id,
+            entityId: movement.movementId,
             occurredAt: now,
             metadata: {
               reason: validation.overrideMetadata.override_reason ?? null,
@@ -1130,8 +1173,8 @@ export async function postInventoryCount(
         responseBody: count,
         responseStatus: 200,
         events: [
-          buildMovementPostedEvent(movement.id, idempotencyKey),
-          buildInventoryCountPostedEvent(id, movement.id, idempotencyKey)
+          buildMovementPostedEvent(movement.movementId, idempotencyKey),
+          buildInventoryCountPostedEvent(id, movement.movementId, idempotencyKey)
         ],
         projectionOps
       };

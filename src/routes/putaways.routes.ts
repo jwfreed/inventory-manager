@@ -198,6 +198,15 @@ router.post('/putaways/:id/post', async (req: Request, res: Response) => {
     if (error?.message === 'PUTAWAY_ACCEPT_LIMIT') {
       return res.status(409).json({ error: 'Requested putaway quantity exceeds accepted quantity.' });
     }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Putaway replay integrity failed closed.',
+          details: error?.details ?? null
+        }
+      });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post putaway.' });
   }

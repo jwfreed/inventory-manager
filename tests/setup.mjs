@@ -1,4 +1,5 @@
 import { afterEach, after, beforeEach } from 'node:test';
+import { createRequire } from 'node:module';
 import { clearWaitForTimers } from './api/helpers/waitFor.mjs';
 import { snapshotActiveHandles, diffHandleSnapshots, logActiveResources } from './api/helpers/activeHandles.mjs';
 import { stopTestServer } from './api/helpers/testServer.mjs';
@@ -15,6 +16,7 @@ function sleep(ms) {
 
 const delayMs = Number(process.env.TEST_AFTER_EACH_DELAY_MS ?? '100');
 const debugHandles = process.env.TEST_DEBUG_HANDLES === '1';
+const require = createRequire(import.meta.url);
 
 // NOTE:
 // TEST_DEBUG_HANDLES=1 can be used to diagnose event-loop leaks.
@@ -84,4 +86,15 @@ after(async () => {
   logActiveResources('[handles] final');
   await stopTestServer();
   await closeDbPool();
+  try {
+    require('ts-node/register/transpile-only');
+    require('tsconfig-paths/register');
+    const dbModulePath = require.resolve('../src/db.ts');
+    const cachedDbModule = require.cache?.[dbModulePath];
+    if (cachedDbModule?.exports?.pool?.end) {
+      await cachedDbModule.exports.pool.end();
+    }
+  } catch {
+    // No-op when the service-layer db pool was never loaded during this test run.
+  }
 });

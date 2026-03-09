@@ -470,6 +470,15 @@ router.post('/shipments/:id/post', async (req: Request, res: Response) => {
     if (error?.message === 'SHIPMENT_LOCATION_REQUIRED') {
       return res.status(400).json({ error: 'Shipment requires ship_from_location_id.' });
     }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Shipment replay integrity failed closed.',
+          details: error?.details ?? null
+        }
+      });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post shipment.' });
   }

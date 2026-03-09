@@ -168,7 +168,7 @@ test('license plate and manufacturing mutation dag entrypoints stay wrapper-mana
   }
 });
 
-test('migrated mutation entrypoints do not create authoritative movement rows outside runInventoryCommand', async () => {
+test('migrated mutation entrypoints do not bypass the canonical movement writer', async () => {
   const uniqueFiles = [...new Set(DAG_NODES.map((node) => node.file))];
   const sourceEntries = await Promise.all(
     uniqueFiles.map(async (filePath) => [filePath, await readFile(filePath, 'utf8')])
@@ -179,17 +179,22 @@ test('migrated mutation entrypoints do not create authoritative movement rows ou
     const source = sources.get(node.file);
     assert.ok(source, `missing source for ${node.label}`);
     const body = extractFunctionBody(source, node.functionName);
-    if (/\bcreateInventoryMovement(?:Line)?\(/.test(body)) {
+    if (/\bpersistInventoryMovement\(/.test(body)) {
       assert.match(
         body,
         /\brunInventoryCommand(?:<[^>]+>)?\(/,
-        `${node.label} must not create authoritative movement rows outside runInventoryCommand()`
+        `${node.label} must not persist authoritative movement rows outside runInventoryCommand()`
       );
     }
+    assert.doesNotMatch(
+      body,
+      /\bcreateInventoryMovement(?:Line)?\(/,
+      `${node.label} must not call direct movement primitives`
+    );
   }
 });
 
-test('migrated movement writers persist deterministic hashes from authoritative movements', async () => {
+test('migrated movement writers persist deterministic hashes at insert time', async () => {
   const [transferSource, licenseSource, workOrderSource] = await Promise.all([
     readFile(TRANSFERS_SERVICE, 'utf8'),
     readFile(LICENSE_PLATES_SERVICE, 'utf8'),
@@ -215,8 +220,8 @@ test('migrated movement writers persist deterministic hashes from authoritative 
     }
     assert.match(
       body,
-      /\bpersistMovementDeterministicHashFromLedger\(|\bbuildMovementDeterministicHash\(/,
-      `${functionName} must persist a deterministic movement hash`
+      /\bpersistInventoryMovement\(/,
+      `${functionName} must persist movement rows through persistInventoryMovement()`
     );
     assert.match(
       body,
@@ -269,19 +274,24 @@ test('shared replay helper keys event repair by aggregate identity, event type, 
   );
   assert.match(
     source,
-    /MOVEMENT_HASH_REQUIRED_AFTER_MIGRATION_TS/,
-    'replay helper must define the post-migration hash cutoff'
-  );
-  assert.match(
-    source,
-    /authoritative_movement_hash_missing_post_migration/,
-    'replay helper must reject missing movement hashes for post-migration rows'
+    /authoritative_movement_hash_missing/,
+    'replay helper must reject missing movement hashes universally'
   );
 
   assert.match(
     body,
-    /inventoryEventVersionExists\([\s\S]*event\.aggregateType[\s\S]*event\.aggregateId[\s\S]*event\.eventType[\s\S]*event\.eventVersion/,
+    /resolveReplayRepairEvents\(/,
+    'replay helper must delegate event repair through the shared authoritative event resolver'
+  );
+  assert.match(
+    source,
+    /loadPersistedInventoryEvent\([\s\S]*event\.aggregateType[\s\S]*event\.aggregateId[\s\S]*event\.eventType[\s\S]*event\.eventVersion/,
     'replay event repair must key event existence by aggregate identity, event type, and version'
+  );
+  assert.match(
+    source,
+    /validatePersistedInventoryEventRegistryRow\(/,
+    'replay event repair must validate persisted authoritative events against the registry'
   );
 });
 

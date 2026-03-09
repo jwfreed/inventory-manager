@@ -5,7 +5,6 @@ import path from 'node:path';
 
 const ORDER_TO_CASH_SERVICE = path.resolve(process.cwd(), 'src/services/orderToCash.service.ts');
 const INVENTORY_COMMAND_WRAPPER = path.resolve(process.cwd(), 'src/modules/platform/application/runInventoryCommand.ts');
-const INVENTORY_OUTBOX = path.resolve(process.cwd(), 'src/domains/inventory/outbox.ts');
 
 function extractFunctionBody(source, signaturePrefix, functionName) {
   const marker = `${signaturePrefix} ${functionName}`;
@@ -77,16 +76,21 @@ test('runInventoryCommand must append authoritative events before projection ops
   assert.ok(appendIndex < projectionIndex, 'authoritative event append must precede projection ops');
 });
 
-test('inventory domain event helpers must preserve stable aggregate identity', async () => {
-  const source = await readFile(INVENTORY_OUTBOX, 'utf8');
+test('shipment posting must rebuild replay responses from authoritative movement scope', async () => {
+  const source = await readFile(ORDER_TO_CASH_SERVICE, 'utf8');
   assert.match(
     source,
-    /aggregateType:\s*'inventory_movement'[\s\S]*aggregateId:\s*movementId/,
-    'movement events must use stable movementId aggregate ids'
+    /\bbuildShipmentReplayResult\([\s\S]*\bbuildPostedDocumentReplayResult\(/,
+    'shipment replay handling must reuse the shared replay helper'
   );
   assert.match(
     source,
-    /aggregateType:\s*'inventory_reservation'[\s\S]*aggregateId:\s*reservationId/,
-    'reservation events must use stable reservationId aggregate ids'
+    /\bpersistInventoryMovement\(/,
+    'shipment posting must persist a deterministic movement hash through the canonical movement writer'
+  );
+  assert.doesNotMatch(
+    source,
+    /\bappendInventoryEvent(?:sWithDispatch|WithDispatch)?\(/,
+    'shipment posting must not append authoritative inventory events directly'
   );
 });

@@ -68,3 +68,41 @@ test('receipt mutations must not use derived projections for correctness', async
   assert.doesNotMatch(voidBody, /\bquantity_on_hand\b/, 'receipt void must not read items.quantity_on_hand for correctness');
   assert.doesNotMatch(voidBody, /\baverage_cost\b/, 'receipt void must not read items.average_cost for correctness');
 });
+
+test('receipt replay and reversal hardening stays on shared helpers', async () => {
+  const source = await readFile(RECEIPTS_SERVICE, 'utf8');
+  const createBody = extractFunctionBody(source, 'export async function', 'createPurchaseOrderReceipt');
+  const voidBody = extractFunctionBody(source, 'export async function', 'voidReceipt');
+  const reversalBody = extractFunctionBody(source, 'async function', 'insertReversalLinesAndCollectDeltas');
+
+  assert.match(
+    source,
+    /\bbuildReceiptCreateReplayResult\([\s\S]*\bbuildPostedDocumentReplayResult\(/,
+    'receipt create replay must use the shared replay helper'
+  );
+  assert.match(
+    source,
+    /\bbuildReceiptVoidReplayResult\([\s\S]*\bbuildPostedDocumentReplayResult\(/,
+    'receipt void replay must use the shared replay helper'
+  );
+  assert.match(
+    createBody,
+    /\bpersistInventoryMovement\(/,
+    'receipt create must persist a deterministic movement hash through the canonical movement writer'
+  );
+  assert.match(
+    voidBody,
+    /\bpersistInventoryMovement\(/,
+    'receipt void must persist a deterministic movement hash through the canonical movement writer'
+  );
+  assert.match(
+    reversalBody,
+    /\bsortDeterministicMovementLines\(/,
+    'receipt reversal line planning must be deterministic'
+  );
+  assert.doesNotMatch(
+    reversalBody,
+    /\bINSERT INTO\s+inventory_movement_lines\b/,
+    'receipt reversal must not bulk-insert authoritative movement lines directly'
+  );
+});

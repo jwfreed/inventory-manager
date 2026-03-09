@@ -1,12 +1,22 @@
-import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { applyInventoryBalanceDelta } from '../../../domains/inventory';
 import { refreshItemCostSummaryProjection } from '../../costing/infrastructure/itemCostSummary.projector';
-import { toNumber } from '../../../lib/numbers';
 import type { InventoryCommandEvent, InventoryCommandProjectionOp } from './runInventoryCommand';
-import { buildInventoryRegistryEvent } from './inventoryEventRegistry';
-
-export const MOVEMENT_HASH_REQUIRED_AFTER_MIGRATION_TS = 1774900000000;
+import {
+  buildInventoryRegistryEvent,
+  validatePersistedInventoryEventRegistryRow
+} from './inventoryEventRegistry';
+import {
+  buildMovementDeterministicHash,
+  type MovementDeterministicHashLineInput
+} from './inventoryMovementDeterminism';
+export {
+  buildMovementDeterministicHash,
+  sortDeterministicMovementLines,
+  type MovementDeterministicHashInput,
+  type MovementDeterministicHashLineInput,
+  type DeterministicMovementLineIdentity
+} from './inventoryMovementDeterminism';
 
 export function buildMovementPostedEvent(
   movementId: string,
@@ -84,23 +94,12 @@ export async function authoritativeMovementReady(
   };
 }
 
-export type MovementDeterministicHashLineInput = {
-  itemId: string;
-  locationId: string;
-  quantityDelta: number | string;
-  uom?: string | null;
-  canonicalUom?: string | null;
-  unitCost?: number | string | null;
-  reasonCode?: string | null;
-};
-
-export type MovementDeterministicHashInput = {
-  tenantId: string;
-  movementType: string;
-  occurredAt: Date | string;
-  sourceType?: string | null;
-  sourceId?: string | null;
-  lines: MovementDeterministicHashLineInput[];
+type PersistedInventoryEventRow = {
+  aggregate_type: string;
+  aggregate_id: string;
+  event_type: string;
+  event_version: number;
+  payload: Record<string, unknown> | null;
 };
 
 export type AuthoritativeMovementReplayExpectation = {
@@ -108,78 +107,6 @@ export type AuthoritativeMovementReplayExpectation = {
   expectedLineCount?: number;
   expectedDeterministicHash?: string | null;
 };
-
-type NormalizedMovementDeterministicHashLine = {
-  itemId: string;
-  locationId: string;
-  canonicalUom: string;
-  quantityDelta: string;
-  unitCost: string | null;
-  reasonCode: string;
-};
-
-type NormalizedMovementDeterministicHashEnvelope = {
-  tenantId: string;
-  movementType: string;
-  occurredAt: string;
-  sourceType: string;
-  sourceId: string;
-  lines: NormalizedMovementDeterministicHashLine[];
-};
-
-function normalizeMovementHashNumber(value: unknown): string {
-  const numeric = toNumber(value);
-  if (!Number.isFinite(numeric)) {
-    return '0.000000000000';
-  }
-  return numeric.toFixed(12);
-}
-
-function normalizeMovementDeterministicHashLine(
-  line: MovementDeterministicHashLineInput
-): NormalizedMovementDeterministicHashLine {
-  return {
-    itemId: line.itemId,
-    locationId: line.locationId,
-    canonicalUom: line.canonicalUom ?? line.uom ?? '',
-    quantityDelta: normalizeMovementHashNumber(line.quantityDelta),
-    unitCost: line.unitCost === null || line.unitCost === undefined
-      ? null
-      : normalizeMovementHashNumber(line.unitCost),
-    reasonCode: line.reasonCode ?? ''
-  };
-}
-
-function compareMovementDeterministicHashLine(
-  left: NormalizedMovementDeterministicHashLine,
-  right: NormalizedMovementDeterministicHashLine
-) {
-  return (
-    left.itemId.localeCompare(right.itemId)
-    || left.locationId.localeCompare(right.locationId)
-    || left.canonicalUom.localeCompare(right.canonicalUom)
-    || left.quantityDelta.localeCompare(right.quantityDelta)
-    || String(left.unitCost ?? '').localeCompare(String(right.unitCost ?? ''))
-    || left.reasonCode.localeCompare(right.reasonCode)
-  );
-}
-
-export function buildMovementDeterministicHash(
-  input: MovementDeterministicHashInput
-): string {
-  const normalizedLines = input.lines
-    .map(normalizeMovementDeterministicHashLine)
-    .sort(compareMovementDeterministicHashLine);
-  const normalizedEnvelope: NormalizedMovementDeterministicHashEnvelope = {
-    tenantId: input.tenantId,
-    movementType: input.movementType,
-    occurredAt: new Date(input.occurredAt).toISOString(),
-    sourceType: input.sourceType?.trim() ?? '',
-    sourceId: input.sourceId?.trim() ?? '',
-    lines: normalizedLines
-  };
-  return createHash('sha256').update(JSON.stringify(normalizedEnvelope)).digest('hex');
-}
 
 export function buildReplayCorruptionError(details: Record<string, unknown>) {
   const error = new Error('REPLAY_CORRUPTION_DETECTED') as Error & {
@@ -264,34 +191,6 @@ function computePersistedMovementDeterministicHash(params: {
   });
 }
 
-export async function persistMovementDeterministicHashFromLedger(
-  client: PoolClient,
-  tenantId: string,
-  movementId: string
-) {
-  const state = await loadPersistedMovementDeterministicHashState(client, tenantId, movementId);
-  if (state.lineCount === 0) {
-    throw buildReplayCorruptionError({
-      tenantId,
-      movementId,
-      reason: 'authoritative_movement_missing_lines'
-    });
-  }
-  const movementDeterministicHash = computePersistedMovementDeterministicHash({
-    tenantId,
-    movement: state.movement,
-    lines: state.lines
-  });
-  await client.query(
-    `UPDATE inventory_movements
-        SET movement_deterministic_hash = $3
-      WHERE tenant_id = $1
-        AND id = $2`,
-    [tenantId, movementId, movementDeterministicHash]
-  );
-  return movementDeterministicHash;
-}
-
 async function verifyAuthoritativeMovementReplayIntegrity(
   client: PoolClient,
   tenantId: string,
@@ -325,15 +224,11 @@ async function verifyAuthoritativeMovementReplayIntegrity(
   }
 
   const storedDeterministicHash = state.movement.movement_deterministic_hash ?? null;
-  const movementCreatedAtMs = new Date(state.movement.created_at).getTime();
-  if (
-    movementCreatedAtMs >= MOVEMENT_HASH_REQUIRED_AFTER_MIGRATION_TS
-    && !storedDeterministicHash
-  ) {
+  if (!storedDeterministicHash) {
     throw buildReplayCorruptionError({
       tenantId,
       movementId: expectation.movementId,
-      reason: 'authoritative_movement_hash_missing_post_migration',
+      reason: 'authoritative_movement_hash_missing',
       createdAt: new Date(state.movement.created_at).toISOString()
     });
   }
@@ -366,6 +261,76 @@ async function verifyAuthoritativeMovementReplayIntegrity(
   }
 }
 
+async function loadPersistedInventoryEvent(
+  client: PoolClient,
+  tenantId: string,
+  aggregateType: string,
+  aggregateId: string,
+  eventType: string,
+  eventVersion: number
+) {
+  const result = await client.query<PersistedInventoryEventRow>(
+    `SELECT aggregate_type,
+            aggregate_id,
+            event_type,
+            event_version,
+            payload
+       FROM inventory_events
+      WHERE tenant_id = $1
+        AND aggregate_type = $2
+        AND aggregate_id = $3
+        AND event_type = $4
+        AND event_version = $5
+      LIMIT 1`,
+    [tenantId, aggregateType, aggregateId, eventType, eventVersion]
+  );
+  return result.rows[0] ?? null;
+}
+
+async function resolveReplayRepairEvents(params: {
+  client: PoolClient;
+  tenantId: string;
+  authoritativeEvents: InventoryCommandEvent[];
+}) {
+  const events: InventoryCommandEvent[] = [];
+  for (const event of params.authoritativeEvents) {
+    const persistedEvent = await loadPersistedInventoryEvent(
+      params.client,
+      params.tenantId,
+      event.aggregateType,
+      event.aggregateId,
+      event.eventType,
+      event.eventVersion
+    );
+    if (!persistedEvent) {
+      events.push(event);
+      continue;
+    }
+
+    try {
+      validatePersistedInventoryEventRegistryRow({
+        aggregateType: persistedEvent.aggregate_type,
+        aggregateId: persistedEvent.aggregate_id,
+        eventType: persistedEvent.event_type,
+        eventVersion: persistedEvent.event_version,
+        payload: persistedEvent.payload ?? {}
+      });
+    } catch (error) {
+      throw buildReplayCorruptionError({
+        tenantId: params.tenantId,
+        aggregateType: event.aggregateType,
+        aggregateId: event.aggregateId,
+        eventType: event.eventType,
+        eventVersion: event.eventVersion,
+        reason: 'inventory_event_registry_contract_violation',
+        violation: (error as Error)?.message ?? 'INVENTORY_EVENT_REGISTRY_VALIDATION_FAILED'
+      });
+    }
+  }
+
+  return events;
+}
+
 export async function buildPostedDocumentReplayResult<T>(params: {
   tenantId: string;
   authoritativeMovements: AuthoritativeMovementReplayExpectation[];
@@ -393,57 +358,17 @@ export async function buildPostedDocumentReplayResult<T>(params: {
     throw params.aggregateNotFoundError;
   }
 
-  const events: InventoryCommandEvent[] = [];
-  for (const event of params.authoritativeEvents) {
-    if (!await inventoryEventVersionExists(
-      params.client,
-      params.tenantId,
-      event.aggregateType,
-      event.aggregateId,
-      event.eventType,
-      event.eventVersion
-    )) {
-      events.push(event);
-    }
-  }
+  const events = await resolveReplayRepairEvents({
+    client: params.client,
+    tenantId: params.tenantId,
+    authoritativeEvents: params.authoritativeEvents
+  });
 
   return {
     responseBody: aggregateView,
     responseStatus: params.responseStatus ?? 200,
     events
   };
-}
-
-type DeterministicMovementLineIdentity = {
-  tenantId: string;
-  warehouseId: string;
-  locationId: string;
-  itemId: string;
-  canonicalUom: string;
-  sourceLineId: string;
-};
-
-function compareDeterministicMovementLineIdentity(
-  left: DeterministicMovementLineIdentity,
-  right: DeterministicMovementLineIdentity
-) {
-  return (
-    left.tenantId.localeCompare(right.tenantId)
-    || left.warehouseId.localeCompare(right.warehouseId)
-    || left.locationId.localeCompare(right.locationId)
-    || left.itemId.localeCompare(right.itemId)
-    || left.canonicalUom.localeCompare(right.canonicalUom)
-    || left.sourceLineId.localeCompare(right.sourceLineId)
-  );
-}
-
-export function sortDeterministicMovementLines<T>(
-  lines: T[],
-  getIdentity: (line: T) => DeterministicMovementLineIdentity
-) {
-  return [...lines].sort((left, right) =>
-    compareDeterministicMovementLineIdentity(getIdentity(left), getIdentity(right))
-  );
 }
 
 export function buildInventoryBalanceProjectionOp(params: {
@@ -466,5 +391,102 @@ export function buildRefreshItemCostSummaryProjectionOp(
 ): InventoryCommandProjectionOp {
   return async (client: PoolClient) => {
     await refreshItemCostSummaryProjection(tenantId, itemId, client);
+  };
+}
+
+export type MovementHashCoverageAuditFailure = {
+  tenantId: string;
+  movementId: string;
+  reason: string;
+  details?: Record<string, unknown> | null;
+};
+
+export type MovementHashCoverageAuditResult = {
+  totalMovements: number;
+  rowsMissingDeterministicHash: number;
+  postCutoffRowsMissingHash: number;
+  replayIntegrityFailures: {
+    count: number;
+    sample: MovementHashCoverageAuditFailure[];
+  };
+};
+
+export async function auditMovementHashCoverage(
+  client: PoolClient,
+  params?: {
+    tenantId?: string | null;
+    sampleLimit?: number;
+  }
+): Promise<MovementHashCoverageAuditResult> {
+  const tenantId = params?.tenantId ?? null;
+  const sampleLimit = Math.max(0, Math.floor(params?.sampleLimit ?? 25));
+
+  const countsResult = await client.query<{
+    total_movements: string | number;
+    rows_missing_deterministic_hash: string | number;
+    post_cutoff_rows_missing_hash: string | number;
+  }>(
+    `SELECT COUNT(*)::int AS total_movements,
+            COUNT(*) FILTER (
+              WHERE movement_deterministic_hash IS NULL
+            )::int AS rows_missing_deterministic_hash,
+            COUNT(*) FILTER (
+              WHERE movement_deterministic_hash IS NULL
+            )::int AS post_cutoff_rows_missing_hash
+       FROM inventory_movements
+      WHERE ($1::uuid IS NULL OR tenant_id = $1)`,
+    [tenantId]
+  );
+
+  const movementsResult = await client.query<{ tenant_id: string; id: string }>(
+    `SELECT tenant_id, id
+       FROM inventory_movements
+      WHERE ($1::uuid IS NULL OR tenant_id = $1)
+      ORDER BY created_at DESC, id DESC`,
+    [tenantId]
+  );
+
+  let replayIntegrityFailureCount = 0;
+  const replayIntegrityFailureSample: MovementHashCoverageAuditFailure[] = [];
+  for (const row of movementsResult.rows) {
+    try {
+      await verifyAuthoritativeMovementReplayIntegrity(client, row.tenant_id, {
+        movementId: row.id
+      });
+    } catch (error) {
+      if (
+        (error as Error & { code?: string })?.code !== 'REPLAY_CORRUPTION_DETECTED'
+        && (error as Error)?.message !== 'REPLAY_CORRUPTION_DETECTED'
+      ) {
+        throw error;
+      }
+
+      replayIntegrityFailureCount += 1;
+      if (replayIntegrityFailureSample.length < sampleLimit) {
+        const details = (error as Error & { details?: Record<string, unknown> })?.details ?? {};
+        replayIntegrityFailureSample.push({
+          tenantId: row.tenant_id,
+          movementId: row.id,
+          reason: String(details.reason ?? 'replay_corruption_detected'),
+          details
+        });
+      }
+    }
+  }
+
+  const countsRow = countsResult.rows[0] ?? {
+    total_movements: 0,
+    rows_missing_deterministic_hash: 0,
+    post_cutoff_rows_missing_hash: 0
+  };
+
+  return {
+    totalMovements: Number(countsRow.total_movements ?? 0),
+    rowsMissingDeterministicHash: Number(countsRow.rows_missing_deterministic_hash ?? 0),
+    postCutoffRowsMissingHash: Number(countsRow.post_cutoff_rows_missing_hash ?? 0),
+    replayIntegrityFailures: {
+      count: replayIntegrityFailureCount,
+      sample: replayIntegrityFailureSample
+    }
   };
 }

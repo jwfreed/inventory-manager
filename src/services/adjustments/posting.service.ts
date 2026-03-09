@@ -10,7 +10,7 @@ import { getCanonicalMovementFields } from '../uomCanonical.service';
 import { resolveWarehouseIdForLocation } from '../warehouseDefaults.service';
 import { fetchInventoryAdjustmentById } from './core.service';
 import type { InventoryAdjustmentRow, InventoryAdjustmentLineRow, PostingContext } from './types';
-import { createInventoryMovement, createInventoryMovementLine } from '../../domains/inventory';
+import { persistInventoryMovement } from '../../domains/inventory';
 import {
   runInventoryCommand,
   type InventoryCommandEvent,
@@ -21,7 +21,6 @@ import {
   buildInventoryBalanceProjectionOp,
   buildMovementPostedEvent,
   buildRefreshItemCostSummaryProjectionOp,
-  persistMovementDeterministicHashFromLedger,
   sortDeterministicMovementLines,
 } from '../../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../../modules/platform/application/inventoryEventRegistry';
@@ -242,7 +241,16 @@ export async function postInventoryAdjustment(
           })
         );
         const movementId = uuidv4();
-        const movement = await createInventoryMovement(client, {
+        const plannedMovementLines = await Promise.all(sortedPreparedLines.map(async (preparedLine) => {
+          const canonicalQty = preparedLine.canonicalFields.quantityDeltaCanonical;
+          const costData = await calculateMovementCost(tenantId, preparedLine.line.item_id, canonicalQty, client);
+          return {
+            ...preparedLine,
+            costData
+          };
+        }));
+
+        const movement = await persistInventoryMovement(client, {
           id: movementId,
           tenantId,
           movementType: 'adjustment',
@@ -255,7 +263,25 @@ export async function postInventoryAdjustment(
           notes: adjustmentRow.notes ?? null,
           metadata: validation.overrideMetadata ?? null,
           createdAt: now,
-          updatedAt: now
+          updatedAt: now,
+          lines: plannedMovementLines.map((preparedLine) => ({
+            warehouseId: preparedLine.warehouseId,
+            sourceLineId: preparedLine.line.id,
+            itemId: preparedLine.line.item_id,
+            locationId: preparedLine.line.location_id,
+            quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
+            uom: preparedLine.canonicalFields.canonicalUom,
+            quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
+            uomEntered: preparedLine.canonicalFields.uomEntered,
+            quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
+            canonicalUom: preparedLine.canonicalFields.canonicalUom,
+            uomDimension: preparedLine.canonicalFields.uomDimension,
+            unitCost: preparedLine.costData.unitCost,
+            extendedCost: preparedLine.costData.extendedCost,
+            reasonCode: preparedLine.line.reason_code,
+            lineNotes: preparedLine.line.notes ?? `Adjustment ${id} line ${preparedLine.line.line_number}`,
+            createdAt: now
+          }))
         });
 
         if (!movement.created) {
@@ -265,7 +291,7 @@ export async function postInventoryAdjustment(
               WHERE tenant_id = $1
                 AND movement_id = $2
               LIMIT 1`,
-            [tenantId, movement.id]
+            [tenantId, movement.movementId]
           );
           if (lineCheck.rowCount > 0) {
             await client.query(
@@ -274,26 +300,25 @@ export async function postInventoryAdjustment(
                       inventory_movement_id = $1,
                       updated_at = $2
                 WHERE id = $3 AND tenant_id = $4`,
-              [movement.id, now, id, tenantId]
+              [movement.movementId, now, id, tenantId]
             );
             return buildInventoryAdjustmentReplayResult({
               tenantId,
               adjustmentId: id,
-              movementId: movement.id,
+              movementId: movement.movementId,
               expectedLineCount: sortedPreparedLines.length,
               client
             });
           }
           throw inventoryAdjustmentPostIncompleteError(id, {
-            movementId: movement.id,
+            movementId: movement.movementId,
             reason: 'movement_exists_without_lines'
           });
         }
 
-        for (const preparedLine of sortedPreparedLines) {
-          const { line, qty, canonicalFields } = preparedLine;
+        for (const preparedLine of plannedMovementLines) {
+          const { line, qty, canonicalFields, costData } = preparedLine;
           const canonicalQty = canonicalFields.quantityDeltaCanonical;
-          const costData = await calculateMovementCost(tenantId, line.item_id, canonicalQty, client);
 
           if (qty > 0) {
             await createCostLayer({
@@ -305,7 +330,7 @@ export async function postInventoryAdjustment(
               unit_cost: costData.unitCost || 0,
               source_type: 'adjustment',
               source_document_id: line.id,
-              movement_id: movement.id,
+              movement_id: movement.movementId,
               notes: `Adjustment increase: ${line.reason_code || 'unspecified'}`,
               client
             });
@@ -317,29 +342,11 @@ export async function postInventoryAdjustment(
               quantity: Math.abs(canonicalQty),
               consumption_type: 'adjustment',
               consumption_document_id: line.id,
-              movement_id: movement.id,
+              movement_id: movement.movementId,
               notes: `Adjustment decrease: ${line.reason_code || 'unspecified'}`,
               client
             });
           }
-
-          await createInventoryMovementLine(client, {
-            tenantId,
-            movementId: movement.id,
-            itemId: line.item_id,
-            locationId: line.location_id,
-            quantityDelta: canonicalQty,
-            uom: canonicalFields.canonicalUom,
-            quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-            uomEntered: canonicalFields.uomEntered,
-            quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-            canonicalUom: canonicalFields.canonicalUom,
-            uomDimension: canonicalFields.uomDimension,
-            unitCost: costData.unitCost,
-            extendedCost: costData.extendedCost,
-            reasonCode: line.reason_code,
-            lineNotes: line.notes ?? `Adjustment ${id} line ${line.line_number}`
-          });
 
           projectionOps.push(
             buildInventoryBalanceProjectionOp({
@@ -352,7 +359,6 @@ export async function postInventoryAdjustment(
           );
           itemsToRefresh.add(line.item_id);
         }
-        await persistMovementDeterministicHashFromLedger(client, tenantId, movement.id);
 
         for (const itemId of itemsToRefresh.values()) {
           projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, itemId));
@@ -364,7 +370,7 @@ export async function postInventoryAdjustment(
                   inventory_movement_id = $1,
                   updated_at = $2
            WHERE id = $3 AND tenant_id = $4`,
-          [movement.id, now, id, tenantId]
+          [movement.movementId, now, id, tenantId]
         );
 
         if (context?.actor) {
@@ -377,7 +383,7 @@ export async function postInventoryAdjustment(
               entityType: 'inventory_adjustment',
               entityId: id,
               occurredAt: now,
-              metadata: { movementId: movement.id }
+              metadata: { movementId: movement.movementId }
             },
             client
           );
@@ -391,7 +397,7 @@ export async function postInventoryAdjustment(
               actorId: context.actor.id ?? null,
               action: 'negative_override',
               entityType: 'inventory_movement',
-              entityId: movement.id,
+              entityId: movement.movementId,
               occurredAt: now,
               metadata: {
                 reason: validation.overrideMetadata.override_reason ?? null,
@@ -412,8 +418,8 @@ export async function postInventoryAdjustment(
           responseBody: adjustment,
           responseStatus: 200,
           events: [
-            buildMovementPostedEvent(movement.id),
-            buildInventoryAdjustmentPostedEvent(id, movement.id)
+            buildMovementPostedEvent(movement.movementId),
+            buildInventoryAdjustmentPostedEvent(id, movement.movementId)
           ],
           projectionOps
         };

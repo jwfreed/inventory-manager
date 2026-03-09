@@ -101,6 +101,22 @@ interface ConsumeLayersResult {
   }>;
 }
 
+export interface PlannedCostLayerConsumption {
+  layer_id: string;
+  quantity: number;
+  unit_cost: number;
+  extended_cost: number;
+  remaining_quantity_before: number;
+  remaining_quantity_after: number;
+}
+
+export interface ConsumeLayersPlanResult {
+  total_cost: number;
+  weighted_average_cost: number;
+  consumed_at: Date;
+  consumptions: PlannedCostLayerConsumption[];
+}
+
 /**
  * Create a new cost layer from a receipt, production, or adjustment
  */
@@ -324,15 +340,13 @@ export async function getAvailableLayers(
   return result.rows;
 }
 
-/**
- * Consume from cost layers in FIFO order
- * Returns the total cost and records all consumptions
- */
-export async function consumeCostLayers(params: ConsumeLayersParams): Promise<ConsumeLayersResult> {
+export async function planCostLayerConsumption(
+  params: ConsumeLayersParams
+): Promise<ConsumeLayersPlanResult> {
   const externalClient = params.client;
   const client = externalClient ?? (await pool.connect());
   const ownsClient = !externalClient;
-  
+
   try {
     if (ownsClient) {
       await client.query('BEGIN');
@@ -363,58 +377,24 @@ export async function consumeCostLayers(params: ConsumeLayersParams): Promise<Co
 
     let remaining_to_consume = params.quantity;
     let total_cost = 0;
-    const consumptions: ConsumeLayersResult['consumptions'] = [];
+    const consumptions: ConsumeLayersPlanResult['consumptions'] = [];
     const consumed_at = params.consumed_at || new Date();
 
-    // Consume from layers in FIFO order
     for (const layer of layers) {
       if (remaining_to_consume <= 0) break;
 
       const consume_from_layer = Math.min(Number(layer.remaining_quantity), remaining_to_consume);
       const layer_cost = consume_from_layer * Number(layer.unit_cost);
-
-      // Record consumption
-      const consumption_id = uuidv4();
-      await client.query(
-        `INSERT INTO cost_layer_consumptions (
-          id, tenant_id, cost_layer_id,
-          consumed_quantity, unit_cost, extended_cost,
-          consumption_type, consumption_document_id, movement_id,
-          consumed_at, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [
-          consumption_id,
-          params.tenant_id,
-          layer.id,
-          consume_from_layer,
-          layer.unit_cost,
-          layer_cost,
-          params.consumption_type,
-          params.consumption_document_id || null,
-          params.movement_id || null,
-          consumed_at,
-          params.notes || null
-        ]
-      );
-
-      // Update layer remaining quantity
-      const new_remaining = Number(layer.remaining_quantity) - consume_from_layer;
-      const new_extended = new_remaining * Number(layer.unit_cost);
-      
-      await client.query(
-        `UPDATE inventory_cost_layers 
-         SET remaining_quantity = $1,
-             extended_cost = $2,
-             updated_at = NOW()
-         WHERE id = $3`,
-        [new_remaining, new_extended, layer.id]
-      );
+      const remainingBefore = Number(layer.remaining_quantity);
+      const new_remaining = remainingBefore - consume_from_layer;
 
       consumptions.push({
         layer_id: layer.id,
         quantity: consume_from_layer,
         unit_cost: Number(layer.unit_cost),
-        extended_cost: layer_cost
+        extended_cost: layer_cost,
+        remaining_quantity_before: remainingBefore,
+        remaining_quantity_after: new_remaining
       });
 
       total_cost += layer_cost;
@@ -430,9 +410,103 @@ export async function consumeCostLayers(params: ConsumeLayersParams): Promise<Co
     return {
       total_cost,
       weighted_average_cost,
+      consumed_at,
       consumptions
     };
+  } catch (error) {
+    if (ownsClient) {
+      await client.query('ROLLBACK');
+    }
+    throw error;
+  } finally {
+    if (ownsClient) {
+      client.release();
+    }
+  }
+}
 
+export async function applyPlannedCostLayerConsumption(
+  params: ConsumeLayersParams & { plan: ConsumeLayersPlanResult }
+): Promise<ConsumeLayersResult> {
+  const executor = params.client ? params.client.query.bind(params.client) : query;
+  for (const consumption of params.plan.consumptions) {
+    await executor(
+      `INSERT INTO cost_layer_consumptions (
+        id, tenant_id, cost_layer_id,
+        consumed_quantity, unit_cost, extended_cost,
+        consumption_type, consumption_document_id, movement_id,
+        consumed_at, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        uuidv4(),
+        params.tenant_id,
+        consumption.layer_id,
+        consumption.quantity,
+        consumption.unit_cost,
+        consumption.extended_cost,
+        params.consumption_type,
+        params.consumption_document_id || null,
+        params.movement_id || null,
+        params.plan.consumed_at,
+        params.notes || null
+      ]
+    );
+
+    await executor(
+      `UPDATE inventory_cost_layers
+          SET remaining_quantity = $1,
+              extended_cost = $2,
+              updated_at = NOW()
+        WHERE id = $3`,
+      [
+        consumption.remaining_quantity_after,
+        consumption.remaining_quantity_after * consumption.unit_cost,
+        consumption.layer_id
+      ]
+    );
+  }
+
+  return {
+    total_cost: params.plan.total_cost,
+    weighted_average_cost: params.plan.weighted_average_cost,
+    consumptions: params.plan.consumptions.map((consumption) => ({
+      layer_id: consumption.layer_id,
+      quantity: consumption.quantity,
+      unit_cost: consumption.unit_cost,
+      extended_cost: consumption.extended_cost
+    }))
+  };
+}
+
+/**
+ * Consume from cost layers in FIFO order
+ * Returns the total cost and records all consumptions
+ */
+export async function consumeCostLayers(params: ConsumeLayersParams): Promise<ConsumeLayersResult> {
+  const externalClient = params.client;
+  const client = externalClient ?? (await pool.connect());
+  const ownsClient = !externalClient;
+
+  try {
+    if (ownsClient) {
+      await client.query('BEGIN');
+    }
+
+    const plan = await planCostLayerConsumption({
+      ...params,
+      client
+    });
+    const result = await applyPlannedCostLayerConsumption({
+      ...params,
+      client,
+      plan
+    });
+
+    if (ownsClient) {
+      await client.query('COMMIT');
+    }
+
+    return result;
   } catch (error) {
     if (ownsClient) {
       await client.query('ROLLBACK');

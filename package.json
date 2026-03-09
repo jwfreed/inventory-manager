@@ -49,6 +49,7 @@
     "test:lint:api": "bash -lc \"if grep -R -n -E '\\\\b(db|pool|client)\\\\.query\\\\b|from\\\\s+[\\\"\\x27]pg[\\\"\\x27]|new\\\\s+Pool\\\\(' tests/api; then echo 'test:lint:api failed: SQL usage detected in tests/api'; exit 1; else echo 'test:lint:api ok'; fi\"",
     "lint:inventory-writes": "ts-node --transpile-only -r dotenv/config scripts/check-inventory-writes.ts",
     "inventory:health": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/inventory-health.ts",
+    "audit:movement-hash-coverage": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/audit-movement-hash-coverage.ts",
     "seed:warehouse-topology": "node scripts/seed_warehouse_topology.mjs",
     "seed:warehouse-topology:default": "node scripts/seed_warehouse_topology.mjs --tenant-id 00000000-0000-0000-0000-000000000001 --fix",
     "invariants:strict:default": "node scripts/inventory_invariants_check.mjs --tenant-id 00000000-0000-0000-0000-000000000001 --strict",

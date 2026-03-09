@@ -27,16 +27,23 @@ import {
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
-import { buildMovementPostedEvent } from '../modules/platform/application/inventoryMutationSupport';
+import {
+  buildPostedDocumentReplayResult,
+  buildInventoryBalanceProjectionOp,
+  buildReplayCorruptionError,
+  buildMovementPostedEvent
+} from '../modules/platform/application/inventoryMutationSupport';
 import { upsertBackorder } from './backorders.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { ItemLifecycleStatus } from '../types/item';
 import { validateSufficientStock, type StockValidationResult } from './stockValidation.service';
 import {
-  createInventoryMovement,
-  createInventoryMovementLine
+  persistInventoryMovement
 } from '../domains/inventory';
-import { consumeCostLayers } from './costLayers.service';
+import {
+  applyPlannedCostLayerConsumption,
+  planCostLayerConsumption
+} from './costLayers.service';
 import { recordAuditLog } from '../lib/audit';
 import { invalidateAtpCacheForWarehouse } from './atpCache.service';
 import { assertSellableLocationOrThrow } from '../domains/inventory';
@@ -365,20 +372,6 @@ function buildReservationChangedEvent(
   });
 }
 
-function buildInventoryBalanceProjectionOp(params: {
-  tenantId: string;
-  itemId: string;
-  locationId: string;
-  uom: string;
-  deltaOnHand?: number;
-  deltaReserved?: number;
-  deltaAllocated?: number;
-}): InventoryCommandProjectionOp {
-  return async (client: PoolClient) => {
-    await applyInventoryBalanceDelta(client, params);
-  };
-}
-
 function compareReservationMutationScope(left: ReservationRow, right: ReservationRow): number {
   const tenantCompare = left.tenant_id.localeCompare(right.tenant_id);
   if (tenantCompare !== 0) return tenantCompare;
@@ -391,26 +384,6 @@ function compareReservationMutationScope(left: ReservationRow, right: Reservatio
   const uomCompare = left.uom.localeCompare(right.uom);
   if (uomCompare !== 0) return uomCompare;
   return left.id.localeCompare(right.id);
-}
-
-async function inventoryEventVersionExists(
-  client: PoolClient,
-  tenantId: string,
-  aggregateType: string,
-  aggregateId: string,
-  eventVersion: number
-) {
-  const res = await client.query(
-    `SELECT 1
-       FROM inventory_events
-      WHERE tenant_id = $1
-        AND aggregate_type = $2
-        AND aggregate_id = $3
-        AND event_version = $4
-      LIMIT 1`,
-    [tenantId, aggregateType, aggregateId, eventVersion]
-  );
-  return res.rowCount > 0;
 }
 
 async function resolveReservationDerivedWarehouseScope(
@@ -1707,6 +1680,61 @@ export async function getShipment(tenantId: string, id: string, client?: PoolCli
   return mapShipment(shipment.rows[0], lines.rows);
 }
 
+async function repairShipmentReplayAggregateState(params: {
+  client: PoolClient;
+  tenantId: string;
+  shipmentId: string;
+  movementId: string;
+  idempotencyKey: string;
+}) {
+  const now = new Date();
+  await params.client.query(
+    `UPDATE sales_order_shipments
+        SET inventory_movement_id = COALESCE(inventory_movement_id, $1),
+            status = 'posted',
+            posted_at = COALESCE(posted_at, $2),
+            posted_idempotency_key = COALESCE(posted_idempotency_key, $3)
+      WHERE id = $4
+        AND tenant_id = $5`,
+    [params.movementId, now, params.idempotencyKey, params.shipmentId, params.tenantId]
+  );
+}
+
+async function buildShipmentReplayResult(params: {
+  tenantId: string;
+  shipmentId: string;
+  movementId: string;
+  expectedLineCount: number;
+  idempotencyKey: string;
+  client: PoolClient;
+}) {
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovements: [
+      {
+        movementId: params.movementId,
+        expectedLineCount: params.expectedLineCount
+      }
+    ],
+    client: params.client,
+    preFetchIntegrityCheck: async () => {
+      await repairShipmentReplayAggregateState({
+        client: params.client,
+        tenantId: params.tenantId,
+        shipmentId: params.shipmentId,
+        movementId: params.movementId,
+        idempotencyKey: params.idempotencyKey
+      });
+    },
+    fetchAggregateView: () => getShipment(params.tenantId, params.shipmentId, params.client),
+    aggregateNotFoundError: new Error('SHIPMENT_NOT_FOUND'),
+    authoritativeEvents: [
+      buildMovementPostedEvent(params.movementId, params.idempotencyKey)
+    ],
+    responseStatus: 200
+  });
+}
+
 export async function postShipment(
   tenantId: string,
   shipmentId: string,
@@ -1760,6 +1788,27 @@ export async function postShipment(
       idempotencyKey: transactionalIdempotencyKey,
       requestHash,
       retryOptions: buildAtpRetryOptions(shipmentRetryContext, ATP_SHIPMENT_POST_RETRIES),
+      onReplay: async ({ client, responseBody }) => {
+        const replayMovementId = responseBody?.inventoryMovementId;
+        if (typeof replayMovementId !== 'string' || !replayMovementId) {
+          throw buildReplayCorruptionError({
+            tenantId,
+            shipmentId,
+            idempotencyKey: transactionalIdempotencyKey,
+            reason: 'shipment_replay_movement_missing'
+          });
+        }
+        return (
+          await buildShipmentReplayResult({
+            tenantId,
+            shipmentId,
+            movementId: replayMovementId,
+            expectedLineCount: Array.isArray(responseBody?.lines) ? responseBody.lines.length : 0,
+            idempotencyKey: transactionalIdempotencyKey,
+            client
+          })
+        ).responseBody;
+      },
       lockTargets: async (client) => {
         shipmentAlreadyPosted = false;
         shipment = null;
@@ -1779,20 +1828,6 @@ export async function postShipment(
         if (shipment.status === 'canceled') {
           throw new Error('SHIPMENT_CANCELED');
         }
-        if (shipment.inventory_movement_id || shipment.status === 'posted') {
-          shipmentAlreadyPosted = true;
-          shipmentRetryContext = {
-            operation: 'shipment_post',
-            tenantId,
-            warehouseIds: [],
-            itemIds: [],
-            lockKeysCount: 0
-          };
-          return [];
-        }
-        if (!shipment.ship_from_location_id) {
-          throw new Error('SHIPMENT_LOCATION_REQUIRED');
-        }
 
         const linesRes = await client.query(
           `SELECT sosl.*, sol.item_id
@@ -1810,6 +1845,20 @@ export async function postShipment(
           throw new Error('SHIPMENT_NO_LINES');
         }
         shipmentLines = linesRes.rows;
+        if (shipment.inventory_movement_id || shipment.status === 'posted') {
+          shipmentAlreadyPosted = true;
+          shipmentRetryContext = {
+            operation: 'shipment_post',
+            tenantId,
+            warehouseIds: [],
+            itemIds: [],
+            lockKeysCount: 0
+          };
+          return [];
+        }
+        if (!shipment.ship_from_location_id) {
+          throw new Error('SHIPMENT_LOCATION_REQUIRED');
+        }
 
         shipFromWarehouseId = await resolveWarehouseIdForLocation(tenantId, shipment.ship_from_location_id, client);
         if (!shipFromWarehouseId) {
@@ -1908,10 +1957,21 @@ export async function postShipment(
           throw new Error('SHIPMENT_NOT_FOUND');
         }
         if (shipmentAlreadyPosted) {
-          return {
-            responseBody: await getShipment(tenantId, shipmentId, client),
-            responseStatus: 200
-          };
+          if (!shipment.inventory_movement_id) {
+            throw buildReplayCorruptionError({
+              tenantId,
+              shipmentId,
+              reason: 'shipment_posted_without_movement'
+            });
+          }
+          return buildShipmentReplayResult({
+            tenantId,
+            shipmentId,
+            movementId: shipment.inventory_movement_id,
+            expectedLineCount: shipmentLines.length,
+            idempotencyKey: transactionalIdempotencyKey,
+            client
+          });
         }
         if (!shipFromWarehouseId) {
           throw new Error('WAREHOUSE_SCOPE_REQUIRED');
@@ -1995,52 +2055,17 @@ export async function postShipment(
           throw error;
         }
 
-        const movement = await createInventoryMovement(client, {
-          tenantId,
-          movementType: 'issue',
-          status: 'posted',
-          externalRef: `shipment:${shipmentId}`,
-          sourceType: 'shipment_post',
-          sourceId: shipmentId,
-          idempotencyKey: transactionalIdempotencyKey,
-          occurredAt: shipment.shipped_at ?? now,
-          postedAt: now,
-          notes: shipment.notes ?? null,
-          metadata: validation.overrideMetadata ?? null,
-          createdAt: now,
-          updatedAt: now
-        });
-
-        const events: InventoryCommandEvent[] = [];
-        const projectionOps: InventoryCommandProjectionOp[] = [];
-
-        if (!movement.created) {
-          const lineCheck = await client.query(
-            `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
-            [movement.id]
-          );
-          if (lineCheck.rowCount > 0) {
-            await client.query(
-              `UPDATE sales_order_shipments
-                  SET inventory_movement_id = $1,
-                      status = 'posted',
-                      posted_at = COALESCE(posted_at, $2),
-                      posted_idempotency_key = COALESCE(posted_idempotency_key, $3)
-                WHERE id = $4 AND tenant_id = $5`,
-              [movement.id, now, transactionalIdempotencyKey, shipmentId, tenantId]
-            );
-            if (!await inventoryEventVersionExists(client, tenantId, 'inventory_movement', movement.id, 1)) {
-              events.push(buildMovementPostedEvent(movement.id, transactionalIdempotencyKey));
-            }
-            return {
-              responseBody: await getShipment(tenantId, shipmentId, client),
-              responseStatus: 200,
-              events,
-              projectionOps
-            };
-          }
-        }
-
+        const movementId = uuidv4();
+        const plannedShipmentLines: Array<{
+          line: (typeof shipmentLineContexts)[number]['line'];
+          canonicalOut: (typeof shipmentLineContexts)[number]['canonicalOut'];
+          issueQty: number;
+          reservation: (typeof shipmentLineContexts)[number]['reservation'];
+          reserveConsume: number;
+          consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>>;
+          unitCost: number | null;
+          extendedCost: number | null;
+        }> = [];
         for (const lineContext of shipmentLineContexts) {
           const { line, canonicalOut, issueQty, reservation, reserveConsume } = lineContext;
 
@@ -2071,35 +2096,90 @@ export async function postShipment(
             });
           }
 
-          const consumption = await consumeCostLayers({
+          const consumptionPlan = await planCostLayerConsumption({
             tenant_id: tenantId,
             item_id: line.item_id,
             location_id: shipment.ship_from_location_id,
             quantity: issueQty,
             consumption_type: 'sale',
             consumption_document_id: shipmentId,
-            movement_id: movement.id,
+            movement_id: movementId,
             client
           });
-          const unitCost = issueQty !== 0 ? consumption.total_cost / issueQty : null;
-          const extendedCost = consumption.total_cost !== null ? -consumption.total_cost : null;
+          plannedShipmentLines.push({
+            line,
+            canonicalOut,
+            issueQty,
+            reservation,
+            reserveConsume,
+            consumptionPlan,
+            unitCost: issueQty !== 0 ? consumptionPlan.total_cost / issueQty : null,
+            extendedCost: consumptionPlan.total_cost !== null ? -consumptionPlan.total_cost : null
+          });
+        }
 
-          await createInventoryMovementLine(client, {
-            tenantId,
-            movementId: movement.id,
-            itemId: line.item_id,
+        const movement = await persistInventoryMovement(client, {
+          id: movementId,
+          tenantId,
+          movementType: 'issue',
+          status: 'posted',
+          externalRef: `shipment:${shipmentId}`,
+          sourceType: 'shipment_post',
+          sourceId: shipmentId,
+          idempotencyKey: transactionalIdempotencyKey,
+          occurredAt: shipment.shipped_at ?? now,
+          postedAt: now,
+          notes: shipment.notes ?? null,
+          metadata: validation.overrideMetadata ?? null,
+          createdAt: now,
+          updatedAt: now,
+          lines: plannedShipmentLines.map((lineContext) => ({
+            sourceLineId: lineContext.line.id,
+            warehouseId: shipFromWarehouseId,
+            itemId: lineContext.line.item_id,
             locationId: shipment.ship_from_location_id,
-            quantityDelta: canonicalOut.quantityDeltaCanonical,
-            uom: canonicalOut.canonicalUom,
-            quantityDeltaEntered: canonicalOut.quantityDeltaEntered,
-            uomEntered: canonicalOut.uomEntered,
-            quantityDeltaCanonical: canonicalOut.quantityDeltaCanonical,
-            canonicalUom: canonicalOut.canonicalUom,
-            uomDimension: canonicalOut.uomDimension,
-            unitCost,
-            extendedCost,
+            quantityDelta: lineContext.canonicalOut.quantityDeltaCanonical,
+            uom: lineContext.canonicalOut.canonicalUom,
+            quantityDeltaEntered: lineContext.canonicalOut.quantityDeltaEntered,
+            uomEntered: lineContext.canonicalOut.uomEntered,
+            quantityDeltaCanonical: lineContext.canonicalOut.quantityDeltaCanonical,
+            canonicalUom: lineContext.canonicalOut.canonicalUom,
+            uomDimension: lineContext.canonicalOut.uomDimension,
+            unitCost: lineContext.unitCost,
+            extendedCost: lineContext.extendedCost,
             reasonCode: 'shipment',
-            lineNotes: `Shipment ${shipmentId} line ${line.id}`
+            lineNotes: `Shipment ${shipmentId} line ${lineContext.line.id}`,
+            createdAt: now
+          }))
+        });
+
+        const events: InventoryCommandEvent[] = [];
+        const projectionOps: InventoryCommandProjectionOp[] = [];
+
+        if (!movement.created) {
+          return buildShipmentReplayResult({
+            tenantId,
+            shipmentId,
+            movementId: movement.movementId,
+            expectedLineCount: shipmentLines.length,
+            idempotencyKey: transactionalIdempotencyKey,
+            client
+          });
+        }
+
+        for (const lineContext of plannedShipmentLines) {
+          const { line, canonicalOut, issueQty, reservation, reserveConsume, consumptionPlan } = lineContext;
+
+          await applyPlannedCostLayerConsumption({
+            tenant_id: tenantId,
+            item_id: line.item_id,
+            location_id: shipment.ship_from_location_id,
+            quantity: issueQty,
+            consumption_type: 'sale',
+            consumption_document_id: shipmentId,
+            movement_id: movement.movementId,
+            client,
+            plan: consumptionPlan
           });
 
           if (reservation && reserveConsume > 0 && reservation.status === 'RESERVED') {
@@ -2183,7 +2263,6 @@ export async function postShipment(
             events.push(buildReservationChangedEvent(reservation, eventVersion, transactionalIdempotencyKey));
           }
         }
-
         await client.query(
           `UPDATE sales_order_shipments
               SET inventory_movement_id = $1,
@@ -2191,10 +2270,10 @@ export async function postShipment(
                   posted_at = $2,
                   posted_idempotency_key = $3
             WHERE id = $4 AND tenant_id = $5`,
-          [movement.id, now, transactionalIdempotencyKey, shipmentId, tenantId]
+          [movement.movementId, now, transactionalIdempotencyKey, shipmentId, tenantId]
         );
 
-        events.push(buildMovementPostedEvent(movement.id, transactionalIdempotencyKey));
+        events.push(buildMovementPostedEvent(movement.movementId, transactionalIdempotencyKey));
 
         if (params.actor) {
           await recordAuditLog(
@@ -2206,7 +2285,7 @@ export async function postShipment(
               entityType: 'sales_order_shipment',
               entityId: shipmentId,
               occurredAt: now,
-              metadata: { movementId: movement.id }
+              metadata: { movementId: movement.movementId }
             },
             client
           );
@@ -2220,7 +2299,7 @@ export async function postShipment(
               actorId: params.actor.id ?? null,
               action: 'negative_override',
               entityType: 'inventory_movement',
-              entityId: movement.id,
+              entityId: movement.movementId,
               occurredAt: now,
               metadata: {
                 reason: validation.overrideMetadata.override_reason ?? null,

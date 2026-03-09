@@ -197,8 +197,18 @@ test('shared posted-document replay hardening anchors counts and adjustments to 
   );
   assert.match(
     replayHelperBody,
-    /inventoryEventVersionExists\([\s\S]*event\.aggregateType[\s\S]*event\.aggregateId[\s\S]*event\.eventType[\s\S]*event\.eventVersion/,
+    /resolveReplayRepairEvents\(/,
+    'replay repair must delegate to the shared authoritative event resolver'
+  );
+  assert.match(
+    supportSource,
+    /loadPersistedInventoryEvent\([\s\S]*event\.aggregateType[\s\S]*event\.aggregateId[\s\S]*event\.eventType[\s\S]*event\.eventVersion/,
     'replay repair must key missing authoritative events by aggregate identity, event type, and version'
+  );
+  assert.match(
+    supportSource,
+    /validatePersistedInventoryEventRegistryRow\(/,
+    'replay repair must validate persisted authoritative events against the registry contract'
   );
 
   assert.match(
@@ -223,8 +233,8 @@ test('shared posted-document replay hardening anchors counts and adjustments to 
   );
   assert.match(
     countsSource,
-    /\bpersistMovementDeterministicHashFromLedger\(/,
-    'counts must persist deterministic movement hashes'
+    /\bpersistInventoryMovement\(/,
+    'counts must persist deterministic movement hashes through the canonical movement writer'
   );
 
   assert.match(
@@ -239,8 +249,8 @@ test('shared posted-document replay hardening anchors counts and adjustments to 
   );
   assert.match(
     adjustmentsSource,
-    /\bpersistMovementDeterministicHashFromLedger\(/,
-    'adjustments must persist deterministic movement hashes'
+    /\bpersistInventoryMovement\(/,
+    'adjustments must persist deterministic movement hashes through the canonical movement writer'
   );
   assert.match(
     adjustmentsSource,
@@ -254,13 +264,8 @@ test('shared posted-document replay hardening anchors counts and adjustments to 
   );
   assert.match(
     supportSource,
-    /MOVEMENT_HASH_REQUIRED_AFTER_MIGRATION_TS/,
-    'replay helper must define the post-migration movement-hash cutoff'
-  );
-  assert.match(
-    supportSource,
-    /authoritative_movement_hash_missing_post_migration/,
-    'replay helper must reject post-migration rows with missing movement hashes'
+    /authoritative_movement_hash_missing/,
+    'replay helper must reject missing movement hashes universally'
   );
 });
 

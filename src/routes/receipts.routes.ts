@@ -144,6 +144,15 @@ router.post('/purchase-order-receipts', async (req: Request, res: Response) => {
         .status(500)
         .json({ error: 'Receipt was created but could not be reloaded. Please retry fetch.' });
     }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Receipt replay integrity failed closed.',
+          details: error?.details ?? null
+        }
+      });
+    }
     if (error?.code === '23505' && error?.constraint === 'uq_po_receipts_idempotency') {
       const tenantId = req.auth!.tenantId;
       const key = parsed.data.idempotencyKey;
@@ -312,6 +321,15 @@ router.post('/purchase-order-receipts/:id/void', async (req: Request, res: Respo
         error: {
           code: 'TX_RETRY_EXHAUSTED',
           message: 'Receipt void contention was too high. Retry this request.'
+        }
+      });
+    }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Receipt replay integrity failed closed.',
+          details: error?.details ?? null
         }
       });
     }

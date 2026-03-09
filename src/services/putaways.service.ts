@@ -9,8 +9,7 @@ import { validateSufficientStock, validateLocationCapacity } from './stockValida
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
-  createInventoryMovement,
-  createInventoryMovementLine
+  persistInventoryMovement
 } from '../domains/inventory';
 import { relocateTransferCostLayersInTx, type TransferLinePair } from './transferCosting.service';
 import {
@@ -18,9 +17,10 @@ import {
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
 import {
+  buildPostedDocumentReplayResult,
   buildInventoryBalanceProjectionOp,
   buildMovementPostedEvent,
-  inventoryEventVersionExists
+  sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
 import {
   calculateAcceptedQuantity,
@@ -206,6 +206,67 @@ export async function fetchPutawayById(tenantId: string, id: string, client?: Po
   const qcBreakdown = await loadQcBreakdown(tenantId, receiptLineIds, client);
   const totals = await loadPutawayTotals(tenantId, receiptLineIds, client);
   return mapPutaway(putawayResult.rows[0], linesResult.rows, contexts, qcBreakdown, totals);
+}
+
+async function repairPutawayReplayAggregateState(
+  client: PoolClient,
+  tenantId: string,
+  putawayId: string,
+  movementId: string
+) {
+  const now = new Date();
+  await client.query(
+    `UPDATE putaway_lines
+        SET status = 'completed',
+            quantity_moved = COALESCE(quantity_moved, quantity_planned),
+            inventory_movement_id = COALESCE(inventory_movement_id, $1),
+            updated_at = $2
+      WHERE putaway_id = $3
+        AND tenant_id = $4
+        AND status <> 'canceled'`,
+    [movementId, now, putawayId, tenantId]
+  );
+  await client.query(
+    `UPDATE putaways
+        SET status = 'completed',
+            inventory_movement_id = COALESCE(inventory_movement_id, $1),
+            updated_at = $2,
+            completed_at = COALESCE(completed_at, $2)
+      WHERE id = $3
+        AND tenant_id = $4`,
+    [movementId, now, putawayId, tenantId]
+  );
+}
+
+async function buildPutawayReplayResult(params: {
+  tenantId: string;
+  putawayId: string;
+  movementId: string;
+  expectedLineCount: number;
+  client: PoolClient;
+}) {
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovements: [
+      {
+        movementId: params.movementId,
+        expectedLineCount: params.expectedLineCount
+      }
+    ],
+    client: params.client,
+    preFetchIntegrityCheck: async () => {
+      await repairPutawayReplayAggregateState(
+        params.client,
+        params.tenantId,
+        params.putawayId,
+        params.movementId
+      );
+    },
+    fetchAggregateView: () => fetchPutawayById(params.tenantId, params.putawayId, params.client),
+    aggregateNotFoundError: new Error('PUTAWAY_NOT_FOUND'),
+    authoritativeEvents: [buildMovementPostedEvent(params.movementId)],
+    responseStatus: 200
+  });
 }
 
 export async function createPutaway(
@@ -400,6 +461,7 @@ export async function postPutaway(
   }
 ) {
   let putaway: PutawayRow | null = null;
+  let putawayLines: PutawayLineRow[] = [];
   let pendingLines: PutawayLineRow[] = [];
   let warehouseIdsByLocation = new Map<string, string>();
 
@@ -417,10 +479,6 @@ export async function postPutaway(
         throw new Error('PUTAWAY_NOT_FOUND');
       }
       putaway = putawayResult.rows[0];
-      if (putaway.status === 'completed') {
-        pendingLines = [];
-        return [];
-      }
       if (putaway.status === 'canceled') {
         throw new Error('PUTAWAY_CANCELED');
       }
@@ -432,7 +490,12 @@ export async function postPutaway(
       if (linesResult.rowCount === 0) {
         throw new Error('PUTAWAY_NO_LINES');
       }
-      pendingLines = linesResult.rows.filter((line) => line.status === 'pending');
+      putawayLines = linesResult.rows;
+      if (putaway.status === 'completed') {
+        pendingLines = [];
+        return [];
+      }
+      pendingLines = putawayLines.filter((line) => line.status === 'pending');
       if (pendingLines.length === 0) {
         throw new Error('PUTAWAY_NOTHING_TO_POST');
       }
@@ -474,9 +537,16 @@ export async function postPutaway(
         throw new Error('PUTAWAY_NOT_FOUND');
       }
       if (putaway.status === 'completed') {
-        return {
-          responseBody: await fetchPutawayById(tenantId, id, client)
-        };
+        if (!putaway.inventory_movement_id) {
+          throw new Error('PUTAWAY_ALREADY_POSTED');
+        }
+        return buildPutawayReplayResult({
+          tenantId,
+          putawayId: id,
+          movementId: putaway.inventory_movement_id,
+          expectedLineCount: putawayLines.filter((line) => line.status !== 'canceled').length * 2,
+          client
+        });
       }
 
       const now = new Date();
@@ -534,50 +604,18 @@ export async function postPutaway(
       );
 
       const movementId = uuidv4();
-      const movement = await createInventoryMovement(client, {
-        id: movementId,
-        tenantId,
-        movementType: 'transfer',
-        status: 'posted',
-        externalRef: `putaway:${id}`,
-        sourceType: 'putaway',
-        sourceId: id,
-        occurredAt: now,
-        postedAt: now,
-        notes: `Putaway ${id}`,
-        metadata: validation.overrideMetadata ?? null,
-        createdAt: now,
-        updatedAt: now
-      });
-
-      const projectionOps: InventoryCommandProjectionOp[] = [];
-      if (!movement.created) {
-        const lineCheck = await client.query(
-          `SELECT 1 FROM inventory_movement_lines WHERE movement_id = $1 LIMIT 1`,
-          [movement.id]
-        );
-        if (lineCheck.rowCount > 0) {
-          await client.query(
-            `UPDATE putaways
-                SET status = 'completed',
-                    inventory_movement_id = $1,
-                    completed_at = $2,
-                    updated_at = $2
-              WHERE id = $3 AND tenant_id = $4`,
-            [movement.id, now, id, tenantId]
-          );
-          const events = await inventoryEventVersionExists(client, tenantId, 'inventory_movement', movement.id, 1)
-            ? []
-            : [buildMovementPostedEvent(movement.id)];
-          return {
-            responseBody: await fetchPutawayById(tenantId, id, client),
-            events,
-            projectionOps
-          };
-        }
-      }
-
-      const transferPairs: TransferLinePair[] = [];
+      const transferPairsByPutawayLineId = new Map<string, TransferLinePair>();
+      const preparedLines: Array<{
+        id: string;
+        putawayLineId: string;
+        sourceLineId: string;
+        warehouseId: string;
+        itemId: string;
+        locationId: string;
+        reasonCode: string;
+        lineNotes: string;
+        canonicalFields: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
+      }> = [];
       for (const line of pendingLines) {
         const qty = toNumber(line.quantity_planned);
         const lineNote = `Putaway ${id} line ${line.line_number}`;
@@ -589,31 +627,6 @@ export async function postPutaway(
           line.uom,
           client
         );
-        const outLineId = await createInventoryMovementLine(client, {
-          tenantId,
-          movementId: movement.id,
-          itemId: line.item_id,
-          locationId: line.from_location_id,
-          quantityDelta: canonicalOut.quantityDeltaCanonical,
-          uom: canonicalOut.canonicalUom,
-          quantityDeltaEntered: canonicalOut.quantityDeltaEntered,
-          uomEntered: canonicalOut.uomEntered,
-          quantityDeltaCanonical: canonicalOut.quantityDeltaCanonical,
-          canonicalUom: canonicalOut.canonicalUom,
-          uomDimension: canonicalOut.uomDimension,
-          reasonCode: 'putaway',
-          lineNotes: lineNote
-        });
-        projectionOps.push(
-          buildInventoryBalanceProjectionOp({
-            tenantId,
-            itemId: line.item_id,
-            locationId: line.from_location_id,
-            uom: canonicalOut.canonicalUom,
-            deltaOnHand: canonicalOut.quantityDeltaCanonical
-          })
-        );
-
         const canonicalIn = await getCanonicalMovementFields(
           tenantId,
           line.item_id,
@@ -627,31 +640,121 @@ export async function postPutaway(
         ) {
           throw new Error('TRANSFER_CANONICAL_MISMATCH');
         }
-        const inLineId = await createInventoryMovementLine(client, {
-          tenantId,
-          movementId: movement.id,
+        transferPairsByPutawayLineId.set(line.id, {
           itemId: line.item_id,
-          locationId: line.to_location_id,
-          quantityDelta: canonicalIn.quantityDeltaCanonical,
-          uom: canonicalIn.canonicalUom,
-          quantityDeltaEntered: canonicalIn.quantityDeltaEntered,
-          uomEntered: canonicalIn.uomEntered,
-          quantityDeltaCanonical: canonicalIn.quantityDeltaCanonical,
-          canonicalUom: canonicalIn.canonicalUom,
-          uomDimension: canonicalIn.uomDimension,
-          reasonCode: 'putaway',
-          lineNotes: lineNote
+          sourceLocationId: line.from_location_id,
+          destinationLocationId: line.to_location_id,
+          outLineId: '',
+          inLineId: '',
+          quantity: canonicalIn.quantityDeltaCanonical,
+          uom: canonicalIn.canonicalUom
         });
+        preparedLines.push(
+          {
+            id: uuidv4(),
+            putawayLineId: line.id,
+            sourceLineId: `${line.id}:out`,
+            warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
+            itemId: line.item_id,
+            locationId: line.from_location_id,
+            reasonCode: 'putaway',
+            lineNotes: lineNote,
+            canonicalFields: canonicalOut
+          },
+          {
+            id: uuidv4(),
+            putawayLineId: line.id,
+            sourceLineId: `${line.id}:in`,
+            warehouseId: warehouseIdsByLocation.get(line.to_location_id) ?? '',
+            itemId: line.item_id,
+            locationId: line.to_location_id,
+            reasonCode: 'putaway',
+            lineNotes: lineNote,
+            canonicalFields: canonicalIn
+          }
+        );
+      }
+
+      const sortedPreparedLines = sortDeterministicMovementLines(
+        preparedLines,
+        (line) => ({
+          tenantId,
+          warehouseId: line.warehouseId,
+          locationId: line.locationId,
+          itemId: line.itemId,
+          canonicalUom: line.canonicalFields.canonicalUom,
+          sourceLineId: line.sourceLineId
+        })
+      );
+
+      const movement = await persistInventoryMovement(client, {
+        id: movementId,
+        tenantId,
+        movementType: 'transfer',
+        status: 'posted',
+        externalRef: `putaway:${id}`,
+        sourceType: 'putaway',
+        sourceId: id,
+        occurredAt: now,
+        postedAt: now,
+        notes: `Putaway ${id}`,
+        metadata: validation.overrideMetadata ?? null,
+        createdAt: now,
+        updatedAt: now,
+        lines: sortedPreparedLines.map((line) => ({
+          id: line.id,
+          warehouseId: line.warehouseId,
+          sourceLineId: line.sourceLineId,
+          itemId: line.itemId,
+          locationId: line.locationId,
+          quantityDelta: line.canonicalFields.quantityDeltaCanonical,
+          uom: line.canonicalFields.canonicalUom,
+          quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,
+          uomEntered: line.canonicalFields.uomEntered,
+          quantityDeltaCanonical: line.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: line.canonicalFields.canonicalUom,
+          uomDimension: line.canonicalFields.uomDimension,
+          reasonCode: line.reasonCode,
+          lineNotes: line.lineNotes,
+          createdAt: now
+        }))
+      });
+
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      if (!movement.created) {
+        return buildPutawayReplayResult({
+          tenantId,
+          putawayId: id,
+          movementId: movement.movementId,
+          expectedLineCount: putawayLines.filter((line) => line.status !== 'canceled').length * 2,
+          client
+        });
+      }
+
+      for (const line of sortedPreparedLines) {
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
-            itemId: line.item_id,
-            locationId: line.to_location_id,
-            uom: canonicalIn.canonicalUom,
-            deltaOnHand: canonicalIn.quantityDeltaCanonical
+            itemId: line.itemId,
+            locationId: line.locationId,
+            uom: line.canonicalFields.canonicalUom,
+            deltaOnHand: line.canonicalFields.quantityDeltaCanonical
           })
         );
 
+        const pair = transferPairsByPutawayLineId.get(line.putawayLineId);
+        if (!pair) {
+          throw new Error('PUTAWAY_TRANSFER_PAIR_MISSING');
+        }
+        if (line.canonicalFields.quantityDeltaCanonical < 0) {
+          pair.outLineId = line.id;
+        } else {
+          pair.inLineId = line.id;
+        }
+      }
+
+      const transferPairs: TransferLinePair[] = [];
+      for (const line of pendingLines) {
         await client.query(
           `UPDATE putaway_lines
               SET status = 'completed',
@@ -659,24 +762,28 @@ export async function postPutaway(
                   inventory_movement_id = $2,
                   updated_at = $3
            WHERE id = $4 AND tenant_id = $5`,
-          [qty, movement.id, now, line.id, tenantId]
+          [toNumber(line.quantity_planned), movement.movementId, now, line.id, tenantId]
         );
 
+        const pair = transferPairsByPutawayLineId.get(line.id);
+        if (!pair?.outLineId || !pair.inLineId) {
+          throw new Error('PUTAWAY_TRANSFER_PAIR_INCOMPLETE');
+        }
         transferPairs.push({
-          itemId: line.item_id,
-          sourceLocationId: line.from_location_id,
-          destinationLocationId: line.to_location_id,
-          outLineId,
-          inLineId,
-          quantity: canonicalIn.quantityDeltaCanonical,
-          uom: canonicalIn.canonicalUom
+          itemId: pair.itemId,
+          sourceLocationId: pair.sourceLocationId,
+          destinationLocationId: pair.destinationLocationId,
+          outLineId: pair.outLineId,
+          inLineId: pair.inLineId,
+          quantity: pair.quantity,
+          uom: pair.uom
         });
       }
 
       await relocateTransferCostLayersInTx({
         client,
         tenantId,
-        transferMovementId: movement.id,
+        transferMovementId: movement.movementId,
         occurredAt: now,
         notes: `Putaway ${id}`,
         pairs: transferPairs
@@ -690,7 +797,7 @@ export async function postPutaway(
                 completed_at = $3,
                 completed_by_user_id = $6
           WHERE id = $4 AND tenant_id = $5`,
-        ['completed', movement.id, now, id, tenantId, context?.actor?.id ?? null]
+        ['completed', movement.movementId, now, id, tenantId, context?.actor?.id ?? null]
       );
 
       if (context?.actor) {
@@ -703,7 +810,7 @@ export async function postPutaway(
             entityType: 'putaway',
             entityId: id,
             occurredAt: now,
-            metadata: { movementId: movement.id }
+            metadata: { movementId: movement.movementId }
           },
           client
         );
@@ -717,7 +824,7 @@ export async function postPutaway(
             actorId: context.actor.id ?? null,
             action: 'negative_override',
             entityType: 'inventory_movement',
-            entityId: movement.id,
+            entityId: movement.movementId,
             occurredAt: now,
             metadata: {
               reason: validation.overrideMetadata.override_reason ?? null,
@@ -737,7 +844,7 @@ export async function postPutaway(
 
       return {
         responseBody: await fetchPutawayById(tenantId, id, client),
-        events: [buildMovementPostedEvent(movement.id)],
+        events: [buildMovementPostedEvent(movement.movementId)],
         projectionOps
       };
     }

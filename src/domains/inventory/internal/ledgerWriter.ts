@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import { buildMovementDeterministicHash, sortDeterministicMovementLines } from '../../../modules/platform/application/inventoryMovementDeterminism';
 
 export type InventoryMovementInput = {
   id?: string;
@@ -42,9 +43,25 @@ export type InventoryMovementLineInput = {
   createdAt?: Date | string;
 };
 
+export type PersistInventoryMovementLineInput = Omit<InventoryMovementLineInput, 'tenantId' | 'movementId'> & {
+  warehouseId: string;
+  sourceLineId: string;
+};
+
+export type PersistInventoryMovementInput = Omit<InventoryMovementInput, 'movementDeterministicHash'> & {
+  lines: PersistInventoryMovementLineInput[];
+};
+
 export type InventoryMovementResult = {
   id: string;
   created: boolean;
+};
+
+export type PersistInventoryMovementResult = {
+  movementId: string;
+  created: boolean;
+  movementDeterministicHash: string | null;
+  lineIds: string[];
 };
 
 const ENFORCE_EXTERNAL_REF = process.env.ENFORCE_INVENTORY_MOVEMENT_EXTERNAL_REF === 'true';
@@ -130,6 +147,93 @@ export async function createInventoryMovement(
   }
 
   return { id, created: true };
+}
+
+export async function persistInventoryMovement(
+  client: PoolClient,
+  input: PersistInventoryMovementInput
+): Promise<PersistInventoryMovementResult> {
+  if (input.lines.length === 0) {
+    throw new Error('INVENTORY_MOVEMENT_LINES_REQUIRED');
+  }
+
+  const movementId = input.id ?? uuidv4();
+  const createdAt = input.createdAt ?? new Date();
+  const updatedAt = input.updatedAt ?? createdAt;
+  const sortedLines = sortDeterministicMovementLines(input.lines, (line) => ({
+    tenantId: input.tenantId,
+    warehouseId: line.warehouseId,
+    locationId: line.locationId,
+    itemId: line.itemId,
+    canonicalUom: line.canonicalUom ?? line.uom,
+    sourceLineId: line.sourceLineId
+  })).map((line) => ({
+    ...line,
+    id: line.id ?? uuidv4(),
+    createdAt: line.createdAt ?? createdAt
+  }));
+
+  const movementDeterministicHash = buildMovementDeterministicHash({
+    tenantId: input.tenantId,
+    movementType: input.movementType,
+    occurredAt: input.occurredAt,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    lines: sortedLines.map((line) => ({
+      itemId: line.itemId,
+      locationId: line.locationId,
+      quantityDelta: line.quantityDeltaCanonical ?? line.quantityDelta,
+      uom: line.uom,
+      canonicalUom: line.canonicalUom,
+      unitCost: line.unitCost ?? null,
+      reasonCode: line.reasonCode ?? null
+    }))
+  });
+
+  const movement = await createInventoryMovement(client, {
+    ...input,
+    id: movementId,
+    movementDeterministicHash,
+    createdAt,
+    updatedAt
+  });
+  if (!movement.created) {
+    return {
+      movementId: movement.id,
+      created: false,
+      movementDeterministicHash: null,
+      lineIds: []
+    };
+  }
+
+  for (const line of sortedLines) {
+    await createInventoryMovementLine(client, {
+      id: line.id,
+      tenantId: input.tenantId,
+      movementId,
+      itemId: line.itemId,
+      locationId: line.locationId,
+      quantityDelta: line.quantityDelta,
+      uom: line.uom,
+      quantityDeltaEntered: line.quantityDeltaEntered ?? null,
+      uomEntered: line.uomEntered ?? null,
+      quantityDeltaCanonical: line.quantityDeltaCanonical ?? null,
+      canonicalUom: line.canonicalUom ?? null,
+      uomDimension: line.uomDimension ?? null,
+      unitCost: line.unitCost ?? null,
+      extendedCost: line.extendedCost ?? null,
+      reasonCode: line.reasonCode ?? null,
+      lineNotes: line.lineNotes ?? null,
+      createdAt: line.createdAt
+    });
+  }
+
+  return {
+    movementId,
+    created: true,
+    movementDeterministicHash,
+    lineIds: sortedLines.map((line) => line.id!)
+  };
 }
 
 export async function createInventoryMovementLine(

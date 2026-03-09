@@ -5,9 +5,8 @@ import { validateSufficientStock } from './stockValidation.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
-  createInventoryMovement,
-  createInventoryMovementLine,
-  applyInventoryBalanceDelta
+  applyInventoryBalanceDelta,
+  persistInventoryMovement
 } from '../domains/inventory';
 import { relocateTransferCostLayersInTx, reverseTransferCostLayersInTx } from './transferCosting.service';
 import { hashTransactionalIdempotencyRequest } from '../lib/transactionalIdempotency';
@@ -22,7 +21,6 @@ import {
   buildMovementDeterministicHash,
   buildMovementPostedEvent,
   buildPostedDocumentReplayResult,
-  persistMovementDeterministicHashFromLedger,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
@@ -680,7 +678,7 @@ export async function executeTransferInventoryMutation(
     throw new Error('TRANSFER_LINE_DIRECTIONS_MISSING');
   }
   const externalRef = `${prepared.sourceType}:${prepared.sourceId}`;
-  const movementResult = await createInventoryMovement(client, {
+  const movementResult = await persistInventoryMovement(client, {
     id: movementId,
     tenantId: prepared.tenantId,
     movementType: prepared.movementType ?? 'transfer',
@@ -693,13 +691,29 @@ export async function executeTransferInventoryMutation(
     postedAt: prepared.occurredAt ?? new Date(),
     notes: prepared.notes ?? 'Inventory transfer',
     metadata: validation.overrideMetadata ?? null,
-    movementDeterministicHash: movementPlan.movementDeterministicHash,
     createdAt: prepared.occurredAt ?? new Date(),
-    updatedAt: prepared.occurredAt ?? new Date()
+    updatedAt: prepared.occurredAt ?? new Date(),
+    lines: movementPlan.lines.map((line) => ({
+      id: line.id,
+      warehouseId: line.warehouseId,
+      sourceLineId: line.sourceLineId,
+      itemId: line.itemId,
+      locationId: line.locationId,
+      quantityDelta: line.canonicalFields.quantityDeltaCanonical,
+      uom: line.canonicalFields.canonicalUom,
+      quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,
+      uomEntered: line.canonicalFields.uomEntered,
+      quantityDeltaCanonical: line.canonicalFields.quantityDeltaCanonical,
+      canonicalUom: line.canonicalFields.canonicalUom,
+      uomDimension: line.canonicalFields.uomDimension,
+      reasonCode: line.reasonCode,
+      lineNotes: line.lineNotes,
+      createdAt: prepared.occurredAt ?? new Date()
+    }))
   });
 
   const baseResult: TransferInventoryResult = {
-    movementId: movementResult.id,
+    movementId: movementResult.movementId,
     created: movementResult.created,
     replayed: false,
     idempotencyKey: prepared.idempotencyKey ?? null,
@@ -709,7 +723,7 @@ export async function executeTransferInventoryMutation(
   if (!movementResult.created) {
     const replay = await buildTransferReplayResult({
       tenantId: prepared.tenantId,
-      movementId: movementResult.id,
+      movementId: movementResult.movementId,
       normalizedIdempotencyKey: prepared.idempotencyKey ?? null,
       replayed: false,
       client,
@@ -732,30 +746,10 @@ export async function executeTransferInventoryMutation(
     };
   }
 
-  for (const line of movementPlan.lines) {
-    await createInventoryMovementLine(client, {
-      id: line.id,
-      tenantId: prepared.tenantId,
-      movementId: movementResult.id,
-      itemId: line.itemId,
-      locationId: line.locationId,
-      quantityDelta: line.canonicalFields.quantityDeltaCanonical,
-      uom: line.canonicalFields.canonicalUom,
-      quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,
-      uomEntered: line.canonicalFields.uomEntered,
-      quantityDeltaCanonical: line.canonicalFields.quantityDeltaCanonical,
-      canonicalUom: line.canonicalFields.canonicalUom,
-      uomDimension: line.canonicalFields.uomDimension,
-      reasonCode: line.reasonCode,
-      lineNotes: line.lineNotes
-    });
-  }
-  await persistMovementDeterministicHashFromLedger(client, prepared.tenantId, movementResult.id);
-
   await relocateTransferCostLayersInTx({
     client,
     tenantId: prepared.tenantId,
-    transferMovementId: movementResult.id,
+    transferMovementId: movementResult.movementId,
     occurredAt: prepared.occurredAt ?? new Date(),
     notes: prepared.notes ?? 'Inventory transfer',
     pairs: [
@@ -774,8 +768,8 @@ export async function executeTransferInventoryMutation(
   return {
     result: baseResult,
     events: buildTransferEvents({
-      transferId: movementResult.id,
-      movementId: movementResult.id,
+      transferId: movementResult.movementId,
+      movementId: movementResult.movementId,
       sourceLocationId: prepared.sourceLocationId,
       destinationLocationId: prepared.destinationLocationId,
       itemId: prepared.itemId,
@@ -1114,7 +1108,7 @@ export async function voidTransferMovement(
         originalLines
       });
       const reversalMovementId = uuidv4();
-      const reversalMovement = await createInventoryMovement(client, {
+      const reversalMovement = await persistInventoryMovement(client, {
         id: reversalMovementId,
         tenantId,
         movementType: TRANSFER_REVERSAL_MOVEMENT_TYPE,
@@ -1129,7 +1123,26 @@ export async function voidTransferMovement(
         reversalOfMovementId: movementId,
         reversalReason: reason,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        lines: reversalPlan.lines.map((line) => ({
+          id: line.id,
+          warehouseId: line.warehouseId,
+          sourceLineId: line.sourceLineId,
+          itemId: line.itemId,
+          locationId: line.locationId,
+          quantityDelta: line.quantityDelta,
+          uom: line.canonicalUom ?? line.effectiveUom,
+          quantityDeltaEntered: line.quantityDeltaEntered,
+          uomEntered: line.uomEntered,
+          quantityDeltaCanonical: line.quantityDeltaCanonical,
+          canonicalUom: line.canonicalUom,
+          uomDimension: line.uomDimension,
+          unitCost: line.unitCost,
+          extendedCost: line.extendedCost,
+          reasonCode: line.reasonCode,
+          lineNotes: line.lineNotes,
+          createdAt: now
+        }))
       });
 
       if (!reversalMovement.created) {
@@ -1143,7 +1156,7 @@ export async function voidTransferMovement(
             WHERE id = $1
               AND tenant_id = $2
             FOR UPDATE`,
-          [reversalMovement.id, tenantId]
+          [reversalMovement.movementId, tenantId]
         );
         const existingMovement = existingMovementResult.rows[0];
         if (
@@ -1160,26 +1173,7 @@ export async function voidTransferMovement(
       const projectionOps: InventoryCommandProjectionOp[] = [];
 
       for (const line of reversalPlan.lines) {
-        const reversalLineId = await createInventoryMovementLine(client, {
-          tenantId,
-          movementId: reversalMovement.id,
-          id: line.id,
-          itemId: line.itemId,
-          locationId: line.locationId,
-          quantityDelta: line.quantityDelta,
-          uom: line.canonicalUom ?? line.effectiveUom,
-          quantityDeltaEntered: line.quantityDeltaEntered,
-          uomEntered: line.uomEntered,
-          quantityDeltaCanonical: line.quantityDeltaCanonical,
-          canonicalUom: line.canonicalUom,
-          uomDimension: line.uomDimension,
-          unitCost: line.unitCost,
-          extendedCost: line.extendedCost,
-          reasonCode: line.reasonCode,
-          lineNotes: line.lineNotes,
-          createdAt: now
-        });
-        reversalLineByOriginalLineId.set(line.originalLineId, reversalLineId);
+        reversalLineByOriginalLineId.set(line.originalLineId, line.id);
 
         if (Math.abs(line.effectiveQty) <= 1e-6) {
           continue;
@@ -1194,13 +1188,12 @@ export async function voidTransferMovement(
           })
         );
       }
-      await persistMovementDeterministicHashFromLedger(client, tenantId, reversalMovement.id);
 
       await reverseTransferCostLayersInTx({
         client,
         tenantId,
         originalTransferMovementId: movementId,
-        reversalMovementId: reversalMovement.id,
+        reversalMovementId: reversalMovement.movementId,
         occurredAt: now,
         notes: `Transfer reversal ${movementId}`,
         reversalLineByOriginalLineId
@@ -1208,15 +1201,15 @@ export async function voidTransferMovement(
 
       return {
         responseBody: {
-          reversalMovementId: reversalMovement.id,
+          reversalMovementId: reversalMovement.movementId,
           reversalOfMovementId: movementId
         },
         responseStatus: 201,
         events: [
-          buildMovementPostedEvent(reversalMovement.id, normalizedIdempotencyKey),
+          buildMovementPostedEvent(reversalMovement.movementId, normalizedIdempotencyKey),
           buildTransferVoidedEvent({
             transferId: movementId,
-            reversalMovementId: reversalMovement.id,
+            reversalMovementId: reversalMovement.movementId,
             reason,
             producerIdempotencyKey: normalizedIdempotencyKey
           })

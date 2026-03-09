@@ -1,10 +1,10 @@
 import type { MigrationBuilder } from 'node-pg-migrate';
 
 const HASH_COMMENT =
-  'Deterministic SHA-256 fingerprint of authoritative movement envelope fields and sorted ledger lines; required for movements created on or after 1774900000000.';
+  'Deterministic SHA-256 fingerprint of authoritative movement envelope fields and sorted ledger lines; required for every authoritative inventory movement.';
 
 const LEGACY_HASH_COMMENT =
-  'Deterministic SHA-256 fingerprint of authoritative movement lines.';
+  'Deterministic SHA-256 fingerprint of authoritative movement envelope fields and sorted ledger lines.';
 
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.sql(`

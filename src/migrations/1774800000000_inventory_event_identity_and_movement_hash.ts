@@ -22,7 +22,8 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.addColumns('inventory_movements', {
     movement_deterministic_hash: {
       type: 'text',
-      comment: 'Deterministic SHA-256 fingerprint of authoritative movement lines.'
+      comment:
+        'Deterministic SHA-256 fingerprint of authoritative movement envelope fields and sorted ledger lines.'
     }
   });
 }

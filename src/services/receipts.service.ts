@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
-import { query, withTransaction, withTransactionRetry } from '../db';
+import { query, withTransaction } from '../db';
 import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
 import type { z } from 'zod';
 import {
@@ -20,8 +20,7 @@ import { createReceiptCostLayerOnce } from './costLayers.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { resolveDefaultLocationForRole, resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
-  createInventoryMovement,
-  createInventoryMovementLine
+  persistInventoryMovement
 } from '../domains/inventory';
 import { hashTransactionalIdempotencyRequest } from '../lib/transactionalIdempotency';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
@@ -30,9 +29,12 @@ import {
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
 import {
+  buildPostedDocumentReplayResult,
   buildInventoryBalanceProjectionOp,
+  buildReplayCorruptionError,
   buildMovementPostedEvent,
-  buildRefreshItemCostSummaryProjectionOp
+  buildRefreshItemCostSummaryProjectionOp,
+  sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
 
 type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
@@ -357,6 +359,91 @@ export async function fetchReceiptById(tenantId: string, id: string, client?: Po
   return { ...receipt, ...statusSummary };
 }
 
+async function buildReceiptCreateReplayResult(params: {
+  tenantId: string;
+  receiptId: string;
+  movementId: string;
+  expectedLineCount: number;
+  idempotencyKey?: string | null;
+  client: PoolClient;
+}) {
+  const replay = await buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovements: [
+      {
+        movementId: params.movementId,
+        expectedLineCount: params.expectedLineCount
+      }
+    ],
+    client: params.client,
+    fetchAggregateView: () => fetchReceiptById(params.tenantId, params.receiptId, params.client),
+    aggregateNotFoundError: new Error('RECEIPT_NOT_FOUND'),
+    authoritativeEvents: [
+      buildMovementPostedEvent(params.movementId, params.idempotencyKey ?? null)
+    ],
+    responseStatus: 200
+  });
+
+  return {
+    responseBody: {
+      receipt: replay.responseBody,
+      replayed: true,
+      responseStatus: replay.responseStatus
+    },
+    responseStatus: replay.responseStatus,
+    events: replay.events
+  };
+}
+
+async function buildReceiptVoidReplayResult(params: {
+  tenantId: string;
+  receiptId: string;
+  reversalMovementId: string;
+  expectedLineCount: number;
+  idempotencyKey?: string | null;
+  client: PoolClient;
+}) {
+  const replay = await buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovements: [
+      {
+        movementId: params.reversalMovementId,
+        expectedLineCount: params.expectedLineCount
+      }
+    ],
+    client: params.client,
+    fetchAggregateView: async () => {
+      const receipt = await fetchReceiptById(params.tenantId, params.receiptId, params.client);
+      if (receipt && receipt.status !== 'voided') {
+        throw buildReplayCorruptionError({
+          tenantId: params.tenantId,
+          receiptId: params.receiptId,
+          movementId: params.reversalMovementId,
+          reason: 'receipt_void_status_mismatch',
+          status: receipt.status
+        });
+      }
+      return receipt;
+    },
+    aggregateNotFoundError: new Error('RECEIPT_NOT_FOUND'),
+    authoritativeEvents: [
+      buildMovementPostedEvent(params.reversalMovementId, params.idempotencyKey ?? null)
+    ],
+    responseStatus: 200
+  });
+
+  return {
+    responseBody: {
+      receipt: replay.responseBody,
+      purchaseOrderId: replay.responseBody.purchaseOrderId ?? null,
+      replayed: true,
+      responseStatus: replay.responseStatus
+    },
+    responseStatus: replay.responseStatus,
+    events: replay.events
+  };
+}
+
 export async function createPurchaseOrderReceipt(
   tenantId: string,
   data: PurchaseOrderReceiptInput,
@@ -407,6 +494,37 @@ export async function createPurchaseOrderReceipt(
     idempotencyKey: normalizedIdempotencyKey,
     requestHash: idempotencyRequestHash,
     retryOptions: { retries: 0 },
+    onReplay: async ({ client, responseBody }) => {
+      const replayedReceiptId = responseBody?.receipt?.id;
+      const replayMovementId = responseBody?.receipt?.inventoryMovementId;
+      if (typeof replayedReceiptId !== 'string' || !replayedReceiptId) {
+        throw buildReplayCorruptionError({
+          tenantId,
+          idempotencyKey: normalizedIdempotencyKey,
+          reason: 'receipt_replay_receipt_missing'
+        });
+      }
+      if (typeof replayMovementId !== 'string' || !replayMovementId) {
+        throw buildReplayCorruptionError({
+          tenantId,
+          receiptId: replayedReceiptId,
+          idempotencyKey: normalizedIdempotencyKey,
+          reason: 'receipt_replay_movement_missing'
+        });
+      }
+      return (
+        await buildReceiptCreateReplayResult({
+          tenantId,
+          receiptId: replayedReceiptId,
+          movementId: replayMovementId,
+          expectedLineCount: Array.isArray(responseBody?.receipt?.lines)
+            ? responseBody.receipt.lines.length
+            : data.lines.length,
+          idempotencyKey: normalizedIdempotencyKey,
+          client
+        })
+      ).responseBody;
+    },
     lockTargets: async (client) => {
       const poResult = await client.query(
         `SELECT status, ship_to_location_id, receiving_location_id
@@ -569,44 +687,24 @@ export async function createPurchaseOrderReceipt(
 
       const now = new Date();
       const occurredAt = data.receivedAt ? new Date(data.receivedAt) : now;
-      const movementResult = await createInventoryMovement(client, {
-        tenantId,
-        movementType: 'receive',
-        status: 'posted',
-        externalRef: `po_receipt:${receiptId}`,
-        sourceType: 'po_receipt',
-        sourceId: receiptId,
-        idempotencyKey: data.idempotencyKey ?? null,
-        occurredAt,
-        postedAt: occurredAt,
-        notes: `PO receipt ${receiptId}`,
-        createdAt: now,
-        updatedAt: now
-      });
-      const movementId = movementResult.id;
       const receiptNumber = await generateReceiptNumber();
       const projectionOps: InventoryCommandProjectionOp[] = [];
       const refreshedItems = new Set<string>();
-
-      await client.query(
-        `INSERT INTO purchase_order_receipts (
-            id, tenant_id, purchase_order_id, status, received_at, received_to_location_id,
-            inventory_movement_id, external_ref, notes, idempotency_key, receipt_number
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [
-          receiptId,
-          tenantId,
-          data.purchaseOrderId,
-          'posted',
-          new Date(data.receivedAt),
-          qaLocationId,
-          movementId,
-          data.externalRef ?? null,
-          data.notes ?? null,
-          data.idempotencyKey ?? null,
-          receiptNumber
-        ]
-      );
+      const plannedReceiptLines: Array<{
+        receiptLineId: string;
+        purchaseOrderLineId: string;
+        itemId: string;
+        receivedQty: number;
+        expectedQty: number;
+        unitCost: number | null;
+        canonicalFields: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
+        costData: ReturnType<typeof calculateMovementCostWithUnitCost>;
+        discrepancyReason: string | null;
+        discrepancyNotes: string | null;
+        lotCode: string | null;
+        serialNumbers: string[] | null;
+        overReceiptApproved: boolean;
+      }> = [];
 
       for (const line of data.lines) {
         const receiptLineId = uuidv4();
@@ -614,30 +712,6 @@ export async function createPurchaseOrderReceipt(
         const poLine = poLineMap.get(line.purchaseOrderLineId);
         const expectedQty = roundQuantity(toNumber(poLine?.quantity_ordered ?? 0));
         const unitCost = line.unitCost !== undefined ? line.unitCost : (poLine?.unit_price ?? null);
-
-        await client.query(
-          `INSERT INTO purchase_order_receipt_lines (
-              id, tenant_id, purchase_order_receipt_id, purchase_order_line_id, uom,
-              quantity_received, expected_quantity, unit_cost, discrepancy_reason, discrepancy_notes,
-              lot_code, serial_numbers, over_receipt_approved
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-          [
-            receiptLineId,
-            tenantId,
-            receiptId,
-            line.purchaseOrderLineId,
-            line.uom,
-            receivedQty,
-            expectedQty,
-            unitCost,
-            line.discrepancyReason ?? null,
-            line.discrepancyNotes ?? null,
-            line.lotCode ?? null,
-            line.serialNumbers ?? null,
-            line.overReceiptApproved ?? false
-          ]
-        );
-
         if (!poLine?.item_id) {
           throw new Error('RECEIPT_LINE_ITEM_REQUIRED');
         }
@@ -649,60 +723,146 @@ export async function createPurchaseOrderReceipt(
           line.uom,
           client
         );
-        const canonicalQty = canonicalFields.quantityDeltaCanonical;
         const costData =
           unitCost !== null && unitCost !== undefined
-            ? calculateMovementCostWithUnitCost(canonicalQty, unitCost)
+            ? calculateMovementCostWithUnitCost(canonicalFields.quantityDeltaCanonical, unitCost)
             : { unitCost: null, extendedCost: null };
-
-        await createInventoryMovementLine(client, {
-          tenantId,
-          movementId,
+        plannedReceiptLines.push({
+          receiptLineId,
+          purchaseOrderLineId: line.purchaseOrderLineId,
           itemId: poLine.item_id,
-          locationId: qaLocationId,
-          quantityDelta: canonicalQty,
-          uom: canonicalFields.canonicalUom,
-          quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
-          uomEntered: canonicalFields.uomEntered,
-          quantityDeltaCanonical: canonicalFields.quantityDeltaCanonical,
-          canonicalUom: canonicalFields.canonicalUom,
-          uomDimension: canonicalFields.uomDimension,
-          unitCost: costData.unitCost,
-          extendedCost: costData.extendedCost,
-          reasonCode: 'receipt',
-          lineNotes: `PO receipt line ${receiptLineId}`
+          receivedQty,
+          expectedQty,
+          unitCost,
+          canonicalFields,
+          costData,
+          discrepancyReason: line.discrepancyReason ?? null,
+          discrepancyNotes: line.discrepancyNotes ?? null,
+          lotCode: line.lotCode ?? null,
+          serialNumbers: line.serialNumbers ?? null,
+          overReceiptApproved: line.overReceiptApproved ?? false
         });
+      }
+
+      const movementResult = await persistInventoryMovement(client, {
+        tenantId,
+        movementType: 'receive',
+        status: 'posted',
+        externalRef: `po_receipt:${receiptId}`,
+        sourceType: 'po_receipt',
+        sourceId: receiptId,
+        idempotencyKey: data.idempotencyKey ?? null,
+        occurredAt,
+        postedAt: occurredAt,
+        notes: `PO receipt ${receiptId}`,
+        createdAt: now,
+        updatedAt: now,
+        lines: plannedReceiptLines.map((line) => ({
+          warehouseId: qaWarehouseId ?? '',
+          sourceLineId: line.receiptLineId,
+          itemId: line.itemId,
+          locationId: qaLocationId,
+          quantityDelta: line.canonicalFields.quantityDeltaCanonical,
+          uom: line.canonicalFields.canonicalUom,
+          quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,
+          uomEntered: line.canonicalFields.uomEntered,
+          quantityDeltaCanonical: line.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: line.canonicalFields.canonicalUom,
+          uomDimension: line.canonicalFields.uomDimension,
+          unitCost: line.costData.unitCost,
+          extendedCost: line.costData.extendedCost,
+          reasonCode: 'receipt',
+          lineNotes: `PO receipt line ${line.receiptLineId}`,
+          createdAt: now
+        }))
+      });
+      const movementId = movementResult.movementId;
+
+      if (!movementResult.created) {
+        return buildReceiptCreateReplayResult({
+          tenantId,
+          receiptId,
+          movementId,
+          expectedLineCount: plannedReceiptLines.length,
+          idempotencyKey: data.idempotencyKey ?? null,
+          client
+        });
+      }
+
+      await client.query(
+        `INSERT INTO purchase_order_receipts (
+            id, tenant_id, purchase_order_id, status, received_at, received_to_location_id,
+            inventory_movement_id, external_ref, notes, idempotency_key, receipt_number
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          receiptId,
+          tenantId,
+          data.purchaseOrderId,
+          'posted',
+          occurredAt,
+          qaLocationId,
+          movementId,
+          data.externalRef ?? null,
+          data.notes ?? null,
+          data.idempotencyKey ?? null,
+          receiptNumber
+        ]
+      );
+
+      for (const line of plannedReceiptLines) {
+        await client.query(
+          `INSERT INTO purchase_order_receipt_lines (
+              id, tenant_id, purchase_order_receipt_id, purchase_order_line_id, uom,
+              quantity_received, expected_quantity, unit_cost, discrepancy_reason, discrepancy_notes,
+              lot_code, serial_numbers, over_receipt_approved
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [
+            line.receiptLineId,
+            tenantId,
+            receiptId,
+            line.purchaseOrderLineId,
+            line.canonicalFields.uomEntered,
+            line.receivedQty,
+            line.expectedQty,
+            line.unitCost,
+            line.discrepancyReason,
+            line.discrepancyNotes,
+            line.lotCode,
+            line.serialNumbers ?? null,
+            line.overReceiptApproved
+          ]
+        );
 
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
-            itemId: poLine.item_id,
+            itemId: line.itemId,
             locationId: qaLocationId,
-            uom: canonicalFields.canonicalUom,
-            deltaOnHand: canonicalQty
+            uom: line.canonicalFields.canonicalUom,
+            deltaOnHand: line.canonicalFields.quantityDeltaCanonical
           })
         );
 
-        if (unitCost !== null && unitCost !== undefined) {
+        if (line.unitCost !== null && line.unitCost !== undefined) {
           await createReceiptCostLayerOnce({
             tenant_id: tenantId,
-            item_id: poLine.item_id,
+            item_id: line.itemId,
             location_id: qaLocationId,
-            uom: canonicalFields.canonicalUom,
-            quantity: canonicalQty,
-            unit_cost: unitCost,
+            uom: line.canonicalFields.canonicalUom,
+            quantity: line.canonicalFields.quantityDeltaCanonical,
+            unit_cost: line.unitCost,
             source_type: 'receipt',
-            source_document_id: receiptLineId,
+            source_document_id: line.receiptLineId,
             movement_id: movementId,
-            layer_date: new Date(data.receivedAt),
+            layer_date: occurredAt,
             notes: `Receipt from PO line ${line.purchaseOrderLineId}`,
             client
           });
         }
 
-        if (!refreshedItems.has(poLine.item_id)) {
-          refreshedItems.add(poLine.item_id);
-          projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, poLine.item_id));
+        if (!refreshedItems.has(line.itemId)) {
+          refreshedItems.add(line.itemId);
+          projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, line.itemId));
         }
       }
 
@@ -1142,81 +1302,90 @@ async function insertReversalLinesAndCollectDeltas(
   client: PoolClient,
   tenantId: string,
   originalMovementId: string,
-  reversalMovementId: string,
-  reason: string,
-  createdAt: Date
+  reason: string
 ) {
-  const insertResult = await client.query<{
+  const sourceLinesResult = await client.query<{
+    source_line_id: string;
     item_id: string;
     location_id: string;
-    balance_uom: string;
-    quantity_delta_effective: string | number;
+    quantity_delta: string | number;
+    uom: string;
+    quantity_delta_entered: string | number | null;
+    uom_entered: string | null;
+    quantity_delta_canonical: string | number | null;
+    canonical_uom: string | null;
+    uom_dimension: string | null;
+    unit_cost: string | number | null;
+    extended_cost: string | number | null;
+    reason_code: string | null;
   }>(
-    `INSERT INTO inventory_movement_lines (
-       id,
-       tenant_id,
-       movement_id,
-       item_id,
-       location_id,
-       quantity_delta,
-       uom,
-       quantity_delta_entered,
-       uom_entered,
-       quantity_delta_canonical,
-       canonical_uom,
-       uom_dimension,
-       unit_cost,
-       extended_cost,
-       reason_code,
-       line_notes,
-       created_at
-     )
-     SELECT
-       gen_random_uuid(),
-       iml.tenant_id,
-       $3,
-       iml.item_id,
-       iml.location_id,
-       -iml.quantity_delta,
-       iml.uom,
-       CASE
-         WHEN iml.quantity_delta_entered IS NULL
-         THEN NULL
-         ELSE -iml.quantity_delta_entered
-       END,
-       iml.uom_entered,
-       CASE
-         WHEN iml.quantity_delta_canonical IS NULL
-         THEN NULL
-         ELSE -iml.quantity_delta_canonical
-       END,
-       iml.canonical_uom,
-       iml.uom_dimension,
-       iml.unit_cost,
-       CASE
-         WHEN iml.extended_cost IS NULL
-         THEN NULL
-         ELSE -iml.extended_cost
-       END,
-       COALESCE(iml.reason_code, 'receipt_void_reversal'),
-       CONCAT('Reversal of movement line ', iml.id, ' (', $4::text, ')'),
-       $5
-      FROM inventory_movement_lines iml
-     WHERE iml.tenant_id = $1
-       AND iml.movement_id = $2
-     RETURNING
-       item_id,
-       location_id,
-       COALESCE(canonical_uom, uom) AS balance_uom,
-       COALESCE(quantity_delta_canonical, quantity_delta) AS quantity_delta_effective`,
-    [tenantId, originalMovementId, reversalMovementId, reason, createdAt]
+    `SELECT id AS source_line_id,
+            item_id,
+            location_id,
+            quantity_delta,
+            uom,
+            quantity_delta_entered,
+            uom_entered,
+            quantity_delta_canonical,
+            canonical_uom,
+            uom_dimension,
+            unit_cost,
+            extended_cost,
+            reason_code
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2`,
+    [tenantId, originalMovementId]
   );
 
-  if (insertResult.rowCount === 0) {
+  if ((sourceLinesResult.rowCount ?? 0) === 0) {
     throw new Error('RECEIPT_NOT_POSTED');
   }
 
-  return insertResult.rows;
+  const reversalLines = sortDeterministicMovementLines(
+    sourceLinesResult.rows.map((row) => ({
+      id: uuidv4(),
+      sourceLineId: row.source_line_id,
+      itemId: row.item_id,
+      locationId: row.location_id,
+      quantityDelta: -toNumber(row.quantity_delta),
+      uom: row.uom,
+      quantityDeltaEntered:
+        row.quantity_delta_entered === null ? null : -toNumber(row.quantity_delta_entered),
+      uomEntered: row.uom_entered,
+      quantityDeltaCanonical:
+        row.quantity_delta_canonical === null ? null : -toNumber(row.quantity_delta_canonical),
+      canonicalUom: row.canonical_uom,
+      uomDimension: row.uom_dimension,
+      unitCost: row.unit_cost === null ? null : Number(row.unit_cost),
+      extendedCost: row.extended_cost === null ? null : -Number(row.extended_cost),
+      reasonCode: row.reason_code ?? 'receipt_void_reversal',
+      lineNotes: `Reversal of movement line ${row.source_line_id} (${reason})`,
+      balanceUom: row.canonical_uom ?? row.uom,
+      balanceQuantityDelta:
+        row.quantity_delta_canonical === null
+          ? -toNumber(row.quantity_delta)
+          : -toNumber(row.quantity_delta_canonical)
+    })),
+    (line) => ({
+      tenantId,
+      warehouseId: '',
+      locationId: line.locationId,
+      itemId: line.itemId,
+      canonicalUom: line.canonicalUom ?? line.uom,
+      sourceLineId: line.sourceLineId
+    })
+  );
+
+  return {
+    reversalLines,
+    balanceDeltas: reversalLines.map((line) => ({
+      item_id: line.itemId,
+      location_id: line.locationId,
+      balance_uom: line.balanceUom,
+      quantity_delta_effective: line.balanceQuantityDelta
+    }))
+  };
 }
 
 export async function voidReceipt(
@@ -1268,6 +1437,40 @@ export async function voidReceipt(
     idempotencyKey: normalizedIdempotencyKey,
     requestHash: idempotencyRequestHash,
     retryOptions: { isolationLevel: 'SERIALIZABLE', retries: 2 },
+    onReplay: async ({ client, responseBody }) => {
+      const replayedReceiptId = responseBody?.receipt?.id ?? id;
+      const originalMovementId = responseBody?.receipt?.inventoryMovementId;
+      if (typeof originalMovementId !== 'string' || !originalMovementId) {
+        throw buildReplayCorruptionError({
+          tenantId,
+          receiptId: replayedReceiptId,
+          idempotencyKey: normalizedIdempotencyKey,
+          reason: 'receipt_void_replay_original_movement_missing'
+        });
+      }
+      const reversalMovement = await findExistingReversalMovement(client, tenantId, originalMovementId);
+      if (!reversalMovement?.id) {
+        throw buildReplayCorruptionError({
+          tenantId,
+          receiptId: replayedReceiptId,
+          originalMovementId,
+          idempotencyKey: normalizedIdempotencyKey,
+          reason: 'receipt_void_replay_reversal_missing'
+        });
+      }
+      return (
+        await buildReceiptVoidReplayResult({
+          tenantId,
+          receiptId: replayedReceiptId,
+          reversalMovementId: reversalMovement.movementId,
+          expectedLineCount: Array.isArray(responseBody?.receipt?.lines)
+            ? responseBody.receipt.lines.length
+            : 0,
+          idempotencyKey: normalizedIdempotencyKey,
+          client
+        })
+      ).responseBody;
+    },
     lockTargets: async (client) => {
       const receiptResult = await client.query<{
         id: string;
@@ -1386,7 +1589,13 @@ export async function voidReceipt(
       }
 
       const now = new Date();
-      const reversalMovement = await createInventoryMovement(client, {
+      const reversalPlan = await insertReversalLinesAndCollectDeltas(
+        client,
+        tenantId,
+        originalMovement.id,
+        reason
+      );
+      const reversalMovement = await persistInventoryMovement(client, {
         tenantId,
         movementType: REVERSAL_MOVEMENT_TYPE,
         status: 'posted',
@@ -1400,7 +1609,26 @@ export async function voidReceipt(
         reversalOfMovementId: originalMovement.id,
         reversalReason: reason,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        lines: reversalPlan.reversalLines.map((line) => ({
+          id: line.id,
+          warehouseId: '',
+          sourceLineId: line.sourceLineId,
+          itemId: line.itemId,
+          locationId: line.locationId,
+          quantityDelta: line.quantityDelta,
+          uom: line.uom,
+          quantityDeltaEntered: line.quantityDeltaEntered,
+          uomEntered: line.uomEntered,
+          quantityDeltaCanonical: line.quantityDeltaCanonical,
+          canonicalUom: line.canonicalUom,
+          uomDimension: line.uomDimension,
+          unitCost: line.unitCost,
+          extendedCost: line.extendedCost,
+          reasonCode: line.reasonCode,
+          lineNotes: line.lineNotes,
+          createdAt: now
+        }))
       });
 
       if (!reversalMovement.created) {
@@ -1414,7 +1642,7 @@ export async function voidReceipt(
             WHERE id = $1
               AND tenant_id = $2
             FOR UPDATE`,
-          [reversalMovement.id, tenantId]
+          [reversalMovement.movementId, tenantId]
         );
         const existingMovement = existingMovementResult.rows[0];
         if (
@@ -1427,15 +1655,6 @@ export async function voidReceipt(
         throw new Error('RECEIPT_VOID_CONFLICT');
       }
 
-      const lineRows = await insertReversalLinesAndCollectDeltas(
-        client,
-        tenantId,
-        originalMovement.id,
-        reversalMovement.id,
-        reason,
-        now
-      );
-
       const balanceDeltaByKey = new Map<string, {
         itemId: string;
         locationId: string;
@@ -1443,7 +1662,7 @@ export async function voidReceipt(
         deltaOnHand: number;
       }>();
       const itemIdsToRefresh = new Set<string>();
-      for (const row of lineRows) {
+      for (const row of reversalPlan.balanceDeltas) {
         const delta = roundQuantity(toNumber(row.quantity_delta_effective));
         const key = `${row.item_id}|${row.location_id}|${row.balance_uom}`;
         const current = balanceDeltaByKey.get(key) ?? {
@@ -1488,7 +1707,7 @@ export async function voidReceipt(
           metadata: {
             statusFrom: receipt.status,
             statusTo: 'voided',
-            reversalMovementId: reversalMovement.id,
+            reversalMovementId: reversalMovement.movementId,
             reversalOfMovementId: originalMovement.id,
             reason
           }
@@ -1525,7 +1744,7 @@ export async function voidReceipt(
           responseStatus: 200
         },
         responseStatus: 200,
-        events: [buildMovementPostedEvent(reversalMovement.id, normalizedIdempotencyKey)],
+        events: [buildMovementPostedEvent(reversalMovement.movementId, normalizedIdempotencyKey)],
         projectionOps
       };
     }

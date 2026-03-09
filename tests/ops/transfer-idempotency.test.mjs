@@ -2,108 +2,79 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
-import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
+import { createRequire } from 'node:module';
+import { createServiceHarness } from './helpers/service-harness.mjs';
 
-const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
-const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
-const tenantSlug = `transfer-idempotency-${randomUUID().slice(0, 8)}`;
+const require = createRequire(import.meta.url);
+require('ts-node/register/transpile-only');
+require('tsconfig-paths/register');
 
-async function apiRequest(method, path, { token, body, params, headers } = {}) {
-  const url = new URL(baseUrl + path);
-  if (params) {
-    for (const [key, value] of Object.entries(params)) {
-      if (value === undefined) continue;
-      url.searchParams.set(key, String(value));
+const FIXED_OCCURRED_AT = new Date('2026-03-01T00:00:00.000Z');
+
+async function createTransferFixture(label) {
+  const harness = await createServiceHarness({
+    tenantPrefix: label,
+    tenantName: `Transfer ${label}`
+  });
+  const factory = harness.topology;
+  const store = await harness.createWarehouseWithSellable(`STORE-${randomUUID().slice(0, 6)}`);
+  const item = await harness.createItem({
+    defaultLocationId: factory.defaults.SELLABLE.id,
+    skuPrefix: 'ITEM',
+    type: 'raw'
+  });
+  await harness.seedStockViaCount({
+    warehouseId: factory.warehouse.id,
+    itemId: item.id,
+    locationId: factory.defaults.SELLABLE.id,
+    quantity: 10,
+    unitCost: 5
+  });
+  return {
+    harness,
+    factory,
+    store,
+    itemId: item.id
+  };
+}
+
+async function expectServiceError(action, expectedCode, expectedReason = null) {
+  await assert.rejects(action, (error) => {
+    assert.equal(error?.code ?? error?.message, expectedCode);
+    if (expectedReason) {
+      assert.equal(error?.details?.reason, expectedReason);
     }
-  }
-  const mergedHeaders = { 'Content-Type': 'application/json', ...(headers ?? {}) };
-  if (token) mergedHeaders.Authorization = `Bearer ${token}`;
-  const res = await fetch(url.toString(), {
-    method,
-    headers: mergedHeaders,
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const contentType = res.headers.get('content-type') || '';
-  const isJson = contentType.includes('application/json');
-  const payload = isJson ? await res.json().catch(() => null) : await res.text().catch(() => '');
-  return { res, payload };
-}
-
-async function getSession() {
-  return ensureDbSession({
-    apiRequest,
-    adminEmail,
-    adminPassword,
-    tenantSlug,
-    tenantName: 'Transfer Idempotency Tenant'
+    return true;
   });
 }
 
-async function createWarehouseWithSellable(token, codePrefix) {
-  const warehouseRes = await apiRequest('POST', '/locations', {
-    token,
-    body: {
-      code: `${codePrefix}-WH`,
-      name: `${codePrefix} Warehouse`,
-      type: 'warehouse',
-      active: true
-    }
-  });
-  assert.equal(warehouseRes.res.status, 201, JSON.stringify(warehouseRes.payload));
-
-  const sellableRes = await apiRequest('POST', '/locations', {
-    token,
-    body: {
-      code: `${codePrefix}-SELLABLE`,
-      name: `${codePrefix} Sellable`,
-      type: 'bin',
-      role: 'SELLABLE',
-      isSellable: true,
-      active: true,
-      parentLocationId: warehouseRes.payload.id
-    }
-  });
-  assert.equal(sellableRes.res.status, 201, JSON.stringify(sellableRes.payload));
-
-  return { warehouse: warehouseRes.payload, sellable: sellableRes.payload };
+async function retargetTransferReplayMovement(db, tenantId, idempotencyKey, movementId) {
+  await db.query(
+    `UPDATE idempotency_keys
+        SET response_body = jsonb_set(
+              jsonb_set(response_body, '{movementId}', to_jsonb($3::text), true),
+              '{transferId}',
+              to_jsonb($3::text),
+              true
+            ),
+            updated_at = now()
+      WHERE tenant_id = $1
+        AND key = $2`,
+    [tenantId, idempotencyKey, movementId]
+  );
 }
 
-async function createVendor(token) {
-  const code = `V-${randomUUID().slice(0, 8)}`;
-  const res = await apiRequest('POST', '/vendors', {
-    token,
-    body: { code, name: `Vendor ${code}` }
-  });
-  assert.equal(res.res.status, 201, JSON.stringify(res.payload));
-  return res.payload.id;
-}
-
-async function createItem(token, defaultLocationId) {
-  const sku = `ITEM-${randomUUID().slice(0, 8)}`;
-  const res = await apiRequest('POST', '/items', {
-    token,
-    body: {
-      sku,
-      name: `Item ${sku}`,
-      uomDimension: 'count',
-      canonicalUom: 'each',
-      stockingUom: 'each',
-      defaultLocationId
-    }
-  });
-  assert.equal(res.res.status, 201, JSON.stringify(res.payload));
-  return res.payload.id;
-}
-
-async function seedPostedStock({ db, tenantId, itemId, locationId, quantity, unitCost, uom = 'each' }) {
+async function insertTransferReplayFixture(params) {
+  const {
+    db,
+    tenantId,
+    itemId,
+    sourceLocationId,
+    destinationLocationId,
+    occurredAt = FIXED_OCCURRED_AT,
+    movementHash
+  } = params;
   const movementId = randomUUID();
-  const movementLineId = randomUUID();
-  const layerId = randomUUID();
-  const sourceDocumentId = randomUUID();
-  const createdAt = '2026-01-01T00:00:00.000Z';
-
   await db.query(
     `INSERT INTO inventory_movements (
         id,
@@ -113,26 +84,17 @@ async function seedPostedStock({ db, tenantId, itemId, locationId, quantity, uni
         external_ref,
         source_type,
         source_id,
+        idempotency_key,
         occurred_at,
         posted_at,
         notes,
+        movement_deterministic_hash,
         created_at,
         updated_at
       ) VALUES (
-        $1,
-        $2,
-        'receive',
-        'posted',
-        $3,
-        'test_seed',
-        $4,
-        $5,
-        $5,
-        'seed',
-        $5,
-        $5
+        $1, $2, 'adjustment', 'posted', $3, 'transfer_fixture', $4, NULL, $5, $5, 'fixture', $6, $5, $5
       )`,
-    [movementId, tenantId, `seed:${movementId}`, sourceDocumentId, createdAt]
+    [movementId, tenantId, `fixture:${movementId}`, movementId, occurredAt, movementHash ?? null]
   );
   await db.query(
     `INSERT INTO inventory_movement_lines (
@@ -153,97 +115,134 @@ async function seedPostedStock({ db, tenantId, itemId, locationId, quantity, uni
         reason_code,
         line_notes,
         created_at
-      ) VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        $7,
-        $6,
-        $7,
-        $6,
-        $7,
-        'count',
-        $8,
-        $9,
-        'seed_receive',
-        'seed',
-        $10
-      )`,
-    [movementLineId, tenantId, movementId, itemId, locationId, quantity, uom, unitCost, quantity * unitCost, createdAt]
+      ) VALUES
+      ($1, $2, $3, $4, $5, -2, 'each', -2, 'each', -2, 'each', 'count', 0, 0, 'fixture_out', 'fixture', $7),
+      ($6, $2, $3, $4, $8, 2, 'each', 2, 'each', 2, 'each', 'count', 0, 0, 'fixture_in', 'fixture', $7)`,
+    [
+      randomUUID(),
+      tenantId,
+      movementId,
+      itemId,
+      sourceLocationId,
+      randomUUID(),
+      occurredAt,
+      destinationLocationId
+    ]
   );
-  await db.query(
-    `INSERT INTO inventory_balance (
-        tenant_id, item_id, location_id, uom, on_hand, reserved, allocated, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $6)
-      ON CONFLICT (tenant_id, item_id, location_id, uom)
-      DO UPDATE SET on_hand = EXCLUDED.on_hand,
-                    reserved = EXCLUDED.reserved,
-                    allocated = EXCLUDED.allocated,
-                    updated_at = EXCLUDED.updated_at`,
-    [tenantId, itemId, locationId, uom, quantity, createdAt]
-  );
-  await db.query(
-    `INSERT INTO inventory_cost_layers (
-        id,
-        tenant_id,
-        item_id,
-        location_id,
-        uom,
-        layer_date,
-        layer_sequence,
-        original_quantity,
-        remaining_quantity,
-        unit_cost,
-        extended_cost,
-        source_type,
-        source_document_id,
-        movement_id,
-        notes,
-        created_at,
-        updated_at
-      ) VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        1,
-        $7,
-        $7,
-        $8,
-        $9,
-        'adjustment',
-        $10,
-        $11,
-        'seed',
-        $6,
-        $6
-      )`,
-    [layerId, tenantId, itemId, locationId, uom, createdAt, quantity, unitCost, quantity * unitCost, sourceDocumentId, movementId]
-  );
+  return movementId;
 }
 
-test('inventory transfer idempotency: replay, conflict, incomplete detection', async () => {
-  const session = await getSession();
-  const token = session.accessToken;
-  const db = session.pool;
-  const tenantId = session.tenant.id;
-
-  const factory = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url });
-  const store = await createWarehouseWithSellable(token, `STORE-${randomUUID().slice(0, 6)}`);
-  const itemId = await createItem(token, factory.defaults.SELLABLE.id);
-  await seedPostedStock({
+async function insertBalancedTransferLineCorruption(params) {
+  const {
     db,
     tenantId,
+    movementId,
     itemId,
-    locationId: factory.defaults.SELLABLE.id,
-    quantity: 10,
-    unitCost: 5
-  });
+    sourceLocationId,
+    destinationLocationId
+  } = params;
+  const outLineId = randomUUID();
+  const inLineId = randomUUID();
+  const sourceLayerId = randomUUID();
+  const destLayerId = randomUUID();
+  const linkId = randomUUID();
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO inventory_movement_lines (
+          id,
+          tenant_id,
+          movement_id,
+          item_id,
+          location_id,
+          quantity_delta,
+          uom,
+          quantity_delta_entered,
+          uom_entered,
+          quantity_delta_canonical,
+          canonical_uom,
+          uom_dimension,
+          unit_cost,
+          extended_cost,
+          reason_code,
+          line_notes,
+          created_at
+        ) VALUES
+        ($1, $2, $3, $4, $5, -1, 'each', -1, 'each', -1, 'each', 'count', 0, 0, 'tamper_out', 'tamper', now()),
+        ($6, $2, $3, $4, $7, 1, 'each', 1, 'each', 1, 'each', 'count', 0, 0, 'tamper_in', 'tamper', now())`,
+      [
+        outLineId,
+        tenantId,
+        movementId,
+        itemId,
+        sourceLocationId,
+        inLineId,
+        destinationLocationId
+      ]
+    );
+    await client.query(
+      `INSERT INTO inventory_cost_layers (
+          id,
+          tenant_id,
+          item_id,
+          location_id,
+          uom,
+          layer_date,
+          layer_sequence,
+          original_quantity,
+          remaining_quantity,
+          unit_cost,
+          extended_cost,
+          source_type,
+          notes,
+          created_at,
+          updated_at
+        ) VALUES
+        ($1, $2, $3, $4, 'each', now(), 1, 1, 1, 0, 0, 'opening_balance', 'tamper source', now(), now()),
+        ($5, $2, $3, $6, 'each', now(), 1, 1, 1, 0, 0, 'opening_balance', 'tamper dest', now(), now())`,
+      [sourceLayerId, tenantId, itemId, sourceLocationId, destLayerId, destinationLocationId]
+    );
+    await client.query(
+      `INSERT INTO cost_layer_transfer_links (
+          id,
+          tenant_id,
+          transfer_movement_id,
+          transfer_out_line_id,
+          transfer_in_line_id,
+          source_cost_layer_id,
+          dest_cost_layer_id,
+          quantity,
+          unit_cost,
+          extended_cost,
+          created_at
+        ) VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7,
+          1,
+          0,
+          0,
+          now()
+        )`,
+      [linkId, tenantId, movementId, outLineId, inLineId, sourceLayerId, destLayerId]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+test('inventory transfer idempotency: replay and payload conflict stay deterministic without HTTP', async () => {
+  const { harness, factory, store, itemId } = await createTransferFixture('transfer-idempotency');
+  const { pool: db, tenantId } = harness;
 
   const payload = {
     sourceLocationId: factory.defaults.SELLABLE.id,
@@ -256,26 +255,21 @@ test('inventory transfer idempotency: replay, conflict, incomplete detection', a
   };
   const idempotencyKey = `transfer-idem-${randomUUID()}`;
 
-  const first = await apiRequest('POST', '/inventory-transfers', {
-    token,
-    headers: { 'Idempotency-Key': idempotencyKey },
-    body: payload
+  const first = await harness.postTransfer({
+    ...payload,
+    idempotencyKey
   });
-  assert.equal(first.res.status, 201, JSON.stringify(first.payload));
-  const firstMovementId = first.payload.movementId;
-  assert.ok(firstMovementId);
-  assert.equal(first.payload.transferId, firstMovementId);
-  assert.equal(first.payload.transfer_id, firstMovementId);
-  assert.equal(first.payload.idempotencyKey, idempotencyKey);
-  assert.equal(first.payload.idempotency_key, idempotencyKey);
-  assert.equal(first.payload.replayed, false);
+  assert.ok(first.movementId);
+  assert.equal(first.transferId, first.movementId);
+  assert.equal(first.idempotencyKey, idempotencyKey);
+  assert.equal(first.replayed, false);
 
   const movementHashRes = await db.query(
     `SELECT movement_deterministic_hash
        FROM inventory_movements
       WHERE tenant_id = $1
         AND id = $2`,
-    [tenantId, firstMovementId]
+    [tenantId, first.movementId]
   );
   assert.equal(movementHashRes.rowCount, 1);
   assert.ok(movementHashRes.rows[0]?.movement_deterministic_hash, 'transfer movement hash must persist');
@@ -287,7 +281,7 @@ test('inventory transfer idempotency: replay, conflict, incomplete detection', a
         AND aggregate_id = $2
         AND aggregate_type IN ('inventory_transfer', 'inventory_movement')
       ORDER BY aggregate_type ASC, event_type ASC`,
-    [tenantId, firstMovementId]
+    [tenantId, first.movementId]
   );
   assert.deepEqual(
     transferEventRes.rows.map((row) => `${row.aggregate_type}:${row.event_type}:v${row.event_version}`),
@@ -315,25 +309,21 @@ test('inventory transfer idempotency: replay, conflict, incomplete detection', a
       [
         randomUUID(),
         tenantId,
-        firstMovementId,
-        JSON.stringify({ transferId: firstMovementId, movementId: firstMovementId })
+        first.movementId,
+        JSON.stringify({ transferId: first.movementId, movementId: first.movementId })
       ]
     ),
     (error) => error?.code === '23505'
   );
 
-  const replay = await apiRequest('POST', '/inventory-transfers', {
-    token,
-    headers: { 'Idempotency-Key': idempotencyKey },
-    body: payload
+  const replay = await harness.postTransfer({
+    ...payload,
+    idempotencyKey
   });
-  assert.equal(replay.res.status, 200, JSON.stringify(replay.payload));
-  assert.equal(replay.payload.movementId, firstMovementId);
-  assert.equal(replay.payload.transferId, firstMovementId);
-  assert.equal(replay.payload.transfer_id, firstMovementId);
-  assert.equal(replay.payload.idempotencyKey, idempotencyKey);
-  assert.equal(replay.payload.idempotency_key, idempotencyKey);
-  assert.equal(replay.payload.replayed, true);
+  assert.equal(replay.movementId, first.movementId);
+  assert.equal(replay.transferId, first.movementId);
+  assert.equal(replay.idempotencyKey, idempotencyKey);
+  assert.equal(replay.replayed, true);
 
   const movementCount = await db.query(
     `SELECT COUNT(*)::int AS count
@@ -345,137 +335,216 @@ test('inventory transfer idempotency: replay, conflict, incomplete detection', a
   );
   assert.equal(Number(movementCount.rows[0]?.count ?? 0), 1);
 
-  const mismatchWarehouse = await apiRequest('POST', '/inventory-transfers', {
-    token,
-    headers: { 'Idempotency-Key': `transfer-idem-mismatch-${randomUUID()}` },
-    body: {
-      ...payload,
-      warehouseId: factory.warehouse.id
-    }
-  });
-  assert.equal(mismatchWarehouse.res.status, 409, JSON.stringify(mismatchWarehouse.payload));
-  assert.equal(mismatchWarehouse.payload?.error?.code, 'WAREHOUSE_SCOPE_MISMATCH');
-
-  const conflict = await apiRequest('POST', '/inventory-transfers', {
-    token,
-    headers: { 'Idempotency-Key': idempotencyKey },
-    body: {
-      ...payload,
-      quantity: 4
-    }
-  });
-  assert.equal(conflict.res.status, 409, JSON.stringify(conflict.payload));
-  assert.equal(conflict.payload?.error?.code, 'INV_TRANSFER_IDEMPOTENCY_CONFLICT');
-
-  const incompleteKey = `transfer-idem-incomplete-${randomUUID()}`;
-  const incompleteFirst = await apiRequest('POST', '/inventory-transfers', {
-    token,
-    headers: { 'Idempotency-Key': incompleteKey },
-    body: {
-      ...payload,
-      quantity: 1
-    }
-  });
-  assert.ok([200, 201].includes(incompleteFirst.res.status), JSON.stringify(incompleteFirst.payload));
-
-  await db.query(
-    `UPDATE transfer_post_executions
-        SET status = 'IN_PROGRESS',
-            inventory_movement_id = NULL,
-            updated_at = now()
-      WHERE tenant_id = $1
-        AND idempotency_key = $2`,
-    [tenantId, incompleteKey]
+  await expectServiceError(
+    () =>
+      harness.postTransfer({
+        ...payload,
+        warehouseId: factory.warehouse.id,
+        idempotencyKey: `transfer-idem-mismatch-${randomUUID()}`
+      }),
+    'WAREHOUSE_SCOPE_MISMATCH'
   );
 
-  const incompleteReplay = await apiRequest('POST', '/inventory-transfers', {
-    token,
-    headers: { 'Idempotency-Key': incompleteKey },
-    body: {
-      ...payload,
-      quantity: 1
-    }
-  });
-  assert.equal(incompleteReplay.res.status, 200, JSON.stringify(incompleteReplay.payload));
-  assert.equal(incompleteReplay.payload?.movementId, incompleteFirst.payload?.movementId);
-  assert.equal(incompleteReplay.payload?.replayed, true);
+  await expectServiceError(
+    () =>
+      harness.postTransfer({
+        ...payload,
+        quantity: 4,
+        idempotencyKey
+      }),
+    'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+  );
 });
 
-test('inventory transfer replay fails closed when authoritative movement lines drift', async () => {
-  const session = await getSession();
-  const token = session.accessToken;
-  const db = session.pool;
-  const tenantId = session.tenant.id;
+test('inventory transfer replay fails closed when the idempotent response points to a missing movement', async () => {
+  const { harness, factory, store, itemId } = await createTransferFixture('transfer-missing');
+  const { pool: db, tenantId } = harness;
+  const idempotencyKey = `transfer-missing-${randomUUID()}`;
 
-  const factory = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:replay-corruption` });
-  const store = await createWarehouseWithSellable(token, `STORE-${randomUUID().slice(0, 6)}`);
-  const itemId = await createItem(token, factory.defaults.SELLABLE.id);
-  await seedPostedStock({
-    db,
-    tenantId,
-    itemId,
-    locationId: factory.defaults.SELLABLE.id,
-    quantity: 10,
-    unitCost: 5
-  });
-
-  const payload = {
+  const first = await harness.postTransfer({
     sourceLocationId: factory.defaults.SELLABLE.id,
     destinationLocationId: store.sellable.id,
     itemId,
     quantity: 2,
     uom: 'each',
     reasonCode: 'distribution',
-    notes: 'Transfer replay corruption test'
-  };
-  const idempotencyKey = `transfer-corruption-${randomUUID()}`;
-
-  const first = await apiRequest('POST', '/inventory-transfers', {
-    token,
-    headers: { 'Idempotency-Key': idempotencyKey },
-    body: payload
+    notes: 'Transfer replay missing movement',
+    idempotencyKey
   });
-  assert.equal(first.res.status, 201, JSON.stringify(first.payload));
-  const movementId = first.payload.movementId;
 
-  await db.query(
-    `INSERT INTO inventory_movement_lines (
-        id,
-        tenant_id,
-        movement_id,
-        item_id,
-        location_id,
-        quantity_delta,
-        uom,
-        quantity_delta_entered,
-        uom_entered,
-        quantity_delta_canonical,
-        canonical_uom,
-        uom_dimension,
-        unit_cost,
-        extended_cost,
-        reason_code,
-        line_notes,
-        created_at
-      ) VALUES
-      ($1, $2, $3, $4, $5, -1, 'each', -1, 'each', -1, 'each', 'count', 0, 0, 'tamper_out', 'tamper', now()),
-      ($6, $2, $3, $4, $7, 1, 'each', 1, 'each', 1, 'each', 'count', 0, 0, 'tamper_in', 'tamper', now())`,
-    [
-      randomUUID(),
-      tenantId,
-      movementId,
-      itemId,
-      factory.defaults.SELLABLE.id,
-      randomUUID(),
-      store.sellable.id
-    ]
+  await retargetTransferReplayMovement(db, tenantId, idempotencyKey, randomUUID());
+
+  await expectServiceError(
+    () =>
+      harness.postTransfer({
+        sourceLocationId: factory.defaults.SELLABLE.id,
+        destinationLocationId: store.sellable.id,
+        itemId,
+        quantity: 2,
+        uom: 'each',
+        reasonCode: 'distribution',
+        notes: 'Transfer replay missing movement',
+        idempotencyKey
+      }),
+    'REPLAY_CORRUPTION_DETECTED',
+    'authoritative_movement_missing'
   );
 
-  const replay = await apiRequest('POST', '/inventory-transfers', {
-    token,
-    headers: { 'Idempotency-Key': idempotencyKey },
-    body: payload
+  assert.ok(first.movementId);
+});
+
+test('inventory transfer replay fails closed when authoritative movement lines drift', async () => {
+  const { harness, factory, store, itemId } = await createTransferFixture('transfer-drift');
+  const { pool: db, tenantId } = harness;
+  const idempotencyKey = `transfer-corruption-${randomUUID()}`;
+
+  const first = await harness.postTransfer({
+    sourceLocationId: factory.defaults.SELLABLE.id,
+    destinationLocationId: store.sellable.id,
+    itemId,
+    quantity: 2,
+    uom: 'each',
+    reasonCode: 'distribution',
+    notes: 'Transfer replay corruption test',
+    idempotencyKey,
+    occurredAt: FIXED_OCCURRED_AT
   });
-  assert.equal(replay.res.status, 409, JSON.stringify(replay.payload));
-  assert.equal(replay.payload?.error?.code, 'REPLAY_CORRUPTION_DETECTED');
+
+  await insertBalancedTransferLineCorruption({
+    db,
+    tenantId,
+    movementId: first.movementId,
+    itemId,
+    sourceLocationId: factory.defaults.SELLABLE.id,
+    destinationLocationId: store.sellable.id
+  });
+
+  await expectServiceError(
+    () =>
+      harness.postTransfer({
+        sourceLocationId: factory.defaults.SELLABLE.id,
+        destinationLocationId: store.sellable.id,
+        itemId,
+        quantity: 2,
+        uom: 'each',
+        reasonCode: 'distribution',
+        notes: 'Transfer replay corruption test',
+        idempotencyKey,
+        occurredAt: FIXED_OCCURRED_AT
+      }),
+    'REPLAY_CORRUPTION_DETECTED',
+    'authoritative_movement_line_count_mismatch'
+  );
+});
+
+test('inventory transfer replay fails closed when the persisted movement hash is missing or mismatched', async () => {
+  const { harness, factory, store, itemId } = await createTransferFixture('transfer-hash');
+  const { pool: db, tenantId } = harness;
+  const basePayload = {
+    sourceLocationId: factory.defaults.SELLABLE.id,
+    destinationLocationId: store.sellable.id,
+    itemId,
+    quantity: 2,
+    uom: 'each',
+    reasonCode: 'distribution',
+    notes: 'Transfer replay hash test'
+  };
+
+  const missingHashKey = `transfer-hash-missing-${randomUUID()}`;
+  const missingHashTransfer = await harness.postTransfer({
+    ...basePayload,
+    idempotencyKey: missingHashKey,
+    occurredAt: FIXED_OCCURRED_AT
+  });
+  const missingHashFixtureId = await insertTransferReplayFixture({
+    db,
+    tenantId,
+    itemId,
+    sourceLocationId: factory.defaults.SELLABLE.id,
+    destinationLocationId: store.sellable.id,
+    occurredAt: FIXED_OCCURRED_AT,
+    movementHash: null
+  });
+  await retargetTransferReplayMovement(db, tenantId, missingHashKey, missingHashFixtureId);
+  await expectServiceError(
+    () =>
+      harness.postTransfer({
+        ...basePayload,
+        occurredAt: FIXED_OCCURRED_AT,
+        idempotencyKey: missingHashKey
+      }),
+    'REPLAY_CORRUPTION_DETECTED',
+    'authoritative_movement_hash_missing'
+  );
+
+  const mismatchHashKey = `transfer-hash-mismatch-${randomUUID()}`;
+  const mismatchHashTransfer = await harness.postTransfer({
+    ...basePayload,
+    idempotencyKey: mismatchHashKey,
+    occurredAt: FIXED_OCCURRED_AT
+  });
+  const mismatchHashFixtureId = await insertTransferReplayFixture({
+    db,
+    tenantId,
+    itemId,
+    sourceLocationId: factory.defaults.SELLABLE.id,
+    destinationLocationId: store.sellable.id,
+    occurredAt: FIXED_OCCURRED_AT,
+    movementHash: '0'.repeat(64)
+  });
+  await retargetTransferReplayMovement(db, tenantId, mismatchHashKey, mismatchHashFixtureId);
+  await expectServiceError(
+    () =>
+      harness.postTransfer({
+        ...basePayload,
+        occurredAt: FIXED_OCCURRED_AT,
+        idempotencyKey: mismatchHashKey
+      }),
+    'REPLAY_CORRUPTION_DETECTED',
+    'authoritative_movement_hash_mismatch'
+  );
+});
+
+test('inventory transfer replay fails closed when a persisted event violates the registry contract', async () => {
+  const { harness, factory, store, itemId } = await createTransferFixture('transfer-event');
+  const { pool: db, tenantId } = harness;
+  const idempotencyKey = `transfer-event-${randomUUID()}`;
+
+  const first = await harness.postTransfer({
+    sourceLocationId: factory.defaults.SELLABLE.id,
+    destinationLocationId: store.sellable.id,
+    itemId,
+    quantity: 2,
+    uom: 'each',
+    reasonCode: 'distribution',
+    notes: 'Transfer replay event mismatch',
+    idempotencyKey
+  });
+
+  await db.query(
+    `UPDATE inventory_events
+        SET payload = '{}'::jsonb
+      WHERE tenant_id = $1
+        AND aggregate_type = 'inventory_movement'
+        AND aggregate_id = $2
+        AND event_type = 'inventory.movement.posted'
+        AND event_version = 1`,
+    [tenantId, first.movementId]
+  );
+
+  await expectServiceError(
+    () =>
+      harness.postTransfer({
+        sourceLocationId: factory.defaults.SELLABLE.id,
+        destinationLocationId: store.sellable.id,
+        itemId,
+        quantity: 2,
+        uom: 'each',
+        reasonCode: 'distribution',
+        notes: 'Transfer replay event mismatch',
+        idempotencyKey
+      }),
+    'REPLAY_CORRUPTION_DETECTED',
+    'inventory_event_registry_contract_violation'
+  );
 });

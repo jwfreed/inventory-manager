@@ -1,9 +1,8 @@
 export {
-  createInventoryMovement,
-  createInventoryMovementLine,
-  createInventoryMovementLines,
-  type InventoryMovementInput,
-  type InventoryMovementLineInput
+  persistInventoryMovement,
+  type PersistInventoryMovementInput,
+  type PersistInventoryMovementLineInput,
+  type PersistInventoryMovementResult
 } from './internal/ledgerWriter';
 
 export {
@@ -16,8 +15,6 @@ export {
 } from './internal/inventoryBalance';
 
 export { assertSellableLocationOrThrow } from './internal/locationGuards';
-
-export { enqueueInventoryMovementPosted, enqueueInventoryReservationChanged } from './outbox';
 
 export {
   acquireAtpLocks,

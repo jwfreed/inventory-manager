@@ -187,18 +187,13 @@ test('transfer replay hardening requires deterministic line plans, post-cutoff h
   );
   assert.match(
     helperSource,
-    /MOVEMENT_HASH_REQUIRED_AFTER_MIGRATION_TS/,
-    'replay helper must define the post-migration hash cutoff'
-  );
-  assert.match(
-    helperSource,
-    /authoritative_movement_hash_missing_post_migration/,
-    'replay helper must reject missing hashes for post-migration movements'
+    /authoritative_movement_hash_missing/,
+    'replay helper must reject missing hashes universally'
   );
   assert.match(
     transfersSource,
-    /\bpersistMovementDeterministicHashFromLedger\(/,
-    'transfer-family mutations must persist deterministic hashes from authoritative ledger rows'
+    /\bpersistInventoryMovement\(/,
+    'transfer-family mutations must persist deterministic hashes through the canonical movement writer'
   );
   assert.match(
     appendSource,

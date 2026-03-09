@@ -118,6 +118,23 @@ function resolveRegistryDefinition(name: InventoryEventRegistryName) {
   return INVENTORY_EVENT_REGISTRY[name];
 }
 
+function findRegistryDefinition(input: {
+  aggregateType: string;
+  eventType: string;
+  eventVersion: number;
+}) {
+  return Object.values(INVENTORY_EVENT_REGISTRY).find(
+    (candidate) =>
+      candidate.aggregateType === input.aggregateType
+      && candidate.eventType === input.eventType
+      && (
+        candidate.allowAnyPositiveVersion
+        ? Number.isInteger(input.eventVersion) && input.eventVersion > 0
+        : candidate.eventVersion === input.eventVersion
+      )
+  );
+}
+
 function resolveAggregateIdFromPayload(
   payload: Record<string, unknown> | undefined,
   payloadKey: string
@@ -175,16 +192,7 @@ export function validateInventoryEventRegistryInput(
     'aggregateType' | 'aggregateId' | 'aggregateIdSource' | 'eventType' | 'eventVersion' | 'payload'
   >
 ): InventoryEventRegistryDefinition {
-  const definition = Object.values(INVENTORY_EVENT_REGISTRY).find(
-    (candidate) =>
-      candidate.aggregateType === input.aggregateType
-      && candidate.eventType === input.eventType
-      && (
-        candidate.allowAnyPositiveVersion
-        ? Number.isInteger(input.eventVersion) && input.eventVersion > 0
-        : candidate.eventVersion === input.eventVersion
-      )
-  );
+  const definition = findRegistryDefinition(input);
   if (!definition) {
     throw new Error(
       `INVENTORY_EVENT_REGISTRY_MISSING:${input.aggregateType}:${input.eventType}:v${input.eventVersion}`
@@ -198,6 +206,30 @@ export function validateInventoryEventRegistryInput(
   if (input.aggregateIdSource !== definition.aggregateIdSource) {
     throw new Error(
       `INVENTORY_EVENT_AGGREGATE_ID_SOURCE_MISMATCH:${input.eventType}:expected=${definition.aggregateIdSource}:received=${input.aggregateIdSource}`
+    );
+  }
+  const expectedAggregateId = resolveAggregateIdFromPayload(
+    input.payload ?? {},
+    definition.aggregateIdPayloadKey
+  );
+  if (expectedAggregateId !== input.aggregateId) {
+    throw new Error(
+      `INVENTORY_EVENT_AGGREGATE_ID_MISMATCH:${input.eventType}:expected=${expectedAggregateId}:received=${input.aggregateId}`
+    );
+  }
+  return definition;
+}
+
+export function validatePersistedInventoryEventRegistryRow(input: Pick<
+  InventoryEventInput,
+  'aggregateType' | 'aggregateId' | 'eventType' | 'eventVersion'
+> & {
+  payload?: Record<string, unknown> | null;
+}): InventoryEventRegistryDefinition {
+  const definition = findRegistryDefinition(input);
+  if (!definition) {
+    throw new Error(
+      `INVENTORY_EVENT_REGISTRY_MISSING:${input.aggregateType}:${input.eventType}:v${input.eventVersion}`
     );
   }
   const expectedAggregateId = resolveAggregateIdFromPayload(

@@ -8,12 +8,15 @@ import { fetchBomById } from './boms.service';
 import { getWorkOrderById, getWorkOrderRequirements } from './workOrders.service';
 import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
-import { consumeCostLayers, createCostLayer } from './costLayers.service';
+import {
+  applyPlannedCostLayerConsumption,
+  createCostLayer,
+  planCostLayerConsumption
+} from './costLayers.service';
 import { getCanonicalMovementFields, type CanonicalMovementFields } from './uomCanonical.service';
 import { getWarehouseDefaultLocationId, resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
-  createInventoryMovement,
-  createInventoryMovementLine
+  persistInventoryMovement
 } from '../domains/inventory';
 import {
   workOrderCompletionCreateSchema,
@@ -44,7 +47,6 @@ import {
   buildReplayCorruptionError,
   buildMovementPostedEvent,
   buildPostedDocumentReplayResult,
-  persistMovementDeterministicHashFromLedger,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
@@ -1274,13 +1276,42 @@ async function allocateWipCostFromMovement(
   return totalCost;
 }
 
-async function allocateWipCostFromWorkOrderIssues(
+type PendingWipCostAllocation = {
+  consumptionIds: string[];
+  totalCost: number;
+};
+
+async function lockUnallocatedWipCostFromMovement(
   client: PoolClient,
   tenantId: string,
-  workOrderId: string,
-  executionId: string,
-  allocatedAt: Date
-): Promise<number> {
+  movementId: string
+): Promise<PendingWipCostAllocation> {
+  const rows = await client.query<{ id: string; extended_cost: string | number }>(
+    `SELECT id, extended_cost
+       FROM cost_layer_consumptions
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND consumption_type = 'production_input'
+        AND wip_execution_id IS NULL
+      FOR UPDATE`,
+    [tenantId, movementId]
+  );
+
+  if (rows.rowCount === 0) {
+    throw new Error('WO_WIP_COST_NO_CONSUMPTIONS');
+  }
+
+  return {
+    consumptionIds: rows.rows.map((row) => row.id),
+    totalCost: rows.rows.reduce((sum, row) => sum + toNumber(row.extended_cost), 0)
+  };
+}
+
+async function lockUnallocatedWipCostFromWorkOrderIssues(
+  client: PoolClient,
+  tenantId: string,
+  workOrderId: string
+): Promise<PendingWipCostAllocation> {
   const rows = await client.query<{ id: string; extended_cost: string | number }>(
     `SELECT clc.id, clc.extended_cost
        FROM cost_layer_consumptions clc
@@ -1300,19 +1331,44 @@ async function allocateWipCostFromWorkOrderIssues(
     throw new Error('WO_WIP_COST_NO_CONSUMPTIONS');
   }
 
-  const ids = rows.rows.map((row) => row.id);
-  const totalCost = rows.rows.reduce((sum, row) => sum + toNumber(row.extended_cost), 0);
+  return {
+    consumptionIds: rows.rows.map((row) => row.id),
+    totalCost: rows.rows.reduce((sum, row) => sum + toNumber(row.extended_cost), 0)
+  };
+}
 
+async function applyWipCostAllocation(
+  client: PoolClient,
+  tenantId: string,
+  executionId: string,
+  allocatedAt: Date,
+  pending: PendingWipCostAllocation
+): Promise<number> {
   await client.query(
     `UPDATE cost_layer_consumptions
         SET wip_execution_id = $1,
             wip_allocated_at = $2
       WHERE tenant_id = $3
         AND id = ANY($4::uuid[])`,
-    [executionId, allocatedAt, tenantId, ids]
+    [executionId, allocatedAt, tenantId, pending.consumptionIds]
   );
+  return pending.totalCost;
+}
 
-  return totalCost;
+async function allocateWipCostFromWorkOrderIssues(
+  client: PoolClient,
+  tenantId: string,
+  workOrderId: string,
+  executionId: string,
+  allocatedAt: Date
+): Promise<number> {
+  return applyWipCostAllocation(
+    client,
+    tenantId,
+    executionId,
+    allocatedAt,
+    await lockUnallocatedWipCostFromWorkOrderIssues(client, tenantId, workOrderId)
+  );
 }
 
 export async function createWorkOrderIssue(
@@ -1593,7 +1649,36 @@ export async function postWorkOrderIssue(
       );
 
       const movementId = uuidv4();
-      const movement = await createInventoryMovement(client, {
+      const plannedMovementLines: Array<{
+        preparedLine: (typeof sortedMovementLines)[number];
+        issueCost: number | null;
+        consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>>;
+      }> = [];
+      for (const preparedLine of sortedMovementLines) {
+        const canonicalQty = Math.abs(preparedLine.canonicalFields.quantityDeltaCanonical);
+        let consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>>;
+        try {
+          consumptionPlan = await planCostLayerConsumption({
+            tenant_id: tenantId,
+            item_id: preparedLine.line.component_item_id,
+            location_id: preparedLine.line.from_location_id,
+            quantity: canonicalQty,
+            consumption_type: 'production_input',
+            consumption_document_id: issueId,
+            movement_id: movementId,
+            client
+          });
+        } catch {
+          throw new Error('WO_WIP_COST_LAYERS_MISSING');
+        }
+        plannedMovementLines.push({
+          preparedLine,
+          issueCost: consumptionPlan.total_cost,
+          consumptionPlan
+        });
+      }
+
+      const movement = await persistInventoryMovement(client, {
         id: movementId,
         tenantId,
         movementType: 'issue',
@@ -1613,7 +1698,31 @@ export async function postWorkOrderIssue(
           ...(validation.overrideMetadata ?? {})
         },
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        lines: plannedMovementLines.map(({ preparedLine, issueCost }) => {
+          const canonicalQty = Math.abs(preparedLine.canonicalFields.quantityDeltaCanonical);
+          const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
+          const extendedCost = issueCost !== null ? -issueCost : null;
+          return {
+            warehouseId: preparedLine.warehouseId,
+            sourceLineId: preparedLine.sourceLineId,
+            itemId: preparedLine.line.component_item_id,
+            locationId: preparedLine.line.from_location_id,
+            quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
+            uom: preparedLine.canonicalFields.canonicalUom,
+            quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
+            uomEntered: preparedLine.canonicalFields.uomEntered,
+            quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
+            canonicalUom: preparedLine.canonicalFields.canonicalUom,
+            uomDimension: preparedLine.canonicalFields.uomDimension,
+            unitCost,
+            extendedCost,
+            reasonCode: preparedLine.reasonCode,
+            lineNotes:
+              preparedLine.line.notes ?? `Work order issue ${issueId} line ${preparedLine.line.line_number}`,
+            createdAt: now
+          };
+        })
       });
 
       if (!movement.created) {
@@ -1621,7 +1730,7 @@ export async function postWorkOrderIssue(
           tenantId,
           workOrderId,
           issueId,
-          movementId: movement.id,
+          movementId: movement.movementId,
           expectedLineCount: sortedMovementLines.length,
           client
         });
@@ -1629,46 +1738,20 @@ export async function postWorkOrderIssue(
 
       let totalIssueCost = 0;
       const projectionOps: InventoryCommandProjectionOp[] = [];
-      for (const preparedLine of sortedMovementLines) {
+      for (const { preparedLine, issueCost, consumptionPlan } of plannedMovementLines) {
         const canonicalQty = Math.abs(preparedLine.canonicalFields.quantityDeltaCanonical);
-        let issueCost: number | null = null;
-        try {
-          const consumption = await consumeCostLayers({
-            tenant_id: tenantId,
-            item_id: preparedLine.line.component_item_id,
-            location_id: preparedLine.line.from_location_id,
-            quantity: canonicalQty,
-            consumption_type: 'production_input',
-            consumption_document_id: issueId,
-            movement_id: movement.id,
-            client
-          });
-          issueCost = consumption.total_cost;
-        } catch {
-          throw new Error('WO_WIP_COST_LAYERS_MISSING');
-        }
-        totalIssueCost += issueCost ?? 0;
-        const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
-        const extendedCost = issueCost !== null ? -issueCost : null;
-
-        await createInventoryMovementLine(client, {
-          tenantId,
-          movementId: movement.id,
-          itemId: preparedLine.line.component_item_id,
-          locationId: preparedLine.line.from_location_id,
-          quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
-          uom: preparedLine.canonicalFields.canonicalUom,
-          quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
-          uomEntered: preparedLine.canonicalFields.uomEntered,
-          quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: preparedLine.canonicalFields.canonicalUom,
-          uomDimension: preparedLine.canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
-          reasonCode: preparedLine.reasonCode,
-          lineNotes:
-            preparedLine.line.notes ?? `Work order issue ${issueId} line ${preparedLine.line.line_number}`
+        await applyPlannedCostLayerConsumption({
+          tenant_id: tenantId,
+          item_id: preparedLine.line.component_item_id,
+          location_id: preparedLine.line.from_location_id,
+          quantity: canonicalQty,
+          consumption_type: 'production_input',
+          consumption_document_id: issueId,
+          movement_id: movement.movementId,
+          client,
+          plan: consumptionPlan
         });
+        totalIssueCost += issueCost ?? 0;
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
@@ -1679,13 +1762,12 @@ export async function postWorkOrderIssue(
           })
         );
       }
-      await persistMovementDeterministicHashFromLedger(client, tenantId, movement.id);
 
       await createWorkOrderWipValuationRecord(client, {
         tenantId,
         workOrderId,
         executionId: null,
-        movementId: movement.id,
+        movementId: movement.movementId,
         valuationType: 'issue',
         valueDelta: totalIssueCost,
         notes: `Work-order issue WIP valuation for issue ${issueId}`
@@ -1699,7 +1781,7 @@ export async function postWorkOrderIssue(
                   updated_at = $2
             WHERE id = $3
               AND tenant_id = $4`,
-          [movement.id, now, issueId, tenantId]
+          [movement.movementId, now, issueId, tenantId]
         );
 
         if (workOrder!.status === 'draft') {
@@ -1744,7 +1826,7 @@ export async function postWorkOrderIssue(
               actorId: context.actor.id ?? null,
               action: 'negative_override',
               entityType: 'inventory_movement',
-              entityId: movement.id,
+              entityId: movement.movementId,
               occurredAt: now,
               metadata: {
                 reason: validation.overrideMetadata.override_reason ?? null,
@@ -1769,18 +1851,18 @@ export async function postWorkOrderIssue(
           {
             ...issue,
             status: 'posted',
-            inventory_movement_id: movement.id,
+            inventory_movement_id: movement.movementId,
             updated_at: now.toISOString()
           },
           linesForPosting
         ),
         responseStatus: 200,
         events: [
-          buildMovementPostedEvent(movement.id),
+          buildMovementPostedEvent(movement.movementId),
           buildWorkOrderIssuePostedEvent({
             issueId,
             workOrderId,
-            movementId: movement.id
+            movementId: movement.movementId
           })
         ],
         projectionOps
@@ -2039,8 +2121,30 @@ export async function postWorkOrderCompletion(
       });
 
       const now = new Date();
+      if (totalProducedCanonical <= 0) {
+        throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
+      }
+      const pendingWipAllocation = await lockUnallocatedWipCostFromWorkOrderIssues(
+        client,
+        tenantId,
+        workOrderId
+      );
+      const totalIssueCost = pendingWipAllocation.totalCost;
+      const plannedMovementLines = sortedMovementLines.map((preparedLine) => {
+        const allocationRatio = preparedLine.canonicalFields.quantityDeltaCanonical / totalProducedCanonical;
+        const allocatedCost = totalIssueCost * allocationRatio;
+        const unitCost =
+          preparedLine.canonicalFields.quantityDeltaCanonical !== 0
+            ? allocatedCost / preparedLine.canonicalFields.quantityDeltaCanonical
+            : null;
+        return {
+          preparedLine,
+          allocatedCost,
+          unitCost
+        };
+      });
       const movementId = uuidv4();
-      const movement = await createInventoryMovement(client, {
+      const movement = await persistInventoryMovement(client, {
         id: movementId,
         tenantId,
         movementType: 'receive',
@@ -2059,58 +2163,10 @@ export async function postWorkOrderCompletion(
           workOrderNumber: workOrder.number ?? workOrder.work_order_number
         },
         createdAt: now,
-        updatedAt: now
-      });
-
-      if (!movement.created) {
-        return buildWorkOrderCompletionReplayResult({
-          tenantId,
-          workOrderId,
-          completionId,
-          movementId: movement.id,
-          expectedLineCount: sortedMovementLines.length,
-          client
-        });
-      }
-
-      if (totalProducedCanonical <= 0) {
-        throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
-      }
-
-      const totalIssueCost = await allocateWipCostFromWorkOrderIssues(
-        client,
-        tenantId,
-        workOrderId,
-        completionId,
-        now
-      );
-      const wipUnitCostCanonical = totalIssueCost / totalProducedCanonical;
-
-      const projectionOps: InventoryCommandProjectionOp[] = [];
-      for (const preparedLine of sortedMovementLines) {
-        const allocationRatio = preparedLine.canonicalFields.quantityDeltaCanonical / totalProducedCanonical;
-        const allocatedCost = totalIssueCost * allocationRatio;
-        const unitCost =
-          preparedLine.canonicalFields.quantityDeltaCanonical !== 0
-            ? allocatedCost / preparedLine.canonicalFields.quantityDeltaCanonical
-            : null;
-        await createCostLayer({
-          tenant_id: tenantId,
-          item_id: preparedLine.line.item_id,
-          location_id: preparedLine.line.to_location_id!,
-          uom: preparedLine.canonicalFields.canonicalUom,
-          quantity: preparedLine.canonicalFields.quantityDeltaCanonical,
-          unit_cost: unitCost ?? 0,
-          source_type: 'production',
-          source_document_id: completionId,
-          movement_id: movement.id,
-          notes: `Production output from work order ${workOrderId}`,
-          client
-        });
-
-        await createInventoryMovementLine(client, {
-          tenantId,
-          movementId: movement.id,
+        updatedAt: now,
+        lines: plannedMovementLines.map(({ preparedLine, allocatedCost, unitCost }) => ({
+          warehouseId: preparedLine.warehouseId,
+          sourceLineId: preparedLine.sourceLineId,
           itemId: preparedLine.line.item_id,
           locationId: preparedLine.line.to_location_id!,
           quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
@@ -2123,7 +2179,37 @@ export async function postWorkOrderCompletion(
           unitCost,
           extendedCost: allocatedCost,
           reasonCode: preparedLine.reasonCode,
-          lineNotes: preparedLine.line.notes ?? `Work order completion ${completionId}`
+          lineNotes: preparedLine.line.notes ?? `Work order completion ${completionId}`,
+          createdAt: now
+        }))
+      });
+
+      if (!movement.created) {
+        return buildWorkOrderCompletionReplayResult({
+          tenantId,
+          workOrderId,
+          completionId,
+          movementId: movement.movementId,
+          expectedLineCount: sortedMovementLines.length,
+          client
+        });
+      }
+      const wipUnitCostCanonical = totalIssueCost / totalProducedCanonical;
+
+      const projectionOps: InventoryCommandProjectionOp[] = [];
+      for (const { preparedLine, allocatedCost, unitCost } of plannedMovementLines) {
+        await createCostLayer({
+          tenant_id: tenantId,
+          item_id: preparedLine.line.item_id,
+          location_id: preparedLine.line.to_location_id!,
+          uom: preparedLine.canonicalFields.canonicalUom,
+          quantity: preparedLine.canonicalFields.quantityDeltaCanonical,
+          unit_cost: unitCost ?? 0,
+          source_type: 'production',
+          source_document_id: completionId,
+          movement_id: movement.movementId,
+          notes: `Production output from work order ${workOrderId}`,
+          client
         });
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
@@ -2135,7 +2221,7 @@ export async function postWorkOrderCompletion(
           })
         );
       }
-      await persistMovementDeterministicHashFromLedger(client, tenantId, movement.id);
+      await applyWipCostAllocation(client, tenantId, completionId, now, pendingWipAllocation);
 
       const completionUomSet = new Set(
         sortedMovementLines.map((line) => line.canonicalFields.canonicalUom)
@@ -2146,7 +2232,7 @@ export async function postWorkOrderCompletion(
         tenantId,
         workOrderId,
         executionId: completionId,
-        movementId: movement.id,
+        movementId: movement.movementId,
         valuationType: 'completion',
         valueDelta: -totalIssueCost,
         quantityCanonical: completionCanonicalUom ? totalProducedCanonical : null,
@@ -2168,7 +2254,7 @@ export async function postWorkOrderCompletion(
             WHERE id = $7
               AND tenant_id = $8`,
           [
-            movement.id,
+            movement.movementId,
             totalIssueCost,
             wipUnitCostCanonical,
             totalProducedCanonical,
@@ -2279,7 +2365,7 @@ export async function postWorkOrderCompletion(
           {
             ...execution,
             status: 'posted',
-            production_movement_id: movement.id,
+            production_movement_id: movement.movementId,
             wip_total_cost: totalIssueCost,
             wip_unit_cost: wipUnitCostCanonical,
             wip_quantity_canonical: totalProducedCanonical,
@@ -2290,11 +2376,11 @@ export async function postWorkOrderCompletion(
         ),
         responseStatus: 200,
         events: [
-          buildMovementPostedEvent(movement.id),
+          buildMovementPostedEvent(movement.movementId),
           buildWorkOrderCompletionPostedEvent({
             executionId: completionId,
             workOrderId,
-            movementId: movement.id
+            movementId: movement.movementId
           })
         ],
         projectionOps
@@ -3403,7 +3489,39 @@ export async function voidWorkOrderProductionReport(
       const now = new Date();
       const outputMovementId = uuidv4();
       const componentMovementId = uuidv4();
-      const outputMovement = await createInventoryMovement(client, {
+      const plannedOutputMovementLines = await Promise.all(plannedOutputLines.map(async (plannedOutputLine) => {
+        const canonicalQty = Math.abs(plannedOutputLine.canonicalFields.quantityDeltaCanonical);
+        const consumptionPlan = await planCostLayerConsumption({
+          tenant_id: tenantId,
+          item_id: plannedOutputLine.line.item_id,
+          location_id: plannedOutputLine.line.location_id,
+          quantity: canonicalQty,
+          consumption_type: 'scrap',
+          consumption_document_id: execution.id,
+          movement_id: outputMovementId,
+          client,
+          notes: `work_order_void_output:${execution.id}`
+        });
+        return {
+          plannedOutputLine,
+          consumptionPlan,
+          unitCost: canonicalQty > 0 ? consumptionPlan.total_cost / canonicalQty : null,
+          extendedCost: -consumptionPlan.total_cost
+        };
+      }));
+      const plannedComponentMovementLines = plannedComponentLines.map((plannedComponentLine) => {
+        const unitCost = movementLineUnitCost(plannedComponentLine.line);
+        const extendedCost = roundQuantity(
+          plannedComponentLine.canonicalFields.quantityDeltaCanonical * unitCost
+        );
+        return {
+          plannedComponentLine,
+          unitCost,
+          extendedCost
+        };
+      });
+
+      const outputMovement = await persistInventoryMovement(client, {
         id: outputMovementId,
         tenantId,
         movementType: 'issue',
@@ -3421,9 +3539,27 @@ export async function voidWorkOrderProductionReport(
           reason
         },
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        lines: plannedOutputMovementLines.map(({ plannedOutputLine, unitCost, extendedCost }) => ({
+          warehouseId: plannedOutputLine.warehouseId,
+          sourceLineId: plannedOutputLine.sourceLineId,
+          itemId: plannedOutputLine.line.item_id,
+          locationId: plannedOutputLine.line.location_id,
+          quantityDelta: plannedOutputLine.canonicalFields.quantityDeltaCanonical,
+          uom: plannedOutputLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: plannedOutputLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: plannedOutputLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: plannedOutputLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: plannedOutputLine.canonicalFields.canonicalUom,
+          uomDimension: plannedOutputLine.canonicalFields.uomDimension,
+          unitCost,
+          extendedCost,
+          reasonCode: plannedOutputLine.reasonCode,
+          lineNotes: plannedOutputLine.lineNotes,
+          createdAt: now
+        }))
       });
-      const componentMovement = await createInventoryMovement(client, {
+      const componentMovement = await persistInventoryMovement(client, {
         id: componentMovementId,
         tenantId,
         movementType: 'receive',
@@ -3441,7 +3577,25 @@ export async function voidWorkOrderProductionReport(
           reason
         },
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        lines: plannedComponentMovementLines.map(({ plannedComponentLine, unitCost, extendedCost }) => ({
+          warehouseId: plannedComponentLine.warehouseId,
+          sourceLineId: plannedComponentLine.sourceLineId,
+          itemId: plannedComponentLine.line.item_id,
+          locationId: plannedComponentLine.line.location_id,
+          quantityDelta: plannedComponentLine.canonicalFields.quantityDeltaCanonical,
+          uom: plannedComponentLine.canonicalFields.canonicalUom,
+          quantityDeltaEntered: plannedComponentLine.canonicalFields.quantityDeltaEntered,
+          uomEntered: plannedComponentLine.canonicalFields.uomEntered,
+          quantityDeltaCanonical: plannedComponentLine.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: plannedComponentLine.canonicalFields.canonicalUom,
+          uomDimension: plannedComponentLine.canonicalFields.uomDimension,
+          unitCost,
+          extendedCost,
+          reasonCode: plannedComponentLine.reasonCode,
+          lineNotes: plannedComponentLine.lineNotes,
+          createdAt: now
+        }))
       });
 
       if (!outputMovement.created || !componentMovement.created) {
@@ -3466,9 +3620,9 @@ export async function voidWorkOrderProductionReport(
       let totalOutputReversalCost = 0;
       let totalComponentReturnCost = 0;
 
-      for (const plannedOutputLine of plannedOutputLines) {
+      for (const { plannedOutputLine, consumptionPlan } of plannedOutputMovementLines) {
         const canonicalQty = Math.abs(plannedOutputLine.canonicalFields.quantityDeltaCanonical);
-        const consumption = await consumeCostLayers({
+        await applyPlannedCostLayerConsumption({
           tenant_id: tenantId,
           item_id: plannedOutputLine.line.item_id,
           location_id: plannedOutputLine.line.location_id,
@@ -3477,28 +3631,10 @@ export async function voidWorkOrderProductionReport(
           consumption_document_id: execution.id,
           movement_id: outputMovementId,
           client,
-          notes: `work_order_void_output:${execution.id}`
+          notes: `work_order_void_output:${execution.id}`,
+          plan: consumptionPlan
         });
-        const unitCost = canonicalQty > 0 ? consumption.total_cost / canonicalQty : null;
-        const extendedCost = -consumption.total_cost;
-        totalOutputReversalCost += consumption.total_cost;
-        await createInventoryMovementLine(client, {
-          tenantId,
-          movementId: outputMovementId,
-          itemId: plannedOutputLine.line.item_id,
-          locationId: plannedOutputLine.line.location_id,
-          quantityDelta: plannedOutputLine.canonicalFields.quantityDeltaCanonical,
-          uom: plannedOutputLine.canonicalFields.canonicalUom,
-          quantityDeltaEntered: plannedOutputLine.canonicalFields.quantityDeltaEntered,
-          uomEntered: plannedOutputLine.canonicalFields.uomEntered,
-          quantityDeltaCanonical: plannedOutputLine.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: plannedOutputLine.canonicalFields.canonicalUom,
-          uomDimension: plannedOutputLine.canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
-          reasonCode: plannedOutputLine.reasonCode,
-          lineNotes: plannedOutputLine.lineNotes
-        });
+        totalOutputReversalCost += consumptionPlan.total_cost;
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
@@ -3510,29 +3646,8 @@ export async function voidWorkOrderProductionReport(
         );
       }
 
-      for (const plannedComponentLine of plannedComponentLines) {
-        const unitCost = movementLineUnitCost(plannedComponentLine.line);
-        const extendedCost = roundQuantity(
-          plannedComponentLine.canonicalFields.quantityDeltaCanonical * unitCost
-        );
+      for (const { plannedComponentLine, unitCost, extendedCost } of plannedComponentMovementLines) {
         totalComponentReturnCost += extendedCost;
-        await createInventoryMovementLine(client, {
-          tenantId,
-          movementId: componentMovementId,
-          itemId: plannedComponentLine.line.item_id,
-          locationId: plannedComponentLine.line.location_id,
-          quantityDelta: plannedComponentLine.canonicalFields.quantityDeltaCanonical,
-          uom: plannedComponentLine.canonicalFields.canonicalUom,
-          quantityDeltaEntered: plannedComponentLine.canonicalFields.quantityDeltaEntered,
-          uomEntered: plannedComponentLine.canonicalFields.uomEntered,
-          quantityDeltaCanonical: plannedComponentLine.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: plannedComponentLine.canonicalFields.canonicalUom,
-          uomDimension: plannedComponentLine.canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
-          reasonCode: plannedComponentLine.reasonCode,
-          lineNotes: plannedComponentLine.lineNotes
-        });
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
@@ -3556,8 +3671,6 @@ export async function voidWorkOrderProductionReport(
           client
         });
       }
-      await persistMovementDeterministicHashFromLedger(client, tenantId, outputMovementId);
-      await persistMovementDeterministicHashFromLedger(client, tenantId, componentMovementId);
 
       const originalValuationRecords = await loadWorkOrderWipValuationRecordsByMovementIds(
         client,
@@ -4291,7 +4404,57 @@ export async function recordWorkOrderBatch(
 
       const issueMovementId = uuidv4();
       const receiveMovementId = uuidv4();
-      const issueMovement = await createInventoryMovement(client, {
+      const plannedIssueMovementLines: Array<{
+        preparedConsume: (typeof sortedConsumes)[number];
+        issueCost: number | null;
+        consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>>;
+      }> = [];
+      for (const preparedConsume of sortedConsumes) {
+        const canonicalQty = Math.abs(preparedConsume.canonicalFields.quantityDeltaCanonical);
+        let consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>>;
+        try {
+          consumptionPlan = await planCostLayerConsumption({
+            tenant_id: tenantId,
+            item_id: preparedConsume.line.componentItemId,
+            location_id: preparedConsume.line.fromLocationId,
+            quantity: canonicalQty,
+            consumption_type: 'production_input',
+            consumption_document_id: issueId,
+            movement_id: issueMovementId,
+            client
+          });
+        } catch {
+          throw new Error('WO_WIP_COST_LAYERS_MISSING');
+        }
+        plannedIssueMovementLines.push({
+          preparedConsume,
+          issueCost: consumptionPlan.total_cost,
+          consumptionPlan
+        });
+      }
+
+      if (producedCanonicalTotal <= 0) {
+        throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
+      }
+      const totalPlannedIssueCost = plannedIssueMovementLines.reduce(
+        (sum, plannedLine) => sum + (plannedLine.issueCost ?? 0),
+        0
+      );
+      const plannedReceiveMovementLines = sortedProduces.map((preparedProduce) => {
+        const allocationRatio = preparedProduce.canonicalFields.quantityDeltaCanonical / producedCanonicalTotal;
+        const allocatedCost = totalPlannedIssueCost * allocationRatio;
+        const unitCost =
+          preparedProduce.canonicalFields.quantityDeltaCanonical !== 0
+            ? allocatedCost / preparedProduce.canonicalFields.quantityDeltaCanonical
+            : null;
+        return {
+          preparedProduce,
+          allocatedCost,
+          unitCost
+        };
+      });
+
+      const issueMovement = await persistInventoryMovement(client, {
         id: issueMovementId,
         tenantId,
         movementType: 'issue',
@@ -4311,9 +4474,32 @@ export async function recordWorkOrderBatch(
           ...(validation.overrideMetadata ?? {})
         },
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        lines: plannedIssueMovementLines.map(({ preparedConsume, issueCost }) => {
+          const canonicalQty = Math.abs(preparedConsume.canonicalFields.quantityDeltaCanonical);
+          const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
+          const extendedCost = issueCost !== null ? -issueCost : null;
+          return {
+            warehouseId: preparedConsume.warehouseId,
+            sourceLineId: preparedConsume.sourceLineId,
+            itemId: preparedConsume.line.componentItemId,
+            locationId: preparedConsume.line.fromLocationId,
+            quantityDelta: preparedConsume.canonicalFields.quantityDeltaCanonical,
+            uom: preparedConsume.canonicalFields.canonicalUom,
+            quantityDeltaEntered: preparedConsume.canonicalFields.quantityDeltaEntered,
+            uomEntered: preparedConsume.canonicalFields.uomEntered,
+            quantityDeltaCanonical: preparedConsume.canonicalFields.quantityDeltaCanonical,
+            canonicalUom: preparedConsume.canonicalFields.canonicalUom,
+            uomDimension: preparedConsume.canonicalFields.uomDimension,
+            unitCost,
+            extendedCost,
+            reasonCode: preparedConsume.reasonCode,
+            lineNotes: preparedConsume.line.notes ?? null,
+            createdAt: now
+          };
+        })
       });
-      const receiveMovement = await createInventoryMovement(client, {
+      const receiveMovement = await persistInventoryMovement(client, {
         id: receiveMovementId,
         tenantId,
         movementType: 'receive',
@@ -4331,7 +4517,25 @@ export async function recordWorkOrderBatch(
         notes: data.notes ?? null,
         metadata: { workOrderId, workOrderNumber },
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        lines: plannedReceiveMovementLines.map(({ preparedProduce, allocatedCost, unitCost }) => ({
+          warehouseId: preparedProduce.warehouseId,
+          sourceLineId: preparedProduce.sourceLineId,
+          itemId: preparedProduce.line.outputItemId,
+          locationId: preparedProduce.line.toLocationId,
+          quantityDelta: preparedProduce.canonicalFields.quantityDeltaCanonical,
+          uom: preparedProduce.canonicalFields.canonicalUom,
+          quantityDeltaEntered: preparedProduce.canonicalFields.quantityDeltaEntered,
+          uomEntered: preparedProduce.canonicalFields.uomEntered,
+          quantityDeltaCanonical: preparedProduce.canonicalFields.quantityDeltaCanonical,
+          canonicalUom: preparedProduce.canonicalFields.canonicalUom,
+          uomDimension: preparedProduce.canonicalFields.uomDimension,
+          unitCost,
+          extendedCost: allocatedCost,
+          reasonCode: preparedProduce.reasonCode,
+          lineNotes: preparedProduce.line.notes ?? null,
+          createdAt: now
+        }))
       });
 
       if (!issueMovement.created || !receiveMovement.created) {
@@ -4404,44 +4608,20 @@ export async function recordWorkOrderBatch(
 
       let totalConsumedCost = 0;
       const projectionOps: InventoryCommandProjectionOp[] = [];
-      for (const preparedConsume of sortedConsumes) {
+      for (const { preparedConsume, issueCost, consumptionPlan } of plannedIssueMovementLines) {
         const canonicalQty = Math.abs(preparedConsume.canonicalFields.quantityDeltaCanonical);
-        let issueCost: number | null = null;
-        try {
-          const consumption = await consumeCostLayers({
-            tenant_id: tenantId,
-            item_id: preparedConsume.line.componentItemId,
-            location_id: preparedConsume.line.fromLocationId,
-            quantity: canonicalQty,
-            consumption_type: 'production_input',
-            consumption_document_id: issueId,
-            movement_id: issueMovementId,
-            client
-          });
-          issueCost = consumption.total_cost;
-        } catch {
-          throw new Error('WO_WIP_COST_LAYERS_MISSING');
-        }
-        totalConsumedCost += issueCost ?? 0;
-        const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
-        const extendedCost = issueCost !== null ? -issueCost : null;
-        await createInventoryMovementLine(client, {
-          tenantId,
-          movementId: issueMovementId,
-          itemId: preparedConsume.line.componentItemId,
-          locationId: preparedConsume.line.fromLocationId,
-          quantityDelta: preparedConsume.canonicalFields.quantityDeltaCanonical,
-          uom: preparedConsume.canonicalFields.canonicalUom,
-          quantityDeltaEntered: preparedConsume.canonicalFields.quantityDeltaEntered,
-          uomEntered: preparedConsume.canonicalFields.uomEntered,
-          quantityDeltaCanonical: preparedConsume.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: preparedConsume.canonicalFields.canonicalUom,
-          uomDimension: preparedConsume.canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
-          reasonCode: preparedConsume.reasonCode,
-          lineNotes: preparedConsume.line.notes ?? null
+        await applyPlannedCostLayerConsumption({
+          tenant_id: tenantId,
+          item_id: preparedConsume.line.componentItemId,
+          location_id: preparedConsume.line.fromLocationId,
+          quantity: canonicalQty,
+          consumption_type: 'production_input',
+          consumption_document_id: issueId,
+          movement_id: issueMovementId,
+          client,
+          plan: consumptionPlan
         });
+        totalConsumedCost += issueCost ?? 0;
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
@@ -4501,10 +4681,6 @@ export async function recordWorkOrderBatch(
         );
       }
 
-      if (producedCanonicalTotal <= 0) {
-        throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
-      }
-
       const totalIssueCost = await allocateWipCostFromMovement(
         client,
         tenantId,
@@ -4513,13 +4689,7 @@ export async function recordWorkOrderBatch(
         now
       );
       const wipUnitCostCanonical = totalIssueCost / producedCanonicalTotal;
-      for (const preparedProduce of sortedProduces) {
-        const allocationRatio = preparedProduce.canonicalFields.quantityDeltaCanonical / producedCanonicalTotal;
-        const allocatedCost = totalIssueCost * allocationRatio;
-        const unitCost =
-          preparedProduce.canonicalFields.quantityDeltaCanonical !== 0
-            ? allocatedCost / preparedProduce.canonicalFields.quantityDeltaCanonical
-            : null;
+      for (const { preparedProduce, allocatedCost, unitCost } of plannedReceiveMovementLines) {
         await createCostLayer({
           tenant_id: tenantId,
           item_id: preparedProduce.line.outputItemId,
@@ -4533,23 +4703,6 @@ export async function recordWorkOrderBatch(
           notes: `Backflush production from work order ${workOrderId}`,
           client
         });
-        await createInventoryMovementLine(client, {
-          tenantId,
-          movementId: receiveMovementId,
-          itemId: preparedProduce.line.outputItemId,
-          locationId: preparedProduce.line.toLocationId,
-          quantityDelta: preparedProduce.canonicalFields.quantityDeltaCanonical,
-          uom: preparedProduce.canonicalFields.canonicalUom,
-          quantityDeltaEntered: preparedProduce.canonicalFields.quantityDeltaEntered,
-          uomEntered: preparedProduce.canonicalFields.uomEntered,
-          quantityDeltaCanonical: preparedProduce.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: preparedProduce.canonicalFields.canonicalUom,
-          uomDimension: preparedProduce.canonicalFields.uomDimension,
-          unitCost,
-          extendedCost: allocatedCost,
-          reasonCode: preparedProduce.reasonCode,
-          lineNotes: preparedProduce.line.notes ?? null
-        });
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
@@ -4560,8 +4713,6 @@ export async function recordWorkOrderBatch(
           })
         );
       }
-      await persistMovementDeterministicHashFromLedger(client, tenantId, issueMovementId);
-      await persistMovementDeterministicHashFromLedger(client, tenantId, receiveMovementId);
 
       await createWorkOrderWipValuationRecord(client, {
         tenantId,
