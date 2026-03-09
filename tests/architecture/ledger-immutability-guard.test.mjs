@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
 import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
 import { stopTestServer } from '../api/helpers/testServer.mjs';
+import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -70,87 +71,33 @@ async function insertLedgerFixture({ db, tenantId, itemId, locationId }) {
   const movementId = randomUUID();
   const movementLineId = randomUUID();
 
-  await db.query(
-    `INSERT INTO inventory_movements (
-        id,
-        tenant_id,
-        movement_type,
-        status,
-        external_ref,
-        source_type,
-        source_id,
-        idempotency_key,
-        occurred_at,
-        posted_at,
-        notes,
-        metadata,
-        reversal_of_movement_id,
-        reversed_by_movement_id,
-        reversal_reason,
-        created_at,
-        updated_at
-      ) VALUES (
-        $1,
-        $2,
-        'adjustment',
-        'posted',
-        $3,
-        'test_fixture',
-        $4,
-        NULL,
-        now(),
-        now(),
-        'ledger immutability fixture',
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        now(),
-        now()
-      )`,
-    [movementId, tenantId, `LEDGER-FIXTURE-${movementId}`, randomUUID()]
-  );
-
-  await db.query(
-    `INSERT INTO inventory_movement_lines (
-        id,
-        tenant_id,
-        movement_id,
-        item_id,
-        location_id,
-        quantity_delta,
-        uom,
-        quantity_delta_entered,
-        uom_entered,
-        quantity_delta_canonical,
-        canonical_uom,
-        uom_dimension,
-        unit_cost,
-        extended_cost,
-        reason_code,
-        line_notes,
-        created_at
-      ) VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        1,
-        'each',
-        1,
-        'each',
-        1,
-        'each',
-        'count',
-        0,
-        0,
-        'ledger_immutability_fixture',
-        'fixture line',
-        now()
-      )`,
-    [movementLineId, tenantId, movementId, itemId, locationId]
-  );
+  await insertPostedMovementFixture(db, {
+    id: movementId,
+    tenantId,
+    movementType: 'adjustment',
+    sourceType: 'test_fixture',
+    sourceId: randomUUID(),
+    externalRef: `LEDGER-FIXTURE-${movementId}`,
+    notes: 'ledger immutability fixture',
+    lines: [
+      {
+        id: movementLineId,
+        itemId,
+        locationId,
+        quantityDelta: 1,
+        uom: 'each',
+        quantityDeltaEntered: 1,
+        uomEntered: 'each',
+        quantityDeltaCanonical: 1,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 0,
+        extendedCost: 0,
+        reasonCode: 'ledger_immutability_fixture',
+        lineNotes: 'fixture line'
+      }
+    ]
+  });
 
   return { movementId, movementLineId };
 }

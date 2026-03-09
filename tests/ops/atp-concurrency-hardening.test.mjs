@@ -4,10 +4,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
-import { closeDbPool } from '../helpers/dbPool.mjs';
 import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
-import { stopTestServer } from '../api/helpers/testServer.mjs';
-import { logActiveResources } from '../api/helpers/activeHandles.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -15,7 +12,7 @@ require('tsconfig-paths/register');
 
 const { buildAtpLockKeys } = require('../../src/domains/inventory/internal/atpLocks.ts');
 const { ensureWarehouseDefaultsForWarehouse } = require('../../src/services/warehouseDefaults.service.ts');
-const { pool: sharedDbPool, withTransactionRetry } = require('../../src/db.ts');
+const { withTransactionRetry } = require('../../src/db.ts');
 const {
   __buildAtpRetryOptionsForTests,
   __mapAtpRetryErrorForTests,
@@ -58,41 +55,6 @@ async function getSession() {
     tenantName: 'ATP Concurrency Hardening Tenant'
   });
 }
-
-async function withTimeout(promise, timeoutMs, message) {
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-test.after(async () => {
-  try {
-    await closeDbPool();
-    sharedDbPool.options.allowExitOnIdle = true;
-    await withTimeout(
-      sharedDbPool.end(),
-      15000,
-      [
-        'ATP_SHARED_POOL_CLOSE_TIMEOUT',
-        `total=${sharedDbPool.totalCount}`,
-        `idle=${sharedDbPool.idleCount}`,
-        `waiting=${sharedDbPool.waitingCount}`
-      ].join(' ')
-    );
-  } catch (error) {
-    logActiveResources('[handles] atp teardown');
-    throw error;
-  } finally {
-    await stopTestServer();
-    logActiveResources('[handles] atp final');
-  }
-});
 
 async function createItem(token, defaultLocationId, suffix = 'ITEM') {
   const sku = `${suffix}-${randomUUID().slice(0, 8)}`;

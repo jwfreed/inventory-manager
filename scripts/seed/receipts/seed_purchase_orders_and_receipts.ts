@@ -125,6 +125,11 @@ function normalizeUom(value: string | null | undefined): string {
   return normalizeWhitespace(String(value ?? '')).toLowerCase();
 }
 
+function normalizeSeedReceiptUom(value: string | null | undefined): string {
+  const normalized = normalizeUom(value);
+  return normalized === 'piece' ? 'each' : normalized;
+}
+
 function toStableNumber(value: number): string {
   const fixed = value.toFixed(12);
   return fixed.replace(/\.?0+$/, '');
@@ -274,7 +279,7 @@ async function selectItemsForReceipts(
   const seenNormKeys = new Set<string>();
 
   for (const row of result.rows) {
-    const uom = normalizeUom(row.default_uom);
+    const uom = normalizeSeedReceiptUom(row.default_uom);
     const itemNormKey = normalizeItemKey(row.name);
     if (!itemNormKey || seenNormKeys.has(itemNormKey)) {
       continue;

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createServiceHarness } from './helpers/service-harness.mjs';
+import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -75,60 +76,51 @@ async function insertTransferReplayFixture(params) {
     movementHash
   } = params;
   const movementId = randomUUID();
-  await db.query(
-    `INSERT INTO inventory_movements (
-        id,
-        tenant_id,
-        movement_type,
-        status,
-        external_ref,
-        source_type,
-        source_id,
-        idempotency_key,
-        occurred_at,
-        posted_at,
-        notes,
-        movement_deterministic_hash,
-        created_at,
-        updated_at
-      ) VALUES (
-        $1, $2, 'adjustment', 'posted', $3, 'transfer_fixture', $4, NULL, $5, $5, 'fixture', $6, $5, $5
-      )`,
-    [movementId, tenantId, `fixture:${movementId}`, movementId, occurredAt, movementHash ?? null]
-  );
-  await db.query(
-    `INSERT INTO inventory_movement_lines (
-        id,
-        tenant_id,
-        movement_id,
-        item_id,
-        location_id,
-        quantity_delta,
-        uom,
-        quantity_delta_entered,
-        uom_entered,
-        quantity_delta_canonical,
-        canonical_uom,
-        uom_dimension,
-        unit_cost,
-        extended_cost,
-        reason_code,
-        line_notes,
-        created_at
-      ) VALUES
-      ($1, $2, $3, $4, $5, -2, 'each', -2, 'each', -2, 'each', 'count', 0, 0, 'fixture_out', 'fixture', $7),
-      ($6, $2, $3, $4, $8, 2, 'each', 2, 'each', 2, 'each', 'count', 0, 0, 'fixture_in', 'fixture', $7)`,
-    [
-      randomUUID(),
-      tenantId,
-      movementId,
-      itemId,
-      sourceLocationId,
-      randomUUID(),
-      occurredAt,
-      destinationLocationId
+  await insertPostedMovementFixture(db, {
+    id: movementId,
+    tenantId,
+    movementType: 'adjustment',
+    sourceType: 'transfer_fixture',
+    sourceId: movementId,
+    externalRef: `fixture:${movementId}`,
+    occurredAt,
+    notes: 'fixture',
+    movementDeterministicHash: movementHash,
+    lines: [
+      {
+        itemId,
+        locationId: sourceLocationId,
+        quantityDelta: -2,
+        uom: 'each',
+        quantityDeltaEntered: -2,
+        uomEntered: 'each',
+        quantityDeltaCanonical: -2,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 0,
+        extendedCost: 0,
+        reasonCode: 'fixture_out',
+        lineNotes: 'fixture',
+        createdAt: occurredAt
+      },
+      {
+        itemId,
+        locationId: destinationLocationId,
+        quantityDelta: 2,
+        uom: 'each',
+        quantityDeltaEntered: 2,
+        uomEntered: 'each',
+        quantityDeltaCanonical: 2,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 0,
+        extendedCost: 0,
+        reasonCode: 'fixture_in',
+        lineNotes: 'fixture',
+        createdAt: occurredAt
+      }
     ]
-  );
+  });
   return movementId;
 }
 

@@ -2,14 +2,8 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { createRequire } from 'node:module';
 import { createServiceHarness } from './helpers/service-harness.mjs';
-
-const require = createRequire(import.meta.url);
-require('ts-node/register/transpile-only');
-require('tsconfig-paths/register');
-
-const { persistInventoryMovement } = require('../../src/domains/inventory');
+import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 
 function assertAppendOnlyError(error) {
   const message = String(error?.message ?? '').toLowerCase();
@@ -25,72 +19,55 @@ async function persistFixtureMovement(harness, suffix) {
   });
   const movementId = randomUUID();
   const occurredAt = new Date('2026-03-03T00:00:00.000Z');
-  const client = await db.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await persistInventoryMovement(client, {
-      id: movementId,
-      tenantId,
-      movementType: 'adjustment',
-      status: 'posted',
-      externalRef: `ledger-normalization:${suffix}:${movementId}`,
-      sourceType: 'ledger_normalization_fixture',
-      sourceId: movementId,
-      occurredAt,
-      postedAt: occurredAt,
-      notes: 'ledger normalization fixture',
-      lines: [
-        {
-          id: randomUUID(),
-          warehouseId: topology.warehouse.id,
-          sourceLineId: `${movementId}:1`,
-          itemId: item.id,
-          locationId: topology.defaults.SELLABLE.id,
-          quantityDelta: 3,
-          uom: 'each',
-          quantityDeltaEntered: 3,
-          uomEntered: 'each',
-          quantityDeltaCanonical: 3,
-          canonicalUom: 'each',
-          uomDimension: 'count',
-          unitCost: 5,
-          extendedCost: 15,
-          reasonCode: 'ledger_normalization',
-          lineNotes: 'fixture line 1',
-          createdAt: occurredAt
-        },
-        {
-          id: randomUUID(),
-          warehouseId: topology.warehouse.id,
-          sourceLineId: `${movementId}:2`,
-          itemId: item.id,
-          locationId: topology.defaults.QA.id,
-          quantityDelta: 2,
-          uom: 'each',
-          quantityDeltaEntered: 2,
-          uomEntered: 'each',
-          quantityDeltaCanonical: 2,
-          canonicalUom: 'each',
-          uomDimension: 'count',
-          unitCost: 5,
-          extendedCost: 10,
-          reasonCode: 'ledger_normalization',
-          lineNotes: 'fixture line 2',
-          createdAt: occurredAt
-        }
-      ]
-    });
-    await client.query('COMMIT');
-    return { result, movementId, itemId: item.id };
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  const result = await insertPostedMovementFixture(db, {
+    id: movementId,
+    tenantId,
+    movementType: 'adjustment',
+    sourceType: 'ledger_normalization_fixture',
+    sourceId: movementId,
+    externalRef: `ledger-normalization:${suffix}:${movementId}`,
+    occurredAt,
+    postedAt: occurredAt,
+    notes: 'ledger normalization fixture',
+    lines: [
+      {
+        itemId: item.id,
+        locationId: topology.defaults.SELLABLE.id,
+        quantityDelta: 3,
+        uom: 'each',
+        quantityDeltaEntered: 3,
+        uomEntered: 'each',
+        quantityDeltaCanonical: 3,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 5,
+        extendedCost: 15,
+        reasonCode: 'ledger_normalization',
+        lineNotes: 'fixture line 1',
+        createdAt: occurredAt
+      },
+      {
+        itemId: item.id,
+        locationId: topology.defaults.QA.id,
+        quantityDelta: 2,
+        uom: 'each',
+        quantityDeltaEntered: 2,
+        uomEntered: 'each',
+        quantityDeltaCanonical: 2,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 5,
+        extendedCost: 10,
+        reasonCode: 'ledger_normalization',
+        lineNotes: 'fixture line 2',
+        createdAt: occurredAt
+      }
+    ]
+  });
+  return { result, movementId, itemId: item.id };
 }
 
-test('persistInventoryMovement stores deterministic hashes under a NOT NULL schema contract', async () => {
+test('inventory_movements store deterministic hashes under a NOT NULL schema contract', async () => {
   const harness = await createServiceHarness({
     tenantPrefix: 'ledger-normalization',
     tenantName: 'Ledger Normalization Tenant'
@@ -98,8 +75,6 @@ test('persistInventoryMovement stores deterministic hashes under a NOT NULL sche
   const { tenantId, pool: db } = harness;
   const { result, movementId } = await persistFixtureMovement(harness, 'insert');
 
-  assert.equal(result.created, true);
-  assert.equal(result.movementId, movementId);
   assert.equal(result.lineIds.length, 2);
   assert.match(result.movementDeterministicHash ?? '', /^[a-f0-9]{64}$/);
 

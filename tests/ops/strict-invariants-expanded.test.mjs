@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import { getTestTenantWithValidTopology } from '../helpers/topologyTenant.mjs';
+import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 
 const execFileAsync = promisify(execFile);
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -112,88 +113,31 @@ async function runInvariantStrictExpectFailure(tenantId) {
 }
 
 async function insertNegativeOnHandFixture({ pool, tenantId, itemId, locationId }) {
-  const movementId = randomUUID();
-  const movementLineId = randomUUID();
-  await pool.query(
-    `INSERT INTO inventory_movements (
-        id,
-        tenant_id,
-        movement_type,
-        status,
-        external_ref,
-        source_type,
-        source_id,
-        idempotency_key,
-        occurred_at,
-        posted_at,
-        notes,
-        metadata,
-        reversal_of_movement_id,
-        reversed_by_movement_id,
-        reversal_reason,
-        created_at,
-        updated_at
-      ) VALUES (
-        $1,
-        $2,
-        'adjustment',
-        'posted',
-        $3,
-        'test_fixture',
-        $4,
-        NULL,
-        now(),
-        now(),
-        'negative on_hand fixture',
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        now(),
-        now()
-      )`,
-    [movementId, tenantId, `NEG-ON-HAND-${movementId}`, randomUUID()]
-  );
-  await pool.query(
-    `INSERT INTO inventory_movement_lines (
-        id,
-        tenant_id,
-        movement_id,
-        item_id,
-        location_id,
-        quantity_delta,
-        uom,
-        quantity_delta_entered,
-        uom_entered,
-        quantity_delta_canonical,
-        canonical_uom,
-        uom_dimension,
-        unit_cost,
-        extended_cost,
-        reason_code,
-        line_notes,
-        created_at
-      ) VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        -5,
-        'each',
-        -5,
-        'each',
-        -5,
-        'each',
-        'count',
-        0,
-        0,
-        'phase42_negative_on_hand',
-        'negative on_hand fixture line',
-        now()
-      )`,
-    [movementLineId, tenantId, movementId, itemId, locationId]
-  );
+  await insertPostedMovementFixture(pool, {
+    tenantId,
+    movementType: 'adjustment',
+    sourceType: 'test_fixture',
+    sourceId: randomUUID(),
+    externalRef: `NEG-ON-HAND-${randomUUID()}`,
+    notes: 'negative on_hand fixture',
+    lines: [
+      {
+        itemId,
+        locationId,
+        quantityDelta: -5,
+        uom: 'each',
+        quantityDeltaEntered: -5,
+        uomEntered: 'each',
+        quantityDeltaCanonical: -5,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 0,
+        extendedCost: 0,
+        reasonCode: 'phase42_negative_on_hand',
+        lineNotes: 'negative on_hand fixture line'
+      }
+    ]
+  });
 }
 
 async function insertCostLayerFixtures({

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createServiceHarness } from './helpers/service-harness.mjs';
+import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -26,50 +27,35 @@ async function insertMovementFixture(params) {
     movementHash
   } = params;
   const movementId = randomUUID();
-  await db.query(
-    `INSERT INTO inventory_movements (
-        id,
-        tenant_id,
-        movement_type,
-        status,
-        external_ref,
-        source_type,
-        source_id,
-        occurred_at,
-        posted_at,
-        notes,
-        movement_deterministic_hash,
-        created_at,
-        updated_at
-      ) VALUES (
-        $1, $2, 'receive', 'posted', $3, 'audit_fixture', $4, $5, $5, 'audit fixture', $6, $5, $5
-      )`,
-    [movementId, tenantId, externalRef, movementId, FIXED_OCCURRED_AT, movementHash ?? null]
-  );
-  await db.query(
-    `INSERT INTO inventory_movement_lines (
-        id,
-        tenant_id,
-        movement_id,
-        item_id,
-        location_id,
-        quantity_delta,
-        uom,
-        quantity_delta_entered,
-        uom_entered,
-        quantity_delta_canonical,
-        canonical_uom,
-        uom_dimension,
-        unit_cost,
-        extended_cost,
-        reason_code,
-        line_notes,
-        created_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, 5, 'each', 5, 'each', 5, 'each', 'count', 2, 10, 'audit_receive', 'audit fixture', $6
-      )`,
-    [randomUUID(), tenantId, movementId, itemId, locationId, FIXED_OCCURRED_AT]
-  );
+  await insertPostedMovementFixture(db, {
+    id: movementId,
+    tenantId,
+    movementType: 'receive',
+    sourceType: 'audit_fixture',
+    sourceId: movementId,
+    externalRef,
+    occurredAt: FIXED_OCCURRED_AT,
+    notes: 'audit fixture',
+    movementDeterministicHash: movementHash,
+    lines: [
+      {
+        itemId,
+        locationId,
+        quantityDelta: 5,
+        uom: 'each',
+        quantityDeltaEntered: 5,
+        uomEntered: 'each',
+        quantityDeltaCanonical: 5,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 2,
+        extendedCost: 10,
+        reasonCode: 'audit_receive',
+        lineNotes: 'audit fixture',
+        createdAt: FIXED_OCCURRED_AT
+      }
+    ]
+  });
   return movementId;
 }
 
@@ -124,29 +110,19 @@ test('inventory_movements rejects NULL deterministic hashes at schema level', as
     tenantName: 'Movement Hash Not Null Tenant'
   });
   const { tenantId, pool: db } = harness;
-  const movementId = randomUUID();
-
   await assert.rejects(
-    db.query(
-      `INSERT INTO inventory_movements (
-          id,
-          tenant_id,
-          movement_type,
-          status,
-          external_ref,
-          source_type,
-          source_id,
-          occurred_at,
-          posted_at,
-          notes,
-          movement_deterministic_hash,
-          created_at,
-          updated_at
-        ) VALUES (
-          $1, $2, 'receive', 'posted', $3, 'audit_fixture', $4, $5, $5, 'audit fixture', NULL, $5, $5
-        )`,
-      [movementId, tenantId, `missing-hash:${movementId}`, movementId, FIXED_OCCURRED_AT]
-    ),
+    insertPostedMovementFixture(db, {
+      id: randomUUID(),
+      tenantId,
+      movementType: 'receive',
+      sourceType: 'audit_fixture',
+      sourceId: randomUUID(),
+      externalRef: `missing-hash:${randomUUID()}`,
+      occurredAt: FIXED_OCCURRED_AT,
+      notes: 'audit fixture',
+      movementDeterministicHash: null,
+      lines: []
+    }),
     (error) => {
       assert.equal(error?.code, '23502');
       return true;

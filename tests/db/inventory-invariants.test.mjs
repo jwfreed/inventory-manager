@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
 import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
 import { expectInvariantLog } from '../helpers/invariantLogs.mjs';
+import { buildMovementFixtureHash } from '../helpers/movementFixture.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -95,13 +96,19 @@ test('receive/transfer movements require source_type and source_id', async () =>
   const session = await getSession();
   const tenantId = session.tenant?.id;
   assert.ok(tenantId);
+  const occurredAt = new Date().toISOString();
 
   await assert.rejects(
     db.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, occurred_at, created_at, updated_at
-       ) VALUES ($1, $2, 'receive', 'posted', now(), now(), now())`,
-      [randomUUID(), tenantId]
+          id, tenant_id, movement_type, status, occurred_at, movement_deterministic_hash, created_at, updated_at
+       ) VALUES ($1, $2, 'receive', 'posted', $3, $4, $3, $3)`,
+      [
+        randomUUID(),
+        tenantId,
+        occurredAt,
+        buildMovementFixtureHash({ tenantId, movementType: 'receive', occurredAt, lines: [] })
+      ]
     ),
     (error) =>
       error?.code === '23514'
@@ -111,9 +118,20 @@ test('receive/transfer movements require source_type and source_id', async () =>
   await assert.rejects(
     db.query(
       `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, source_type, occurred_at, created_at, updated_at
-       ) VALUES ($1, $2, 'transfer', 'posted', 'putaway', now(), now(), now())`,
-      [randomUUID(), tenantId]
+          id, tenant_id, movement_type, status, source_type, occurred_at, movement_deterministic_hash, created_at, updated_at
+       ) VALUES ($1, $2, 'transfer', 'posted', 'putaway', $3, $4, $3, $3)`,
+      [
+        randomUUID(),
+        tenantId,
+        occurredAt,
+        buildMovementFixtureHash({
+          tenantId,
+          movementType: 'transfer',
+          occurredAt,
+          sourceType: 'putaway',
+          lines: []
+        })
+      ]
     ),
     (error) =>
       error?.code === '23514'

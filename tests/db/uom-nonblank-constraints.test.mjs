@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
 import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
+import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -101,13 +102,14 @@ test('inventory_balance and inventory_movement_lines reject blank and whitespace
       && String(error?.constraint ?? '') === 'inventory_balance_uom_not_blank',
   );
 
-  const movementId = randomUUID();
-  await db.query(
-    `INSERT INTO inventory_movements (
-        id, tenant_id, movement_type, status, occurred_at, created_at, updated_at
-     ) VALUES ($1, $2, 'adjustment', 'posted', now(), now(), now())`,
-    [movementId, tenantId],
-  );
+  const { movementId } = await insertPostedMovementFixture(db, {
+    tenantId,
+    movementType: 'adjustment',
+    sourceType: 'uom_constraint_fixture',
+    sourceId: randomUUID(),
+    notes: 'uom constraint fixture',
+    lines: [],
+  });
 
   await assert.rejects(
     db.query(

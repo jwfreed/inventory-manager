@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { ensureDbSession } from '../helpers/ensureDbSession.mjs';
 import { ensureStandardWarehouse } from '../api/helpers/warehouse-bootstrap.mjs';
+import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -57,36 +58,33 @@ async function createItem(token, locationId, suffix) {
   return itemRes.payload.id;
 }
 
-async function seedStockLine(pool, { tenantId, itemId, locationId, quantityDelta, uom, reasonCode = 'seed' }) {
-  const movementId = randomUUID();
-  const lineId = randomUUID();
+async function seedLegacyStockLine(pool, { tenantId, itemId, locationId, quantityDelta, uom, reasonCode = 'seed' }) {
   const now = new Date().toISOString();
-
-  await pool.query(
-    `INSERT INTO inventory_movements (
-        id, tenant_id, movement_type, status, external_ref, source_type, source_id, idempotency_key,
-        occurred_at, posted_at, notes, metadata, reversal_of_movement_id, reversed_by_movement_id, reversal_reason,
-        created_at, updated_at
-     ) VALUES (
-        $1, $2, 'adjustment', 'posted', $3, NULL, NULL, NULL,
-        $4, $4, $5, NULL, NULL, NULL, NULL,
-        $4, $4
-     )`,
-    [movementId, tenantId, `seed:${movementId}`, now, `seed ${reasonCode}`]
-  );
-
-  await pool.query(
-    `INSERT INTO inventory_movement_lines (
-        id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
-        quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
-        unit_cost, extended_cost, reason_code, line_notes, created_at
-     ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7,
-        NULL, NULL, NULL, NULL, NULL,
-        NULL, NULL, $8, $9, $10
-     )`,
-    [lineId, tenantId, movementId, itemId, locationId, quantityDelta, uom, reasonCode, `seed:${reasonCode}`, now]
-  );
+  await insertPostedMovementFixture(pool, {
+    tenantId,
+    movementType: 'adjustment',
+    occurredAt: now,
+    externalRef: `seed:${reasonCode}:${randomUUID()}`,
+    notes: `seed ${reasonCode}`,
+    lines: [
+      {
+        itemId,
+        locationId,
+        quantityDelta,
+        uom,
+        quantityDeltaEntered: null,
+        uomEntered: null,
+        quantityDeltaCanonical: null,
+        canonicalUom: null,
+        uomDimension: null,
+        unitCost: null,
+        extendedCost: null,
+        reasonCode,
+        lineNotes: `seed:${reasonCode}`,
+        createdAt: now,
+      },
+    ],
+  });
 }
 
 async function withSnapshotNormalizationEnabled(fn) {
@@ -124,14 +122,14 @@ test('snapshot summary aggregates mixed convertible UOM rows when stock UOM is c
 
     const itemId = await createItem(token, defaults.SELLABLE.id, Date.now());
 
-    await seedStockLine(session.pool, {
+    await seedLegacyStockLine(session.pool, {
       tenantId,
       itemId,
       locationId: defaults.SELLABLE.id,
       quantityDelta: 1,
       uom: 'kg',
     });
-    await seedStockLine(session.pool, {
+    await seedLegacyStockLine(session.pool, {
       tenantId,
       itemId,
       locationId: defaults.SELLABLE.id,
@@ -197,14 +195,14 @@ test('snapshot normalization keeps analytics precision before final output round
     );
     invalidateUomRegistryCache();
     try {
-      await seedStockLine(session.pool, {
+      await seedLegacyStockLine(session.pool, {
         tenantId,
         itemId,
         locationId: defaults.SELLABLE.id,
         quantityDelta: 0.4,
         uom: microUomA,
       });
-      await seedStockLine(session.pool, {
+      await seedLegacyStockLine(session.pool, {
         tenantId,
         itemId,
         locationId: defaults.SELLABLE.id,
@@ -263,14 +261,14 @@ test('snapshot summary keeps watch diagnostics when legacy fallback conversion i
       [randomUUID(), tenantId, itemId, legacyFrom]
     );
 
-    await seedStockLine(session.pool, {
+    await seedLegacyStockLine(session.pool, {
       tenantId,
       itemId,
       locationId: defaults.SELLABLE.id,
       quantityDelta: 1,
       uom: legacyFrom,
     });
-    await seedStockLine(session.pool, {
+    await seedLegacyStockLine(session.pool, {
       tenantId,
       itemId,
       locationId: defaults.SELLABLE.id,
@@ -330,14 +328,14 @@ test('snapshot summary fails conservative when any row is non-convertible', asyn
 
     const itemId = await createItem(token, defaults.SELLABLE.id, `${Date.now()}-mixed`);
 
-    await seedStockLine(session.pool, {
+    await seedLegacyStockLine(session.pool, {
       tenantId,
       itemId,
       locationId: defaults.SELLABLE.id,
       quantityDelta: 100,
       uom: 'g',
     });
-    await seedStockLine(session.pool, {
+    await seedLegacyStockLine(session.pool, {
       tenantId,
       itemId,
       locationId: defaults.SELLABLE.id,
