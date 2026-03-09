@@ -17,6 +17,17 @@ const { ensureWarehouseDefaultsForWarehouse } = require('../../../src/services/w
 const { createVendor: createVendorService } = require('../../../src/services/vendors.service.ts');
 const { createPurchaseOrder } = require('../../../src/services/purchaseOrders.service.ts');
 const { createPurchaseOrderReceipt } = require('../../../src/services/receipts.service.ts');
+const {
+  createSalesOrder,
+  createShipment,
+  postShipment
+} = require('../../../src/services/orderToCash.service.ts');
+const {
+  createInventoryAdjustment
+} = require('../../../src/services/adjustments/core.service.ts');
+const {
+  postInventoryAdjustment
+} = require('../../../src/services/adjustments/posting.service.ts');
 const { createLicensePlate, moveLicensePlate } = require('../../../src/services/licensePlates.service.ts');
 const { createBom, activateBomVersion } = require('../../../src/services/boms.service.ts');
 const { createWorkOrder } = require('../../../src/services/workOrders.service.ts');
@@ -232,6 +243,17 @@ export async function createServiceHarness(options = {}) {
     });
   }
 
+  async function createCustomer(codePrefix = 'C') {
+    const id = randomUUID();
+    const code = `${codePrefix}-${randomUUID().slice(0, 8)}`;
+    await pool.query(
+      `INSERT INTO customers (id, tenant_id, code, name, active, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, true, now(), now())`,
+      [id, tenantId, code, `Customer ${code}`]
+    );
+    return { id, code, name: `Customer ${code}` };
+  }
+
   async function seedStockViaCount({
     warehouseId = topology.warehouse.id,
     itemId,
@@ -312,6 +334,42 @@ export async function createServiceHarness(options = {}) {
       { type: 'system', id: null }
     );
     return receipt.receipt;
+  }
+
+  async function createPurchaseOrderDocument(params) {
+    return createPurchaseOrder(
+      tenantId,
+      params,
+      { type: 'system', id: null }
+    );
+  }
+
+  async function postReceiptDocument(params) {
+    return createPurchaseOrderReceipt(
+      tenantId,
+      params,
+      { type: 'system', id: null }
+    );
+  }
+
+  async function createInventoryAdjustmentDraft(data, actor, options) {
+    return createInventoryAdjustment(tenantId, data, actor, options);
+  }
+
+  async function postInventoryAdjustmentDraft(adjustmentId, context) {
+    return postInventoryAdjustment(tenantId, adjustmentId, context);
+  }
+
+  async function createSalesOrderDocument(data) {
+    return createSalesOrder(tenantId, data);
+  }
+
+  async function createShipmentDocument(data) {
+    return createShipment(tenantId, data);
+  }
+
+  async function postShipmentDocument(shipmentId, params) {
+    return postShipment(tenantId, shipmentId, params);
   }
 
   async function qcAcceptReceiptLine({ receiptLineId, quantity, uom = 'each', actorId = null }) {
@@ -562,8 +620,16 @@ export async function createServiceHarness(options = {}) {
     createWarehouseWithSellable,
     createItem,
     createVendor,
+    createCustomer,
     seedStockViaCount,
     createReceipt,
+    createPurchaseOrder: createPurchaseOrderDocument,
+    postReceipt: postReceiptDocument,
+    createInventoryAdjustmentDraft,
+    postInventoryAdjustmentDraft,
+    createSalesOrder: createSalesOrderDocument,
+    createShipment: createShipmentDocument,
+    postShipment: postShipmentDocument,
     qcAcceptReceiptLine,
     createLicensePlate: (data, actor) => createLicensePlate(tenantId, data, actor),
     moveLicensePlate: (data, actor) => moveLicensePlate(tenantId, data, actor),
