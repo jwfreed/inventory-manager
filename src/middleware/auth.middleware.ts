@@ -15,6 +15,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = bearer ?? queryToken;
 
   if (!token) {
+    res.setHeader('WWW-Authenticate', 'Bearer realm="inventory-manager", error="invalid_token"');
     return res.status(401).json({ error: 'Missing access token.' });
   }
 
@@ -28,6 +29,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     updateRequestContext({ userId: payload.sub, tenantId: payload.tenantId });
     return next();
   } catch {
+    res.setHeader('WWW-Authenticate', 'Bearer realm="inventory-manager", error="invalid_token"');
     return res.status(401).json({ error: 'Invalid or expired access token.' });
   }
 }

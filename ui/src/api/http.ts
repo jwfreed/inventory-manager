@@ -1,6 +1,7 @@
 import type { ApiError } from './types'
 import { buildUrl } from './baseUrl'
-import { getAccessToken, setAccessToken } from '../lib/authStore'
+import { clearAuthSession, getAccessToken, setAuthenticatedSession } from '../lib/authStore'
+import type { AuthSession as CanonicalAuthSession } from '../lib/authContext'
 
 export type AuthSession = {
   accessToken: string
@@ -80,14 +81,16 @@ export async function refreshAccessToken() {
 
       if (!response.ok) {
         if (response.status === 401) {
-          setAccessToken(null)
+          clearAuthSession('refresh-failed')
         }
         return null
       }
 
       const session = (await response.json()) as AuthSession
       if (session?.accessToken) {
-        setAccessToken(session.accessToken)
+        if ('user' in session && 'tenant' in session && session.user && session.tenant) {
+          setAuthenticatedSession(session as CanonicalAuthSession, { broadcast: false })
+        }
       }
       return session
     } catch {
@@ -148,6 +151,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
         ...options,
         body,
       })
+    } else {
+      clearAuthSession('refresh-failed')
     }
   }
 

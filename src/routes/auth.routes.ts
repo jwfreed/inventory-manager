@@ -6,6 +6,15 @@ import { buildRefreshToken, hashPassword, hashToken, refreshCookieOptions, signA
 import { requireAuth } from '../middleware/auth.middleware';
 
 const router = Router();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const configuredAuthOrigins = new Set(
+  String(process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+);
 
 const loginSchema = z.object({
   email: z.preprocess(
@@ -42,6 +51,57 @@ const profileUpdateSchema = z.object({
   fullName: z.string().optional(),
   baseCurrency: z.string().length(3).toUpperCase().optional()
 });
+
+router.use((_req: Request, res: Response, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
+
+function clearRefreshCookies(res: Response) {
+  res.clearCookie('refresh_token', refreshCookieOptions('/auth', false));
+  res.clearCookie('refresh_token', refreshCookieOptions('/', false));
+}
+
+function getRequestOrigin(req: Request): string | null {
+  const value = req.headers.origin ?? req.headers.referer;
+  if (typeof value !== 'string' || !value) return null;
+  try {
+    return new URL(value).origin.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isTrustedAuthOrigin(req: Request) {
+  const origin = getRequestOrigin(req);
+  if (!origin) return true;
+  const requestOrigin = `${req.protocol}://${req.get('host')}`.toLowerCase();
+  return origin === requestOrigin || configuredAuthOrigins.has(origin);
+}
+
+function consumeLoginAttempt(email: string, ip: string) {
+  const now = Date.now();
+  const key = `${ip}:${email.trim().toLowerCase()}`;
+  const existing = loginAttempts.get(key);
+  if (!existing || existing.resetAt <= now) {
+    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+  if (existing.count >= LOGIN_MAX_ATTEMPTS) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.max(1, Math.ceil((existing.resetAt - now) / 1000))
+    };
+  }
+  existing.count += 1;
+  loginAttempts.set(key, existing);
+  return { allowed: true, retryAfterSeconds: 0 };
+}
+
+function clearLoginAttemptWindow(email: string, ip: string) {
+  loginAttempts.delete(`${ip}:${email.trim().toLowerCase()}`);
+}
 
 function mapUser(row: any) {
   return {
@@ -101,8 +161,9 @@ async function resolveMembership(
     [userId]
   );
 
-  if (membershipRes.rowCount === 1) return membershipRes.rows[0];
-  if (membershipRes.rowCount > 1) {
+  const membershipCount = membershipRes.rowCount ?? 0;
+  if (membershipCount === 1) return membershipRes.rows[0];
+  if (membershipCount > 1) {
     if (preferredTenantSlug) {
       const normalizedPreferred = preferredTenantSlug.trim().toLowerCase();
       const preferredMembership = membershipRes.rows.find((row: any) => row.slug === normalizedPreferred);
@@ -307,6 +368,11 @@ router.post('/auth/login', async (req: Request, res: Response) => {
   }
 
   const { email, password, tenantId, tenantSlug } = parsed.data;
+  const attempt = consumeLoginAttempt(email, req.ip ?? 'unknown');
+  if (!attempt.allowed) {
+    res.setHeader('Retry-After', String(attempt.retryAfterSeconds));
+    return res.status(429).json({ error: 'Too many login attempts. Try again later.' });
+  }
 
   try {
     const userResult = await query('SELECT * FROM users WHERE email = $1', [email]);
@@ -330,6 +396,7 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Tenant membership not found or ambiguous.' });
     }
 
+    clearLoginAttemptWindow(email, req.ip ?? 'unknown');
     const session = await createSession(res, user, membership);
     return res.json(session);
   } catch (error) {
@@ -343,50 +410,76 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  if (!isTrustedAuthOrigin(req)) {
+    clearRefreshCookies(res);
+    return res.status(403).json({ error: 'Untrusted origin.' });
+  }
   const rawCandidates = extractRefreshTokenCandidates(req);
   if (rawCandidates.length === 0) {
+    clearRefreshCookies(res);
     return res.status(401).json({ error: 'Missing refresh token.' });
   }
 
   try {
     const tokenHashes = rawCandidates.map(hashToken);
-    const tokenRes = await query(
-      `SELECT *
-         FROM refresh_tokens
-        WHERE token_hash = ANY($1::text[])
-          AND revoked_at IS NULL
-          AND expires_at > now()
-        ORDER BY created_at DESC
-        LIMIT 1`,
-      [tokenHashes]
-    );
-    if (tokenRes.rowCount === 0) {
+    const result = await withTransaction(async (client) => {
+      const tokenRes = await client.query(
+        `SELECT *
+           FROM refresh_tokens
+          WHERE token_hash = ANY($1::text[])
+            AND revoked_at IS NULL
+            AND expires_at > now()
+          ORDER BY created_at DESC
+          LIMIT 1
+          FOR UPDATE`,
+        [tokenHashes]
+      );
+      if (tokenRes.rowCount === 0) {
+        return null;
+      }
+
+      const tokenRow = tokenRes.rows[0];
+      const userRes = await client.query(
+        `SELECT *
+           FROM users
+          WHERE id = $1
+            AND active = true`,
+        [tokenRow.user_id]
+      );
+      if (userRes.rowCount === 0) {
+        return { tokenRow, user: null };
+      }
+
+      await client.query(
+        `UPDATE refresh_tokens
+            SET revoked_at = now()
+          WHERE id = $1
+            AND revoked_at IS NULL`,
+        [tokenRow.id]
+      );
+
+      return { tokenRow, user: userRes.rows[0] };
+    });
+    if (!result?.tokenRow) {
+      clearRefreshCookies(res);
       return res.status(401).json({ error: 'Invalid refresh token.' });
     }
-
-    const tokenRow = tokenRes.rows[0];
-    const userRes = await query('SELECT * FROM users WHERE id = $1', [tokenRow.user_id]);
-    if (userRes.rowCount === 0) {
+    if (!result.user) {
+      clearRefreshCookies(res);
       return res.status(401).json({ error: 'Invalid user.' });
     }
 
     const membership = await resolveMembership(
-      tokenRow.user_id,
-      parsed.data.tenantId ?? tokenRow.tenant_id,
+      result.tokenRow.user_id,
+      parsed.data.tenantId ?? result.tokenRow.tenant_id,
       parsed.data.tenantSlug
     );
     if (!membership) {
+      clearRefreshCookies(res);
       return res.status(400).json({ error: 'Tenant membership not found or ambiguous.' });
     }
 
-    await query(
-      `UPDATE refresh_tokens
-          SET revoked_at = now()
-        WHERE id = $1`,
-      [tokenRow.id]
-    );
-
-    const session = await createSession(res, userRes.rows[0], membership);
+    const session = await createSession(res, result.user, membership);
     return res.json(session);
   } catch (error) {
     console.error(error);
@@ -395,6 +488,10 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
 });
 
 router.post('/auth/logout', async (req: Request, res: Response) => {
+  if (!isTrustedAuthOrigin(req)) {
+    clearRefreshCookies(res);
+    return res.status(403).json({ error: 'Untrusted origin.' });
+  }
   const rawCandidates = extractRefreshTokenCandidates(req);
   if (rawCandidates.length) {
     const tokenHashes = rawCandidates.map(hashToken);
@@ -406,8 +503,7 @@ router.post('/auth/logout', async (req: Request, res: Response) => {
     );
   }
 
-  res.clearCookie('refresh_token', refreshCookieOptions('/auth', false));
-  res.clearCookie('refresh_token', refreshCookieOptions('/', false));
+  clearRefreshCookies(res);
   return res.status(204).send();
 });
 

@@ -31,6 +31,7 @@ export type AuthState = {
   user: AuthUser | null
   tenant: AuthTenant | null
   role: string | null
+  logoutReason: 'manual' | 'refresh-failed' | 'remote-signout' | 'unknown' | null
 }
 
 export type LoginInput = {

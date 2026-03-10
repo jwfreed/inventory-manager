@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import type { ApiError } from '@api/types'
 import { Alert, Button, Card, Input, LoadingSpinner } from '@shared/ui'
 import { useAuth } from '@shared/auth'
@@ -16,6 +16,24 @@ function getErrorMessage(error: unknown, fallback: string) {
 export default function LoginPage() {
   const { status, login, bootstrap } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const redirectTo = (
+    typeof location.state === 'object'
+    && location.state
+    && 'from' in location.state
+    && typeof location.state.from === 'string'
+    && location.state.from.startsWith('/')
+  )
+    ? location.state.from
+    : '/dashboard'
+  const redirectReason = (
+    typeof location.state === 'object'
+    && location.state
+    && 'reason' in location.state
+    && typeof location.state.reason === 'string'
+  )
+    ? location.state.reason
+    : null
 
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
@@ -33,9 +51,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      navigate('/dashboard', { replace: true })
+      navigate(redirectTo, { replace: true })
     }
-  }, [status, navigate])
+  }, [navigate, redirectTo, status])
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -48,7 +66,7 @@ export default function LoginPage() {
         password: loginPassword,
         tenantSlug: loginTenantSlug.trim() || undefined,
       })
-      navigate('/dashboard', { replace: true })
+      navigate(redirectTo, { replace: true })
     } catch (error) {
       setLoginError(getErrorMessage(error, 'Unable to sign in.'))
     } finally {
@@ -69,7 +87,7 @@ export default function LoginPage() {
         adminPassword,
         adminName: adminName.trim() || undefined,
       })
-      navigate('/dashboard', { replace: true })
+      navigate(redirectTo, { replace: true })
     } catch (error) {
       setBootstrapError(getErrorMessage(error, 'Unable to bootstrap admin account.'))
     } finally {
@@ -94,6 +112,20 @@ export default function LoginPage() {
             Sign in to your tenant workspace. First-time setup requires bootstrapping an admin
             account.
           </p>
+          {redirectReason === 'refresh-failed' && (
+            <Alert
+              variant="warning"
+              title="Session expired"
+              message="Your session is no longer valid. Sign in again to continue."
+            />
+          )}
+          {redirectReason === 'remote-signout' && (
+            <Alert
+              variant="warning"
+              title="Signed out in another tab"
+              message="This tab was signed out because your session changed elsewhere."
+            />
+          )}
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">

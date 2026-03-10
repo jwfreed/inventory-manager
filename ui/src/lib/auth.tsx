@@ -1,13 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
+import type { ApiError } from '../api/types'
 import { apiGet, apiPost, refreshAccessToken } from '../api/http'
-import { getAccessToken, setAccessToken } from './authStore'
+import {
+  clearAuthSession,
+  getAccessToken,
+  getAuthState,
+  setAuthenticatedProfile,
+  setAuthenticatedSession,
+  subscribeAuthState,
+} from './authStore'
 import { LoadingSpinner } from '../components/Loading'
 import type {
   AuthContextValue,
   AuthSession,
-  AuthState,
   AuthTenant,
   AuthUser,
   BootstrapInput,
@@ -16,50 +23,22 @@ import type {
 import { AuthContext } from './authContext'
 import { useAuth } from './useAuth'
 
-function mapSession(session: AuthSession): AuthState {
-  return {
-    status: 'authenticated',
-    accessToken: session.accessToken,
-    user: session.user,
-    tenant: session.tenant,
-    role: session.role ?? null,
-  }
+function isAuthError(error: unknown) {
+  const apiError = error as ApiError | undefined
+  return apiError?.status === 401 || apiError?.status === 403
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>(() => ({
-    status: 'loading',
-    accessToken: getAccessToken(),
-    user: null,
-    tenant: null,
-    role: null,
-  }))
-
-  const hydrateFromSession = useCallback((session: AuthSession) => {
-    setAccessToken(session.accessToken)
-    setState(mapSession(session))
-  }, [])
+  const state = useSyncExternalStore(subscribeAuthState, getAuthState, getAuthState)
 
   const hydrateFromMe = useCallback(
     (payload: { user: AuthUser; tenant: AuthTenant; role?: string }) => {
       const token = getAccessToken()
       if (!token) {
-        setState({
-          status: 'unauthenticated',
-          accessToken: null,
-          user: null,
-          tenant: null,
-          role: null,
-        })
+        clearAuthSession('unknown')
         return
       }
-      setState({
-        status: 'authenticated',
-        accessToken: token,
-        user: payload.user,
-        tenant: payload.tenant,
-        role: payload.role ?? null,
-      })
+      setAuthenticatedProfile(payload, { accessToken: token })
     },
     [],
   )
@@ -67,36 +46,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     const session = await refreshAccessToken()
     if (session?.accessToken && session.user && session.tenant) {
-      hydrateFromSession(session as AuthSession)
+      setAuthenticatedSession(session as AuthSession)
       return
     }
     if (session?.accessToken) {
-      const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string }>('/auth/me')
+      const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string }>('/auth/me', {
+        skipAuthRefresh: true,
+      })
       hydrateFromMe(me)
       return
     }
-    setAccessToken(null)
-    setState({
-      status: 'unauthenticated',
-      accessToken: null,
-      user: null,
-      tenant: null,
-      role: null,
-    })
-  }, [hydrateFromMe, hydrateFromSession])
+    clearAuthSession('refresh-failed')
+  }, [hydrateFromMe])
 
   useEffect(() => {
+    if (state.status !== 'loading') return
+
     let active = true
     const init = async () => {
       const token = getAccessToken()
       if (token) {
         try {
-          const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string }>('/auth/me')
+          const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string }>('/auth/me', {
+            skipAuthRefresh: true,
+          })
           if (!active) return
           hydrateFromMe(me)
           return
-        } catch {
-          // fall through to refresh
+        } catch (error) {
+          if (!active) return
+          if (!isAuthError(error)) {
+            clearAuthSession('unknown')
+            return
+          }
         }
       }
 
@@ -104,14 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await refresh()
       } catch {
         if (!active) return
-        setAccessToken(null)
-        setState({
-          status: 'unauthenticated',
-          accessToken: null,
-          user: null,
-          tenant: null,
-          role: null,
-        })
+        clearAuthSession('refresh-failed')
       }
     }
 
@@ -119,36 +94,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
-  }, [hydrateFromMe, refresh])
+  }, [hydrateFromMe, refresh, state.status])
 
-  const login = useCallback(
-    async (input: LoginInput) => {
-      const session = await apiPost<AuthSession>('/auth/login', input)
-      hydrateFromSession(session)
-    },
-    [hydrateFromSession],
-  )
+  const login = useCallback(async (input: LoginInput) => {
+    const session = await apiPost<AuthSession>('/auth/login', input)
+    setAuthenticatedSession(session)
+  }, [])
 
-  const bootstrap = useCallback(
-    async (input: BootstrapInput) => {
-      const session = await apiPost<AuthSession>('/auth/bootstrap', input)
-      hydrateFromSession(session)
-    },
-    [hydrateFromSession],
-  )
+  const bootstrap = useCallback(async (input: BootstrapInput) => {
+    const session = await apiPost<AuthSession>('/auth/bootstrap', input)
+    setAuthenticatedSession(session)
+  }, [])
 
   const logout = useCallback(async () => {
     try {
       await apiPost('/auth/logout')
     } finally {
-      setAccessToken(null)
-      setState({
-        status: 'unauthenticated',
-        accessToken: null,
-        user: null,
-        tenant: null,
-        role: null,
-      })
+      clearAuthSession('manual')
     }
   }, [])
 
@@ -160,14 +122,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       refresh,
     }),
-    [state, login, bootstrap, logout, refresh],
+    [bootstrap, login, logout, refresh, state],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { status } = useAuth()
+  const { status, logoutReason } = useAuth()
+  const location = useLocation()
+
   if (status === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-25">
@@ -176,7 +140,16 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     )
   }
   if (status !== 'authenticated') {
-    return <Navigate to="/login" replace />
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{
+          from: `${location.pathname}${location.search}${location.hash}`,
+          reason: logoutReason,
+        }}
+      />
+    )
   }
   return <>{children}</>
 }
