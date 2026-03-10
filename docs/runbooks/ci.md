@@ -1,15 +1,15 @@
 # CI Runbook
 
-This repository uses GitHub Actions with Postgres and API integration tests. CI is designed to be deterministic and warehouse-safe.
+This repository uses GitHub Actions with Postgres-backed API integration tests. CI is tiered to keep merge latency low while preserving invariant coverage.
 
 ## CI Flow (GitHub Actions)
 
 High-level steps:
-1. Start Postgres service
+1. Start Postgres and Redis
 2. Run migrations
 3. Start API server
 4. Wait for `/healthz`
-5. Run tests sequentially
+5. Run the tier script that matches the trigger
 
 Example snippet:
 
@@ -33,13 +33,13 @@ Example snippet:
     done
     echo "Server failed to become ready"; cat server.log || true; exit 1
 
-- name: API tests
-  run: npm run test:api
+- name: Truth tests
+  if: github.event_name == 'pull_request'
+  run: npm run test:truth
 
-- name: Ops tests
-  run: npm run test:ops
-  env:
-    TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+- name: Contract tests
+  if: github.event_name == 'push'
+  run: npm run test:contracts
 ```
 
 ## Local CI-equivalent run
@@ -61,17 +61,17 @@ npm run test:api
 
 ## Test Order and Suites
 
-- **API**: `npm run test:api`
-- **Ops (AK-47)**: `npm run test:ops`
-- **DB/Invariant**: `npm run test:db`
-- **All**: `npm run test:all`
+- **PR merge gate**: `npm run test:truth`
+- **Push validation**: `npm run test:contracts`
+- **Nightly heavy workflows**: `npm run test:scenarios`
+- **UI E2E**: `npm run e2e` (manual/on-demand workflow)
 
 Suggested order for local verification:
 
-1. `npm run test:api` (short, API behavior)
-2. `npm run test:db` (invariants/triggers)
-3. `npm run test:ops` (AK-47 operational flows)
-4. `npm run test:all` (full suite)
+1. `npm run test:truth`
+2. `npm run test:contracts`
+3. `npm run test:scenarios`
+4. `npm run e2e`
 
 ## Debug Flags
 

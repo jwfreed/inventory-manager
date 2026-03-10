@@ -34,16 +34,14 @@ jobs:
           --health-retries=12
     env:
       CI: 'true'
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
-      TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ci_dummy_secret
+      PGPASSWORD: postgres
       PORT: 3000
       API_BASE_URL: http://127.0.0.1:3000
       TEST_BASE_URL: http://127.0.0.1:3000
       NODE_ENV: test
-      SEED_ADMIN_EMAIL: ci-admin@test.local
-      SEED_ADMIN_PASSWORD: ci-admin-password
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,5 +63,92 @@ jobs:
           exit 1
       - name: Run migrations
         run: npm run migrate:up
-      - name: Run scenario suite
+      - name: Create app_ci role and grants
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ci') THEN
+              CREATE ROLE app_ci WITH LOGIN PASSWORD 'app_ci_pass' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            ELSE
+              ALTER ROLE app_ci WITH LOGIN PASSWORD 'app_ci_pass' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            END IF;
+          END
+          $$;
+          GRANT CONNECT ON DATABASE inventory_test TO app_ci;
+          GRANT USAGE ON SCHEMA public TO app_ci;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_ci;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_ci;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_ci;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
+          REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
+          SQL
+      - name: Start API server (if needed)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
+        run: |
+          set -euo pipefail
+          if command -v nc >/dev/null 2>&1; then
+            if nc -z 127.0.0.1 3000 2>/dev/null; then
+              echo "API already listening on 127.0.0.1:3000; skipping startup."
+              exit 0
+            fi
+          elif (echo > /dev/tcp/127.0.0.1/3000) >/dev/null 2>&1; then
+            echo "API already listening on 127.0.0.1:3000; skipping startup."
+            exit 0
+          fi
+          nohup npm run dev -- --repair-defaults > server.log 2>&1 &
+          SERVER_PID=$!
+          echo "$SERVER_PID" > server.pid
+          echo "SERVER_PID=$SERVER_PID" >> "$GITHUB_ENV"
+          sleep 1
+          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "API process exited immediately after startup"
+            cat server.log || true
+            ps -p "$SERVER_PID" -o pid,ppid,stat,etime,cmd || true
+            exit 1
+          fi
+      - name: Wait for API readiness
+        run: |
+          set -euo pipefail
+          SERVER_PID=""
+          if [ -f server.pid ]; then
+            SERVER_PID="$(cat server.pid)"
+          fi
+          for i in {1..60}; do
+            if [ -n "$SERVER_PID" ] && ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "API process exited before readiness"
+              cat server.log || true
+              ps -p "$SERVER_PID" -o pid,ppid,stat,etime,cmd || true
+              exit 1
+            fi
+            if curl -fsS "http://127.0.0.1:3000/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server failed to become ready"
+          cat server.log || true
+          if [ -n "$SERVER_PID" ]; then
+            ps -p "$SERVER_PID" -o pid,ppid,stat,etime,cmd || true
+          fi
+          exit 1
+      - name: Run scenarios suite
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
         run: npm run test:scenarios
+      - name: Stop API server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill "$(cat server.pid)" || true
+          fi
+          tail -200 server.log || true
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-log-scenarios
+          path: server.log

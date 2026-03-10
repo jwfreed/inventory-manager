@@ -1,0 +1,23 @@
+{
+  "name": "scenarios",
+  "description": "Heavy end-to-end operational and load workflows for nightly coverage.",
+  "timeoutMs": 900000,
+  "concurrency": 1,
+  "useSetupImport": true,
+  "directories": [
+    "tests/ops",
+    "tests/load"
+  ],
+  "excludeFiles": [
+    "tests/ops/cycle-count-idempotency.test.mjs",
+    "tests/ops/ledger-reconcile.test.mjs",
+    "tests/ops/purchase-order-lifecycle-close.test.mjs",
+    "tests/ops/qc-accept-reject.test.mjs",
+    "tests/ops/receipt-void-reversal.test.mjs",
+    "tests/ops/reservations-lifecycle.test.mjs",
+    "tests/ops/transactional-idempotency-receipts.test.mjs",
+    "tests/ops/transfer-idempotency.test.mjs",
+    "tests/ops/work-order-production-report.test.mjs",
+    "tests/ops/clean-dev-db-no-drift.test.mjs"
+  ]
+}

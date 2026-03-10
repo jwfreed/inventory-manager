@@ -1,0 +1,24 @@
+{
+  "name": "truth",
+  "description": "Invariant-only merge gate covering architectural and ledger correctness contracts.",
+  "timeoutMs": 900000,
+  "concurrency": 1,
+  "useSetupImport": true,
+  "files": [
+    "tests/architecture/ai-guardrails-contract.test.mjs",
+    "tests/architecture/fresh-db-contract-scripts.test.mjs",
+    "tests/architecture/idempotency-endpoint-uniqueness-guard.test.mjs",
+    "tests/architecture/ledger-immutability-guard.test.mjs",
+    "tests/architecture/ledger-immutability-role-guard.test.mjs",
+    "tests/architecture/ledger-immutability-trigger-metadata.test.mjs",
+    "tests/architecture/ledger-migration-lint.test.mjs",
+    "tests/architecture/no-correctness-compromise-guards.test.mjs",
+    "tests/architecture/no-src-imports-tests-guard.test.mjs",
+    "tests/architecture/test-tier-contract.test.mjs",
+    "tests/db/inventory-invariants-scope-hardening.test.mjs",
+    "tests/db/inventory-invariants.test.mjs",
+    "tests/db/phase6-invariants-reservation-warehouse-historical-mismatch.test.mjs",
+    "tests/db/phase6-invariants-warehouse-id-drift.test.mjs",
+    "tests/ops/clean-dev-db-no-drift.test.mjs"
+  ]
+}

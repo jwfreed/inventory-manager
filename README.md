@@ -16,10 +16,11 @@ npm run test:api
 
 ## Test suites
 
-- `npm run test:api` — API behavior checks
-- `npm run test:ops` — AK-47 operational flows
-- `npm run test:db` — DB triggers and invariants
-- `npm run test:all` — full suite
+- `npm run test:truth` — invariant-only merge gate
+- `npm run test:contracts` — representative mutation-family contracts
+- `npm run test:scenarios` — heavy operational and load workflows
+- `npm run e2e` — UI-level Playwright workflows (manual/on-demand)
+- `npm run test:all` — legacy full Node test sweep
 
 ## Runbooks
 
@@ -28,6 +29,14 @@ npm run test:api
 - `docs/runbooks/debugging_tests.md`
 - `docs/runbooks/ci.md`
 - `docs/operational-suite.md`
+- `docs/ai-development.md`
+
+## Repository guardrails
+
+- Ledger-adjacent writes are owned by `src/domains/inventory/internal/ledgerWriter.ts`.
+- Multi-step mutations are expected to run inside `withTransaction(...)` or `withTransactionRetry(...)`.
+- Static write ownership is checked by `npm run lint:inventory-writes`.
+- AI guidance and prompt templates live under `.repo/` and `.github/copilot-instructions.md`.
 
 ## Phase Summary (0–7)
 

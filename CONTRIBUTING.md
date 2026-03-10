@@ -6,19 +6,19 @@ Inventory systems fail quietly. Prefer auditability, deterministic behavior, and
 
 ## Test tiers
 
-Tests are organized by intent:
+Tests are organized into repository-level tiers with manifests under `tests/truth/`, `tests/contracts/`, and `tests/scenarios/`.
 
-- **API** (`tests/api/`): request/response behavior and simple flows
-- **Ops (AK-47)** (`tests/ops/`): long transactional workflows (QC, ATP, reservations)
-- **DB** (`tests/db/`): triggers, invariants, and DB-only semantics
+- **Truth**: invariant-only guards and ledger correctness checks
+- **Contracts**: representative mutation-family tests
+- **Scenarios**: heavy operational and load workflows
 
 Scripts:
 
 ```bash
-npm run test:api
-npm run test:ops
-npm run test:db
-npm run test:all
+npm run test:truth
+npm run test:contracts
+npm run test:scenarios
+npm run e2e
 ```
 
 ## Helper usage
@@ -33,6 +33,7 @@ Use these helpers instead of bespoke logic:
 ## Rules
 
 - **No direct DB writes in API tests.** Use the standard warehouse template and API endpoints.
+- **Do not weaken truth tests.** If a correctness invariant changes, update the docs, tier manifest, and guard tests in the same change.
 - **Warehouse roots are role-less and non-sellable.** Do not set roles on roots in tests.
 - **Role bins are discovered by role, not code.** Codes are globally unique.
 - **Scope all locations to a warehouse.** Never assume global `/locations` results.

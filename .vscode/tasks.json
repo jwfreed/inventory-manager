@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "inventory: dev",
+      "type": "shell",
+      "command": "npm run dev",
+      "problemMatcher": []
+    },
+    {
+      "label": "inventory: migrate",
+      "type": "shell",
+      "command": "npm run migrate",
+      "problemMatcher": []
+    },
+    {
+      "label": "inventory: truth",
+      "type": "shell",
+      "command": "npm run test:truth",
+      "problemMatcher": []
+    },
+    {
+      "label": "inventory: contracts",
+      "type": "shell",
+      "command": "npm run test:contracts",
+      "problemMatcher": []
+    },
+    {
+      "label": "inventory: scenarios",
+      "type": "shell",
+      "command": "npm run test:scenarios",
+      "problemMatcher": []
+    },
+    {
+      "label": "inventory: write-ownership",
+      "type": "shell",
+      "command": "npm run lint:inventory-writes",
+      "problemMatcher": []
+    }
+  ]
+}

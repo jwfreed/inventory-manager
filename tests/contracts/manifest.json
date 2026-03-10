@@ -1,0 +1,20 @@
+{
+  "name": "contracts",
+  "description": "Representative mutation-family contract tests. One or a few stable files per command family.",
+  "timeoutMs": 900000,
+  "concurrency": 1,
+  "useSetupImport": true,
+  "files": [
+    "tests/api/00_bootstrap.test.mjs",
+    "tests/api/warehouse-root-create.test.mjs",
+    "tests/ops/cycle-count-idempotency.test.mjs",
+    "tests/ops/ledger-reconcile.test.mjs",
+    "tests/ops/purchase-order-lifecycle-close.test.mjs",
+    "tests/ops/qc-accept-reject.test.mjs",
+    "tests/ops/receipt-void-reversal.test.mjs",
+    "tests/ops/reservations-lifecycle.test.mjs",
+    "tests/ops/transactional-idempotency-receipts.test.mjs",
+    "tests/ops/transfer-idempotency.test.mjs",
+    "tests/ops/work-order-production-report.test.mjs"
+  ]
+}
