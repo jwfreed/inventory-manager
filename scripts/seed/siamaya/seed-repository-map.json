@@ -32,6 +32,21 @@
       "role": "canonical routing and work-center metadata"
     },
     {
+      "kind": "inventory_states",
+      "path": "scripts/seed/siamaya/inventory-state-scenarios.json",
+      "role": "simulation-only inventory lifecycle state fixtures"
+    },
+    {
+      "kind": "capacity",
+      "path": "scripts/seed/siamaya/capacity-metadata.json",
+      "role": "optional work-center capacity metadata for simulation"
+    },
+    {
+      "kind": "validation",
+      "path": "scripts/seed/siamaya/bom-validation-report.json",
+      "role": "automated BOM structural validation report"
+    },
+    {
       "kind": "procurement",
       "path": "scripts/seed/siamaya/procurement-metadata.json",
       "role": "procurement planning attributes for leaf items"
@@ -45,6 +60,16 @@
       "kind": "demand",
       "path": "scripts/seed/siamaya/demand-simulation.json",
       "role": "timestamped demand stream for finished SKUs"
+    },
+    {
+      "kind": "workflow",
+      "path": "scripts/seed/siamaya/guided-workflow-scenarios.json",
+      "role": "step-by-step tester workflow scenarios"
+    },
+    {
+      "kind": "stress",
+      "path": "scripts/seed/siamaya/stress-simulation-report.json",
+      "role": "high-volume deterministic stress simulation results"
     },
     {
       "kind": "graphviz",

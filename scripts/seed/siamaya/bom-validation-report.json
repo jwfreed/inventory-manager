@@ -1,0 +1,24 @@
+{
+  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "summary": {
+    "cycleCount": 0,
+    "selfReferenceCount": 0,
+    "duplicateComponentCount": 0,
+    "invalidQuantityCount": 0,
+    "uomMismatchCount": 0,
+    "yieldInconsistencyCount": 0,
+    "orphanIntermediateCount": 0,
+    "unusedComponentCount": 0,
+    "unresolvedLeafItemCount": 0
+  },
+  "valid": true,
+  "cyclePaths": [],
+  "selfReferencingRows": [],
+  "duplicateComponents": [],
+  "invalidRows": [],
+  "uomMismatches": [],
+  "yieldInconsistencies": [],
+  "orphanIntermediates": [],
+  "unusedComponents": [],
+  "unresolvedLeafItems": []
+}

@@ -18,9 +18,14 @@ const BASELINE_STOCK_PATH = path.resolve(SIAMAYA_DIR, 'initial-stock-spec.partia
 const REPOSITORY_MAP_PATH = path.resolve(SIAMAYA_DIR, 'seed-repository-map.json');
 const GAP_ANALYSIS_PATH = path.resolve(SIAMAYA_DIR, 'inventory-gap-analysis.json');
 const ROUTING_PATH = path.resolve(SIAMAYA_DIR, 'routing-normalization.json');
+const INVENTORY_STATES_PATH = path.resolve(SIAMAYA_DIR, 'inventory-state-scenarios.json');
+const CAPACITY_PATH = path.resolve(SIAMAYA_DIR, 'capacity-metadata.json');
+const BOM_VALIDATION_PATH = path.resolve(SIAMAYA_DIR, 'bom-validation-report.json');
 const PROCUREMENT_PATH = path.resolve(SIAMAYA_DIR, 'procurement-metadata.json');
 const WORK_ORDERS_PATH = path.resolve(SIAMAYA_DIR, 'work-order-scenarios.json');
 const DEMAND_PATH = path.resolve(SIAMAYA_DIR, 'demand-simulation.json');
+const WORKFLOW_PATH = path.resolve(SIAMAYA_DIR, 'guided-workflow-scenarios.json');
+const STRESS_PATH = path.resolve(SIAMAYA_DIR, 'stress-simulation-report.json');
 const VALIDATION_PATH = path.resolve(SIAMAYA_DIR, 'simulation-validation.json');
 const MRP_CSV_PATH = path.resolve(SIAMAYA_DIR, 'mrp-explosion.csv');
 const DAG_DOT_PATH = path.resolve(SIAMAYA_DIR, 'factory-dag.dot');
@@ -469,9 +474,14 @@ function buildSeedRepositoryMap() {
       { kind: 'pipeline', path: 'scripts/seed/siamaya/import_bom_from_xlsx.ts', role: 'BOM import from workbook/json' },
       { kind: 'pipeline', path: 'scripts/seed/siamaya/preprocess_bom_csv.ts', role: 'manual BOM preprocess and correction rules' },
       { kind: 'routing', path: 'scripts/seed/siamaya/routing-normalization.json', role: 'canonical routing and work-center metadata' },
+      { kind: 'inventory_states', path: 'scripts/seed/siamaya/inventory-state-scenarios.json', role: 'simulation-only inventory lifecycle state fixtures' },
+      { kind: 'capacity', path: 'scripts/seed/siamaya/capacity-metadata.json', role: 'optional work-center capacity metadata for simulation' },
+      { kind: 'validation', path: 'scripts/seed/siamaya/bom-validation-report.json', role: 'automated BOM structural validation report' },
       { kind: 'procurement', path: 'scripts/seed/siamaya/procurement-metadata.json', role: 'procurement planning attributes for leaf items' },
       { kind: 'work_orders', path: 'scripts/seed/siamaya/work-order-scenarios.json', role: 'representative manufacturing lifecycle scenarios' },
       { kind: 'demand', path: 'scripts/seed/siamaya/demand-simulation.json', role: 'timestamped demand stream for finished SKUs' },
+      { kind: 'workflow', path: 'scripts/seed/siamaya/guided-workflow-scenarios.json', role: 'step-by-step tester workflow scenarios' },
+      { kind: 'stress', path: 'scripts/seed/siamaya/stress-simulation-report.json', role: 'high-volume deterministic stress simulation results' },
       { kind: 'graphviz', path: 'scripts/seed/siamaya/factory-dag.dot', role: 'complete product DAG' },
       { kind: 'graphviz', path: 'scripts/seed/siamaya/factory-ingredient-flow.dot', role: 'ingredient-only production flow' },
       { kind: 'graphviz', path: 'scripts/seed/siamaya/factory-packaging-flow.dot', role: 'packaging assembly flow' },
@@ -651,6 +661,187 @@ function buildBomGraph(bomDocument) {
   };
 }
 
+function findCyclePaths(graph) {
+  const visited = new Set();
+  const active = new Set();
+  const stack = [];
+  const cycles = [];
+
+  function visit(key) {
+    if (active.has(key)) {
+      const start = stack.indexOf(key);
+      cycles.push([...stack.slice(start), key].map((nodeKey) => graph.nodes.get(nodeKey)?.name ?? nodeKey));
+      return;
+    }
+    if (visited.has(key)) return;
+    visited.add(key);
+    active.add(key);
+    stack.push(key);
+    for (const next of graph.edges.get(key) ?? []) {
+      visit(next);
+    }
+    stack.pop();
+    active.delete(key);
+  }
+
+  for (const key of graph.nodes.keys()) {
+    visit(key);
+  }
+
+  const unique = new Map();
+  for (const cycle of cycles) {
+    const signature = cycle.join(' -> ');
+    unique.set(signature, cycle);
+  }
+  return [...unique.values()].sort((left, right) => left.join('>').localeCompare(right.join('>')));
+}
+
+function validateBomDataset(bomDocument, graph = buildBomGraph(bomDocument)) {
+  const duplicateMap = new Map();
+  const outputSignatureMap = new Map();
+  const selfReferencingRows = [];
+  const invalidRows = [];
+  const yieldInconsistencies = [];
+
+  for (const [index, row] of bomDocument.rows.entries()) {
+    const outputName = collapseWhitespace(row['Finished Product']);
+    const componentName = collapseWhitespace(row['Component Item']);
+    const outputKey = normalizeItemKey(outputName);
+    const componentKey = normalizeItemKey(componentName);
+    const outputQty = Number(row['Output Qty']);
+    const outputUom = normalizeUom(row['Output UOM']);
+    const componentQty = Number(row['Component Qty']);
+    const componentUom = normalizeUom(row['Component UOM']);
+
+    if (outputKey === componentKey) {
+      selfReferencingRows.push({ row: index + 1, itemName: outputName });
+    }
+
+    if (!Number.isFinite(outputQty) || outputQty <= 0 || !Number.isFinite(componentQty) || componentQty <= 0) {
+      invalidRows.push({
+        row: index + 1,
+        outputName,
+        componentName,
+        outputQty: Number.isFinite(outputQty) ? outputQty : null,
+        componentQty: Number.isFinite(componentQty) ? componentQty : null
+      });
+    }
+
+    const outputSignature = `${outputKey}__${outputUom}`;
+    if (!outputSignatureMap.has(outputKey)) {
+      outputSignatureMap.set(outputKey, outputSignature);
+    } else if (outputSignatureMap.get(outputKey) !== outputSignature || graph.boms.get(outputKey)?.outputQty !== outputQty) {
+      yieldInconsistencies.push({
+        row: index + 1,
+        itemName: outputName,
+        expected: {
+          outputQty: graph.boms.get(outputKey)?.outputQty ?? null,
+          outputUom: graph.boms.get(outputKey)?.outputUom ?? null
+        },
+        actual: {
+          outputQty,
+          outputUom
+        }
+      });
+    }
+
+    const duplicateKey = `${outputKey}__${componentKey}__${componentUom}`;
+    if (!duplicateMap.has(duplicateKey)) {
+      duplicateMap.set(duplicateKey, {
+        outputItemKey: outputKey,
+        outputItemName: outputName,
+        componentItemKey: componentKey,
+        componentItemName: componentName,
+        uom: componentUom,
+        rows: [index + 1]
+      });
+    } else {
+      duplicateMap.get(duplicateKey).rows.push(index + 1);
+    }
+  }
+
+  const duplicateComponents = [...duplicateMap.values()]
+    .filter((entry) => entry.rows.length > 1)
+    .sort((left, right) => left.outputItemName.localeCompare(right.outputItemName) || left.componentItemName.localeCompare(right.componentItemName));
+
+  const uomMismatches = [];
+  for (const node of graph.nodes.values()) {
+    const componentDims = new Set([...node.componentUoms].map((uom) => uomDimension(uom)));
+    const outputDims = new Set([...node.outputUoms].map((uom) => uomDimension(uom)));
+    if (componentDims.size > 1) {
+      uomMismatches.push({
+        itemKey: node.key,
+        itemName: node.name,
+        issue: 'component_multi_dimension',
+        componentUoms: [...node.componentUoms].sort()
+      });
+    }
+    if (outputDims.size > 1) {
+      uomMismatches.push({
+        itemKey: node.key,
+        itemName: node.name,
+        issue: 'output_multi_dimension',
+        outputUoms: [...node.outputUoms].sort()
+      });
+    }
+    if (componentDims.size > 0 && outputDims.size > 0) {
+      const [componentDim] = componentDims;
+      const [outputDim] = outputDims;
+      if (componentDim !== outputDim) {
+        uomMismatches.push({
+          itemKey: node.key,
+          itemName: node.name,
+          issue: 'component_output_dimension_mismatch',
+          componentUoms: [...node.componentUoms].sort(),
+          outputUoms: [...node.outputUoms].sort()
+        });
+      }
+    }
+  }
+
+  const dependentCounts = computeDependentFinishedCounts(graph);
+  const dependentByKey = new Map(dependentCounts.map((entry) => [entry.itemKey, entry.dependentFinishedGoods]));
+  const orphanIntermediates = [...graph.intermediateKeys]
+    .filter((key) => (dependentByKey.get(key) ?? 0) === 0)
+    .map((key) => ({ itemKey: key, itemName: graph.nodes.get(key)?.name ?? key }))
+    .sort((left, right) => left.itemName.localeCompare(right.itemName));
+  const unusedComponents = [...graph.componentKeys]
+    .filter((key) => (dependentByKey.get(key) ?? 0) === 0)
+    .map((key) => ({ itemKey: key, itemName: graph.nodes.get(key)?.name ?? key }))
+    .sort((left, right) => left.itemName.localeCompare(right.itemName));
+  const unresolvedLeafItems = [...graph.leafKeys]
+    .filter((key) => !graph.nodes.get(key)?.name)
+    .map((key) => ({ itemKey: key }));
+
+  const cyclePaths = findCyclePaths(graph);
+  const summary = {
+    cycleCount: cyclePaths.length,
+    selfReferenceCount: selfReferencingRows.length,
+    duplicateComponentCount: duplicateComponents.length,
+    invalidQuantityCount: invalidRows.length,
+    uomMismatchCount: uomMismatches.length,
+    yieldInconsistencyCount: yieldInconsistencies.length,
+    orphanIntermediateCount: orphanIntermediates.length,
+    unusedComponentCount: unusedComponents.length,
+    unresolvedLeafItemCount: unresolvedLeafItems.length
+  };
+
+  return {
+    generatedAt: GENERATED_AT,
+    summary,
+    valid: Object.values(summary).every((count) => count === 0),
+    cyclePaths,
+    selfReferencingRows,
+    duplicateComponents,
+    invalidRows,
+    uomMismatches,
+    yieldInconsistencies,
+    orphanIntermediates,
+    unusedComponents,
+    unresolvedLeafItems
+  };
+}
+
 function normalizeBomDocument(bomDocument, graph) {
   const outputRoute = new Map();
   for (const bom of graph.boms.values()) {
@@ -660,15 +851,36 @@ function normalizeBomDocument(bomDocument, graph) {
     outputRoute.set(bom.outputKey, resolved);
   }
 
-  const normalizedRows = bomDocument.rows.map((row) => {
+  const groupedRows = new Map();
+  for (const row of bomDocument.rows) {
     const outputName = collapseWhitespace(row['Finished Product']);
+    const componentName = collapseWhitespace(row['Component Item']);
     const outputKey = normalizeItemKey(outputName);
+    const componentKey = normalizeItemKey(componentName);
+    const componentUom = normalizeUom(row['Component UOM']);
     const route = outputRoute.get(outputKey);
-    return {
-      ...row,
-      Operation: route.operation,
-      'Work Center': route.routeCode
-    };
+    const key = `${outputKey}__${componentKey}__${componentUom}`;
+
+    if (!groupedRows.has(key)) {
+      groupedRows.set(key, {
+        ...row,
+        'Finished Product': outputName,
+        'Component Item': componentName,
+        'Output UOM': normalizeUom(row['Output UOM']),
+        'Component UOM': componentUom,
+        Operation: route.operation,
+        'Work Center': route.routeCode,
+        'Component Qty': Number(row['Component Qty'])
+      });
+    } else {
+      groupedRows.get(key)['Component Qty'] += Number(row['Component Qty']);
+    }
+  }
+
+  const normalizedRows = [...groupedRows.values()].sort((left, right) => {
+    const outputCompare = String(left['Finished Product']).localeCompare(String(right['Finished Product']));
+    if (outputCompare !== 0) return outputCompare;
+    return String(left['Component Item']).localeCompare(String(right['Component Item']));
   });
 
   const normalizedDocument = {
@@ -762,13 +974,17 @@ function expandLeaves(graph, itemKey, quantity, uom, trail = []) {
 
 function computeDependentFinishedCounts(graph) {
   const memo = new Map();
+  const active = new Set();
   function visit(key) {
     if (memo.has(key)) return memo.get(key);
+    if (active.has(key)) return new Set();
+    active.add(key);
     const dependentFinished = new Set();
     for (const child of graph.edges.get(key) ?? []) {
       if (graph.finishedKeys.has(child)) dependentFinished.add(child);
       for (const nested of visit(child)) dependentFinished.add(nested);
     }
+    active.delete(key);
     memo.set(key, dependentFinished);
     return dependentFinished;
   }
@@ -1038,6 +1254,376 @@ function buildFinishedRequirements(graph) {
     }
   }
   return { rows, summary };
+}
+
+function buildCapacityMetadata() {
+  const maxBatchSizeByWorkCenter = {
+    ROASTER: { maxBatchSize: 120, batchUom: 'kg' },
+    WINNOWER: { maxBatchSize: 100, batchUom: 'kg' },
+    PREREFINER: { maxBatchSize: 80, batchUom: 'kg' },
+    GRINDER: { maxBatchSize: 60, batchUom: 'kg' },
+    MIXER: { maxBatchSize: 200, batchUom: 'kg' },
+    TEMPERER: { maxBatchSize: 40, batchUom: 'kg' },
+    WRAPPER: { maxBatchSize: 1200, batchUom: 'piece' },
+    COATER: { maxBatchSize: 250, batchUom: 'kg' },
+    PACKAGING: { maxBatchSize: 1500, batchUom: 'piece' }
+  };
+
+  return {
+    generatedAt: GENERATED_AT,
+    workCenters: Object.values(ROUTE_CATALOG)
+      .map((entry) => ({
+        workCenter: entry.workCenterCode,
+        cycleTimeMinutes: entry.runTimeMinutes,
+        setupMinutes: entry.setupTimeMinutes,
+        maxBatchSize: maxBatchSizeByWorkCenter[entry.workCenterCode].maxBatchSize,
+        batchUom: maxBatchSizeByWorkCenter[entry.workCenterCode].batchUom,
+        parallelUnits: entry.capacity,
+        dailyAvailableMinutes: entry.capacity * 480
+      }))
+      .sort((left, right) => left.workCenter.localeCompare(right.workCenter))
+  };
+}
+
+function buildInventoryStateScenarios(workOrdersDocument) {
+  return {
+    generatedAt: GENERATED_AT,
+    states: ['AVAILABLE', 'ALLOCATED', 'ISSUED', 'WIP', 'QC_HOLD', 'FINISHED'],
+    records: [
+      {
+        stateRecordId: 'INVSTATE-001',
+        state: 'AVAILABLE',
+        itemKey: 'cacao beans',
+        itemName: 'Cacao Beans',
+        quantity: 240000,
+        uom: 'g',
+        locationCode: 'FACTORY_RM_STORE',
+        notes: 'Raw cacao ready for roasting'
+      },
+      {
+        stateRecordId: 'INVSTATE-002',
+        state: 'AVAILABLE',
+        itemKey: 'wrapper banana crunch 75g',
+        itemName: 'Wrapper - Banana Crunch (75g)',
+        quantity: 600,
+        uom: 'piece',
+        locationCode: 'FACTORY_PACK_STORE',
+        notes: 'Packaging available for scheduled release'
+      },
+      {
+        stateRecordId: 'INVSTATE-003',
+        state: 'ALLOCATED',
+        itemKey: 'cacao beans',
+        itemName: 'Cacao Beans',
+        quantity: 50000,
+        uom: 'g',
+        locationCode: 'FACTORY_RM_STORE',
+        workOrderCode: workOrdersDocument.workOrders[2]?.workOrderCode ?? null,
+        notes: 'Reserved for tasting-box production window'
+      },
+      {
+        stateRecordId: 'INVSTATE-004',
+        state: 'ALLOCATED',
+        itemKey: 'wrapper banana crunch 75g',
+        itemName: 'Wrapper - Banana Crunch (75g)',
+        quantity: 120,
+        uom: 'piece',
+        locationCode: 'FACTORY_PACK_STORE',
+        workOrderCode: workOrdersDocument.workOrders[1]?.workOrderCode ?? null,
+        notes: 'Allocated to released Banana Crunch work order'
+      },
+      {
+        stateRecordId: 'INVSTATE-005',
+        state: 'ISSUED',
+        itemKey: 'cacao nibs raw material',
+        itemName: 'Cacao Nibs - Raw Material',
+        quantity: 18000,
+        uom: 'g',
+        locationCode: 'FACTORY_PRODUCTION',
+        workOrderCode: workOrdersDocument.workOrders[0]?.workOrderCode ?? null,
+        notes: 'Issued to production from roast stage'
+      },
+      {
+        stateRecordId: 'INVSTATE-006',
+        state: 'ISSUED',
+        itemKey: 'organic cane sugar',
+        itemName: 'Organic Cane Sugar',
+        quantity: 6000,
+        uom: 'g',
+        locationCode: 'FACTORY_PRODUCTION',
+        workOrderCode: workOrdersDocument.workOrders[0]?.workOrderCode ?? null,
+        notes: 'Staged at prerefiner for current batch'
+      },
+      {
+        stateRecordId: 'INVSTATE-007',
+        state: 'WIP',
+        itemKey: 'base 70 dark chocolate',
+        itemName: 'Base - 70% Dark Chocolate',
+        quantity: 42000,
+        uom: 'g',
+        locationCode: 'FACTORY_PRODUCTION',
+        workOrderCode: workOrdersDocument.workOrders[0]?.workOrderCode ?? null,
+        notes: 'Mass waiting for tempering'
+      },
+      {
+        stateRecordId: 'INVSTATE-008',
+        state: 'WIP',
+        itemKey: 'banana crunch milk chocolate 75g flow wrap',
+        itemName: 'Banana Crunch Milk Chocolate (75g) - FLOW WRAP',
+        quantity: 180,
+        uom: 'piece',
+        locationCode: 'FACTORY_PRODUCTION',
+        workOrderCode: workOrdersDocument.workOrders[1]?.workOrderCode ?? null,
+        notes: 'Wrapped bars waiting for final outer wrapper'
+      },
+      {
+        stateRecordId: 'INVSTATE-009',
+        state: 'QC_HOLD',
+        itemKey: 'cacao nibs 250g',
+        itemName: 'Cacao Nibs 250g',
+        quantity: 16,
+        uom: 'piece',
+        locationCode: 'FACTORY_QA',
+        notes: 'Sampling hold pending release'
+      },
+      {
+        stateRecordId: 'INVSTATE-010',
+        state: 'QC_HOLD',
+        itemKey: 'tasting box',
+        itemName: 'Tasting Box',
+        quantity: 12,
+        uom: 'piece',
+        locationCode: 'FACTORY_QA',
+        notes: 'Box set under final label approval'
+      },
+      {
+        stateRecordId: 'INVSTATE-011',
+        state: 'FINISHED',
+        itemKey: 'couverture 70 dark chocolate 1kg',
+        itemName: 'Couverture 70% Dark Chocolate (1kg)',
+        quantity: 18,
+        uom: 'piece',
+        locationCode: 'FACTORY_FG_STAGE',
+        notes: 'Released finished stock'
+      },
+      {
+        stateRecordId: 'INVSTATE-012',
+        state: 'FINISHED',
+        itemKey: 'sample cubes 70 dark chocolate',
+        itemName: 'Sample Cubes - 70% Dark Chocolate',
+        quantity: 60,
+        uom: 'piece',
+        locationCode: 'FACTORY_FG_STAGE',
+        notes: 'Tester-ready finished goods'
+      }
+    ]
+  };
+}
+
+function buildGuidedWorkflowScenarios(workOrdersDocument) {
+  const wo = workOrdersDocument.workOrders;
+  return {
+    generatedAt: GENERATED_AT,
+    tasks: [
+      { taskId: 'WF-001', description: 'Receive cacao beans into RM stock', expectedActions: ['Verify lot code', 'Record received quantity', 'Confirm expiry'], itemsInvolved: ['Cacao Beans'], successCriteria: ['Stock appears in AVAILABLE state', 'Lot metadata is complete'] },
+      { taskId: 'WF-002', description: 'Receive packaging wrappers into packaging store', expectedActions: ['Check wrapper artwork', 'Post packaging receipt'], itemsInvolved: ['Wrapper - Banana Crunch (75g)'], successCriteria: ['Packaging is stored as AVAILABLE', 'Packaging quantity increases'] },
+      { taskId: 'WF-003', description: 'Release work order for couverture production', expectedActions: ['Open work order', 'Confirm BOM version', 'Release order'], itemsInvolved: [wo[0]?.itemName ?? 'Couverture 70% Dark Chocolate (1kg)'], successCriteria: ['Work order status changes to RELEASED', 'Requirements are visible'] },
+      { taskId: 'WF-004', description: 'Allocate cacao beans to tasting-box demand', expectedActions: ['Reserve stock', 'Allocate to work order'], itemsInvolved: ['Cacao Beans', wo[2]?.itemName ?? 'Tasting Box'], successCriteria: ['Inventory state shows ALLOCATED', 'Allocation references the work order'] },
+      { taskId: 'WF-005', description: 'Roast cacao beans', expectedActions: ['Move beans into ROASTER queue', 'Confirm batch start'], itemsInvolved: ['Cacao Beans'], successCriteria: ['Roaster capacity is consumed', 'Issued material is traceable'] },
+      { taskId: 'WF-006', description: 'Winnow roasted beans into nibs', expectedActions: ['Create nib output batch', 'Post shell separation'], itemsInvolved: ['Cacao Nibs - Raw Material'], successCriteria: ['Nib inventory becomes ISSUED or WIP', 'Yield is reasonable'] },
+      { taskId: 'WF-007', description: 'Create 70% dark base in prerefiner', expectedActions: ['Issue nibs, butter, sugar', 'Post base output'], itemsInvolved: ['Cacao Nibs - Raw Material', 'Cacao Butter', 'Organic Cane Sugar', 'Base - 70% Dark Chocolate'], successCriteria: ['Base appears in WIP', 'Consumption matches BOM'] },
+      { taskId: 'WF-008', description: 'Grind and refine milk-chocolate family batches', expectedActions: ['Load grinder', 'Observe route timing'], itemsInvolved: ['Base - Milk Chocolate'], successCriteria: ['Grinder capacity decreases', 'WIP remains positive'] },
+      { taskId: 'WF-009', description: 'Temper couverture batch', expectedActions: ['Transfer base to temperer', 'Post tempered output'], itemsInvolved: ['Base - 70% Dark Chocolate', 'Couverture 70% Dark Chocolate (1kg)'], successCriteria: ['Tempering route completes', 'Finished quantity increases'] },
+      { taskId: 'WF-010', description: 'Produce Banana Crunch flow-wrap intermediates', expectedActions: ['Issue ingredients', 'Create wrapped intermediate'], itemsInvolved: ['Banana Crunch Milk Chocolate (75g) - FLOW WRAP'], successCriteria: ['Intermediate appears in WIP', 'No ingredient shortages occur'] },
+      { taskId: 'WF-011', description: 'Apply final Banana Crunch wrapper', expectedActions: ['Consume wrapper stock', 'Complete final SKU'], itemsInvolved: ['Wrapper - Banana Crunch (75g)', 'Banana Crunch Milk Chocolate (75g)'], successCriteria: ['Wrapper inventory decreases', 'Finished SKU is produced'] },
+      { taskId: 'WF-012', description: 'Assemble tasting box set', expectedActions: ['Pick component bars', 'Pack outer box', 'Apply FDA sticker'], itemsInvolved: ['Tasting Box'], successCriteria: ['Packaging state changes to FINISHED or QC_HOLD', 'Box count is correct'] },
+      { taskId: 'WF-013', description: 'Move tasting boxes into QC hold', expectedActions: ['Transfer to QA location', 'Record hold reason'], itemsInvolved: ['Tasting Box'], successCriteria: ['Inventory state becomes QC_HOLD', 'Quantity matches transfer'] },
+      { taskId: 'WF-014', description: 'Release QC-approved tasting boxes', expectedActions: ['Approve QC batch', 'Move to FG stage'], itemsInvolved: ['Tasting Box'], successCriteria: ['FG quantity increases', 'QC_HOLD quantity decreases'] },
+      { taskId: 'WF-015', description: 'Pack cacao nib retail bags', expectedActions: ['Issue bags and stickers', 'Produce retail packs'], itemsInvolved: ['Cacao Nibs 250g'], successCriteria: ['Packaging components are consumed', 'Retail pack output is posted'] },
+      { taskId: 'WF-016', description: 'Review procurement reorder points', expectedActions: ['Open procurement metadata', 'Find low-cover items'], itemsInvolved: ['Sunflower Lecithin', 'Gold Paper - Small Bar'], successCriteria: ['Lead time and reorder point are visible', 'Tester can explain reorder rationale'] },
+      { taskId: 'WF-017', description: 'Inspect stress-simulation bottlenecks', expectedActions: ['Open stress report', 'Review stockouts and throughput'], itemsInvolved: ['Stress simulation report'], successCriteria: ['Tester can identify top bottleneck item and work center'] },
+      { taskId: 'WF-018', description: 'Ship finished couverture and sample cubes', expectedActions: ['Pick finished goods', 'Confirm shipment'], itemsInvolved: ['Couverture 70% Dark Chocolate (1kg)', 'Sample Cubes - 70% Dark Chocolate'], successCriteria: ['Finished stock decreases', 'Scenario ends with shipment-ready inventory'] }
+    ]
+  };
+}
+
+function expandRouteLoad(graph, routingByItemKey, itemKey, quantity, uom, trail = []) {
+  if (trail.includes(itemKey)) return { ok: false, cycle: [...trail, itemKey] };
+  const bom = graph.boms.get(itemKey);
+  if (!bom) return { ok: true, workCenters: new Map() };
+  const requestedQty = convertQuantity(quantity, uom, bom.outputUom);
+  if (requestedQty === null) return { ok: false, mismatch: { itemKey, quantity, uom, outputUom: bom.outputUom } };
+  const multiplier = requestedQty / bom.outputQty;
+  const workCenters = new Map();
+  const route = routingByItemKey.get(itemKey);
+  if (route) {
+    const minutes = route.setupTimeMinutes + (route.runTimeMinutes * multiplier);
+    workCenters.set(route.workCenterCode, minutes);
+  }
+  for (const component of bom.components) {
+    const nested = expandRouteLoad(graph, routingByItemKey, component.key, component.qty * multiplier, component.uom, [...trail, itemKey]);
+    if (!nested.ok) return nested;
+    for (const [workCenter, minutes] of nested.workCenters.entries()) {
+      workCenters.set(workCenter, (workCenters.get(workCenter) ?? 0) + minutes);
+    }
+  }
+  return { ok: true, workCenters };
+}
+
+function runStressSimulation(graph, expandedStock, procurementDocument, routingDocument, demandDocument, totalOrders = 10000) {
+  const routingByItemKey = new Map(routingDocument.routings.map((routing) => [routing.itemKey, routing]));
+  const procurementByKey = new Map(procurementDocument.items.map((item) => [item.itemKey, item]));
+  const capacityByWorkCenter = new Map(buildCapacityMetadata().workCenters.map((center) => [center.workCenter, center]));
+  const stock = stockMapFromSpec(expandedStock);
+  const templates = demandDocument.orders.slice().sort((left, right) => left.orderedAt.localeCompare(right.orderedAt) || left.orderId.localeCompare(right.orderId));
+  const pendingReceipts = [];
+  const stockoutsByItem = new Map();
+  const bottleneckWorkCenters = new Map();
+  const throughputByWorkCenter = new Map();
+  const dailyCapacity = new Map();
+  const dailyThroughput = new Map();
+  let fulfilledOrders = 0;
+  let stockoutOrders = 0;
+  let capacityBlockedOrders = 0;
+  let replenishmentOrders = 0;
+
+  function dayKey(index) {
+    const date = new Date('2026-01-01T00:00:00.000Z');
+    date.setUTCDate(date.getUTCDate() + (index % 365));
+    return date.toISOString().slice(0, 10);
+  }
+
+  function ensureDailyCapacity(key) {
+    if (!dailyCapacity.has(key)) {
+      const map = new Map();
+      for (const [workCenter, config] of capacityByWorkCenter.entries()) {
+        map.set(workCenter, config.dailyAvailableMinutes);
+      }
+      dailyCapacity.set(key, map);
+    }
+    return dailyCapacity.get(key);
+  }
+
+  function receiveDueReceipts(currentDay) {
+    for (let index = pendingReceipts.length - 1; index >= 0; index -= 1) {
+      const receipt = pendingReceipts[index];
+      if (receipt.day > currentDay) continue;
+      if (!stock.has(receipt.itemKey)) {
+        stock.set(receipt.itemKey, { quantity: 0, uom: receipt.uom });
+      }
+      const current = stock.get(receipt.itemKey);
+      current.quantity += convertQuantity(receipt.quantity, receipt.uom, current.uom) ?? 0;
+      pendingReceipts.splice(index, 1);
+    }
+  }
+
+  function maybeScheduleReorder(itemKey, currentDay) {
+    const policy = procurementByKey.get(itemKey);
+    if (!policy) return;
+    const onHand = stock.get(itemKey);
+    const availableQty = onHand ? convertQuantity(onHand.quantity, onHand.uom, policy.uom) ?? 0 : 0;
+    const alreadyPending = pendingReceipts.some((receipt) => receipt.itemKey === itemKey);
+    if (alreadyPending || availableQty >= policy.reorderPoint) return;
+    const quantity = policy.uom === 'piece'
+      ? Math.max(policy.minimumOrderQty, policy.reorderPoint * 2)
+      : roundUp(Math.max(policy.minimumOrderQty, policy.reorderPoint * 1.5), policy.minimumOrderQty >= 5000 ? 500 : 50);
+    pendingReceipts.push({
+      day: currentDay + policy.leadTimeDays,
+      itemKey,
+      quantity,
+      uom: policy.uom
+    });
+    replenishmentOrders += 1;
+  }
+
+  for (let orderIndex = 0; orderIndex < totalOrders; orderIndex += 1) {
+    const day = orderIndex % 365;
+    const currentDay = dayKey(day);
+    receiveDueReceipts(day);
+    const dayCapacity = ensureDailyCapacity(currentDay);
+    const template = templates[orderIndex % templates.length];
+    const bom = graph.boms.get(template.finishedItemKey);
+    const orderQuantity = bom.outputQty;
+    const requirements = expandLeaves(graph, template.finishedItemKey, orderQuantity, bom.outputUom);
+    const routeLoad = expandRouteLoad(graph, routingByItemKey, template.finishedItemKey, orderQuantity, bom.outputUom);
+    if (!requirements.ok || !routeLoad.ok) {
+      stockoutOrders += 1;
+      continue;
+    }
+
+    const shortage = [];
+    for (const leaf of requirements.leaves.values()) {
+      const onHand = stock.get(leaf.key);
+      const availableQty = onHand ? convertQuantity(onHand.quantity, onHand.uom, leaf.uom) ?? 0 : 0;
+      if (availableQty + 1e-9 < leaf.quantity) {
+        shortage.push(leaf);
+      }
+    }
+    if (shortage.length > 0) {
+      stockoutOrders += 1;
+      for (const leaf of shortage) {
+        stockoutsByItem.set(leaf.key, (stockoutsByItem.get(leaf.key) ?? 0) + 1);
+        maybeScheduleReorder(leaf.key, day);
+      }
+      continue;
+    }
+
+    let capacityBlocked = false;
+    for (const [workCenter, minutes] of routeLoad.workCenters.entries()) {
+      const available = dayCapacity.get(workCenter) ?? 0;
+      if (available + 1e-9 < minutes) {
+        capacityBlocked = true;
+        bottleneckWorkCenters.set(workCenter, (bottleneckWorkCenters.get(workCenter) ?? 0) + 1);
+      }
+    }
+    if (capacityBlocked) {
+      capacityBlockedOrders += 1;
+      continue;
+    }
+
+    for (const leaf of requirements.leaves.values()) {
+      const onHand = stock.get(leaf.key);
+      onHand.quantity -= convertQuantity(leaf.quantity, leaf.uom, onHand.uom) ?? 0;
+      maybeScheduleReorder(leaf.key, day);
+    }
+    for (const [workCenter, minutes] of routeLoad.workCenters.entries()) {
+      dayCapacity.set(workCenter, (dayCapacity.get(workCenter) ?? 0) - minutes);
+      throughputByWorkCenter.set(workCenter, (throughputByWorkCenter.get(workCenter) ?? 0) + minutes);
+    }
+    dailyThroughput.set(currentDay, (dailyThroughput.get(currentDay) ?? 0) + 1);
+    fulfilledOrders += 1;
+  }
+
+  const endingInventory = [...stock.entries()]
+    .map(([itemKey, entry]) => ({
+      itemKey,
+      itemName: graph.nodes.get(itemKey)?.name ?? itemKey,
+      quantity: Number(entry.quantity.toFixed(entry.uom === 'piece' ? 0 : 3)),
+      uom: entry.uom
+    }))
+    .sort((left, right) => left.itemName.localeCompare(right.itemName));
+
+  return {
+    generatedAt: GENERATED_AT,
+    totalOrders,
+    fulfilledOrders,
+    stockoutOrders,
+    capacityBlockedOrders,
+    fillRate: Number((fulfilledOrders / totalOrders).toFixed(4)),
+    replenishmentOrders,
+    topStockouts: [...stockoutsByItem.entries()]
+      .map(([itemKey, count]) => ({ itemKey, itemName: graph.nodes.get(itemKey)?.name ?? itemKey, stockoutCount: count }))
+      .sort((left, right) => right.stockoutCount - left.stockoutCount || left.itemName.localeCompare(right.itemName))
+      .slice(0, 15),
+    bottleneckWorkCenters: [...bottleneckWorkCenters.entries()]
+      .map(([workCenter, count]) => ({ workCenter, blockedOrders: count }))
+      .sort((left, right) => right.blockedOrders - left.blockedOrders || left.workCenter.localeCompare(right.workCenter)),
+    throughputByWorkCenter: [...throughputByWorkCenter.entries()]
+      .map(([workCenter, minutes]) => ({ workCenter, consumedMinutes: Number(minutes.toFixed(2)) }))
+      .sort((left, right) => right.consumedMinutes - left.consumedMinutes || left.workCenter.localeCompare(right.workCenter)),
+    endingInventorySample: endingInventory.slice(0, 20),
+    peakDailyThroughput: Math.max(...dailyThroughput.values(), 0)
+  };
 }
 
 function stockMapFromSpec(spec) {
@@ -1421,27 +2007,45 @@ function renderDot(graph, mode) {
 function buildAssets() {
   const bomDocument = readJson(BOM_PATH);
   const initialStockDocument = readJson(fs.existsSync(BASELINE_STOCK_PATH) ? BASELINE_STOCK_PATH : INITIAL_STOCK_PATH);
-  const graph = buildBomGraph(bomDocument);
+  const rawGraph = buildBomGraph(bomDocument);
   const repositoryMap = buildSeedRepositoryMap();
-  const { normalizedDocument, routingDocument } = normalizeBomDocument(bomDocument, graph);
+  const { normalizedDocument, routingDocument } = normalizeBomDocument(bomDocument, rawGraph);
+  const graph = buildBomGraph(normalizedDocument);
+  const bomValidationReport = validateBomDataset(normalizedDocument, graph);
   const demandDocument = buildDemandDataset(graph);
   const demandAggregation = aggregateDemandLeafRequirements(graph, demandDocument);
   const procurementDocument = buildProcurementMetadata(graph, demandAggregation);
   const expandedOpeningStock = buildExpandedOpeningInventory(graph, demandAggregation, procurementDocument, groupExistingStockEntries(initialStockDocument));
   const mrp = buildFinishedRequirements(graph);
   const gapAnalysis = buildGapAnalysis(graph, initialStockDocument);
+  const capacityDocument = buildCapacityMetadata();
   const workOrdersDocument = selectRepresentativeWorkOrders(graph, routingDocument);
+  const inventoryStatesDocument = buildInventoryStateScenarios(workOrdersDocument);
+  const workflowDocument = buildGuidedWorkflowScenarios(workOrdersDocument);
+  const stressSimulationDocument = runStressSimulation(
+    graph,
+    expandedOpeningStock,
+    procurementDocument,
+    routingDocument,
+    demandDocument,
+    10000
+  );
   const validationDocument = buildValidationDocument(graph, expandedOpeningStock, gapAnalysis, workOrdersDocument);
 
   return {
     repositoryMap,
     graphMetrics: buildGraphMetrics(graph),
+    bomValidationReport,
     normalizedBom: normalizedDocument,
     routingDocument,
+    inventoryStatesDocument,
+    capacityDocument,
     procurementDocument,
     expandedOpeningStock,
     workOrdersDocument,
     demandDocument,
+    workflowDocument,
+    stressSimulationDocument,
     gapAnalysis,
     validationDocument,
     mrpCsv: renderMrpCsv(mrp.rows),
@@ -1455,6 +2059,8 @@ export function generateSimulationAssets() {
   return buildAssets();
 }
 
+export { buildBomGraph, validateBomDataset, buildCapacityMetadata, runStressSimulation };
+
 export function renderSimulationAssetFiles(assets = buildAssets()) {
   return new Map([
     [REPOSITORY_MAP_PATH, stableJson(assets.repositoryMap)],
@@ -1462,9 +2068,14 @@ export function renderSimulationAssetFiles(assets = buildAssets()) {
     [INITIAL_STOCK_PATH, stableJson(assets.expandedOpeningStock)],
     [GAP_ANALYSIS_PATH, stableJson(assets.gapAnalysis)],
     [ROUTING_PATH, stableJson(assets.routingDocument)],
+    [INVENTORY_STATES_PATH, stableJson(assets.inventoryStatesDocument)],
+    [CAPACITY_PATH, stableJson(assets.capacityDocument)],
+    [BOM_VALIDATION_PATH, stableJson(assets.bomValidationReport)],
     [PROCUREMENT_PATH, stableJson(assets.procurementDocument)],
     [WORK_ORDERS_PATH, stableJson(assets.workOrdersDocument)],
     [DEMAND_PATH, stableJson(assets.demandDocument)],
+    [WORKFLOW_PATH, stableJson(assets.workflowDocument)],
+    [STRESS_PATH, stableJson(assets.stressSimulationDocument)],
     [VALIDATION_PATH, stableJson(assets.validationDocument)],
     [MRP_CSV_PATH, assets.mrpCsv],
     [DAG_DOT_PATH, assets.dagDot],
@@ -1487,9 +2098,11 @@ function printSummary(assets) {
     nodeCount: assets.graphMetrics.nodeCount,
     edgeCount: assets.graphMetrics.edgeCount,
     dependencyDepth: assets.graphMetrics.dependencyDepth,
+    bomValid: assets.bomValidationReport.valid,
     coverageRatio: assets.validationDocument.finishedGoodsCoverage.coverageRatio,
     coverageTargetMet: assets.validationDocument.finishedGoodsCoverage.meetsTarget,
-    simulationsSucceeded: assets.validationDocument.simulationsSucceeded
+    simulationsSucceeded: assets.validationDocument.simulationsSucceeded,
+    stressFillRate: assets.stressSimulationDocument.fillRate
   };
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
 }

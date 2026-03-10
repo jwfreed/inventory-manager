@@ -28,6 +28,13 @@ Graphviz factory diagrams in `scripts/seed/siamaya/`.
 npm run seed:siamaya:generate-simulation
 ```
 
+Validation and stress-test helpers:
+
+```bash
+npm run seed:siamaya:validate
+npm run seed:siamaya:stress
+```
+
 ## Nuclear Dev Reset + Siamaya Seed (Local Only)
 
 This is a destructive local/dev reset that drops all `public` schema data, reruns migrations, and seeds only the requested pack.

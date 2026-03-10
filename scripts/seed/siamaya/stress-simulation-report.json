@@ -1,0 +1,177 @@
+{
+  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "totalOrders": 10000,
+  "fulfilledOrders": 3482,
+  "stockoutOrders": 0,
+  "capacityBlockedOrders": 6518,
+  "fillRate": 0.3482,
+  "replenishmentOrders": 164,
+  "topStockouts": [],
+  "bottleneckWorkCenters": [
+    {
+      "workCenter": "PREREFINER",
+      "blockedOrders": 5860
+    },
+    {
+      "workCenter": "ROASTER",
+      "blockedOrders": 2958
+    },
+    {
+      "workCenter": "TEMPERER",
+      "blockedOrders": 122
+    }
+  ],
+  "throughputByWorkCenter": [
+    {
+      "workCenter": "TEMPERER",
+      "consumedMinutes": 181280
+    },
+    {
+      "workCenter": "PREREFINER",
+      "consumedMinutes": 167486.49
+    },
+    {
+      "workCenter": "ROASTER",
+      "consumedMinutes": 156643.86
+    },
+    {
+      "workCenter": "WRAPPER",
+      "consumedMinutes": 61160
+    },
+    {
+      "workCenter": "PACKAGING",
+      "consumedMinutes": 25620
+    },
+    {
+      "workCenter": "MIXER",
+      "consumedMinutes": 20760
+    },
+    {
+      "workCenter": "WINNOWER",
+      "consumedMinutes": 6180
+    }
+  ],
+  "endingInventorySample": [
+    {
+      "itemKey": "allspice powder",
+      "itemName": "Allspice Powder",
+      "quantity": 919.352,
+      "uom": "g"
+    },
+    {
+      "itemKey": "almond powder",
+      "itemName": "Almond Powder",
+      "quantity": 5585.6,
+      "uom": "g"
+    },
+    {
+      "itemKey": "almonds",
+      "itemName": "Almonds",
+      "quantity": 4450,
+      "uom": "g"
+    },
+    {
+      "itemKey": "almonds chopped",
+      "itemName": "Almonds, Chopped",
+      "quantity": 9831.414,
+      "uom": "g"
+    },
+    {
+      "itemKey": "almonds whole",
+      "itemName": "Almonds, Whole",
+      "quantity": 3399.17,
+      "uom": "g"
+    },
+    {
+      "itemKey": "bag expandable sides 13 20cm",
+      "itemName": "Bag Expandable Sides (13*20cm)",
+      "quantity": 199,
+      "uom": "piece"
+    },
+    {
+      "itemKey": "banana chips",
+      "itemName": "Banana Chips",
+      "quantity": 4437.892,
+      "uom": "g"
+    },
+    {
+      "itemKey": "banana powder",
+      "itemName": "Banana Powder",
+      "quantity": 3620.662,
+      "uom": "g"
+    },
+    {
+      "itemKey": "banana sticks",
+      "itemName": "Banana Sticks",
+      "quantity": 3200,
+      "uom": "g"
+    },
+    {
+      "itemKey": "biscuit",
+      "itemName": "Biscuit",
+      "quantity": 2089.432,
+      "uom": "g"
+    },
+    {
+      "itemKey": "cacao beans",
+      "itemName": "Cacao Beans",
+      "quantity": 11658729.661,
+      "uom": "g"
+    },
+    {
+      "itemKey": "cacao butter",
+      "itemName": "Cacao Butter",
+      "quantity": 77177.085,
+      "uom": "g"
+    },
+    {
+      "itemKey": "cacao hot sauce 90ml",
+      "itemName": "Cacao Hot Sauce (90ml)",
+      "quantity": 197,
+      "uom": "piece"
+    },
+    {
+      "itemKey": "cacao nibs 250g",
+      "itemName": "Cacao Nibs 250g",
+      "quantity": 24,
+      "uom": "piece"
+    },
+    {
+      "itemKey": "cacao powder 666",
+      "itemName": "Cacao Powder 666",
+      "quantity": 18580.25,
+      "uom": "g"
+    },
+    {
+      "itemKey": "cacao powder chocolasia",
+      "itemName": "Cacao Powder Chocolasia",
+      "quantity": 4912.25,
+      "uom": "g"
+    },
+    {
+      "itemKey": "cacao powder kd30",
+      "itemName": "Cacao Powder KD30",
+      "quantity": 20737,
+      "uom": "g"
+    },
+    {
+      "itemKey": "candied orange",
+      "itemName": "Candied Orange",
+      "quantity": 4250,
+      "uom": "g"
+    },
+    {
+      "itemKey": "cardamom powder",
+      "itemName": "Cardamom Powder",
+      "quantity": 1167.358,
+      "uom": "g"
+    },
+    {
+      "itemKey": "cashews",
+      "itemName": "Cashews",
+      "quantity": 2832.12,
+      "uom": "g"
+    }
+  ],
+  "peakDailyThroughput": 14
+}

@@ -1,0 +1,139 @@
+{
+  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "states": [
+    "AVAILABLE",
+    "ALLOCATED",
+    "ISSUED",
+    "WIP",
+    "QC_HOLD",
+    "FINISHED"
+  ],
+  "records": [
+    {
+      "stateRecordId": "INVSTATE-001",
+      "state": "AVAILABLE",
+      "itemKey": "cacao beans",
+      "itemName": "Cacao Beans",
+      "quantity": 240000,
+      "uom": "g",
+      "locationCode": "FACTORY_RM_STORE",
+      "notes": "Raw cacao ready for roasting"
+    },
+    {
+      "stateRecordId": "INVSTATE-002",
+      "state": "AVAILABLE",
+      "itemKey": "wrapper banana crunch 75g",
+      "itemName": "Wrapper - Banana Crunch (75g)",
+      "quantity": 600,
+      "uom": "piece",
+      "locationCode": "FACTORY_PACK_STORE",
+      "notes": "Packaging available for scheduled release"
+    },
+    {
+      "stateRecordId": "INVSTATE-003",
+      "state": "ALLOCATED",
+      "itemKey": "cacao beans",
+      "itemName": "Cacao Beans",
+      "quantity": 50000,
+      "uom": "g",
+      "locationCode": "FACTORY_RM_STORE",
+      "workOrderCode": "WO-SIAMAYA-003",
+      "notes": "Reserved for tasting-box production window"
+    },
+    {
+      "stateRecordId": "INVSTATE-004",
+      "state": "ALLOCATED",
+      "itemKey": "wrapper banana crunch 75g",
+      "itemName": "Wrapper - Banana Crunch (75g)",
+      "quantity": 120,
+      "uom": "piece",
+      "locationCode": "FACTORY_PACK_STORE",
+      "workOrderCode": "WO-SIAMAYA-002",
+      "notes": "Allocated to released Banana Crunch work order"
+    },
+    {
+      "stateRecordId": "INVSTATE-005",
+      "state": "ISSUED",
+      "itemKey": "cacao nibs raw material",
+      "itemName": "Cacao Nibs - Raw Material",
+      "quantity": 18000,
+      "uom": "g",
+      "locationCode": "FACTORY_PRODUCTION",
+      "workOrderCode": "WO-SIAMAYA-001",
+      "notes": "Issued to production from roast stage"
+    },
+    {
+      "stateRecordId": "INVSTATE-006",
+      "state": "ISSUED",
+      "itemKey": "organic cane sugar",
+      "itemName": "Organic Cane Sugar",
+      "quantity": 6000,
+      "uom": "g",
+      "locationCode": "FACTORY_PRODUCTION",
+      "workOrderCode": "WO-SIAMAYA-001",
+      "notes": "Staged at prerefiner for current batch"
+    },
+    {
+      "stateRecordId": "INVSTATE-007",
+      "state": "WIP",
+      "itemKey": "base 70 dark chocolate",
+      "itemName": "Base - 70% Dark Chocolate",
+      "quantity": 42000,
+      "uom": "g",
+      "locationCode": "FACTORY_PRODUCTION",
+      "workOrderCode": "WO-SIAMAYA-001",
+      "notes": "Mass waiting for tempering"
+    },
+    {
+      "stateRecordId": "INVSTATE-008",
+      "state": "WIP",
+      "itemKey": "banana crunch milk chocolate 75g flow wrap",
+      "itemName": "Banana Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "quantity": 180,
+      "uom": "piece",
+      "locationCode": "FACTORY_PRODUCTION",
+      "workOrderCode": "WO-SIAMAYA-002",
+      "notes": "Wrapped bars waiting for final outer wrapper"
+    },
+    {
+      "stateRecordId": "INVSTATE-009",
+      "state": "QC_HOLD",
+      "itemKey": "cacao nibs 250g",
+      "itemName": "Cacao Nibs 250g",
+      "quantity": 16,
+      "uom": "piece",
+      "locationCode": "FACTORY_QA",
+      "notes": "Sampling hold pending release"
+    },
+    {
+      "stateRecordId": "INVSTATE-010",
+      "state": "QC_HOLD",
+      "itemKey": "tasting box",
+      "itemName": "Tasting Box",
+      "quantity": 12,
+      "uom": "piece",
+      "locationCode": "FACTORY_QA",
+      "notes": "Box set under final label approval"
+    },
+    {
+      "stateRecordId": "INVSTATE-011",
+      "state": "FINISHED",
+      "itemKey": "couverture 70 dark chocolate 1kg",
+      "itemName": "Couverture 70% Dark Chocolate (1kg)",
+      "quantity": 18,
+      "uom": "piece",
+      "locationCode": "FACTORY_FG_STAGE",
+      "notes": "Released finished stock"
+    },
+    {
+      "stateRecordId": "INVSTATE-012",
+      "state": "FINISHED",
+      "itemKey": "sample cubes 70 dark chocolate",
+      "itemName": "Sample Cubes - 70% Dark Chocolate",
+      "quantity": 60,
+      "uom": "piece",
+      "locationCode": "FACTORY_FG_STAGE",
+      "notes": "Tester-ready finished goods"
+    }
+  ]
+}

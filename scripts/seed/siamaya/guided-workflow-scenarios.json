@@ -1,0 +1,285 @@
+{
+  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "tasks": [
+    {
+      "taskId": "WF-001",
+      "description": "Receive cacao beans into RM stock",
+      "expectedActions": [
+        "Verify lot code",
+        "Record received quantity",
+        "Confirm expiry"
+      ],
+      "itemsInvolved": [
+        "Cacao Beans"
+      ],
+      "successCriteria": [
+        "Stock appears in AVAILABLE state",
+        "Lot metadata is complete"
+      ]
+    },
+    {
+      "taskId": "WF-002",
+      "description": "Receive packaging wrappers into packaging store",
+      "expectedActions": [
+        "Check wrapper artwork",
+        "Post packaging receipt"
+      ],
+      "itemsInvolved": [
+        "Wrapper - Banana Crunch (75g)"
+      ],
+      "successCriteria": [
+        "Packaging is stored as AVAILABLE",
+        "Packaging quantity increases"
+      ]
+    },
+    {
+      "taskId": "WF-003",
+      "description": "Release work order for couverture production",
+      "expectedActions": [
+        "Open work order",
+        "Confirm BOM version",
+        "Release order"
+      ],
+      "itemsInvolved": [
+        "Couverture 70% Dark Chocolate (1kg)"
+      ],
+      "successCriteria": [
+        "Work order status changes to RELEASED",
+        "Requirements are visible"
+      ]
+    },
+    {
+      "taskId": "WF-004",
+      "description": "Allocate cacao beans to tasting-box demand",
+      "expectedActions": [
+        "Reserve stock",
+        "Allocate to work order"
+      ],
+      "itemsInvolved": [
+        "Cacao Beans",
+        "Tasting Box"
+      ],
+      "successCriteria": [
+        "Inventory state shows ALLOCATED",
+        "Allocation references the work order"
+      ]
+    },
+    {
+      "taskId": "WF-005",
+      "description": "Roast cacao beans",
+      "expectedActions": [
+        "Move beans into ROASTER queue",
+        "Confirm batch start"
+      ],
+      "itemsInvolved": [
+        "Cacao Beans"
+      ],
+      "successCriteria": [
+        "Roaster capacity is consumed",
+        "Issued material is traceable"
+      ]
+    },
+    {
+      "taskId": "WF-006",
+      "description": "Winnow roasted beans into nibs",
+      "expectedActions": [
+        "Create nib output batch",
+        "Post shell separation"
+      ],
+      "itemsInvolved": [
+        "Cacao Nibs - Raw Material"
+      ],
+      "successCriteria": [
+        "Nib inventory becomes ISSUED or WIP",
+        "Yield is reasonable"
+      ]
+    },
+    {
+      "taskId": "WF-007",
+      "description": "Create 70% dark base in prerefiner",
+      "expectedActions": [
+        "Issue nibs, butter, sugar",
+        "Post base output"
+      ],
+      "itemsInvolved": [
+        "Cacao Nibs - Raw Material",
+        "Cacao Butter",
+        "Organic Cane Sugar",
+        "Base - 70% Dark Chocolate"
+      ],
+      "successCriteria": [
+        "Base appears in WIP",
+        "Consumption matches BOM"
+      ]
+    },
+    {
+      "taskId": "WF-008",
+      "description": "Grind and refine milk-chocolate family batches",
+      "expectedActions": [
+        "Load grinder",
+        "Observe route timing"
+      ],
+      "itemsInvolved": [
+        "Base - Milk Chocolate"
+      ],
+      "successCriteria": [
+        "Grinder capacity decreases",
+        "WIP remains positive"
+      ]
+    },
+    {
+      "taskId": "WF-009",
+      "description": "Temper couverture batch",
+      "expectedActions": [
+        "Transfer base to temperer",
+        "Post tempered output"
+      ],
+      "itemsInvolved": [
+        "Base - 70% Dark Chocolate",
+        "Couverture 70% Dark Chocolate (1kg)"
+      ],
+      "successCriteria": [
+        "Tempering route completes",
+        "Finished quantity increases"
+      ]
+    },
+    {
+      "taskId": "WF-010",
+      "description": "Produce Banana Crunch flow-wrap intermediates",
+      "expectedActions": [
+        "Issue ingredients",
+        "Create wrapped intermediate"
+      ],
+      "itemsInvolved": [
+        "Banana Crunch Milk Chocolate (75g) - FLOW WRAP"
+      ],
+      "successCriteria": [
+        "Intermediate appears in WIP",
+        "No ingredient shortages occur"
+      ]
+    },
+    {
+      "taskId": "WF-011",
+      "description": "Apply final Banana Crunch wrapper",
+      "expectedActions": [
+        "Consume wrapper stock",
+        "Complete final SKU"
+      ],
+      "itemsInvolved": [
+        "Wrapper - Banana Crunch (75g)",
+        "Banana Crunch Milk Chocolate (75g)"
+      ],
+      "successCriteria": [
+        "Wrapper inventory decreases",
+        "Finished SKU is produced"
+      ]
+    },
+    {
+      "taskId": "WF-012",
+      "description": "Assemble tasting box set",
+      "expectedActions": [
+        "Pick component bars",
+        "Pack outer box",
+        "Apply FDA sticker"
+      ],
+      "itemsInvolved": [
+        "Tasting Box"
+      ],
+      "successCriteria": [
+        "Packaging state changes to FINISHED or QC_HOLD",
+        "Box count is correct"
+      ]
+    },
+    {
+      "taskId": "WF-013",
+      "description": "Move tasting boxes into QC hold",
+      "expectedActions": [
+        "Transfer to QA location",
+        "Record hold reason"
+      ],
+      "itemsInvolved": [
+        "Tasting Box"
+      ],
+      "successCriteria": [
+        "Inventory state becomes QC_HOLD",
+        "Quantity matches transfer"
+      ]
+    },
+    {
+      "taskId": "WF-014",
+      "description": "Release QC-approved tasting boxes",
+      "expectedActions": [
+        "Approve QC batch",
+        "Move to FG stage"
+      ],
+      "itemsInvolved": [
+        "Tasting Box"
+      ],
+      "successCriteria": [
+        "FG quantity increases",
+        "QC_HOLD quantity decreases"
+      ]
+    },
+    {
+      "taskId": "WF-015",
+      "description": "Pack cacao nib retail bags",
+      "expectedActions": [
+        "Issue bags and stickers",
+        "Produce retail packs"
+      ],
+      "itemsInvolved": [
+        "Cacao Nibs 250g"
+      ],
+      "successCriteria": [
+        "Packaging components are consumed",
+        "Retail pack output is posted"
+      ]
+    },
+    {
+      "taskId": "WF-016",
+      "description": "Review procurement reorder points",
+      "expectedActions": [
+        "Open procurement metadata",
+        "Find low-cover items"
+      ],
+      "itemsInvolved": [
+        "Sunflower Lecithin",
+        "Gold Paper - Small Bar"
+      ],
+      "successCriteria": [
+        "Lead time and reorder point are visible",
+        "Tester can explain reorder rationale"
+      ]
+    },
+    {
+      "taskId": "WF-017",
+      "description": "Inspect stress-simulation bottlenecks",
+      "expectedActions": [
+        "Open stress report",
+        "Review stockouts and throughput"
+      ],
+      "itemsInvolved": [
+        "Stress simulation report"
+      ],
+      "successCriteria": [
+        "Tester can identify top bottleneck item and work center"
+      ]
+    },
+    {
+      "taskId": "WF-018",
+      "description": "Ship finished couverture and sample cubes",
+      "expectedActions": [
+        "Pick finished goods",
+        "Confirm shipment"
+      ],
+      "itemsInvolved": [
+        "Couverture 70% Dark Chocolate (1kg)",
+        "Sample Cubes - 70% Dark Chocolate"
+      ],
+      "successCriteria": [
+        "Finished stock decreases",
+        "Scenario ends with shipment-ready inventory"
+      ]
+    }
+  ]
+}

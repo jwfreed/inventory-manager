@@ -1,0 +1,86 @@
+{
+  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "workCenters": [
+    {
+      "workCenter": "COATER",
+      "cycleTimeMinutes": 50,
+      "setupMinutes": 15,
+      "maxBatchSize": 250,
+      "batchUom": "kg",
+      "parallelUnits": 2,
+      "dailyAvailableMinutes": 960
+    },
+    {
+      "workCenter": "GRINDER",
+      "cycleTimeMinutes": 180,
+      "setupMinutes": 25,
+      "maxBatchSize": 60,
+      "batchUom": "kg",
+      "parallelUnits": 2,
+      "dailyAvailableMinutes": 960
+    },
+    {
+      "workCenter": "MIXER",
+      "cycleTimeMinutes": 45,
+      "setupMinutes": 15,
+      "maxBatchSize": 200,
+      "batchUom": "kg",
+      "parallelUnits": 2,
+      "dailyAvailableMinutes": 960
+    },
+    {
+      "workCenter": "PACKAGING",
+      "cycleTimeMinutes": 20,
+      "setupMinutes": 10,
+      "maxBatchSize": 1500,
+      "batchUom": "piece",
+      "parallelUnits": 4,
+      "dailyAvailableMinutes": 1920
+    },
+    {
+      "workCenter": "PREREFINER",
+      "cycleTimeMinutes": 120,
+      "setupMinutes": 30,
+      "maxBatchSize": 80,
+      "batchUom": "kg",
+      "parallelUnits": 1,
+      "dailyAvailableMinutes": 480
+    },
+    {
+      "workCenter": "ROASTER",
+      "cycleTimeMinutes": 90,
+      "setupMinutes": 35,
+      "maxBatchSize": 120,
+      "batchUom": "kg",
+      "parallelUnits": 1,
+      "dailyAvailableMinutes": 480
+    },
+    {
+      "workCenter": "TEMPERER",
+      "cycleTimeMinutes": 60,
+      "setupMinutes": 20,
+      "maxBatchSize": 40,
+      "batchUom": "kg",
+      "parallelUnits": 2,
+      "dailyAvailableMinutes": 960
+    },
+    {
+      "workCenter": "WINNOWER",
+      "cycleTimeMinutes": 40,
+      "setupMinutes": 20,
+      "maxBatchSize": 100,
+      "batchUom": "kg",
+      "parallelUnits": 1,
+      "dailyAvailableMinutes": 480
+    },
+    {
+      "workCenter": "WRAPPER",
+      "cycleTimeMinutes": 30,
+      "setupMinutes": 10,
+      "maxBatchSize": 1200,
+      "batchUom": "piece",
+      "parallelUnits": 3,
+      "dailyAvailableMinutes": 1440
+    }
+  ]
+}

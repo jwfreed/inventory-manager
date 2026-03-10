@@ -4476,17 +4476,7 @@
       "Output Qty": 1,
       "Output UOM": "piece",
       "Component Item": "Signature Dark 70% (20g) - GOLD FOIL",
-      "Component Qty": 1,
-      "Component UOM": "piece",
-      "Operation": "PACK",
-      "Work Center": "PACKAGING"
-    },
-    {
-      "Finished Product": "Taste of Thailand Chocolate Collection",
-      "Output Qty": 1,
-      "Output UOM": "piece",
-      "Component Item": "Signature Dark 70% (20g) - GOLD FOIL",
-      "Component Qty": 1,
+      "Component Qty": 2,
       "Component UOM": "piece",
       "Operation": "PACK",
       "Work Center": "PACKAGING"
