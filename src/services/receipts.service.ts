@@ -1462,7 +1462,7 @@ export async function voidReceipt(
         await buildReceiptVoidReplayResult({
           tenantId,
           receiptId: replayedReceiptId,
-          reversalMovementId: reversalMovement.movementId,
+          reversalMovementId: reversalMovement.id,
           expectedLineCount: Array.isArray(responseBody?.receipt?.lines)
             ? responseBody.receipt.lines.length
             : 0,

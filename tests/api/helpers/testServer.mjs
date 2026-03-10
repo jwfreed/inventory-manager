@@ -10,9 +10,12 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 
-const baseUrl = (process.env.TEST_BASE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
+const baseUrl = (process.env.TEST_BASE_URL || process.env.API_BASE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
 const parsedBaseUrl = new URL(baseUrl);
 const basePort = parsedBaseUrl.port || (parsedBaseUrl.protocol === 'https:' ? '443' : '80');
+if (!process.env.TEST_BASE_URL) {
+  process.env.TEST_BASE_URL = baseUrl;
+}
 if (!process.env.API_BASE_URL) {
   process.env.API_BASE_URL = baseUrl;
 }

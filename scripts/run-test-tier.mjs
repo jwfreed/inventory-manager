@@ -1,6 +1,8 @@
+import 'dotenv/config';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import net from 'node:net';
 
 const ROOT = process.cwd();
 const args = process.argv.slice(2);
@@ -40,10 +42,11 @@ if (manifest.useSetupImport !== false) {
 }
 testArgs.push(...files);
 
+const childEnv = await buildChildEnv(process.env);
 const result = spawnSync(process.execPath, testArgs, {
   cwd: ROOT,
   stdio: 'inherit',
-  env: process.env
+  env: childEnv
 });
 
 if (typeof result.status === 'number') {
@@ -86,4 +89,66 @@ function walkDirectory(directoryPath, acc) {
 
 function normalize(value) {
   return String(value).replace(/\\/g, '/');
+}
+
+async function buildChildEnv(env) {
+  const databaseEnv = normalizeDatabaseEnv(env);
+  const explicitTestBaseUrl = normalizeBaseUrl(env.TEST_BASE_URL);
+  const explicitApiBaseUrl = normalizeBaseUrl(env.API_BASE_URL);
+
+  if (explicitTestBaseUrl && explicitApiBaseUrl) {
+    return { ...env, ...databaseEnv, TEST_BASE_URL: explicitTestBaseUrl, API_BASE_URL: explicitApiBaseUrl };
+  }
+  if (explicitTestBaseUrl) {
+    return { ...env, ...databaseEnv, TEST_BASE_URL: explicitTestBaseUrl, API_BASE_URL: explicitTestBaseUrl };
+  }
+  if (explicitApiBaseUrl) {
+    return { ...env, ...databaseEnv, TEST_BASE_URL: explicitApiBaseUrl, API_BASE_URL: explicitApiBaseUrl };
+  }
+
+  // Tier runs must not attach to an arbitrary dev server already bound to 3000.
+  const isolatedBaseUrl = `http://127.0.0.1:${await reserveEphemeralPort()}`;
+  return { ...env, ...databaseEnv, TEST_BASE_URL: isolatedBaseUrl, API_BASE_URL: isolatedBaseUrl };
+}
+
+function normalizeBaseUrl(value) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/\/$/, '');
+}
+
+function normalizeDatabaseEnv(env) {
+  const canonicalDatabaseUrl = String(env.TEST_DATABASE_URL ?? env.DATABASE_URL ?? '').trim();
+  if (!canonicalDatabaseUrl) {
+    throw new Error(
+      'TEST_TIER_DATABASE_URL_MISSING: set TEST_DATABASE_URL or DATABASE_URL before running tier tests.'
+    );
+  }
+  return {
+    TEST_DATABASE_URL: canonicalDatabaseUrl,
+    DATABASE_URL: canonicalDatabaseUrl
+  };
+}
+
+function reserveEphemeralPort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : null;
+      server.close((closeError) => {
+        if (closeError) {
+          reject(closeError);
+          return;
+        }
+        if (!port) {
+          reject(new Error('TEST_TIER_PORT_RESOLUTION_FAILED'));
+          return;
+        }
+        resolve(port);
+      });
+    });
+  });
 }
