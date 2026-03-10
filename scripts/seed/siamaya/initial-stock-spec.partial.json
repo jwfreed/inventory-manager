@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "stockDate": "2026-01-01T00:00:00.000Z",
+  "items": [
+    {
+      "itemKey": "cacao beans",
+      "quantity": 500,
+      "uom": "kg",
+      "unitCost": 4.25,
+      "locationCode": "FACTORY_RM_STORE",
+      "lotCode": "LOT-CACAO-BEANS-2026-01",
+      "productionDate": "2025-12-01T00:00:00.000Z",
+      "expirationDate": "2027-12-01T00:00:00.000Z"
+    },
+    {
+      "itemKey": "cacao butter",
+      "quantity": 120000,
+      "uom": "g",
+      "unitCost": 0.0081,
+      "locationCode": "FACTORY_RM_STORE",
+      "lotCode": "LOT-CACAO-BUTTER-2026-01",
+      "productionDate": "2025-11-20T00:00:00.000Z",
+      "expirationDate": "2027-11-20T00:00:00.000Z"
+    },
+    {
+      "itemKey": "powdered milk",
+      "quantity": 180000,
+      "uom": "g",
+      "unitCost": 0.0034,
+      "locationCode": "FACTORY_RM_STORE",
+      "lotCode": "LOT-POWDERED-MILK-2026-01",
+      "productionDate": "2025-12-10T00:00:00.000Z",
+      "expirationDate": "2026-12-10T00:00:00.000Z"
+    },
+    {
+      "itemKey": "coconut milk powder",
+      "quantity": 90000,
+      "uom": "g",
+      "unitCost": 0.0049,
+      "locationCode": "FACTORY_RM_STORE",
+      "lotCode": "LOT-COCONUT-MILK-POWDER-2026-01",
+      "productionDate": "2025-11-15T00:00:00.000Z",
+      "expirationDate": "2026-11-15T00:00:00.000Z"
+    },
+    {
+      "itemKey": "organic cane sugar",
+      "quantity": 300000,
+      "uom": "g",
+      "unitCost": 0.00115,
+      "locationCode": "FACTORY_RM_STORE"
+    },
+    {
+      "itemKey": "flow wrap foil",
+      "quantity": 12000,
+      "uom": "g",
+      "unitCost": 0.012,
+      "locationCode": "FACTORY_PACK_STORE"
+    },
+    {
+      "itemKey": "vacuum pack bags",
+      "quantity": 3500,
+      "uom": "piece",
+      "unitCost": 0.04,
+      "locationCode": "FACTORY_PACK_STORE"
+    },
+    {
+      "itemKey": "stickers clear",
+      "quantity": 8000,
+      "uom": "piece",
+      "unitCost": 0.01,
+      "locationCode": "FACTORY_PACK_STORE"
+    }
+  ]
+}

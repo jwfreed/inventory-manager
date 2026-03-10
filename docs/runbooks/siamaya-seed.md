@@ -18,6 +18,16 @@ Unmapped BOM outputs/components are skipped and written to a deterministic revie
 npm run seed -- --pack siamaya_factory
 ```
 
+## Regenerate Full-Factory Simulation Assets
+
+This refreshes the normalized BOM routing metadata, expanded opening inventory,
+MRP explosion table, procurement metadata, demand/work-order scenarios, and
+Graphviz factory diagrams in `scripts/seed/siamaya/`.
+
+```bash
+npm run seed:siamaya:generate-simulation
+```
+
 ## Nuclear Dev Reset + Siamaya Seed (Local Only)
 
 This is a destructive local/dev reset that drops all `public` schema data, reruns migrations, and seeds only the requested pack.

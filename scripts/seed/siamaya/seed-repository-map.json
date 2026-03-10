@@ -1,0 +1,89 @@
+{
+  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "datasets": [
+    {
+      "kind": "bom",
+      "path": "scripts/seed/siamaya/siamaya-bom-production.json",
+      "role": "authoritative normalized BOM seed"
+    },
+    {
+      "kind": "inventory",
+      "path": "scripts/seed/siamaya/initial-stock-spec.json",
+      "role": "expanded opening inventory seed"
+    },
+    {
+      "kind": "inventory",
+      "path": "scripts/seed/siamaya/initial-stock-spec.partial.json",
+      "role": "preserved baseline partial opening inventory seed"
+    },
+    {
+      "kind": "pipeline",
+      "path": "scripts/seed/siamaya/import_bom_from_xlsx.ts",
+      "role": "BOM import from workbook/json"
+    },
+    {
+      "kind": "pipeline",
+      "path": "scripts/seed/siamaya/preprocess_bom_csv.ts",
+      "role": "manual BOM preprocess and correction rules"
+    },
+    {
+      "kind": "routing",
+      "path": "scripts/seed/siamaya/routing-normalization.json",
+      "role": "canonical routing and work-center metadata"
+    },
+    {
+      "kind": "procurement",
+      "path": "scripts/seed/siamaya/procurement-metadata.json",
+      "role": "procurement planning attributes for leaf items"
+    },
+    {
+      "kind": "work_orders",
+      "path": "scripts/seed/siamaya/work-order-scenarios.json",
+      "role": "representative manufacturing lifecycle scenarios"
+    },
+    {
+      "kind": "demand",
+      "path": "scripts/seed/siamaya/demand-simulation.json",
+      "role": "timestamped demand stream for finished SKUs"
+    },
+    {
+      "kind": "graphviz",
+      "path": "scripts/seed/siamaya/factory-dag.dot",
+      "role": "complete product DAG"
+    },
+    {
+      "kind": "graphviz",
+      "path": "scripts/seed/siamaya/factory-ingredient-flow.dot",
+      "role": "ingredient-only production flow"
+    },
+    {
+      "kind": "graphviz",
+      "path": "scripts/seed/siamaya/factory-packaging-flow.dot",
+      "role": "packaging assembly flow"
+    },
+    {
+      "kind": "report",
+      "path": "scripts/seed/siamaya/mrp-explosion.csv",
+      "role": "full MRP leaf explosion table"
+    },
+    {
+      "kind": "report",
+      "path": "scripts/seed/siamaya/inventory-gap-analysis.json",
+      "role": "coverage and gap analysis summary"
+    },
+    {
+      "kind": "report",
+      "path": "scripts/seed/siamaya/simulation-validation.json",
+      "role": "coverage, acyclic, and simulation validation report"
+    }
+  ],
+  "warehouseSeeds": [
+    "seeds/topology/warehouses.tsv",
+    "seeds/topology/warehouse_defaults.tsv",
+    "seeds/topology/locations.tsv"
+  ],
+  "packEntrypoints": [
+    "scripts/seed/packs/siamaya_factory.ts",
+    "scripts/seed/run.ts"
+  ]
+}

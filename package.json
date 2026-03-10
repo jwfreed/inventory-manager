@@ -20,6 +20,7 @@
     "dev:seed:chocolate": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/chocolate-seed.ts",
     "seed": "node -r ts-node/register/transpile-only -r tsconfig-paths/register -r dotenv/config scripts/seed/run.ts",
     "seed:siamaya:bom:preprocess": "node -r ts-node/register/transpile-only -r tsconfig-paths/register scripts/seed/siamaya/preprocess_bom_csv.ts",
+    "seed:siamaya:generate-simulation": "node scripts/seed/siamaya/generate_simulation_assets.mjs --write",
     "seed:phase0": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/phase0-seed.ts",
     "pretest:api": "npm run migrate:up && npm run test:lint:api",
     "pretest:ops": "npm run migrate:up",

@@ -1,0 +1,845 @@
+{
+  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "targetCoverageRatio": 0.7,
+  "targetFinishedGoods": 68,
+  "baseCoverage": {
+    "producibleCount": 9,
+    "blockedCount": 88,
+    "coverageRatio": 0.0928
+  },
+  "greedyExpansion": {
+    "addedLeafItemCount": 85,
+    "unlockedFinishedGoods": 68,
+    "coverageRatio": 0.701,
+    "addedLeafItems": [
+      {
+        "leafItemKey": "sunflower lecithin",
+        "leafItemName": "Sunflower Lecithin",
+        "unlocksFinishedGoods": 37,
+        "sampleFinishedGoods": [
+          "Apple Pie Milk Chocolate - Halloween (75g)",
+          "Banana Crunch Milk Chocolate (75g)",
+          "Banana Milk Chocolate (20g)",
+          "Coffee Crunch Milk Chocolate (20g)",
+          "Coffee Crunch Milk Chocolate (75g)",
+          "Couverture Signature Milk Chocolate 50% (1kg)",
+          "Couverture Thai Tea (1kg)",
+          "Durian Milk Chocolate (20g)"
+        ]
+      },
+      {
+        "leafItemKey": "gold paper small bar",
+        "leafItemName": "Gold Paper - Small Bar",
+        "unlocksFinishedGoods": 14,
+        "sampleFinishedGoods": [
+          "Banana Milk Chocolate (20g)",
+          "Chiang Mai Chocolate Collection",
+          "Coconut Milk 65% Dark chocolate (20g)",
+          "Coffee Crunch Milk Chocolate (20g)",
+          "Durian Milk Chocolate (20g)",
+          "Masala Chai Milk Chocolate (20g)",
+          "Signature Dark 70% Dark Chocolate (20g)",
+          "Signature Dark 85% Dark Chocolate (20g)"
+        ]
+      },
+      {
+        "leafItemKey": "chili powder",
+        "leafItemName": "Chili Powder",
+        "unlocksFinishedGoods": 13,
+        "sampleFinishedGoods": [
+          "Coconut Curry Dark Chocolate (75g)",
+          "Khao Soi Curry Milk Chocolate (75g)",
+          "Mango Chili Dark Chocolate (75g)",
+          "Peanut Curry Dark Chocolate (75g)",
+          "Sample Cubes - Coconut Curry Dark Chocolate",
+          "Sample Cubes - Khao Soi Curry Milk Chocolate",
+          "Sample Cubes - Mango Chili Dark Chocolate",
+          "Sample Cubes - Peanut Curry Dark Chocolate"
+        ]
+      },
+      {
+        "leafItemKey": "cinnamon powder",
+        "leafItemName": "Cinnamon Powder",
+        "unlocksFinishedGoods": 11,
+        "sampleFinishedGoods": [
+          "Apple Pie Milk Chocolate - Halloween (75g)",
+          "Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+          "Masala Chai Milk Chocolate (20g)",
+          "Masala Chai Milk Chocolate (75g)",
+          "Peanut Curry Dark Chocolate (75g)",
+          "Sample Cubes - Apple Pie Milk Chocolate (Halloween 2025)",
+          "Sample Cubes - Gingerbread Cookie Milk Chocolate (Xmas 2024 + 2025)",
+          "Sample Cubes - Masala Chai Milk Chocolate"
+        ]
+      },
+      {
+        "leafItemKey": "dried coconut flakes",
+        "leafItemName": "Dried Coconut Flakes",
+        "unlocksFinishedGoods": 11,
+        "sampleFinishedGoods": [
+          "Chiang Mai Chocolate Collection",
+          "Coconut Curry Dark Chocolate (75g)",
+          "Coconut Milk 65% Dark chocolate (20g)",
+          "Coconut Milk 65% Dark Chocolate (75g)",
+          "German Chocolate Cake 70% Dark Chocolate - Christmas (75g)",
+          "Paleo Robbie: Banana Bites (100g)",
+          "Sample Cubes - Coconut Curry Dark Chocolate",
+          "Sample Cubes - Coconut Milk 65% Dark Chocolate"
+        ]
+      },
+      {
+        "leafItemKey": "salt",
+        "leafItemName": "Salt",
+        "unlocksFinishedGoods": 8,
+        "sampleFinishedGoods": [
+          "Drinking Chocolate 1kg",
+          "Drinking Chocolate 250g",
+          "Drinking Chocolate 300g (Hotel exclusive",
+          "Khao Soi Curry Milk Chocolate (75g)",
+          "Mango Chili Dark Chocolate (75g)",
+          "Paleo Robbie: Dark Chocolate Almond Butter Cups",
+          "Sample Cubes - Khao Soi Curry Milk Chocolate",
+          "Sample Cubes - Mango Chili Dark Chocolate"
+        ]
+      },
+      {
+        "leafItemKey": "thai tea powder",
+        "leafItemName": "Thai Tea Powder",
+        "unlocksFinishedGoods": 8,
+        "sampleFinishedGoods": [
+          "Couverture Thai Tea (1kg)",
+          "Sample Cubes - Thai Tea Milk Chocolate",
+          "Taste of Thailand Chocolate Collection",
+          "Tasting Box",
+          "Tea & Coffee Chocolate Collection",
+          "Thai Tea Milk Chocolate (20g)",
+          "Thai Tea Milk Chocolate (75g)",
+          "Thai Tea Milk Chocolate (8g) - Mahabhirom"
+        ]
+      },
+      {
+        "leafItemKey": "cacao powder 666",
+        "leafItemName": "Cacao Powder 666",
+        "unlocksFinishedGoods": 7,
+        "sampleFinishedGoods": [
+          "Drinking Chocolate 1kg",
+          "Drinking Chocolate 250g",
+          "Drinking Chocolate 300g (Hotel exclusive",
+          "Paleo Robbie: 70% Chocolate Coated Almonds (80g)",
+          "Paleo Robbie: 70% Chocolate Coated Cashews (80g)",
+          "Paleo Robbie: Sugar Free 85% Chocolate Coated Almonds (80g)",
+          "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)"
+        ]
+      },
+      {
+        "leafItemKey": "clove oil",
+        "leafItemName": "Clove Oil",
+        "unlocksFinishedGoods": 7,
+        "sampleFinishedGoods": [
+          "Masala Chai Milk Chocolate (20g)",
+          "Masala Chai Milk Chocolate (75g)",
+          "Peanut Curry Dark Chocolate (75g)",
+          "Sample Cubes - Masala Chai Milk Chocolate",
+          "Sample Cubes - Peanut Curry Dark Chocolate",
+          "Tasting Box",
+          "Tea & Coffee Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "coffee beans",
+        "leafItemName": "Coffee Beans",
+        "unlocksFinishedGoods": 7,
+        "sampleFinishedGoods": [
+          "Coffee Crunch Milk Chocolate (20g)",
+          "Coffee Crunch Milk Chocolate (75g)",
+          "Hill Coffee and Pomelo Dark Chocolate (75g)",
+          "Sample Cubes - Coffee Crunch Milk Chocolate",
+          "Sample Cubes - Hill Coffee and Pomelo Dark Chocolate",
+          "Tasting Box",
+          "Tea & Coffee Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "banana chips",
+        "leafItemName": "Banana Chips",
+        "unlocksFinishedGoods": 6,
+        "sampleFinishedGoods": [
+          "Banana Crunch Milk Chocolate (75g)",
+          "Paleo Robbie: Dark Choc Drizzled Banana Chips (100g)",
+          "Paleo Robbie: Hunky Monkey Trail Mix (100g)",
+          "Sample Cubes - Banana Crunch Milk Chocolate",
+          "Sample Cubes - Smash Daddy's Banana Split Milk Chocolate",
+          "Smash Daddy's Banana Split Milk Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "banana powder",
+        "leafItemName": "Banana Powder",
+        "unlocksFinishedGoods": 6,
+        "sampleFinishedGoods": [
+          "Banana Crunch Milk Chocolate (75g)",
+          "Banana Milk Chocolate (20g)",
+          "Sample Cubes - Banana Crunch Milk Chocolate",
+          "Sample Cubes - Smash Daddy's Banana Split Milk Chocolate",
+          "Smash Daddy's Banana Split Milk Chocolate (75g)",
+          "Tropical Fruit Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "cacao powder chocolasia",
+        "leafItemName": "Cacao Powder Chocolasia",
+        "unlocksFinishedGoods": 6,
+        "sampleFinishedGoods": [
+          "Cacao Powder 1kg - Retail",
+          "Cacao Powder 250g",
+          "Cacao Powder 80g",
+          "Drinking Chocolate 1kg",
+          "Drinking Chocolate 250g",
+          "Drinking Chocolate 300g (Hotel exclusive"
+        ]
+      },
+      {
+        "leafItemKey": "allspice powder",
+        "leafItemName": "Allspice Powder",
+        "unlocksFinishedGoods": 5,
+        "sampleFinishedGoods": [
+          "Masala Chai Milk Chocolate (20g)",
+          "Masala Chai Milk Chocolate (75g)",
+          "Sample Cubes - Masala Chai Milk Chocolate",
+          "Tasting Box",
+          "Tea & Coffee Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "cardamom powder",
+        "leafItemName": "Cardamom Powder",
+        "unlocksFinishedGoods": 5,
+        "sampleFinishedGoods": [
+          "Masala Chai Milk Chocolate (20g)",
+          "Masala Chai Milk Chocolate (75g)",
+          "Sample Cubes - Masala Chai Milk Chocolate",
+          "Tasting Box",
+          "Tea & Coffee Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "durian powder",
+        "leafItemName": "Durian Powder",
+        "unlocksFinishedGoods": 5,
+        "sampleFinishedGoods": [
+          "Durian Milk Chocolate (20g)",
+          "Durian Milk Chocolate (75g)",
+          "Sample Cubes - Durian Milk Chocolate",
+          "Tasting Box",
+          "Tropical Fruit Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "ginger oil",
+        "leafItemName": "Ginger Oil",
+        "unlocksFinishedGoods": 5,
+        "sampleFinishedGoods": [
+          "Masala Chai Milk Chocolate (20g)",
+          "Masala Chai Milk Chocolate (75g)",
+          "Sample Cubes - Masala Chai Milk Chocolate",
+          "Tasting Box",
+          "Tea & Coffee Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "star anise powder",
+        "leafItemName": "Star Anise Powder",
+        "unlocksFinishedGoods": 5,
+        "sampleFinishedGoods": [
+          "Masala Chai Milk Chocolate (20g)",
+          "Masala Chai Milk Chocolate (75g)",
+          "Sample Cubes - Masala Chai Milk Chocolate",
+          "Tasting Box",
+          "Tea & Coffee Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "clear bag long paleo robbie",
+        "leafItemName": "Clear Bag - Long - Paleo Robbie",
+        "unlocksFinishedGoods": 4,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Banana Bites (100g)",
+          "Paleo Robbie: Dark Choc Drizzled Banana Chips (100g)",
+          "Paleo Robbie: Hunky Monkey Trail Mix (100g)",
+          "Paleo Robbie: Pineapple Pops (100g)"
+        ]
+      },
+      {
+        "leafItemKey": "clear bag short paleo robbie",
+        "leafItemName": "Clear Bag - Short - Paleo Robbie",
+        "unlocksFinishedGoods": 4,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: 70% Chocolate Coated Almonds (80g)",
+          "Paleo Robbie: 70% Chocolate Coated Cashews (80g)",
+          "Paleo Robbie: Sugar Free 85% Chocolate Coated Almonds (80g)",
+          "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)"
+        ]
+      },
+      {
+        "leafItemKey": "curry powder",
+        "leafItemName": "Curry Powder",
+        "unlocksFinishedGoods": 4,
+        "sampleFinishedGoods": [
+          "Khao Soi Curry Milk Chocolate (75g)",
+          "Peanut Curry Dark Chocolate (75g)",
+          "Sample Cubes - Khao Soi Curry Milk Chocolate",
+          "Sample Cubes - Peanut Curry Dark Chocolate"
+        ]
+      },
+      {
+        "leafItemKey": "galangal oil",
+        "leafItemName": "Galangal Oil",
+        "unlocksFinishedGoods": 4,
+        "sampleFinishedGoods": [
+          "Coconut Curry Dark Chocolate (75g)",
+          "Sample Cubes - Coconut Curry Dark Chocolate",
+          "Sample Cubes - Tom Yum Dark Chocolate",
+          "Tom Yum Dark Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "silver bag 12 x 9 1kg powders",
+        "leafItemName": "Silver Bag 12\" x 9\" - 1kg powders",
+        "unlocksFinishedGoods": 4,
+        "sampleFinishedGoods": [
+          "Cacao Nibs 1kg - Retail",
+          "Cacao Powder 1kg - Retail",
+          "Drinking Chocolate 1kg",
+          "Drinking Chocolate 300g (Hotel exclusive"
+        ]
+      },
+      {
+        "leafItemKey": "almonds chopped",
+        "leafItemName": "Almonds, Chopped",
+        "unlocksFinishedGoods": 3,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Dark Chocolate Almond Butter Cups",
+          "Sample Cubes - Paleo Robbie: Simply Cacao Plus Milk with Almonds and Sea Salt",
+          "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "bag expandable sides 13 20cm",
+        "leafItemName": "Bag Expandable Sides (13*20cm)",
+        "unlocksFinishedGoods": 3,
+        "sampleFinishedGoods": [
+          "Cacao Nibs 250g",
+          "Cacao Powder 250g",
+          "Drinking Chocolate 250g"
+        ]
+      },
+      {
+        "leafItemKey": "cacao powder kd30",
+        "leafItemName": "Cacao Powder KD30",
+        "unlocksFinishedGoods": 3,
+        "sampleFinishedGoods": [
+          "Cacao Powder 1kg - Retail",
+          "Cacao Powder 250g",
+          "Cacao Powder 80g"
+        ]
+      },
+      {
+        "leafItemKey": "cashews",
+        "leafItemName": "Cashews",
+        "unlocksFinishedGoods": 3,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: 70% Chocolate Coated Cashews (80g)",
+          "Paleo Robbie: Hunky Monkey Trail Mix (100g)",
+          "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)"
+        ]
+      },
+      {
+        "leafItemKey": "gold paper 8g",
+        "leafItemName": "Gold Paper - 8g",
+        "unlocksFinishedGoods": 3,
+        "sampleFinishedGoods": [
+          "85% Dark Chocolate (8g) - Anantara",
+          "85% Dark Chocolate (8g) - Mahabhirom",
+          "Thai Tea Milk Chocolate (8g) - Mahabhirom"
+        ]
+      },
+      {
+        "leafItemKey": "pink salt",
+        "leafItemName": "Pink Salt",
+        "unlocksFinishedGoods": 3,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Dark Choc Drizzled Banana Chips (100g)",
+          "Sample Cubes - Paleo Robbie: Simply Cacao Plus Milk with Almonds and Sea Salt",
+          "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "vanilla oil",
+        "leafItemName": "Vanilla Oil",
+        "unlocksFinishedGoods": 3,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)",
+          "Sample Cubes - Paleo Robbie: Simply Cacao Plus Milk with Vanilla Bean",
+          "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper coconut milk 20g",
+        "leafItemName": "Wrapper - Coconut Milk (20g)",
+        "unlocksFinishedGoods": 3,
+        "sampleFinishedGoods": [
+          "Chiang Mai Chocolate Collection",
+          "Coconut Milk 65% Dark chocolate (20g)",
+          "Tropical Fruit Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "almonds whole",
+        "leafItemName": "Almonds, Whole",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: 70% Chocolate Coated Almonds (80g)",
+          "Paleo Robbie: Sugar Free 85% Chocolate Coated Almonds (80g)"
+        ]
+      },
+      {
+        "leafItemKey": "biscuit",
+        "leafItemName": "Biscuit",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Apple Pie Milk Chocolate - Halloween (75g)",
+          "Sample Cubes - Apple Pie Milk Chocolate (Halloween 2025)"
+        ]
+      },
+      {
+        "leafItemKey": "clove powder",
+        "leafItemName": "Clove Powder",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+          "Sample Cubes - Gingerbread Cookie Milk Chocolate (Xmas 2024 + 2025)"
+        ]
+      },
+      {
+        "leafItemKey": "dried apple",
+        "leafItemName": "Dried Apple",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Apple Pie Milk Chocolate - Halloween (75g)",
+          "Sample Cubes - Apple Pie Milk Chocolate (Halloween 2025)"
+        ]
+      },
+      {
+        "leafItemKey": "ginger powder",
+        "leafItemName": "Ginger Powder",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+          "Sample Cubes - Gingerbread Cookie Milk Chocolate (Xmas 2024 + 2025)"
+        ]
+      },
+      {
+        "leafItemKey": "ginger dried",
+        "leafItemName": "Ginger, Dried",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Peanut Curry Dark Chocolate (75g)",
+          "Sample Cubes - Peanut Curry Dark Chocolate"
+        ]
+      },
+      {
+        "leafItemKey": "gingerbread cookie",
+        "leafItemName": "Gingerbread Cookie",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+          "Sample Cubes - Gingerbread Cookie Milk Chocolate (Xmas 2024 + 2025)"
+        ]
+      },
+      {
+        "leafItemKey": "mango dried",
+        "leafItemName": "Mango, Dried",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Mango Chili Dark Chocolate (75g)",
+          "Sample Cubes - Mango Chili Dark Chocolate"
+        ]
+      },
+      {
+        "leafItemKey": "pomelo dried",
+        "leafItemName": "Pomelo, Dried",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Hill Coffee and Pomelo Dark Chocolate (75g)",
+          "Sample Cubes - Hill Coffee and Pomelo Dark Chocolate"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper banana 20g",
+        "leafItemName": "Wrapper - Banana (20g)",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Banana Milk Chocolate (20g)",
+          "Tropical Fruit Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper coffee crunch 20g",
+        "leafItemName": "Wrapper - Coffee Crunch (20g)",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Coffee Crunch Milk Chocolate (20g)",
+          "Tea & Coffee Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper durian 20g",
+        "leafItemName": "Wrapper - Durian (20g)",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Durian Milk Chocolate (20g)",
+          "Tropical Fruit Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper masala chai 20g",
+        "leafItemName": "Wrapper - Masala Chai (20g)",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Masala Chai Milk Chocolate (20g)",
+          "Tea & Coffee Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper signature dark 85 20g",
+        "leafItemName": "Wrapper - Signature Dark 85% (20g)",
+        "unlocksFinishedGoods": 2,
+        "sampleFinishedGoods": [
+          "Chiang Mai Chocolate Collection",
+          "Signature Dark 85% Dark Chocolate (20g)"
+        ]
+      },
+      {
+        "leafItemKey": "almond powder",
+        "leafItemName": "Almond Powder",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Dark Chocolate Almond Butter Cups"
+        ]
+      },
+      {
+        "leafItemKey": "almonds",
+        "leafItemName": "Almonds",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Hunky Monkey Trail Mix (100g)"
+        ]
+      },
+      {
+        "leafItemKey": "banana sticks",
+        "leafItemName": "Banana Sticks",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Banana Bites (100g)"
+        ]
+      },
+      {
+        "leafItemKey": "cacao hot sauce 90ml",
+        "leafItemName": "Cacao Hot Sauce (90ml)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Cacao Hot Sauce"
+        ]
+      },
+      {
+        "leafItemKey": "candied orange",
+        "leafItemName": "Candied Orange",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Dark Chocolate Dipped Candied Orange (45g)"
+        ]
+      },
+      {
+        "leafItemKey": "chiang mai dark chocolate box",
+        "leafItemName": "Chiang Mai Dark Chocolate Box",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Chiang Mai Chocolate Collection"
+        ]
+      },
+      {
+        "leafItemKey": "clear plastic bag 3 x 6 chocolate dipped orange",
+        "leafItemName": "Clear Plastic Bag 3\" x 6\" (Chocolate Dipped Orange)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Dark Chocolate Dipped Candied Orange (45g)"
+        ]
+      },
+      {
+        "leafItemKey": "sleeve anantara 85 8g",
+        "leafItemName": "Sleeve - Anantara 85% 8g",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "85% Dark Chocolate (8g) - Anantara"
+        ]
+      },
+      {
+        "leafItemKey": "sleeve mahabhirom 85 8g",
+        "leafItemName": "Sleeve - Mahabhirom 85% 8g",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "85% Dark Chocolate (8g) - Mahabhirom"
+        ]
+      },
+      {
+        "leafItemKey": "sleeve mahabhirom thai tea 8g",
+        "leafItemName": "Sleeve - Mahabhirom Thai Tea 8g",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Thai Tea Milk Chocolate (8g) - Mahabhirom"
+        ]
+      },
+      {
+        "leafItemKey": "sticker 70 coated almonds paleo robbie",
+        "leafItemName": "Sticker - 70% Coated Almonds - Paleo Robbie",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: 70% Chocolate Coated Almonds (80g)"
+        ]
+      },
+      {
+        "leafItemKey": "sticker 70 coated cashews paleo robbie",
+        "leafItemName": "Sticker - 70% Coated Cashews - Paleo Robbie",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: 70% Chocolate Coated Cashews (80g)"
+        ]
+      },
+      {
+        "leafItemKey": "sticker banana bites paleo robbie",
+        "leafItemName": "Sticker - Banana Bites - Paleo Robbie",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Banana Bites (100g)"
+        ]
+      },
+      {
+        "leafItemKey": "sticker drizzled banana chips paleo robbie",
+        "leafItemName": "Sticker - Drizzled Banana Chips - Paleo Robbie",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Dark Choc Drizzled Banana Chips (100g)"
+        ]
+      },
+      {
+        "leafItemKey": "sticker sugar free almonds paleo robbie",
+        "leafItemName": "Sticker - Sugar Free Almonds - Paleo Robbie",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Sugar Free 85% Chocolate Coated Almonds (80g)"
+        ]
+      },
+      {
+        "leafItemKey": "sticker sugar free cashews paleo robbie",
+        "leafItemName": "Sticker - Sugar Free Cashews - Paleo Robbie",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Paleo Robbie: Sugar Free 85% Chocolate Coated Cashew (80g)"
+        ]
+      },
+      {
+        "leafItemKey": "stickers cacao hot sauce",
+        "leafItemName": "Stickers - Cacao Hot Sauce",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Cacao Hot Sauce"
+        ]
+      },
+      {
+        "leafItemKey": "stickers cacao nibs retail 250g",
+        "leafItemName": "Stickers - Cacao Nibs - Retail (250g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Cacao Nibs 250g"
+        ]
+      },
+      {
+        "leafItemKey": "stickers cacao powder retail 250g",
+        "leafItemName": "Stickers - Cacao Powder - Retail (250g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Cacao Powder 250g"
+        ]
+      },
+      {
+        "leafItemKey": "stickers chocolate dipped orange",
+        "leafItemName": "Stickers - Chocolate Dipped Orange",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Dark Chocolate Dipped Candied Orange (45g)"
+        ]
+      },
+      {
+        "leafItemKey": "stickers drinking chocolate retail 250g",
+        "leafItemName": "Stickers - Drinking Chocolate - Retail (250g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Drinking Chocolate 250g"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper apple pie milk chocolate halloween 75g",
+        "leafItemName": "Wrapper - Apple Pie Milk Chocolate - Halloween (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Apple Pie Milk Chocolate - Halloween (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper banana crunch 75g",
+        "leafItemName": "Wrapper - Banana Crunch (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Banana Crunch Milk Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper coconut milk 75g",
+        "leafItemName": "Wrapper - Coconut Milk (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Coconut Milk 65% Dark Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper coffee crunch 75g",
+        "leafItemName": "Wrapper - Coffee Crunch (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Coffee Crunch Milk Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper durian 75g",
+        "leafItemName": "Wrapper - Durian (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Durian Milk Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper gingerbread cookie milk chocolate christmas 75g",
+        "leafItemName": "Wrapper - Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Gingerbread Cookie Milk Chocolate - Christmas (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper hill coffee and pomelo 75g",
+        "leafItemName": "Wrapper - Hill Coffee and Pomelo (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Hill Coffee and Pomelo Dark Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper mango chili 75g",
+        "leafItemName": "Wrapper - Mango Chili (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Mango Chili Dark Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper masala chai 75g",
+        "leafItemName": "Wrapper - Masala Chai (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Masala Chai Milk Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper signature dark 70 20g",
+        "leafItemName": "Wrapper - Signature Dark 70% (20g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Signature Dark 70% Dark Chocolate (20g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper signature dark 70 75g",
+        "leafItemName": "Wrapper - Signature Dark 70% (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Signature Dark 70% Dark Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper signature dark 85 75g",
+        "leafItemName": "Wrapper - Signature Dark 85% (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Signature Dark 85% Dark Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper signature milk 20g",
+        "leafItemName": "Wrapper - Signature Milk (20g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Signature Milk Chocolate (20g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper signature milk 75g",
+        "leafItemName": "Wrapper - Signature Milk (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Signature Milk Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper simply cacao almonds paleo robbie 75g",
+        "leafItemName": "Wrapper - Simply Cacao Almonds - Paleo Robbie (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper simply cacao plus milk paleo robbie 75g",
+        "leafItemName": "Wrapper - Simply Cacao Plus Milk - Paleo Robbie (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Simply Cacao Plus Milk - Paleo Robbie (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper simply cacao vanilla paleo robbie 75g",
+        "leafItemName": "Wrapper - Simply Cacao Vanilla - Paleo Robbie (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper thai bullet chili 75g",
+        "leafItemName": "Wrapper - Thai Bullet Chili (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Thai Bullet Chili Dark Chocolate (75g)"
+        ]
+      },
+      {
+        "leafItemKey": "wrapper thai tea 75g",
+        "leafItemName": "Wrapper - Thai Tea (75g)",
+        "unlocksFinishedGoods": 1,
+        "sampleFinishedGoods": [
+          "Thai Tea Milk Chocolate (75g)"
+        ]
+      }
+    ]
+  },
+  "method": "deterministic_greedy_leaf_coverage"
+}

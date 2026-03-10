@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "dagAcyclic": true,
+  "cycleKeys": [],
+  "finishedGoodsCoverage": {
+    "producibleCount": 97,
+    "totalFinishedGoods": 97,
+    "coverageRatio": 1,
+    "meetsTarget": true
+  },
+  "inventorySeedsDeterministic": true,
+  "gapAnalysisMethod": "deterministic_greedy_leaf_coverage",
+  "simulationRuns": [
+    {
+      "itemName": "Couverture 70% Dark Chocolate (1kg)",
+      "success": true,
+      "blocked": null
+    },
+    {
+      "itemName": "Banana Crunch Milk Chocolate (75g)",
+      "success": true,
+      "blocked": null
+    },
+    {
+      "itemName": "Tasting Box",
+      "success": true,
+      "blocked": null
+    },
+    {
+      "itemName": "Cacao Nibs 250g",
+      "success": true,
+      "blocked": null
+    }
+  ],
+  "simulationsSucceeded": true
+}
