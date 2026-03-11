@@ -1,4 +1,4 @@
-import { Card } from '../../../components/Card'
+import { Panel } from '../../../shared/ui/Panel'
 import { RoutingsCard } from '../../routings/components/RoutingsCard'
 
 type Props = {
@@ -7,12 +7,11 @@ type Props = {
 
 export function RoutingPanel({ itemId }: Props) {
   return (
-    <Card
+    <Panel
       title="Routing panel"
       description="Ordered manufacturing steps, versions, and work-center assignments."
-      className="rounded-[24px] border-slate-200 shadow-sm shadow-slate-950/5"
     >
       <RoutingsCard itemId={itemId} />
-    </Card>
+    </Panel>
   )
 }

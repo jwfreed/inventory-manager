@@ -1,10 +1,10 @@
 import type { ApiError, Bom, BomVersion, Item } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
-import { Card } from '../../../components/Card'
-import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
+import { EmptyState } from '../../../shared/ui/EmptyState'
+import { Panel } from '../../../shared/ui/Panel'
 import { BomCard } from '../../boms/components/BomCard'
 import { BomForm } from '../../boms/components/BomForm'
 
@@ -46,10 +46,10 @@ export function BOMPanel({
   const requiresBom = item.type === 'wip' || item.type === 'finished'
 
   return (
-    <Card
+    <Panel
       title="BOM panel"
       description="Versioned production definitions with a single active version."
-      action={
+      actions={
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" size="sm" onClick={onToggleComposer}>
             {showComposer ? 'Close composer' : 'New BOM version'}
@@ -59,7 +59,6 @@ export function BOMPanel({
           </Button>
         </div>
       }
-      className="rounded-[24px] border-slate-200 shadow-sm shadow-slate-950/5"
     >
       <div className="space-y-4">
         <div className="grid gap-3 md:grid-cols-3">
@@ -129,6 +128,6 @@ export function BOMPanel({
           ))}
         </div>
       </div>
-    </Card>
+    </Panel>
   )
 }

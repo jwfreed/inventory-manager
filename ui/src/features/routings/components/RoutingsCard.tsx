@@ -4,8 +4,8 @@ import React, { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
-import { EmptyState } from '../../../components/EmptyState'
 import { LoadingSpinner } from '../../../components/Loading'
+import { DataTable, EmptyState } from '../../../shared/ui'
 import { createRouting, getRoutingsByItemId, getWorkCenters, updateRouting } from '../api'
 import type { Routing } from '../types'
 import { RoutingForm } from './RoutingForm'
@@ -162,45 +162,42 @@ export const RoutingsCard: React.FC<RoutingsCardProps> = ({ itemId }) => {
               </div>
 
               {routing.steps && routing.steps.length > 0 ? (
-                <div className="overflow-x-auto px-5 py-4">
-                  <table className="min-w-full divide-y divide-slate-200">
-                    <thead>
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Seq
-                        </th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Production area
-                        </th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Description
-                        </th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Setup
-                        </th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Run
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {routing.steps.map((step) => (
-                        <tr key={step.id ?? `${routing.id}-${step.sequenceNumber}`}>
-                          <td className="px-3 py-3 text-sm font-medium text-slate-900">{step.sequenceNumber}</td>
-                          <td className="px-3 py-3 text-sm text-slate-700">
-                            {workCenterMap.get(step.workCenterId) || step.workCenterId}
-                          </td>
-                          <td className="px-3 py-3 text-sm text-slate-700">{step.description || '—'}</td>
-                          <td className="px-3 py-3 text-right text-sm text-slate-700">
-                            {step.setupTimeMinutes} min
-                          </td>
-                          <td className="px-3 py-3 text-right text-sm text-slate-700">
-                            {step.runTimeMinutes} min
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="px-5 py-4">
+                  <DataTable
+                    rows={routing.steps}
+                    rowKey={(step) => step.id ?? `${routing.id}-${step.sequenceNumber}`}
+                    columns={[
+                      {
+                        id: 'sequenceNumber',
+                        header: 'Seq',
+                        cell: (step) => (
+                          <span className="font-medium text-slate-900">{step.sequenceNumber}</span>
+                        ),
+                      },
+                      {
+                        id: 'workCenterId',
+                        header: 'Production area',
+                        cell: (step) => workCenterMap.get(step.workCenterId) || step.workCenterId,
+                      },
+                      {
+                        id: 'description',
+                        header: 'Description',
+                        cell: (step) => step.description || '—',
+                      },
+                      {
+                        id: 'setupTimeMinutes',
+                        header: 'Setup',
+                        align: 'right',
+                        cell: (step) => `${step.setupTimeMinutes} min`,
+                      },
+                      {
+                        id: 'runTimeMinutes',
+                        header: 'Run',
+                        align: 'right',
+                        cell: (step) => `${step.runTimeMinutes} min`,
+                      },
+                    ]}
+                  />
                 </div>
               ) : (
                 <div className="px-5 py-4 text-sm text-slate-500">No steps defined yet.</div>

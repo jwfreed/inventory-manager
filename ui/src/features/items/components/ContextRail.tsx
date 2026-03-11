@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { Card } from '../../../components/Card'
 import { Badge } from '../../../components/Badge'
+import { Panel } from '../../../shared/ui/Panel'
 
 type RailSection = {
   title: string
@@ -17,11 +17,10 @@ export function ContextRail({ sections }: Props) {
   return (
     <aside className="space-y-4 xl:sticky xl:top-24 xl:w-[320px] xl:self-start">
       {sections.map((section) => (
-        <Card
+        <Panel
           key={section.title}
           title={section.title}
           description={section.description}
-          className="rounded-[24px] border-slate-200 shadow-sm shadow-slate-950/5"
         >
           {section.items ? (
             <div className="space-y-3">
@@ -37,7 +36,7 @@ export function ContextRail({ sections }: Props) {
             </div>
           ) : null}
           {section.children}
-        </Card>
+        </Panel>
       ))}
     </aside>
   )

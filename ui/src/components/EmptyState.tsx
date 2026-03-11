@@ -1,25 +1,24 @@
 import type { ReactNode } from 'react'
-import { cn } from '../lib/utils'
+import { EmptyState as PrimitiveEmptyState, type EmptyStateProps as PrimitiveEmptyStateProps } from '../shared/ui/EmptyState'
 
-type Props = {
-  title: string
-  description?: string
+type Props = PrimitiveEmptyStateProps & {
   icon?: ReactNode
-  action?: ReactNode
-  className?: string
 }
 
-export function EmptyState({ title, description, icon, action, className }: Props) {
+export function EmptyState({ icon, ...props }: Props) {
+  if (!icon) {
+    return <PrimitiveEmptyState {...props} />
+  }
+
   return (
-    <div className={cn('rounded-xl border border-dashed border-slate-200 bg-white p-5', className)}>
-      <div className="flex items-start gap-3">
-        {icon && <div className="text-slate-500">{icon}</div>}
-        <div className="flex-1">
-          <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-          {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
-          {action && <div className="mt-4">{action}</div>}
-        </div>
-      </div>
-    </div>
+    <PrimitiveEmptyState
+      {...props}
+      description={
+        <span className="inline-flex items-start gap-3">
+          <span className="text-slate-500">{icon}</span>
+          <span>{props.description}</span>
+        </span>
+      }
+    />
   )
 }

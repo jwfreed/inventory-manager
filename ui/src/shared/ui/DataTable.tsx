@@ -34,7 +34,13 @@ export function DataTable<T>({
   rowClassName,
 }: Props<T>) {
   return (
-    <div className={cn('overflow-hidden rounded-xl border border-slate-200', className, containerClassName)}>
+    <div
+      className={cn(
+        'overflow-hidden rounded-2xl border border-slate-200 bg-white',
+        className,
+        containerClassName,
+      )}
+    >
       <table className="min-w-full divide-y divide-slate-200">
         <thead className={cn('bg-slate-50', stickyHeader ? 'sticky top-0 z-10' : undefined)}>
           <tr>
@@ -45,7 +51,7 @@ export function DataTable<T>({
                   key={column.id}
                   scope="col"
                   className={cn(
-                    'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500',
+                    'px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500',
                     alignClass,
                     column.headerClassName,
                   )}
@@ -68,7 +74,7 @@ export function DataTable<T>({
               <tr
                 key={rowKey(row)}
                 className={cn(
-                  'transition-colors hover:bg-slate-50',
+                  'h-9 transition-colors hover:bg-slate-50',
                   onRowClick && 'cursor-pointer',
                   rowClassName?.(row),
                 )}
@@ -79,7 +85,7 @@ export function DataTable<T>({
                   return (
                     <td
                       key={column.id}
-                      className={cn('px-4 py-3 text-sm text-slate-800', alignClass, column.cellClassName)}
+                      className={cn('px-4 py-2 text-sm text-slate-800', alignClass, column.cellClassName)}
                     >
                       {column.cell(row)}
                     </td>

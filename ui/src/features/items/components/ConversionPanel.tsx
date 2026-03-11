@@ -4,13 +4,11 @@ import type { Item, UomConversion } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
-import { Card } from '../../../components/Card'
-import { EmptyState } from '../../../components/EmptyState'
 import { Input } from '../../../components/Inputs'
+import { DataTable, EmptyState, Panel } from '../../../shared/ui'
 import { useCreateUomConversion, useDeleteUomConversion } from '../api/uomConversions'
 import { formatConversionEquation } from '../itemDetail.logic'
 import type { UnitConversionState } from '../itemDetail.models'
-import { DataTable } from './DataTable'
 
 type Props = {
   item: Item
@@ -44,10 +42,9 @@ export function ConversionPanel({ item, conversionState, manualConversions }: Pr
   }
 
   return (
-    <Card
+    <Panel
       title="Conversion panel"
       description="System conversions are preferred when the unit registry can resolve the item's canonical unit."
-      className="rounded-[24px] border-slate-200 shadow-sm shadow-slate-950/5"
     >
       <div className="space-y-5">
         <div className="flex flex-wrap items-center gap-2">
@@ -213,6 +210,6 @@ export function ConversionPanel({ item, conversionState, manualConversions }: Pr
           </div>
         )}
       </div>
-    </Card>
+    </Panel>
   )
 }
