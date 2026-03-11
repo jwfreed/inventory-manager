@@ -76,8 +76,10 @@ export function MovementsTable({ movements, page, pageCount, onPageChange }: Pro
     Boolean((movement.metadata as { negative_override?: boolean } | null)?.negative_override)
 
   return (
-    <div className="space-y-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+    <div className="space-y-0 rounded-xl border border-slate-200 bg-white">
       <DataTable
+        key={page ?? 'movements'}
+        className="rounded-none border-0"
         stickyHeader
         keyboardNavigation
         rows={movements}

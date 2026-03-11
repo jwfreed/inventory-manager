@@ -700,6 +700,7 @@ export default function ItemsListPage() {
           {!isLoading && !isError && filteredByType.length > 0 && (
             <div className="space-y-3">
               <DataTable
+                key={page}
                 stickyHeader
                 keyboardNavigation
                 rows={filteredByType}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { cn } from '../lib/utils'
@@ -15,19 +15,77 @@ type Props = {
 
 export function Modal({ isOpen, onClose, title, children, footer, className }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  const titleId = useId()
   const hasCustomMaxWidth = typeof className === 'string' && className.includes('max-w-')
   const maxWidthClass = hasCustomMaxWidth ? '' : 'max-w-lg'
 
   useEffect(() => {
     if (!isOpen) return
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+    const focusableSelector = [
+      'a[href]',
+      'button:not([disabled])',
+      'textarea:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(', ')
+
+    const setModalOpenState = (delta: number) => {
+      const currentCount = Number(document.body.dataset.modalOpenCount ?? '0')
+      const nextCount = Math.max(0, currentCount + delta)
+      if (nextCount === 0) {
+        delete document.body.dataset.modalOpenCount
+      } else {
+        document.body.dataset.modalOpenCount = String(nextCount)
+      }
+    }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
+      if (event.key !== 'Tab') return
+
+      const dialog = dialogRef.current
+      if (!dialog) return
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => !element.hasAttribute('disabled'),
+      )
+      if (focusable.length === 0) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
 
+    setModalOpenState(1)
     document.addEventListener('keydown', handleKeyDown)
-    dialogRef.current?.focus()
-    return () => document.removeEventListener('keydown', handleKeyDown)
+    const focusTarget =
+      dialogRef.current?.querySelector<HTMLElement>('[autofocus], input, button, textarea, select') ??
+      dialogRef.current
+    focusTarget?.focus()
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      setModalOpenState(-1)
+      const previousFocus = previousFocusRef.current
+      if (previousFocus && document.contains(previousFocus)) {
+        previousFocus.focus()
+      }
+    }
   }, [isOpen, onClose])
 
   if (!isOpen) return null
@@ -37,6 +95,7 @@ export function Modal({ isOpen, onClose, title, children, footer, className }: P
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
       aria-modal="true"
       role="dialog"
+      aria-labelledby={title ? titleId : undefined}
     >
       <div
         ref={dialogRef}
@@ -48,7 +107,9 @@ export function Modal({ isOpen, onClose, title, children, footer, className }: P
         )}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <div className="text-base font-semibold text-slate-900">{title}</div>
+          <div id={titleId} className="text-base font-semibold text-slate-900">
+            {title}
+          </div>
           <Button variant="secondary" size="sm" onClick={onClose} aria-label="Close modal">
             Close
           </Button>

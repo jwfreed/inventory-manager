@@ -129,6 +129,13 @@ export default function WorkOrderProgressPage() {
   const totalOrders = progressQuery.data?.data.length || 0
   const onTimeRate =
     totalOrders > 0 ? Math.round(((totalOrders - lateOrders) / totalOrders) * 100) : 0
+  const sortedRows = useMemo(
+    () =>
+      [...(progressQuery.data?.data ?? [])].sort(
+        (left, right) => Number(right.isLate) - Number(left.isLate),
+      ),
+    [progressQuery.data?.data],
+  )
 
   return (
     <div className="space-y-6">
@@ -241,7 +248,7 @@ export default function WorkOrderProgressPage() {
           <DataTable
             stickyHeader
             keyboardNavigation
-            rows={[...progressQuery.data.data].sort((left, right) => Number(right.isLate) - Number(left.isLate))}
+            rows={sortedRows}
             rowKey={(row) => row.workOrderId}
             onRowClick={(row) => navigate(`/work-orders/${row.workOrderId}`)}
             onRowOpen={(row) => navigate(`/work-orders/${row.workOrderId}`)}

@@ -22,9 +22,15 @@ export default defineConfig([
   },
   {
     files: [
-      'src/features/ledger/pages/MovementDetailPage.tsx',
-      'src/features/workOrders/pages/WorkOrderDetailPage.tsx',
+      'src/features/items/pages/**/*.tsx',
+      'src/features/ledger/pages/**/*.tsx',
+      'src/features/locations/pages/**/*.tsx',
+      'src/features/workOrders/pages/**/*.tsx',
       'src/features/reports/pages/WorkOrderProgressPage.tsx',
+    ],
+    ignores: [
+      'src/features/workOrders/pages/ProductionOverviewPage.tsx',
+      'src/features/workOrders/pages/WorkOrderCreatePage.tsx',
     ],
     rules: {
       'no-restricted-imports': [

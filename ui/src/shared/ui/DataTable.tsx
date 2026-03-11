@@ -1,4 +1,11 @@
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
+import {
+  useId,
+  useMemo,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { cn } from '../../lib/utils'
 
 type Column<T> = {
@@ -30,6 +37,7 @@ type Props<T> = {
   keyboardNavigation?: boolean
   selectedRowKey?: string
   onSelectedRowChange?: (row: T) => void
+  keyboardNavigationLabel?: string
   shortcutActions?: Array<{
     key: string
     when?: (row: T) => boolean
@@ -54,12 +62,16 @@ export function DataTable<T>({
   keyboardNavigation = false,
   selectedRowKey,
   onSelectedRowChange,
+  keyboardNavigationLabel = 'Use arrow keys to move between rows and Enter to open the selected row.',
   shortcutActions = [],
 }: Props<T>) {
+  const keyboardHelpId = useId()
   const rowKeys = useMemo(() => rows.map((row) => rowKey(row)), [rowKey, rows])
   const [internalSelectedRowKey, setInternalSelectedRowKey] = useState<string | null>(
     rowKeys[0] ?? null,
   )
+  const [isKeyboardMode, setIsKeyboardMode] = useState(false)
+
   const activeSelectedRowKey =
     selectedRowKey ??
     (internalSelectedRowKey && rowKeys.includes(internalSelectedRowKey)
@@ -88,6 +100,11 @@ export function DataTable<T>({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!keyboardNavigation || rows.length === 0) return
+    if (event.defaultPrevented) return
+    if (event.currentTarget !== event.target) return
+    if (typeof document !== 'undefined' && Number(document.body.dataset.modalOpenCount ?? '0') > 0) {
+      return
+    }
 
     if (event.key === 'ArrowDown') {
       event.preventDefault()
@@ -121,16 +138,46 @@ export function DataTable<T>({
     }
   }
 
+  const handleFocus = (event: FocusEvent<HTMLDivElement>) => {
+    if (!keyboardNavigation) return
+    if (event.currentTarget === event.target) {
+      setIsKeyboardMode(true)
+    }
+  }
+
+  const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (!keyboardNavigation) return
+    const nextTarget = event.relatedTarget as Node | null
+    if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
+      setIsKeyboardMode(false)
+    }
+  }
+
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-2xl border border-slate-200 bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200',
+        'overflow-x-auto overflow-y-visible rounded-2xl border border-slate-200 bg-white focus:outline-none',
+        keyboardNavigation && isKeyboardMode && 'ring-2 ring-brand-200 ring-offset-1',
         className,
         containerClassName,
       )}
       onKeyDown={handleKeyDown}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
       tabIndex={keyboardNavigation ? 0 : undefined}
+      aria-describedby={keyboardNavigation ? keyboardHelpId : undefined}
+      aria-label={keyboardNavigation ? 'Interactive data table' : undefined}
     >
+      {keyboardNavigation ? (
+        <p id={keyboardHelpId} className="sr-only">
+          {keyboardNavigationLabel}
+        </p>
+      ) : null}
+      {keyboardNavigation && isKeyboardMode ? (
+        <div className="border-b border-slate-100 bg-brand-50/60 px-3 py-1 text-xs font-medium text-brand-700">
+          Keyboard navigation active
+        </div>
+      ) : null}
       <table className="min-w-full divide-y divide-slate-200">
         <thead className={cn('bg-slate-50', stickyHeader ? 'sticky top-0 z-10' : undefined)}>
           <tr>
@@ -168,13 +215,18 @@ export function DataTable<T>({
             rows.map((row) => (
               <tr
                 key={rowKey(row)}
+                aria-selected={keyboardNavigation ? activeSelectedRowKey === rowKey(row) : undefined}
                 className={cn(
                   'h-9 transition-colors hover:bg-slate-50',
-                  keyboardNavigation && 'focus-within:bg-slate-50',
-                  activeSelectedRowKey === rowKey(row) &&
-                    'bg-brand-50/80 outline outline-1 -outline-offset-1 outline-brand-300',
+                  keyboardNavigation && isKeyboardMode && 'focus-within:bg-slate-50',
                   getRowState?.(row) === 'warning' && 'bg-amber-50/40 hover:bg-amber-50/60',
                   getRowState?.(row) === 'danger' && 'bg-rose-50/40 hover:bg-rose-50/60',
+                  activeSelectedRowKey === rowKey(row) &&
+                    'outline outline-2 -outline-offset-2 outline-brand-300 shadow-[inset_3px_0_0_0_theme(colors.sky.500)]',
+                  activeSelectedRowKey === rowKey(row) &&
+                    getRowState?.(row) !== 'warning' &&
+                    getRowState?.(row) !== 'danger' &&
+                    'bg-brand-50/60',
                   onRowClick && 'cursor-pointer',
                   rowClassName?.(row),
                 )}

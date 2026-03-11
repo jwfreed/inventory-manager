@@ -18,6 +18,30 @@ type Params = {
 
 const MAX_RESULTS = 8
 
+function looksLikeEntityQuery(query: string) {
+  if (!query) return false
+  return /[0-9-]/.test(query) || /^wo[\s-]?\d+/i.test(query) || /^[a-z]{1,4}\d+/i.test(query)
+}
+
+function scoreCommand(command: CommandAction, normalizedQuery: string) {
+  if (!normalizedQuery) return 0
+  const haystack = `${command.label} ${command.meta ?? ''}`.toLowerCase()
+  const isEntityCommand = command.id.startsWith('item:') || command.id.startsWith('work-order:') || command.id.startsWith('location:')
+  let score = 0
+
+  if (haystack.startsWith(normalizedQuery)) score += 50
+  else if (haystack.includes(normalizedQuery)) score += 25
+
+  if (command.meta?.toLowerCase().startsWith(normalizedQuery)) score += 20
+
+  if (looksLikeEntityQuery(normalizedQuery) && isEntityCommand) score += 100
+  else if (isEntityCommand) score += 10
+
+  if (command.group === 'Navigate') score -= 5
+
+  return score
+}
+
 export function useCommandRegistry({ query, navigate }: Params) {
   const normalizedQuery = query.trim().toLowerCase()
   const itemsQuery = useItemsList(
@@ -128,7 +152,9 @@ export function useCommandRegistry({ query, navigate }: Params) {
       ...itemCommands,
       ...workOrderCommands,
       ...locationCommands,
-    ].slice(0, 20)
+    ]
+      .sort((left, right) => scoreCommand(right, normalizedQuery) - scoreCommand(left, normalizedQuery))
+      .slice(0, 20)
   }, [
     itemsQuery.data?.data,
     locationsQuery.data?.data,

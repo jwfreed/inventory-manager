@@ -18,17 +18,27 @@ export function CommandPaletteProvider({ children }: Props) {
   const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const { commands, isLoading } = useCommandRegistry({ query, navigate })
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const { commands, isLoading } = useCommandRegistry({ query: debouncedQuery, navigate })
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedQuery(query), 120)
+    return () => window.clearTimeout(timeout)
+  }, [query])
 
   const open = useCallback(() => setIsOpen(true), [])
   const close = useCallback(() => {
     setIsOpen(false)
     setQuery('')
+    setDebouncedQuery('')
   }, [])
   const toggle = useCallback(() => {
     setIsOpen((current) => {
       const next = !current
-      if (!next) setQuery('')
+      if (!next) {
+        setQuery('')
+        setDebouncedQuery('')
+      }
       return next
     })
   }, [])
