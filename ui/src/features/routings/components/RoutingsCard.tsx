@@ -1,85 +1,111 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getRoutingsByItemId, createRouting, updateRouting, getWorkCenters } from '../api';
-import { RoutingForm } from './RoutingForm';
-import type { Routing } from '../types';
-import { PlusIcon, PencilIcon } from '@heroicons/react/24/outline';
-import { Card } from '../../../components/Card';
+import { PencilIcon, PlusIcon } from '@heroicons/react/24/outline'
+import { formatDate } from '@shared/formatters'
+import React, { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Badge } from '../../../components/Badge'
+import { Button } from '../../../components/Button'
+import { EmptyState } from '../../../components/EmptyState'
+import { LoadingSpinner } from '../../../components/Loading'
+import { createRouting, getRoutingsByItemId, getWorkCenters, updateRouting } from '../api'
+import type { Routing } from '../types'
+import { RoutingForm } from './RoutingForm'
 
 interface RoutingsCardProps {
-  itemId: string;
+  itemId: string
 }
 
 export const RoutingsCard: React.FC<RoutingsCardProps> = ({ itemId }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingRouting, setEditingRouting] = useState<Routing | null>(null);
-  const queryClient = useQueryClient();
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingRouting, setEditingRouting] = useState<Routing | null>(null)
+  const queryClient = useQueryClient()
 
   const { data: routings, isLoading: isLoadingRoutings } = useQuery({
     queryKey: ['routings', itemId],
-    queryFn: () => getRoutingsByItemId(itemId)
-  });
+    queryFn: () => getRoutingsByItemId(itemId),
+  })
 
   const { data: workCenters } = useQuery({
     queryKey: ['workCenters'],
-    queryFn: getWorkCenters
-  });
+    queryFn: getWorkCenters,
+  })
 
   const workCenterMap = React.useMemo(() => {
-    const map = new Map<string, string>();
-    workCenters?.forEach(wc => map.set(wc.id, wc.name));
-    return map;
-  }, [workCenters]);
+    const map = new Map<string, string>()
+    workCenters?.forEach((wc) => map.set(wc.id, wc.name))
+    return map
+  }, [workCenters])
 
   const createMutation = useMutation({
     mutationFn: createRouting,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['routings', itemId] });
-      setIsEditing(false);
-    }
-  });
+      queryClient.invalidateQueries({ queryKey: ['routings', itemId] })
+      setIsEditing(false)
+    },
+  })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Routing> }) => updateRouting(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['routings', itemId] });
-      setIsEditing(false);
-      setEditingRouting(null);
-    }
-  });
+      queryClient.invalidateQueries({ queryKey: ['routings', itemId] })
+      setIsEditing(false)
+      setEditingRouting(null)
+    },
+  })
 
   const handleSubmit = (data: Partial<Routing>) => {
     if (editingRouting) {
-      updateMutation.mutate({ id: editingRouting.id, data });
-    } else {
-      createMutation.mutate({ ...data, itemId });
+      updateMutation.mutate({ id: editingRouting.id, data })
+      return
     }
-  };
+
+    createMutation.mutate({ ...data, itemId })
+  }
 
   const handleEdit = (routing: Routing) => {
-    setEditingRouting(routing);
-    setIsEditing(true);
-  };
+    setEditingRouting(routing)
+    setIsEditing(true)
+  }
 
   const handleAddNew = () => {
-    setEditingRouting(null);
-    setIsEditing(true);
-  };
+    setEditingRouting(null)
+    setIsEditing(true)
+  }
 
   const handleCancel = () => {
-    setIsEditing(false);
-    setEditingRouting(null);
-  };
+    setIsEditing(false)
+    setEditingRouting(null)
+  }
 
-  if (isLoadingRoutings) return <div>Loading...</div>;
+  if (isLoadingRoutings) return <LoadingSpinner label="Loading routings..." />
 
-  if (isEditing) {
-    return (
-      <Card>
-        <div className="px-4 py-5 sm:p-6">
-          <h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">
-            {editingRouting ? 'Edit Routing' : 'Add Routing'}
-          </h3>
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-1">
+          <div className="text-sm text-slate-600">
+            Manage the process definition for this item with explicit versioning, statuses, and ordered steps.
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="neutral">{routings?.length ?? 0} routing{(routings?.length ?? 0) === 1 ? '' : 's'}</Badge>
+            <Badge variant="info">Keyboard-safe table layout</Badge>
+          </div>
+        </div>
+        <Button size="sm" onClick={handleAddNew}>
+          <PlusIcon className="mr-1.5 h-4 w-4" aria-hidden="true" />
+          Add routing
+        </Button>
+      </div>
+
+      {isEditing && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-4">
+            <div className="text-base font-semibold text-slate-900">
+              {editingRouting ? 'Edit routing' : 'Add routing'}
+            </div>
+            <div className="text-sm text-slate-600">
+              Define the route as a versioned manufacturing template for this item.
+            </div>
+          </div>
           <RoutingForm
             itemId={itemId}
             initialData={editingRouting || {}}
@@ -87,107 +113,102 @@ export const RoutingsCard: React.FC<RoutingsCardProps> = ({ itemId }) => {
             onCancel={handleCancel}
           />
         </div>
-      </Card>
-    );
-  }
+      )}
 
-  return (
-    <Card>
-      <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
-        <div>
-          <h3 className="text-lg font-medium leading-6 text-gray-900">Production Routings</h3>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            Manage manufacturing steps and production areas.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleAddNew}
-          className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-        >
-          <PlusIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
-          Add Routing
-        </button>
-      </div>
-      <div className="border-t border-gray-200">
-        {routings && routings.length > 0 ? (
-          <ul role="list" className="divide-y divide-gray-200">
-            {routings.map((routing) => (
-              <li key={routing.id} className="px-4 py-4 sm:px-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <div className="flex items-center">
-                      <p className="truncate text-sm font-medium text-indigo-600">{routing.name}</p>
-                      <span className="ml-2 inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
-                        v{routing.version}
-                      </span>
-                      {routing.isDefault && (
-                        <span className="ml-2 inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
-                          Default
-                        </span>
-                      )}
-                      <span className={`ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        routing.status === 'active' ? 'bg-green-100 text-green-800' : 
-                        routing.status === 'draft' ? 'bg-yellow-100 text-yellow-800' : 
-                        'bg-red-100 text-red-800'
-                      }`}>
+      {!routings || routings.length === 0 ? (
+        <EmptyState
+          title="No routings configured"
+          description="Create a routing when the item requires a defined production sequence or work-center assignment."
+          action={
+            <Button size="sm" onClick={handleAddNew}>
+              Create routing
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-4">
+          {routings.map((routing) => (
+            <div key={routing.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 px-5 py-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold text-slate-900">{routing.name}</h3>
+                      <Badge variant="neutral">v{routing.version}</Badge>
+                      {routing.isDefault && <Badge variant="success">Default</Badge>}
+                      <Badge
+                        variant={
+                          routing.status === 'active'
+                            ? 'success'
+                            : routing.status === 'draft'
+                              ? 'warning'
+                              : 'danger'
+                        }
+                      >
                         {routing.status}
-                      </span>
+                      </Badge>
                     </div>
-                    <div className="mt-2 sm:flex sm:justify-between">
-                      <div className="sm:flex">
-                        <p className="flex items-center text-sm text-gray-500">
-                          {routing.steps?.length || 0} Steps
-                        </p>
-                      </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
+                      <span>{routing.steps?.length || 0} steps</span>
+                      <span>Updated {formatDate(routing.updatedAt)}</span>
                     </div>
+                    {routing.notes && <p className="text-sm leading-6 text-slate-600">{routing.notes}</p>}
                   </div>
-                  <div className="ml-5 flex-shrink-0">
-                    <button
-                      onClick={() => handleEdit(routing)}
-                      className="text-indigo-600 hover:text-indigo-900"
-                    >
-                      <PencilIcon className="h-5 w-5" aria-hidden="true" />
-                    </button>
-                  </div>
+                  <Button variant="secondary" size="sm" onClick={() => handleEdit(routing)}>
+                    <PencilIcon className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                    Edit
+                  </Button>
                 </div>
-                {routing.steps && routing.steps.length > 0 && (
-                  <div className="mt-4 border-t border-gray-100 pt-4">
-                    <table className="min-w-full divide-y divide-gray-300">
-                      <thead>
-                        <tr>
-                          <th className="text-left text-xs font-medium text-gray-500">Seq</th>
-                          <th className="text-left text-xs font-medium text-gray-500">Production Area</th>
-                          <th className="text-left text-xs font-medium text-gray-500">Description</th>
-                          <th className="text-right text-xs font-medium text-gray-500">Setup</th>
-                          <th className="text-right text-xs font-medium text-gray-500">Run</th>
+              </div>
+
+              {routing.steps && routing.steps.length > 0 ? (
+                <div className="overflow-x-auto px-5 py-4">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead>
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Seq
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Production area
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Description
+                        </th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Setup
+                        </th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Run
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {routing.steps.map((step) => (
+                        <tr key={step.id ?? `${routing.id}-${step.sequenceNumber}`}>
+                          <td className="px-3 py-3 text-sm font-medium text-slate-900">{step.sequenceNumber}</td>
+                          <td className="px-3 py-3 text-sm text-slate-700">
+                            {workCenterMap.get(step.workCenterId) || step.workCenterId}
+                          </td>
+                          <td className="px-3 py-3 text-sm text-slate-700">{step.description || '—'}</td>
+                          <td className="px-3 py-3 text-right text-sm text-slate-700">
+                            {step.setupTimeMinutes} min
+                          </td>
+                          <td className="px-3 py-3 text-right text-sm text-slate-700">
+                            {step.runTimeMinutes} min
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {routing.steps.map((step) => (
-                          <tr key={step.id}>
-                            <td className="whitespace-nowrap py-2 text-xs text-gray-900">{step.sequenceNumber}</td>
-                            <td className="whitespace-nowrap py-2 text-xs text-gray-500">
-                              {workCenterMap.get(step.workCenterId) || step.workCenterId}
-                            </td>
-                            <td className="whitespace-nowrap py-2 text-xs text-gray-500">{step.description}</td>
-                            <td className="whitespace-nowrap py-2 text-right text-xs text-gray-500">{step.setupTimeMinutes}</td>
-                            <td className="whitespace-nowrap py-2 text-right text-xs text-gray-500">{step.runTimeMinutes}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="px-4 py-5 sm:px-6 text-center text-sm text-gray-500">
-            No routings found. Create one to get started.
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-};
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="px-5 py-4 text-sm text-slate-500">No steps defined yet.</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

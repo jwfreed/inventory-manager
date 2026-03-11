@@ -1,40 +1,64 @@
-import { useState } from 'react';
-import { useCreateUomConversion, useDeleteUomConversion } from '../api/uomConversions';
-import { Button } from '../../../components/Button';
-import { Input } from '../../../components/Inputs';
-import { Alert } from '../../../components/Alert';
-import type { Item, UomConversion } from '../../../api/types';
+import { formatNumber } from '@shared/formatters'
+import { useState } from 'react'
+import type { Item, UomConversion } from '../../../api/types'
+import { Alert } from '../../../components/Alert'
+import { Badge } from '../../../components/Badge'
+import { Button } from '../../../components/Button'
+import { EmptyState } from '../../../components/EmptyState'
+import { Input } from '../../../components/Inputs'
+import { useCreateUomConversion, useDeleteUomConversion } from '../api/uomConversions'
 
 type Props = {
-  item: Item;
-  conversions: UomConversion[];
-};
+  item: Item
+  conversions: UomConversion[]
+}
 
 export function UomConversionsCard({ item, conversions }: Props) {
-  const [fromUom, setFromUom] = useState('');
-  const [toUom, setToUom] = useState('');
-  const [factor, setFactor] = useState(1);
+  const [fromUom, setFromUom] = useState('')
+  const [toUom, setToUom] = useState('')
+  const [factor, setFactor] = useState(1)
 
-  const createMutation = useCreateUomConversion();
-  const deleteMutation = useDeleteUomConversion();
+  const createMutation = useCreateUomConversion()
+  const deleteMutation = useDeleteUomConversion()
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    createMutation.mutate({
-      itemId: item.id,
-      fromUom,
-      toUom,
-      factor,
-    });
-  };
+    e.preventDefault()
+    createMutation.mutate(
+      {
+        itemId: item.id,
+        fromUom: fromUom.trim(),
+        toUom: toUom.trim(),
+        factor,
+      },
+      {
+        onSuccess: () => {
+          setFromUom('')
+          setToUom('')
+          setFactor(1)
+        },
+      },
+    )
+  }
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-lg font-semibold">UoM Conversions</h3>
-      <div className="text-sm text-slate-600">
-        Conversions affect inventory, BOMs, and costing. Canonical UOM:{' '}
-        <span className="font-semibold text-slate-900">{item.canonicalUom ?? '—'}</span>.
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-1">
+          <div className="text-sm text-slate-600">
+            Conversions normalize inventory, BOMs, and costing into the item&apos;s canonical unit.
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="info">Canonical UOM {item.canonicalUom ?? item.defaultUom ?? '—'}</Badge>
+            <Badge variant="neutral">{conversions.length} conversion{conversions.length === 1 ? '' : 's'}</Badge>
+          </div>
+        </div>
+        {conversions.length > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            Example: 1 {conversions[0].fromUom} = {formatNumber(conversions[0].factor)} {conversions[0].toUom}
+          </div>
+        )}
       </div>
+
       {createMutation.isError && (
         <Alert variant="error" title="Failed to create conversion" message={createMutation.error.message} />
       )}
@@ -45,17 +69,23 @@ export function UomConversionsCard({ item, conversions }: Props) {
           message={deleteMutation.error.message}
         />
       )}
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+
+      <form
+        onSubmit={handleSubmit}
+        className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_120px]"
+      >
         <Input
           value={fromUom}
           onChange={(e) => setFromUom(e.target.value)}
-          placeholder="From UoM"
+          placeholder="From UOM"
+          aria-label="From unit of measure"
           required
         />
         <Input
           value={toUom}
           onChange={(e) => setToUom(e.target.value)}
-          placeholder="To UoM"
+          placeholder="To UOM"
+          aria-label="To unit of measure"
           required
         />
         <Input
@@ -63,59 +93,67 @@ export function UomConversionsCard({ item, conversions }: Props) {
           value={factor}
           onChange={(e) => setFactor(Number(e.target.value))}
           placeholder="Factor"
+          aria-label="Conversion factor"
           required
           min="0.000000001"
           step="any"
         />
         <Button type="submit" disabled={createMutation.isPending}>
-          Add
+          {createMutation.isPending ? 'Adding...' : 'Add'}
         </Button>
       </form>
-      {conversions.length > 0 && (
-        <div className="text-xs text-slate-500">
-          Example: 1 {conversions[0].fromUom} = {conversions[0].factor} {conversions[0].toUom}
-        </div>
-      )}
-      <div className="flow-root">
-        <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
-          <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-            <table className="min-w-full divide-y divide-gray-300">
-              <thead>
-                <tr>
-                  <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-0">
-                    From UoM
-                  </th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                    To UoM
-                  </th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                    Factor
-                  </th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                    Canonical
-                  </th>
-                  <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-0">
-                    <span className="sr-only">Delete</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {conversions.map((conversion) => (
-                  <tr key={conversion.id}>
-                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
-                      {conversion.fromUom}
+
+      {conversions.length === 0 ? (
+        <EmptyState
+          title="No conversions configured"
+          description="Add conversions when this item is transacted, costed, or planned in multiple units."
+        />
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  From
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  To
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Factor
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Canonical path
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Action
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 bg-white">
+              {conversions.map((conversion) => {
+                const isCanonical =
+                  conversion.fromUom === item.canonicalUom || conversion.toUom === item.canonicalUom
+
+                return (
+                  <tr key={conversion.id} className="align-top">
+                    <td className="px-4 py-3 text-sm font-medium text-slate-900">{conversion.fromUom}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{conversion.toUom}</td>
+                    <td className="px-4 py-3 text-right text-sm text-slate-700">
+                      {formatNumber(conversion.factor)}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{conversion.toUom}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{conversion.factor}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      {conversion.fromUom === item.canonicalUom || conversion.toUom === item.canonicalUom
-                        ? 'Canonical'
-                        : '—'}
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      {isCanonical ? (
+                        <Badge variant="success">Touches canonical UOM</Badge>
+                      ) : (
+                        <span className="text-slate-500">Indirect conversion only</span>
+                      )}
                     </td>
-                    <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
+                    <td className="px-4 py-3 text-right">
                       <Button
-                        variant="danger"
+                        variant="secondary"
                         size="sm"
+                        className="border-rose-200 text-rose-700 hover:bg-rose-50"
                         onClick={() => deleteMutation.mutate(conversion.id)}
                         disabled={deleteMutation.isPending}
                       >
@@ -123,12 +161,12 @@ export function UomConversionsCard({ item, conversions }: Props) {
                       </Button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
-      </div>
+      )}
     </div>
-  );
+  )
 }

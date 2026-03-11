@@ -1,36 +1,58 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { formatCurrency, formatDate, formatNumber } from '@shared/formatters'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useItem, useItemMetrics } from '../queries'
-import { useLocationsList } from '../../locations/queries'
-import { useInventorySnapshotSummary } from '../../inventory/queries'
-import { useBomsByItem } from '../../boms/queries'
-import { useUomConversionsList } from '../api/uomConversions'
-import { useMovementWindow } from '../../ledger/queries'
 import type { ApiError, Bom, BomVersion } from '../../../api/types'
 import { Alert } from '../../../components/Alert'
-import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
 import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Modal } from '../../../components/Modal'
-import { Section } from '../../../components/Section'
-import { formatCurrency, formatDate, formatNumber } from '@shared/formatters'
-import { ItemForm } from '../components/ItemForm'
-import { BomForm } from '../../boms/components/BomForm'
-import { BomCard } from '../../boms/components/BomCard'
-import { InventorySnapshotTable } from '../../inventory/components/InventorySnapshotTable'
-import { UomConversionsCard } from '../components/UomConversionsCard'
-import { RoutingsCard } from '../../routings/components/RoutingsCard'
 import { useAuth } from '@shared/auth'
+import { BomForm } from '../../boms/components/BomForm'
+import { InventorySnapshotTable } from '../../inventory/components/InventorySnapshotTable'
+import { useInventorySnapshotSummaryDetailed } from '../../inventory/queries'
+import { useMovementWindow } from '../../ledger/queries'
+import { useLocationsList } from '../../locations/queries'
+import { getRoutingsByItemId } from '../../routings/api'
+import { ItemForm } from '../components/ItemForm'
+import { useUomConversionsList } from '../api/uomConversions'
+import { useItem, useItemMetrics } from '../queries'
+import { useBomsByItem } from '../../boms/queries'
+import { BOMPanel } from '../components/BOMPanel'
+import { ConfigurationHealthPill, ContextRail } from '../components/ContextRail'
+import { ConfigurationPanels } from '../components/ConfigurationPanels'
+import { ConversionPanel } from '../components/ConversionPanel'
+import { InventoryLifecycle } from '../components/InventoryLifecycle'
+import { ItemHeader } from '../components/ItemHeader'
+import { ItemHealthBanner } from '../components/ItemHealthBanner'
+import { ItemSectionNav } from '../components/ItemSectionNav'
+import { MetricGrid } from '../components/MetricGrid'
+import { MetricTile } from '../components/MetricTile'
+import { RoutingPanel } from '../components/RoutingPanel'
+import { useInventoryLifecycle } from '../hooks/useInventoryLifecycle'
+import { useItemHealth } from '../hooks/useItemHealth'
+import { useUnitConversions } from '../hooks/useUnitConversions'
+import { normalizeUomCode, summarizeInventoryRows } from '../itemDetail.logic'
+import { ItemHealthStatus } from '../itemDetail.models'
 
-const typeLabels: Record<string, string> = {
-  raw: 'Raw',
-  wip: 'WIP',
-  finished: 'Finished',
-  packaging: 'Packaging',
-}
+const sectionLinks = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'inventory', label: 'Inventory' },
+  { id: 'production', label: 'Production' },
+  { id: 'configuration', label: 'Configuration' },
+  { id: 'history', label: 'History' },
+]
+
+const inventoryStageOrder = [
+  'Storage / Available',
+  'Receiving & Staging',
+  'Production / WIP',
+  'Quarantine / Rejected',
+  'External / Virtual',
+] as const
 
 const toDateInputValue = (value?: string | null) => {
   if (!value) return null
@@ -53,19 +75,19 @@ export default function ItemDetailPage() {
     version?: BomVersion
   } | null>(null)
   const [bomMessage, setBomMessage] = useState<string | null>(null)
-  const [selectedLocationId, setSelectedLocationId] = useState(
-    () => searchParams.get('locationId') ?? '',
-  )
+  const [idCopied, setIdCopied] = useState(false)
   const editFormRef = useRef<HTMLDivElement | null>(null)
+  const copyTimeoutRef = useRef<number | null>(null)
+  const selectedLocationId = searchParams.get('locationId') ?? ''
 
   const itemQuery = useItem(id, {
     retry: (count, err: ApiError) => err?.status !== 404 && count < 1,
   })
   const metricsQuery = useItemMetrics(id, 90, { enabled: Boolean(id) })
-
+  const bomsQuery = useBomsByItem(id)
+  const uomConversionsQuery = useUomConversionsList(id)
   const locationsQuery = useLocationsList({ active: true, limit: 100 }, { staleTime: 60_000 })
-
-  const snapshotQuery = useInventorySnapshotSummary(
+  const inventoryQuery = useInventorySnapshotSummaryDetailed(
     {
       itemId: id ?? undefined,
       locationId: selectedLocationId || undefined,
@@ -77,21 +99,18 @@ export default function ItemDetailPage() {
     { itemId: id ?? undefined, locationId: selectedLocationId || undefined },
     { staleTime: 30_000 },
   )
-
-  const bomsQuery = useBomsByItem(id)
-
-  const uomConversionsQuery = useUomConversionsList(id)
+  const routingsQuery = useQuery({
+    queryKey: ['routings', id],
+    queryFn: () => getRoutingsByItemId(id as string),
+    enabled: Boolean(id),
+    staleTime: 30_000,
+  })
 
   useEffect(() => {
     if (itemQuery.isError && itemQuery.error?.status === 404) {
       navigate('/not-found', { replace: true })
     }
   }, [itemQuery.isError, itemQuery.error, navigate])
-
-  useEffect(() => {
-    const locationId = searchParams.get('locationId') ?? ''
-    setSelectedLocationId(locationId)
-  }, [searchParams])
 
   useEffect(() => {
     if (!showEdit) return
@@ -104,37 +123,20 @@ export default function ItemDetailPage() {
     focusable?.focus()
   }, [showEdit])
 
-  const copyId = async () => {
-    if (!id) return
-    try {
-      await navigator.clipboard.writeText(id)
-    } catch {
-      // ignore
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current != null) {
+        window.clearTimeout(copyTimeoutRef.current)
+      }
     }
-  }
+  }, [])
 
-  const stockRows = useMemo(() => snapshotQuery.data ?? [], [snapshotQuery.data])
-  const defaultUom =
-    itemQuery.data?.defaultUom?.trim() ||
-    itemQuery.data?.canonicalUom?.trim() ||
-    null
-  const locationLookup = useMemo(() => {
-    const map = new Map<string, { code?: string; name?: string; type?: string }>()
-    locationsQuery.data?.data?.forEach((loc) => {
-      map.set(loc.id, { code: loc.code, name: loc.name, type: loc.type })
-    })
-    return map
-  }, [locationsQuery.data])
-  const conversionPairs = useMemo(() => {
-    const map = new Map<string, number>()
-    ;(uomConversionsQuery.data ?? []).forEach((conversion) => {
-      if (!conversion.fromUom || !conversion.toUom) return
-      const fromKey = conversion.fromUom.trim().toLowerCase()
-      const toKey = conversion.toUom.trim().toLowerCase()
-      map.set(`${fromKey}:${toKey}`, conversion.factor)
-    })
-    return map
-  }, [uomConversionsQuery.data])
+  const item = itemQuery.data
+  const stockRows = useMemo(() => inventoryQuery.data?.data ?? [], [inventoryQuery.data?.data])
+  const diagnostics = useMemo(
+    () => inventoryQuery.data?.diagnostics.uomNormalizationDiagnostics ?? [],
+    [inventoryQuery.data?.diagnostics.uomNormalizationDiagnostics],
+  )
 
   const movementLink = useMemo(() => {
     if (!id) return '/movements'
@@ -145,12 +147,8 @@ export default function ItemDetailPage() {
     }
     const occurredFrom = toDateInputValue(movementWindowQuery.data?.occurredFrom)
     const occurredTo = toDateInputValue(movementWindowQuery.data?.occurredTo)
-    if (occurredFrom) {
-      params.set('occurredFrom', occurredFrom)
-    }
-    if (occurredTo) {
-      params.set('occurredTo', occurredTo)
-    }
+    if (occurredFrom) params.set('occurredFrom', occurredFrom)
+    if (occurredTo) params.set('occurredTo', occurredTo)
     return `/movements?${params.toString()}`
   }, [
     id,
@@ -159,192 +157,60 @@ export default function ItemDetailPage() {
     selectedLocationId,
   ])
 
-  const getConversionFactor = (fromUom?: string | null, toUom?: string | null) => {
-    if (!fromUom || !toUom) return null
-    const fromKey = fromUom.trim().toLowerCase()
-    const toKey = toUom.trim().toLowerCase()
-    if (!fromKey || !toKey) return null
-    if (fromKey === toKey) return 1
-    const direct = conversionPairs.get(`${fromKey}:${toKey}`)
-    if (direct) return direct
-    const reverse = conversionPairs.get(`${toKey}:${fromKey}`)
-    if (reverse) return 1 / reverse
-    return null
-  }
-
-  const conversionMissingUoms = useMemo(() => {
-    if (!defaultUom) return new Set<string>()
-    const missing = new Set<string>()
-    stockRows.forEach((row) => {
-      if (getConversionFactor(row.uom, defaultUom) == null) {
-        missing.add(row.uom)
-      }
+  const locationLookup = useMemo(() => {
+    const map = new Map<
+      string,
+      { code?: string; name?: string; type?: string; role?: string; isSellable?: boolean }
+    >()
+    locationsQuery.data?.data?.forEach((location) => {
+      map.set(location.id, {
+        code: location.code,
+        name: location.name,
+        type: location.type,
+        role: location.role,
+        isSellable: location.isSellable,
+      })
     })
-    return missing
-  }, [defaultUom, stockRows, conversionPairs])
+    return map
+  }, [locationsQuery.data])
 
-  const convertedRows = useMemo(() => {
-    if (!defaultUom) return []
-    const map = new Map<string, typeof stockRows[number]>()
-    stockRows.forEach((row) => {
-      const factor = getConversionFactor(row.uom, defaultUom)
-      if (factor == null) return
-      const key = row.locationId
-      const current = map.get(key) ?? {
-        ...row,
-        uom: defaultUom,
-        onHand: 0,
-        reserved: 0,
-        available: 0,
-        held: 0,
-        rejected: 0,
-        nonUsable: 0,
-        onOrder: 0,
-        inTransit: 0,
-        backordered: 0,
-        inventoryPosition: 0,
-      }
-      current.onHand += row.onHand * factor
-      current.reserved += row.reserved * factor
-      current.available += row.available * factor
-      current.held += row.held * factor
-      current.rejected += row.rejected * factor
-      current.nonUsable += row.nonUsable * factor
-      current.onOrder += row.onOrder * factor
-      current.inTransit += row.inTransit * factor
-      current.backordered += row.backordered * factor
-      current.inventoryPosition += row.inventoryPosition * factor
-      map.set(key, current)
-    })
-    return Array.from(map.values())
-  }, [defaultUom, stockRows, conversionPairs])
-
-  const totalsByDefaultUom = useMemo(() => {
-    if (!defaultUom) return null
-    return convertedRows.reduce(
-      (acc, row) => ({
-        onHand: acc.onHand + row.onHand,
-        available: acc.available + row.available,
-        reserved: acc.reserved + row.reserved,
-        held: acc.held + row.held,
-        rejected: acc.rejected + row.rejected,
-        nonUsable: acc.nonUsable + row.nonUsable,
-        onOrder: acc.onOrder + row.onOrder,
-        inTransit: acc.inTransit + row.inTransit,
-        backordered: acc.backordered + row.backordered,
-        inventoryPosition: acc.inventoryPosition + row.inventoryPosition,
-      }),
-      {
-        onHand: 0,
-        available: 0,
-        reserved: 0,
-        held: 0,
-        rejected: 0,
-        nonUsable: 0,
-        onOrder: 0,
-        inTransit: 0,
-        backordered: 0,
-        inventoryPosition: 0,
-      },
-    )
-  }, [convertedRows, defaultUom])
-
-  const hasNegativeBalance = useMemo(
-    () => stockRows.some((row) => row.onHand < 0),
-    [stockRows],
-  )
-
-  const locationStageLabel = useCallback(
-    (locationId: string) => {
-      const loc = locationLookup.get(locationId)
-      if (!loc) return 'External / Virtual'
-      if (loc.role && loc.role !== 'SELLABLE') {
-        return 'Quarantine / Rejected'
-      }
-      if (loc.isSellable === false) {
-        return 'Quarantine / Rejected'
-      }
-      if (['warehouse', 'bin', 'store'].includes(loc.type)) {
-        return 'Storage / Available'
-      }
-      return 'External / Virtual'
-    },
-    [locationLookup],
-  )
-
-  const groupedRows = useMemo(() => {
-    const groups = new Map<string, typeof convertedRows>()
-    convertedRows.forEach((row) => {
-      const stage = locationStageLabel(row.locationId)
-      const list = groups.get(stage) ?? []
-      list.push(row)
-      groups.set(stage, list)
-    })
-    return groups
-  }, [convertedRows, locationStageLabel])
-
-  const stageTotals = useMemo(() => {
-    const totals = new Map<string, { available: number; held: number; rejected: number; reserved: number }>()
-    groupedRows.forEach((rows, stage) => {
-      const accum = rows.reduce(
-        (acc, row) => ({
-          available: acc.available + row.available,
-          held: acc.held + row.held,
-          rejected: acc.rejected + row.rejected,
-          reserved: acc.reserved + row.reserved,
-        }),
-        { available: 0, held: 0, rejected: 0, reserved: 0 },
-      )
-      totals.set(stage, accum)
-    })
-    return totals
-  }, [groupedRows])
   const selectedLocationLabel = useMemo(() => {
     if (!selectedLocationId) return 'All locations'
-    const loc = locationsQuery.data?.data.find((row) => row.id === selectedLocationId)
-    if (!loc) return 'Unknown location'
-    const code = loc.code ?? 'Location'
-    return loc.name ? `${code} — ${loc.name}` : code
+    const location = locationsQuery.data?.data.find((row) => row.id === selectedLocationId)
+    if (!location) return 'Unknown location'
+    return location.name ? `${location.code} — ${location.name}` : location.code
   }, [locationsQuery.data, selectedLocationId])
 
-  const hasConversionIssues = conversionMissingUoms.size > 0
-  const storageTotals = stageTotals.get('Storage / Available') ?? {
-    available: 0,
-    held: 0,
-    rejected: 0,
-    reserved: 0,
-  }
-  const receivingTotals = stageTotals.get('Receiving & Staging') ?? {
-    available: 0,
-    held: 0,
-    rejected: 0,
-    reserved: 0,
-  }
-  const wipTotals = stageTotals.get('Production / WIP') ?? {
-    available: 0,
-    held: 0,
-    rejected: 0,
-    reserved: 0,
-  }
-  const externalTotals = stageTotals.get('External / Virtual') ?? {
-    available: 0,
-    held: 0,
-    rejected: 0,
-    reserved: 0,
-  }
-  const totalHolds = (stageTotals.get('Quarantine / Rejected')?.held ?? 0) + (stageTotals.get('Quarantine / Rejected')?.rejected ?? 0)
-  const totalReserved = totalsByDefaultUom?.reserved ?? 0
-  const hasNegativeAny = hasNegativeBalance
-  const isUsable = storageTotals.available > 0 && !hasNegativeAny
-  const operationalStatusTitle = isUsable ? '✔ Available for use' : '⚠ Not available for use'
-  const stageOrder = [
-    'Storage / Available',
-    'Receiving & Staging',
-    'Production / WIP',
-    'Quarantine / Rejected',
-    'External / Virtual',
-  ]
+  const conversionQuery = useUnitConversions({
+    item,
+    stockRows,
+    conversions: uomConversionsQuery.data ?? [],
+  })
+  const conversionState = conversionQuery.data
 
+  const diagnosticMissingUnits = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          diagnostics
+            .filter((entry) => entry.reason === 'NON_CONVERTIBLE_UOM' || entry.status !== 'OK')
+            .flatMap((entry) => entry.observedUoms),
+        ),
+      ),
+    [diagnostics],
+  )
+
+  const inventorySummary = useMemo(
+    () =>
+      summarizeInventoryRows(
+        stockRows,
+        conversionState.factorByUom,
+        conversionState.canonicalUom,
+      ),
+    [conversionState.canonicalUom, conversionState.factorByUom, stockRows],
+  )
+
+  const hasManufacturingFlow = item?.type === 'wip' || item?.type === 'finished'
   const bomSummary = useMemo(() => {
     const boms = bomsQuery.data?.boms ?? []
     const activeBom = boms.find((bom) => bom.versions.some((version) => version.status === 'active'))
@@ -353,18 +219,146 @@ export default function ItemDetailPage() {
     return { activeBom, activeVersion, versionCount }
   }, [bomsQuery.data?.boms])
 
-  const openBomModal = (source?: { bom?: Bom; version?: BomVersion }) => {
-    setBomDraftSource(source ?? null)
-    setShowBomModal(true)
-  }
+  const healthConfiguration = useMemo(
+    () => ({
+      hasActiveBom: Boolean(bomSummary.activeBom),
+      requiresBom: hasManufacturingFlow,
+      hasRouting: (routingsQuery.data?.length ?? 0) > 0,
+      requiresRouting: hasManufacturingFlow,
+      conversionMode: conversionState.mode,
+      systemConversionDetected: conversionState.systemDetected,
+      missingConversionUnits: Array.from(
+        new Set([...conversionState.missingUnits, ...diagnosticMissingUnits]),
+      ),
+    }),
+    [
+      bomSummary.activeBom,
+      conversionState.missingUnits,
+      conversionState.mode,
+      conversionState.systemDetected,
+      diagnosticMissingUnits,
+      hasManufacturingFlow,
+      routingsQuery.data,
+    ],
+  )
 
-  const closeBomModal = () => {
-    setShowBomModal(false)
-    setBomDraftSource(null)
+  const health = useItemHealth({
+    item,
+    inventory: inventorySummary,
+    configuration: healthConfiguration,
+  })
+  const lifecycleStages = useInventoryLifecycle(inventorySummary)
+
+  const metricTiles = [
+    {
+      label: 'Available now',
+      value: conversionState.canonicalUom
+        ? `${formatNumber(inventorySummary.available)} ${conversionState.canonicalUom}`
+        : '—',
+      subtext: `Scope: ${selectedLocationLabel}`,
+      status: inventorySummary.available > 0 ? 'neutral' : 'warning',
+    },
+    {
+      label: 'On hand',
+      value: conversionState.canonicalUom
+        ? `${formatNumber(inventorySummary.onHand)} ${conversionState.canonicalUom}`
+        : stockRows.length,
+      subtext:
+        metricsQuery.data?.lastCountAt != null
+          ? `Last count ${formatDate(metricsQuery.data.lastCountAt)}`
+          : 'Authoritative movement-ledger rollup',
+      status: inventorySummary.hasNegativeOnHand ? 'danger' : 'neutral',
+    },
+    {
+      label: 'Inventory position',
+      value: conversionState.canonicalUom
+        ? `${formatNumber(inventorySummary.inventoryPosition)} ${conversionState.canonicalUom}`
+        : '—',
+      subtext:
+        inventorySummary.backordered > 0
+          ? `Backordered ${formatNumber(inventorySummary.backordered)}`
+          : 'Planning position',
+      status: inventorySummary.backordered > 0 ? 'warning' : 'neutral',
+    },
+    {
+      label: 'Manufacturing readiness',
+      value:
+        health.status === ItemHealthStatus.READY
+          ? 'Ready'
+          : bomSummary.activeBom
+            ? 'Partial'
+            : 'Blocked',
+      subtext: bomSummary.activeBom
+        ? `BOM ${bomSummary.activeBom.bomCode}`
+        : hasManufacturingFlow
+          ? 'No active BOM'
+          : 'No BOM required',
+      status: health.status === ItemHealthStatus.READY ? 'neutral' : 'warning',
+    },
+  ] as const
+
+  const classifyLocationStage = useCallback(
+    (locationId: string) => {
+      const location = locationLookup.get(locationId)
+      if (!location) return 'External / Virtual'
+      const type = location.type?.toLowerCase() ?? ''
+      if (location.role && location.role !== 'SELLABLE') return 'Quarantine / Rejected'
+      if (location.isSellable === false) return 'Quarantine / Rejected'
+      if (type.includes('receiv') || type.includes('stage')) return 'Receiving & Staging'
+      if (type.includes('prod') || type.includes('wip') || type.includes('manufactur')) {
+        return 'Production / WIP'
+      }
+      if (
+        ['warehouse', 'bin', 'store'].includes(type) ||
+        type.includes('warehouse') ||
+        type.includes('bin') ||
+        type.includes('store')
+      ) {
+        return 'Storage / Available'
+      }
+      return 'External / Virtual'
+    },
+    [locationLookup],
+  )
+
+  const stageRows = useMemo(() => {
+    const groups = new Map<string, typeof stockRows>()
+    stockRows.forEach((row) => {
+      const stage = classifyLocationStage(row.locationId)
+      const list = groups.get(stage) ?? []
+      list.push(row)
+      groups.set(stage, list)
+    })
+    return groups
+  }, [classifyLocationStage, stockRows])
+
+  const stageTotals = useMemo(() => {
+    const groups = new Map<string, number>()
+    stageRows.forEach((rows, stage) => {
+      const total = rows.reduce((sum, row) => {
+        const factor = conversionState.factorByUom.get(normalizeUomCode(row.uom)) ?? 0
+        return sum + row.available * factor
+      }, 0)
+      groups.set(stage, total)
+    })
+    return groups
+  }, [conversionState.factorByUom, stageRows])
+
+  const copyId = async () => {
+    if (!id) return
+    try {
+      await navigator.clipboard.writeText(id)
+      setIdCopied(true)
+      if (copyTimeoutRef.current != null) {
+        window.clearTimeout(copyTimeoutRef.current)
+      }
+      copyTimeoutRef.current = window.setTimeout(() => setIdCopied(false), 1800)
+    } catch {
+      // ignore
+    }
   }
 
   const updateLocationScope = (nextLocationId: string) => {
-    setSelectedLocationId(nextLocationId)
     const nextParams = new URLSearchParams(searchParams)
     if (nextLocationId) {
       nextParams.set('locationId', nextLocationId)
@@ -374,604 +368,412 @@ export default function ItemDetailPage() {
     setSearchParams(nextParams)
   }
 
+  const openBomModal = (payload?: { bom?: Bom; version?: BomVersion }) => {
+    setBomDraftSource(payload ?? null)
+    setShowBomModal(true)
+  }
+
+  const closeBomModal = () => {
+    setShowBomModal(false)
+    setBomDraftSource(null)
+  }
+
+  const handleHealthAction = (actionId: string) => {
+    switch (actionId) {
+      case 'fix_conversions':
+        document.getElementById('configuration')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        break
+      case 'adjust_stock':
+        if (id) navigate(`/inventory-adjustments/new?itemId=${id}`)
+        break
+      case 'create_bom':
+        setShowBomForm(true)
+        document.getElementById('production')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        break
+      case 'create_routing':
+        document.getElementById('production')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        break
+      case 'view_movements':
+        navigate(movementLink)
+        break
+      case 'edit_item':
+        setShowEdit(true)
+        break
+      default:
+        break
+    }
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Item detail</h2>
-          {itemQuery.data && (
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700">
-              <span className="font-semibold text-slate-900">
-                {itemQuery.data.sku} — {itemQuery.data.name}
-              </span>
-              <Badge
-                variant={
-                  itemQuery.data.lifecycleStatus === 'Active'
-                    ? 'success'
-                    : itemQuery.data.lifecycleStatus === 'Obsolete' ||
-                      itemQuery.data.lifecycleStatus === 'Phase-Out'
-                    ? 'danger'
-                    : 'neutral'
-                }
-              >
-                {itemQuery.data.lifecycleStatus}
-              </Badge>
-            </div>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => navigate('/items')}>
-            Back to list
-          </Button>
-          <Button
-            variant={hasNegativeAny ? 'primary' : 'secondary'}
-            size="sm"
-            onClick={() => {
-              if (id) navigate(`/inventory-adjustments/new?itemId=${id}`)
-            }}
-          >
-            Adjust stock
-          </Button>
-        </div>
-      </div>
-
-      {itemQuery.isLoading && <LoadingSpinner label="Loading item..." />}
-      {itemQuery.isError && itemQuery.error && (
+    <div className="mx-auto max-w-[1480px] space-y-6 pb-10">
+      {itemQuery.isLoading ? <LoadingSpinner label="Loading item..." /> : null}
+      {itemQuery.isError && itemQuery.error ? (
         <ErrorState error={itemQuery.error} onRetry={() => void itemQuery.refetch()} />
-      )}
+      ) : null}
 
-      {itemQuery.data && (
-        <Card>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-500">SKU</div>
-              <div className="text-xl font-semibold text-slate-900">{itemQuery.data.sku}</div>
-              <div className="text-sm text-slate-700">{itemQuery.data.name}</div>
-              <button
-                type="button"
-                className="mt-1 text-xs font-semibold text-slate-500 underline"
-                onClick={copyId}
+      {item ? (
+        <>
+          <section id="overview" className="space-y-6">
+            <ItemHeader
+              item={item}
+              onBack={() => navigate('/items')}
+              onEdit={() => setShowEdit((value) => !value)}
+              onAdjustStock={() => {
+                if (id) navigate(`/inventory-adjustments/new?itemId=${id}`)
+              }}
+              onCopyId={copyId}
+              idCopied={idCopied}
+            />
+
+            <ItemHealthBanner health={health} onAction={handleHealthAction} />
+
+            <MetricGrid>
+              {metricTiles.map((tile) => (
+                <MetricTile
+                  key={tile.label}
+                  label={tile.label}
+                  value={tile.value}
+                  subtext={tile.subtext}
+                  status={tile.status}
+                />
+              ))}
+            </MetricGrid>
+          </section>
+
+          <ItemSectionNav sections={sectionLinks} />
+
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <main className="space-y-6">
+              <PageSection
+                id="inventory"
+                title="Inventory"
+                description="Lifecycle, scope, warnings, and stage-by-stage breakdown for the authoritative stock view."
               >
-                Copy item ID
-              </button>
-              {itemQuery.data.description && (
-                <div className="mt-2 text-sm text-slate-600">{itemQuery.data.description}</div>
-              )}
-              <div className="mt-3 grid gap-3 sm:grid-cols-3 text-sm text-slate-700">
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Type</div>
-                  <div className="font-semibold text-slate-900">
-                    {typeLabels[itemQuery.data.type] ?? itemQuery.data.type}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Default UOM</div>
-                  <div className="font-semibold text-slate-900">
-                    {itemQuery.data.defaultUom || '—'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Default location</div>
-                  <div className="font-semibold text-slate-900">
-                    {itemQuery.data.defaultLocationCode ||
-                      itemQuery.data.defaultLocationName ||
-                      '—'}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-3 pt-3 border-t border-slate-200 grid gap-3 sm:grid-cols-4 text-sm text-slate-700">
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Standard Cost</div>
-                  <div className="text-[11px] text-slate-500">Variance reporting</div>
-                  <div className="font-mono font-semibold text-slate-900">
-                    {itemQuery.data.standardCost != null
-                      ? formatCurrency(
-                          itemQuery.data.standardCost,
-                          itemQuery.data.standardCostCurrency ?? baseCurrency,
+                <Card
+                  title="Inventory lifecycle"
+                  description="Normalized to the canonical unit when the system registry or item overrides can resolve conversions."
+                  className="rounded-[24px] border-slate-200 shadow-sm shadow-slate-950/5"
+                >
+                  <InventoryLifecycle stages={lifecycleStages} uom={conversionState.canonicalUom} />
+                </Card>
+
+                <Card
+                  title="Inventory state"
+                  description="Inventory is grouped by operational stage and scoped by location."
+                  action={
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <label
+                        htmlFor="item-location-scope"
+                        className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500"
+                      >
+                        Location scope
+                      </label>
+                      <select
+                        id="item-location-scope"
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                        value={selectedLocationId}
+                        onChange={(event) => updateLocationScope(event.target.value)}
+                      >
+                        <option value="">All locations</option>
+                        {locationsQuery.data?.data.map((location) => (
+                          <option key={location.id} value={location.id}>
+                            {location.code || location.name || 'Location'}
+                          </option>
+                        ))}
+                      </select>
+                      <Button variant="secondary" size="sm" onClick={() => navigate(movementLink)}>
+                        View movements
+                      </Button>
+                    </div>
+                  }
+                  className="rounded-[24px] border-slate-200 shadow-sm shadow-slate-950/5"
+                >
+                  <div className="space-y-4">
+                    <div className="text-sm text-slate-600">Scope: {selectedLocationLabel}</div>
+
+                    {inventoryQuery.isLoading ? <LoadingSpinner label="Loading inventory..." /> : null}
+                    {inventoryQuery.isError ? (
+                      <ErrorState
+                        error={inventoryQuery.error as ApiError}
+                        onRetry={() => void inventoryQuery.refetch()}
+                      />
+                    ) : null}
+
+                    {healthConfiguration.missingConversionUnits.length > 0 ? (
+                      <Alert
+                        variant="warning"
+                        title="Missing UOM normalization"
+                        message={`Inventory cannot be fully normalized for ${healthConfiguration.missingConversionUnits.join(', ')}.`}
+                      />
+                    ) : null}
+
+                    {inventorySummary.hasNegativeOnHand ? (
+                      <Alert
+                        variant="warning"
+                        title="Negative inventory detected"
+                        message="Movement ordering is inconsistent for at least one stock row."
+                        action={
+                          <Button variant="secondary" size="sm" onClick={() => navigate(movementLink)}>
+                            Investigate
+                          </Button>
+                        }
+                      />
+                    ) : null}
+
+                    {stockRows.length === 0 && !inventoryQuery.isLoading ? (
+                      <EmptyState
+                        title="No stock activity yet"
+                        description="This item has no on-hand, reservation, or inbound movement in the selected scope."
+                        action={
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => {
+                              if (id) navigate(`/inventory-adjustments/new?itemId=${id}`)
+                            }}
+                          >
+                            Adjust stock
+                          </Button>
+                        }
+                      />
+                    ) : null}
+
+                    <div className="space-y-4">
+                      {inventoryStageOrder.map((stage) => {
+                        const rows = stageRows.get(stage) ?? []
+                        if (rows.length === 0) return null
+                        return (
+                          <div
+                            key={stage}
+                            className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/60"
+                          >
+                            <div className="border-b border-slate-200 px-5 py-4">
+                              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                                <div>
+                                  <div className="text-base font-semibold text-slate-900">{stage}</div>
+                                  <div className="mt-1 text-sm text-slate-600">
+                                    Available {formatNumber(stageTotals.get(stage) ?? 0)}{' '}
+                                    {conversionState.canonicalUom ?? ''}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="px-5 py-4">
+                              <InventorySnapshotTable
+                                rows={rows}
+                                showItem={false}
+                                showLocation={!selectedLocationId}
+                                locationLookup={locationLookup}
+                              />
+                            </div>
+                          </div>
                         )
-                      : 'Not set'}
+                      })}
+                    </div>
                   </div>
-                  {itemQuery.data.standardCostCurrency &&
-                  itemQuery.data.standardCostExchangeRateToBase &&
-                  itemQuery.data.standardCostCurrency !== baseCurrency ? (
-                    <div className="text-xs text-slate-500">
-                      Rate: {formatNumber(itemQuery.data.standardCostExchangeRateToBase)}
+                </Card>
+              </PageSection>
+
+              <PageSection
+                id="production"
+                title="Production"
+                description="Manufacturing definitions are kept in modular panels for BOMs and routings."
+              >
+                <ConfigurationPanels>
+                  <BOMPanel
+                    item={item}
+                    summary={bomSummary}
+                    boms={bomsQuery.data?.boms ?? []}
+                    isLoading={bomsQuery.isLoading}
+                    error={(bomsQuery.error as ApiError) ?? null}
+                    showComposer={showBomForm}
+                    message={bomMessage}
+                    onToggleComposer={() => {
+                      setShowBomForm((value) => !value)
+                      if (!showBomForm) setBomMessage(null)
+                    }}
+                    onCreateWorkOrder={() => {
+                      if (!bomSummary.activeBom || !id) return
+                      navigate(`/work-orders/new?outputItemId=${id}&bomId=${bomSummary.activeBom.id}`)
+                    }}
+                    onCreated={() => {
+                      setShowBomForm(false)
+                      setBomMessage('BOM created.')
+                      void bomsQuery.refetch()
+                    }}
+                    onRefetch={() => void bomsQuery.refetch()}
+                    onDuplicate={openBomModal}
+                  />
+                  <RoutingPanel itemId={item.id} />
+                </ConfigurationPanels>
+              </PageSection>
+
+              <PageSection
+                id="configuration"
+                title="Configuration"
+                description="Unit conversions and master-data editing stay isolated from inventory and production read paths."
+              >
+                <ConfigurationPanels>
+                  <ConversionPanel
+                    item={item}
+                    conversionState={conversionState}
+                    manualConversions={uomConversionsQuery.data ?? []}
+                  />
+
+                  {showEdit ? (
+                    <div ref={editFormRef}>
+                      <Card
+                        title="Edit item"
+                        description="Inline editor for master data and default policies."
+                        className="rounded-[24px] border-slate-200 shadow-sm shadow-slate-950/5"
+                      >
+                        <ItemForm
+                          initialItem={item}
+                          onSuccess={() => {
+                            setShowEdit(false)
+                            void itemQuery.refetch()
+                          }}
+                        />
+                      </Card>
                     </div>
                   ) : null}
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">
-                    Base Cost ({baseCurrency})
-                  </div>
-                  <div className="text-[11px] text-slate-500">Reference currency</div>
-                  <div className="font-mono font-semibold text-slate-900">
-                    {itemQuery.data.standardCostBase != null
-                      ? formatCurrency(itemQuery.data.standardCostBase, baseCurrency)
-                      : '—'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Average Cost</div>
-                  <div className="text-[11px] text-slate-500">Inventory valuation</div>
-                  <div className="font-mono font-semibold text-slate-900">
-                    {itemQuery.data.averageCost != null
-                      ? formatCurrency(itemQuery.data.averageCost, baseCurrency)
-                      : 'N/A'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-600">Cost Info</div>
-                  <div className="text-xs text-slate-600">
-                    {itemQuery.data.averageCost != null ? 'Auto-calculated on receipts' : 'Set standard cost first'}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="grid gap-3 text-right text-sm text-slate-700">
-              <div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowEdit((v) => !v)}
-                >
-                  {showEdit ? 'Close edit' : 'Edit item'}
-                </Button>
-              </div>
-              <div>Created: {itemQuery.data.createdAt ? formatDate(itemQuery.data.createdAt) : '—'}</div>
-              <div>Updated: {itemQuery.data.updatedAt ? formatDate(itemQuery.data.updatedAt) : '—'}</div>
-            </div>
-          </div>
-        </Card>
-      )}
+                </ConfigurationPanels>
+              </PageSection>
 
-      {itemQuery.data && (
-        <Section title="Operational status">
-          <Card>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">{operationalStatusTitle}</div>
-                <div className="mt-2 space-y-1 text-sm text-slate-700">
-                  {isUsable ? (
-                    <div>
-                      • {formatNumber(storageTotals.available)} {defaultUom ?? '—'} usable in Storage / Available
-                    </div>
-                  ) : (
-                    <>
-                      {receivingTotals.available > 0 && (
-                        <div>• Inventory exists only in Receiving &amp; Staging</div>
-                      )}
-                      {wipTotals.available > 0 && <div>• Inventory exists only in Production / WIP</div>}
-                      {externalTotals.available > 0 && <div>• Inventory exists only in External / Virtual locations</div>}
-                      {storageTotals.available <= 0 && receivingTotals.available <= 0 && wipTotals.available <= 0 && externalTotals.available <= 0 && (
-                        <div>• No usable inventory on hand</div>
-                      )}
-                    </>
-                  )}
-                  {totalHolds > 0 && (
-                    <div>• QC holds present ({formatNumber(totalHolds)} {defaultUom ?? '—'})</div>
-                  )}
-                  {totalReserved > 0 && (
-                    <div>• Reserved ({formatNumber(totalReserved)} {defaultUom ?? '—'})</div>
-                  )}
-                  {hasNegativeAny && (
-                    <div>
-                      • Negative on-hand detected{' '}
-                      <span
-                        className="text-xs text-slate-500 underline"
-                        title="Negative inventory signals a record inconsistency (out-of-order or missing movement)."
-                      >
-                        Why?
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="text-xs text-slate-500">
-                Default UOM: {defaultUom ?? 'Not set'}
-              </div>
-            </div>
-          </Card>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-            <span className={`rounded-full px-2 py-1 ${totalHolds > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
-              {totalHolds > 0 ? '⚠ QC holds' : '✅ No holds'}
-            </span>
-            <span className={`rounded-full px-2 py-1 ${hasNegativeAny ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
-              {hasNegativeAny ? '⚠ Negative on-hand' : '✅ No negative on-hand'}
-            </span>
-            {metricsQuery.data?.lastCountAt && (
-              <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">
-                ℹ Last count {formatDate(metricsQuery.data.lastCountAt)}
-              </span>
-            )}
-          </div>
-        </Section>
-      )}
-
-      {itemQuery.data && (
-        <Card>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-500">Operational Metrics</div>
-              <div className="text-sm text-slate-600">
-                Based on the last 90 days of activity and the most recent cycle count.
-              </div>
-            </div>
-            <div className="text-xs text-slate-500">
-              Window: {metricsQuery.data?.windowDays ?? 90} days
-            </div>
-          </div>
-          {metricsQuery.isLoading && <LoadingSpinner label="Loading metrics..." />}
-          {metricsQuery.isError && (
-            <Alert
-              variant="error"
-              title="Metrics unavailable"
-              message={(metricsQuery.error as ApiError)?.message ?? 'Failed to load metrics.'}
-            />
-          )}
-          {metricsQuery.data && (
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm text-slate-700">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Fill Rate</div>
-                <div className="font-semibold text-slate-900">
-                  {metricsQuery.data.fillRate != null
-                    ? `${(metricsQuery.data.fillRate * 100).toFixed(1)}%`
-                    : '—'}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {metricsQuery.data.orderedQty > 0
-                    ? `${formatNumber(metricsQuery.data.shippedQty)} shipped / ${formatNumber(
-                        metricsQuery.data.orderedQty,
-                      )} ordered`
-                    : 'No shipped order lines'}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Stockout Rate</div>
-                <div className="font-semibold text-slate-900">
-                  {metricsQuery.data.stockoutRate != null
-                    ? `${(metricsQuery.data.stockoutRate * 100).toFixed(1)}%`
-                    : '—'}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Turns</div>
-                <div className="font-semibold text-slate-900">
-                  {metricsQuery.data.turns != null ? metricsQuery.data.turns.toFixed(2) : '—'}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">DOI</div>
-                <div className="font-semibold text-slate-900">
-                  {metricsQuery.data.doiDays != null ? `${metricsQuery.data.doiDays.toFixed(1)} days` : '—'}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Last Count</div>
-                <div className="font-semibold text-slate-900">
-                  {metricsQuery.data.lastCountAt ? formatDate(metricsQuery.data.lastCountAt) : '—'}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {metricsQuery.data.lastCountVarianceQty != null
-                    ? `Variance ${formatNumber(metricsQuery.data.lastCountVarianceQty)}`
-                    : 'No variance recorded'}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Count Variance %</div>
-                <div className="font-semibold text-slate-900">
-                  {metricsQuery.data.lastCountVariancePct != null
-                    ? `${(metricsQuery.data.lastCountVariancePct * 100).toFixed(1)}%`
-                    : '—'}
-                </div>
-              </div>
-            </div>
-          )}
-        </Card>
-      )}
-      {itemQuery.data && showEdit && (
-        <div ref={editFormRef}>
-          <Section title="Edit item">
-            <ItemForm
-              initialItem={itemQuery.data}
-              onSuccess={() => {
-                setShowEdit(false)
-                void itemQuery.refetch()
-              }}
-            />
-          </Section>
-        </div>
-      )}
-
-      <Section
-        title="Stock (authoritative)"
-        description="This is the definitive view of on-hand and availability for this item. Use the location scope to narrow."
-      >
-        <div className="flex flex-col gap-2 pb-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-slate-700">
-            Stock is a property of an item at a location. This view aggregates the movement ledger.
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Location</label>
-            <select
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              value={selectedLocationId}
-              onChange={(e) => updateLocationScope(e.target.value)}
-            >
-              <option value="">All locations</option>
-              {locationsQuery.data?.data.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.code || loc.name || 'Location'}
-                </option>
-              ))}
-            </select>
-            {id && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => navigate(movementLink)}
+              <PageSection
+                id="history"
+                title="History"
+                description="Movement and change context without pulling metadata into the primary work surface."
               >
-                View movements
-              </Button>
-            )}
-          </div>
-        </div>
-        {locationsQuery.isLoading && <LoadingSpinner label="Loading locations..." />}
-        {locationsQuery.isError && (
-          <Alert
-            variant="error"
-            title="Locations unavailable"
-            message={(locationsQuery.error as ApiError)?.message ?? 'Could not load locations.'}
-            action={
-              <Button size="sm" variant="secondary" onClick={() => void locationsQuery.refetch()}>
-                Retry
-              </Button>
-            }
-          />
-        )}
-        {snapshotQuery.isLoading && <LoadingSpinner label="Loading stock..." />}
-        {snapshotQuery.isError && (
-          <ErrorState error={snapshotQuery.error as ApiError} onRetry={() => void snapshotQuery.refetch()} />
-        )}
-        {!snapshotQuery.isLoading && !snapshotQuery.isError && (
-          <>
-            <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">
-              Scope: {selectedLocationLabel}
-            </div>
-            {!defaultUom && (
-              <Alert
-                variant="warning"
-                title="Default UOM missing"
-                message="Set a default UOM to view canonical inventory totals."
-              />
-            )}
-            {hasConversionIssues && (
-              <Alert
-                variant="warning"
-                title="Missing UOM conversions"
-                message={`Add conversions to show canonical totals: ${Array.from(conversionMissingUoms).join(', ')} → ${defaultUom}.`}
-              />
-            )}
-            {hasNegativeBalance && (
-              <Alert
-                variant="warning"
-                title="Negative inventory detected"
-                message="Negative on-hand balances indicate a record inconsistency (out-of-order or missing movement). Review movements to resolve."
-                action={
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      if (id) navigate(movementLink)
-                    }}
-                  >
-                    View movements
-                  </Button>
-                }
-              />
-            )}
-            {stockRows.length === 0 && (
-              <EmptyState
-                title="No stock activity yet"
-                description="No on-hand, reservations, or incoming found for this item in the selected scope."
-              />
-            )}
-            {stockRows.length > 0 && (
-              <>
-                {totalsByDefaultUom && (
-                  <div className="mb-4 grid gap-3 md:grid-cols-3">
-                    <div className="rounded-lg border border-slate-200 bg-white p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">
-                        Available (on-hand − reservations) ({defaultUom})
+                <Card
+                  title="Supporting history"
+                  description="Use the movement ledger for detailed traceability and issue investigation."
+                  action={
+                    <Button variant="secondary" size="sm" onClick={() => navigate(movementLink)}>
+                      View movement ledger
+                    </Button>
+                  }
+                  className="rounded-[24px] border-slate-200 shadow-sm shadow-slate-950/5"
+                >
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Created
                       </div>
-                      <div className="mt-1 text-2xl font-semibold text-slate-900">
-                        {formatNumber(totalsByDefaultUom.available)}
+                      <div className="mt-2 text-base font-semibold text-slate-950">
+                        {item.createdAt ? formatDate(item.createdAt) : '—'}
                       </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        On hand {formatNumber(totalsByDefaultUom.onHand)} ·{' '}
-                        <span className="inline-flex items-center gap-1">
-                          Reserved {formatNumber(totalsByDefaultUom.reserved)}
-                          <button
-                            type="button"
-                            className="text-brand-700 underline"
-                            title="Reserved stock is allocated to orders and not available."
-                          >
-                            Explain
-                          </button>
-                        </span>{' '}
-                        · Backordered {formatNumber(totalsByDefaultUom.backordered)}{' '}
-                        ·{' '}
-                        <span className="inline-flex items-center gap-1">
-                          Held {formatNumber(totalsByDefaultUom.held)}
-                          <button
-                            type="button"
-                            className="text-brand-700 underline"
-                            title="Held stock is quarantined or awaiting QC and not usable."
-                          >
-                            Explain
-                          </button>
-                        </span>{' '}
-                        ·{' '}
-                        <span className="inline-flex items-center gap-1">
-                          Rejected {formatNumber(totalsByDefaultUom.rejected)}
-                          <button
-                            type="button"
-                            className="text-brand-700 underline"
-                            title="Rejected stock is non-usable and should not be put away."
-                          >
-                            Explain
-                          </button>
-                        </span>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Updated
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-950">
+                        {item.updatedAt ? formatDate(item.updatedAt) : '—'}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Costing
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-950">
+                        {item.averageCost != null
+                          ? formatCurrency(item.averageCost, baseCurrency)
+                          : item.standardCost != null
+                            ? formatCurrency(item.standardCost, item.standardCostCurrency ?? baseCurrency)
+                            : 'Not set'}
                       </div>
                     </div>
                   </div>
-                )}
-                <div className="text-xs uppercase tracking-wide text-slate-500">
-                  Location breakdown by lifecycle
-                </div>
-                <div className="mt-2 space-y-4">
-                  {stageOrder.map((stage) => {
-                    const rows = groupedRows.get(stage) ?? []
-                    if (rows.length === 0) return null
-                    const helper =
-                      stage === 'Receiving & Staging'
-                        ? 'Inventory here may not be consumable.'
-                        : stage === 'Production / WIP'
-                          ? 'Inventory here is in-process and not usable.'
-                          : stage === 'Quarantine / Rejected'
-                            ? 'Inventory here is on hold or rejected.'
-                            : stage === 'External / Virtual'
-                              ? 'Inventory here is not available for use.'
-                              : 'Inventory here is available for use.'
-                    return (
-                      <div key={stage} className="space-y-2">
-                        <div className="text-sm font-semibold text-slate-700">{stage}</div>
-                        <div className="text-xs text-slate-500">{helper}</div>
-                        <InventorySnapshotTable
-                          rows={rows}
-                          showItem={false}
-                          showLocation={!selectedLocationId}
-                          locationLookup={locationLookup}
+                </Card>
+              </PageSection>
+            </main>
+
+            <ContextRail
+              sections={[
+                {
+                  title: 'Entity identity',
+                  description: 'Stable properties for fast scanning.',
+                  items: [
+                    { label: 'Type', value: item.type },
+                    { label: 'Lifecycle', value: item.lifecycleStatus },
+                    { label: 'Default UOM', value: item.defaultUom || '—' },
+                    { label: 'Canonical UOM', value: item.canonicalUom || '—' },
+                    { label: 'Stocking UOM', value: item.stockingUom || '—' },
+                    {
+                      label: 'Default location',
+                      value: item.defaultLocationCode || item.defaultLocationName || '—',
+                    },
+                  ],
+                },
+                {
+                  title: 'Configuration health',
+                  description: 'High-signal readiness checks.',
+                  items: [
+                    {
+                      label: 'UOM normalization',
+                      value: (
+                        <ConfigurationHealthPill
+                          label={
+                            conversionState.mode === 'derived'
+                              ? 'System derived'
+                              : healthConfiguration.missingConversionUnits.length > 0
+                                ? 'Manual required'
+                                : 'Manual configured'
+                          }
+                          tone={
+                            healthConfiguration.missingConversionUnits.length > 0 ? 'warning' : 'success'
+                          }
                         />
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            )}
-          </>
-        )}
-        <div className="pt-3 text-xs text-slate-500">
-          Stock is derived from the movement ledger (append-only).
-        </div>
-      </Section>
-
-      <Section title="BOMs">
-        {bomsQuery.isLoading && <LoadingSpinner label="Loading BOMs..." />}
-        {bomsQuery.isError && bomsQuery.error && (
-          <ErrorState error={bomsQuery.error as unknown as ApiError} onRetry={() => void bomsQuery.refetch()} />
-        )}
-        <div className="flex flex-wrap items-start justify-between gap-3 pb-2">
-          <div className="text-sm text-slate-700">
-            BOMs are versioned recipes. Activate exactly one version to use in work orders.
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setShowBomForm((v) => !v)
-                if (!showBomForm) setBomMessage(null)
-              }}
-            >
-              {showBomForm ? 'Close panel' : 'New BOM version'}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                if (!bomSummary.activeBom || !id) return
-                navigate(`/work-orders/new?outputItemId=${id}&bomId=${bomSummary.activeBom.id}`)
-              }}
-              disabled={!bomSummary.activeBom || !id}
-            >
-              Create work order
-            </Button>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 pb-3">
-          <span>
-            Active BOM:{' '}
-            {bomSummary.activeBom && bomSummary.activeVersion
-              ? `${bomSummary.activeBom.bomCode} (v${bomSummary.activeVersion.versionNumber})`
-              : 'No active BOM'}
-          </span>
-          <span>Versions: {bomSummary.versionCount}</span>
-          {!bomSummary.activeBom && (
-            <span className="text-xs text-slate-500">Activate a version to create work orders.</span>
-          )}
-        </div>
-        {bomMessage && <Alert variant="success" title="BOM updated" message={bomMessage} className="mb-3" />}
-        {showBomForm && itemQuery.data && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <BomForm
-              outputItemId={itemQuery.data.id}
-              defaultUom={itemQuery.data.defaultUom || undefined}
-              onSuccess={() => {
-                setShowBomForm(false)
-                setBomMessage('BOM created.')
-                void bomsQuery.refetch()
-              }}
+                      ),
+                    },
+                    {
+                      label: 'Active BOM',
+                      value: (
+                        <ConfigurationHealthPill
+                          label={bomSummary.activeBom ? 'Ready' : hasManufacturingFlow ? 'Missing' : 'Optional'}
+                          tone={bomSummary.activeBom || !hasManufacturingFlow ? 'success' : 'warning'}
+                        />
+                      ),
+                    },
+                    {
+                      label: 'Routing',
+                      value: (
+                        <ConfigurationHealthPill
+                          label={(routingsQuery.data?.length ?? 0) > 0 ? 'Ready' : hasManufacturingFlow ? 'Missing' : 'Optional'}
+                          tone={(routingsQuery.data?.length ?? 0) > 0 || !hasManufacturingFlow ? 'success' : 'warning'}
+                        />
+                      ),
+                    },
+                  ],
+                },
+                {
+                  title: 'Supporting metadata',
+                  description: 'Secondary details kept out of the main flow.',
+                  items: [
+                    { label: 'Item ID', value: item.id },
+                    { label: 'ABC class', value: item.abcClass || '—' },
+                    {
+                      label: 'Standard cost',
+                      value:
+                        item.standardCost != null
+                          ? formatCurrency(item.standardCost, item.standardCostCurrency ?? baseCurrency)
+                          : 'Not set',
+                    },
+                    {
+                      label: `Base cost (${baseCurrency})`,
+                      value:
+                        item.standardCostBase != null
+                          ? formatCurrency(item.standardCostBase, baseCurrency)
+                          : '—',
+                    },
+                  ],
+                },
+              ]}
             />
           </div>
-        )}
-        {!bomsQuery.isLoading && !bomsQuery.isError && bomsQuery.data?.boms.length === 0 && (
-          <EmptyState
-            title={
-              itemQuery.data?.type === 'wip' || itemQuery.data?.type === 'finished'
-                ? 'BOM required for production'
-                : 'No BOM required'
-            }
-            description={
-              itemQuery.data?.type === 'wip' || itemQuery.data?.type === 'finished'
-                ? 'This item cannot be produced or disassembled without a BOM.'
-                : 'Raw and packaging items can be received without a BOM.'
-            }
-            action={
-              itemQuery.data?.type === 'wip' || itemQuery.data?.type === 'finished' ? (
-                <Button size="sm" onClick={() => setShowBomForm(true)}>
-                  Create BOM
-                </Button>
-              ) : undefined
-            }
-          />
-        )}
-        <div className="grid gap-4">
-          {bomsQuery.data?.boms.map((bom) => (
-            <BomCard
-              key={bom.id}
-              bomId={bom.id}
-              fallback={bom}
-              onChanged={() => void bomsQuery.refetch()}
-              onDuplicate={(sourceBom, sourceVersion) => openBomModal({ bom: sourceBom, version: sourceVersion })}
-            />
-          ))}
-        </div>
-      </Section>
-
-      {itemQuery.data && (
-        <Section title="UoM Conversions">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <UomConversionsCard item={itemQuery.data} conversions={uomConversionsQuery.data ?? []} />
-          </div>
-        </Section>
-      )}
-
-      {itemQuery.data && (
-        <Section title="Production Routings">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <RoutingsCard itemId={itemQuery.data.id} />
-          </div>
-        </Section>
-      )}
+        </>
+      ) : null}
 
       <Modal
         isOpen={showBomModal}
@@ -980,10 +782,10 @@ export default function ItemDetailPage() {
         className="max-h-[92vh] w-full max-w-[90vw] overflow-hidden"
       >
         <div className="max-h-[80vh] overflow-y-auto pr-4">
-          {itemQuery.data && (
+          {item ? (
             <BomForm
-              outputItemId={itemQuery.data.id}
-              defaultUom={itemQuery.data.defaultUom || undefined}
+              outputItemId={item.id}
+              defaultUom={item.defaultUom || undefined}
               initialBom={bomDraftSource ?? undefined}
               onSuccess={() => {
                 closeBomModal()
@@ -991,9 +793,31 @@ export default function ItemDetailPage() {
                 void bomsQuery.refetch()
               }}
             />
-          )}
+          ) : null}
         </div>
       </Modal>
     </div>
+  )
+}
+
+function PageSection({
+  id,
+  title,
+  description,
+  children,
+}: {
+  id: string
+  title: string
+  description: string
+  children: ReactNode
+}) {
+  return (
+    <section id={id} className="space-y-4 scroll-mt-24">
+      <div className="space-y-1">
+        <div className="text-2xl font-semibold tracking-tight text-slate-950">{title}</div>
+        <p className="max-w-3xl text-sm leading-6 text-slate-600">{description}</p>
+      </div>
+      {children}
+    </section>
   )
 }
