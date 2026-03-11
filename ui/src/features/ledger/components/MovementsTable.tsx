@@ -78,9 +78,18 @@ export function MovementsTable({ movements, page, pageCount, onPageChange }: Pro
   return (
     <div className="space-y-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
       <DataTable
+        stickyHeader
+        keyboardNavigation
         rows={movements}
         rowKey={(movement) => movement.id}
         onRowClick={(movement) => navigate(`/movements/${movement.id}`)}
+        onRowOpen={(movement) => navigate(`/movements/${movement.id}`)}
+        shortcutActions={[
+          {
+            key: 'm',
+            run: (movement) => navigate(`/movements/${movement.id}`),
+          },
+        ]}
         getRowState={(movement) =>
           hasNegativeOverride(movement) ? 'danger' : movement.status?.toLowerCase() === 'draft' || isLatePosted(movement) ? 'warning' : 'default'
         }

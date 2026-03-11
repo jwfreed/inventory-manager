@@ -20,4 +20,33 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    files: [
+      'src/features/ledger/pages/MovementDetailPage.tsx',
+      'src/features/workOrders/pages/WorkOrderDetailPage.tsx',
+      'src/features/reports/pages/WorkOrderProgressPage.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@shared/ui',
+              importNames: ['Card', 'Section'],
+              message: 'Use EntityPageLayout, Panel, DataTable, and SectionNav on migrated operational pages.',
+            },
+            {
+              name: '../../../components/Card',
+              message: 'Use Panel instead of Card on migrated operational pages.',
+            },
+            {
+              name: '../../../components/Section',
+              message: 'Use Panel and SectionNav instead of Section on migrated operational pages.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])

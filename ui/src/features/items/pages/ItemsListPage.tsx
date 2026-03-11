@@ -137,6 +137,7 @@ export default function ItemsListPage() {
   useEffect(() => {
     const abcParam = searchParams.get('abcClass')
     if (abcParam) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAbcClassFilter(abcParam)
     }
   }, [searchParams])
@@ -240,6 +241,7 @@ export default function ItemsListPage() {
   }, [filtered, typeFilter, abcClassFilter])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(1)
   }, [search, lifecycleStatus, typeFilter, abcClassFilter])
 
@@ -698,9 +700,22 @@ export default function ItemsListPage() {
           {!isLoading && !isError && filteredByType.length > 0 && (
             <div className="space-y-3">
               <DataTable
+                stickyHeader
+                keyboardNavigation
                 rows={filteredByType}
                 rowKey={(item) => item.id}
                 onRowClick={(item) => navigate(`/items/${item.id}`)}
+                onRowOpen={(item) => navigate(`/items/${item.id}`)}
+                shortcutActions={[
+                  {
+                    key: 'a',
+                    run: (item) => navigate(`/inventory-adjustments/new?itemId=${item.id}`),
+                  },
+                  {
+                    key: 'm',
+                    run: (item) => navigate(`/movements?itemId=${item.id}`),
+                  },
+                ]}
                 columns={visibleColumns.map((column) => ({
                   id: column.id,
                   header: column.header ?? column.label,

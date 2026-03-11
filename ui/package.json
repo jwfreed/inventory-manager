@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "check:operational-tables": "node scripts/checkOperationalTables.mjs",
     "preview": "vite preview",
     "test": "vitest",
     "test:smoke": "bash -lc 'set -euo pipefail; files=$(find src/test -type f \\( -name \"*production*\" -o -name \"*routing*\" -o -name \"*workcenter*\" -o -name \"*report*\" \\) | tr \"\\n\" \" \"); if [ -z \"${files// }\" ]; then echo \"No matching UI smoke tests under src/test\"; exit 0; fi; vitest run $files'",

@@ -14,9 +14,18 @@ type Props = {
 export function WorkOrdersTable({ rows, onSelect, formatOutput, remaining }: Props) {
   return (
     <DataTable
+      stickyHeader
+      keyboardNavigation
       rows={rows}
       rowKey={(row) => row.id}
       onRowClick={onSelect}
+      onRowOpen={onSelect}
+      shortcutActions={[
+        {
+          key: 'w',
+          run: onSelect,
+        },
+      ]}
       getRowState={(row) =>
         row.status?.toLowerCase() === 'canceled'
           ? 'danger'

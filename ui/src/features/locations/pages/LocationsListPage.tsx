@@ -195,9 +195,18 @@ export default function LocationsListPage() {
           )}
           {!isLoading && !isError && filtered.length > 0 && (
             <DataTable
+              stickyHeader
+              keyboardNavigation
               rows={filtered}
               rowKey={(loc) => loc.id}
               onRowClick={(loc) => navigate(`/locations/${loc.id}`)}
+              onRowOpen={(loc) => navigate(`/locations/${loc.id}`)}
+              shortcutActions={[
+                {
+                  key: 'l',
+                  run: (loc) => navigate(`/locations/${loc.id}`),
+                },
+              ]}
               getRowState={(loc) => (loc.active ? 'default' : 'warning')}
               columns={[
                 { id: 'code', header: 'Code', priority: 'primary', cell: (loc) => loc.code },

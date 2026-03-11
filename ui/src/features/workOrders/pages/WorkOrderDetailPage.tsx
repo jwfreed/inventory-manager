@@ -3,10 +3,24 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useItem, useItemsList } from '@features/items/queries'
 import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createWorkOrder, updateWorkOrderDescription, useActiveBomVersion } from '../api/workOrders'
+import { createWorkOrder, updateWorkOrderDescription, useActiveBomVersion as activateWorkOrderBomVersion } from '../api/workOrders'
 import type { ApiError } from '@api/types'
 import { useWorkOrder, useWorkOrderExecution, useWorkOrderRequirements, workOrdersQueryKeys } from '../queries'
-import { Alert, Button, Card, EmptyState, ErrorState, LoadingSpinner, Modal, Section, Textarea } from '@shared/ui'
+import {
+  Alert,
+  Banner,
+  Button,
+  ContextRail,
+  EmptyState,
+  EntityPageLayout,
+  ErrorState,
+  LoadingSpinner,
+  Modal,
+  PageHeader,
+  Panel,
+  SectionNav,
+  Textarea,
+} from '@shared/ui'
 import { WorkOrderHeader } from '../components/WorkOrderHeader'
 import { ExecutionSummaryPanel } from '../components/ExecutionSummaryPanel'
 import { IssueDraftForm } from '../components/IssueDraftForm'
@@ -21,6 +35,14 @@ import type { AtpResult } from '@api/types'
 import { formatNumber } from '@shared/formatters'
 
 type TabKey = 'summary' | 'issues' | 'completions' | 'batch'
+
+const workOrderDetailSections = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'inventory', label: 'Inventory' },
+  { id: 'execution', label: 'Execution' },
+  { id: 'requirements', label: 'Requirements' },
+  { id: 'actions', label: 'Actions' },
+] as const
 
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -226,7 +248,7 @@ export default function WorkOrderDetailPage() {
   }, [bomQuery.data, workOrderQuery.data?.bomVersionId, requirementsQuery.data?.bomVersionId])
 
   const switchBomMutation = useMutation({
-    mutationFn: () => useActiveBomVersion(id as string),
+    mutationFn: () => activateWorkOrderBomVersion(id as string),
     onSuccess: () => {
       setShowBomSwitchConfirm(false)
       setBomSwitchError(null)
@@ -289,7 +311,7 @@ export default function WorkOrderDetailPage() {
     staleTime: 30_000,
   })
 
-  const atpRows: AtpResult[] = (atpQuery.data?.data ?? []) as AtpResult[]
+  const atpRows = useMemo(() => (atpQuery.data?.data ?? []) as AtpResult[], [atpQuery.data?.data])
   const totalOnHand = atpRows.reduce((sum, row) => sum + (row.onHand ?? 0), 0)
   const totalReserved = atpRows.reduce((sum, row) => sum + (row.reserved ?? 0), 0)
   const totalAvailable = atpRows.reduce((sum, row) => sum + (row.availableToPromise ?? 0), 0)
@@ -333,263 +355,370 @@ export default function WorkOrderDetailPage() {
     return <ErrorState error={workOrderQuery.error} />
   }
 
+  const healthContent = workOrderQuery.data ? (
+    <div className="space-y-3">
+      {isDisassembly && totalAvailable <= 0 ? (
+        <Banner
+          severity="action"
+          title="No usable inventory for disassembly"
+          description="This work order cannot start until inventory is available to consume."
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data!.id)}`)
+                }
+              >
+                View movements
+              </Button>
+              <Button
+                size="sm"
+                onClick={() =>
+                  navigate(
+                    `/inventory-adjustments/new?itemId=${encodeURIComponent(workOrderQuery.data!.outputItemId)}`,
+                  )
+                }
+              >
+                Adjust stock
+              </Button>
+            </div>
+          }
+        />
+      ) : null}
+      {!isDisassembly && activeVersionId && usedBomVersion && activeVersionId !== usedBomVersion.id ? (
+        <Banner
+          severity="action"
+          title="Work order is using an older BOM version"
+          description="Active BOM configuration has changed since this work order was created."
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => navigate(`/items/${workOrderQuery.data!.outputItemId}`)}
+              >
+                View active BOM
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setBomSwitchError(null)
+                  setShowBomSwitchConfirm(true)
+                }}
+              >
+                Switch to active
+              </Button>
+            </div>
+          }
+        />
+      ) : null}
+      {executionQuery.data?.workOrder.completedAt ? (
+        <Banner
+          severity="info"
+          title="Work order completed"
+          description={`Completed at ${executionQuery.data.workOrder.completedAt}.`}
+          action={
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data!.id)}`)
+              }
+            >
+              View movements
+            </Button>
+          }
+        />
+      ) : null}
+    </div>
+  ) : undefined
+
+  const contextSections = workOrderQuery.data
+    ? [
+        {
+          title: 'Entity identity',
+          rows: [
+            { label: 'Work order', value: workOrderQuery.data.number },
+            { label: 'Output item', value: itemLabel(workOrderQuery.data.outputItemId) || 'Unknown item' },
+            { label: 'Kind', value: workOrderQuery.data.kind },
+            { label: 'Status', value: workOrderQuery.data.status },
+          ],
+        },
+        {
+          title: 'Configuration health',
+          rows: [
+            { label: 'BOM', value: workOrderQuery.data.bomId ?? '—' },
+            { label: 'Used BOM version', value: usedBomVersion ? `v${usedBomVersion.versionNumber}` : '—' },
+            { label: 'Active BOM', value: activeVersionLabel ? `v${activeVersionLabel}` : '—' },
+            { label: 'Consume location', value: defaultConsumeLocationLabel },
+          ],
+        },
+        {
+          title: 'Supporting metadata',
+          rows: [
+            { label: 'Planned qty', value: `${formatNumber(workOrderQuery.data.quantityPlanned)} ${workOrderQuery.data.outputUom}` },
+            { label: 'Completed qty', value: `${formatNumber(workOrderQuery.data.quantityCompleted ?? 0)} ${workOrderQuery.data.outputUom}` },
+            { label: 'Remaining', value: `${formatNumber(remaining)} ${workOrderQuery.data.outputUom}` },
+          ],
+        },
+      ]
+    : []
+
+  const sectionLinks = isDisassembly
+    ? workOrderDetailSections.filter((section) => section.id !== 'requirements')
+    : workOrderDetailSections
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Work Order Detail</h2>
-        </div>
-        <Button variant="secondary" size="sm" onClick={() => navigate('/work-orders')}>
-          Back to list
-        </Button>
-      </div>
-      {workOrderQuery.data && (
-        <div className="flex justify-end">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data!.id)}`)}
-          >
-            View movements
-          </Button>
-        </div>
-      )}
-
-      {workOrderQuery.isLoading && <LoadingSpinner label="Loading work order..." />}
-      {workOrderQuery.isError && workOrderQuery.error && (
-        <ErrorState error={workOrderQuery.error} onRetry={() => void workOrderQuery.refetch()} />
-      )}
-      {workOrderQuery.data && (
-        <WorkOrderHeader
-          workOrder={workOrderQuery.data}
-          outputItemLabel={itemLabel(workOrderQuery.data.outputItemId)}
-        />
-      )}
-
-      {workOrderQuery.data && (
-        <Section title="Inventory status">
-          <Card>
-            <div className="grid gap-3 text-sm md:grid-cols-5">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">On hand</div>
-                <div className="mt-1 font-semibold text-slate-900">
-                  {formatNumber(totalOnHand)} {workOrderQuery.data.outputUom}
+    <>
+      <EntityPageLayout
+        header={
+          <section id="overview" className="space-y-6">
+            <PageHeader
+              title="Work order detail"
+              subtitle="Track readiness, execution, and next actions from one operational page."
+              action={
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => navigate('/work-orders')}>
+                    Back to list
+                  </Button>
+                  {workOrderQuery.data ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() =>
+                        navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data!.id)}`)
+                      }
+                    >
+                      View movements
+                    </Button>
+                  ) : null}
                 </div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Reserved</div>
-                <div className="mt-1 font-semibold text-slate-900">
-                  {formatNumber(totalReserved)} {workOrderQuery.data.outputUom}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Available</div>
-                <div className="mt-1 font-semibold text-slate-900">
-                  {formatNumber(totalAvailable)} {workOrderQuery.data.outputUom}
-                </div>
-              </div>
-              <div className="md:col-span-2">
-                <div className="text-xs uppercase tracking-wide text-slate-500">Default consume location</div>
-                <div className="mt-1 font-semibold text-slate-900">{defaultConsumeLocationLabel}</div>
-              </div>
-            </div>
-            {isDisassembly && totalAvailable <= 0 && (
-              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                No available inventory to consume for disassembly.
-              </div>
-            )}
-          </Card>
-        </Section>
-      )}
-
-      {workOrderQuery.data && (
-        <Section title="Description">
-          <Card>
-            <div className="space-y-3">
-              <Textarea
-                value={descriptionDraft}
-                onChange={(event) => setDescriptionDraft(event.target.value)}
-                placeholder="Optional note for humans"
-                disabled={descriptionMutation.isPending}
+              }
+            />
+            {workOrderQuery.isLoading ? <LoadingSpinner label="Loading work order..." /> : null}
+            {workOrderQuery.isError && workOrderQuery.error ? (
+              <ErrorState error={workOrderQuery.error} onRetry={() => void workOrderQuery.refetch()} />
+            ) : null}
+            {workOrderQuery.data ? (
+              <WorkOrderHeader
+                workOrder={workOrderQuery.data}
+                outputItemLabel={itemLabel(workOrderQuery.data.outputItemId)}
               />
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setDescriptionDraft(descriptionBase)}
-                  disabled={!hasDescriptionChanges || descriptionMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => descriptionMutation.mutate(descriptionDraft)}
-                  disabled={!hasDescriptionChanges || descriptionMutation.isPending}
-                >
-                  Save description
-                </Button>
+            ) : null}
+          </section>
+        }
+        health={healthContent}
+        sectionNav={<SectionNav sections={sectionLinks} ariaLabel="Work order sections" />}
+        contextRail={<ContextRail sections={contextSections} />}
+      >
+        {workOrderQuery.data ? (
+          <section id="inventory">
+            <Panel title="Inventory status" description="Current ATP context for this work order's output item.">
+              <div className="grid gap-3 text-sm md:grid-cols-5">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">On hand</div>
+                  <div className="mt-1 font-semibold text-slate-900">
+                    {formatNumber(totalOnHand)} {workOrderQuery.data.outputUom}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Reserved</div>
+                  <div className="mt-1 font-semibold text-slate-900">
+                    {formatNumber(totalReserved)} {workOrderQuery.data.outputUom}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Available</div>
+                  <div className="mt-1 font-semibold text-slate-900">
+                    {formatNumber(totalAvailable)} {workOrderQuery.data.outputUom}
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Default consume location</div>
+                  <div className="mt-1 font-semibold text-slate-900">{defaultConsumeLocationLabel}</div>
+                </div>
               </div>
-              {descriptionMutation.isError && (
-                <Alert
-                  variant="error"
-                  title="Update failed"
-                  message={(descriptionMutation.error as ApiError)?.message ?? 'Failed to update description.'}
+            </Panel>
+          </section>
+        ) : null}
+
+        {workOrderQuery.data ? (
+          <section id="execution" className="space-y-6">
+            <Panel title="Description" description="Operator-facing note for this work order.">
+              <div className="space-y-3">
+                <Textarea
+                  value={descriptionDraft}
+                  onChange={(event) => setDescriptionDraft(event.target.value)}
+                  placeholder="Optional note for humans"
+                  disabled={descriptionMutation.isPending}
                 />
-              )}
-            </div>
-          </Card>
-        </Section>
-      )}
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setDescriptionDraft(descriptionBase)}
+                    disabled={!hasDescriptionChanges || descriptionMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => descriptionMutation.mutate(descriptionDraft)}
+                    disabled={!hasDescriptionChanges || descriptionMutation.isPending}
+                  >
+                    Save description
+                  </Button>
+                </div>
+                {descriptionMutation.isError ? (
+                  <Alert
+                    variant="error"
+                    title="Update failed"
+                    message={(descriptionMutation.error as ApiError)?.message ?? 'Failed to update description.'}
+                  />
+                ) : null}
+              </div>
+            </Panel>
 
-      <Section title="Execution summary">
-        {summaryFlash && (
-          <Alert variant="success" title="Summary updated" message="Execution totals refreshed." />
-        )}
-        <ExecutionSummaryPanel
-          summary={executionQuery.data}
-          isLoading={executionQuery.isLoading}
-          isError={executionQuery.isError}
-          onRetry={() => void executionQuery.refetch()}
-          errorMessage={executionQuery.error?.message}
-        />
-      </Section>
+            <Panel title="Execution summary" description="Issued, completed, and remaining quantities.">
+              {summaryFlash ? (
+                <Alert variant="success" title="Summary updated" message="Execution totals refreshed." />
+              ) : null}
+              <ExecutionSummaryPanel
+                summary={executionQuery.data}
+                isLoading={executionQuery.isLoading}
+                isError={executionQuery.isError}
+                onRetry={() => void executionQuery.refetch()}
+                errorMessage={executionQuery.error?.message}
+              />
+            </Panel>
 
-      {workOrderQuery.data && (
-        <Section title="Primary execution path">
-          {isDisassembly && (
-            <Card>
-              <div className="flex items-start gap-3">
-                <div className="mt-1 text-lg">🔧</div>
-                <div className="flex-1">
+            <Panel title="Primary execution path" description="Recommended next step based on current execution state.">
+              {isDisassembly ? (
+                <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
                   <div className="text-sm font-semibold text-slate-900">Next step</div>
                   <div className="mt-1 text-sm text-slate-700">{nextStepMessage}</div>
-                    <div className="mt-3">
+                  <div className="mt-3">
                     <Button size="sm" onClick={goToIssues} disabled={!preferredConsumeLocation}>
                       Consume parent item
                     </Button>
                   </div>
                 </div>
-              </div>
-            </Card>
-          )}
-          <div className="grid gap-3 md:grid-cols-3">
-            {[
-              {
-                step: 1,
-                title: isDisassembly ? 'Consume parent item' : 'Use materials',
-                detail: isDisassembly ? 'Consume the item being disassembled.' : 'Issue components to start work.',
-                cta: isDisassembly ? 'Consume' : 'Issue materials',
-                onClick: goToIssues,
-              },
-              {
-                step: 2,
-                title: isDisassembly ? 'Produce components' : 'Make product',
-                detail: isDisassembly ? 'Record recovered components as outputs.' : 'Post completions as output is produced.',
-                cta: isDisassembly ? 'Record outputs' : 'Post completion',
-                onClick: () => updateTab('completions'),
-              },
-              {
-                step: 3,
-                title: 'Review & continue',
-                detail: remaining === 0 ? 'Finish this step or continue production.' : 'Review movements and next steps.',
-                cta: remaining === 0 && nextStepAvailable ? 'Create next step WO' : 'View movements',
-                onClick: () => {
-                  if (remaining === 0 && nextStepAvailable) {
-                    setShowNextStep(true)
-                  } else if (workOrderQuery.data) {
-                    navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data.id)}`)
-                  }
-                },
-              },
-            ].map((step) => (
-              <div
-                key={step.step}
-                className={`rounded-lg border px-4 py-3 ${
-                  currentStep === step.step ? 'border-brand-400 bg-brand-50' : 'border-slate-200'
-                }`}
-              >
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Step {step.step}
-                </div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">{step.title}</div>
-                <div className="mt-1 text-xs text-slate-600">{step.detail}</div>
-                <Button
-                  size="sm"
-                  variant={currentStep === step.step ? 'primary' : 'secondary'}
-                  className="mt-3"
-                  onClick={step.onClick}
-                >
-                  {step.cta}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {!isDisassembly && (
-        <Section title="Requirements vs issued">
-          {requirementsQuery.isLoading && <LoadingSpinner label="Loading requirements..." />}
-          {requirementsQuery.isError && (
-            <ErrorState
-              error={requirementsQuery.error}
-              onRetry={() => void requirementsQuery.refetch()}
-            />
-          )}
-          {requirementsQuery.data && executionQuery.data && (
-            <Card>
-              {usedBomVersion && (
-                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs uppercase tracking-wide text-slate-500">BOM version used</div>
-                      <div className="mt-1 font-semibold text-slate-900">
-                        v{usedBomVersion.versionNumber}{' '}
-                        <span className="text-slate-500">({usedBomVersion.status})</span>
-                      </div>
-                      {activeVersionId && activeVersionId !== usedBomVersion.id && (
-                        <div className="mt-1 text-xs text-slate-600">
-                          Active BOM:{' '}
-                          {activeBomCode ? `${activeBomCode} ` : ''}
-                          {activeVersionLabel ? `v${activeVersionLabel}` : 'current'}.{' '}
-                          <button
-                            type="button"
-                            className="font-semibold text-brand-700 underline"
-                            onClick={() => navigate(`/items/${workOrderQuery.data?.outputItemId}`)}
-                          >
-                            View active BOM
-                          </button>
-                        </div>
-                      )}
+              ) : null}
+              <div className="grid gap-3 md:grid-cols-3">
+                {[
+                  {
+                    step: 1,
+                    title: isDisassembly ? 'Consume parent item' : 'Use materials',
+                    detail: isDisassembly ? 'Consume the item being disassembled.' : 'Issue components to start work.',
+                    cta: isDisassembly ? 'Consume' : 'Issue materials',
+                    onClick: goToIssues,
+                  },
+                  {
+                    step: 2,
+                    title: isDisassembly ? 'Produce components' : 'Make product',
+                    detail: isDisassembly ? 'Record recovered components as outputs.' : 'Post completions as output is produced.',
+                    cta: isDisassembly ? 'Record outputs' : 'Post completion',
+                    onClick: () => updateTab('completions'),
+                  },
+                  {
+                    step: 3,
+                    title: 'Review & continue',
+                    detail: remaining === 0 ? 'Finish this step or continue production.' : 'Review movements and next steps.',
+                    cta: remaining === 0 && nextStepAvailable ? 'Create next step WO' : 'View movements',
+                    onClick: () => {
+                      if (remaining === 0 && nextStepAvailable) {
+                        setShowNextStep(true)
+                      } else if (workOrderQuery.data) {
+                        navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data.id)}`)
+                      }
+                    },
+                  },
+                ].map((step) => (
+                  <div
+                    key={step.step}
+                    className={`rounded-lg border px-4 py-3 ${
+                      currentStep === step.step ? 'border-brand-400 bg-brand-50' : 'border-slate-200'
+                    }`}
+                  >
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Step {step.step}
                     </div>
-                    {activeVersionId &&
-                      activeVersionId !== usedBomVersion.id && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => {
-                            setBomSwitchError(null)
-                            setShowBomSwitchConfirm(true)
-                          }}
-                        >
-                          Switch to active
-                        </Button>
-                      )}
+                    <div className="mt-1 text-sm font-semibold text-slate-900">{step.title}</div>
+                    <div className="mt-1 text-xs text-slate-600">{step.detail}</div>
+                    <Button
+                      size="sm"
+                      variant={currentStep === step.step ? 'primary' : 'secondary'}
+                      className="mt-3"
+                      onClick={step.onClick}
+                    >
+                      {step.cta}
+                    </Button>
                   </div>
-                </div>
-              )}
-              <WorkOrderRequirementsTable
-                lines={requirementsQuery.data.lines}
-                issuedTotals={executionQuery.data.issuedTotals}
-                componentLabel={componentLabel}
-              />
-            </Card>
-          )}
-        </Section>
-      )}
+                ))}
+              </div>
+            </Panel>
+          </section>
+        ) : null}
 
-      <Section title="Actions">
-        <div id="work-order-actions" ref={actionsRef} className="scroll-mt-24">
+        {!isDisassembly ? (
+          <section id="requirements">
+            <Panel title="Requirements vs issued" description="Compare BOM requirements to issued quantities for each component.">
+              {requirementsQuery.isLoading ? <LoadingSpinner label="Loading requirements..." /> : null}
+              {requirementsQuery.isError ? (
+                <ErrorState
+                  error={requirementsQuery.error}
+                  onRetry={() => void requirementsQuery.refetch()}
+                />
+              ) : null}
+              {requirementsQuery.data && executionQuery.data ? (
+                <div className="space-y-4">
+                  {usedBomVersion ? (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="text-xs uppercase tracking-wide text-slate-500">BOM version used</div>
+                          <div className="mt-1 font-semibold text-slate-900">
+                            v{usedBomVersion.versionNumber}{' '}
+                            <span className="text-slate-500">({usedBomVersion.status})</span>
+                          </div>
+                          {activeVersionId && activeVersionId !== usedBomVersion.id ? (
+                            <div className="mt-1 text-xs text-slate-600">
+                              Active BOM: {activeBomCode ? `${activeBomCode} ` : ''}
+                              {activeVersionLabel ? `v${activeVersionLabel}` : 'current'}.
+                            </div>
+                          ) : null}
+                        </div>
+                        {activeVersionId && activeVersionId !== usedBomVersion.id ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setBomSwitchError(null)
+                              setShowBomSwitchConfirm(true)
+                            }}
+                          >
+                            Switch to active
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  <WorkOrderRequirementsTable
+                    lines={requirementsQuery.data.lines}
+                    issuedTotals={executionQuery.data.issuedTotals}
+                    componentLabel={componentLabel}
+                  />
+                </div>
+              ) : null}
+            </Panel>
+          </section>
+        ) : null}
+
+        <section id="actions">
+          <Panel title="Actions" description="Post issues, completions, and batch records from one execution surface.">
+            <div id="work-order-actions" ref={actionsRef} className="scroll-mt-24">
           <div className="flex gap-2 border-b border-slate-200">
             {(['summary', 'issues', 'completions', 'batch'] as TabKey[]).map((key) => (
               <button
@@ -617,7 +746,7 @@ export default function WorkOrderDetailPage() {
           </div>
 
           {tab === 'summary' && (
-            <Card>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
               <div className="text-sm text-slate-700">
                 {isDisassembly
                   ? 'Consume the parent item, then record recovered components as outputs. Posting creates inventory movements and cannot be edited.'
@@ -633,7 +762,7 @@ export default function WorkOrderDetailPage() {
                   description="Create an issue or completion to begin execution."
                 />
               )}
-            </Card>
+            </div>
           )}
 
           {tab === 'issues' && workOrderQuery.data && (
@@ -710,7 +839,7 @@ export default function WorkOrderDetailPage() {
                   onCancel={() => setShowNextStep(false)}
                 />
               ) : (
-                <Card>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <div className="text-sm font-semibold text-slate-900">Continue production</div>
@@ -722,12 +851,14 @@ export default function WorkOrderDetailPage() {
                       Next step…
                     </Button>
                   </div>
-                </Card>
+                </div>
               )}
             </div>
           )}
         </div>
-      </Section>
+          </Panel>
+        </section>
+      </EntityPageLayout>
 
       <Modal
         isOpen={showBomSwitchConfirm}
@@ -761,14 +892,6 @@ export default function WorkOrderDetailPage() {
           {bomSwitchError && <Alert variant="error" title="Switch failed" message={bomSwitchError} />}
         </div>
       </Modal>
-
-      {executionQuery.data?.workOrder.completedAt && (
-        <Alert
-          variant="info"
-          title="Completed"
-          message={`Work order marked completed at ${executionQuery.data.workOrder.completedAt}`}
-        />
-      )}
-    </div>
+    </>
   )
 }
