@@ -1,6 +1,5 @@
-import { useState } from 'react'
-import { Button } from '../../../components/Button'
-import { Input, Select } from '../../../components/Inputs'
+import { useMemo, useState } from 'react'
+import { Button, FilterBar, Input, Select, ActiveFiltersSummary } from '@shared/ui'
 import type { MovementListParams } from '../api/ledger'
 
 type Props = {
@@ -27,6 +26,19 @@ const statusOptions = [
 
 export function MovementFilters({ initialFilters, onApply, disabled }: Props) {
   const [filters, setFilters] = useState<MovementListParams>(initialFilters)
+  const activeFilters = useMemo(
+    () =>
+      [
+        filters.occurredFrom ? { key: 'occurredFrom', label: 'From', value: filters.occurredFrom } : null,
+        filters.occurredTo ? { key: 'occurredTo', label: 'To', value: filters.occurredTo } : null,
+        filters.movementType ? { key: 'movementType', label: 'Type', value: filters.movementType } : null,
+        filters.status ? { key: 'status', label: 'Status', value: filters.status } : null,
+        filters.externalRef ? { key: 'externalRef', label: 'Reference', value: filters.externalRef } : null,
+        filters.itemId ? { key: 'itemId', label: 'Item', value: filters.itemId } : null,
+        filters.locationId ? { key: 'locationId', label: 'Location', value: filters.locationId } : null,
+      ].filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
+    [filters],
+  )
 
   const handleChange = (key: keyof MovementListParams, value: string) => {
     setFilters((prev) => ({
@@ -36,9 +48,34 @@ export function MovementFilters({ initialFilters, onApply, disabled }: Props) {
     }))
   }
 
+  const reset = () => {
+    const next: MovementListParams = { limit: filters.limit, offset: 0 }
+    setFilters(next)
+    onApply(next)
+  }
+
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="grid gap-3 md:grid-cols-3">
+    <FilterBar
+      actions={
+        <>
+          <Button variant="primary" size="sm" onClick={() => onApply(filters)} disabled={disabled}>
+            Apply filters
+          </Button>
+          <Button variant="secondary" size="sm" onClick={reset} disabled={disabled}>
+            Reset
+          </Button>
+        </>
+      }
+      helperText="Use item, location, and date filters to trace stock movements for a specific scope."
+      summary={
+        <ActiveFiltersSummary
+          filters={activeFilters}
+          onClearOne={(key) => handleChange(key as keyof MovementListParams, '')}
+          onClearAll={reset}
+        />
+      }
+    >
+      <div className="grid w-full gap-3 md:grid-cols-3">
         <div className="space-y-1">
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Occurred from
@@ -127,31 +164,6 @@ export function MovementFilters({ initialFilters, onApply, disabled }: Props) {
           />
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => onApply(filters)}
-          disabled={disabled}
-        >
-          Apply filters
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            const reset: MovementListParams = { limit: filters.limit, offset: 0 }
-            setFilters(reset)
-            onApply(reset)
-          }}
-          disabled={disabled}
-        >
-          Reset
-        </Button>
-        <span className="text-xs text-slate-500">
-          Use item/location filters to trace stock movements for a specific scope.
-        </span>
-      </div>
-    </div>
+    </FilterBar>
   )
 }

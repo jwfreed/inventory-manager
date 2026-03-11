@@ -1,5 +1,5 @@
 import type { ComboboxOption } from '@shared/ui'
-import { Button, Card, Combobox } from '@shared/ui'
+import { Banner, Button, Combobox, Panel } from '@shared/ui'
 import type { ApiError } from '@api/types'
 
 type Props = {
@@ -36,7 +36,7 @@ export function WorkOrderNextStepPanel({
   if (!isOpen) return null
 
   return (
-    <Card title="Continue production" description="Create the next work order from the active BOM.">
+    <Panel title="Continue production" description="Create the next work order from the active BOM.">
       <div className="space-y-3">
         <div className="text-sm text-slate-700">
           Suggests BOMs where this output is a component. Consume location defaults to this work
@@ -72,7 +72,7 @@ export function WorkOrderNextStepPanel({
           </label>
           <div className="text-sm text-slate-600 md:col-span-2">{consumeLocationHint}</div>
         </div>
-        {createWarning && <div className="text-sm text-red-600">{createWarning}</div>}
+        {createWarning ? <Banner severity="action" title="Creation blocked" description={createWarning} /> : null}
         <div className="flex gap-2">
           <Button size="sm" onClick={onCreate} disabled={isLoading}>
             Create next-step WO
@@ -82,6 +82,6 @@ export function WorkOrderNextStepPanel({
           </Button>
         </div>
       </div>
-    </Card>
+    </Panel>
   )
 }

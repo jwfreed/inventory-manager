@@ -2,13 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useItemsList, useItemsMetrics } from '../queries'
 import { useInventorySnapshotSummary } from '../../inventory/queries'
-import { Alert } from '../../../components/Alert'
-import { Badge } from '../../../components/Badge'
-import { Button } from '../../../components/Button'
-import { Card } from '../../../components/Card'
-import { EmptyState } from '../../../components/EmptyState'
-import { LoadingSpinner } from '../../../components/Loading'
-import { Section } from '../../../components/Section'
 import { formatDate, formatNumber } from '@shared/formatters'
 import { useAuth } from '../../../lib/useAuth'
 import type { Item } from '../../../api/types'
@@ -19,6 +12,7 @@ import OnboardingTip from '@features/onboarding/components/OnboardingTip'
 import { isTipDismissed, markTipDismissed } from '@features/onboarding/state'
 import { trackOnboardingEvent } from '@features/onboarding/analytics'
 import { usePageChrome } from '../../../app/layout/usePageChrome'
+import { ActiveFiltersSummary, Alert, Badge, Button, DataTable, EmptyState, FilterBar, LoadingSpinner, Panel, StatusCell } from '@shared/ui'
 
 type ColumnId =
   | 'sku'
@@ -329,7 +323,7 @@ export default function ItemsListPage() {
       {
         id: 'type',
         label: 'Type',
-        render: (item) => <Badge variant="neutral">{typeLabels[item.type] ?? item.type}</Badge>,
+        render: (item) => <StatusCell label={typeLabels[item.type] ?? item.type} tone="neutral" compact />,
       },
       {
         id: 'defaultUom',
@@ -376,17 +370,17 @@ export default function ItemsListPage() {
         id: 'status',
         label: 'Status',
         render: (item) => (
-          <Badge
-            variant={
+          <StatusCell
+            label={item.lifecycleStatus}
+            tone={
               item.lifecycleStatus === 'Active'
                 ? 'success'
                 : item.lifecycleStatus === 'Obsolete' || item.lifecycleStatus === 'Phase-Out'
                   ? 'danger'
                   : 'neutral'
             }
-          >
-            {item.lifecycleStatus}
-          </Badge>
+            compact
+          />
         ),
       },
       {
@@ -504,6 +498,17 @@ export default function ItemsListPage() {
     createSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [showCreate])
 
+  const activeFilters = useMemo(
+    () =>
+      [
+        lifecycleStatus ? { key: 'lifecycleStatus', label: 'Lifecycle', value: lifecycleStatus } : null,
+        typeFilter ? { key: 'type', label: 'Type', value: typeLabels[typeFilter] ?? typeFilter } : null,
+        abcClassFilter ? { key: 'abcClass', label: 'ABC', value: abcClassFilter } : null,
+        search ? { key: 'search', label: 'Search', value: search } : null,
+      ].filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
+    [abcClassFilter, lifecycleStatus, search, typeFilter],
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -519,7 +524,7 @@ export default function ItemsListPage() {
       </div>
 
       {showCreate && (
-        <Section title="Create item">
+        <Panel title="Create item" description="Create inventory items without leaving the list.">
           <div ref={createSectionRef} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <ItemForm
               autoFocusSku
@@ -531,11 +536,30 @@ export default function ItemsListPage() {
               }}
             />
           </div>
-        </Section>
+        </Panel>
       )}
 
-      <Section title="Filters">
-        <div className="flex flex-wrap items-center gap-3">
+      <Panel title="Filters" description="Filter items by lifecycle, type, class, and text search.">
+        <FilterBar
+          summary={
+            <ActiveFiltersSummary
+              filters={activeFilters}
+              onClearOne={(key) => {
+                if (key === 'lifecycleStatus') setLifecycleStatus('')
+                if (key === 'type') setTypeFilter('')
+                if (key === 'abcClass') setAbcClassFilter('')
+                if (key === 'search') setSearch('')
+              }}
+              onClearAll={() => {
+                setLifecycleStatus('Active')
+                setTypeFilter('')
+                setAbcClassFilter('')
+                setSearch('')
+              }}
+            />
+          }
+          helperText={`Showing ${filteredByType.length} of ${data?.paging?.total ?? data?.data?.length ?? 0} items`}
+        >
           <select
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={lifecycleStatus}
@@ -623,13 +647,10 @@ export default function ItemsListPage() {
               </div>
             )}
           </div>
-        </div>
-        <div className="pt-2 text-sm text-slate-600">
-          Showing {filteredByType.length} of {data?.paging?.total ?? data?.data?.length ?? 0} items
-        </div>
-      </Section>
+        </FilterBar>
+      </Panel>
 
-      <Section title="Items">
+      <Panel title="Items" description="Master-data list with operational state visible in the main scan path.">
         {shouldShowBulkEditTip && (
           <OnboardingTip
             title="Tip: bulk edit"
@@ -649,7 +670,7 @@ export default function ItemsListPage() {
             }}
           />
         )}
-        <Card className={showCreate ? 'opacity-80' : undefined}>
+        <div className={showCreate ? 'opacity-80' : undefined}>
           {isLoading && <LoadingSpinner label="Loading items..." />}
           {isError && error && (
             <Alert
@@ -665,8 +686,8 @@ export default function ItemsListPage() {
           )}
           {!isLoading && !isError && filteredByType.length === 0 && (
             <EmptyState
-              title="No items yet"
-              description="Add your first item to start tracking inventory."
+              title="No items found"
+              description="Adjust filters or add an item to start tracking inventory."
               action={
                 <Button size="sm" onClick={() => navigate('/onboarding/first-win')}>
                   Add your first item
@@ -675,45 +696,25 @@ export default function ItemsListPage() {
             />
           )}
           {!isLoading && !isError && filteredByType.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    {visibleColumns.map((column) => {
-                      const alignClass = column.align === 'right' ? 'text-right' : 'text-left'
-                      return (
-                        <th
-                          key={column.id}
-                          className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 ${alignClass} ${column.headerClassName ?? ''}`}
-                        >
-                          {column.header ?? column.label}
-                        </th>
-                      )
-                    })}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {filteredByType.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="group cursor-pointer hover:bg-slate-50"
-                      onClick={() => navigate(`/items/${item.id}`)}
-                    >
-                      {visibleColumns.map((column) => {
-                        const alignClass = column.align === 'right' ? 'text-right' : 'text-left'
-                        return (
-                          <td
-                            key={column.id}
-                            className={`px-4 py-3 text-sm text-slate-800 ${alignClass} ${column.cellClassName ?? ''}`}
-                          >
-                            {column.render(item)}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              <DataTable
+                rows={filteredByType}
+                rowKey={(item) => item.id}
+                onRowClick={(item) => navigate(`/items/${item.id}`)}
+                columns={visibleColumns.map((column) => ({
+                  id: column.id,
+                  header: column.header ?? column.label,
+                  align: column.align,
+                  priority: column.id === 'sku' || column.id === 'status' ? 'primary' : undefined,
+                  cellClassName: column.cellClassName,
+                  cell: (item: Item) => column.render(item),
+                }))}
+                rowActions={(item) => (
+                  <Button variant="secondary" size="sm" onClick={() => navigate(`/items/${item.id}`)}>
+                    View
+                  </Button>
+                )}
+              />
               <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm">
                 <span className="text-slate-500">
                   Page {page} of{' '}
@@ -744,8 +745,8 @@ export default function ItemsListPage() {
               </div>
             </div>
           )}
-        </Card>
-      </Section>
+        </div>
+      </Panel>
     </div>
   )
 }

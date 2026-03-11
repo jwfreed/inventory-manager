@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useItemsList } from '@features/items/queries'
 import { useWorkOrdersList } from '../queries'
-import { Alert, Button, Card, EmptyState, LoadingSpinner, PageHeader, Section, SectionHeader } from '@shared/ui'
+import { Alert, Button, EmptyState, LoadingSpinner, PageHeader, Panel } from '@shared/ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { WorkOrdersFilters } from '../components/WorkOrdersFilters'
 import { WorkOrdersTable } from '../components/WorkOrdersTable'
@@ -69,13 +69,15 @@ export default function WorkOrdersListPage() {
         onPlannedDateChange={setPlannedDate}
         onKindChange={setKind}
         onRefresh={() => void refetch()}
+        onReset={() => {
+          setStatus('')
+          setSearch('')
+          setPlannedDate('')
+          setKind('')
+        }}
       />
 
-      <Section>
-        <SectionHeader
-          title="Execution Queue"
-          description="Prioritize active orders and resolve stalled production before due dates slip."
-        />
+      <Panel title="Execution queue" description="Prioritize active orders and resolve stalled production before due dates slip.">
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
           <div>
             Showing {filtered.length} work orders
@@ -83,36 +85,34 @@ export default function WorkOrdersListPage() {
           </div>
           {isFetching && <span className="text-xs uppercase tracking-wide text-slate-400">Updating…</span>}
         </div>
-        <Card>
-          {isLoading && <LoadingSpinner label="Loading work orders..." />}
-          {isError && error && (
-            <Alert
-              variant="error"
-              title="Failed to load work orders"
-              message={error.message}
-              action={
-                <Button size="sm" variant="secondary" onClick={() => void refetch()}>
-                  Retry
-                </Button>
-              }
-            />
-          )}
-          {!isLoading && !isError && filtered.length === 0 && (
-            <EmptyState
-              title="No work orders found"
-              description="Adjust filters or create a new work order."
-            />
-          )}
-          {!isLoading && !isError && filtered.length > 0 && (
-            <WorkOrdersTable
-              rows={filtered}
-              onSelect={(row) => navigate(`/work-orders/${row.id}`)}
-              formatOutput={formatOutput}
-              remaining={remaining}
-            />
-          )}
-        </Card>
-      </Section>
+        {isLoading && <LoadingSpinner label="Loading work orders..." />}
+        {isError && error && (
+          <Alert
+            variant="error"
+            title="Failed to load work orders"
+            message={error.message}
+            action={
+              <Button size="sm" variant="secondary" onClick={() => void refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        )}
+        {!isLoading && !isError && filtered.length === 0 && (
+          <EmptyState
+            title="No work orders found"
+            description="Adjust filters or create a new work order."
+          />
+        )}
+        {!isLoading && !isError && filtered.length > 0 && (
+          <WorkOrdersTable
+            rows={filtered}
+            onSelect={(row) => navigate(`/work-orders/${row.id}`)}
+            formatOutput={formatOutput}
+            remaining={remaining}
+          />
+        )}
+      </Panel>
     </div>
   )
 }

@@ -5,7 +5,7 @@ import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { ErrorState } from '../../../components/ErrorState'
 import { LoadingSpinner } from '../../../components/Loading'
-import { DataTable, EmptyState, Panel } from '../../../shared/ui'
+import { ActiveFiltersSummary, DataTable, EmptyState, Panel, StatusCell } from '../../../shared/ui'
 import type { InventoryLifecycleStage } from '../itemDetail.models'
 import { normalizeUomCode } from '../itemDetail.logic'
 import { InventoryLifecycle } from './InventoryLifecycle'
@@ -93,9 +93,15 @@ export function ItemInventorySection({
     () =>
       inventoryStageOrder
         .map((stage) => {
-          const rows = stockRows.filter(
-            (row) => classifyLocationStage(row.locationId, locationLookup) === stage,
-          )
+          const rows = stockRows
+            .filter((row) => classifyLocationStage(row.locationId, locationLookup) === stage)
+            .sort((left, right) => {
+              const leftAnomaly =
+                !left.locationId || left.onHand < 0 || !factorByUom.has(normalizeUomCode(left.uom))
+              const rightAnomaly =
+                !right.locationId || right.onHand < 0 || !factorByUom.has(normalizeUomCode(right.uom))
+              return Number(rightAnomaly) - Number(leftAnomaly)
+            })
           const available = rows.reduce((sum, row) => {
             const factor = factorByUom.get(normalizeUomCode(row.uom)) ?? 0
             return sum + row.available * factor
@@ -154,6 +160,13 @@ export function ItemInventorySection({
       >
         <div className="space-y-4">
           <div className="text-sm text-slate-600">Scope: {selectedLocationLabel}</div>
+          <ActiveFiltersSummary
+            filters={
+              selectedLocationId
+                ? [{ key: 'locationId', label: 'Location', value: selectedLocationLabel }]
+                : [{ key: 'locationId', label: 'Location', value: 'All locations' }]
+            }
+          />
 
           {isLoading ? <LoadingSpinner label="Loading inventory..." /> : null}
           {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
@@ -207,7 +220,31 @@ export function ItemInventorySection({
                   <DataTable
                     rows={rows}
                     rowKey={(row) => `${row.itemId}-${row.locationId}-${row.uom}`}
+                    getRowState={(row) =>
+                      !row.locationId || row.onHand < 0
+                        ? 'danger'
+                        : !factorByUom.has(normalizeUomCode(row.uom))
+                          ? 'warning'
+                          : 'default'
+                    }
                     columns={[
+                      {
+                        id: 'status',
+                        header: 'State',
+                        priority: 'anomaly',
+                        cell: (row: InventorySnapshotRow) => {
+                          if (!row.locationId) {
+                            return <StatusCell label="Anomaly" tone="danger" meta="Inventory row has no location" compact />
+                          }
+                          if (row.onHand < 0) {
+                            return <StatusCell label="Anomaly" tone="danger" meta="Negative on-hand" compact />
+                          }
+                          if (!factorByUom.has(normalizeUomCode(row.uom))) {
+                            return <StatusCell label="Warning" tone="warning" meta="UOM not normalized" compact />
+                          }
+                          return <StatusCell label="Ready" tone="success" compact />
+                        },
+                      },
                       ...(selectedLocationId
                         ? []
                         : [
@@ -216,8 +253,8 @@ export function ItemInventorySection({
                               header: 'Location',
                               cell: (row: InventorySnapshotRow) => formatLocation(row, locationLookup),
                             },
-                          ]),
-                      { id: 'uom', header: 'UOM', cell: (row: InventorySnapshotRow) => row.uom },
+                      ]),
+                      { id: 'uom', header: 'UOM', cell: (row: InventorySnapshotRow) => row.uom, priority: 'primary' },
                       {
                         id: 'onHand',
                         header: 'On hand',

@@ -4,6 +4,7 @@ import { cn } from '../../../lib/utils'
 import type { Movement } from '../../../api/types'
 import { MovementStatusBadge } from './MovementStatusBadge'
 import { Badge } from '../../../components/Badge'
+import { Button, DataTable, StatusCell } from '@shared/ui'
 
 type Props = {
   movements: Movement[]
@@ -71,129 +72,90 @@ export function MovementsTable({ movements, page, pageCount, onPageChange }: Pro
     const oneDayMs = 24 * 60 * 60 * 1000
     return postedAt - occurredAt > oneDayMs
   }
-  // TODO: flag large adjustments when list endpoint includes total absolute delta.
-  const isAdjustment = (movement: Movement) =>
-    movement.movementType?.toLowerCase() === 'adjustment'
   const hasNegativeOverride = (movement: Movement) =>
     Boolean((movement.metadata as { negative_override?: boolean } | null)?.negative_override)
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <table className="min-w-full divide-y divide-slate-200">
-        <thead className="bg-slate-50">
-          <tr>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Occurred at
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Movement type
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Status
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Source
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Posted at
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-200 bg-white">
-          {movements.length === 0 ? (
-            <tr>
-              <td colSpan={5} className="px-4 py-6 text-sm text-slate-500">
-                No movements found.
-              </td>
-            </tr>
-          ) : (
-            movements.map((movement) => (
-              <tr
-                key={movement.id}
-                tabIndex={0}
-                role="button"
-                className={cn(
-                  'cursor-pointer transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500',
-                  (movement.status?.toLowerCase() === 'draft' || isLatePosted(movement)) &&
-                    'bg-amber-50/40',
-                )}
-                onClick={() => navigate(`/movements/${movement.id}`)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    navigate(`/movements/${movement.id}`)
-                  }
-                }}
-              >
-                <td className="px-4 py-3 text-sm text-slate-800">
-                  <div className="font-medium text-slate-900">{formatDate(movement.occurredAt)}</div>
-                  {movement.postedAt && (
-                    <div className="text-xs text-slate-500">Posted {formatDate(movement.postedAt)}</div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm capitalize text-slate-800">
-                  <div className="font-medium">{movement.movementType}</div>
-                  {movement.notes && (
-                    <div className="text-xs text-slate-500">{movement.notes}</div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-800">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <MovementStatusBadge status={movement.status} />
-                    {isLatePosted(movement) && (
-                      <Badge variant="warning">Late posted</Badge>
-                    )}
-                    {isAdjustment(movement) && (
-                      <Badge variant="info">Adjustment</Badge>
-                    )}
-                    {hasNegativeOverride(movement) && (
-                      <Badge variant="danger">Negative override</Badge>
+    <div className="space-y-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <DataTable
+        rows={movements}
+        rowKey={(movement) => movement.id}
+        onRowClick={(movement) => navigate(`/movements/${movement.id}`)}
+        getRowState={(movement) =>
+          hasNegativeOverride(movement) ? 'danger' : movement.status?.toLowerCase() === 'draft' || isLatePosted(movement) ? 'warning' : 'default'
+        }
+        rowActions={(movement) => (
+          <Button variant="secondary" size="sm" onClick={() => navigate(`/movements/${movement.id}`)}>
+            View
+          </Button>
+        )}
+        columns={[
+          {
+            id: 'occurredAt',
+            header: 'Occurred at',
+            priority: 'primary',
+            cell: (movement) => (
+              <div>
+                <div className="font-medium text-slate-900">{formatDate(movement.occurredAt)}</div>
+                {movement.postedAt ? <div className="text-xs text-slate-500">Posted {formatDate(movement.postedAt)}</div> : null}
+              </div>
+            ),
+          },
+          {
+            id: 'movementType',
+            header: 'Movement type',
+            cell: (movement) => (
+              <div>
+                <div className="font-medium capitalize text-slate-900">{movement.movementType}</div>
+                {movement.notes ? <div className="text-xs text-slate-500">{movement.notes}</div> : null}
+              </div>
+            ),
+          },
+          {
+            id: 'status',
+            header: 'Status',
+            priority: 'anomaly',
+            cell: (movement) => {
+              if (hasNegativeOverride(movement)) {
+                return <StatusCell label="Anomaly" tone="danger" meta="Negative override recorded" />
+              }
+              if (isLatePosted(movement)) {
+                return <StatusCell label="Late posted" tone="warning" meta={movement.status?.toLowerCase() === 'draft' ? 'Draft does not affect stock' : undefined} />
+              }
+              return <MovementStatusBadge status={movement.status} meta={movement.status?.toLowerCase() === 'draft' ? 'Draft does not affect stock' : undefined} />
+            },
+          },
+          {
+            id: 'source',
+            header: 'Source',
+            cell: (movement) => {
+              const source = getSourceLink(movement.externalRef)
+              if (!movement.externalRef) return <span className="text-xs text-slate-500">System-generated</span>
+              if (!source) return movement.externalRef
+              return (
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="neutral">{source.type}</Badge>
+                    {source.to ? (
+                      <Link className="text-brand-700 underline" to={source.to} onClick={(event) => event.stopPropagation()}>
+                        {source.label}
+                      </Link>
+                    ) : (
+                      <span className="text-sm text-slate-700">{source.label}</span>
                     )}
                   </div>
-                  {movement.status?.toLowerCase() === 'draft' && (
-                    <div className="mt-1 text-xs text-slate-500">Draft movements do not affect stock.</div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-700">
-                  {(() => {
-                    const source = getSourceLink(movement.externalRef)
-                    if (!movement.externalRef) {
-                      return <span className="text-xs text-slate-500">System-generated</span>
-                    }
-                    if (!source) return movement.externalRef
-                    return (
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="neutral">{source.type}</Badge>
-                          {source.to ? (
-                            <Link
-                              className="text-brand-700 underline"
-                              to={source.to}
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              {source.label}
-                            </Link>
-                          ) : (
-                            <span className="text-sm text-slate-700">{source.label}</span>
-                          )}
-                        </div>
-                        <span className="text-xs text-slate-500">{movement.externalRef}</span>
-                      </div>
-                    )
-                  })()}
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-800">
-                  {movement.postedAt ? (
-                    <span className="text-xs text-slate-500">{formatDate(movement.postedAt)}</span>
-                  ) : (
-                    '—'
-                  )}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+                  <span className="text-xs text-slate-500">{movement.externalRef}</span>
+                </div>
+              )
+            },
+          },
+          {
+            id: 'postedAt',
+            header: 'Posted at',
+            cell: (movement) => movement.postedAt ? <span className="text-xs text-slate-500">{formatDate(movement.postedAt)}</span> : '—',
+          },
+        ]}
+      />
       {page && pageCount ? (
         <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm">
           <span className="text-slate-500">

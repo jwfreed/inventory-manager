@@ -1,4 +1,4 @@
-import { Button, FilterBar, Section } from '@shared/ui'
+import { ActiveFiltersSummary, Button, FilterBar } from '@shared/ui'
 
 const statusOptions = [
   { label: 'All statuses', value: '' },
@@ -19,6 +19,7 @@ type Props = {
   onPlannedDateChange: (next: string) => void
   onKindChange: (next: string) => void
   onRefresh: () => void
+  onReset: () => void
 }
 
 export function WorkOrdersFilters({
@@ -32,10 +33,40 @@ export function WorkOrdersFilters({
   onPlannedDateChange,
   onKindChange,
   onRefresh,
+  onReset,
 }: Props) {
+  const filters = [
+    status ? { key: 'status', label: 'Status', value: status.replace(/_/g, ' ') } : null,
+    search ? { key: 'search', label: 'Search', value: search } : null,
+    plannedDate ? { key: 'plannedDate', label: 'Planned date', value: plannedDate } : null,
+    kind ? { key: 'kind', label: 'Kind', value: kind } : null,
+  ].filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+
   return (
-    <Section title="Filters">
-      <FilterBar>
+    <FilterBar
+      actions={
+        <>
+          <Button variant="secondary" size="sm" onClick={onReset}>
+            Reset
+          </Button>
+          <Button variant="secondary" size="sm" onClick={onRefresh}>
+            Refresh
+          </Button>
+        </>
+      }
+      summary={
+        <ActiveFiltersSummary
+          filters={filters}
+          onClearOne={(key) => {
+            if (key === 'status') onStatusChange('')
+            if (key === 'search') onSearchChange('')
+            if (key === 'plannedDate') onPlannedDateChange('')
+            if (key === 'kind') onKindChange('')
+          }}
+          onClearAll={onReset}
+        />
+      }
+    >
         <select
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
           value={status}
@@ -83,10 +114,6 @@ export function WorkOrdersFilters({
           onChange={(e) => onPlannedDateChange(e.target.value)}
           disabled={isFetching}
         />
-        <Button variant="secondary" size="sm" onClick={onRefresh}>
-          Refresh
-        </Button>
-      </FilterBar>
-    </Section>
+    </FilterBar>
   )
 }

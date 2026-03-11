@@ -1,8 +1,7 @@
-import { Badge } from '../../../components/Badge'
-import { Card } from '../../../components/Card'
 import { formatNumber } from '@shared/formatters'
 import { Link } from 'react-router-dom'
 import type { WorkOrder } from '../../../api/types'
+import { Badge, Panel, StatusCell, formatStatusLabel, statusTone } from '@shared/ui'
 
 type Props = {
   workOrder: WorkOrder
@@ -16,17 +15,8 @@ export function WorkOrderHeader({ workOrder, outputItemLabel }: Props) {
   const outputLabel =
     outputItemLabel || workOrder.outputItemName || workOrder.outputItemSku || 'Unknown item'
 
-  const statusVariant =
-    workOrder.status === 'completed'
-      ? 'success'
-      : workOrder.status === 'in_progress'
-        ? 'info'
-        : workOrder.status === 'canceled'
-          ? 'danger'
-          : 'warning'
-
   return (
-    <Card>
+    <Panel title="Work order" description="Primary work-order state and output summary.">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-wide text-slate-500">Work order</div>
@@ -37,7 +27,7 @@ export function WorkOrderHeader({ workOrder, outputItemLabel }: Props) {
             <div className="mt-1 text-sm text-slate-600">{workOrder.description}</div>
           )}
           <div className="mt-2 flex items-center gap-2">
-            <Badge variant={statusVariant}>{workOrder.status}</Badge>
+            <StatusCell label={formatStatusLabel(workOrder.status)} tone={statusTone(workOrder.status)} compact />
             <Badge variant="neutral">
               {isDisassembly ? 'Input' : 'Output'}:{' '}
               <Link 
@@ -79,6 +69,6 @@ export function WorkOrderHeader({ workOrder, outputItemLabel }: Props) {
           </div>
         </div>
       </div>
-    </Card>
+    </Panel>
   )
 }

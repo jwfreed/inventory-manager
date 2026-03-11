@@ -1,5 +1,5 @@
 import type { WorkOrder } from '@api/types'
-import { Badge, DataTable } from '@shared/ui'
+import { Badge, DataTable, StatusCell, formatStatusLabel, statusTone } from '@shared/ui'
 import { formatNumber } from '@shared/formatters'
 import { Link } from 'react-router-dom'
 import { cn } from '../../../lib/utils'
@@ -12,40 +12,38 @@ type Props = {
 }
 
 export function WorkOrdersTable({ rows, onSelect, formatOutput, remaining }: Props) {
-  const formatStatus = (status?: string | null) => {
-    if (!status) return 'Unknown'
-    return status
-      .replace(/_/g, ' ')
-      .split(' ')
-      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-      .join(' ')
-  }
-
-  const statusVariant = (status?: string | null) => {
-    const normalized = status?.toLowerCase()
-    if (normalized === 'draft') return 'warning'
-    if (normalized === 'in_progress') return 'info'
-    if (normalized === 'completed') return 'success'
-    if (normalized === 'canceled') return 'neutral'
-    return 'neutral'
-  }
-
   return (
     <DataTable
       rows={rows}
       rowKey={(row) => row.id}
       onRowClick={onSelect}
+      getRowState={(row) =>
+        row.status?.toLowerCase() === 'canceled'
+          ? 'danger'
+          : row.status?.toLowerCase() === 'draft'
+            ? 'warning'
+            : 'default'
+      }
       rowClassName={(row) =>
         cn(
           'group',
-          row.status?.toLowerCase() === 'draft' && 'bg-slate-50/40',
           row.status?.toLowerCase() === 'completed' && 'opacity-70',
         )
       }
+      rowActions={(row) => (
+        <Link
+          className="inline-flex rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+          to={`/work-orders/${row.id}`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          View
+        </Link>
+      )}
       columns={[
         {
           id: 'number',
           header: 'WO Number',
+          priority: 'primary',
           cell: (row) => (
             <div className="space-y-1">
               <Link
@@ -63,14 +61,16 @@ export function WorkOrdersTable({ rows, onSelect, formatOutput, remaining }: Pro
           id: 'status',
           header: 'Status',
           cell: (row) => (
-            <div className="flex items-center gap-2">
-              <Badge variant={statusVariant(row.status)}>{formatStatus(row.status)}</Badge>
+            <div className="space-y-1">
+              <StatusCell
+                label={formatStatusLabel(row.status)}
+                tone={statusTone(row.status)}
+                meta={row.status?.toLowerCase() === 'draft' ? 'No inventory impact' : undefined}
+                compact
+              />
               <Badge variant={row.kind === 'disassembly' ? 'info' : 'neutral'}>
                 {row.kind === 'disassembly' ? 'Disassembly' : 'Production'}
               </Badge>
-              {row.status?.toLowerCase() === 'draft' && (
-                <span className="text-xs text-slate-500">No inventory impact</span>
-              )}
             </div>
           ),
         },
@@ -131,7 +131,7 @@ export function WorkOrdersTable({ rows, onSelect, formatOutput, remaining }: Pro
           cell: () => (
             <span className="text-xs text-slate-300 opacity-0 transition group-hover:opacity-60">{'>'}</span>
           ),
-          cellClassName: 'w-6',
+          cellClassName: 'hidden',
         },
       ]}
     />

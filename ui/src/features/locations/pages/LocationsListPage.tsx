@@ -4,13 +4,7 @@ import { useMutation } from '@tanstack/react-query'
 import { createStandardWarehouseTemplate } from '../api/locations'
 import { useLocationsList } from '../queries'
 import type { ApiError, Location } from '../../../api/types'
-import { Alert } from '../../../components/Alert'
-import { Badge } from '../../../components/Badge'
-import { Button } from '../../../components/Button'
-import { Card } from '../../../components/Card'
-import { EmptyState } from '../../../components/EmptyState'
-import { LoadingSpinner } from '../../../components/Loading'
-import { Section } from '../../../components/Section'
+import { ActiveFiltersSummary, Alert, Button, DataTable, EmptyState, FilterBar, LoadingSpinner, Panel, StatusCell } from '@shared/ui'
 import { LocationForm } from '../components/LocationForm'
 import { usePageChrome } from '../../../app/layout/usePageChrome'
 
@@ -48,6 +42,15 @@ export default function LocationsListPage() {
       (loc) => loc.code.toLowerCase().includes(needle) || loc.name.toLowerCase().includes(needle),
     )
   }, [data?.data, search, typeFilter])
+  const activeFilters = useMemo(
+    () =>
+      [
+        active ? { key: 'active', label: 'State', value: active === 'true' ? 'Active' : 'Inactive' } : null,
+        typeFilter ? { key: 'type', label: 'Type', value: typeFilter } : null,
+        search ? { key: 'search', label: 'Search', value: search } : null,
+      ].filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
+    [active, search, typeFilter],
+  )
 
   const templateMutation = useMutation<{ created: Location[]; skipped: string[] }, ApiError>({
     mutationFn: () => createStandardWarehouseTemplate({ includeReceivingQc }),
@@ -65,7 +68,7 @@ export default function LocationsListPage() {
         </p>
       </div>
 
-      <Section title="Create location">
+      <Panel title="Create location" description="Create storage and demand points without leaving the list.">
         <div className="flex justify-end pb-2">
           <Button variant="secondary" size="sm" onClick={() => setShowCreate((v) => !v)}>
             {showCreate ? 'Hide form' : 'New location'}
@@ -117,10 +120,27 @@ export default function LocationsListPage() {
             }}
           />
         )}
-      </Section>
+      </Panel>
 
-      <Section title="Filters">
-        <div className="flex flex-wrap items-center gap-3">
+      <Panel title="Filters" description="Filter locations by operational state and type.">
+        <FilterBar
+          actions={<Button variant="secondary" size="sm" onClick={() => void refetch()}>Refresh</Button>}
+          summary={
+            <ActiveFiltersSummary
+              filters={activeFilters}
+              onClearOne={(key) => {
+                if (key === 'active') setActive('')
+                if (key === 'type') setTypeFilter('')
+                if (key === 'search') setSearch('')
+              }}
+              onClearAll={() => {
+                setActive('')
+                setTypeFilter('')
+                setSearch('')
+              }}
+            />
+          }
+        >
           <select
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={active}
@@ -150,14 +170,10 @@ export default function LocationsListPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <Button variant="secondary" size="sm" onClick={() => void refetch()}>
-            Refresh
-          </Button>
-        </div>
-      </Section>
+        </FilterBar>
+      </Panel>
 
-      <Section title="Locations">
-        <Card>
+      <Panel title="Locations" description="Browse locations with standardized operational state rendering.">
           {isLoading && <LoadingSpinner label="Loading locations..." />}
           {isError && error && (
             <Alert
@@ -173,54 +189,26 @@ export default function LocationsListPage() {
           )}
           {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
-              title="No locations yet"
-              description="Create locations with the form above or via API/migrations."
+              title="No locations found"
+              description="Adjust filters or create a new location to populate this list."
             />
           )}
           {!isLoading && !isError && filtered.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Code
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Name
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Type
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Active
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {filtered.map((loc) => (
-                    <tr
-                      key={loc.id}
-                      className="cursor-pointer hover:bg-slate-50"
-                      onClick={() => navigate(`/locations/${loc.id}`)}
-                    >
-                      <td className="px-4 py-3 text-sm font-semibold text-slate-900">{loc.code}</td>
-                      <td className="px-4 py-3 text-sm text-slate-800">{loc.name}</td>
-                      <td className="px-4 py-3 text-sm text-slate-800">
-                        <Badge variant="neutral">{loc.type}</Badge>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-800">
-                        <Badge variant={loc.active ? 'success' : 'danger'}>
-                          {loc.active ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              rows={filtered}
+              rowKey={(loc) => loc.id}
+              onRowClick={(loc) => navigate(`/locations/${loc.id}`)}
+              getRowState={(loc) => (loc.active ? 'default' : 'warning')}
+              columns={[
+                { id: 'code', header: 'Code', priority: 'primary', cell: (loc) => loc.code },
+                { id: 'name', header: 'Name', cell: (loc) => loc.name },
+                { id: 'type', header: 'Type', cell: (loc) => <StatusCell label={loc.type} tone="neutral" compact /> },
+                { id: 'active', header: 'State', cell: (loc) => <StatusCell label={loc.active ? 'Ready' : 'Blocked'} tone={loc.active ? 'success' : 'warning'} compact /> },
+              ]}
+              rowActions={(loc) => <Button variant="secondary" size="sm" onClick={() => navigate(`/locations/${loc.id}`)}>View</Button>}
+            />
           )}
-        </Card>
-      </Section>
+      </Panel>
     </div>
   )
 }

@@ -1,19 +1,11 @@
-import { SeverityPill, type Severity } from '@shared/ui'
+import { StatusCell, formatStatusLabel, statusTone } from '@shared/ui'
 
 type Props = {
   status: string
+  meta?: string
+  compact?: boolean
 }
 
-export function MovementStatusBadge({ status }: Props) {
-  const normalized = status?.toLowerCase()
-  const severity: Severity =
-    normalized === 'posted'
-      ? 'info'
-      : normalized === 'draft'
-        ? 'watch'
-        : normalized === 'canceled'
-          ? 'critical'
-          : 'info'
-
-  return <SeverityPill severity={severity} label={status} />
+export function MovementStatusBadge({ status, meta, compact }: Props) {
+  return <StatusCell label={formatStatusLabel(status)} tone={statusTone(status)} meta={meta} compact={compact} />
 }

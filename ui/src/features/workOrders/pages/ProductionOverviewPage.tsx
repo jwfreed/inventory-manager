@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useProductionOverview } from '../productionOverviewQueries'
 import { useItemsList } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
-import { Button, Card, LoadingSpinner, ErrorState, Badge } from '@shared/ui'
+import { ActiveFiltersSummary, Button, Card, ErrorState, FilterBar, LoadingSpinner, Panel, StatusCell, formatStatusLabel, statusTone } from '@shared/ui'
 import { formatNumber } from '@shared/formatters'
 import { SimpleLineChart, SimpleBarChart } from '@shared/charts'
 import { ChartExportButton } from '@shared/charts/ChartExportButton'
@@ -37,6 +37,16 @@ export default function ProductionOverviewPage() {
 
   const items = useMemo(() => itemsQuery.data?.data ?? [], [itemsQuery.data])
   const locations = useMemo(() => locationsQuery.data?.data ?? [], [locationsQuery.data])
+  const activeFilters = useMemo(
+    () =>
+      [
+        dateFrom ? { key: 'dateFrom', label: 'From', value: dateFrom } : null,
+        dateTo ? { key: 'dateTo', label: 'To', value: dateTo } : null,
+        itemId ? { key: 'itemId', label: 'Item', value: items.find((item) => item.id === itemId)?.sku ?? itemId } : null,
+        locationId ? { key: 'locationId', label: 'Location', value: locations.find((loc) => loc.id === locationId)?.code ?? locationId } : null,
+      ].filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
+    [dateFrom, dateTo, itemId, items, locationId, locations],
+  )
 
   const itemsMap = useMemo(() => {
     return new Map(items.map((item) => [item.id, item]))
@@ -164,11 +174,46 @@ export default function ProductionOverviewPage() {
         </p>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <div className="p-4">
-          <h3 className="text-sm font-semibold text-slate-900 mb-4">Filters</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <Panel title="Filters" description="Scope production reporting by date, item, and location.">
+        <FilterBar
+          actions={
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setDateFrom('')
+                  setDateTo('')
+                  setItemId('')
+                  setLocationId('')
+                }}
+              >
+                Clear filters
+              </Button>
+              <Button size="sm" variant="secondary" onClick={handleExportAll} disabled={!overviewQuery.data}>
+                Export All to CSV
+              </Button>
+            </>
+          }
+          summary={
+            <ActiveFiltersSummary
+              filters={activeFilters}
+              onClearOne={(key) => {
+                if (key === 'dateFrom') setDateFrom('')
+                if (key === 'dateTo') setDateTo('')
+                if (key === 'itemId') setItemId('')
+                if (key === 'locationId') setLocationId('')
+              }}
+              onClearAll={() => {
+                setDateFrom('')
+                setDateTo('')
+                setItemId('')
+                setLocationId('')
+              }}
+            />
+          }
+        >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Date From</label>
               <input
@@ -218,25 +263,8 @@ export default function ProductionOverviewPage() {
               </select>
             </div>
           </div>
-          <div className="mt-4 flex gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                setDateFrom('')
-                setDateTo('')
-                setItemId('')
-                setLocationId('')
-              }}
-            >
-              Clear Filters
-            </Button>
-            <Button size="sm" variant="secondary" onClick={handleExportAll} disabled={!overviewQuery.data}>
-              Export All to CSV
-            </Button>
-          </div>
-        </div>
-      </Card>
+        </FilterBar>
+      </Panel>
 
       {overviewQuery.isLoading && (
         <div className="py-12">
@@ -503,17 +531,7 @@ export default function ProductionOverviewPage() {
                           className="block border border-slate-200 rounded-lg p-3 hover:border-brand-500 hover:shadow-md transition-all"
                         >
                           <div className="flex items-center justify-between mb-2">
-                            <Badge
-                              variant={
-                                row.status === 'completed'
-                                  ? 'success'
-                                  : row.status === 'released'
-                                    ? 'warning'
-                                    : 'neutral'
-                              }
-                            >
-                              {row.status}
-                            </Badge>
+                            <StatusCell label={formatStatusLabel(row.status)} tone={statusTone(row.status)} compact />
                             <span className="text-sm font-medium text-brand-700">
                               {row.workOrderCount} WOs →
                             </span>

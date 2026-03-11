@@ -2,12 +2,7 @@ import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { type MovementListParams } from '../api/ledger'
 import { useMovementsList } from '../queries'
-import { Card } from '../../../components/Card'
-import { EmptyState } from '../../../components/EmptyState'
-import { ErrorState } from '../../../components/ErrorState'
-import { LoadingSpinner } from '../../../components/Loading'
-import { Section } from '../../../components/Section'
-import { Alert } from '../../../components/Alert'
+import { Banner, EmptyState, ErrorState, LoadingSpinner, Panel } from '@shared/ui'
 import { MovementFilters } from '../components/MovementFilters'
 import { MovementsTable } from '../components/MovementsTable'
 import { usePageChrome } from '../../../app/layout/usePageChrome'
@@ -40,15 +35,15 @@ export default function MovementsListPage() {
         </p>
       </div>
 
-      <Section title="Filters">
+      <Panel title="Filters" description="Narrow the movement ledger to a precise inventory scope.">
         <MovementFilters
           initialFilters={filters}
           onApply={(next) => setFilters(next)}
           disabled={isFetching}
         />
-      </Section>
+      </Panel>
 
-      <Section title="Movements">
+      <Panel title="Movements" description="Append-only stock movements with anomaly-first status treatment.">
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
           <div>
             Showing {data?.data?.length ?? 0} movements
@@ -64,32 +59,21 @@ export default function MovementsListPage() {
           </div>
           {isFetching && <span className="text-xs uppercase tracking-wide text-slate-400">Updating…</span>}
         </div>
-        <Alert
-          variant="info"
+        <Banner
+          severity="watch"
           title="Exception focus"
-          message="Draft or late-posted movements and large adjustments are typical exceptions. Narrow the date range and sort by occurred date to spot them quickly."
+          description="Draft or late-posted movements and large adjustments are typical exceptions. Narrow the date range to spot them quickly."
         />
-        <Card>
-          {isLoading && <LoadingSpinner label="Loading movements..." />}
-          {isError && error && (
-            <ErrorState
-              error={error}
-              onRetry={() => {
-                void refetch()
-              }}
-            />
-          )}
-          {!isLoading && !isError && data && data.data.length === 0 && (
-            <EmptyState
-              title="No movements found"
-              description="Broaden the date range or clear filters to see movement history."
-            />
-          )}
-          {!isLoading && !isError && data && data.data.length > 0 && (
-            <MovementsTable movements={data.data} />
-          )}
-        </Card>
-      </Section>
+        {isLoading && <LoadingSpinner label="Loading movements..." />}
+        {isError && error && <ErrorState error={error} onRetry={() => { void refetch() }} />}
+        {!isLoading && !isError && data && data.data.length === 0 && (
+          <EmptyState
+            title="No movements found"
+            description="Broaden the date range or clear filters to see movement history."
+          />
+        )}
+        {!isLoading && !isError && data && data.data.length > 0 && <MovementsTable movements={data.data} />}
+      </Panel>
     </div>
   )
 }
