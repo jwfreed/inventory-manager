@@ -22,8 +22,49 @@ const querySchema = z.object({
   forceRefresh: z.coerce.boolean().optional()
 });
 
+function firstQueryValue(value: unknown) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function sanitizeDashboardQuery(query: Request['query']) {
+  const warehouseId = firstQueryValue(query.warehouseId);
+  const windowDays = firstQueryValue(query.windowDays);
+  const forceRefresh = firstQueryValue(query.forceRefresh);
+
+  const sanitized: Record<string, string | number | boolean> = {};
+
+  if (typeof warehouseId === 'string') {
+    const trimmed = warehouseId.trim();
+    if (trimmed && z.string().uuid().safeParse(trimmed).success) {
+      sanitized.warehouseId = trimmed;
+    }
+  }
+
+  if (typeof windowDays === 'string') {
+    const trimmed = windowDays.trim();
+    if (trimmed) {
+      const parsed = Number.parseInt(trimmed, 10);
+      if (Number.isFinite(parsed)) {
+        sanitized.windowDays = Math.min(365, Math.max(7, parsed));
+      }
+    }
+  } else if (typeof windowDays === 'number' && Number.isFinite(windowDays)) {
+    sanitized.windowDays = Math.min(365, Math.max(7, Math.trunc(windowDays)));
+  }
+
+  if (typeof forceRefresh === 'string') {
+    const normalized = forceRefresh.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') sanitized.forceRefresh = true;
+    if (normalized === 'false' || normalized === '0') sanitized.forceRefresh = false;
+  } else if (typeof forceRefresh === 'boolean') {
+    sanitized.forceRefresh = forceRefresh;
+  }
+
+  return sanitized;
+}
+
 function parseOptions(req: Request, res: Response) {
-  const parsed = querySchema.safeParse(req.query);
+  const parsed = querySchema.safeParse(sanitizeDashboardQuery(req.query));
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid query params.', details: parsed.error.format() });
     return null;

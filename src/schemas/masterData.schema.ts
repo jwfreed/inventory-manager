@@ -21,6 +21,8 @@ export const itemSchema = z.object({
   lifecycleStatus: z.nativeEnum(ItemLifecycleStatus).default(ItemLifecycleStatus.ACTIVE),
   type: z.enum(['raw', 'wip', 'finished', 'packaging']).default('raw'),
   isPhantom: z.boolean().default(false),
+  isPurchasable: z.boolean().optional(),
+  isManufactured: z.boolean().optional(),
   defaultUom: uomSchema.max(50).nullable().optional(),
   uomDimension: uomDimensionSchema.nullable().optional(),
   canonicalUom: uomSchema.max(32).nullable().optional(),

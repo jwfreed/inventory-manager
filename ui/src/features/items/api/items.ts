@@ -3,6 +3,8 @@ import type { Item, ItemInventoryRow } from '../../../api/types'
 
 type ItemApiRow = Item & {
   type?: Item['type']
+  is_purchasable?: boolean
+  is_manufactured?: boolean
   default_uom?: string | null
   uom_dimension?: Item['uomDimension'] | null
   canonical_uom?: string | null
@@ -28,6 +30,8 @@ export type ItemPayload = {
   description?: string
   type?: Item['type']
   isPhantom?: boolean
+  isPurchasable?: boolean
+  isManufactured?: boolean
   lifecycleStatus?: Item['lifecycleStatus']
   defaultUom?: string | null
   uomDimension?: Item['uomDimension'] | null
@@ -57,6 +61,8 @@ export type ItemMetrics = {
 export type ListItemsParams = {
   lifecycleStatus?: string
   search?: string
+  isPurchasable?: boolean
+  isManufactured?: boolean
   limit?: number
   offset?: number
 }
@@ -69,6 +75,8 @@ function mapItem(row: ItemApiRow): Item {
     description: row.description,
     type: row.type ?? 'raw',
     isPhantom: !!row.isPhantom,
+    isPurchasable: row.isPurchasable ?? row.is_purchasable ?? false,
+    isManufactured: row.isManufactured ?? row.is_manufactured ?? false,
     lifecycleStatus: row.lifecycleStatus,
     defaultUom: row.defaultUom ?? row.default_uom ?? row.stocking_uom ?? null,
     uomDimension: row.uomDimension ?? row.uom_dimension ?? null,
@@ -102,6 +110,8 @@ export async function listItems(
     params: {
       ...(params.lifecycleStatus ? { lifecycleStatus: params.lifecycleStatus } : {}),
       ...(params.search ? { search: params.search } : {}),
+      ...(params.isPurchasable !== undefined ? { isPurchasable: params.isPurchasable } : {}),
+      ...(params.isManufactured !== undefined ? { isManufactured: params.isManufactured } : {}),
       ...(params.limit ? { limit: params.limit } : {}),
       ...(params.offset !== undefined ? { offset: params.offset } : {}),
     },

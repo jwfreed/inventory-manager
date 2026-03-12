@@ -52,7 +52,7 @@ export function SupplierScorecardsPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Supplier Scorecards</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Track vendor performance across delivery and quality metrics
+          Track supplier performance across delivery and quality metrics
         </p>
       </div>
 
@@ -178,7 +178,7 @@ function ScorecardTable({
         <thead className="bg-slate-50">
           <tr>
             <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-              Vendor
+              Supplier
             </th>
             <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">
               Purchase Orders

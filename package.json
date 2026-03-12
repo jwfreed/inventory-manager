@@ -63,7 +63,8 @@
     "backfill:movement-canonical": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/backfill-movement-canonical.ts",
     "backfill:inventory-balance": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/backfill-inventory-balance.ts",
     "worker": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/worker.ts",
-    "start": "node -r tsconfig-paths/register dist/server.js"
+    "start": "PORT=${PORT:-3000} HOST=${HOST:-127.0.0.1} ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config src/server.ts",
+    "start:dist": "node -r tsconfig-paths/register dist/server.js"
   },
   "dependencies": {
     "@opentelemetry/auto-instrumentations-node": "^0.50.0",

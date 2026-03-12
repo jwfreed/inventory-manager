@@ -1,6 +1,5 @@
 import { apiGet } from '../../../api/http'
 import type { DashboardOverview, DashboardSignalSection } from '../../../api/types'
-import type { ApiError } from '../../../api/types'
 
 export type DashboardSignalParams = {
   warehouseId?: string
@@ -8,39 +7,31 @@ export type DashboardSignalParams = {
   forceRefresh?: boolean
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
 function buildParams(params: DashboardSignalParams = {}) {
+  const sanitizedWarehouseId =
+    typeof params.warehouseId === 'string' && isUuid(params.warehouseId.trim())
+      ? params.warehouseId.trim()
+      : undefined
+  const sanitizedWindowDays =
+    typeof params.windowDays === 'number' && Number.isFinite(params.windowDays)
+      ? Math.min(365, Math.max(7, Math.trunc(params.windowDays)))
+      : undefined
+
   return {
-    ...(params.warehouseId ? { warehouseId: params.warehouseId } : {}),
-    ...(params.windowDays ? { windowDays: params.windowDays } : {}),
+    ...(sanitizedWarehouseId ? { warehouseId: sanitizedWarehouseId } : {}),
+    ...(sanitizedWindowDays ? { windowDays: sanitizedWindowDays } : {}),
     ...(params.forceRefresh ? { forceRefresh: true } : {}),
   }
 }
 
-const DASHBOARD_ROUTE_PREFIX = '/dashboard'
-const DASHBOARD_ROUTE_FALLBACK_PREFIX = '/api/dashboard'
-
-async function getDashboardPayload<T>(path: string, params: DashboardSignalParams = {}): Promise<T> {
-  try {
-    return await apiGet<T>(`${DASHBOARD_ROUTE_PREFIX}${path}`, {
-      params: buildParams(params),
-    })
-  } catch (error) {
-    const apiError = error as ApiError
-    if (apiError.status !== 404) {
-      throw error
-    }
-
-    return apiGet<T>(`${DASHBOARD_ROUTE_FALLBACK_PREFIX}${path}`, {
-      params: buildParams(params),
-    })
-  }
-}
-
 export async function getDashboardOverview(params: DashboardSignalParams = {}): Promise<DashboardOverview> {
-  const response = await getDashboardPayload<{ data?: DashboardOverview } | DashboardOverview>(
-    '/overview',
-    params,
-  )
+  const response = await apiGet<{ data?: DashboardOverview } | DashboardOverview>('/api/dashboard/overview', {
+    params: buildParams(params),
+  })
   if ('data' in response && response.data) return response.data
   return response as DashboardOverview
 }
@@ -59,9 +50,9 @@ export async function getDashboardSignalSection(
     | 'performance-metrics',
   params: DashboardSignalParams = {},
 ): Promise<DashboardSignalSection> {
-  const response = await getDashboardPayload<{ data?: DashboardSignalSection } | DashboardSignalSection>(
-    `/${endpoint}`,
-    params,
+  const response = await apiGet<{ data?: DashboardSignalSection } | DashboardSignalSection>(
+    `/api/dashboard/${endpoint}`,
+    { params: buildParams(params) },
   )
   if ('data' in response && response.data) return response.data
   return response as DashboardSignalSection

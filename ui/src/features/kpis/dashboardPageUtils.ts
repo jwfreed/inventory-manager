@@ -78,8 +78,8 @@ export function resolveWarehouseScopeLabel(input: {
   const warehouse = input.warehouseLookup.get(warehouseId)
   if (!warehouse) {
     return {
-      label: 'Warehouse scope not resolved',
-      rawId: warehouseId,
+      label: 'All active warehouses',
+      rawId: null as string | null,
     }
   }
   if (warehouse.code && warehouse.name) {
@@ -91,7 +91,7 @@ export function resolveWarehouseScopeLabel(input: {
   if (warehouse.name) {
     return { label: warehouse.name, rawId: warehouseId }
   }
-  return { label: 'Warehouse scope not resolved', rawId: warehouseId }
+  return { label: 'All active warehouses', rawId: null as string | null }
 }
 
 export function medianRuntimeSeconds(runtimeMsValues: number[]) {

@@ -23,7 +23,7 @@ type Props = {
 }
 
 const CANONICAL_UOM_BY_DIMENSION = {
-  mass: 'kg',
+  mass: 'g',
   volume: 'L',
   count: 'each',
   length: 'm',
@@ -41,6 +41,8 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
   const [description, setDescription] = useState(initialItem?.description ?? '')
   const [type, setType] = useState<Item['type']>(initialItem?.type ?? 'raw')
   const [isPhantom, setIsPhantom] = useState(initialItem?.isPhantom ?? false)
+  const [isPurchasable, setIsPurchasable] = useState(initialItem?.isPurchasable ?? true)
+  const [isManufactured, setIsManufactured] = useState(initialItem?.isManufactured ?? false)
   const [lifecycleStatus, setLifecycleStatus] = useState<Item['lifecycleStatus']>(
     initialItem?.lifecycleStatus ?? 'Active',
   )
@@ -65,6 +67,8 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
     setDescription(initialItem.description ?? '')
     setType(initialItem.type ?? 'raw')
     setIsPhantom(initialItem.isPhantom ?? false)
+    setIsPurchasable(initialItem.isPurchasable ?? true)
+    setIsManufactured(initialItem.isManufactured ?? false)
     setLifecycleStatus(initialItem.lifecycleStatus ?? 'Active')
     setUomDimension(initialItem.uomDimension ?? null)
     setStockingUom(initialItem.stockingUom ?? initialItem.defaultUom ?? '')
@@ -98,6 +102,8 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
       name,
       description: description || undefined,
       isPhantom,
+      isPurchasable,
+      isManufactured,
       type,
       lifecycleStatus,
       defaultUom: stockingUom.trim() ? stockingUom.trim() : undefined,
@@ -157,16 +163,38 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
             </select>
           </FormField>
           <div className="flex items-center h-full pt-6">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                checked={isPhantom}
-                onChange={(e) => setIsPhantom(e.target.checked)}
-                disabled={mutation.isPending}
-              />
-              <span className="text-slate-700">Phantom Item</span>
-            </label>
+            <div className="grid gap-2">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  checked={isPhantom}
+                  onChange={(e) => setIsPhantom(e.target.checked)}
+                  disabled={mutation.isPending}
+                />
+                <span className="text-slate-700">Phantom Item</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  checked={isPurchasable}
+                  onChange={(e) => setIsPurchasable(e.target.checked)}
+                  disabled={mutation.isPending}
+                />
+                <span className="text-slate-700">Purchasable</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  checked={isManufactured}
+                  onChange={(e) => setIsManufactured(e.target.checked)}
+                  disabled={mutation.isPending}
+                />
+                <span className="text-slate-700">Manufactured internally</span>
+              </label>
+            </div>
           </div>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
@@ -195,7 +223,7 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
               required
             >
               <option value="">Select dimension</option>
-              <option value="mass">Mass (kg)</option>
+              <option value="mass">Mass (g)</option>
               <option value="volume">Volume (L)</option>
               <option value="count">Count (each)</option>
               <option value="length">Length (m)</option>

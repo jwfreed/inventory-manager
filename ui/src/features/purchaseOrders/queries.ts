@@ -4,7 +4,7 @@ import { getPurchaseOrder, listPurchaseOrders } from './api/purchaseOrders'
 
 export const purchaseOrdersQueryKeys = {
   all: ['purchase-orders'] as const,
-  list: (params: { limit?: number; offset?: number } = {}) =>
+  list: (params: { limit?: number; offset?: number; search?: string } = {}) =>
     [...purchaseOrdersQueryKeys.all, 'list', params] as const,
   detail: (id: string) => [...purchaseOrdersQueryKeys.all, 'detail', id] as const,
 }
@@ -17,7 +17,7 @@ type PurchaseOrdersListOptions = Omit<
 type PurchaseOrderOptions = Omit<UseQueryOptions<PurchaseOrder, ApiError>, 'queryKey' | 'queryFn'>
 
 export function usePurchaseOrdersList(
-  params: { limit?: number; offset?: number } = {},
+  params: { limit?: number; offset?: number; search?: string } = {},
   options: PurchaseOrdersListOptions = {},
 ) {
   return useQuery({

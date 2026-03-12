@@ -89,7 +89,7 @@ export function PurchaseOrderDetailsForm({
           />
         </div>
         <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase text-slate-500">Vendor reference</span>
+          <span className="text-xs uppercase text-slate-500">Supplier reference</span>
           <Input
             value={vendorReference}
             onChange={(e) => onVendorReferenceChange(e.target.value)}

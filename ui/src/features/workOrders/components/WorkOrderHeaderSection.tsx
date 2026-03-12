@@ -1,5 +1,5 @@
 import type { Item } from '@api/types'
-import { Input, Section, Textarea } from '@shared/ui'
+import { Combobox, Input, Section, Textarea } from '@shared/ui'
 import { FormField } from '../../../components/FormField'
 
 export type SelectOption = {
@@ -79,21 +79,22 @@ export function WorkOrderHeaderSection({
         </FormField>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
-        <FormField label={itemLabel} className="md:col-span-2">
-          <select
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+        <div className="md:col-span-2">
+          <Combobox
+            label={itemLabel}
             value={outputItemId}
-            onChange={(e) => onOutputItemChange(e.target.value)}
+            options={items.map((item) => ({
+              value: item.id,
+              label: `${item.sku} — ${item.name}`,
+              keywords: `${item.sku} ${item.name}`,
+            }))}
+            placeholder="Search items"
             disabled={isPending || itemsLoading}
-          >
-            <option value="">Select item</option>
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.sku} — {item.name}
-              </option>
-            ))}
-          </select>
-        </FormField>
+            loading={itemsLoading}
+            showSelectedValue={false}
+            onChange={onOutputItemChange}
+          />
+        </div>
         <FormField label="Unit of measure" helper={selectedItem?.defaultUom && outputUom === selectedItem.defaultUom ? 'Auto from item default UOM' : undefined}>
           <Input
             value={outputUom}

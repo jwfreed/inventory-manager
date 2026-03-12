@@ -91,7 +91,7 @@ export function PurchaseOrdersGroupTable({
             },
             {
               id: 'vendor',
-              header: 'Vendor',
+              header: 'Supplier',
               cell: (po) => (
                 <span>
                   {po.vendorCode ?? po.vendorId}

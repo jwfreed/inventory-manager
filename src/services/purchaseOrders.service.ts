@@ -157,6 +157,24 @@ function normalizePurchaseOrderLines(lines: PurchaseOrderLineInput[]) {
   return normalized;
 }
 
+async function assertPurchasableItems(client: PoolClient, tenantId: string, itemIds: string[]) {
+  const distinctItemIds = Array.from(new Set(itemIds));
+  if (distinctItemIds.length === 0) return;
+
+  const { rows } = await client.query<{ id: string }>(
+    `SELECT id
+       FROM items
+      WHERE tenant_id = $1
+        AND id = ANY($2::uuid[])
+        AND is_purchasable = true`,
+    [tenantId, distinctItemIds]
+  );
+
+  if (rows.length !== distinctItemIds.length) {
+    throw new Error('PO_NON_PURCHASABLE_ITEM');
+  }
+}
+
 async function generatePoNumber(client: PoolClient) {
   const { rows } = await client.query(`SELECT nextval('po_number_seq') AS seq`);
   const seq = Number(rows[0].seq ?? 0);
@@ -217,6 +235,7 @@ export async function createPurchaseOrder(
 
   return withTransaction(async (client) => {
     const poNumber = (data.poNumber ?? '').trim() || (await generatePoNumber(client));
+    await assertPurchasableItems(client, tenantId, normalizedLines.map((line) => line.itemId));
     const insertedOrder = await client.query(
       `INSERT INTO purchase_orders (
           id, tenant_id, po_number, vendor_id, status, order_date, expected_date,
@@ -344,6 +363,9 @@ export async function updatePurchaseOrder(
         expectedDate: data.expectedDate ?? poResult.rows[0]?.expected_date ?? null,
         lines: existingLines.map((line) => ({ quantityOrdered: line.quantity_ordered }))
       });
+    }
+    if (normalizedLines) {
+      await assertPurchasableItems(client, tenantId, normalizedLines.map((line) => line.itemId));
     }
 
     const status = requestedStatus === 'submitted' && shouldAutoApprove() ? 'approved' : requestedStatus;
@@ -957,7 +979,35 @@ export async function getPurchaseOrderByLineId(tenantId: string, lineId: string)
   return getPurchaseOrderById(tenantId, line.rows[0].purchase_order_id);
 }
 
-export async function listPurchaseOrders(tenantId: string, limit: number, offset: number) {
+export async function listPurchaseOrders(tenantId: string, limit: number, offset: number, search?: string) {
+  const params: Array<string | number> = [tenantId];
+  let searchClause = '';
+  if (search) {
+    params.push(`%${search}%`);
+    const searchParam = params.length;
+    searchClause = `
+      AND (
+        po.po_number ILIKE $${searchParam}
+        OR v.code ILIKE $${searchParam}
+        OR v.name ILIKE $${searchParam}
+        OR EXISTS (
+          SELECT 1
+            FROM purchase_order_lines pol_search
+            JOIN items i_search
+              ON i_search.id = pol_search.item_id
+             AND i_search.tenant_id = pol_search.tenant_id
+           WHERE pol_search.purchase_order_id = po.id
+             AND pol_search.tenant_id = po.tenant_id
+             AND (
+               i_search.sku ILIKE $${searchParam}
+               OR i_search.name ILIKE $${searchParam}
+             )
+        )
+      )
+    `;
+  }
+
+  params.push(limit, offset);
   const { rows } = await query(
     `SELECT po.id,
             po.po_number,
@@ -982,9 +1032,10 @@ export async function listPurchaseOrders(tenantId: string, limit: number, offset
        LEFT JOIN locations loc ON loc.id = po.ship_to_location_id AND loc.tenant_id = po.tenant_id
        LEFT JOIN locations recv ON recv.id = po.receiving_location_id AND recv.tenant_id = po.tenant_id
       WHERE po.tenant_id = $1
+       ${searchClause}
        ORDER BY po.created_at DESC
-       LIMIT $2 OFFSET $3`,
-    [tenantId, limit, offset]
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
   );
   return rows.map(mapPurchaseOrderSummary);
 }

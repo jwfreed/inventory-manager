@@ -29,6 +29,10 @@ const EVENT_TYPES = [
   'workorder:completed',
 ] as const
 
+const HEARTBEAT_TIMEOUT_MS = 45_000
+const BASE_RECONNECT_DELAY_MS = 1_000
+const MAX_RECONNECT_DELAY_MS = 30_000
+
 function asStringArray(value: unknown): string[] {
   if (!value) return []
   if (Array.isArray(value)) {
@@ -49,12 +53,43 @@ export function useServerEvents(accessToken?: string | null) {
     if (typeof EventSource === 'undefined') return
     if (!accessToken) return
 
+    let source: EventSource | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let heartbeatTimer: ReturnType<typeof setTimeout> | null = null
+    let reconnectAttempts = 0
+    let closed = false
+
     const rawUrl = buildUrl('/events')
-    const url = rawUrl.startsWith('http')
-      ? new URL(rawUrl)
-      : new URL(rawUrl, window.location.origin)
-    url.searchParams.set('access_token', accessToken)
-    const source = new EventSource(url.toString())
+
+    const buildEventUrl = () => {
+      const url = rawUrl.startsWith('http')
+        ? new URL(rawUrl)
+        : new URL(rawUrl, window.location.origin)
+      url.searchParams.set('access_token', accessToken)
+      return url
+    }
+
+    const clearReconnect = () => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
+    }
+
+    const clearHeartbeat = () => {
+      if (heartbeatTimer) {
+        clearTimeout(heartbeatTimer)
+        heartbeatTimer = null
+      }
+    }
+
+    const refreshHeartbeat = () => {
+      clearHeartbeat()
+      heartbeatTimer = setTimeout(() => {
+        closeSource()
+        scheduleReconnect()
+      }, HEARTBEAT_TIMEOUT_MS)
+    }
 
     const invalidateInventory = (itemIds: string[], locationIds: string[]) => {
       void queryClient.invalidateQueries({ queryKey: ['inventory-summary'] })
@@ -130,6 +165,7 @@ export function useServerEvents(accessToken?: string | null) {
 
     const handleEvent = (message: MessageEvent) => {
       if (!message.data) return
+      refreshHeartbeat()
       let payload: ServerEvent | null = null
       try {
         payload = JSON.parse(message.data) as ServerEvent
@@ -218,17 +254,81 @@ export function useServerEvents(accessToken?: string | null) {
       }
     }
 
-    EVENT_TYPES.forEach((type) => {
-      source.addEventListener(type, handleEvent as EventListener)
-    })
-    source.addEventListener('message', handleEvent as EventListener)
-
-    return () => {
+    const closeSource = () => {
+      if (!source) return
       EVENT_TYPES.forEach((type) => {
-        source.removeEventListener(type, handleEvent as EventListener)
+        source?.removeEventListener(type, handleEvent as EventListener)
       })
       source.removeEventListener('message', handleEvent as EventListener)
+      source.removeEventListener('open', handleOpen as EventListener)
+      source.removeEventListener('error', handleError as EventListener)
       source.close()
+      source = null
+    }
+
+    const scheduleReconnect = () => {
+      if (closed || reconnectTimer || (typeof navigator !== 'undefined' && !navigator.onLine)) return
+      const backoff = Math.min(
+        MAX_RECONNECT_DELAY_MS,
+        BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttempts,
+      )
+      const jitter = Math.floor(Math.random() * 250)
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        reconnectAttempts += 1
+        openSource()
+      }, backoff + jitter)
+    }
+
+    const handleOpen = () => {
+      reconnectAttempts = 0
+      refreshHeartbeat()
+    }
+
+    const handleError = () => {
+      clearHeartbeat()
+      closeSource()
+      scheduleReconnect()
+    }
+
+    const openSource = () => {
+      if (closed) return
+      closeSource()
+      const nextSource = new EventSource(buildEventUrl().toString())
+      source = nextSource
+      nextSource.addEventListener('open', handleOpen as EventListener)
+      nextSource.addEventListener('error', handleError as EventListener)
+      EVENT_TYPES.forEach((type) => {
+        nextSource.addEventListener(type, handleEvent as EventListener)
+      })
+      nextSource.addEventListener('message', handleEvent as EventListener)
+    }
+
+    const handleOnline = () => {
+      reconnectAttempts = 0
+      clearReconnect()
+      if (!source) {
+        openSource()
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !source) {
+        handleOnline()
+      }
+    }
+
+    openSource()
+    window.addEventListener('online', handleOnline)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      closed = true
+      clearReconnect()
+      clearHeartbeat()
+      window.removeEventListener('online', handleOnline)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      closeSource()
     }
   }, [accessToken, queryClient])
 }

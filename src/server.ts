@@ -184,7 +184,6 @@ app.use('/atp', atpRouter);
 app.use('/supplier-scorecards', supplierScorecardRouter);
 app.use('/reports', reportsRouter);
 app.use('/metrics', metricsRouter);
-app.use('/dashboard', dashboardSignalsRouter);
 app.use('/api/dashboard', dashboardSignalsRouter);
 app.use('/supplier-performance', supplierPerformanceRouter);
 app.use(productionOverviewRouter);

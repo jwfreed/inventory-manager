@@ -296,7 +296,7 @@ export default function PurchaseOrderDetailPage() {
   const hasLines = poLines.length > 0
   const quantitiesValid = hasLines && poLines.every((line) => (line.quantityOrdered ?? 0) > 0)
   const checklist = [
-    { id: 'vendor', label: 'Vendor selected', ok: Boolean(po.vendorId) },
+    { id: 'vendor', label: 'Supplier selected', ok: Boolean(po.vendorId) },
     { id: 'lines', label: 'At least one line item', ok: hasLines },
     { id: 'qty', label: 'Quantities valid', ok: quantitiesValid },
     { id: 'shipTo', label: 'Ship-to location set', ok: Boolean(shipToLocationId) },

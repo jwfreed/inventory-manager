@@ -94,10 +94,25 @@ router.get('/items', async (req: Request, res: Response) => {
       ? (req.query.lifecycleStatus.split(',') as ItemLifecycleStatus[])
       : undefined;
   const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+  const isPurchasable =
+    typeof req.query.isPurchasable === 'string'
+      ? req.query.isPurchasable.toLowerCase() === 'true'
+      : undefined;
+  const isManufactured =
+    typeof req.query.isManufactured === 'string'
+      ? req.query.isManufactured.toLowerCase() === 'true'
+      : undefined;
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   try {
-    const { items, total } = await listItems(req.auth!.tenantId, { lifecycleStatus, search, limit, offset });
+    const { items, total } = await listItems(req.auth!.tenantId, {
+      lifecycleStatus,
+      search,
+      isPurchasable,
+      isManufactured,
+      limit,
+      offset,
+    });
     return res.json({ data: items, paging: { limit, offset, total } });
   } catch (error) {
     console.error(error);

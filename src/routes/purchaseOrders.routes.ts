@@ -52,6 +52,9 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
     if (error?.message === 'PO_DUPLICATE_LINE_NUMBERS') {
       return res.status(400).json({ error: 'Line numbers must be unique within a purchase order.' });
     }
+    if (error?.message === 'PO_NON_PURCHASABLE_ITEM') {
+      return res.status(400).json({ error: 'Purchase orders can only contain purchasable items.' });
+    }
     const mapped = mapPgErrorToHttp(error, {
       unique: () => ({ status: 409, body: { error: 'PO number must be unique.' } }),
       foreignKey: () => ({ status: 400, body: { error: 'Referenced vendor, item, or location does not exist.' } })
@@ -85,9 +88,12 @@ router.get('/purchase-orders/:id', async (req: Request, res: Response) => {
 router.get('/purchase-orders', async (req: Request, res: Response) => {
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
   const offset = Math.max(0, Number(req.query.offset) || 0);
+  const search = typeof req.query.search === 'string' && req.query.search.trim()
+    ? req.query.search.trim()
+    : undefined;
 
   try {
-    const rows = await listPurchaseOrders(req.auth!.tenantId, limit, offset);
+    const rows = await listPurchaseOrders(req.auth!.tenantId, limit, offset, search);
     return res.json({ data: rows, paging: { limit, offset } });
   } catch (error) {
     console.error(error);
@@ -140,6 +146,9 @@ router.put('/purchase-orders/:id', async (req: Request, res: Response) => {
     }
     if (error?.message?.startsWith?.('PO_SUBMIT_')) {
       return res.status(409).json({ error: 'Purchase order is not ready to submit.' });
+    }
+    if (error?.message === 'PO_NON_PURCHASABLE_ITEM') {
+      return res.status(400).json({ error: 'Purchase orders can only contain purchasable items.' });
     }
     const mapped = mapPgErrorToHttp(error, {
       foreignKey: () => ({ status: 400, body: { error: 'Referenced vendor, item, or location does not exist.' } })

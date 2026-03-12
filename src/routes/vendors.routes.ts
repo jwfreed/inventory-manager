@@ -18,13 +18,13 @@ router.post('/vendors', async (req: Request, res: Response) => {
     return res.status(201).json(vendor);
   } catch (error: any) {
     const mapped = mapPgErrorToHttp(error, {
-      unique: () => ({ status: 409, body: { error: 'Vendor code must be unique.' } })
+      unique: () => ({ status: 409, body: { error: 'Supplier code must be unique.' } })
     });
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
     }
     console.error(error);
-    return res.status(500).json({ error: 'Failed to create vendor.' });
+    return res.status(500).json({ error: 'Failed to create supplier.' });
   }
 });
 
@@ -39,14 +39,14 @@ router.get('/vendors', async (_req: Request, res: Response) => {
     return res.json({ data: rows });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: 'Failed to list vendors.' });
+    return res.status(500).json({ error: 'Failed to list suppliers.' });
   }
 });
 
 router.put('/vendors/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) {
-    return res.status(400).json({ error: 'Invalid vendor id.' });
+    return res.status(400).json({ error: 'Invalid supplier id.' });
   }
   const parsed = vendorUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -55,35 +55,35 @@ router.put('/vendors/:id', async (req: Request, res: Response) => {
   try {
     const updated = await updateVendor(req.auth!.tenantId, id, parsed.data);
     if (!updated) {
-      return res.status(404).json({ error: 'Vendor not found.' });
+      return res.status(404).json({ error: 'Supplier not found.' });
     }
     return res.json(updated);
   } catch (error: any) {
     const mapped = mapPgErrorToHttp(error, {
-      unique: () => ({ status: 409, body: { error: 'Vendor code must be unique.' } })
+      unique: () => ({ status: 409, body: { error: 'Supplier code must be unique.' } })
     });
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
     }
     console.error(error);
-    return res.status(500).json({ error: 'Failed to update vendor.' });
+    return res.status(500).json({ error: 'Failed to update supplier.' });
   }
 });
 
 router.delete('/vendors/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) {
-    return res.status(400).json({ error: 'Invalid vendor id.' });
+    return res.status(400).json({ error: 'Invalid supplier id.' });
   }
   try {
     const updated = await deactivateVendor(req.auth!.tenantId, id);
     if (!updated) {
-      return res.status(404).json({ error: 'Vendor not found.' });
+      return res.status(404).json({ error: 'Supplier not found.' });
     }
     return res.json(updated);
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: 'Failed to deactivate vendor.' });
+    return res.status(500).json({ error: 'Failed to deactivate supplier.' });
   }
 });
 

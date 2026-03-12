@@ -28,16 +28,16 @@ export function PurchaseOrderVendorSection({
 }: Props) {
   return (
     <div>
-      <div className="text-sm font-semibold text-slate-800">Step 1: Vendor and identity</div>
-      <p className="text-xs text-slate-500">Start with the vendor to anchor pricing and lead time.</p>
+      <div className="text-sm font-semibold text-slate-800">Step 1: Supplier and identity</div>
+      <p className="text-xs text-slate-500">Start with the supplier to anchor pricing and lead time.</p>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <div>
           <Combobox
-            label="Vendor"
+            label="Supplier"
             value={vendorId}
             options={vendorOptions}
             loading={vendorLoading}
-            placeholder="Search vendors (code/name)"
+            placeholder="Search suppliers (code/name)"
             required
             error={vendorError}
             showSelectedValue={false}
@@ -45,11 +45,11 @@ export function PurchaseOrderVendorSection({
           />
         </div>
         <label className="space-y-1 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Vendor reference</span>
+          <span className="text-xs uppercase tracking-wide text-slate-500">Supplier reference</span>
           <Input
             value={vendorReference}
             onChange={(e) => onVendorReferenceChange(e.target.value)}
-            placeholder="Optional (vendor's reference #)"
+            placeholder="Optional (supplier reference #)"
           />
         </label>
         <label className="space-y-1 text-sm">

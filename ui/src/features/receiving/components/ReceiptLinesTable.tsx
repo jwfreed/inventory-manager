@@ -208,6 +208,7 @@ export function ReceiptLinesTable({
                     focusNextQty(line.purchaseOrderLineId)
                   }}
                   className={cn(
+                    'min-w-[7rem] text-base font-semibold',
                     isInvalid ? 'border-red-400 focus:border-red-500 focus:ring-red-100' : undefined,
                     isMatch
                       ? 'border-green-300 bg-green-50 focus:border-green-500 focus:ring-green-100'
@@ -273,6 +274,7 @@ export function ReceiptLinesTable({
               min="0"
               value={line.unitCost ?? ''}
               disabled={disabled}
+              className="min-w-[8rem] text-base font-semibold"
               onChange={(e) =>
                 onLineChange(line.purchaseOrderLineId, {
                   unitCost: e.target.value === '' ? '' : Number(e.target.value),

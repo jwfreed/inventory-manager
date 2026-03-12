@@ -952,7 +952,26 @@ export async function listReceipts(
   }
   if (options.search) {
     where.push(
-      `(por.id::text ILIKE $${paramIndex} OR po.po_number ILIKE $${paramIndex} OR por.external_ref ILIKE $${paramIndex})`
+      `(
+        por.id::text ILIKE $${paramIndex}
+        OR po.po_number ILIKE $${paramIndex}
+        OR por.external_ref ILIKE $${paramIndex}
+        OR v.name ILIKE $${paramIndex}
+        OR v.code ILIKE $${paramIndex}
+        OR EXISTS (
+          SELECT 1
+            FROM purchase_order_receipt_lines porl_search
+            JOIN items i_search
+              ON i_search.id = porl_search.item_id
+             AND i_search.tenant_id = porl_search.tenant_id
+           WHERE porl_search.purchase_order_receipt_id = por.id
+             AND porl_search.tenant_id = por.tenant_id
+             AND (
+               i_search.sku ILIKE $${paramIndex}
+               OR i_search.name ILIKE $${paramIndex}
+             )
+        )
+      )`
     );
     params.push(`%${options.search}%`);
     paramIndex += 1;

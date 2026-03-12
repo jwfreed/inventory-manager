@@ -87,7 +87,7 @@ export default function ReceiptsIndexPage() {
             <div className="md:col-span-2">
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Search</label>
               <Input
-                placeholder="Receipt #, PO #, or reference..."
+                placeholder="Receipt #, PO #, supplier, item, or reference..."
                 value={search}
                 onChange={(event) => setParam('search', event.target.value)}
               />
@@ -103,9 +103,9 @@ export default function ReceiptsIndexPage() {
               </Select>
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Vendor</label>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Supplier</label>
               <Select value={vendorId} onChange={(event) => setParam('vendorId', event.target.value)}>
-                <option value="">All vendors</option>
+                <option value="">All suppliers</option>
                 {vendors.map((vendor) => (
                   <option key={vendor.id} value={vendor.id}>
                     {vendor.name}
@@ -162,7 +162,7 @@ export default function ReceiptsIndexPage() {
                 },
                 {
                   id: 'vendor',
-                  header: 'Vendor',
+                  header: 'Supplier',
                   cell: (receipt) => receipt.vendorName || receipt.vendorCode || '—',
                 },
                 {

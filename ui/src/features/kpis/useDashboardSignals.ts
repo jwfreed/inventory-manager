@@ -27,6 +27,7 @@ import {
 } from './queries'
 
 const DEFAULT_WINDOW_DAYS = 90
+const FALLBACK_INVENTORY_SUMMARY_LIMIT = 2000
 
 function isNotFoundError(error: unknown): error is ApiError {
   return Boolean(error && typeof error === 'object' && (error as ApiError).status === 404)
@@ -138,7 +139,7 @@ function buildFallbackOverview(input: {
     asOfLabel,
     warehouseScope: {
       ids: [],
-      label: 'Warehouse scope not resolved',
+      label: 'All active warehouses',
     },
     warehouses: Array.from(warehouseLookup.entries()).map(([id, warehouse]) => ({
       id,
@@ -164,7 +165,7 @@ export function useDashboardSignals() {
   const shouldUseCompatibilityFallback = isNotFoundError(overviewQuery.error)
 
   const inventorySummaryQuery = useInventorySnapshotSummaryDetailed(
-    { limit: 5_000 },
+    { limit: FALLBACK_INVENTORY_SUMMARY_LIMIT },
     { enabled: shouldUseCompatibilityFallback, staleTime: 30_000, retry: 1 },
   )
   const itemsQuery = useItemsList(

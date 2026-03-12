@@ -33,10 +33,14 @@ export default function PurchaseOrdersListPage() {
   const action = (searchParams.get('action') ?? '').toLowerCase()
   const isReceivingMode = action === 'receive'
   const statusFilter = (searchParams.get('status') ?? (isReceivingMode ? 'approved' : '')).toLowerCase()
+  const search = searchParams.get('search') ?? ''
   const showReceiveAction =
     isReceivingMode || ['approved', 'partially_received', 'submitted'].includes(statusFilter)
 
-  const poQuery = usePurchaseOrdersList({ limit: 200 }, { staleTime: 30_000 })
+  const poQuery = usePurchaseOrdersList(
+    { limit: 200, search: search || undefined },
+    { staleTime: 30_000 },
+  )
 
   const repeatMutation = useMutation({
     mutationFn: async (poId: string) => {
@@ -179,6 +183,20 @@ export default function PurchaseOrdersListPage() {
         )}
         <PurchaseOrdersSummaryCards grouped={grouped} staleDraftCount={staleDrafts.length} />
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+          <input
+            className="min-w-[220px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            placeholder="Search PO, supplier, or item"
+            value={search}
+            onChange={(event) => {
+              const updated = new URLSearchParams(searchParams)
+              if (event.target.value) {
+                updated.set('search', event.target.value)
+              } else {
+                updated.delete('search')
+              }
+              setSearchParams(updated)
+            }}
+          />
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</span>
           <select
             className="rounded-lg border border-slate-200 px-2 py-1 text-sm"

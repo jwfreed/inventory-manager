@@ -18,7 +18,7 @@ export function PurchaseOrderReadinessPanel({
       <div className="text-xs uppercase tracking-wide text-slate-500">Submission readiness</div>
       <ul className="mt-2 space-y-2 text-sm text-slate-700">
         <li className="flex items-center justify-between">
-          <span>Vendor selected</span>
+          <span>Supplier selected</span>
           <span>{vendorReady ? '✓' : '—'}</span>
         </li>
         <li className="flex items-center justify-between">

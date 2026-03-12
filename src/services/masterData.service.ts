@@ -30,6 +30,8 @@ const itemSelectColumns = `
   i.description,
   i.type,
   i.is_phantom,
+  i.is_purchasable,
+  i.is_manufactured,
   i.default_uom,
   i.uom_dimension,
   i.canonical_uom,
@@ -62,6 +64,13 @@ const itemSelectColumns = `
 `;
 
 const DEFAULT_BASE_CURRENCY = process.env.BASE_CURRENCY || 'THB';
+
+function getDefaultSourcingFlags(type: ItemInput['type']) {
+  return {
+    isPurchasable: type === 'raw' || type === 'packaging',
+    isManufactured: type === 'wip' || type === 'finished',
+  };
+}
 
 async function resolveStandardCostFields(data: ItemInput, baseCurrency: string = DEFAULT_BASE_CURRENCY) {
   if (data.standardCost == null) {
@@ -97,6 +106,8 @@ export function mapItem(row: any) {
     name: row.name,
     description: row.description,
     isPhantom: !!row.is_phantom,
+    isPurchasable: row.is_purchasable ?? false,
+    isManufactured: row.is_manufactured ?? false,
     type: row.type ?? 'raw',
     defaultUom: row.defaultUom ?? row.default_uom ?? row.stocking_uom ?? null,
     uomDimension: row.uomDimension ?? row.uom_dimension ?? null,
@@ -137,6 +148,10 @@ export async function createItem(tenantId: string, data: ItemInput, baseCurrency
   const id = uuidv4();
   const lifecycleStatus = data.lifecycleStatus ?? ItemLifecycleStatus.ACTIVE;
   const isPhantom = data.isPhantom ?? false;
+  const type = data.type ?? 'raw';
+  const defaultSourcingFlags = getDefaultSourcingFlags(type);
+  const isPurchasable = data.isPurchasable ?? defaultSourcingFlags.isPurchasable;
+  const isManufactured = data.isManufactured ?? defaultSourcingFlags.isManufactured;
   const defaultUom = data.defaultUom ?? data.stockingUom ?? null;
   const uomDimension = data.uomDimension ?? null;
   const canonicalUom = data.canonicalUom ?? null;
@@ -150,18 +165,20 @@ export async function createItem(tenantId: string, data: ItemInput, baseCurrency
   } = await resolveStandardCostFields(data, baseCurrency);
   await query(
     `INSERT INTO items (
-        id, tenant_id, sku, name, description, type, is_phantom, default_uom, uom_dimension, canonical_uom, stocking_uom, default_location_id, requires_lot, requires_serial, requires_qc, lifecycle_status, weight, weight_uom, volume, volume_uom,
+        id, tenant_id, sku, name, description, type, is_phantom, is_purchasable, is_manufactured, default_uom, uom_dimension, canonical_uom, stocking_uom, default_location_id, requires_lot, requires_serial, requires_qc, lifecycle_status, weight, weight_uom, volume, volume_uom,
         standard_cost, standard_cost_currency, standard_cost_exchange_rate_to_base, standard_cost_base,
         rolled_cost, cost_method, selling_price, list_price, price_currency, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $30)`,
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $32)`,
     [
       id,
       tenantId,
       data.sku,
       data.name,
       data.description ?? null,
-      data.type,
+      type,
       isPhantom,
+      isPurchasable,
+      isManufactured,
       defaultUom,
       uomDimension,
       canonicalUom,
@@ -215,6 +232,24 @@ export async function updateItem(
   const now = new Date();
   const type = data.type ?? 'raw';
   const isPhantom = data.isPhantom ?? false;
+  const existingItem = await query<{
+    is_purchasable: boolean;
+    is_manufactured: boolean;
+  }>(
+    `SELECT is_purchasable, is_manufactured
+       FROM items
+      WHERE id = $1 AND tenant_id = $2`,
+    [id, tenantId]
+  );
+  const defaultSourcingFlags = getDefaultSourcingFlags(type);
+  const isPurchasable =
+    data.isPurchasable
+      ?? existingItem.rows[0]?.is_purchasable
+      ?? defaultSourcingFlags.isPurchasable;
+  const isManufactured =
+    data.isManufactured
+      ?? existingItem.rows[0]?.is_manufactured
+      ?? defaultSourcingFlags.isManufactured;
   const defaultUom = data.defaultUom ?? data.stockingUom ?? null;
   const uomDimension = data.uomDimension ?? null;
   const canonicalUom = data.canonicalUom ?? null;
@@ -236,30 +271,32 @@ export async function updateItem(
            description = $3,
            type = $4,
            is_phantom = $5,
-           default_uom = $6,
-           uom_dimension = $7,
-           canonical_uom = $8,
-           stocking_uom = $9,
-           default_location_id = $10,
-           requires_lot = $11,
-           requires_serial = $12,
-           requires_qc = $13,
-           lifecycle_status = $14,
-           weight = $15,
-           weight_uom = $16,
-           volume = $17,
-           volume_uom = $18,
-           standard_cost = $19,
-           standard_cost_currency = $20,
-           standard_cost_exchange_rate_to_base = $21,
-           standard_cost_base = $22,
-           rolled_cost = $23,
-           cost_method = $24,
-           selling_price = $25,
-           list_price = $26,
-           price_currency = $27,
-           updated_at = $28
-     WHERE id = $29 AND tenant_id = $30
+           is_purchasable = $6,
+           is_manufactured = $7,
+           default_uom = $8,
+           uom_dimension = $9,
+           canonical_uom = $10,
+           stocking_uom = $11,
+           default_location_id = $12,
+           requires_lot = $13,
+           requires_serial = $14,
+           requires_qc = $15,
+           lifecycle_status = $16,
+           weight = $17,
+           weight_uom = $18,
+           volume = $19,
+           volume_uom = $20,
+           standard_cost = $21,
+           standard_cost_currency = $22,
+           standard_cost_exchange_rate_to_base = $23,
+           standard_cost_base = $24,
+           rolled_cost = $25,
+           cost_method = $26,
+           selling_price = $27,
+           list_price = $28,
+           price_currency = $29,
+           updated_at = $30
+     WHERE id = $31 AND tenant_id = $32
      RETURNING id`,
     [
       data.sku,
@@ -267,6 +304,8 @@ export async function updateItem(
       data.description ?? null,
       type,
       isPhantom,
+      isPurchasable,
+      isManufactured,
       defaultUom,
       uomDimension,
       canonicalUom,
@@ -301,7 +340,14 @@ export async function updateItem(
 
 export async function listItems(
   tenantId: string,
-  filters: { lifecycleStatus?: ItemLifecycleStatus[]; search?: string; limit: number; offset: number }
+  filters: {
+    lifecycleStatus?: ItemLifecycleStatus[];
+    search?: string;
+    isPurchasable?: boolean;
+    isManufactured?: boolean;
+    limit: number;
+    offset: number;
+  }
 ) {
   const conditions: string[] = ['i.tenant_id = $1'];
   const params: any[] = [tenantId];
@@ -313,6 +359,14 @@ export async function listItems(
     params.push(`%${filters.search}%`);
     const idx = params.length;
     conditions.push(`(i.sku ILIKE $${idx} OR i.name ILIKE $${idx})`);
+  }
+  if (filters.isPurchasable !== undefined) {
+    params.push(filters.isPurchasable);
+    conditions.push(`i.is_purchasable = $${params.length}`);
+  }
+  if (filters.isManufactured !== undefined) {
+    params.push(filters.isManufactured);
+    conditions.push(`i.is_manufactured = $${params.length}`);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const countRes = await query(

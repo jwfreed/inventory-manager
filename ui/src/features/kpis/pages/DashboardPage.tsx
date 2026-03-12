@@ -158,7 +158,11 @@ export default function DashboardPage() {
     return medianRuntimeSeconds(runtimes)
   }, [runsQuery.data])
 
-  const warehouseScopeId = latestRunMeta?.warehouseId ?? null
+  const warehouseScopeId = useMemo(() => {
+    const rawWarehouseId = latestRunMeta?.warehouseId ?? null
+    if (!rawWarehouseId) return null
+    return data.warehouseLookup.has(rawWarehouseId) ? rawWarehouseId : null
+  }, [data.warehouseLookup, latestRunMeta?.warehouseId])
 
   const runMutation = useMutation({
     mutationFn: () =>
@@ -273,62 +277,6 @@ export default function DashboardPage() {
           }
         />
       )}
-
-      <Section>
-        <SectionHeader
-          title="KPI Compute"
-          description="Idempotent read-only KPI compute. This process does not mutate inventory transactions."
-          action={
-            <Button
-              onClick={() => runMutation.mutate()}
-              disabled={runMutation.isPending}
-              aria-label="Run KPI calculations"
-            >
-              {runMutation.isPending ? 'Running KPI calculations…' : 'Run KPI calculations'}
-            </Button>
-          }
-        />
-        <Card>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last successful run</p>
-              <p className="mt-1 text-sm text-slate-800">
-                {lastSuccessfulRunTimestamp ? formatDateTime(lastSuccessfulRunTimestamp) : 'No run yet'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">As of</p>
-              <p className="mt-1 text-sm text-slate-800">{formatDateTime(asOfTimestamp) || asOfTimestamp}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Runtime estimate</p>
-              <p className="mt-1 text-sm text-slate-800">
-                {historicalRuntimeSeconds
-                  ? `Typical runtime under ${historicalRuntimeSeconds} seconds`
-                  : 'Runtime varies by data volume.'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Workspace scope</p>
-              <p className="mt-1 text-sm text-slate-800">{tenant?.name ?? tenant?.slug ?? 'Current workspace'}</p>
-            </div>
-          </div>
-          {runMutation.isPending && (
-            <div className="mt-3">
-              <LoadingSpinner label="Computing KPI snapshots..." />
-            </div>
-          )}
-          {runMutation.isError && (
-            <div className="mt-3">
-              <Banner
-                severity="critical"
-                title="KPI run failed"
-                description="Retry KPI compute. Inventory transactions were not modified."
-              />
-            </div>
-          )}
-        </Card>
-      </Section>
 
       <Section>
         <div
@@ -625,6 +573,63 @@ export default function DashboardPage() {
                 },
               ]}
             />
+          )}
+        </Card>
+      </Section>
+
+      <Section>
+        <SectionHeader
+          title="System / Data Freshness"
+          description="Read-only KPI refresh and data recency controls. This process does not mutate inventory transactions."
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => runMutation.mutate()}
+              disabled={runMutation.isPending}
+              aria-label="Run KPI calculations"
+            >
+              {runMutation.isPending ? 'Running KPI calculations…' : 'Run KPI calculations'}
+            </Button>
+          }
+        />
+        <Card>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last successful run</p>
+              <p className="mt-1 text-sm text-slate-800">
+                {lastSuccessfulRunTimestamp ? formatDateTime(lastSuccessfulRunTimestamp) : 'No run yet'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">As of</p>
+              <p className="mt-1 text-sm text-slate-800">{formatDateTime(asOfTimestamp) || asOfTimestamp}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Runtime estimate</p>
+              <p className="mt-1 text-sm text-slate-800">
+                {historicalRuntimeSeconds
+                  ? `Typical runtime under ${historicalRuntimeSeconds} seconds`
+                  : 'Runtime varies by data volume.'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Workspace scope</p>
+              <p className="mt-1 text-sm text-slate-800">{tenant?.name ?? tenant?.slug ?? 'Current workspace'}</p>
+            </div>
+          </div>
+          {runMutation.isPending && (
+            <div className="mt-3">
+              <LoadingSpinner label="Computing KPI snapshots..." />
+            </div>
+          )}
+          {runMutation.isError && (
+            <div className="mt-3">
+              <Banner
+                severity="critical"
+                title="KPI run failed"
+                description="Retry KPI compute. Inventory transactions were not modified."
+              />
+            </div>
           )}
         </Card>
       </Section>

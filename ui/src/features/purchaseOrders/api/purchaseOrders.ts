@@ -6,7 +6,9 @@ export type PurchaseOrderListResponse = {
   paging?: { limit: number; offset: number }
 }
 
-export async function listPurchaseOrders(params: { limit?: number; offset?: number } = {}): Promise<PurchaseOrderListResponse> {
+export async function listPurchaseOrders(
+  params: { limit?: number; offset?: number; search?: string } = {},
+): Promise<PurchaseOrderListResponse> {
   return apiGet<PurchaseOrderListResponse>('/purchase-orders', { params })
 }
 

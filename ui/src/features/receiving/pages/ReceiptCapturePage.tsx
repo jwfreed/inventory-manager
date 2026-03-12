@@ -204,7 +204,7 @@ export default function ReceiptCapturePage() {
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                         <div>
-                          <span className="text-slate-500">Vendor:</span>{' '}
+                          <span className="text-slate-500">Supplier:</span>{' '}
                           <span className="font-medium text-slate-900">
                             {formatEntityLabel(ctx.poQuery.data.vendorCode, ctx.poQuery.data.vendorName)}
                           </span>

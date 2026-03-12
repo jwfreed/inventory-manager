@@ -65,6 +65,10 @@ export function PurchaseOrderLinesSection({
                   onUpdateLine(idx, {
                     itemId: nextValue,
                     uom: selected?.defaultUom || line.uom || '',
+                    unitPrice:
+                      line.unitPrice === '' || line.unitPrice == null
+                        ? (selected?.standardCost ?? line.unitPrice)
+                        : line.unitPrice,
                   })
                 }}
               />

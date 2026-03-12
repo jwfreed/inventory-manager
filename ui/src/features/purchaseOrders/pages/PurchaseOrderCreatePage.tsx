@@ -48,7 +48,12 @@ export default function PurchaseOrderCreatePage() {
   )
 
   const itemsQuery = useItemsList(
-    { limit: 200, search: debouncedItemSearch || undefined, lifecycleStatus: 'Active' },
+    {
+      limit: 200,
+      search: debouncedItemSearch || undefined,
+      lifecycleStatus: 'Active',
+      isPurchasable: true,
+    },
     { staleTime: 60_000, retry: 1 },
   )
 
@@ -177,7 +182,7 @@ export default function PurchaseOrderCreatePage() {
     !!poNumber ||
     !!vendorReference ||
     lineStats.withIntentCount > 0
-  const vendorError = showValidation && !vendorId ? 'Vendor is required.' : undefined
+  const vendorError = showValidation && !vendorId ? 'Supplier is required.' : undefined
   const shipToError = showValidation && !shipToLocationId ? 'Ship-to location is required.' : undefined
   const receivingError = showValidation && !receivingLocationId ? 'Receiving location is required.' : undefined
   const expectedDateError = expectedDateInvalid

@@ -7,6 +7,8 @@ export type Item = {
   description?: string | null
   type: ItemType
   isPhantom?: boolean
+  isPurchasable?: boolean
+  isManufactured?: boolean
   defaultUom?: string | null
   uomDimension?: 'mass' | 'volume' | 'count' | 'length' | 'area' | 'time' | null
   canonicalUom?: string | null

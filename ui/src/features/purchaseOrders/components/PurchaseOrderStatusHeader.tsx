@@ -17,7 +17,7 @@ export function PurchaseOrderStatusHeader({ vendorLabel, poNumber, status }: Pro
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
       <div className="text-sm text-slate-700">
-        <div className="font-medium">Vendor: {vendorLabel}</div>
+        <div className="font-medium">Supplier: {vendorLabel}</div>
         <div className="text-xs text-slate-500">PO {poNumber}</div>
       </div>
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">

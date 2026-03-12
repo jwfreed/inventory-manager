@@ -8,7 +8,7 @@ import { Card } from '../../../components/Card'
 import { Alert } from '../../../components/Alert'
 import { LoadingSpinner } from '../../../components/Loading'
 import { Button } from '../../../components/Button'
-import { Input } from '../../../components/Inputs'
+import { Input, Textarea } from '../../../components/Inputs'
 import { Badge } from '../../../components/Badge'
 
 export default function VendorsListPage() {
@@ -19,6 +19,14 @@ export default function VendorsListPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
+  const [contactName, setContactName] = useState('')
+  const [addressLine1, setAddressLine1] = useState('')
+  const [addressLine2, setAddressLine2] = useState('')
+  const [city, setCity] = useState('')
+  const [state, setState] = useState('')
+  const [postalCode, setPostalCode] = useState('')
+  const [country, setCountry] = useState('')
+  const [notes, setNotes] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [codeError, setCodeError] = useState(false)
@@ -37,6 +45,14 @@ export default function VendorsListPage() {
     setName('')
     setEmail('')
     setPhone('')
+    setContactName('')
+    setAddressLine1('')
+    setAddressLine2('')
+    setCity('')
+    setState('')
+    setPostalCode('')
+    setCountry('')
+    setNotes('')
     setCodeError(false)
     setNameError(false)
     setEditingId(null)
@@ -82,6 +98,14 @@ export default function VendorsListPage() {
       name: nameValue,
       email: email.trim() || undefined,
       phone: phone.trim() || undefined,
+      contactName: contactName.trim() || undefined,
+      addressLine1: addressLine1.trim() || undefined,
+      addressLine2: addressLine2.trim() || undefined,
+      city: city.trim() || undefined,
+      state: state.trim() || undefined,
+      postalCode: postalCode.trim() || undefined,
+      country: country.trim() || undefined,
+      notes: notes.trim() || undefined,
     }
     if (editingId) {
       updateMutation.mutate({ id: editingId, payload })
@@ -96,6 +120,14 @@ export default function VendorsListPage() {
     setName(vendor.name)
     setEmail(vendor.email ?? '')
     setPhone(vendor.phone ?? '')
+    setContactName(vendor.contactName ?? '')
+    setAddressLine1(vendor.addressLine1 ?? '')
+    setAddressLine2(vendor.addressLine2 ?? '')
+    setCity(vendor.city ?? '')
+    setState(vendor.state ?? '')
+    setPostalCode(vendor.postalCode ?? '')
+    setCountry(vendor.country ?? '')
+    setNotes(vendor.notes ?? '')
     setCodeError(false)
     setNameError(false)
     setShowForm(true)
@@ -107,6 +139,14 @@ export default function VendorsListPage() {
     setName('')
     setEmail('')
     setPhone('')
+    setContactName('')
+    setAddressLine1('')
+    setAddressLine2('')
+    setCity('')
+    setState('')
+    setPostalCode('')
+    setCountry('')
+    setNotes('')
     setCodeError(false)
     setNameError(false)
     setShowForm(true)
@@ -118,7 +158,7 @@ export default function VendorsListPage() {
 
   const onDeactivate = (vendorId: string) => {
     const confirmed = window.confirm(
-      'Deactivate vendor?\n\nInactive vendors won’t appear in PO and receiving pickers. This does not delete history.',
+      'Deactivate supplier?\n\nInactive suppliers won’t appear in PO and receiving pickers. This does not delete history.',
     )
     if (!confirmed) return
     setDeactivatingId(vendorId)
@@ -130,9 +170,19 @@ export default function VendorsListPage() {
     const term = search.trim().toLowerCase()
     if (!term) return vendors
     return vendors.filter((vendor) => {
-      const codeValue = vendor.code?.toLowerCase() ?? ''
-      const nameValue = vendor.name?.toLowerCase() ?? ''
-      return codeValue.includes(term) || nameValue.includes(term)
+      const haystack = [
+        vendor.code,
+        vendor.name,
+        vendor.contactName,
+        vendor.email,
+        vendor.phone,
+        vendor.city,
+        vendor.country,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(term)
     })
   }, [vendors, search])
 
@@ -150,7 +200,7 @@ export default function VendorsListPage() {
 
   return (
     <div className="space-y-6">
-      <Section title="Vendors" description="Create suppliers and keep them tidy. Active vendors show up in PO and receiving pickers.">
+      <Section title="Suppliers" description="Create suppliers and keep them tidy. Active suppliers show up in PO and receiving pickers.">
         {error && (
           <Alert
             variant="error"
@@ -159,16 +209,16 @@ export default function VendorsListPage() {
           />
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm font-semibold text-slate-800">Vendor list</div>
+          <div className="text-sm font-semibold text-slate-800">Supplier list</div>
           <div className="flex flex-wrap items-center gap-2">
             <Input
               className="w-full sm:w-56"
-              placeholder="Search code or name"
+              placeholder="Search code, name, or contact"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
             <Button variant="secondary" size="sm" onClick={() => (showForm ? onCloseForm() : onCreate())}>
-              {showForm ? 'Close' : 'New vendor'}
+              {showForm ? 'Close' : 'New supplier'}
             </Button>
             <Button
               variant={filterActive === 'active' ? 'primary' : 'secondary'}
@@ -194,7 +244,7 @@ export default function VendorsListPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold text-slate-800">
-                    {editingId ? 'Edit vendor' : 'New vendor'}
+                    {editingId ? 'Edit supplier' : 'New supplier'}
                   </div>
                   <p className="text-xs text-slate-500">Code should be short and unique (e.g., SIAMAYA).</p>
                 </div>
@@ -237,7 +287,39 @@ export default function VendorsListPage() {
                   <span className="text-xs uppercase tracking-wide text-slate-500">Phone</span>
                   <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
                 </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Contact name</span>
+                  <Input value={contactName} onChange={(e) => setContactName(e.target.value)} />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Address line 1</span>
+                  <Input value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Address line 2</span>
+                  <Input value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">City</span>
+                  <Input value={city} onChange={(e) => setCity(e.target.value)} />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">State / Province</span>
+                  <Input value={state} onChange={(e) => setState(e.target.value)} />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Postal code</span>
+                  <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Country</span>
+                  <Input value={country} onChange={(e) => setCountry(e.target.value)} />
+                </label>
               </div>
+              <label className="block space-y-1 text-sm">
+                <span className="text-xs uppercase tracking-wide text-slate-500">Notes</span>
+                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+              </label>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-slate-500">Active by default; deactivate from the list.</p>
                 <div className="flex items-center gap-2">
@@ -245,7 +327,7 @@ export default function VendorsListPage() {
                     <span className="text-xs text-red-600">Code and name are required.</span>
                   )}
                   <Button type="submit" disabled={formSubmitting}>
-                  {editingId ? 'Update vendor' : 'Create vendor'}
+                    {editingId ? 'Update supplier' : 'Create supplier'}
                   </Button>
                 </div>
               </div>
@@ -254,19 +336,19 @@ export default function VendorsListPage() {
         )}
 
         <Card className="mt-4">
-          {vendorsQuery.isLoading && <LoadingSpinner label="Loading vendors..." />}
+          {vendorsQuery.isLoading && <LoadingSpinner label="Loading suppliers..." />}
           {!vendorsQuery.isLoading && vendors.length === 0 && (
-            <div className="py-6 text-sm text-slate-600">No vendors found.</div>
+            <div className="py-6 text-sm text-slate-600">No suppliers found.</div>
           )}
           {!vendorsQuery.isLoading && vendors.length > 0 && (
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
               <div>
-                Showing {filteredVendors.length} vendors{filterActive === 'active' ? ' (Active)' : ''}
+                Showing {filteredVendors.length} suppliers{filterActive === 'active' ? ' (Active)' : ''}
               </div>
             </div>
           )}
           {!vendorsQuery.isLoading && filteredVendors.length === 0 && vendors.length > 0 && (
-            <div className="py-6 text-sm text-slate-600">No vendors match your search.</div>
+            <div className="py-6 text-sm text-slate-600">No suppliers match your search.</div>
           )}
           {!vendorsQuery.isLoading && filteredVendors.length > 0 && (
             <div className="overflow-hidden rounded-lg border border-slate-200">
@@ -280,10 +362,10 @@ export default function VendorsListPage() {
                       Name
                     </th>
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Email
+                      Contact
                     </th>
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Phone
+                      Address
                     </th>
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Active
@@ -314,8 +396,22 @@ export default function VendorsListPage() {
                           {vendor.name}
                         </button>
                       </td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.email ?? '—'}</td>
-                      <td className="px-3 py-2 text-sm text-slate-800">{vendor.phone ?? '—'}</td>
+                      <td className="px-3 py-2 text-sm text-slate-800">
+                        <div>{vendor.contactName || '—'}</div>
+                        <div className="text-xs text-slate-500">{vendor.email || vendor.phone || '—'}</div>
+                      </td>
+                      <td className="px-3 py-2 text-sm text-slate-800">
+                        {[
+                          vendor.addressLine1,
+                          vendor.addressLine2,
+                          vendor.city,
+                          vendor.state,
+                          vendor.postalCode,
+                          vendor.country,
+                        ]
+                          .filter(Boolean)
+                          .join(', ') || '—'}
+                      </td>
                       <td className="px-3 py-2 text-sm text-slate-800">
                         <Badge variant={vendor.active ? 'success' : 'neutral'}>
                           {vendor.active ? 'Active' : 'Inactive'}

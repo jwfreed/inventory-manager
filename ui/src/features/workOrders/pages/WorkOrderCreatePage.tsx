@@ -76,8 +76,12 @@ export default function WorkOrderCreatePage() {
     if (kind === 'disassembly') {
       return allItems
     }
-    // For production, show all items (BOM validation happens at submission)
-    return allItems
+    return allItems.filter(
+      (item) =>
+        item.isManufactured ||
+        item.type === 'wip' ||
+        item.type === 'finished',
+    )
   }, [itemsQuery.data, kind])
 
   const locationOptions = useMemo(
