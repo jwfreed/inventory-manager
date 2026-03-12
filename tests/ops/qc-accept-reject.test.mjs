@@ -48,6 +48,8 @@ async function createItem(token, defaultLocationId, skuPrefix) {
       sku,
       name: `Item ${sku}`,
       type: 'finished',
+      isPurchasable: true,
+      isManufactured: false,
       defaultUom: 'each',
       uomDimension: 'count',
       canonicalUom: 'each',
