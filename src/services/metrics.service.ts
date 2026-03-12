@@ -301,10 +301,10 @@ export class MetricsService {
           iml.item_id,
           iml.location_id,
           iml_lot.lot_id,
-          l.lot_number,
+          l.lot_code AS lot_number,
           SUM(iml_lot.quantity_delta) as on_hand_qty,
           l.received_at,
-          EXTRACT(DAY FROM (CURRENT_DATE - l.received_at::date))::integer as age_days
+          (CURRENT_DATE - l.received_at::date)::integer as age_days
         FROM inventory_movement_lots iml_lot
         JOIN inventory_movement_lines iml ON iml_lot.inventory_movement_line_id = iml.id
         JOIN inventory_movements im ON iml.movement_id = im.id AND iml.tenant_id = im.tenant_id
@@ -312,7 +312,7 @@ export class MetricsService {
         WHERE iml.tenant_id = $1
           AND im.status = 'posted'
           AND l.received_at IS NOT NULL
-        GROUP BY iml.item_id, iml.location_id, iml_lot.lot_id, l.lot_number, l.received_at
+        GROUP BY iml.item_id, iml.location_id, iml_lot.lot_id, l.lot_code, l.received_at
         HAVING SUM(iml_lot.quantity_delta) > 0
       )
       SELECT 
