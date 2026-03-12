@@ -44,6 +44,7 @@ import reportsRouter from './routes/reports.routes';
 import metricsRouter from './routes/metrics.routes';
 import supplierPerformanceRouter from './routes/supplierPerformance.routes';
 import productionOverviewRouter from './routes/productionOverview.routes';
+import dashboardSignalsRouter from './routes/dashboardSignals.routes';
 import costLayersRouter from './routes/costLayers.routes';
 import costsRouter from './routes/costs.routes';
 import { requireAuth } from './middleware/auth.middleware';
@@ -55,6 +56,7 @@ import { recalculateMetrics } from './jobs/metricsRecalculation.job';
 import { syncExchangeRates } from './jobs/exchangeRateSync.job';
 import { runInventoryHealthCheck } from './jobs/inventoryHealth.job';
 import { runInventoryInvariantCheck } from './jobs/inventoryInvariants.job';
+import { refreshInventorySignalCache } from './jobs/inventorySignals.job';
 import { runInventoryLedgerReconcileAndRepair } from './jobs/inventoryLedgerReconcileAndRepair.job';
 import { ensureWarehouseDefaults } from './services/warehouseDefaults.service';
 import { pruneOutboxEvents } from './jobs/outboxRetention.job';
@@ -182,6 +184,8 @@ app.use('/atp', atpRouter);
 app.use('/supplier-scorecards', supplierScorecardRouter);
 app.use('/reports', reportsRouter);
 app.use('/metrics', metricsRouter);
+app.use('/dashboard', dashboardSignalsRouter);
+app.use('/api/dashboard', dashboardSignalsRouter);
 app.use('/supplier-performance', supplierPerformanceRouter);
 app.use(productionOverviewRouter);
 app.use('/api/cost-layers', costLayersRouter);
@@ -235,6 +239,15 @@ if (schedulerMode.schedulerEnabled) {
     process.env.INVENTORY_INVARIANT_CRON ?? '30 * * * *', // Hourly by default
     async () => {
       await runInventoryInvariantCheck();
+    },
+    true
+  );
+
+  registerJob(
+    'inventory-signal-refresh',
+    process.env.INVENTORY_SIGNAL_REFRESH_CRON ?? '15 * * * *', // Hourly by default
+    async () => {
+      await refreshInventorySignalCache();
     },
     true
   );

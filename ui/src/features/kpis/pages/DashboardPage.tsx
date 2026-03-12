@@ -178,6 +178,7 @@ export default function DashboardPage() {
       void queryClient.invalidateQueries({ queryKey: kpisQueryKeys.fulfillmentFillRatePrefix() })
       void queryClient.invalidateQueries({ queryKey: kpisQueryKeys.replenishmentRecommendationsPrefix() })
       void queryClient.invalidateQueries({ queryKey: kpisQueryKeys.replenishmentPoliciesPrefix() })
+      void queryClient.invalidateQueries({ queryKey: kpisQueryKeys.dashboardOverviewPrefix() })
       void queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.all })
       void queryClient.invalidateQueries({ queryKey: purchaseOrdersQueryKeys.all })
       void queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.all })
@@ -199,6 +200,16 @@ export default function DashboardPage() {
   )
 
   const hasReorderRisk = (allExceptionSignals.find((signal) => signal.type === 'reorder_risk')?.count ?? 0) > 0
+  const additionalSections = [
+    data.sections?.inventoryRisk,
+    data.sections?.inventoryCoverage,
+    data.sections?.supplyReliability,
+    data.sections?.excessInventory,
+    data.sections?.performanceMetrics,
+    data.sections?.systemHealth,
+    data.sections?.demandVolatility,
+    data.sections?.forecastAccuracy,
+  ].filter(Boolean)
 
   return (
     <div className="space-y-6">
@@ -483,6 +494,68 @@ export default function DashboardPage() {
           </div>
         </Section>
       )}
+
+      {additionalSections.map((section) => (
+        <Section key={section.key}>
+          <SectionHeader title={section.title} description={section.description} />
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {section.metrics.map((metric) => (
+                <MetricCard
+                  key={metric.key}
+                  title={metric.label}
+                  value={metric.value}
+                  severity={metric.severity}
+                  helper={metric.helper}
+                  to={metric.drilldownTo}
+                  explanation={{
+                    formula: metric.formula,
+                    asOf: data.asOfLabel,
+                    queryHint: metric.queryHint,
+                    sources: metric.sources,
+                    scope: displayWarehouseScope.label,
+                  }}
+                />
+              ))}
+            </div>
+            {section.rows.length > 0 && (
+              <Card>
+                <DataTable
+                  rows={section.rows}
+                  rowKey={(row) => row.id}
+                  columns={[
+                    {
+                      id: 'severity',
+                      header: 'Severity',
+                      cell: (row) => <SeverityPill severity={row.severity} />,
+                    },
+                    {
+                      id: 'label',
+                      header: 'Entity',
+                      cell: (row) => (
+                        <Link to={row.drilldownTo} className="font-medium text-brand-700 hover:underline">
+                          {row.label}
+                        </Link>
+                      ),
+                    },
+                    {
+                      id: 'secondary',
+                      header: 'Context',
+                      cell: (row) => row.secondaryLabel ?? '—',
+                    },
+                    {
+                      id: 'value',
+                      header: 'Signal',
+                      align: 'right',
+                      cell: (row) => row.value,
+                    },
+                  ]}
+                />
+              </Card>
+            )}
+          </div>
+        </Section>
+      ))}
 
       <Section>
         <SectionHeader

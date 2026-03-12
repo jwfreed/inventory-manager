@@ -1,218 +1,332 @@
 import { useMemo } from 'react'
-import type { ApiError } from '@api/types'
+import type {
+  ApiError,
+  DashboardOverview,
+  DashboardSignalSection,
+  InventoryUomInconsistency,
+  Item,
+  Location,
+} from '@api/types'
 import { useInventorySnapshotSummaryDetailed } from '@features/inventory/queries'
 import { useItemsList, useItemsMetrics } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
 import { usePurchaseOrdersList } from '@features/purchaseOrders/queries'
 import { useWorkOrdersList } from '@features/workOrders/queries'
-import { formatDateTime } from './utils'
 import {
   bucketUomDiagnosticsByGroup,
   buildDashboardExceptions,
   buildDashboardSignals,
   deriveCoverageState,
+  type MonitoringCoverage,
 } from './dashboardMath'
-import { useFulfillmentFillRate, useReplenishmentPolicies, useReplenishmentRecommendations } from './queries'
+import {
+  useDashboardOverview,
+  useFulfillmentFillRate,
+  useReplenishmentPolicies,
+  useReplenishmentRecommendations,
+} from './queries'
 
-const ENABLE_DASHBOARD_UOM_INCONSISTENT =
-  import.meta.env.VITE_ENABLE_DASHBOARD_UOM_INCONSISTENT === 'true'
+const DEFAULT_WINDOW_DAYS = 90
 
-export function useDashboardSignals() {
-  const inventorySummaryQuery = useInventorySnapshotSummaryDetailed({ limit: 2000 }, { staleTime: 30_000 })
-  const itemsQuery = useItemsList({ limit: 500 }, { staleTime: 60_000 })
-  const locationsQuery = useLocationsList({ limit: 1000, active: true }, { staleTime: 60_000 })
-  const purchaseOrdersQuery = usePurchaseOrdersList({ limit: 1000 }, { staleTime: 30_000 })
-  const workOrdersQuery = useWorkOrdersList({ limit: 1000 }, { staleTime: 30_000 })
-  const recommendationsQuery = useReplenishmentRecommendations({ limit: 1000 }, { staleTime: 30_000 })
-  const policiesQuery = useReplenishmentPolicies({ staleTime: 60_000 })
-  const fillRateQuery = useFulfillmentFillRate({}, { staleTime: 30_000 })
+function isNotFoundError(error: unknown): error is ApiError {
+  return Boolean(error && typeof error === 'object' && (error as ApiError).status === 404)
+}
 
-  const itemIds = useMemo(
-    () => (itemsQuery.data?.data ?? []).map((item) => item.id),
-    [itemsQuery.data],
+function createEmptySection(
+  key: DashboardSignalSection['key'],
+  title: string,
+  description: string,
+): DashboardSignalSection {
+  return {
+    key,
+    title,
+    description,
+    metrics: [],
+    rows: [],
+  }
+}
+
+function createEmptySections(): DashboardOverview['sections'] {
+  return {
+    inventoryIntegrity: createEmptySection(
+      'inventoryIntegrity',
+      'Inventory Integrity',
+      'Compatibility fallback. Rebuild or restart the backend on the latest source to enable the server-owned overview.',
+    ),
+    inventoryRisk: createEmptySection('inventoryRisk', 'Inventory Risk', 'Compatibility fallback.'),
+    inventoryCoverage: createEmptySection('inventoryCoverage', 'Inventory Coverage', 'Compatibility fallback.'),
+    flowReliability: createEmptySection('flowReliability', 'Flow Reliability', 'Compatibility fallback.'),
+    supplyReliability: createEmptySection('supplyReliability', 'Supply Reliability', 'Compatibility fallback.'),
+    excessInventory: createEmptySection('excessInventory', 'Excess Inventory', 'Compatibility fallback.'),
+    performanceMetrics: createEmptySection('performanceMetrics', 'Performance Metrics', 'Compatibility fallback.'),
+    systemHealth: createEmptySection('systemHealth', 'System Health', 'Compatibility fallback.'),
+    demandVolatility: createEmptySection('demandVolatility', 'Demand Volatility', 'Compatibility fallback.'),
+    forecastAccuracy: createEmptySection('forecastAccuracy', 'Forecast Accuracy', 'Compatibility fallback.'),
+  }
+}
+
+function formatAsOfLabel(asOfIso: string) {
+  const date = new Date(asOfIso)
+  if (Number.isNaN(date.getTime())) return asOfIso
+  return date.toLocaleString()
+}
+
+function buildWarehouseLookup(locations: Location[]) {
+  const map = new Map<string, { code?: string | null; name?: string | null }>()
+  locations.forEach((location) => {
+    if (location.type === 'warehouse') {
+      map.set(location.id, { code: location.code, name: location.name })
+    }
+  })
+  return map
+}
+
+function buildFallbackOverview(input: {
+  items: Item[]
+  locations: Location[]
+  inventoryRows: NonNullable<ReturnType<typeof useInventorySnapshotSummaryDetailed>['data']>['data']
+  uomDiagnostics: InventoryUomInconsistency[]
+  policies: NonNullable<ReturnType<typeof useReplenishmentPolicies>['data']>['data']
+  recommendations: NonNullable<ReturnType<typeof useReplenishmentRecommendations>['data']>['data']
+  purchaseOrders: NonNullable<ReturnType<typeof usePurchaseOrdersList>['data']>['data']
+  workOrders: NonNullable<ReturnType<typeof useWorkOrdersList>['data']>['data']
+  itemMetrics: NonNullable<ReturnType<typeof useItemsMetrics>['data']>
+  fillRate: ReturnType<typeof useFulfillmentFillRate>['data'] | null
+}): DashboardOverview {
+  const asOf = new Date().toISOString()
+  const asOfLabel = formatAsOfLabel(asOf)
+  const itemLookup = new Map(input.items.map((item) => [item.id, item]))
+  const locationLookup = new Map(input.locations.map((location) => [location.id, location]))
+  const itemMetricsLookup = new Map(input.itemMetrics.map((metric) => [metric.itemId, metric]))
+  const policyScopeSet = new Set(
+    input.policies
+      .filter((policy) => policy.status !== 'inactive' && policy.siteLocationId)
+      .map((policy) => `${policy.itemId}:${policy.siteLocationId}`),
   )
-  const itemMetricsQuery = useItemsMetrics(itemIds, 90, {
-    staleTime: 60_000,
-    enabled: itemIds.length > 0,
+
+  const exceptions = buildDashboardExceptions({
+    inventoryRows: input.inventoryRows,
+    uomInconsistencies: input.uomDiagnostics,
+    recommendations: input.recommendations,
+    policyScopeSet,
+    purchaseOrders: input.purchaseOrders,
+    workOrders: input.workOrders,
+    itemLookup,
+    locationLookup,
+    itemMetricsLookup,
+    asOf,
   })
 
-  const itemLookup = useMemo(() => {
-    const map = new Map((itemsQuery.data?.data ?? []).map((item) => [item.id, item]))
-    return map
-  }, [itemsQuery.data])
+  const signals = buildDashboardSignals({
+    exceptions,
+    fillRate: input.fillRate ?? null,
+    asOfLabel,
+  })
 
-  const locationLookup = useMemo(() => {
-    const map = new Map((locationsQuery.data?.data ?? []).map((location) => [location.id, location]))
-    return map
-  }, [locationsQuery.data])
+  const coverage: MonitoringCoverage = deriveCoverageState({
+    inventoryRows: input.inventoryRows,
+    policies: input.policies,
+    items: input.items,
+    itemMetrics: input.itemMetrics,
+    fillRate: input.fillRate ?? null,
+  })
+
+  const warehouseLookup = buildWarehouseLookup(input.locations)
+
+  return {
+    asOf,
+    asOfLabel,
+    warehouseScope: {
+      ids: [],
+      label: 'Warehouse scope not resolved',
+    },
+    warehouses: Array.from(warehouseLookup.entries()).map(([id, warehouse]) => ({
+      id,
+      code: warehouse.code ?? null,
+      name: warehouse.name ?? null,
+    })),
+    coverage,
+    exceptions,
+    signals,
+    uomNormalizationDiagnostics: input.uomDiagnostics,
+    uomDiagnosticGroupBuckets: bucketUomDiagnosticsByGroup(input.uomDiagnostics),
+    sections: createEmptySections(),
+    coverageMatrix: [],
+  }
+}
+
+export function useDashboardSignals() {
+  const overviewQuery = useDashboardOverview(
+    { windowDays: DEFAULT_WINDOW_DAYS },
+    { staleTime: 30_000, retry: 1 },
+  )
+
+  const shouldUseCompatibilityFallback = isNotFoundError(overviewQuery.error)
+
+  const inventorySummaryQuery = useInventorySnapshotSummaryDetailed(
+    { limit: 5_000 },
+    { enabled: shouldUseCompatibilityFallback, staleTime: 30_000, retry: 1 },
+  )
+  const itemsQuery = useItemsList(
+    { limit: 1_000 },
+    { enabled: shouldUseCompatibilityFallback, staleTime: 60_000, retry: 1 },
+  )
+  const locationsQuery = useLocationsList(
+    { limit: 1_000 },
+    { enabled: shouldUseCompatibilityFallback, staleTime: 60_000, retry: 1 },
+  )
+  const policiesQuery = useReplenishmentPolicies({
+    enabled: shouldUseCompatibilityFallback,
+    staleTime: 60_000,
+    retry: 1,
+  })
+  const recommendationsQuery = useReplenishmentRecommendations(
+    { limit: 1_000 },
+    { enabled: shouldUseCompatibilityFallback, staleTime: 30_000, retry: 1 },
+  )
+  const purchaseOrdersQuery = usePurchaseOrdersList(
+    { limit: 500 },
+    { enabled: shouldUseCompatibilityFallback, staleTime: 30_000, retry: 1 },
+  )
+  const workOrdersQuery = useWorkOrdersList(
+    { limit: 500 },
+    { enabled: shouldUseCompatibilityFallback, staleTime: 30_000, retry: 1 },
+  )
+  const itemIds = itemsQuery.data?.data.map((item) => item.id) ?? []
+  const itemMetricsQuery = useItemsMetrics(itemIds, DEFAULT_WINDOW_DAYS, {
+    enabled: shouldUseCompatibilityFallback && itemIds.length > 0,
+    staleTime: 30_000,
+    retry: 1,
+  })
+  const fillRateQuery = useFulfillmentFillRate(
+    {},
+    { enabled: shouldUseCompatibilityFallback, staleTime: 30_000, retry: 1 },
+  )
+
+  const fallbackOverview = useMemo(() => {
+    if (!shouldUseCompatibilityFallback) return null
+    if (
+      !inventorySummaryQuery.data ||
+      !itemsQuery.data ||
+      !locationsQuery.data ||
+      !policiesQuery.data ||
+      !recommendationsQuery.data ||
+      !purchaseOrdersQuery.data ||
+      !workOrdersQuery.data
+    ) {
+      return null
+    }
+
+    return buildFallbackOverview({
+      items: itemsQuery.data.data,
+      locations: locationsQuery.data.data,
+      inventoryRows: inventorySummaryQuery.data.data,
+      uomDiagnostics: inventorySummaryQuery.data.diagnostics.uomNormalizationDiagnostics,
+      policies: policiesQuery.data.data,
+      recommendations: recommendationsQuery.data.data,
+      purchaseOrders: purchaseOrdersQuery.data.data,
+      workOrders: workOrdersQuery.data.data,
+      itemMetrics: itemMetricsQuery.data ?? [],
+      fillRate: fillRateQuery.data ?? null,
+    })
+  }, [
+    shouldUseCompatibilityFallback,
+    inventorySummaryQuery.data,
+    itemsQuery.data,
+    locationsQuery.data,
+    policiesQuery.data,
+    recommendationsQuery.data,
+    purchaseOrdersQuery.data,
+    workOrdersQuery.data,
+    itemMetricsQuery.data,
+    fillRateQuery.data,
+  ])
+
+  const activeOverview = overviewQuery.data ?? fallbackOverview
 
   const warehouseLookup = useMemo(() => {
-    const map = new Map<string, { code?: string; name?: string }>()
-    ;(locationsQuery.data?.data ?? []).forEach((location) => {
-      if (location.type === 'warehouse') {
-        map.set(location.id, { code: location.code, name: location.name })
-      }
+    const warehouses = activeOverview?.warehouses ?? []
+    const map = new Map<string, { code?: string | null; name?: string | null }>()
+    warehouses.forEach((warehouse) => {
+      map.set(warehouse.id, { code: warehouse.code, name: warehouse.name })
     })
     return map
-  }, [locationsQuery.data])
+  }, [activeOverview?.warehouses])
 
-  const policyScopeSet = useMemo(() => {
-    const set = new Set<string>()
-    ;(policiesQuery.data?.data ?? []).forEach((policy) => {
-      if (!policy.siteLocationId) return
-      if (String(policy.status ?? '').toLowerCase() === 'inactive') return
-      set.add(`${policy.itemId}:${policy.siteLocationId}`)
-    })
-    return set
-  }, [policiesQuery.data])
-
-  const itemMetricsLookup = useMemo(() => {
-    const map = new Map((itemMetricsQuery.data ?? []).map((metric) => [metric.itemId, metric]))
-    return map
-  }, [itemMetricsQuery.data])
-
-  const inventoryRows = inventorySummaryQuery.data?.data ?? []
-  const uomNormalizationDiagnostics = ENABLE_DASHBOARD_UOM_INCONSISTENT
-    ? inventorySummaryQuery.data?.diagnostics.uomNormalizationDiagnostics ??
-      inventorySummaryQuery.data?.diagnostics.uomInconsistencies ??
-      []
-    : []
-  const uomDiagnosticGroupBuckets = useMemo(
-    () => bucketUomDiagnosticsByGroup(uomNormalizationDiagnostics),
-    [uomNormalizationDiagnostics],
-  )
-
-  const asOfMs = useMemo(() => {
-    const stamps = [
-      inventorySummaryQuery.dataUpdatedAt,
-      recommendationsQuery.dataUpdatedAt,
-      policiesQuery.dataUpdatedAt,
-      purchaseOrdersQuery.dataUpdatedAt,
-      workOrdersQuery.dataUpdatedAt,
-      itemMetricsQuery.dataUpdatedAt,
-      fillRateQuery.dataUpdatedAt,
-    ].filter((value) => Number.isFinite(value) && value > 0)
-    return stamps.length > 0 ? Math.max(...stamps) : Date.now()
-  }, [
-    inventorySummaryQuery.dataUpdatedAt,
-    recommendationsQuery.dataUpdatedAt,
-    policiesQuery.dataUpdatedAt,
-    purchaseOrdersQuery.dataUpdatedAt,
-    workOrdersQuery.dataUpdatedAt,
-    itemMetricsQuery.dataUpdatedAt,
-    fillRateQuery.dataUpdatedAt,
-  ])
-  const asOfIso = new Date(asOfMs).toISOString()
-  const asOfLabel = formatDateTime(asOfIso) || asOfIso
-
-  const exceptions = useMemo(
-    () =>
-      buildDashboardExceptions({
-        inventoryRows,
-        uomInconsistencies: uomNormalizationDiagnostics,
-        recommendations: recommendationsQuery.data?.data ?? [],
-        policyScopeSet,
-        purchaseOrders: purchaseOrdersQuery.data?.data ?? [],
-        workOrders: workOrdersQuery.data?.data ?? [],
-        itemLookup,
-        locationLookup,
-        itemMetricsLookup,
-        asOf: asOfIso,
-      }),
+  const fallbackLoading =
+    shouldUseCompatibilityFallback &&
+    !fallbackOverview &&
     [
-      inventoryRows,
-      uomNormalizationDiagnostics,
-      recommendationsQuery.data,
-      policyScopeSet,
-      purchaseOrdersQuery.data,
-      workOrdersQuery.data,
-      itemLookup,
-      locationLookup,
-      itemMetricsLookup,
-      asOfIso,
-    ],
-  )
+      inventorySummaryQuery,
+      itemsQuery,
+      locationsQuery,
+      policiesQuery,
+      recommendationsQuery,
+      purchaseOrdersQuery,
+      workOrdersQuery,
+      itemMetricsQuery,
+      fillRateQuery,
+    ].some((query) => query.isLoading || query.isFetching)
 
-  const signals = useMemo(
-    () =>
-      buildDashboardSignals({
-        exceptions,
-        fillRate: fillRateQuery.data ?? null,
-        asOfLabel,
-      }),
-    [exceptions, fillRateQuery.data, asOfLabel],
-  )
-
-  const coverage = useMemo(
-    () =>
-      deriveCoverageState({
-        inventoryRows,
-        policies: policiesQuery.data?.data ?? [],
-        items: itemsQuery.data?.data ?? [],
-        itemMetrics: itemMetricsQuery.data ?? [],
-        fillRate: fillRateQuery.data ?? null,
-      }),
-    [
-      inventoryRows,
-      policiesQuery.data,
-      purchaseOrdersQuery.data,
-      workOrdersQuery.data,
-      itemsQuery.data,
-      itemMetricsQuery.data,
-      fillRateQuery.data,
-    ],
-  )
-
-  const loading =
-    inventorySummaryQuery.isLoading ||
-    recommendationsQuery.isLoading ||
-    policiesQuery.isLoading ||
-    purchaseOrdersQuery.isLoading ||
-    workOrdersQuery.isLoading ||
-    itemsQuery.isLoading ||
-    locationsQuery.isLoading ||
-    itemMetricsQuery.isLoading ||
-    fillRateQuery.isLoading
-
-  const error = [
-    inventorySummaryQuery.error,
-    recommendationsQuery.error,
-    policiesQuery.error,
-    purchaseOrdersQuery.error,
-    workOrdersQuery.error,
-    itemsQuery.error,
-    locationsQuery.error,
-    itemMetricsQuery.error,
-    fillRateQuery.error,
-  ].find(Boolean) as ApiError | undefined
+  const fallbackError = shouldUseCompatibilityFallback
+    ? [
+        inventorySummaryQuery.error,
+        itemsQuery.error,
+        locationsQuery.error,
+        policiesQuery.error,
+        recommendationsQuery.error,
+        purchaseOrdersQuery.error,
+        workOrdersQuery.error,
+        itemMetricsQuery.error,
+        fillRateQuery.error,
+      ].find((error) => error && !isNotFoundError(error))
+    : undefined
 
   return {
     queries: {
+      overviewQuery,
       inventorySummaryQuery,
-      recommendationsQuery,
-      policiesQuery,
-      purchaseOrdersQuery,
-      workOrdersQuery,
       itemsQuery,
       locationsQuery,
+      policiesQuery,
+      recommendationsQuery,
+      purchaseOrdersQuery,
+      workOrdersQuery,
       itemMetricsQuery,
       fillRateQuery,
     },
     data: {
-      asOfIso,
-      asOfLabel,
-      itemLookup,
-      locationLookup,
+      asOfIso: activeOverview?.asOf ?? new Date().toISOString(),
+      asOfLabel: activeOverview?.asOfLabel ?? '',
+      exceptions: activeOverview?.exceptions ?? [],
+      signals: activeOverview?.signals ?? [],
+      coverage:
+        activeOverview?.coverage ?? {
+          hasInventoryRows: false,
+          hasReplenishmentPolicies: false,
+          hasDemandSignal: false,
+          hasCycleCountProgram: false,
+          hasShipmentsInWindow: false,
+          inventoryMonitoringConfigured: false,
+          replenishmentMonitoringConfigured: false,
+          cycleCountMonitoringConfigured: false,
+          reliabilityMeasurable: false,
+        },
+      sections: activeOverview?.sections,
+      coverageMatrix: activeOverview?.coverageMatrix ?? [],
+      warehouseScope: activeOverview?.warehouseScope,
       warehouseLookup,
-      exceptions,
-      signals,
-      coverage,
-      uomNormalizationDiagnostics,
-      uomDiagnosticGroupBuckets,
-      // Deprecated alias retained for existing consumers.
-      uomInconsistencies: uomNormalizationDiagnostics,
+      uomNormalizationDiagnostics: activeOverview?.uomNormalizationDiagnostics ?? [],
+      uomDiagnosticGroupBuckets: activeOverview?.uomDiagnosticGroupBuckets ?? {
+        actionGroups: 0,
+        watchGroups: 0,
+        totalGroups: 0,
+      },
+      uomInconsistencies: activeOverview?.uomNormalizationDiagnostics ?? [],
     },
-    loading,
-    error,
+    loading: overviewQuery.isLoading || fallbackLoading,
+    error: shouldUseCompatibilityFallback
+      ? (fallbackError as ApiError | undefined)
+      : (overviewQuery.error as ApiError | undefined),
   }
 }

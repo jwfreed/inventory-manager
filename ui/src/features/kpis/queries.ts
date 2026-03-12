@@ -1,6 +1,8 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import type { ApiError, FulfillmentFillRate } from '../../api/types'
 import { listKpiRuns, listKpiSnapshots, getFulfillmentFillRate } from './api/kpis'
+import { getDashboardOverview, type DashboardSignalParams } from './api/dashboard'
+import type { DashboardOverview } from '../../api/types'
 import { listAllReplenishmentPolicies, listReplenishmentRecommendations } from './api/planning'
 
 type KpiSnapshotsResult = Awaited<ReturnType<typeof listKpiSnapshots>>
@@ -18,9 +20,11 @@ export const kpisQueryKeys = {
   fulfillmentFillRatePrefix: () => ['kpis', 'fill-rate'] as const,
   replenishmentRecommendationsPrefix: () => ['planning', 'replenishment'] as const,
   replenishmentPoliciesPrefix: () => ['planning', 'replenishment-policies'] as const,
+  dashboardOverviewPrefix: () => ['dashboard', 'overview'] as const,
   snapshots: (params: Parameters<typeof listKpiSnapshots>[0] = {}) =>
     ['kpis', 'snapshots', params] as const,
   runs: (params: Parameters<typeof listKpiRuns>[0] = {}) => ['kpis', 'runs', params] as const,
+  dashboardOverview: (params: DashboardSignalParams = {}) => ['dashboard', 'overview', params] as const,
   fulfillmentFillRate: (params: { from?: string; to?: string } = {}) =>
     ['kpis', 'fill-rate', params] as const,
   replenishmentRecommendations: (params: { limit?: number; offset?: number } = {}) =>
@@ -47,6 +51,11 @@ type ReplenishmentOptions = Omit<
 
 type ReplenishmentPoliciesOptions = Omit<
   UseQueryOptions<ReplenishmentPoliciesResult, ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type DashboardOverviewOptions = Omit<
+  UseQueryOptions<DashboardOverview, ApiError>,
   'queryKey' | 'queryFn'
 >
 
@@ -102,6 +111,18 @@ export function useReplenishmentPolicies(options: ReplenishmentPoliciesOptions =
   return useQuery({
     queryKey: kpisQueryKeys.replenishmentPolicies(),
     queryFn: () => listAllReplenishmentPolicies(),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useDashboardOverview(
+  params: DashboardSignalParams = {},
+  options: DashboardOverviewOptions = {},
+) {
+  return useQuery({
+    queryKey: kpisQueryKeys.dashboardOverview(params),
+    queryFn: () => getDashboardOverview(params),
     retry: 1,
     ...options,
   })
