@@ -16,6 +16,7 @@ type RunnerOptions = {
   tenantName?: string;
   adminEmail?: string;
   adminPassword?: string;
+  stockProfile?: 'minimal' | 'base';
   repairOpeningBalanceLayers: boolean;
   withReceipts: boolean;
   receiptMode?: 'clean' | 'partial_then_close_short' | 'partial_with_discrepancy';
@@ -60,6 +61,14 @@ function parseReceiptMode(value: string | undefined): 'clean' | 'partial_then_cl
   throw new Error(`SEED_OPTION_INVALID_RECEIPT_MODE value=${value}`);
 }
 
+function parseStockProfile(value: string | undefined): 'minimal' | 'base' | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === 'minimal' || normalized === 'base') return normalized;
+  throw new Error(`SEED_OPTION_INVALID_STOCK_PROFILE value=${value}`);
+}
+
 function parseRunnerOptions(): RunnerOptions {
   const pack = getArg('pack') ?? process.env.SEED_PACK ?? '';
   return {
@@ -75,6 +84,7 @@ function parseRunnerOptions(): RunnerOptions {
     tenantName: getArg('tenant-name') ?? process.env.SEED_TENANT_NAME,
     adminEmail: getArg('admin-email') ?? process.env.SEED_ADMIN_EMAIL,
     adminPassword: getArg('admin-password') ?? process.env.SEED_ADMIN_PASSWORD,
+    stockProfile: parseStockProfile(getArg('stock-profile') ?? process.env.SEED_STOCK_PROFILE),
     repairOpeningBalanceLayers: getBooleanArg(
       'repair-opening-balance-layers',
       process.env.SEED_REPAIR_OPENING_BALANCE_LAYERS,
@@ -165,6 +175,7 @@ export async function runSeedPack(options: RunnerOptions): Promise<SeedSummary> 
           tenantName: options.tenantName,
           adminEmail: options.adminEmail,
           adminPassword: options.adminPassword,
+          stockProfile: options.stockProfile,
           repairOpeningBalanceLayers: options.repairOpeningBalanceLayers
         });
       } else if (options.pack === 'demo') {

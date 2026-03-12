@@ -19,6 +19,7 @@ const ID_NAMESPACE = '85fc700f-6f58-4d79-a7db-7af0951374fd';
 const REQUIRED_ROLES = ['SELLABLE', 'QA', 'HOLD'] as const;
 const DEFAULT_BOM_JSON_PATH = path.resolve(process.cwd(), 'scripts/seed/siamaya/siamaya-bom-production.json');
 const DEFAULT_INITIAL_STOCK_SPEC_PATH = path.resolve(process.cwd(), 'scripts/seed/siamaya/initial-stock-spec.json');
+const DEFAULT_MINIMAL_INITIAL_STOCK_SPEC_PATH = path.resolve(process.cwd(), 'scripts/seed/siamaya/initial-stock-spec.partial.json');
 const DEFAULT_REVIEW_REPORT_PATH = path.resolve(process.cwd(), 'scripts/seed/siamaya/seed_review_required.csv');
 const DEFAULT_LOYVERSE_ITEMS_CSV_CANDIDATES = [
   '/mnt/data/Siamaya items_cleaned.import.csv',
@@ -81,6 +82,7 @@ export type SiamayaPackOptions = {
   bomUnmatchedComponentReportPath?: string;
   reviewReportPath?: string;
   initialStockSpecPath?: string;
+  stockProfile?: 'minimal' | 'base';
   repairOpeningBalanceLayers?: boolean;
   warehouses?: Array<{ code: string; name: string }>;
   datasetOverride?: {
@@ -2047,7 +2049,7 @@ async function seedInitialStockMovement(
   const movementExternalRef = `seed:${args.pack}:initial-stock:${args.tenantSlug}:v${args.spec.version}`;
   const movementSourceId = deterministicId('seed-source', args.tenantId, movementExternalRef);
   const movementId = deterministicId('movement', args.tenantId, movementExternalRef);
-  const expectedLotCount = new Set(seedLines.filter((line) => !!line.lotCode).map((line) => line.lotCode)).size;
+  const expectedLotCodes = new Set<string>();
   const itemIdsInSeed = Array.from(new Set(seedLines.map((line) => args.itemIdByKey.get(line.itemKey)).filter((id): id is string => !!id)));
   const itemRequiresLotRows = await client.query<{ id: string; requires_lot: boolean }>(
     `SELECT id, requires_lot
@@ -2081,12 +2083,9 @@ async function seedInitialStockMovement(
     if (isLotTracked && !line.lotCode) {
       throw new Error(`SEED_INITIAL_STOCK_LOT_REQUIRED item=${line.itemKey}`);
     }
-    if (!isLotTracked && line.lotCode) {
-      throw new Error(`SEED_INITIAL_STOCK_LOT_NOT_ALLOWED item=${line.itemKey}`);
-    }
 
     let lotId: string | null = null;
-    if (line.lotCode) {
+    if (isLotTracked && line.lotCode) {
       const lotResult = await upsertSeedLot(client, {
         tenantId: args.tenantId,
         itemId,
@@ -2095,6 +2094,7 @@ async function seedInitialStockMovement(
         expirationDate: line.expirationDate
       });
       lotId = lotResult.id;
+      expectedLotCodes.add(line.lotCode);
       if (lotResult.created) {
         lotsCreated += 1;
       }
@@ -2252,7 +2252,7 @@ async function seedInitialStockMovement(
   });
   costLayersCreated += repairedLayers.created;
 
-  return { movementId, linesCreated, costLayersCreated, lotsCreated, expectedLotCount };
+  return { movementId, linesCreated, costLayersCreated, lotsCreated, expectedLotCount: expectedLotCodes.size };
 }
 
 async function upsertBomAndVersion(
@@ -2694,28 +2694,36 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
   const adminPassword = options.adminPassword ?? DEFAULT_OPTIONS.adminPassword;
   const warehouseSpecs = options.warehouses ?? DEFAULT_OPTIONS.warehouses;
   const explicitBomPath = options.bomFilePath ? path.resolve(options.bomFilePath) : undefined;
-  const resolvedItemsCsvPath = resolveFirstExistingPath(options.itemsCsvPath, DEFAULT_LOYVERSE_ITEMS_CSV_CANDIDATES);
-  const resolvedBomWorkbookPath = resolveFirstExistingPath(
-    explicitBomPath && explicitBomPath.toLowerCase().endsWith('.xlsx') ? explicitBomPath : undefined,
-    DEFAULT_SIAMAYA_BOM_XLSX_CANDIDATES
-  );
-  const resolvedOutputReportPath = resolveFirstExistingPath(
-    options.bomOutputMappingReportPath,
-    DEFAULT_BOM_OUTPUT_MAPPING_REPORT_CANDIDATES
-  );
-  const resolvedComponentReportPath = resolveFirstExistingPath(
-    options.bomUnmatchedComponentReportPath,
-    DEFAULT_BOM_COMPONENT_MAPPING_REPORT_CANDIDATES
-  );
+  const resolvedItemsCsvPath = options.itemsCsvPath
+    ? resolveFirstExistingPath(options.itemsCsvPath, DEFAULT_LOYVERSE_ITEMS_CSV_CANDIDATES)
+    : undefined;
+  const resolvedBomWorkbookPath =
+    explicitBomPath && explicitBomPath.toLowerCase().endsWith('.xlsx')
+      ? resolveFirstExistingPath(explicitBomPath, DEFAULT_SIAMAYA_BOM_XLSX_CANDIDATES)
+      : undefined;
+  const resolvedOutputReportPath = options.bomOutputMappingReportPath
+    ? resolveFirstExistingPath(options.bomOutputMappingReportPath, DEFAULT_BOM_OUTPUT_MAPPING_REPORT_CANDIDATES)
+    : undefined;
+  const resolvedComponentReportPath = options.bomUnmatchedComponentReportPath
+    ? resolveFirstExistingPath(options.bomUnmatchedComponentReportPath, DEFAULT_BOM_COMPONENT_MAPPING_REPORT_CANDIDATES)
+    : undefined;
   const reviewReportPath = path.resolve(options.reviewReportPath ?? DEFAULT_REVIEW_REPORT_PATH);
+  const resolvedInitialStockSpecPath = path.resolve(
+    options.initialStockSpecPath
+      ?? (options.stockProfile === 'minimal'
+        ? DEFAULT_MINIMAL_INITIAL_STOCK_SPEC_PATH
+        : DEFAULT_INITIAL_STOCK_SPEC_PATH)
+  );
 
   const useRealDataImport =
     !options.datasetOverride
+    && !!options.itemsCsvPath
     && !!resolvedItemsCsvPath
     && !!resolvedBomWorkbookPath
-    && (!explicitBomPath || explicitBomPath.toLowerCase().endsWith('.xlsx'));
+    && !!explicitBomPath
+    && explicitBomPath.toLowerCase().endsWith('.xlsx');
 
-  let initialStockSpec = loadInitialStockSpec(options.initialStockSpecPath ?? DEFAULT_INITIAL_STOCK_SPEC_PATH);
+  let initialStockSpec = loadInitialStockSpec(resolvedInitialStockSpecPath);
   let realDataReviewRows: RealDataReviewRow[] = [];
   let skuByItemKey = new Map<string, string>();
 

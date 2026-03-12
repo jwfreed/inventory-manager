@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "generatedAt": "2026-03-12T00:00:00.000Z",
   "workOrders": [
     {
-      "workOrderCode": "WO-SIAMAYA-001",
-      "itemKey": "couverture 70 dark chocolate 1kg",
-      "itemName": "Couverture 70% Dark Chocolate (1kg)",
+      "workOrderCode": "WO-SIAMAYA-75G-001",
+      "itemKey": "cacao nibs raw material",
+      "itemName": "Cacao Nibs - Raw Material",
       "simulationState": "PLANNED",
       "platformStatus": "draft",
       "scheduledStartAt": "2026-01-05T08:00:00.000Z",
@@ -12,10 +12,41 @@
       "quantityPlanned": 1,
       "outputUom": "kg",
       "routing": {
-        "workCenterCode": "TEMPERER",
-        "operationCode": "TEMPER",
-        "setupTimeMinutes": 20,
-        "runTimeMinutes": 60
+        "workCenterCode": "ROASTER",
+        "operationCode": "ROAST",
+        "setupTimeMinutes": 30,
+        "runTimeMinutes": 90
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "cacao beans",
+          "itemName": "Cacao Beans",
+          "quantity": 1.25,
+          "uom": "kg"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-04T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-002",
+      "itemKey": "base 70 dark chocolate",
+      "itemName": "Base - 70% Dark Chocolate",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-06T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-07T16:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "kg",
+      "routing": {
+        "workCenterCode": "GRINDER",
+        "operationCode": "PREREFINE",
+        "setupTimeMinutes": 30,
+        "runTimeMinutes": 120
       },
       "materialRequirements": [
         {
@@ -35,293 +66,146 @@
           "itemName": "Organic Cane Sugar",
           "quantity": 300,
           "uom": "g"
-        },
-        {
-          "itemKey": "vacuum pack bags",
-          "itemName": "Vacuum Pack Bags",
-          "quantity": 1,
-          "uom": "piece"
         }
       ],
       "lifecycle": [
         {
           "state": "PLANNED",
-          "at": "2026-01-04T09:00:00.000Z"
+          "at": "2026-01-05T09:00:00.000Z"
         }
       ]
     },
     {
-      "workOrderCode": "WO-SIAMAYA-002",
-      "itemKey": "banana crunch milk chocolate 75g",
-      "itemName": "Banana Crunch Milk Chocolate (75g)",
-      "simulationState": "RELEASED",
-      "platformStatus": "released",
+      "workOrderCode": "WO-SIAMAYA-75G-003",
+      "itemKey": "base 85 dark chocolate",
+      "itemName": "Base - 85% Dark Chocolate",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
       "scheduledStartAt": "2026-01-07T08:00:00.000Z",
       "scheduledDueAt": "2026-01-08T16:00:00.000Z",
-      "quantityPlanned": 2,
-      "outputUom": "piece",
+      "quantityPlanned": 1,
+      "outputUom": "kg",
       "routing": {
-        "workCenterCode": "WRAPPER",
-        "operationCode": "WRAP",
-        "setupTimeMinutes": 10,
-        "runTimeMinutes": 30
+        "workCenterCode": "GRINDER",
+        "operationCode": "PREREFINE",
+        "setupTimeMinutes": 30,
+        "runTimeMinutes": 120
       },
       "materialRequirements": [
         {
-          "itemKey": "banana chips",
-          "itemName": "Banana Chips",
-          "quantity": 13.276,
-          "uom": "g"
-        },
-        {
-          "itemKey": "banana powder",
-          "itemName": "Banana Powder",
-          "quantity": 3.976,
-          "uom": "g"
-        },
-        {
           "itemKey": "cacao beans",
           "itemName": "Cacao Beans",
-          "quantity": 66.375,
-          "uom": "g"
-        },
-        {
-          "itemKey": "cacao butter",
-          "itemName": "Cacao Butter",
-          "quantity": 13.275,
-          "uom": "g"
-        },
-        {
-          "itemKey": "flow wrap foil",
-          "itemName": "Flow Wrap Foil",
-          "quantity": 6,
-          "uom": "g"
+          "quantity": 1.0625,
+          "uom": "kg"
         },
         {
           "itemKey": "organic cane sugar",
           "itemName": "Organic Cane Sugar",
-          "quantity": 46.4625,
+          "quantity": 150,
           "uom": "g"
-        },
-        {
-          "itemKey": "powdered milk",
-          "itemName": "Powdered Milk",
-          "quantity": 19.9125,
-          "uom": "g"
-        },
-        {
-          "itemKey": "sunflower lecithin",
-          "itemName": "Sunflower Lecithin",
-          "quantity": 0.39825,
-          "uom": "g"
-        },
-        {
-          "itemKey": "wrapper banana crunch 75g",
-          "itemName": "Wrapper - Banana Crunch (75g)",
-          "quantity": 2,
-          "uom": "piece"
         }
       ],
       "lifecycle": [
         {
           "state": "PLANNED",
           "at": "2026-01-06T09:00:00.000Z"
-        },
-        {
-          "state": "RELEASED",
-          "at": "2026-01-07T08:00:00.000Z"
         }
       ]
     },
     {
-      "workOrderCode": "WO-SIAMAYA-003",
-      "itemKey": "tasting box",
-      "itemName": "Tasting Box",
-      "simulationState": "ALLOCATED",
-      "platformStatus": "released",
-      "scheduledStartAt": "2026-01-09T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-10T16:00:00.000Z",
-      "quantityPlanned": 3,
-      "outputUom": "piece",
+      "workOrderCode": "WO-SIAMAYA-75G-004",
+      "itemKey": "base milk chocolate",
+      "itemName": "Base - Milk Chocolate",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-08T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-09T16:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "kg",
       "routing": {
-        "workCenterCode": "PACKAGING",
-        "operationCode": "PACK",
-        "setupTimeMinutes": 10,
-        "runTimeMinutes": 20
+        "workCenterCode": "GRINDER",
+        "operationCode": "PREREFINE",
+        "setupTimeMinutes": 30,
+        "runTimeMinutes": 120
       },
       "materialRequirements": [
         {
-          "itemKey": "allspice powder",
-          "itemName": "Allspice Powder",
-          "quantity": 0.234,
-          "uom": "g"
-        },
-        {
           "itemKey": "cacao beans",
           "itemName": "Cacao Beans",
-          "quantity": 140.045738,
+          "quantity": 500,
           "uom": "g"
         },
         {
           "itemKey": "cacao butter",
           "itemName": "Cacao Butter",
-          "quantity": 14.75406,
+          "quantity": 100,
           "uom": "g"
         },
         {
-          "itemKey": "cardamom powder",
-          "itemName": "Cardamom Powder",
-          "quantity": 0.06,
+          "itemKey": "organic cane sugar",
+          "itemName": "Organic Cane Sugar",
+          "quantity": 350,
           "uom": "g"
         },
         {
-          "itemKey": "chili powder",
-          "itemName": "Chili Powder",
-          "quantity": 0.237,
+          "itemKey": "powdered milk",
+          "itemName": "Powdered Milk",
+          "quantity": 150,
           "uom": "g"
         },
         {
-          "itemKey": "cinnamon powder",
-          "itemName": "Cinnamon Powder",
-          "quantity": 1.05,
+          "itemKey": "sunflower lecithin",
+          "itemName": "Sunflower Lecithin",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-07T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-005",
+      "itemKey": "base coconut milk chocolate",
+      "itemName": "Base - Coconut Milk Chocolate",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-09T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-10T16:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "kg",
+      "routing": {
+        "workCenterCode": "GRINDER",
+        "operationCode": "PREREFINE",
+        "setupTimeMinutes": 30,
+        "runTimeMinutes": 120
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "cacao beans",
+          "itemName": "Cacao Beans",
+          "quantity": 775,
           "uom": "g"
         },
         {
-          "itemKey": "clove oil",
-          "itemName": "Clove Oil",
-          "quantity": 0.021,
+          "itemKey": "cacao butter",
+          "itemName": "Cacao Butter",
+          "quantity": 30,
           "uom": "g"
         },
         {
           "itemKey": "coconut milk powder",
           "itemName": "Coconut Milk Powder",
-          "quantity": 2.2227,
+          "quantity": 100,
           "uom": "g"
-        },
-        {
-          "itemKey": "coffee beans",
-          "itemName": "Coffee Beans",
-          "quantity": 0.471,
-          "uom": "g"
-        },
-        {
-          "itemKey": "dried coconut flakes",
-          "itemName": "Dried Coconut Flakes",
-          "quantity": 1.803,
-          "uom": "g"
-        },
-        {
-          "itemKey": "durian powder",
-          "itemName": "Durian Powder",
-          "quantity": 0.6,
-          "uom": "g"
-        },
-        {
-          "itemKey": "ginger oil",
-          "itemName": "Ginger Oil",
-          "quantity": 0.111,
-          "uom": "g"
-        },
-        {
-          "itemKey": "individual box 70 dark chocolate 8g",
-          "itemName": "Individual Box - 70% Dark Chocolate (8g)",
-          "quantity": 3,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "individual box 85 dark chocolate 8g",
-          "itemName": "Individual Box - 85% Dark Chocolate (8g)",
-          "quantity": 3,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "individual box coconut milk 65 dark chocolate 8g",
-          "itemName": "Individual Box - Coconut Milk 65% Dark Chocolate (8g)",
-          "quantity": 3,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "individual box coffee crunch milk chocolate 8g",
-          "itemName": "Individual Box - Coffee Crunch Milk Chocolate (8g)",
-          "quantity": 3,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "individual box durian milk chocolate 8g",
-          "itemName": "Individual Box - Durian Milk Chocolate (8g)",
-          "quantity": 3,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "individual box masala chai milk chocolate 8g",
-          "itemName": "Individual Box - Masala Chai Milk Chocolate (8g)",
-          "quantity": 3,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "individual box signature milk chocolate 8g",
-          "itemName": "Individual Box - Signature Milk Chocolate (8g)",
-          "quantity": 3,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "individual box thai bullet chili dark chocolate 8g",
-          "itemName": "Individual Box - Thai Bullet Chili Dark Chocolate (8g)",
-          "quantity": 3,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "individual box thai tea milk chocolate 8g",
-          "itemName": "Individual Box - Thai Tea Milk Chocolate (8g)",
-          "quantity": 3,
-          "uom": "piece"
         },
         {
           "itemKey": "organic cane sugar",
           "itemName": "Organic Cane Sugar",
-          "quantity": 64.43625,
-          "uom": "g"
-        },
-        {
-          "itemKey": "outer packing for tasting box",
-          "itemName": "Outer Packing for Tasting Box",
-          "quantity": 3,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "powdered milk",
-          "itemName": "Powdered Milk",
-          "quantity": 17.5464,
-          "uom": "g"
-        },
-        {
-          "itemKey": "shrink film 5 5 inch",
-          "itemName": "Shrink film (5.5 inch)",
-          "quantity": 3,
-          "uom": "g"
-        },
-        {
-          "itemKey": "star anise powder",
-          "itemName": "Star Anise Powder",
-          "quantity": 0.234,
-          "uom": "g"
-        },
-        {
-          "itemKey": "stickers tasting box fda",
-          "itemName": "Stickers - Tasting Box FDA",
-          "quantity": 3,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "sunflower lecithin",
-          "itemName": "Sunflower Lecithin",
-          "quantity": 0.350928,
-          "uom": "g"
-        },
-        {
-          "itemKey": "thai tea powder",
-          "itemName": "Thai Tea Powder",
-          "quantity": 0.285,
+          "quantity": 250,
           "uom": "g"
         }
       ],
@@ -329,81 +213,286 @@
         {
           "state": "PLANNED",
           "at": "2026-01-08T09:00:00.000Z"
-        },
-        {
-          "state": "RELEASED",
-          "at": "2026-01-09T08:00:00.000Z"
-        },
-        {
-          "state": "ALLOCATED",
-          "at": "2026-01-09T10:00:00.000Z"
         }
       ]
     },
     {
-      "workOrderCode": "WO-SIAMAYA-004",
-      "itemKey": "cacao nibs 250g",
-      "itemName": "Cacao Nibs 250g",
-      "simulationState": "IN_PROCESS",
-      "platformStatus": "in_progress",
-      "scheduledStartAt": "2026-01-11T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-12T16:00:00.000Z",
-      "quantityPlanned": 4,
-      "outputUom": "piece",
+      "workOrderCode": "WO-SIAMAYA-75G-006",
+      "itemKey": "base pomelo",
+      "itemName": "Base - Pomelo",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-10T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-11T16:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "kg",
       "routing": {
-        "workCenterCode": "PACKAGING",
-        "operationCode": "PACK",
-        "setupTimeMinutes": 10,
-        "runTimeMinutes": 20
+        "workCenterCode": "GRINDER",
+        "operationCode": "PREREFINE",
+        "setupTimeMinutes": 30,
+        "runTimeMinutes": 120
       },
       "materialRequirements": [
         {
-          "itemKey": "bag expandable sides 13 20cm",
-          "itemName": "Bag Expandable Sides (13*20cm)",
-          "quantity": 4,
-          "uom": "piece"
-        },
-        {
           "itemKey": "cacao beans",
           "itemName": "Cacao Beans",
-          "quantity": 1250,
+          "quantity": 887.5,
           "uom": "g"
         },
         {
-          "itemKey": "stickers cacao nibs retail 250g",
-          "itemName": "Stickers - Cacao Nibs - Retail (250g)",
-          "quantity": 8,
-          "uom": "piece"
+          "itemKey": "coffee beans",
+          "itemName": "Coffee Beans",
+          "quantity": 20,
+          "uom": "g"
+        },
+        {
+          "itemKey": "organic cane sugar",
+          "itemName": "Organic Cane Sugar",
+          "quantity": 270,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-09T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-007",
+      "itemKey": "base sugar free",
+      "itemName": "Base - Sugar Free",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-11T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-12T16:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "kg",
+      "routing": {
+        "workCenterCode": "GRINDER",
+        "operationCode": "PREREFINE",
+        "setupTimeMinutes": 30,
+        "runTimeMinutes": 120
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "cacao beans",
+          "itemName": "Cacao Beans",
+          "quantity": 1.0625,
+          "uom": "kg"
+        },
+        {
+          "itemKey": "powdered milk",
+          "itemName": "Powdered Milk",
+          "quantity": 150,
+          "uom": "g"
         }
       ],
       "lifecycle": [
         {
           "state": "PLANNED",
           "at": "2026-01-10T09:00:00.000Z"
-        },
-        {
-          "state": "RELEASED",
-          "at": "2026-01-11T08:00:00.000Z"
-        },
-        {
-          "state": "ALLOCATED",
-          "at": "2026-01-11T10:00:00.000Z"
-        },
-        {
-          "state": "IN_PROCESS",
-          "at": "2026-01-11T13:00:00.000Z"
         }
       ]
     },
     {
-      "workOrderCode": "WO-SIAMAYA-005",
-      "itemKey": "thai tea milk chocolate 20g",
-      "itemName": "Thai Tea Milk Chocolate (20g)",
-      "simulationState": "COMPLETED",
-      "platformStatus": "completed",
+      "workOrderCode": "WO-SIAMAYA-75G-008",
+      "itemKey": "apple pie milk chocolate halloween 75g",
+      "itemName": "Apple Pie Milk Chocolate - Halloween (75g)",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-12T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-13T16:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "piece",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "WRAP",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 30
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "biscuit",
+          "itemName": "Biscuit",
+          "quantity": 3.195,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cacao beans",
+          "itemName": "Cacao Beans",
+          "quantity": 31.0685,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cacao butter",
+          "itemName": "Cacao Butter",
+          "quantity": 6.2137,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cinnamon powder",
+          "itemName": "Cinnamon Powder",
+          "quantity": 0.285,
+          "uom": "g"
+        },
+        {
+          "itemKey": "dried apple",
+          "itemName": "Dried Apple",
+          "quantity": 6.383,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "organic cane sugar",
+          "itemName": "Organic Cane Sugar",
+          "quantity": 21.74795,
+          "uom": "g"
+        },
+        {
+          "itemKey": "powdered milk",
+          "itemName": "Powdered Milk",
+          "quantity": 9.32055,
+          "uom": "g"
+        },
+        {
+          "itemKey": "sunflower lecithin",
+          "itemName": "Sunflower Lecithin",
+          "quantity": 0.186411,
+          "uom": "g"
+        },
+        {
+          "itemKey": "wrapper apple pie milk chocolate halloween 75g",
+          "itemName": "Wrapper - Apple Pie Milk Chocolate - Halloween (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-11T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-009",
+      "itemKey": "masala chai milk chocolate 75g",
+      "itemName": "Masala Chai Milk Chocolate (75g)",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
       "scheduledStartAt": "2026-01-13T08:00:00.000Z",
       "scheduledDueAt": "2026-01-14T16:00:00.000Z",
-      "quantityPlanned": 5,
+      "quantityPlanned": 1,
+      "outputUom": "piece",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "WRAP",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 30
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "allspice powder",
+          "itemName": "Allspice Powder",
+          "quantity": 0.74,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cacao beans",
+          "itemName": "Cacao Beans",
+          "quantity": 34.803,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cacao butter",
+          "itemName": "Cacao Butter",
+          "quantity": 6.9606,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cardamom powder",
+          "itemName": "Cardamom Powder",
+          "quantity": 0.185,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cinnamon powder",
+          "itemName": "Cinnamon Powder",
+          "quantity": 3.3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "clove oil",
+          "itemName": "Clove Oil",
+          "quantity": 0.062,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "ginger oil",
+          "itemName": "Ginger Oil",
+          "quantity": 0.367,
+          "uom": "g"
+        },
+        {
+          "itemKey": "organic cane sugar",
+          "itemName": "Organic Cane Sugar",
+          "quantity": 24.3621,
+          "uom": "g"
+        },
+        {
+          "itemKey": "powdered milk",
+          "itemName": "Powdered Milk",
+          "quantity": 10.4409,
+          "uom": "g"
+        },
+        {
+          "itemKey": "star anise powder",
+          "itemName": "Star Anise Powder",
+          "quantity": 0.74,
+          "uom": "g"
+        },
+        {
+          "itemKey": "sunflower lecithin",
+          "itemName": "Sunflower Lecithin",
+          "quantity": 0.208818,
+          "uom": "g"
+        },
+        {
+          "itemKey": "wrapper masala chai 75g",
+          "itemName": "Wrapper - Masala Chai (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-12T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-010",
+      "itemKey": "tom yum dark chocolate 75g",
+      "itemName": "Tom Yum Dark Chocolate (75g)",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-14T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-15T16:00:00.000Z",
+      "quantityPlanned": 1,
       "outputUom": "piece",
       "routing": {
         "workCenterCode": "WRAPPER",
@@ -415,153 +504,68 @@
         {
           "itemKey": "cacao beans",
           "itemName": "Cacao Beans",
-          "quantity": 49.4675,
+          "quantity": 54.017438,
           "uom": "g"
         },
         {
           "itemKey": "cacao butter",
           "itemName": "Cacao Butter",
-          "quantity": 9.8935,
+          "quantity": 3.32415,
           "uom": "g"
         },
         {
-          "itemKey": "gold paper small bar",
-          "itemName": "Gold Paper - Small Bar",
-          "quantity": 5,
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "galangal oil",
+          "itemName": "Galangal Oil",
+          "quantity": 0.067,
+          "uom": "g"
+        },
+        {
+          "itemKey": "kaffir lime oil",
+          "itemName": "Kaffir Lime Oil",
+          "quantity": 0.067,
+          "uom": "g"
+        },
+        {
+          "itemKey": "lemongrass oil",
+          "itemName": "Lemongrass Oil",
+          "quantity": 0.067,
           "uom": "g"
         },
         {
           "itemKey": "organic cane sugar",
           "itemName": "Organic Cane Sugar",
-          "quantity": 34.62725,
+          "quantity": 19.9449,
           "uom": "g"
         },
         {
-          "itemKey": "powdered milk",
-          "itemName": "Powdered Milk",
-          "quantity": 14.84025,
+          "itemKey": "tom yum powder",
+          "itemName": "Tom Yum Powder",
+          "quantity": 1.663,
           "uom": "g"
         },
         {
-          "itemKey": "sunflower lecithin",
-          "itemName": "Sunflower Lecithin",
-          "quantity": 0.296805,
+          "itemKey": "tomato dried",
+          "itemName": "Tomato, Dried",
+          "quantity": 6.653,
           "uom": "g"
         },
         {
-          "itemKey": "thai tea powder",
-          "itemName": "Thai Tea Powder",
-          "quantity": 1.19,
-          "uom": "g"
-        },
-        {
-          "itemKey": "wrapper thai tea 20g",
-          "itemName": "Wrapper - Thai Tea (20g)",
-          "quantity": 5,
+          "itemKey": "wrapper tom yum 75g",
+          "itemName": "Wrapper - Tom Yum (75g)",
+          "quantity": 1,
           "uom": "piece"
         }
       ],
       "lifecycle": [
         {
           "state": "PLANNED",
-          "at": "2026-01-12T09:00:00.000Z"
-        },
-        {
-          "state": "RELEASED",
-          "at": "2026-01-13T08:00:00.000Z"
-        },
-        {
-          "state": "ALLOCATED",
-          "at": "2026-01-13T10:00:00.000Z"
-        },
-        {
-          "state": "IN_PROCESS",
-          "at": "2026-01-13T13:00:00.000Z"
-        },
-        {
-          "state": "COMPLETED",
-          "at": "2026-01-14T15:00:00.000Z"
-        }
-      ]
-    },
-    {
-      "workOrderCode": "WO-SIAMAYA-006",
-      "itemKey": "paleo robbie banana bites 100g",
-      "itemName": "Paleo Robbie: Banana Bites (100g)",
-      "simulationState": "CLOSED",
-      "platformStatus": "completed",
-      "scheduledStartAt": "2026-01-15T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-16T16:00:00.000Z",
-      "quantityPlanned": 6,
-      "outputUom": "piece",
-      "routing": {
-        "workCenterCode": "TEMPERER",
-        "operationCode": "TEMPER",
-        "setupTimeMinutes": 20,
-        "runTimeMinutes": 60
-      },
-      "materialRequirements": [
-        {
-          "itemKey": "banana sticks",
-          "itemName": "Banana Sticks",
-          "quantity": 360,
-          "uom": "g"
-        },
-        {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 191.25,
-          "uom": "g"
-        },
-        {
-          "itemKey": "clear bag long paleo robbie",
-          "itemName": "Clear Bag - Long - Paleo Robbie",
-          "quantity": 6,
-          "uom": "piece"
-        },
-        {
-          "itemKey": "dried coconut flakes",
-          "itemName": "Dried Coconut Flakes",
-          "quantity": 60,
-          "uom": "g"
-        },
-        {
-          "itemKey": "powdered milk",
-          "itemName": "Powdered Milk",
-          "quantity": 27,
-          "uom": "g"
-        },
-        {
-          "itemKey": "sticker banana bites paleo robbie",
-          "itemName": "Sticker - Banana Bites - Paleo Robbie",
-          "quantity": 6,
-          "uom": "piece"
-        }
-      ],
-      "lifecycle": [
-        {
-          "state": "PLANNED",
-          "at": "2026-01-14T09:00:00.000Z"
-        },
-        {
-          "state": "RELEASED",
-          "at": "2026-01-15T08:00:00.000Z"
-        },
-        {
-          "state": "ALLOCATED",
-          "at": "2026-01-15T10:00:00.000Z"
-        },
-        {
-          "state": "IN_PROCESS",
-          "at": "2026-01-15T13:00:00.000Z"
-        },
-        {
-          "state": "COMPLETED",
-          "at": "2026-01-16T15:00:00.000Z"
-        },
-        {
-          "state": "CLOSED",
-          "at": "2026-01-17T10:00:00.000Z"
+          "at": "2026-01-13T09:00:00.000Z"
         }
       ]
     }

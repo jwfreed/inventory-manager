@@ -4,1575 +4,763 @@
   "items": [
     {
       "itemKey": "allspice powder",
-      "quantity": 500,
+      "quantity": 3.7,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-ALLSPICE-POWDER-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
-    },
-    {
-      "itemKey": "almond powder",
-      "quantity": 2875,
-      "uom": "g",
-      "unitCost": 0.0108,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-ALMOND-POWDER-2026-01",
-      "productionDate": "2025-11-14T00:00:00.000Z",
-      "expirationDate": "2026-07-12T00:00:00.000Z"
-    },
-    {
-      "itemKey": "almond powder",
-      "quantity": 2875,
-      "uom": "g",
-      "unitCost": 0.0108,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-ALMOND-POWDER-2026-02",
-      "productionDate": "2025-09-27T00:00:00.000Z",
-      "expirationDate": "2026-05-25T00:00:00.000Z"
-    },
-    {
-      "itemKey": "almonds",
-      "quantity": 2000,
-      "uom": "g",
-      "unitCost": 0.0108,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-ALMONDS-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-ALLSPICE-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "almonds chopped",
-      "quantity": 4125,
+      "quantity": 34.05,
       "uom": "g",
-      "unitCost": 0.0108,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-ALMONDS-CHOPPED-2026-01",
-      "productionDate": "2025-11-14T00:00:00.000Z",
-      "expirationDate": "2026-07-12T00:00:00.000Z"
-    },
-    {
-      "itemKey": "almonds chopped",
-      "quantity": 4125,
-      "uom": "g",
-      "unitCost": 0.0108,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-ALMONDS-CHOPPED-2026-02",
-      "productionDate": "2025-09-27T00:00:00.000Z",
-      "expirationDate": "2026-05-25T00:00:00.000Z"
-    },
-    {
-      "itemKey": "almonds whole",
-      "quantity": 2000,
-      "uom": "g",
-      "unitCost": 0.0108,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-ALMONDS-WHOLE-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
-    },
-    {
-      "itemKey": "bag expandable sides 13 20cm",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.05,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-ALMONDS-CHOPPED-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0108
     },
     {
       "itemKey": "banana chips",
-      "quantity": 3125,
+      "quantity": 48.94,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-BANANA-CHIPS-2026-01",
-      "productionDate": "2025-11-14T00:00:00.000Z",
-      "expirationDate": "2026-07-12T00:00:00.000Z"
-    },
-    {
-      "itemKey": "banana chips",
-      "quantity": 3125,
-      "uom": "g",
-      "unitCost": 0.0098,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-BANANA-CHIPS-2026-02",
-      "productionDate": "2025-09-27T00:00:00.000Z",
-      "expirationDate": "2026-05-25T00:00:00.000Z"
+      "lotCode": "BASE-BANANA-CHIPS-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "banana powder",
-      "quantity": 2000,
+      "quantity": 19.39,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-BANANA-POWDER-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
-    },
-    {
-      "itemKey": "banana sticks",
-      "quantity": 2000,
-      "uom": "g",
-      "unitCost": 0.0098,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-BANANA-STICKS-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-BANANA-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "biscuit",
-      "quantity": 1000,
+      "quantity": 15.975,
       "uom": "g",
-      "unitCost": 0.0084,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-BISCUIT-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-BISCUIT-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0084
     },
     {
       "itemKey": "cacao beans",
-      "quantity": 1666.667,
+      "quantity": 6.021421,
       "uom": "kg",
-      "unitCost": 4.25,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-BEANS-2026-01",
-      "productionDate": "2025-09-02T00:00:00.000Z",
-      "expirationDate": "2027-09-02T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao beans",
-      "quantity": 1666.667,
-      "uom": "kg",
-      "unitCost": 4.25,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-BEANS-2026-02",
-      "productionDate": "2025-05-04T00:00:00.000Z",
-      "expirationDate": "2027-05-04T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao beans",
-      "quantity": 1666.666,
-      "uom": "kg",
-      "unitCost": 4.25,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-BEANS-2026-03",
-      "productionDate": "2025-01-03T00:00:00.000Z",
-      "expirationDate": "2027-01-03T00:00:00.000Z"
+      "lotCode": "BASE-CACAO-BEANS-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2028-01-01",
+      "unitCost": 4.25
     },
     {
       "itemKey": "cacao butter",
-      "quantity": 40000,
+      "quantity": 524.963,
       "uom": "g",
-      "unitCost": 0.0081,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-BUTTER-2026-01",
-      "productionDate": "2025-10-03T00:00:00.000Z",
-      "expirationDate": "2027-03-27T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao butter",
-      "quantity": 40000,
-      "uom": "g",
-      "unitCost": 0.0081,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-BUTTER-2026-02",
-      "productionDate": "2025-07-05T00:00:00.000Z",
-      "expirationDate": "2026-12-27T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao butter",
-      "quantity": 40000,
-      "uom": "g",
-      "unitCost": 0.0081,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-BUTTER-2026-03",
-      "productionDate": "2025-04-06T00:00:00.000Z",
-      "expirationDate": "2026-09-28T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao hot sauce 90ml",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.025,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "cacao nibs 250g",
-      "quantity": 24,
-      "uom": "piece",
-      "unitCost": 2.8,
-      "locationCode": "FACTORY_FG_STAGE",
-      "lotCode": "LOT-FG-03",
-      "productionDate": "2025-12-20T00:00:00.000Z",
-      "expirationDate": "2026-12-20T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao powder 666",
-      "quantity": 6666.667,
-      "uom": "g",
-      "unitCost": 0.0056,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-POWDER-666-2026-01",
-      "productionDate": "2025-10-03T00:00:00.000Z",
-      "expirationDate": "2027-03-27T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao powder 666",
-      "quantity": 6666.666,
-      "uom": "g",
-      "unitCost": 0.0056,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-POWDER-666-2026-02",
-      "productionDate": "2025-07-05T00:00:00.000Z",
-      "expirationDate": "2026-12-27T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao powder 666",
-      "quantity": 6666.667,
-      "uom": "g",
-      "unitCost": 0.0056,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-POWDER-666-2026-03",
-      "productionDate": "2025-04-06T00:00:00.000Z",
-      "expirationDate": "2026-09-28T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao powder chocolasia",
-      "quantity": 1666.667,
-      "uom": "g",
-      "unitCost": 0.0056,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-POWDER-CHOCOLASIA-2026-01",
-      "productionDate": "2025-10-03T00:00:00.000Z",
-      "expirationDate": "2027-03-27T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao powder chocolasia",
-      "quantity": 1666.667,
-      "uom": "g",
-      "unitCost": 0.0056,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-POWDER-CHOCOLASIA-2026-02",
-      "productionDate": "2025-07-05T00:00:00.000Z",
-      "expirationDate": "2026-12-27T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao powder chocolasia",
-      "quantity": 1666.666,
-      "uom": "g",
-      "unitCost": 0.0056,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-POWDER-CHOCOLASIA-2026-03",
-      "productionDate": "2025-04-06T00:00:00.000Z",
-      "expirationDate": "2026-09-28T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao powder kd30",
-      "quantity": 6333.333,
-      "uom": "g",
-      "unitCost": 0.0056,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-POWDER-KD30-2026-01",
-      "productionDate": "2025-10-03T00:00:00.000Z",
-      "expirationDate": "2027-03-27T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao powder kd30",
-      "quantity": 6333.334,
-      "uom": "g",
-      "unitCost": 0.0056,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-POWDER-KD30-2026-02",
-      "productionDate": "2025-07-05T00:00:00.000Z",
-      "expirationDate": "2026-12-27T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cacao powder kd30",
-      "quantity": 6333.333,
-      "uom": "g",
-      "unitCost": 0.0056,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CACAO-POWDER-KD30-2026-03",
-      "productionDate": "2025-04-06T00:00:00.000Z",
-      "expirationDate": "2026-09-28T00:00:00.000Z"
-    },
-    {
-      "itemKey": "candied orange",
-      "quantity": 2000,
-      "uom": "g",
-      "unitCost": 0.0098,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CANDIED-ORANGE-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-CACAO-BUTTER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2028-01-01",
+      "unitCost": 0.0081
     },
     {
       "itemKey": "cardamom powder",
-      "quantity": 500,
+      "quantity": 0.925,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CARDAMOM-POWDER-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cashews",
-      "quantity": 2000,
-      "uom": "g",
-      "unitCost": 0.0108,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CASHEWS-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
-    },
-    {
-      "itemKey": "chiang mai dark chocolate box",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-CARDAMOM-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "chili powder",
-      "quantity": 500,
+      "quantity": 6.32,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CHILI-POWDER-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-CHILI-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "cinnamon powder",
-      "quantity": 875,
+      "quantity": 20.865,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CINNAMON-POWDER-2026-01",
-      "productionDate": "2025-10-20T00:00:00.000Z",
-      "expirationDate": "2026-10-20T00:00:00.000Z"
-    },
-    {
-      "itemKey": "cinnamon powder",
-      "quantity": 875,
-      "uom": "g",
-      "unitCost": 0.0145,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CINNAMON-POWDER-2026-02",
-      "productionDate": "2025-08-08T00:00:00.000Z",
-      "expirationDate": "2026-08-08T00:00:00.000Z"
-    },
-    {
-      "itemKey": "clear bag long paleo robbie",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.05,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "clear bag short paleo robbie",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.05,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "clear plastic bag 3 x 6 chocolate dipped orange",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.05,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-CINNAMON-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "clove oil",
-      "quantity": 500,
+      "quantity": 0.625,
       "uom": "g",
-      "unitCost": 0.025,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CLOVE-OIL-2026-01",
-      "productionDate": "2025-10-26T00:00:00.000Z",
-      "expirationDate": "2026-07-23T00:00:00.000Z"
+      "lotCode": "BASE-CLOVE-OIL-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.025
     },
     {
       "itemKey": "clove powder",
-      "quantity": 500,
+      "quantity": 0.8,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CLOVE-POWDER-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-CLOVE-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "coconut milk powder",
-      "quantity": 30000,
+      "quantity": 65.743,
       "uom": "g",
-      "unitCost": 0.0049,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-COCONUT-MILK-POWDER-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-11-02T00:00:00.000Z"
-    },
-    {
-      "itemKey": "coconut milk powder",
-      "quantity": 30000,
-      "uom": "g",
-      "unitCost": 0.0049,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-COCONUT-MILK-POWDER-2026-02",
-      "productionDate": "2025-09-03T00:00:00.000Z",
-      "expirationDate": "2026-09-03T00:00:00.000Z"
-    },
-    {
-      "itemKey": "coconut milk powder",
-      "quantity": 30000,
-      "uom": "g",
-      "unitCost": 0.0049,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-COCONUT-MILK-POWDER-2026-03",
-      "productionDate": "2025-07-05T00:00:00.000Z",
-      "expirationDate": "2026-07-05T00:00:00.000Z"
+      "lotCode": "BASE-COCONUT-MILK-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0049
     },
     {
       "itemKey": "coffee beans",
-      "quantity": 675,
+      "quantity": 14.175,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-COFFEE-BEANS-2026-01",
-      "productionDate": "2025-10-20T00:00:00.000Z",
-      "expirationDate": "2026-10-20T00:00:00.000Z"
-    },
-    {
-      "itemKey": "coffee beans",
-      "quantity": 675,
-      "uom": "g",
-      "unitCost": 0.0145,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-COFFEE-BEANS-2026-02",
-      "productionDate": "2025-08-08T00:00:00.000Z",
-      "expirationDate": "2026-08-08T00:00:00.000Z"
-    },
-    {
-      "itemKey": "couverture 70 dark chocolate 1kg",
-      "quantity": 18,
-      "uom": "piece",
-      "unitCost": 7.9,
-      "locationCode": "FACTORY_FG_STAGE",
-      "lotCode": "LOT-FG-04",
-      "productionDate": "2025-12-20T00:00:00.000Z",
-      "expirationDate": "2026-12-20T00:00:00.000Z"
+      "lotCode": "BASE-COFFEE-BEANS-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "curry powder",
-      "quantity": 500,
+      "quantity": 3.375,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-CURRY-POWDER-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-CURRY-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "dried apple",
-      "quantity": 2000,
+      "quantity": 31.915,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-DRIED-APPLE-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-DRIED-APPLE-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "dried coconut flakes",
-      "quantity": 4000,
+      "quantity": 82.575,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-DRIED-COCONUT-FLAKES-2026-01",
-      "productionDate": "2025-11-14T00:00:00.000Z",
-      "expirationDate": "2026-07-12T00:00:00.000Z"
-    },
-    {
-      "itemKey": "dried coconut flakes",
-      "quantity": 4000,
-      "uom": "g",
-      "unitCost": 0.0098,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-DRIED-COCONUT-FLAKES-2026-02",
-      "productionDate": "2025-09-27T00:00:00.000Z",
-      "expirationDate": "2026-05-25T00:00:00.000Z"
+      "lotCode": "BASE-DRIED-COCONUT-FLAKES-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "durian powder",
-      "quantity": 2000,
+      "quantity": 9.15,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-DURIAN-POWDER-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-DURIAN-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "flow wrap foil",
-      "quantity": 6000,
+      "quantity": 375,
       "uom": "g",
-      "unitCost": 0.012,
-      "locationCode": "FACTORY_PACK_STORE",
-      "lotCode": "LOT-FLOW-WRAP-FOIL-2026-01",
-      "productionDate": "2024-01-02T00:00:00.000Z",
-      "expirationDate": "2033-12-30T00:00:00.000Z"
-    },
-    {
-      "itemKey": "flow wrap foil",
-      "quantity": 6000,
-      "uom": "g",
-      "unitCost": 0.012,
-      "locationCode": "FACTORY_PACK_STORE",
-      "lotCode": "LOT-FLOW-WRAP-FOIL-2026-02",
-      "productionDate": "2022-01-02T00:00:00.000Z",
-      "expirationDate": "2031-12-31T00:00:00.000Z"
+      "locationCode": "FACTORY_RM_STORE",
+      "lotCode": "BASE-FLOW-WRAP-FOIL-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.012
     },
     {
       "itemKey": "galangal oil",
-      "quantity": 500,
+      "quantity": 1.085,
       "uom": "g",
-      "unitCost": 0.025,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-GALANGAL-OIL-2026-01",
-      "productionDate": "2025-10-26T00:00:00.000Z",
-      "expirationDate": "2026-07-23T00:00:00.000Z"
+      "lotCode": "BASE-GALANGAL-OIL-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.025
     },
     {
       "itemKey": "ginger dried",
-      "quantity": 2750,
+      "quantity": 30.975,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-GINGER-DRIED-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-GINGER-DRIED-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "ginger oil",
-      "quantity": 500,
+      "quantity": 1.835,
       "uom": "g",
-      "unitCost": 0.025,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-GINGER-OIL-2026-01",
-      "productionDate": "2025-10-26T00:00:00.000Z",
-      "expirationDate": "2026-07-23T00:00:00.000Z"
+      "lotCode": "BASE-GINGER-OIL-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.025
     },
     {
       "itemKey": "ginger powder",
-      "quantity": 500,
+      "quantity": 3.9,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-GINGER-POWDER-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-GINGER-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "gingerbread cookie",
-      "quantity": 1650,
+      "quantity": 33.5,
       "uom": "g",
-      "unitCost": 0.0084,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-GINGERBREAD-COOKIE-2026-01",
-      "productionDate": "2025-10-20T00:00:00.000Z",
-      "expirationDate": "2026-10-20T00:00:00.000Z"
-    },
-    {
-      "itemKey": "gingerbread cookie",
-      "quantity": 1650,
-      "uom": "g",
-      "unitCost": 0.0084,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-GINGERBREAD-COOKIE-2026-02",
-      "productionDate": "2025-08-08T00:00:00.000Z",
-      "expirationDate": "2026-08-08T00:00:00.000Z"
-    },
-    {
-      "itemKey": "gold paper 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.025,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "gold paper small bar",
-      "quantity": 1000,
-      "uom": "g",
-      "unitCost": 0.006,
-      "locationCode": "FACTORY_PACK_STORE",
-      "lotCode": "LOT-GOLD-PAPER-SMALL-BAR-2026-01",
-      "productionDate": "2023-07-04T00:00:00.000Z",
-      "expirationDate": "2033-07-01T00:00:00.000Z"
-    },
-    {
-      "itemKey": "individual box 70 dark chocolate 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "individual box 85 dark chocolate 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "individual box coconut milk 65 dark chocolate 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "individual box coffee crunch milk chocolate 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "individual box durian milk chocolate 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "individual box masala chai milk chocolate 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "individual box signature milk chocolate 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "individual box thai bullet chili dark chocolate 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "individual box thai tea milk chocolate 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-GINGERBREAD-COOKIE-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "kaffir lime oil",
-      "quantity": 500,
+      "quantity": 0.655,
       "uom": "g",
-      "unitCost": 0.025,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-KAFFIR-LIME-OIL-2026-01",
-      "productionDate": "2025-10-26T00:00:00.000Z",
-      "expirationDate": "2026-07-23T00:00:00.000Z"
+      "lotCode": "BASE-KAFFIR-LIME-OIL-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.025
     },
     {
       "itemKey": "khao soi crispy noodles",
-      "quantity": 1700,
+      "quantity": 23.7,
       "uom": "g",
-      "unitCost": 0.0084,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-KHAO-SOI-CRISPY-NOODLES-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-KHAO-SOI-CRISPY-NOODLES-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0084
     },
     {
       "itemKey": "lemongrass oil",
-      "quantity": 500,
+      "quantity": 1.425,
       "uom": "g",
-      "unitCost": 0.025,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-LEMONGRASS-OIL-2026-01",
-      "productionDate": "2025-10-26T00:00:00.000Z",
-      "expirationDate": "2026-07-23T00:00:00.000Z"
+      "lotCode": "BASE-LEMONGRASS-OIL-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.025
     },
     {
       "itemKey": "lotus seed",
-      "quantity": 1500,
+      "quantity": 16.75,
       "uom": "g",
-      "unitCost": 0.0084,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-LOTUS-SEED-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-LOTUS-SEED-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0084
     },
     {
       "itemKey": "mango dried",
-      "quantity": 3750,
+      "quantity": 48.675,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-MANGO-DRIED-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-MANGO-DRIED-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "mango jelly",
-      "quantity": 2875,
+      "quantity": 56.175,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-MANGO-JELLY-2026-01",
-      "productionDate": "2025-11-14T00:00:00.000Z",
-      "expirationDate": "2026-07-12T00:00:00.000Z"
-    },
-    {
-      "itemKey": "mango jelly",
-      "quantity": 2875,
-      "uom": "g",
-      "unitCost": 0.0098,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-MANGO-JELLY-2026-02",
-      "productionDate": "2025-09-27T00:00:00.000Z",
-      "expirationDate": "2026-05-25T00:00:00.000Z"
+      "lotCode": "BASE-MANGO-JELLY-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "organic cane sugar",
-      "quantity": 150000,
+      "quantity": 2331.841,
       "uom": "g",
-      "unitCost": 0.00115,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-ORGANIC-CANE-SUGAR-2026-01",
-      "productionDate": "2025-03-15T00:00:00.000Z",
-      "expirationDate": "2029-03-14T00:00:00.000Z"
-    },
-    {
-      "itemKey": "organic cane sugar",
-      "quantity": 150000,
-      "uom": "g",
-      "unitCost": 0.00115,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-ORGANIC-CANE-SUGAR-2026-02",
-      "productionDate": "2024-05-27T00:00:00.000Z",
-      "expirationDate": "2028-05-26T00:00:00.000Z"
-    },
-    {
-      "itemKey": "outer packing for tasting box",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "paper bag w window 4 75 x 8",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.05,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "paper baking cups",
-      "quantity": 125,
-      "uom": "piece",
-      "unitCost": 0.025,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-ORGANIC-CANE-SUGAR-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2029-12-31",
+      "unitCost": 0.00115
     },
     {
       "itemKey": "peanuts",
-      "quantity": 3750,
+      "quantity": 46.725,
       "uom": "g",
-      "unitCost": 0.0108,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-PEANUTS-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-PEANUTS-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0108
     },
     {
       "itemKey": "pecans",
-      "quantity": 2750,
+      "quantity": 29.25,
       "uom": "g",
-      "unitCost": 0.0108,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-PECANS-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
-    },
-    {
-      "itemKey": "pineapple dried",
-      "quantity": 2000,
-      "uom": "g",
-      "unitCost": 0.0098,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-PINEAPPLE-DRIED-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-PECANS-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0108
     },
     {
       "itemKey": "pink salt",
-      "quantity": 500,
+      "quantity": 0.34,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-PINK-SALT-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
-    },
-    {
-      "itemKey": "plum powder",
-      "quantity": 500,
-      "uom": "g",
-      "unitCost": 0.0145,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-PLUM-POWDER-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-PINK-SALT-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "pomelo dried",
-      "quantity": 2500,
+      "quantity": 33.75,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-POMELO-DRIED-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-POMELO-DRIED-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "popping candy",
-      "quantity": 1850,
+      "quantity": 37.915,
       "uom": "g",
-      "unitCost": 0.0084,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-POPPING-CANDY-2026-01",
-      "productionDate": "2025-10-20T00:00:00.000Z",
-      "expirationDate": "2026-10-20T00:00:00.000Z"
-    },
-    {
-      "itemKey": "popping candy",
-      "quantity": 1850,
-      "uom": "g",
-      "unitCost": 0.0084,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-POPPING-CANDY-2026-02",
-      "productionDate": "2025-08-08T00:00:00.000Z",
-      "expirationDate": "2026-08-08T00:00:00.000Z"
+      "lotCode": "BASE-POPPING-CANDY-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0084
     },
     {
       "itemKey": "powdered milk",
-      "quantity": 60000,
+      "quantity": 770.607,
       "uom": "g",
-      "unitCost": 0.0034,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-POWDERED-MILK-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-11-02T00:00:00.000Z"
-    },
-    {
-      "itemKey": "powdered milk",
-      "quantity": 60000,
-      "uom": "g",
-      "unitCost": 0.0034,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-POWDERED-MILK-2026-02",
-      "productionDate": "2025-09-03T00:00:00.000Z",
-      "expirationDate": "2026-09-03T00:00:00.000Z"
-    },
-    {
-      "itemKey": "powdered milk",
-      "quantity": 60000,
-      "uom": "g",
-      "unitCost": 0.0034,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-POWDERED-MILK-2026-03",
-      "productionDate": "2025-07-05T00:00:00.000Z",
-      "expirationDate": "2026-07-05T00:00:00.000Z"
-    },
-    {
-      "itemKey": "pumpkin seeds",
-      "quantity": 2000,
-      "uom": "g",
-      "unitCost": 0.0108,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-PUMPKIN-SEEDS-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-POWDERED-MILK-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0034
     },
     {
       "itemKey": "salt",
-      "quantity": 500,
+      "quantity": 0.815,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-SALT-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-SALT-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "salted egg powder",
-      "quantity": 800,
+      "quantity": 16.75,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-SALTED-EGG-POWDER-2026-01",
-      "productionDate": "2025-10-20T00:00:00.000Z",
-      "expirationDate": "2026-10-20T00:00:00.000Z"
-    },
-    {
-      "itemKey": "salted egg powder",
-      "quantity": 800,
-      "uom": "g",
-      "unitCost": 0.0145,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-SALTED-EGG-POWDER-2026-02",
-      "productionDate": "2025-08-08T00:00:00.000Z",
-      "expirationDate": "2026-08-08T00:00:00.000Z"
-    },
-    {
-      "itemKey": "sample cubes 70 dark chocolate",
-      "quantity": 60,
-      "uom": "piece",
-      "unitCost": 0.42,
-      "locationCode": "FACTORY_FG_STAGE",
-      "lotCode": "LOT-FG-01",
-      "productionDate": "2025-12-20T00:00:00.000Z",
-      "expirationDate": "2026-12-20T00:00:00.000Z"
-    },
-    {
-      "itemKey": "sample cubes 85 dark chocolate",
-      "quantity": 40,
-      "uom": "piece",
-      "unitCost": 0.45,
-      "locationCode": "FACTORY_FG_STAGE",
-      "lotCode": "LOT-FG-02",
-      "productionDate": "2025-12-20T00:00:00.000Z",
-      "expirationDate": "2026-12-20T00:00:00.000Z"
+      "lotCode": "BASE-SALTED-EGG-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "shallots dried",
-      "quantity": 2000,
+      "quantity": 10.165,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-SHALLOTS-DRIED-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
-    },
-    {
-      "itemKey": "shellac",
-      "quantity": 1000,
-      "uom": "g",
-      "unitCost": 0.0084,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-SHELLAC-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
-    },
-    {
-      "itemKey": "shrink film 5 5 inch",
-      "quantity": 1000,
-      "uom": "g",
-      "unitCost": 0.006,
-      "locationCode": "FACTORY_PACK_STORE",
-      "lotCode": "LOT-SHRINK-FILM-5-5-INCH-2026-01",
-      "productionDate": "2023-07-04T00:00:00.000Z",
-      "expirationDate": "2033-07-01T00:00:00.000Z"
-    },
-    {
-      "itemKey": "signature dark 70 20g gold foil",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.025,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "signature dark 85 20g gold foil",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.025,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "silver bag 12 x 9 1kg powders",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.05,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "sleeve anantara 85 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.07,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "sleeve mahabhirom 85 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.07,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "sleeve mahabhirom thai tea 8g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.07,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-SHALLOTS-DRIED-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "star anise powder",
-      "quantity": 500,
+      "quantity": 3.7,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-STAR-ANISE-POWDER-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
-    },
-    {
-      "itemKey": "sticker 70 coated almonds paleo robbie",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "sticker 70 coated cashews paleo robbie",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "sticker banana bites paleo robbie",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "sticker drizzled banana chips paleo robbie",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "sticker hunky monkey trail mix paleo robbie",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "sticker pineapple pops paleo robbie",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "sticker sugar free almonds paleo robbie",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "sticker sugar free cashews paleo robbie",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "stickers cacao hot sauce",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "stickers cacao nibs retail 250g",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "stickers cacao nibs retail 80g",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "stickers cacao powder retail 250g",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "stickers cacao powder retail 80g",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "stickers chocolate dipped orange",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-STAR-ANISE-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "stickers clear",
-      "quantity": 8000,
+      "quantity": 21,
       "uom": "piece",
-      "unitCost": 0.01,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "stickers drinking chocolate retail 250g",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "stickers mango jelly 70g",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "stickers tasting box fda",
-      "quantity": 250,
-      "uom": "piece",
-      "unitCost": 0.015,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-STICKERS-CLEAR-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.01
     },
     {
       "itemKey": "strawberries dried",
-      "quantity": 2000,
+      "quantity": 15.75,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-STRAWBERRIES-DRIED-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-STRAWBERRIES-DRIED-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "strawberries freeze dried",
-      "quantity": 2000,
+      "quantity": 3.15,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-STRAWBERRIES-FREEZE-DRIED-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
+      "lotCode": "BASE-STRAWBERRIES-FREEZE-DRIED-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "sunflower lecithin",
-      "quantity": 1200,
+      "quantity": 12.149,
       "uom": "g",
-      "unitCost": 0.0084,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-SUNFLOWER-LECITHIN-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-SUNFLOWER-LECITHIN-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0108
     },
     {
       "itemKey": "sunflower seeds",
-      "quantity": 2750,
+      "quantity": 31.05,
       "uom": "g",
-      "unitCost": 0.0108,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-SUNFLOWER-SEEDS-2026-01",
-      "productionDate": "2025-11-02T00:00:00.000Z",
-      "expirationDate": "2026-06-30T00:00:00.000Z"
-    },
-    {
-      "itemKey": "taste of thailand box",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "tea coffee box",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-SUNFLOWER-SEEDS-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0108
     },
     {
       "itemKey": "thai tea powder",
-      "quantity": 850,
+      "quantity": 4.45,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-THAI-TEA-POWDER-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
-    },
-    {
-      "itemKey": "tin for mango jelly",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.34,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-THAI-TEA-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "toffee",
-      "quantity": 1450,
+      "quantity": 29.25,
       "uom": "g",
-      "unitCost": 0.0084,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-TOFFEE-2026-01",
-      "productionDate": "2025-10-20T00:00:00.000Z",
-      "expirationDate": "2026-10-20T00:00:00.000Z"
-    },
-    {
-      "itemKey": "toffee",
-      "quantity": 1450,
-      "uom": "g",
-      "unitCost": 0.0084,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-TOFFEE-2026-02",
-      "productionDate": "2025-08-08T00:00:00.000Z",
-      "expirationDate": "2026-08-08T00:00:00.000Z"
+      "lotCode": "BASE-TOFFEE-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0084
     },
     {
       "itemKey": "tom yum powder",
-      "quantity": 700,
+      "quantity": 8.315,
       "uom": "g",
-      "unitCost": 0.0145,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-TOM-YUM-POWDER-2026-01",
-      "productionDate": "2025-10-02T00:00:00.000Z",
-      "expirationDate": "2026-10-02T00:00:00.000Z"
+      "lotCode": "BASE-TOM-YUM-POWDER-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.0145
     },
     {
       "itemKey": "tomato dried",
-      "quantity": 2750,
+      "quantity": 64.315,
       "uom": "g",
-      "unitCost": 0.0098,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-TOMATO-DRIED-2026-01",
-      "productionDate": "2025-11-14T00:00:00.000Z",
-      "expirationDate": "2026-07-12T00:00:00.000Z"
-    },
-    {
-      "itemKey": "tomato dried",
-      "quantity": 2750,
-      "uom": "g",
-      "unitCost": 0.0098,
-      "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-TOMATO-DRIED-2026-02",
-      "productionDate": "2025-09-27T00:00:00.000Z",
-      "expirationDate": "2026-05-25T00:00:00.000Z"
-    },
-    {
-      "itemKey": "tropical fruit box",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "vacuum pack bags",
-      "quantity": 3500,
-      "uom": "piece",
-      "unitCost": 0.04,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-TOMATO-DRIED-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2026-08-29",
+      "unitCost": 0.0098
     },
     {
       "itemKey": "vanilla oil",
-      "quantity": 500,
+      "quantity": 2.6,
       "uom": "g",
-      "unitCost": 0.025,
       "locationCode": "FACTORY_RM_STORE",
-      "lotCode": "LOT-VANILLA-OIL-2026-01",
-      "productionDate": "2025-10-26T00:00:00.000Z",
-      "expirationDate": "2026-07-23T00:00:00.000Z"
-    },
-    {
-      "itemKey": "white cake box",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "white inner box",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.22,
-      "locationCode": "FACTORY_PACK_STORE"
+      "lotCode": "BASE-VANILLA-OIL-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2027-01-01",
+      "unitCost": 0.025
     },
     {
       "itemKey": "wrapper apple pie milk chocolate halloween 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper banana 20g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-APPLE-PIE-MILK-CHOCOLATE-HALLOWEEN-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper banana crunch 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-BANANA-CRUNCH-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper coconut curry 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper coconut milk 20g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-COCONUT-CURRY-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper coconut milk 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper coffee crunch 20g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-COCONUT-MILK-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper coffee crunch 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper durian 20g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-COFFEE-CRUNCH-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper durian 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-DURIAN-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper german chocolate cake 70 dark chocolate christmas 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-GERMAN-CHOCOLATE-CAKE-70-DARK-CHOCOLATE-CHRISTMAS-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper gingerbread cookie milk chocolate christmas 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-GINGERBREAD-COOKIE-MILK-CHOCOLATE-CHRISTMAS-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper hill coffee and pomelo 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-HILL-COFFEE-AND-POMELO-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper khao soi 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-KHAO-SOI-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper mango chili 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-MANGO-CHILI-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper mango jelly popping candy milk chocolate loi kratong 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper masala chai 20g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-MANGO-JELLY-POPPING-CANDY-MILK-CHOCOLATE-LOI-KRATONG-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper masala chai 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-MASALA-CHAI-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper mooncake 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-MOONCAKE-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper peanut curry 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper signature dark 70",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper signature dark 70 20g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-PEANUT-CURRY-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper signature dark 70 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper signature dark 85 20g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-SIGNATURE-DARK-70-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper signature dark 85 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper signature milk 20g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-SIGNATURE-DARK-85-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper signature milk 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-SIGNATURE-MILK-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper simply cacao almonds paleo robbie 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-SIMPLY-CACAO-ALMONDS-PALEO-ROBBIE-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper simply cacao plus milk paleo robbie 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-SIMPLY-CACAO-PLUS-MILK-PALEO-ROBBIE-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper simply cacao vanilla paleo robbie 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-SIMPLY-CACAO-VANILLA-PALEO-ROBBIE-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper smash daddy s banana split 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper thai bullet chili 20g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-SMASH-DADDY-S-BANANA-SPLIT-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper thai bullet chili 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
-    },
-    {
-      "itemKey": "wrapper thai tea 20g",
-      "quantity": 100,
-      "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-THAI-BULLET-CHILI-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper thai tea 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-THAI-TEA-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     },
     {
       "itemKey": "wrapper tom yum 75g",
-      "quantity": 100,
+      "quantity": 7,
       "uom": "piece",
-      "unitCost": 0.03,
-      "locationCode": "FACTORY_PACK_STORE"
+      "locationCode": "FACTORY_PACK_STORE",
+      "lotCode": "BASE-WRAPPER-TOM-YUM-75G-20260101",
+      "productionDate": "2026-01-01",
+      "expirationDate": "2035-12-30",
+      "unitCost": 0.05
     }
   ]
 }

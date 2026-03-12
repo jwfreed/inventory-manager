@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "generatedAt": "2026-03-12T00:00:00.000Z",
   "items": [
     {
       "itemKey": "allspice powder",
@@ -7,32 +7,11 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 5.9882
-    },
-    {
-      "itemKey": "almond powder",
-      "itemName": "Almond Powder",
-      "category": "nuts",
-      "uom": "g",
-      "preferredSupplier": "Golden Orchard Nuts",
-      "leadTimeDays": 14,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 2950,
-      "demandRatePerDay": 122.709
-    },
-    {
-      "itemKey": "almonds",
-      "itemName": "Almonds",
-      "category": "nuts",
-      "uom": "g",
-      "preferredSupplier": "Golden Orchard Nuts",
-      "leadTimeDays": 14,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 2000,
-      "demandRatePerDay": 11.5068
+      "demandRatePerDay": 0.024667,
+      "baseProfileQty": 3.7
     },
     {
       "itemKey": "almonds chopped",
@@ -40,65 +19,35 @@
       "category": "nuts",
       "uom": "g",
       "preferredSupplier": "Golden Orchard Nuts",
-      "leadTimeDays": 14,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 4250,
-      "demandRatePerDay": 175.9192
-    },
-    {
-      "itemKey": "almonds whole",
-      "itemName": "Almonds, Whole",
-      "category": "nuts",
-      "uom": "g",
-      "preferredSupplier": "Golden Orchard Nuts",
-      "leadTimeDays": 14,
+      "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 20.0495
-    },
-    {
-      "itemKey": "bag expandable sides 13 20cm",
-      "itemName": "Bag Expandable Sides (13*20cm)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 1.08
+      "demandRatePerDay": 0.227,
+      "baseProfileQty": 34.05
     },
     {
       "itemKey": "banana chips",
       "itemName": "Banana Chips",
-      "category": "driedFruit",
+      "category": "dried_fruit",
       "uom": "g",
       "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
-      "reorderPoint": 3300,
-      "demandRatePerDay": 126.5057
+      "reorderPoint": 2000,
+      "demandRatePerDay": 0.326267,
+      "baseProfileQty": 48.94
     },
     {
       "itemKey": "banana powder",
       "itemName": "Banana Powder",
-      "category": "driedFruit",
+      "category": "dried_fruit",
       "uom": "g",
       "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 34.1112
-    },
-    {
-      "itemKey": "banana sticks",
-      "itemName": "Banana Sticks",
-      "category": "driedFruit",
-      "uom": "g",
-      "preferredSupplier": "Chiang Mai Fruit Traders",
-      "leadTimeDays": 16,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 2000,
-      "demandRatePerDay": 21.6986
+      "demandRatePerDay": 0.129267,
+      "baseProfileQty": 19.39
     },
     {
       "itemKey": "biscuit",
@@ -109,7 +58,8 @@
       "leadTimeDays": 18,
       "minimumOrderQty": 1000,
       "reorderPoint": 1000,
-      "demandRatePerDay": 11.6039
+      "demandRatePerDay": 0.1065,
+      "baseProfileQty": 15.975
     },
     {
       "itemKey": "cacao beans",
@@ -120,7 +70,8 @@
       "leadTimeDays": 28,
       "minimumOrderQty": 5000,
       "reorderPoint": 5000,
-      "demandRatePerDay": 14.1874
+      "demandRatePerDay": 0.040143,
+      "baseProfileQty": 6.021421
     },
     {
       "itemKey": "cacao butter",
@@ -130,63 +81,9 @@
       "preferredSupplier": "Siam Cacao Partners",
       "leadTimeDays": 28,
       "minimumOrderQty": 5000,
-      "reorderPoint": 39000,
-      "demandRatePerDay": 1013.7011
-    },
-    {
-      "itemKey": "cacao hot sauce 90ml",
-      "itemName": "Cacao Hot Sauce (90ml)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.23
-    },
-    {
-      "itemKey": "cacao powder 666",
-      "itemName": "Cacao Powder 666",
-      "category": "cocoa",
-      "uom": "g",
-      "preferredSupplier": "Siam Cacao Partners",
-      "leadTimeDays": 28,
-      "minimumOrderQty": 5000,
-      "reorderPoint": 13000,
-      "demandRatePerDay": 330.8301
-    },
-    {
-      "itemKey": "cacao powder chocolasia",
-      "itemName": "Cacao Powder Chocolasia",
-      "category": "cocoa",
-      "uom": "g",
-      "preferredSupplier": "Siam Cacao Partners",
-      "leadTimeDays": 28,
-      "minimumOrderQty": 5000,
       "reorderPoint": 5000,
-      "demandRatePerDay": 70.9726
-    },
-    {
-      "itemKey": "cacao powder kd30",
-      "itemName": "Cacao Powder KD30",
-      "category": "cocoa",
-      "uom": "g",
-      "preferredSupplier": "Siam Cacao Partners",
-      "leadTimeDays": 28,
-      "minimumOrderQty": 5000,
-      "reorderPoint": 12000,
-      "demandRatePerDay": 312.4603
-    },
-    {
-      "itemKey": "candied orange",
-      "itemName": "Candied Orange",
-      "category": "driedFruit",
-      "uom": "g",
-      "preferredSupplier": "Chiang Mai Fruit Traders",
-      "leadTimeDays": 16,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 2000,
-      "demandRatePerDay": 6.9041
+      "demandRatePerDay": 3.499751,
+      "baseProfileQty": 524.963
     },
     {
       "itemKey": "cardamom powder",
@@ -194,32 +91,11 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 1.4969
-    },
-    {
-      "itemKey": "cashews",
-      "itemName": "Cashews",
-      "category": "nuts",
-      "uom": "g",
-      "preferredSupplier": "Golden Orchard Nuts",
-      "leadTimeDays": 14,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 2000,
-      "demandRatePerDay": 27.5842
-    },
-    {
-      "itemKey": "chiang mai dark chocolate box",
-      "itemName": "Chiang Mai Dark Chocolate Box",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
+      "demandRatePerDay": 0.006167,
+      "baseProfileQty": 0.925
     },
     {
       "itemKey": "chili powder",
@@ -227,10 +103,11 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 8.4088
+      "demandRatePerDay": 0.042133,
+      "baseProfileQty": 6.32
     },
     {
       "itemKey": "cinnamon powder",
@@ -238,43 +115,11 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
-      "reorderPoint": 1050,
-      "demandRatePerDay": 32.6652
-    },
-    {
-      "itemKey": "clear bag long paleo robbie",
-      "itemName": "Clear Bag - Long - Paleo Robbie",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 1.61
-    },
-    {
-      "itemKey": "clear bag short paleo robbie",
-      "itemName": "Clear Bag - Short - Paleo Robbie",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 1.51
-    },
-    {
-      "itemKey": "clear plastic bag 3 x 6 chocolate dipped orange",
-      "itemName": "Clear Plastic Bag 3\" x 6\" (Chocolate Dipped Orange)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.23
+      "reorderPoint": 500,
+      "demandRatePerDay": 0.1391,
+      "baseProfileQty": 20.865
     },
     {
       "itemKey": "clove oil",
@@ -285,7 +130,8 @@
       "leadTimeDays": 24,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 1.0547
+      "demandRatePerDay": 0.004167,
+      "baseProfileQty": 0.625
     },
     {
       "itemKey": "clove powder",
@@ -293,10 +139,11 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 1.548
+      "demandRatePerDay": 0.005333,
+      "baseProfileQty": 0.8
     },
     {
       "itemKey": "coconut milk powder",
@@ -304,10 +151,11 @@
       "category": "coconut",
       "uom": "g",
       "preferredSupplier": "Andaman Coconut Foods",
-      "leadTimeDays": 18,
+      "leadTimeDays": 21,
       "minimumOrderQty": 5000,
       "reorderPoint": 5000,
-      "demandRatePerDay": 124.4403
+      "demandRatePerDay": 0.438287,
+      "baseProfileQty": 65.743
     },
     {
       "itemKey": "coffee beans",
@@ -315,10 +163,11 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
-      "reorderPoint": 800,
-      "demandRatePerDay": 24.8818
+      "reorderPoint": 500,
+      "demandRatePerDay": 0.0945,
+      "baseProfileQty": 14.175
     },
     {
       "itemKey": "curry powder",
@@ -326,54 +175,59 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 5.2624
+      "demandRatePerDay": 0.0225,
+      "baseProfileQty": 3.375
     },
     {
       "itemKey": "dried apple",
       "itemName": "Dried Apple",
-      "category": "driedFruit",
+      "category": "dried_fruit",
       "uom": "g",
       "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 23.1824
+      "demandRatePerDay": 0.212767,
+      "baseProfileQty": 31.915
     },
     {
       "itemKey": "dried coconut flakes",
       "itemName": "Dried Coconut Flakes",
-      "category": "driedFruit",
-      "uom": "g",
-      "preferredSupplier": "Chiang Mai Fruit Traders",
-      "leadTimeDays": 16,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 4300,
-      "demandRatePerDay": 164.6032
-    },
-    {
-      "itemKey": "durian powder",
-      "itemName": "Durian Powder",
-      "category": "driedFruit",
+      "category": "dried_fruit",
       "uom": "g",
       "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 13.4045
+      "demandRatePerDay": 0.5505,
+      "baseProfileQty": 82.575
+    },
+    {
+      "itemKey": "durian powder",
+      "itemName": "Durian Powder",
+      "category": "dried_fruit",
+      "uom": "g",
+      "preferredSupplier": "Chiang Mai Fruit Traders",
+      "leadTimeDays": 16,
+      "minimumOrderQty": 2000,
+      "reorderPoint": 2000,
+      "demandRatePerDay": 0.061,
+      "baseProfileQty": 9.15
     },
     {
       "itemKey": "flow wrap foil",
       "itemName": "Flow Wrap Foil",
-      "category": "packaging",
+      "category": "process_material",
       "uom": "g",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
+      "preferredSupplier": "Factory Consumables Co.",
+      "leadTimeDays": 12,
       "minimumOrderQty": 1000,
       "reorderPoint": 1000,
-      "demandRatePerDay": 34.1014
+      "demandRatePerDay": 2.5,
+      "baseProfileQty": 375
     },
     {
       "itemKey": "galangal oil",
@@ -384,7 +238,20 @@
       "leadTimeDays": 24,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 2.0017
+      "demandRatePerDay": 0.007233,
+      "baseProfileQty": 1.085
+    },
+    {
+      "itemKey": "ginger dried",
+      "itemName": "Ginger, Dried",
+      "category": "dried_fruit",
+      "uom": "g",
+      "preferredSupplier": "Chiang Mai Fruit Traders",
+      "leadTimeDays": 16,
+      "minimumOrderQty": 2000,
+      "reorderPoint": 2000,
+      "demandRatePerDay": 0.2065,
+      "baseProfileQty": 30.975
     },
     {
       "itemKey": "ginger oil",
@@ -395,7 +262,8 @@
       "leadTimeDays": 24,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 2.969
+      "demandRatePerDay": 0.012233,
+      "baseProfileQty": 1.835
     },
     {
       "itemKey": "ginger powder",
@@ -403,153 +271,23 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 7.5478
-    },
-    {
-      "itemKey": "ginger dried",
-      "itemName": "Ginger, Dried",
-      "category": "driedFruit",
-      "uom": "g",
-      "preferredSupplier": "Chiang Mai Fruit Traders",
-      "leadTimeDays": 16,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 2000,
-      "demandRatePerDay": 54.4481
+      "demandRatePerDay": 0.026,
+      "baseProfileQty": 3.9
     },
     {
       "itemKey": "gingerbread cookie",
       "itemName": "Gingerbread Cookie",
-      "category": "inclusions",
+      "category": "spices",
       "uom": "g",
-      "preferredSupplier": "Specialty Inclusion Works",
+      "preferredSupplier": "Lanna Spice Collective",
       "leadTimeDays": 18,
-      "minimumOrderQty": 1000,
-      "reorderPoint": 1850,
-      "demandRatePerDay": 64.8323
-    },
-    {
-      "itemKey": "gold paper 8g",
-      "itemName": "Gold Paper - 8g",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 1.78
-    },
-    {
-      "itemKey": "gold paper small bar",
-      "itemName": "Gold Paper - Small Bar",
-      "category": "packaging",
-      "uom": "g",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 1000,
-      "reorderPoint": 1000,
-      "demandRatePerDay": 8.2767
-    },
-    {
-      "itemKey": "individual box 70 dark chocolate 8g",
-      "itemName": "Individual Box - 70% Dark Chocolate (8g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "individual box 85 dark chocolate 8g",
-      "itemName": "Individual Box - 85% Dark Chocolate (8g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "individual box coconut milk 65 dark chocolate 8g",
-      "itemName": "Individual Box - Coconut Milk 65% Dark Chocolate (8g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "individual box coffee crunch milk chocolate 8g",
-      "itemName": "Individual Box - Coffee Crunch Milk Chocolate (8g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "individual box durian milk chocolate 8g",
-      "itemName": "Individual Box - Durian Milk Chocolate (8g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "individual box masala chai milk chocolate 8g",
-      "itemName": "Individual Box - Masala Chai Milk Chocolate (8g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "individual box signature milk chocolate 8g",
-      "itemName": "Individual Box - Signature Milk Chocolate (8g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "individual box thai bullet chili dark chocolate 8g",
-      "itemName": "Individual Box - Thai Bullet Chili Dark Chocolate (8g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "individual box thai tea milk chocolate 8g",
-      "itemName": "Individual Box - Thai Tea Milk Chocolate (8g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
+      "minimumOrderQty": 500,
+      "reorderPoint": 500,
+      "demandRatePerDay": 0.223333,
+      "baseProfileQty": 33.5
     },
     {
       "itemKey": "kaffir lime oil",
@@ -560,7 +298,8 @@
       "leadTimeDays": 24,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 1.1551
+      "demandRatePerDay": 0.004367,
+      "baseProfileQty": 0.655
     },
     {
       "itemKey": "khao soi crispy noodles",
@@ -571,7 +310,8 @@
       "leadTimeDays": 18,
       "minimumOrderQty": 1000,
       "reorderPoint": 1000,
-      "demandRatePerDay": 33.8163
+      "demandRatePerDay": 0.158,
+      "baseProfileQty": 23.7
     },
     {
       "itemKey": "lemongrass oil",
@@ -582,7 +322,8 @@
       "leadTimeDays": 24,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 2.5764
+      "demandRatePerDay": 0.0095,
+      "baseProfileQty": 1.425
     },
     {
       "itemKey": "lotus seed",
@@ -593,29 +334,32 @@
       "leadTimeDays": 18,
       "minimumOrderQty": 1000,
       "reorderPoint": 1000,
-      "demandRatePerDay": 29.4429
-    },
-    {
-      "itemKey": "mango jelly",
-      "itemName": "Mango Jelly",
-      "category": "driedFruit",
-      "uom": "g",
-      "preferredSupplier": "Chiang Mai Fruit Traders",
-      "leadTimeDays": 16,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 3050,
-      "demandRatePerDay": 115.7039
+      "demandRatePerDay": 0.111667,
+      "baseProfileQty": 16.75
     },
     {
       "itemKey": "mango dried",
       "itemName": "Mango, Dried",
-      "category": "driedFruit",
+      "category": "dried_fruit",
       "uom": "g",
       "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 76.3864
+      "demandRatePerDay": 0.3245,
+      "baseProfileQty": 48.675
+    },
+    {
+      "itemKey": "mango jelly",
+      "itemName": "Mango Jelly",
+      "category": "dried_fruit",
+      "uom": "g",
+      "preferredSupplier": "Chiang Mai Fruit Traders",
+      "leadTimeDays": 16,
+      "minimumOrderQty": 2000,
+      "reorderPoint": 2000,
+      "demandRatePerDay": 0.3745,
+      "baseProfileQty": 56.175
     },
     {
       "itemKey": "organic cane sugar",
@@ -625,41 +369,9 @@
       "preferredSupplier": "Organic Cane Sugar Co-op",
       "leadTimeDays": 14,
       "minimumOrderQty": 10000,
-      "reorderPoint": 116500,
-      "demandRatePerDay": 4853.4097
-    },
-    {
-      "itemKey": "outer packing for tasting box",
-      "itemName": "Outer Packing for Tasting Box",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "paper bag w window 4 75 x 8",
-      "itemName": "Paper Bag w/ Window 4.75\" x 8\"",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.53
-    },
-    {
-      "itemKey": "paper baking cups",
-      "itemName": "Paper Baking Cups",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 2.3
+      "reorderPoint": 10000,
+      "demandRatePerDay": 15.545607,
+      "baseProfileQty": 2331.841
     },
     {
       "itemKey": "peanuts",
@@ -667,10 +379,11 @@
       "category": "nuts",
       "uom": "g",
       "preferredSupplier": "Golden Orchard Nuts",
-      "leadTimeDays": 14,
+      "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 76.921
+      "demandRatePerDay": 0.3115,
+      "baseProfileQty": 46.725
     },
     {
       "itemKey": "pecans",
@@ -678,21 +391,11 @@
       "category": "nuts",
       "uom": "g",
       "preferredSupplier": "Golden Orchard Nuts",
-      "leadTimeDays": 14,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 2000,
-      "demandRatePerDay": 56.4485
-    },
-    {
-      "itemKey": "pineapple dried",
-      "itemName": "Pineapple, Dried",
-      "category": "driedFruit",
-      "uom": "g",
-      "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 29.9178
+      "demandRatePerDay": 0.195,
+      "baseProfileQty": 29.25
     },
     {
       "itemKey": "pink salt",
@@ -700,32 +403,23 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 0.6137
-    },
-    {
-      "itemKey": "plum powder",
-      "itemName": "Plum Powder",
-      "category": "spices",
-      "uom": "g",
-      "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
-      "minimumOrderQty": 500,
-      "reorderPoint": 500,
-      "demandRatePerDay": 2.3014
+      "demandRatePerDay": 0.002267,
+      "baseProfileQty": 0.34
     },
     {
       "itemKey": "pomelo dried",
       "itemName": "Pomelo, Dried",
-      "category": "driedFruit",
+      "category": "dried_fruit",
       "uom": "g",
       "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 48.1562
+      "demandRatePerDay": 0.225,
+      "baseProfileQty": 33.75
     },
     {
       "itemKey": "popping candy",
@@ -735,8 +429,9 @@
       "preferredSupplier": "Specialty Inclusion Works",
       "leadTimeDays": 18,
       "minimumOrderQty": 1000,
-      "reorderPoint": 2050,
-      "demandRatePerDay": 72.2087
+      "reorderPoint": 1000,
+      "demandRatePerDay": 0.252767,
+      "baseProfileQty": 37.915
     },
     {
       "itemKey": "powdered milk",
@@ -746,19 +441,9 @@
       "preferredSupplier": "Northern Dairy Ingredients",
       "leadTimeDays": 21,
       "minimumOrderQty": 5000,
-      "reorderPoint": 47000,
-      "demandRatePerDay": 1508.0825
-    },
-    {
-      "itemKey": "pumpkin seeds",
-      "itemName": "Pumpkin Seeds",
-      "category": "nuts",
-      "uom": "g",
-      "preferredSupplier": "Golden Orchard Nuts",
-      "leadTimeDays": 14,
-      "minimumOrderQty": 2000,
-      "reorderPoint": 2000,
-      "demandRatePerDay": 4.6027
+      "reorderPoint": 5000,
+      "demandRatePerDay": 5.13738,
+      "baseProfileQty": 770.607
     },
     {
       "itemKey": "salt",
@@ -766,10 +451,11 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 5.2368
+      "demandRatePerDay": 0.005433,
+      "baseProfileQty": 0.815
     },
     {
       "itemKey": "salted egg powder",
@@ -777,109 +463,23 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
-      "reorderPoint": 950,
-      "demandRatePerDay": 29.4429
+      "reorderPoint": 500,
+      "demandRatePerDay": 0.111667,
+      "baseProfileQty": 16.75
     },
     {
       "itemKey": "shallots dried",
       "itemName": "Shallots, Dried",
-      "category": "driedFruit",
+      "category": "dried_fruit",
       "uom": "g",
       "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 14.5006
-    },
-    {
-      "itemKey": "shellac",
-      "itemName": "Shellac",
-      "category": "inclusions",
-      "uom": "g",
-      "preferredSupplier": "Specialty Inclusion Works",
-      "leadTimeDays": 18,
-      "minimumOrderQty": 1000,
-      "reorderPoint": 1000,
-      "demandRatePerDay": 0.1644
-    },
-    {
-      "itemKey": "shrink film 5 5 inch",
-      "itemName": "Shrink film (5.5 inch)",
-      "category": "packaging",
-      "uom": "g",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 1000,
-      "reorderPoint": 1000,
-      "demandRatePerDay": 0.4192
-    },
-    {
-      "itemKey": "signature dark 70 20g gold foil",
-      "itemName": "Signature Dark 70% (20g) - GOLD FOIL",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 1.16
-    },
-    {
-      "itemKey": "signature dark 85 20g gold foil",
-      "itemName": "Signature Dark 85% (20g) - GOLD FOIL",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "silver bag 12 x 9 1kg powders",
-      "itemName": "Silver Bag 12\" x 9\" - 1kg powders",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 1.2
-    },
-    {
-      "itemKey": "sleeve anantara 85 8g",
-      "itemName": "Sleeve - Anantara 85% 8g",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.66
-    },
-    {
-      "itemKey": "sleeve mahabhirom 85 8g",
-      "itemName": "Sleeve - Mahabhirom 85% 8g",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.53
-    },
-    {
-      "itemKey": "sleeve mahabhirom thai tea 8g",
-      "itemName": "Sleeve - Mahabhirom Thai Tea 8g",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.59
+      "demandRatePerDay": 0.067767,
+      "baseProfileQty": 10.165
     },
     {
       "itemKey": "star anise powder",
@@ -887,164 +487,11 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 5.9882
-    },
-    {
-      "itemKey": "sticker 70 coated almonds paleo robbie",
-      "itemName": "Sticker - 70% Coated Almonds - Paleo Robbie",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.33
-    },
-    {
-      "itemKey": "sticker 70 coated cashews paleo robbie",
-      "itemName": "Sticker - 70% Coated Cashews - Paleo Robbie",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.33
-    },
-    {
-      "itemKey": "sticker banana bites paleo robbie",
-      "itemName": "Sticker - Banana Bites - Paleo Robbie",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.36
-    },
-    {
-      "itemKey": "sticker drizzled banana chips paleo robbie",
-      "itemName": "Sticker - Drizzled Banana Chips - Paleo Robbie",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.33
-    },
-    {
-      "itemKey": "sticker hunky monkey trail mix paleo robbie",
-      "itemName": "Sticker - Hunky Monkey Trail Mix - Paleo Robbie",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.46
-    },
-    {
-      "itemKey": "sticker pineapple pops paleo robbie",
-      "itemName": "Sticker - Pineapple Pops - Paleo Robbie",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.46
-    },
-    {
-      "itemKey": "sticker sugar free almonds paleo robbie",
-      "itemName": "Sticker - Sugar Free Almonds - Paleo Robbie",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.46
-    },
-    {
-      "itemKey": "sticker sugar free cashews paleo robbie",
-      "itemName": "Sticker - Sugar Free Cashews - Paleo Robbie",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.39
-    },
-    {
-      "itemKey": "stickers cacao hot sauce",
-      "itemName": "Stickers - Cacao Hot Sauce",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.23
-    },
-    {
-      "itemKey": "stickers cacao nibs retail 250g",
-      "itemName": "Stickers - Cacao Nibs - Retail (250g)",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.66
-    },
-    {
-      "itemKey": "stickers cacao nibs retail 80g",
-      "itemName": "Stickers - Cacao Nibs - Retail (80g)",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.3
-    },
-    {
-      "itemKey": "stickers cacao powder retail 250g",
-      "itemName": "Stickers - Cacao Powder - Retail (250g)",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.53
-    },
-    {
-      "itemKey": "stickers cacao powder retail 80g",
-      "itemName": "Stickers - Cacao Powder - Retail (80g)",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.23
-    },
-    {
-      "itemKey": "stickers chocolate dipped orange",
-      "itemName": "Stickers - Chocolate Dipped Orange",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.23
+      "demandRatePerDay": 0.024667,
+      "baseProfileQty": 3.7
     },
     {
       "itemKey": "stickers clear",
@@ -1055,73 +502,44 @@
       "leadTimeDays": 10,
       "minimumOrderQty": 250,
       "reorderPoint": 250,
-      "demandRatePerDay": 4.31
-    },
-    {
-      "itemKey": "stickers drinking chocolate retail 250g",
-      "itemName": "Stickers - Drinking Chocolate - Retail (250g)",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.99
-    },
-    {
-      "itemKey": "stickers mango jelly 70g",
-      "itemName": "Stickers - Mango Jelly (70g)",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.33
-    },
-    {
-      "itemKey": "stickers tasting box fda",
-      "itemName": "Stickers - Tasting Box FDA",
-      "category": "labels",
-      "uom": "piece",
-      "preferredSupplier": "Nimman Print & Label",
-      "leadTimeDays": 10,
-      "minimumOrderQty": 250,
-      "reorderPoint": 250,
-      "demandRatePerDay": 0.42
+      "demandRatePerDay": 0.1,
+      "baseProfileQty": 21
     },
     {
       "itemKey": "strawberries dried",
       "itemName": "Strawberries, Dried",
-      "category": "driedFruit",
+      "category": "dried_fruit",
       "uom": "g",
       "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 22.4729
+      "demandRatePerDay": 0.105,
+      "baseProfileQty": 15.75
     },
     {
       "itemKey": "strawberries freeze dried",
       "itemName": "Strawberries, Freeze Dried",
-      "category": "driedFruit",
+      "category": "dried_fruit",
       "uom": "g",
       "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 4.4946
+      "demandRatePerDay": 0.021,
+      "baseProfileQty": 3.15
     },
     {
       "itemKey": "sunflower lecithin",
       "itemName": "Sunflower Lecithin",
-      "category": "inclusions",
+      "category": "nuts",
       "uom": "g",
-      "preferredSupplier": "Specialty Inclusion Works",
-      "leadTimeDays": 18,
-      "minimumOrderQty": 1000,
-      "reorderPoint": 1000,
-      "demandRatePerDay": 22.8996
+      "preferredSupplier": "Golden Orchard Nuts",
+      "leadTimeDays": 16,
+      "minimumOrderQty": 2000,
+      "reorderPoint": 2000,
+      "demandRatePerDay": 0.080987,
+      "baseProfileQty": 12.149
     },
     {
       "itemKey": "sunflower seeds",
@@ -1129,32 +547,11 @@
       "category": "nuts",
       "uom": "g",
       "preferredSupplier": "Golden Orchard Nuts",
-      "leadTimeDays": 14,
+      "leadTimeDays": 16,
       "minimumOrderQty": 2000,
       "reorderPoint": 2000,
-      "demandRatePerDay": 54.5787
-    },
-    {
-      "itemKey": "taste of thailand box",
-      "itemName": "Taste of Thailand Box",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.37
-    },
-    {
-      "itemKey": "tea coffee box",
-      "itemName": "Tea & Coffee Box",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.35
+      "demandRatePerDay": 0.207,
+      "baseProfileQty": 31.05
     },
     {
       "itemKey": "thai tea powder",
@@ -1162,21 +559,11 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 15.7713
-    },
-    {
-      "itemKey": "tin for mango jelly",
-      "itemName": "Tin for Mango Jelly",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.16
+      "demandRatePerDay": 0.029667,
+      "baseProfileQty": 4.45
     },
     {
       "itemKey": "toffee",
@@ -1186,8 +573,9 @@
       "preferredSupplier": "Specialty Inclusion Works",
       "leadTimeDays": 18,
       "minimumOrderQty": 1000,
-      "reorderPoint": 1600,
-      "demandRatePerDay": 56.4485
+      "reorderPoint": 1000,
+      "demandRatePerDay": 0.195,
+      "baseProfileQty": 29.25
     },
     {
       "itemKey": "tom yum powder",
@@ -1195,43 +583,23 @@
       "category": "spices",
       "uom": "g",
       "preferredSupplier": "Lanna Spice Collective",
-      "leadTimeDays": 21,
+      "leadTimeDays": 18,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 13.0498
+      "demandRatePerDay": 0.055433,
+      "baseProfileQty": 8.315
     },
     {
       "itemKey": "tomato dried",
       "itemName": "Tomato, Dried",
-      "category": "driedFruit",
+      "category": "dried_fruit",
       "uom": "g",
       "preferredSupplier": "Chiang Mai Fruit Traders",
       "leadTimeDays": 16,
       "minimumOrderQty": 2000,
-      "reorderPoint": 2950,
-      "demandRatePerDay": 113.3127
-    },
-    {
-      "itemKey": "tropical fruit box",
-      "itemName": "Tropical Fruit Box",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "vacuum pack bags",
-      "itemName": "Vacuum Pack Bags",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 3.29
+      "reorderPoint": 2000,
+      "demandRatePerDay": 0.428767,
+      "baseProfileQty": 64.315
     },
     {
       "itemKey": "vanilla oil",
@@ -1242,29 +610,8 @@
       "leadTimeDays": 24,
       "minimumOrderQty": 500,
       "reorderPoint": 500,
-      "demandRatePerDay": 4.2066
-    },
-    {
-      "itemKey": "white cake box",
-      "itemName": "White Cake Box",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.23
-    },
-    {
-      "itemKey": "white inner box",
-      "itemName": "White Inner Box",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 1.56
+      "demandRatePerDay": 0.017333,
+      "baseProfileQty": 2.6
     },
     {
       "itemKey": "wrapper apple pie milk chocolate halloween 75g",
@@ -1275,18 +622,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.27
-    },
-    {
-      "itemKey": "wrapper banana 20g",
-      "itemName": "Wrapper - Banana (20g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.95
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper banana crunch 75g",
@@ -1297,7 +634,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.53
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper coconut curry 75g",
@@ -1308,18 +646,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.53
-    },
-    {
-      "itemKey": "wrapper coconut milk 20g",
-      "itemName": "Wrapper - Coconut Milk (20g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 1.27
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper coconut milk 75g",
@@ -1330,18 +658,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.46
-    },
-    {
-      "itemKey": "wrapper coffee crunch 20g",
-      "itemName": "Wrapper - Coffee Crunch (20g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.85
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper coffee crunch 75g",
@@ -1352,18 +670,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.53
-    },
-    {
-      "itemKey": "wrapper durian 20g",
-      "itemName": "Wrapper - Durian (20g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.95
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper durian 75g",
@@ -1374,7 +682,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.56
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper german chocolate cake 70 dark chocolate christmas 75g",
@@ -1385,7 +694,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.33
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper gingerbread cookie milk chocolate christmas 75g",
@@ -1396,7 +706,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.36
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper hill coffee and pomelo 75g",
@@ -1407,7 +718,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.56
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper khao soi 75g",
@@ -1418,7 +730,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.56
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper mango chili 75g",
@@ -1429,7 +742,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.39
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper mango jelly popping candy milk chocolate loi kratong 75g",
@@ -1440,18 +754,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.21
-    },
-    {
-      "itemKey": "wrapper masala chai 20g",
-      "itemName": "Wrapper - Masala Chai (20g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.72
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper masala chai 75g",
@@ -1462,7 +766,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.39
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper mooncake 75g",
@@ -1473,7 +778,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.46
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper peanut curry 75g",
@@ -1484,29 +790,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.46
-    },
-    {
-      "itemKey": "wrapper signature dark 70",
-      "itemName": "Wrapper - Signature Dark 70%",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.42
-    },
-    {
-      "itemKey": "wrapper signature dark 70 20g",
-      "itemName": "Wrapper - Signature Dark 70% (20g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.53
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper signature dark 70 75g",
@@ -1517,18 +802,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.56
-    },
-    {
-      "itemKey": "wrapper signature dark 85 20g",
-      "itemName": "Wrapper - Signature Dark 85% (20g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.95
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper signature dark 85 75g",
@@ -1539,18 +814,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.56
-    },
-    {
-      "itemKey": "wrapper signature milk 20g",
-      "itemName": "Wrapper - Signature Milk (20g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.49
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper signature milk 75g",
@@ -1561,7 +826,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.53
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper simply cacao almonds paleo robbie 75g",
@@ -1572,7 +838,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.36
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper simply cacao plus milk paleo robbie 75g",
@@ -1583,7 +850,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.46
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper simply cacao vanilla paleo robbie 75g",
@@ -1594,7 +862,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.36
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper smash daddy s banana split 75g",
@@ -1605,18 +874,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.56
-    },
-    {
-      "itemKey": "wrapper thai bullet chili 20g",
-      "itemName": "Wrapper - Thai Bullet Chili (20g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 0.86
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper thai bullet chili 75g",
@@ -1627,18 +886,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.53
-    },
-    {
-      "itemKey": "wrapper thai tea 20g",
-      "itemName": "Wrapper - Thai Tea (20g)",
-      "category": "packaging",
-      "uom": "piece",
-      "preferredSupplier": "Chiang Mai Packaging Works",
-      "leadTimeDays": 15,
-      "minimumOrderQty": 100,
-      "reorderPoint": 100,
-      "demandRatePerDay": 1.15
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper thai tea 75g",
@@ -1649,7 +898,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.46
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     },
     {
       "itemKey": "wrapper tom yum 75g",
@@ -1660,7 +910,8 @@
       "leadTimeDays": 15,
       "minimumOrderQty": 100,
       "reorderPoint": 100,
-      "demandRatePerDay": 0.39
+      "demandRatePerDay": 0.033,
+      "baseProfileQty": 7
     }
   ]
 }

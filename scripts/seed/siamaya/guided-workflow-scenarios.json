@@ -1,284 +1,250 @@
 {
-  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "generatedAt": "2026-03-12T00:00:00.000Z",
   "tasks": [
     {
-      "taskId": "WF-001",
-      "description": "Receive cacao beans into RM stock",
+      "taskId": "WF-75G-001",
+      "description": "Receive cacao beans for the 75 g focused factory scope.",
       "expectedActions": [
-        "Verify lot code",
-        "Record received quantity",
-        "Confirm expiry"
+        "Create inbound receipt",
+        "Put away to FACTORY_RM_STORE",
+        "Assign deterministic lot"
       ],
       "itemsInvolved": [
         "Cacao Beans"
       ],
       "successCriteria": [
-        "Stock appears in AVAILABLE state",
-        "Lot metadata is complete"
+        "On-hand exists in FACTORY_RM_STORE",
+        "Lot is linked",
+        "UOM remains kg or g"
       ]
     },
     {
-      "taskId": "WF-002",
-      "description": "Receive packaging wrappers into packaging store",
+      "taskId": "WF-75G-002",
+      "description": "Roast and winnow cacao beans into Cacao Nibs - Raw Material.",
       "expectedActions": [
-        "Check wrapper artwork",
-        "Post packaging receipt"
-      ],
-      "itemsInvolved": [
-        "Wrapper - Banana Crunch (75g)"
-      ],
-      "successCriteria": [
-        "Packaging is stored as AVAILABLE",
-        "Packaging quantity increases"
-      ]
-    },
-    {
-      "taskId": "WF-003",
-      "description": "Release work order for couverture production",
-      "expectedActions": [
-        "Open work order",
-        "Confirm BOM version",
-        "Release order"
-      ],
-      "itemsInvolved": [
-        "Couverture 70% Dark Chocolate (1kg)"
-      ],
-      "successCriteria": [
-        "Work order status changes to RELEASED",
-        "Requirements are visible"
-      ]
-    },
-    {
-      "taskId": "WF-004",
-      "description": "Allocate cacao beans to tasting-box demand",
-      "expectedActions": [
-        "Reserve stock",
-        "Allocate to work order"
+        "Create work order",
+        "Issue Cacao Beans",
+        "Report production for Cacao Nibs - Raw Material"
       ],
       "itemsInvolved": [
         "Cacao Beans",
-        "Tasting Box"
-      ],
-      "successCriteria": [
-        "Inventory state shows ALLOCATED",
-        "Allocation references the work order"
-      ]
-    },
-    {
-      "taskId": "WF-005",
-      "description": "Roast cacao beans",
-      "expectedActions": [
-        "Move beans into ROASTER queue",
-        "Confirm batch start"
-      ],
-      "itemsInvolved": [
-        "Cacao Beans"
-      ],
-      "successCriteria": [
-        "Roaster capacity is consumed",
-        "Issued material is traceable"
-      ]
-    },
-    {
-      "taskId": "WF-006",
-      "description": "Winnow roasted beans into nibs",
-      "expectedActions": [
-        "Create nib output batch",
-        "Post shell separation"
-      ],
-      "itemsInvolved": [
         "Cacao Nibs - Raw Material"
       ],
       "successCriteria": [
-        "Nib inventory becomes ISSUED or WIP",
-        "Yield is reasonable"
+        "Cacao nib inventory increases",
+        "Bean inventory decreases",
+        "Work order posts cleanly"
       ]
     },
     {
-      "taskId": "WF-007",
-      "description": "Create 70% dark base in prerefiner",
+      "taskId": "WF-75G-003",
+      "description": "Produce Base - 70% Dark Chocolate from cacao nibs, sugar, and cacao butter.",
       "expectedActions": [
-        "Issue nibs, butter, sugar",
-        "Post base output"
+        "Open work order",
+        "Issue raw ingredients",
+        "Report finished base"
       ],
       "itemsInvolved": [
         "Cacao Nibs - Raw Material",
-        "Cacao Butter",
         "Organic Cane Sugar",
+        "Cacao Butter",
         "Base - 70% Dark Chocolate"
       ],
       "successCriteria": [
-        "Base appears in WIP",
-        "Consumption matches BOM"
+        "Base stock is received to production location",
+        "All issue lines use mass UOMs"
       ]
     },
     {
-      "taskId": "WF-008",
-      "description": "Grind and refine milk-chocolate family batches",
+      "taskId": "WF-75G-004",
+      "description": "Produce Base - Milk Chocolate for the retained 75 g milk variants.",
       "expectedActions": [
-        "Load grinder",
-        "Observe route timing"
+        "Issue cacao nibs, sugar, butter, powdered milk",
+        "Report production"
       ],
       "itemsInvolved": [
-        "Base - Milk Chocolate"
+        "Base - Milk Chocolate",
+        "Powdered Milk"
       ],
       "successCriteria": [
-        "Grinder capacity decreases",
-        "WIP remains positive"
+        "Base - Milk Chocolate on-hand increases",
+        "Inputs remain traceable"
       ]
     },
     {
-      "taskId": "WF-009",
-      "description": "Temper couverture batch",
+      "taskId": "WF-75G-005",
+      "description": "Produce Base - Coconut Milk Chocolate for dark coconut variants.",
       "expectedActions": [
-        "Transfer base to temperer",
-        "Post tempered output"
+        "Issue cacao nibs, sugar, butter, coconut milk powder",
+        "Report production"
       ],
       "itemsInvolved": [
-        "Base - 70% Dark Chocolate",
-        "Couverture 70% Dark Chocolate (1kg)"
+        "Base - Coconut Milk Chocolate",
+        "Coconut Milk Powder"
       ],
       "successCriteria": [
-        "Tempering route completes",
-        "Finished quantity increases"
+        "Coconut base is available for downstream bars"
       ]
     },
     {
-      "taskId": "WF-010",
-      "description": "Produce Banana Crunch flow-wrap intermediates",
+      "taskId": "WF-75G-006",
+      "description": "Produce Base - Pomelo for the Hill Coffee and Pomelo 75 g bar.",
       "expectedActions": [
-        "Issue ingredients",
-        "Create wrapped intermediate"
+        "Issue cacao nibs, sugar, coffee beans",
+        "Report production"
       ],
       "itemsInvolved": [
-        "Banana Crunch Milk Chocolate (75g) - FLOW WRAP"
+        "Base - Pomelo",
+        "Coffee Beans"
       ],
       "successCriteria": [
-        "Intermediate appears in WIP",
-        "No ingredient shortages occur"
+        "Base - Pomelo is created exactly once"
       ]
     },
     {
-      "taskId": "WF-011",
-      "description": "Apply final Banana Crunch wrapper",
+      "taskId": "WF-75G-007",
+      "description": "Produce Base - Sugar Free for the Paleo Robbie 75 g bars.",
       "expectedActions": [
-        "Consume wrapper stock",
-        "Complete final SKU"
+        "Issue cacao nibs and powdered milk",
+        "Report sugar-free base"
       ],
       "itemsInvolved": [
-        "Wrapper - Banana Crunch (75g)",
-        "Banana Crunch Milk Chocolate (75g)"
+        "Base - Sugar Free",
+        "Powdered Milk"
       ],
       "successCriteria": [
-        "Wrapper inventory decreases",
-        "Finished SKU is produced"
+        "No cane sugar is consumed",
+        "Sugar-free base is stocked by weight"
       ]
     },
     {
-      "taskId": "WF-012",
-      "description": "Assemble tasting box set",
+      "taskId": "WF-75G-008",
+      "description": "Temper Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP as a discrete intermediate.",
       "expectedActions": [
-        "Pick component bars",
-        "Pack outer box",
-        "Apply FDA sticker"
+        "Create tempering work order",
+        "Issue base chocolate and foil",
+        "Report one-piece output"
       ],
       "itemsInvolved": [
-        "Tasting Box"
+        "Apple Pie Milk Chocolate - Halloween (75g)",
+        "Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP",
+        "Flow Wrap Foil"
       ],
       "successCriteria": [
-        "Packaging state changes to FINISHED or QC_HOLD",
-        "Box count is correct"
+        "Intermediate output UOM is piece",
+        "Base chocolate issue remains in g"
       ]
     },
     {
-      "taskId": "WF-013",
-      "description": "Move tasting boxes into QC hold",
+      "taskId": "WF-75G-009",
+      "description": "Wrap Durian Milk Chocolate (75g) into sellable finished goods.",
       "expectedActions": [
-        "Transfer to QA location",
-        "Record hold reason"
+        "Issue flow-wrap intermediate",
+        "Issue printed wrapper",
+        "Report wrapped bar"
       ],
       "itemsInvolved": [
-        "Tasting Box"
+        "Durian Milk Chocolate (75g)",
+        "Durian Milk Chocolate (75g) - FLOW WRAP"
       ],
       "successCriteria": [
-        "Inventory state becomes QC_HOLD",
-        "Quantity matches transfer"
+        "Finished bar is stocked as piece",
+        "Wrapper consumption is one piece"
       ]
     },
     {
-      "taskId": "WF-014",
-      "description": "Release QC-approved tasting boxes",
+      "taskId": "WF-75G-010",
+      "description": "Verify piece-count inventory for Masala Chai Milk Chocolate (75g).",
       "expectedActions": [
-        "Approve QC batch",
-        "Move to FG stage"
+        "Open item detail",
+        "Review on-hand by location",
+        "Confirm count-based UOM"
       ],
       "itemsInvolved": [
-        "Tasting Box"
+        "Masala Chai Milk Chocolate (75g)"
       ],
       "successCriteria": [
-        "FG quantity increases",
-        "QC_HOLD quantity decreases"
+        "Finished item UOM is piece only",
+        "No weight-based stockkeeping is shown"
       ]
     },
     {
-      "taskId": "WF-015",
-      "description": "Pack cacao nib retail bags",
+      "taskId": "WF-75G-011",
+      "description": "Pick Simply Cacao Plus Milk - Paleo Robbie (75g) for an outbound order.",
       "expectedActions": [
-        "Issue bags and stickers",
-        "Produce retail packs"
+        "Create allocation",
+        "Pick from SELLABLE",
+        "Confirm quantity in pieces"
       ],
       "itemsInvolved": [
-        "Cacao Nibs 250g"
+        "Simply Cacao Plus Milk - Paleo Robbie (75g)"
       ],
       "successCriteria": [
-        "Packaging components are consumed",
-        "Retail pack output is posted"
+        "Picked quantity is counted by piece",
+        "ATP decreases correctly"
       ]
     },
     {
-      "taskId": "WF-016",
-      "description": "Review procurement reorder points",
+      "taskId": "WF-75G-012",
+      "description": "Pack and ship Tom Yum Dark Chocolate (75g) to a customer.",
       "expectedActions": [
-        "Open procurement metadata",
-        "Find low-cover items"
+        "Create shipment",
+        "Pack bars",
+        "Post shipment"
       ],
       "itemsInvolved": [
-        "Sunflower Lecithin",
-        "Gold Paper - Small Bar"
+        "Tom Yum Dark Chocolate (75g)"
       ],
       "successCriteria": [
-        "Lead time and reorder point are visible",
-        "Tester can explain reorder rationale"
+        "Inventory decreases from SELLABLE",
+        "Shipment closes successfully"
       ]
     },
     {
-      "taskId": "WF-017",
-      "description": "Inspect stress-simulation bottlenecks",
+      "taskId": "WF-75G-013",
+      "description": "Inspect minimal-stock shortage behavior after one full unit of every retained 75 g SKU is planned.",
       "expectedActions": [
-        "Open stress report",
-        "Review stockouts and throughput"
+        "Load minimal profile",
+        "Plan one run per 75 g SKU",
+        "Review remaining bottlenecks"
       ],
       "itemsInvolved": [
-        "Stress simulation report"
+        "Minimal stock profile"
       ],
       "successCriteria": [
-        "Tester can identify top bottleneck item and work center"
+        "Every retained 75 g SKU is manufacturable exactly once",
+        "No unrelated leaf materials are stocked"
       ]
     },
     {
-      "taskId": "WF-018",
-      "description": "Ship finished couverture and sample cubes",
+      "taskId": "WF-75G-014",
+      "description": "Inspect base-stock normal production behavior across repeated 75 g runs.",
       "expectedActions": [
-        "Pick finished goods",
-        "Confirm shipment"
+        "Load base profile",
+        "Plan five runs per retained SKU",
+        "Review raw and packaging sufficiency"
       ],
       "itemsInvolved": [
-        "Couverture 70% Dark Chocolate (1kg)",
-        "Sample Cubes - 70% Dark Chocolate"
+        "Base stock profile"
       ],
       "successCriteria": [
-        "Finished stock decreases",
-        "Scenario ends with shipment-ready inventory"
+        "Raw materials support >= 5 runs",
+        "Packaging supports >= 7 aggregated runs"
+      ]
+    },
+    {
+      "taskId": "WF-75G-015",
+      "description": "Verify only BOM-derived 75 g finished bars remain in scope.",
+      "expectedActions": [
+        "Open focused BOM dataset",
+        "Review finished outputs",
+        "Confirm exclusions"
+      ],
+      "itemsInvolved": [
+        "Focused BOM dataset"
+      ],
+      "successCriteria": [
+        "No 8 g, 20 g, 1 kg, powder, nib pack, gift box, or sauce outputs remain as finished goods"
       ]
     }
   ]

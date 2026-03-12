@@ -1,18 +1,30 @@
 {
-  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "generatedAt": "2026-03-12T00:00:00.000Z",
   "dagAcyclic": true,
   "cycleKeys": [],
   "finishedGoodsCoverage": {
-    "producibleCount": 97,
-    "totalFinishedGoods": 97,
+    "producibleCount": 25,
+    "totalFinishedGoods": 25,
     "coverageRatio": 1,
     "meetsTarget": true
   },
   "inventorySeedsDeterministic": true,
-  "gapAnalysisMethod": "deterministic_greedy_leaf_coverage",
+  "gapAnalysisMethod": "aggregate_leaf_demand_profiles",
+  "stockProfiles": {
+    "minimal": {
+      "manufacturableOnce": true,
+      "missing": [],
+      "minimumPerSkuRuns": 1
+    },
+    "base": {
+      "manufacturableFiveRuns": true,
+      "missing": [],
+      "minimumPerSkuRuns": 5
+    }
+  },
   "simulationRuns": [
     {
-      "itemName": "Couverture 70% Dark Chocolate (1kg)",
+      "itemName": "Apple Pie Milk Chocolate - Halloween (75g)",
       "success": true,
       "blocked": null
     },
@@ -22,12 +34,17 @@
       "blocked": null
     },
     {
-      "itemName": "Tasting Box",
+      "itemName": "Coconut Curry Dark Chocolate (75g)",
       "success": true,
       "blocked": null
     },
     {
-      "itemName": "Cacao Nibs 250g",
+      "itemName": "Coconut Milk 65% Dark Chocolate (75g)",
+      "success": true,
+      "blocked": null
+    },
+    {
+      "itemName": "Coffee Crunch Milk Chocolate (75g)",
       "success": true,
       "blocked": null
     }

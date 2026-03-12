@@ -1,6 +1,9 @@
 {
-  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "generatedAt": "2026-03-12T00:00:00.000Z",
   "summary": {
+    "rowCount": 186,
+    "outputCount": 57,
+    "leafCount": 76,
     "cycleCount": 0,
     "selfReferenceCount": 0,
     "duplicateComponentCount": 0,
@@ -8,8 +11,7 @@
     "uomMismatchCount": 0,
     "yieldInconsistencyCount": 0,
     "orphanIntermediateCount": 0,
-    "unusedComponentCount": 0,
-    "unresolvedLeafItemCount": 0
+    "unusedComponentCount": 0
   },
   "valid": true,
   "cyclePaths": [],
