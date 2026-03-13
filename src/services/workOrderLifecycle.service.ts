@@ -49,9 +49,11 @@ export function nextStatusFromProgress(params: {
   currentStatus?: string | null;
   plannedQuantity: number;
   completedQuantity: number;
+  scrappedQuantity?: number;
 }) {
   const current = normalizeWorkOrderStatus(params.currentStatus);
-  if (params.completedQuantity >= params.plannedQuantity) {
+  const effectiveProcessed = params.completedQuantity + (params.scrappedQuantity ?? 0);
+  if (effectiveProcessed >= params.plannedQuantity) {
     return 'completed' as const;
   }
   if (params.completedQuantity > 0) {

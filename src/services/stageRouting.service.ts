@@ -214,9 +214,9 @@ export async function deriveWorkOrderStageRouting(
     tenantId,
     warehouseId,
     {
-      roles: ['FG_STAGE'],
-      localCodes: ['FG_STAGE', 'FG_STORE'],
-      codeHints: ['FACTORY_FG_STAGE', 'FACTORY_FG_STORE']
+      roles: ['FG_STAGE', 'FG_SELLABLE', 'SELLABLE'],
+      localCodes: ['FG_STAGE', 'FG_STORE', 'SELLABLE'],
+      codeHints: ['FACTORY_FG_STAGE', 'FACTORY_FG_STORE', 'FG_STORE']
     },
     client
   );
@@ -253,6 +253,19 @@ export async function deriveWorkOrderStageRouting(
     };
   }
 
+  if (stageType === 'disassembly') {
+    const fallbackConsumeLocation = context.defaultConsumeLocationId
+      ? await resolveLocationById(tenantId, context.defaultConsumeLocationId, client)
+      : null;
+    return {
+      stageType,
+      stageLabel,
+      defaultConsumeLocation: fgStage ?? fallbackConsumeLocation,
+      defaultProduceLocation: wipStore ?? packStore ?? rmStore ?? fgStage,
+      routingLocked: true
+    };
+  }
+
   return {
     stageType,
     stageLabel,
@@ -266,6 +279,66 @@ export async function deriveWorkOrderStageRouting(
         : fgStage ?? wipStore,
     routingLocked: true
   };
+}
+
+export async function deriveDisassemblyProduceLocation(
+  tenantId: string,
+  context: WorkOrderRoutingContext,
+  component: ComponentDescriptor,
+  client?: PoolClient
+) {
+  const routing = await deriveWorkOrderStageRouting(tenantId, context, client);
+  const componentItem = await getItem(tenantId, component.componentItemId);
+  const warehouseId = routing.defaultConsumeLocation?.warehouseId ?? routing.defaultProduceLocation?.warehouseId;
+  if (!warehouseId) {
+    return routing.defaultProduceLocation;
+  }
+  if (componentItem?.type === 'wip') {
+    return resolveLocationBySemantic(
+      tenantId,
+      warehouseId,
+      {
+        roles: ['WIP'],
+        localCodes: ['PRODUCTION', 'WIP_WRAPPED'],
+        codeHints: ['FACTORY_WIP_WRAPPED', 'FACTORY_PRODUCTION', 'WIP_WRAPPED_BAR']
+      },
+      client
+    );
+  }
+  if (componentItem?.type === 'packaging') {
+    return resolveLocationBySemantic(
+      tenantId,
+      warehouseId,
+      {
+        roles: ['PACKAGING'],
+        localCodes: ['PACK_STORE'],
+        codeHints: ['FACTORY_PACK_STORE', 'PACK_STORE']
+      },
+      client
+    );
+  }
+  if (componentItem?.type === 'finished') {
+    return resolveLocationBySemantic(
+      tenantId,
+      warehouseId,
+      {
+        roles: ['FG_STAGE', 'FG_SELLABLE', 'SELLABLE'],
+        localCodes: ['FG_STAGE', 'FG_STORE', 'SELLABLE'],
+        codeHints: ['FACTORY_FG_STAGE', 'FACTORY_FG_STORE', 'FG_STORE']
+      },
+      client
+    );
+  }
+  return resolveLocationBySemantic(
+    tenantId,
+    warehouseId,
+    {
+      roles: ['RM_STORE'],
+      localCodes: ['RM_STORE'],
+      codeHints: ['FACTORY_RM_STORE', 'RM_STORE']
+    },
+    client
+  );
 }
 
 export async function deriveComponentConsumeLocation(

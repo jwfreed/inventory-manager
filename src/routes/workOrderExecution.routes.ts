@@ -14,7 +14,13 @@ import {
   voidWorkOrderProductionReport
 } from '../services/workOrderExecution.service';
 import {
+  executeDisassemblyWorkOrder,
+  getDisassemblyPlan
+} from '../services/disassembly.service';
+import {
   workOrderCompletionCreateSchema,
+  workOrderDisassemblyExecuteSchema,
+  workOrderDisassemblyQuerySchema,
   workOrderIssueCreateSchema,
   workOrderBatchSchema,
   workOrderIssuePostSchema,
@@ -50,6 +56,104 @@ function resolveRequestIdempotencyKey(req: Request, bodyKey?: string | null): st
   const normalizedBody = bodyKey?.trim() ? bodyKey.trim() : null;
   return normalizedBody ?? headerKey;
 }
+
+router.get('/work-orders/:id/disassembly-plan', async (req: Request, res: Response) => {
+  const workOrderId = req.params.id;
+  if (!uuidSchema.safeParse(workOrderId).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+  const parsed = workOrderDisassemblyQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const quantity = parsed.data.quantity ? Number(parsed.data.quantity) : undefined;
+  if (quantity !== undefined && !(quantity > 0)) {
+    return res.status(400).json({ error: 'Quantity must be positive if provided.' });
+  }
+
+  try {
+    const plan = await getDisassemblyPlan(req.auth!.tenantId, workOrderId, quantity);
+    if (!plan) {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    return res.json(plan);
+  } catch (error: any) {
+    if (error?.message === 'WO_DISASSEMBLY_KIND_REQUIRED') {
+      return res.status(400).json({ error: 'This work order is not configured for disassembly.' });
+    }
+    if (error?.message === 'WO_BOM_VERSION_NOT_FOUND') {
+      return res.status(400).json({ error: 'No BOM version available for this disassembly work order.' });
+    }
+    if (error?.message === 'WO_BOM_LEGACY_UNSUPPORTED') {
+      return res.status(409).json({ error: 'Legacy BOM detected; disassembly cannot be planned.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to compute disassembly plan.' });
+  }
+});
+
+router.post('/work-orders/:id/disassemble', async (req: Request, res: Response) => {
+  const workOrderId = req.params.id;
+  if (!uuidSchema.safeParse(workOrderId).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+  const parsed = workOrderDisassemblyExecuteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    const result = await executeDisassemblyWorkOrder(
+      req.auth!.tenantId,
+      workOrderId,
+      {
+        quantity: parsed.data.quantity,
+        occurredAt: parsed.data.occurredAt,
+        notes: parsed.data.notes ?? null,
+        idempotencyKey: resolveRequestIdempotencyKey(req, parsed.data.idempotencyKey)
+      },
+      {
+        actor: { type: 'user', id: req.auth!.userId, role: req.auth!.role }
+      }
+    );
+    return res.status(result.replayed ? 200 : 201).json(result);
+  } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
+    if (error?.code === 'WO_RESERVATION_SHORTAGE' || error?.message === 'WO_RESERVATION_SHORTAGE') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_RESERVATION_SHORTAGE',
+          message: 'Disassembly is blocked because reservations are short.',
+          details: error?.details ?? {}
+        }
+      });
+    }
+    if (error?.code === 'WO_DISASSEMBLY_OUTPUT_VARIANCE' || error?.message === 'WO_DISASSEMBLY_OUTPUT_VARIANCE') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_DISASSEMBLY_OUTPUT_VARIANCE',
+          message: 'Disassembly output does not reconcile to the BOM structure.',
+          details: error?.details ?? {}
+        }
+      });
+    }
+    if (error?.message === 'WO_DISASSEMBLY_KIND_REQUIRED') {
+      return res.status(400).json({ error: 'This work order is not configured for disassembly.' });
+    }
+    if (error?.message === 'WO_BOM_VERSION_NOT_FOUND') {
+      return res.status(400).json({ error: 'No BOM version available for this disassembly work order.' });
+    }
+    if (error?.code === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({
+        error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to post disassembly execution.' });
+  }
+});
 
 router.post('/work-orders/:id/issues', async (req: Request, res: Response) => {
   const workOrderId = req.params.id;
@@ -553,6 +657,35 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
         }
       });
     }
+    if (error?.code === 'WO_RESERVATION_SHORTAGE' || error?.message === 'WO_RESERVATION_SHORTAGE') {
+      return res.status(409).json({
+        error: {
+          code: 'INSUFFICIENT_STOCK',
+          message: 'Work-order execution is blocked because reserved component inventory is short.',
+          details: error?.details
+        }
+      });
+    }
+    if (
+      error?.code === 'WO_WIP_DOWNSTREAM_STAGE_REQUIRED'
+      || error?.message === 'WO_WIP_DOWNSTREAM_STAGE_REQUIRED'
+      || error?.code === 'WO_BOM_EXECUTION_VARIANCE_UNAPPROVED'
+      || error?.message === 'WO_BOM_EXECUTION_VARIANCE_UNAPPROVED'
+      || error?.code === 'WO_DISASSEMBLY_OUTPUT_VARIANCE'
+      || error?.message === 'WO_DISASSEMBLY_OUTPUT_VARIANCE'
+      || error?.code === 'WO_WRAPPED_STAGE_OUTPUT_INVALID'
+      || error?.message === 'WO_WRAPPED_STAGE_OUTPUT_INVALID'
+      || error?.code === 'WO_BOXING_STAGE_OUTPUT_INVALID'
+      || error?.message === 'WO_BOXING_STAGE_OUTPUT_INVALID'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: error?.code ?? error?.message,
+          message: 'Manufacturing execution invariant check failed.',
+          details: error?.details
+        }
+      });
+    }
     if (error?.message === 'WO_NOT_FOUND') {
       return res.status(404).json({ error: 'Work order not found.' });
     }
@@ -761,6 +894,33 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
     }
     if (error?.message === 'WO_BOM_NO_LINES') {
       return res.status(409).json({ error: 'BOM has no component lines for report-production.' });
+    }
+    if (error?.code === 'WO_RESERVATION_SHORTAGE' || error?.message === 'WO_RESERVATION_SHORTAGE') {
+      return res.status(409).json({
+        error: {
+          code: 'INSUFFICIENT_STOCK',
+          message: 'Work-order production is blocked because reserved component inventory is short.',
+          details: error?.details
+        }
+      });
+    }
+    if (
+      error?.code === 'WO_WIP_DOWNSTREAM_STAGE_REQUIRED'
+      || error?.message === 'WO_WIP_DOWNSTREAM_STAGE_REQUIRED'
+      || error?.code === 'WO_BOM_EXECUTION_VARIANCE_UNAPPROVED'
+      || error?.message === 'WO_BOM_EXECUTION_VARIANCE_UNAPPROVED'
+      || error?.code === 'WO_WRAPPED_STAGE_OUTPUT_INVALID'
+      || error?.message === 'WO_WRAPPED_STAGE_OUTPUT_INVALID'
+      || error?.code === 'WO_BOXING_STAGE_OUTPUT_INVALID'
+      || error?.message === 'WO_BOXING_STAGE_OUTPUT_INVALID'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: error?.code ?? error?.message,
+          message: 'Manufacturing execution invariant check failed.',
+          details: error?.details
+        }
+      });
     }
     if (error?.message === 'WO_REPORT_NO_COMPONENT_CONSUMPTION') {
       return res.status(400).json({ error: 'report-production requires at least one component consumption line.' });

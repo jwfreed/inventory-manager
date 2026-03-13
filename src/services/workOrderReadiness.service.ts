@@ -1,8 +1,8 @@
 import { query } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
-import { getWorkOrderRequirements } from './workOrders.service';
-import { deriveComponentConsumeLocation, deriveWorkOrderStageRouting } from './stageRouting.service';
+import { deriveWorkOrderStageRouting } from './stageRouting.service';
 import { getWorkOrderExecutionSummary } from './workOrderExecution.service';
+import { getWorkOrderReservationSnapshot } from './inventoryReservation.service';
 
 type WorkOrderRow = {
   id: string;
@@ -32,12 +32,8 @@ export async function getWorkOrderReadiness(tenantId: string, workOrderId: strin
   const workOrder = workOrderRes.rows[0];
   const plannedQuantity = roundQuantity(toNumber(workOrder.quantity_planned));
   const producedQuantity = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
-  const remainingQuantity = roundQuantity(Math.max(0, plannedQuantity - producedQuantity));
-  const requirements = await getWorkOrderRequirements(
-    tenantId,
-    workOrderId,
-    remainingQuantity > 0 ? remainingQuantity : plannedQuantity
-  );
+  const scrappedQuantity = roundQuantity(toNumber(workOrder.quantity_scrapped ?? 0));
+  const remainingQuantity = roundQuantity(Math.max(0, plannedQuantity - producedQuantity - scrappedQuantity));
   const executionSummary = await getWorkOrderExecutionSummary(tenantId, workOrderId);
   const routing = await deriveWorkOrderStageRouting(tenantId, {
     kind: workOrder.kind,
@@ -47,8 +43,9 @@ export async function getWorkOrderReadiness(tenantId: string, workOrderId: strin
     defaultProduceLocationId: workOrder.default_produce_location_id,
     produceToLocationIdSnapshot: workOrder.produce_to_location_id_snapshot
   });
+  const reservationSnapshot = await getWorkOrderReservationSnapshot(tenantId, workOrderId);
 
-  if (!requirements) {
+  if (reservationSnapshot.length === 0) {
     return {
       workOrderId,
       stageType: routing.stageType,
@@ -59,81 +56,38 @@ export async function getWorkOrderReadiness(tenantId: string, workOrderId: strin
       quantities: {
         planned: plannedQuantity,
         produced: producedQuantity,
-        scrapped: roundQuantity(toNumber(workOrder.quantity_scrapped ?? 0)),
+        scrapped: scrappedQuantity,
         remaining: remainingQuantity
       },
       hasShortage: false,
+      reservations: [],
       lines: []
     };
   }
 
-  const readinessLines = await Promise.all(
-    requirements.lines.map(async (line) => {
-      const preferredLocation = await deriveComponentConsumeLocation(
-        tenantId,
-        {
-          kind: workOrder.kind,
-          outputItemId: workOrder.output_item_id,
-          bomId: workOrder.bom_id,
-          defaultConsumeLocationId: workOrder.default_consume_location_id,
-          defaultProduceLocationId: workOrder.default_produce_location_id,
-          produceToLocationIdSnapshot: workOrder.produce_to_location_id_snapshot
-        },
-        { componentItemId: line.componentItemId }
-      );
-
-      const availabilityRes = preferredLocation
-        ? await query<{
-            item_id: string;
-            on_hand_qty: string | number;
-            reserved_qty: string | number;
-            allocated_qty: string | number;
-            available_qty: string | number;
-          }>(
-            `SELECT item_id, on_hand_qty, reserved_qty, allocated_qty, available_qty
-               FROM inventory_available_location_v
-              WHERE tenant_id = $1
-                AND item_id = $2
-                AND location_id = $3
-                AND uom = $4
-              LIMIT 1`,
-            [tenantId, line.componentItemId, preferredLocation.id, line.uom]
-          )
-        : { rows: [] };
-
-      const availability = availabilityRes.rows[0];
-      const available = roundQuantity(toNumber(availability?.available_qty ?? 0));
-      const reserved = roundQuantity(toNumber(availability?.reserved_qty ?? 0) + toNumber(availability?.allocated_qty ?? 0));
-      const shortage = roundQuantity(Math.max(0, line.quantityRequired - available));
-
-      const componentRes = await query<{ sku: string | null; name: string | null }>(
-        `SELECT sku, name
-           FROM items
-          WHERE tenant_id = $1
-            AND id = $2`,
-        [tenantId, line.componentItemId]
-      );
-
-      return {
-        ...line,
-        componentItemSku: componentRes.rows[0]?.sku ?? null,
-        componentItemName: componentRes.rows[0]?.name ?? null,
-        consumeLocationId: preferredLocation?.id ?? null,
-        consumeLocationCode: preferredLocation?.code ?? null,
-        consumeLocationName: preferredLocation?.name ?? null,
-        consumeLocationRole: preferredLocation?.role ?? null,
-        required: line.quantityRequired,
-        reserved,
-        available,
-        shortage,
-        blocked: shortage > 0
-      };
-    })
-  );
-
-  const produced = producedQuantity;
-  const scrapped = roundQuantity(toNumber(workOrder.quantity_scrapped ?? 0));
-  const planned = plannedQuantity;
+  const readinessLines = reservationSnapshot.map((line, index) => ({
+    lineNumber: index + 1,
+    componentItemId: line.componentItemId,
+    componentItemSku: line.componentItemSku,
+    componentItemName: line.componentItemName,
+    uom: line.uom,
+    quantityRequired: line.requiredQty,
+    usesPackSize: false,
+    variableUom: null,
+    scrapFactor: null,
+    consumeLocationId: line.locationId,
+    consumeLocationCode: line.locationCode,
+    consumeLocationName: line.locationName,
+    consumeLocationRole: line.locationRole,
+    required: line.requiredQty,
+    reserved: line.openReservedQty,
+    available: line.availableQty,
+    shortage: line.shortageQty,
+    blocked: line.shortageQty > 0,
+    reservationId: line.reservationId,
+    reservationStatus: line.reservationStatus,
+    fulfilled: line.fulfilledQty
+  }));
 
   return {
     workOrderId,
@@ -143,13 +97,27 @@ export async function getWorkOrderReadiness(tenantId: string, workOrderId: strin
     consumeLocation: routing.defaultConsumeLocation,
     produceLocation: routing.defaultProduceLocation,
     quantities: {
-      planned,
-      produced,
-      scrapped,
+      planned: plannedQuantity,
+      produced: producedQuantity,
+      scrapped: scrappedQuantity,
       remaining: remainingQuantity
     },
     hasShortage: readinessLines.some((line) => line.shortage > 0),
     executionSummary,
+    reservations: reservationSnapshot.map((line) => ({
+      id: line.reservationId,
+      status: line.reservationStatus,
+      componentItemId: line.componentItemId,
+      componentItemSku: line.componentItemSku,
+      componentItemName: line.componentItemName,
+      locationId: line.locationId,
+      locationCode: line.locationCode,
+      locationName: line.locationName,
+      uom: line.uom,
+      requiredQty: line.requiredQty,
+      reservedQty: line.openReservedQty,
+      fulfilledQty: line.fulfilledQty
+    })),
     lines: readinessLines
   };
 }

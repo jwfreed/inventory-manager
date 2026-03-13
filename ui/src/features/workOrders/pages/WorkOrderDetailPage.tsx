@@ -5,7 +5,14 @@ import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createWorkOrder, updateWorkOrderDescription, useActiveBomVersion as activateWorkOrderBomVersion } from '../api/workOrders'
 import type { ApiError } from '@api/types'
-import { useWorkOrder, useWorkOrderExecution, useWorkOrderReadiness, useWorkOrderRequirements, workOrdersQueryKeys } from '../queries'
+import {
+  useWorkOrder,
+  useWorkOrderDisassemblyPlan,
+  useWorkOrderExecution,
+  useWorkOrderReadiness,
+  useWorkOrderRequirements,
+  workOrdersQueryKeys,
+} from '../queries'
 import {
   Alert,
   Banner,
@@ -23,7 +30,6 @@ import {
 } from '@shared/ui'
 import { WorkOrderHeader } from '../components/WorkOrderHeader'
 import { ExecutionSummaryPanel } from '../components/ExecutionSummaryPanel'
-import { RecordBatchForm } from '../components/RecordBatchForm'
 import { WorkOrderExecutionWorkspace } from '../components/WorkOrderExecutionWorkspace'
 import { WorkOrderRequirementsTable } from '../components/WorkOrderRequirementsTable'
 import { WorkOrderNextStepPanel } from '../components/WorkOrderNextStepPanel'
@@ -156,7 +162,11 @@ export default function WorkOrderDetailPage() {
 
   const isDisassembly = workOrderQuery.data?.kind === 'disassembly'
   const readinessQuery = useWorkOrderReadiness(id, {
-    enabled: Boolean(id) && Boolean(workOrderQuery.data) && !isDisassembly,
+    enabled: Boolean(id) && Boolean(workOrderQuery.data),
+    staleTime: 10_000,
+  })
+  const disassemblyPlanQuery = useWorkOrderDisassemblyPlan(id, undefined, {
+    enabled: Boolean(id) && Boolean(workOrderQuery.data) && isDisassembly,
     staleTime: 10_000,
   })
   const requirementsQuery = useWorkOrderRequirements(id, undefined, {
@@ -660,16 +670,21 @@ export default function WorkOrderDetailPage() {
                 <WorkOrderExecutionWorkspace
                   workOrder={workOrderQuery.data}
                   readiness={readinessQuery.data}
+                  disassemblyPlan={disassemblyPlanQuery.data}
                   isLoading={readinessQuery.isLoading}
                   isError={readinessQuery.isError}
                   errorMessage={readinessQuery.error?.message}
                   onRefresh={refreshAll}
                 />
               ) : workOrderQuery.data ? (
-                <RecordBatchForm
+                <WorkOrderExecutionWorkspace
                   workOrder={workOrderQuery.data}
-                  outputItem={outputItemQuery.data}
-                  onRefetch={refreshAll}
+                  readiness={readinessQuery.data}
+                  disassemblyPlan={disassemblyPlanQuery.data}
+                  isLoading={readinessQuery.isLoading || disassemblyPlanQuery.isLoading}
+                  isError={readinessQuery.isError || disassemblyPlanQuery.isError}
+                  errorMessage={readinessQuery.error?.message ?? disassemblyPlanQuery.error?.message}
+                  onRefresh={refreshAll}
                 />
               ) : (
                 <EmptyState

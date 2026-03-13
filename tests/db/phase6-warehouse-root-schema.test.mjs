@@ -68,9 +68,33 @@ test('locations schema allows role-less, non-sellable warehouse roots', async ()
   );
   assert.equal(roleWhitelistConstraintRes.rowCount, 1);
   const roleWhitelistDef = String(roleWhitelistConstraintRes.rows[0]?.def ?? '').toUpperCase();
-  for (const role of ['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRAP']) {
+  for (const role of [
+    'SELLABLE',
+    'QA',
+    'HOLD',
+    'REJECT',
+    'SCRAP',
+    'RM_STORE',
+    'WIP',
+    'PACKAGING',
+    'FG_STAGE',
+    'FG_SELLABLE',
+  ]) {
     assert.ok(roleWhitelistDef.includes(`'${role}'`), `role whitelist missing ${role}: ${roleWhitelistDef}`);
   }
+
+  const roleSellableConstraintRes = await pool.query(
+    `SELECT conname,
+            pg_get_constraintdef(oid) AS def
+       FROM pg_constraint
+      WHERE conrelid = 'public.locations'::regclass
+        AND conname = 'chk_locations_role_sellable'`
+  );
+  assert.equal(roleSellableConstraintRes.rowCount, 1);
+  const roleSellableDef = String(roleSellableConstraintRes.rows[0]?.def ?? '').toUpperCase();
+  assert.ok(roleSellableDef.includes("'SELLABLE'"));
+  assert.ok(roleSellableDef.includes("'FG_SELLABLE'"));
+  assert.ok(roleSellableDef.includes('IS_SELLABLE = TRUE'));
 });
 
 test.after(async () => {

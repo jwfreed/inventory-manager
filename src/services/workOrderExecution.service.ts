@@ -61,6 +61,11 @@ import {
   deriveComponentConsumeLocation,
   deriveWorkOrderStageRouting
 } from './stageRouting.service';
+import {
+  consumeWorkOrderReservations,
+  ensureWorkOrderReservationsReady
+} from './inventoryReservation.service';
+import { assertWorkOrderExecutionInvariants } from './manufacturingInvariant.service';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
 // (never inventory_adjustments). External refs include work order ids for traceability.
@@ -490,6 +495,8 @@ type WorkOrderExecutionRow = {
   status: string;
   consumption_movement_id: string | null;
   production_movement_id: string | null;
+  production_batch_id: string | null;
+  output_lot_id: string | null;
   wip_total_cost: string | number | null;
   wip_unit_cost: string | number | null;
   wip_quantity_canonical: string | number | null;
@@ -1024,6 +1031,20 @@ async function resolveOrCreateOutputLot(
     }
     throw error;
   }
+}
+
+export async function verifyWorkOrderWipIntegrityForClose(
+  tenantId: string,
+  workOrderId: string,
+  client?: PoolClient
+) {
+  if (client) {
+    await verifyWorkOrderWipIntegrity(client, tenantId, workOrderId);
+    return;
+  }
+  await withTransaction(async (tx) => {
+    await verifyWorkOrderWipIntegrity(tx, tenantId, workOrderId);
+  });
 }
 
 async function persistWorkOrderLotLinks(
@@ -2436,7 +2457,7 @@ export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId
       uom: row.uom,
       quantityCompleted: roundQuantity(toNumber(row.qty))
     })),
-    remainingToComplete: roundQuantity(Math.max(0, planned - completed)),
+    remainingToComplete: roundQuantity(Math.max(0, planned - completed - scrapped)),
     bom
   };
 }
@@ -3169,6 +3190,40 @@ export async function reportWorkOrderProduction(
       });
     }
     throw error;
+  }
+
+  if (lotTracking?.outputLotId || data.productionBatchId) {
+    const metadata: Record<string, unknown> = {};
+    if (lotTracking?.outputLotId) {
+      metadata.lotId = lotTracking.outputLotId;
+    }
+    if (data.productionBatchId) {
+      metadata.productionBatchId = data.productionBatchId;
+    }
+    await query(
+      `UPDATE work_order_executions
+          SET output_lot_id = COALESCE($1, output_lot_id),
+              production_batch_id = COALESCE($2, production_batch_id)
+        WHERE tenant_id = $3
+          AND id = $4`,
+      [lotTracking?.outputLotId ?? null, data.productionBatchId ?? null, tenantId, batchResult.executionId]
+    );
+    await query(
+      `UPDATE inventory_movements
+          SET lot_id = COALESCE($1, lot_id),
+              production_batch_id = COALESCE($2, production_batch_id),
+              metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+              updated_at = now()
+        WHERE tenant_id = $4
+          AND id = $5`,
+      [
+        lotTracking?.outputLotId ?? null,
+        data.productionBatchId ?? null,
+        JSON.stringify(metadata),
+        tenantId,
+        batchResult.receiveMovementId
+      ]
+    );
   }
 
   return {
@@ -3998,6 +4053,18 @@ export async function reportWorkOrderScrap(
           await projectionClient.query(
             `UPDATE work_orders
                 SET quantity_scrapped = COALESCE(quantity_scrapped, 0) + $1,
+                    status = CASE
+                      WHEN COALESCE(quantity_completed, 0) + COALESCE(quantity_scrapped, 0) + $1 >= quantity_planned
+                        THEN 'completed'
+                      WHEN COALESCE(quantity_completed, 0) > 0 OR COALESCE(quantity_scrapped, 0) + $1 > 0
+                        THEN 'partially_completed'
+                      ELSE status
+                    END,
+                    completed_at = CASE
+                      WHEN COALESCE(quantity_completed, 0) + COALESCE(quantity_scrapped, 0) + $1 >= quantity_planned
+                        THEN COALESCE(completed_at, $2)
+                      ELSE completed_at
+                    END,
                     updated_at = $2
               WHERE id = $3
                 AND tenant_id = $4`,
@@ -4146,6 +4213,19 @@ export async function recordWorkOrderBatch(
       }
       if (isTerminalWorkOrderStatus(workOrder.status)) {
         throw new Error('WO_INVALID_STATE');
+      }
+      await ensureWorkOrderReservationsReady(tenantId, workOrderId, client);
+      if (normalizeWorkOrderStatus(workOrder.status) === 'draft') {
+        await client.query(
+          `UPDATE work_orders
+              SET status = 'ready',
+                  released_at = COALESCE(released_at, $1),
+                  updated_at = $1
+            WHERE tenant_id = $2
+              AND id = $3`,
+          [occurredAt, tenantId, workOrderId]
+        );
+        workOrder.status = 'ready';
       }
       consumeLinesOrdered = [...normalizedConsumes].sort(compareBatchConsumeKey);
       produceLinesOrdered = [...normalizedProduces].sort(compareBatchProduceKey);
@@ -4334,6 +4414,25 @@ export async function recordWorkOrderBatch(
         canonicalUom: entry.canonicalFields.canonicalUom,
         sourceLineId: entry.sourceLineId
       }));
+      await assertWorkOrderExecutionInvariants({
+        tenantId,
+        workOrder,
+        consumeLines: sortedConsumes.map((entry) => ({
+          itemId: entry.line.componentItemId,
+          locationId: entry.line.fromLocationId,
+          uom: entry.canonicalFields.canonicalUom,
+          quantity: Math.abs(entry.canonicalFields.quantityDeltaCanonical),
+          reasonCode: entry.reasonCode
+        })),
+        produceLines: sortedProduces.map((entry) => ({
+          itemId: entry.line.outputItemId,
+          locationId: entry.line.toLocationId,
+          uom: entry.canonicalFields.canonicalUom,
+          quantity: entry.canonicalFields.quantityDeltaCanonical,
+          reasonCode: entry.reasonCode
+        })),
+        client
+      });
       if (existingBatchReplay) {
         return buildWorkOrderBatchReplayResult({
           tenantId,
@@ -4718,6 +4817,17 @@ export async function recordWorkOrderBatch(
         notes: `Work-order production report WIP capitalization for execution ${executionId}`
       });
       await verifyWorkOrderWipIntegrity(client, tenantId, workOrderId);
+      await consumeWorkOrderReservations(
+        tenantId,
+        workOrderId,
+        consumeLinesOrdered.map((line) => ({
+          componentItemId: line.componentItemId,
+          locationId: line.fromLocationId,
+          uom: line.uom,
+          quantity: line.quantity
+        })),
+        client
+      );
 
       const consumedTotal = consumeLinesOrdered.reduce((sum, line) => sum + line.quantity, 0);
       const currentCompleted = toNumber(workOrder.quantity_completed ?? 0);
@@ -4728,7 +4838,8 @@ export async function recordWorkOrderBatch(
       const newStatus = nextStatusFromProgress({
         currentStatus: workOrder.status,
         plannedQuantity: planned,
-        completedQuantity: newCompleted
+        completedQuantity: newCompleted,
+        scrappedQuantity: toNumber(workOrder.quantity_scrapped ?? 0)
       });
 
       projectionOps.push(async (projectionClient) => {

@@ -88,11 +88,13 @@ const REQUIRED_NON_PROD_LOCATION_COLUMNS = ['role', 'is_sellable'] as const;
 const REQUIRED_NON_PROD_LOCATION_CHECK_CONSTRAINTS = [
   {
     name: 'chk_locations_role',
-    checkExpression: "role IS NULL OR role IN ('SELLABLE','QA','HOLD','REJECT','SCRAP')"
+    checkExpression:
+      "role IS NULL OR role IN ('SELLABLE','QA','HOLD','REJECT','SCRAP','RM_STORE','WIP','PACKAGING','FG_STAGE','FG_SELLABLE')"
   },
   {
     name: 'chk_locations_role_sellable',
-    checkExpression: "role IS NULL OR ((role = 'SELLABLE') = is_sellable)"
+    checkExpression:
+      "role IS NULL OR (CASE WHEN role IN ('SELLABLE','FG_SELLABLE') THEN is_sellable = true ELSE is_sellable = false END)"
   },
   {
     name: 'chk_locations_role_required_except_warehouse_root',

@@ -86,6 +86,7 @@ export const workOrderReportProductionSchema = z.object({
   outputUom: uomSchema.max(32).optional(),
   outputLotId: z.string().uuid().optional(),
   outputLotCode: z.string().min(1).max(120).optional(),
+  productionBatchId: z.string().min(1).max(120).optional(),
   inputLots: z.array(
     z.object({
       componentItemId: z.string().uuid(),
@@ -113,6 +114,17 @@ export const workOrderReportProductionSchema = z.object({
       reason: z.string().max(255)
     })
   ).optional()
+});
+
+export const workOrderDisassemblyQuerySchema = z.object({
+  quantity: z.string().optional()
+});
+
+export const workOrderDisassemblyExecuteSchema = z.object({
+  quantity: z.number().positive().optional(),
+  occurredAt: workOrderExecutionDateSchema,
+  notes: z.string().max(2000).optional(),
+  idempotencyKey: z.string().min(1).max(255).optional()
 });
 
 export const workOrderVoidReportProductionSchema = z.object({

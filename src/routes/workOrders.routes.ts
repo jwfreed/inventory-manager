@@ -228,6 +228,31 @@ router.post('/work-orders/:id/status/:status', async (req: Request, res: Respons
     }
     return res.json(updated);
   } catch (error: any) {
+    if (error?.code === 'WO_RESERVATION_SHORTAGE' || error?.message === 'WO_RESERVATION_SHORTAGE') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_RESERVATION_SHORTAGE',
+          message: 'Work order cannot move to READY because component reservations are short.',
+          details: error?.details ?? {}
+        }
+      });
+    }
+    if (
+      error?.code === 'WO_CLOSE_DRAFT_POSTINGS_EXIST'
+      || error?.message === 'WO_CLOSE_DRAFT_POSTINGS_EXIST'
+      || error?.code === 'WO_CLOSE_INCOMPLETE_PROGRESS'
+      || error?.message === 'WO_CLOSE_INCOMPLETE_PROGRESS'
+      || error?.code === 'WO_WIP_INTEGRITY_FAILED'
+      || error?.message === 'WO_WIP_INTEGRITY_FAILED'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: error?.code ?? error?.message,
+          message: 'Work order close failed integrity validation.',
+          details: error?.details ?? {}
+        }
+      });
+    }
     if (error?.code === 'WO_STATUS_TRANSITION_INVALID' || error?.message === 'WO_STATUS_TRANSITION_INVALID') {
       return res.status(409).json({ error: 'Invalid work order status transition.' });
     }

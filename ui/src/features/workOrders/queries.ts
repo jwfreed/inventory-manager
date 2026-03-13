@@ -1,6 +1,14 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
-import type { ApiError, WorkOrder, WorkOrderExecutionSummary, WorkOrderReadiness, WorkOrderRequirements } from '../../api/types'
+import type {
+  ApiError,
+  WorkOrder,
+  WorkOrderDisassemblyPlan,
+  WorkOrderExecutionSummary,
+  WorkOrderReadiness,
+  WorkOrderRequirements,
+} from '../../api/types'
 import {
+  getWorkOrderDisassemblyPlan,
   getWorkOrder,
   getWorkOrderExecution,
   getWorkOrderReadiness,
@@ -15,6 +23,8 @@ export const workOrdersQueryKeys = {
   detail: (id: string) => [...workOrdersQueryKeys.all, 'detail', id] as const,
   execution: (id: string) => [...workOrdersQueryKeys.all, 'execution', id] as const,
   readiness: (id: string) => [...workOrdersQueryKeys.all, 'readiness', id] as const,
+  disassemblyPlan: (id: string, quantity?: number) =>
+    [...workOrdersQueryKeys.all, 'disassembly-plan', id, quantity ?? null] as const,
   requirements: (id: string, params?: { quantity?: number; packSize?: number }) =>
     [...workOrdersQueryKeys.all, 'requirements', id, params ?? {}] as const,
 }
@@ -38,6 +48,11 @@ type RequirementsOptions = Omit<
 
 type ReadinessOptions = Omit<
   UseQueryOptions<WorkOrderReadiness, ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type DisassemblyPlanOptions = Omit<
+  UseQueryOptions<WorkOrderDisassemblyPlan, ApiError>,
   'queryKey' | 'queryFn'
 >
 
@@ -74,6 +89,20 @@ export function useWorkOrderReadiness(id?: string, options: ReadinessOptions = {
   return useQuery({
     queryKey: workOrdersQueryKeys.readiness(id ?? ''),
     queryFn: () => getWorkOrderReadiness(id as string),
+    enabled: Boolean(id),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useWorkOrderDisassemblyPlan(
+  id?: string,
+  quantity?: number,
+  options: DisassemblyPlanOptions = {},
+) {
+  return useQuery({
+    queryKey: workOrdersQueryKeys.disassemblyPlan(id ?? '', quantity),
+    queryFn: () => getWorkOrderDisassemblyPlan(id as string, quantity),
     enabled: Boolean(id),
     retry: 1,
     ...options,

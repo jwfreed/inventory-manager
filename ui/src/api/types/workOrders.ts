@@ -59,6 +59,9 @@ export type WorkOrderReadinessLine = WorkOrderRequirementLine & {
   available: number
   shortage: number
   blocked: boolean
+  reservationId?: string | null
+  reservationStatus?: string | null
+  fulfilled?: number
   consumeLocationId?: string | null
   consumeLocationCode?: string | null
   consumeLocationName?: string | null
@@ -90,7 +93,55 @@ export type WorkOrderReadiness = {
   }
   hasShortage: boolean
   executionSummary?: WorkOrderExecutionSummary | null
+  reservations: {
+    id?: string | null
+    status?: string | null
+    componentItemId: string
+    componentItemSku?: string | null
+    componentItemName?: string | null
+    locationId: string
+    locationCode?: string | null
+    locationName?: string | null
+    uom: string
+    requiredQty: number
+    reservedQty: number
+    fulfilledQty: number
+  }[]
   lines: WorkOrderReadinessLine[]
+}
+
+export type WorkOrderDisassemblyPlan = {
+  workOrderId: string
+  status: string
+  bomId: string
+  bomVersionId: string
+  consumeItemId: string
+  consumeItemSku?: string | null
+  consumeItemName?: string | null
+  consumeLocation?: {
+    id: string
+    code: string
+    name: string
+    role?: string | null
+  } | null
+  quantities: {
+    planned: number
+    produced: number
+    scrapped: number
+    remaining: number
+    requestedDisassembly: number
+  }
+  outputs: {
+    componentItemId: string
+    componentItemSku?: string | null
+    componentItemName?: string | null
+    toLocationId: string
+    toLocationCode?: string | null
+    toLocationName?: string | null
+    toLocationRole?: string | null
+    quantityProduced: number
+    uom: string
+  }[]
 }
 
 export type WorkOrderRequirements = {

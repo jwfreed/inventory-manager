@@ -11,9 +11,6 @@ vi.mock('@features/workOrders/components/WorkOrderHeader', () => ({
 vi.mock('@features/workOrders/components/ExecutionSummaryPanel', () => ({
   ExecutionSummaryPanel: () => <div>__execution_summary__</div>,
 }))
-vi.mock('@features/workOrders/components/RecordBatchForm', () => ({
-  RecordBatchForm: () => <div>__record_batch_form__</div>,
-}))
 vi.mock('@features/workOrders/components/WorkOrderExecutionWorkspace', () => ({
   WorkOrderExecutionWorkspace: () => <div>__execution_workspace__</div>,
 }))
@@ -38,6 +35,7 @@ vi.mock('@features/locations/queries', () => ({
 }))
 vi.mock('@features/workOrders/queries', () => ({
   useWorkOrder: vi.fn(),
+  useWorkOrderDisassemblyPlan: vi.fn(),
   useWorkOrderExecution: vi.fn(),
   useWorkOrderReadiness: vi.fn(),
   useWorkOrderRequirements: vi.fn(),
@@ -61,7 +59,13 @@ vi.mock('../../app/layout/usePageChrome', () => ({
 import { useItem, useItemsList } from '@features/items/queries'
 import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
 import { useLocationsList } from '@features/locations/queries'
-import { useWorkOrder, useWorkOrderExecution, useWorkOrderReadiness, useWorkOrderRequirements } from '@features/workOrders/queries'
+import {
+  useWorkOrder,
+  useWorkOrderDisassemblyPlan,
+  useWorkOrderExecution,
+  useWorkOrderReadiness,
+  useWorkOrderRequirements,
+} from '@features/workOrders/queries'
 import { getAtp } from '@api/reports'
 
 const mockedUseItem = vi.mocked(useItem)
@@ -71,6 +75,7 @@ const mockedUseBomsByItem = vi.mocked(useBomsByItem)
 const mockedUseNextStepBoms = vi.mocked(useNextStepBoms)
 const mockedUseLocationsList = vi.mocked(useLocationsList)
 const mockedUseWorkOrder = vi.mocked(useWorkOrder)
+const mockedUseWorkOrderDisassemblyPlan = vi.mocked(useWorkOrderDisassemblyPlan)
 const mockedUseWorkOrderExecution = vi.mocked(useWorkOrderExecution)
 const mockedUseWorkOrderReadiness = vi.mocked(useWorkOrderReadiness)
 const mockedUseWorkOrderRequirements = vi.mocked(useWorkOrderRequirements)
@@ -150,10 +155,17 @@ describe('WorkOrderDetailPage tabs', () => {
         produceLocation: null,
         quantities: { planned: 10, produced: 0, scrapped: 0, remaining: 10 },
         hasShortage: false,
+        reservations: [],
         lines: [],
       },
       isLoading: false,
       isError: false,
+    } as any)
+    mockedUseWorkOrderDisassemblyPlan.mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: false,
+      error: null,
     } as any)
     mockedUseWorkOrderRequirements.mockReturnValue({
       data: { lines: [], bomVersionId: null },
@@ -193,13 +205,28 @@ describe('WorkOrderDetailPage tabs', () => {
     expect(screen.getByText('__execution_workspace__')).toBeInTheDocument()
   })
 
-  it('hides report production panel for disassembly work orders', async () => {
+  it('renders unified execution workspace for disassembly work orders', async () => {
     mockedUseWorkOrder.mockReturnValue({
       data: makeWorkOrder({ kind: 'disassembly' }),
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderDisassemblyPlan.mockReturnValue({
+      data: {
+        workOrderId: 'wo-1',
+        status: 'ready',
+        bomId: 'bom-1',
+        bomVersionId: 'bomv-1',
+        consumeItemId: 'item-1',
+        consumeLocation: null,
+        quantities: { planned: 10, produced: 0, scrapped: 0, remaining: 10, requestedDisassembly: 10 },
+        outputs: [],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
     } as any)
     mockedUseWorkOrderExecution.mockReturnValue({
       data: {
@@ -225,8 +252,7 @@ describe('WorkOrderDetailPage tabs', () => {
     renderPage()
     await screen.findByText('__work_order_header__')
 
-    expect(screen.queryByText('__execution_workspace__')).toBeNull()
-    expect(screen.getByText('__record_batch_form__')).toBeInTheDocument()
+    expect(screen.getByText('__execution_workspace__')).toBeInTheDocument()
   })
 
   it('opens the execution workspace from the primary execution path', async () => {

@@ -1,6 +1,7 @@
 import { apiGet, apiPatch, apiPost } from '../../../api/http'
 import type {
   WorkOrder,
+  WorkOrderDisassemblyPlan,
   WorkOrderListResponse,
   WorkOrderExecutionSummary,
   WorkOrderIssue,
@@ -50,6 +51,15 @@ export async function getWorkOrderRequirements(
 
 export async function getWorkOrderReadiness(id: string): Promise<WorkOrderReadiness> {
   return apiGet<WorkOrderReadiness>(`/work-orders/${id}/readiness`)
+}
+
+export async function getWorkOrderDisassemblyPlan(
+  id: string,
+  quantity?: number,
+): Promise<WorkOrderDisassemblyPlan> {
+  const params: Record<string, number> = {}
+  if (quantity) params.quantity = quantity
+  return apiGet<WorkOrderDisassemblyPlan>(`/work-orders/${id}/disassembly-plan`, { params })
 }
 
 export type WorkOrderCreatePayload = {
@@ -195,6 +205,7 @@ export type ReportProductionPayload = {
   outputUom?: string
   outputLotId?: string
   outputLotCode?: string
+  productionBatchId?: string
   inputLots?: Array<{
     componentItemId: string
     lotId: string
@@ -254,4 +265,18 @@ export async function reportWorkOrderScrap(
   payload: ReportScrapPayload,
 ): Promise<ReportScrapResult> {
   return apiPost<ReportScrapResult>(`/work-orders/${workOrderId}/report-scrap`, payload)
+}
+
+export type ExecuteDisassemblyPayload = {
+  quantity?: number
+  occurredAt: string
+  notes?: string | null
+  idempotencyKey?: string
+}
+
+export async function executeWorkOrderDisassembly(
+  workOrderId: string,
+  payload: ExecuteDisassemblyPayload,
+): Promise<RecordBatchResult> {
+  return apiPost<RecordBatchResult>(`/work-orders/${workOrderId}/disassemble`, payload)
 }

@@ -17,6 +17,8 @@ import {
   normalizeWorkOrderStatus
 } from './workOrderLifecycle.service';
 import { deriveWorkOrderStageRouting } from './stageRouting.service';
+import { ensureWorkOrderReservationsReady, releaseWorkOrderReservations } from './inventoryReservation.service';
+import { closeWorkOrder } from './workOrderClose.service';
 
 type WorkOrderCreateInput = z.infer<typeof workOrderCreateSchema>;
 type WorkOrderListQuery = z.infer<typeof workOrderListQuerySchema>;
@@ -701,16 +703,37 @@ export async function transitionWorkOrderStatus(
     throw new Error('WO_NOT_FOUND');
   }
   assertWorkOrderStatusTransition(current.status, nextStatus);
+  if (nextStatus === 'ready') {
+    await ensureWorkOrderReservationsReady(tenantId, workOrderId);
+    const now = new Date();
+    await query(
+      `UPDATE work_orders
+          SET status = 'ready',
+              released_at = COALESCE(released_at, $1),
+              updated_at = $1
+        WHERE id = $2
+          AND tenant_id = $3`,
+      [now, workOrderId, tenantId]
+    );
+    return getWorkOrderById(tenantId, workOrderId);
+  }
+  if (nextStatus === 'closed') {
+    await closeWorkOrder(tenantId, workOrderId);
+    return getWorkOrderById(tenantId, workOrderId);
+  }
+
   const now = new Date();
-  await query(
-    `UPDATE work_orders
-        SET status = $1,
-            completed_at = CASE WHEN $1 IN ('completed', 'closed') THEN COALESCE(completed_at, $2) ELSE completed_at END,
-            updated_at = $2
-      WHERE id = $3
-        AND tenant_id = $4`,
-    [nextStatus, now, workOrderId, tenantId]
-  );
+  await withTransaction(async (client) => {
+    await releaseWorkOrderReservations(tenantId, workOrderId, 'work_order_canceled', client);
+    await client.query(
+      `UPDATE work_orders
+          SET status = 'canceled',
+              updated_at = $1
+        WHERE id = $2
+          AND tenant_id = $3`,
+      [now, workOrderId, tenantId]
+    );
+  });
   return getWorkOrderById(tenantId, workOrderId);
 }
 
