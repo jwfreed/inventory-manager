@@ -17,15 +17,12 @@ type Props = {
   quantityLabel?: string
   scheduledStartAt: string
   scheduledDueAt: string
-  defaultConsumeLocationId: string
-  defaultProduceLocationId: string
   items: Item[]
   itemsLoading: boolean
-  locationsLoading: boolean
   selectedItem?: Item
-  locationOptions: SelectOption[]
-  consumeMissing: boolean
-  produceMissing: boolean
+  stageLabel?: string
+  consumeLocationLabel?: string
+  produceLocationLabel?: string
   isPending: boolean
   onDescriptionChange: (value: string) => void
   onOutputItemChange: (value: string) => void
@@ -33,8 +30,6 @@ type Props = {
   onQuantityPlannedChange: (value: number | '') => void
   onScheduledStartAtChange: (value: string) => void
   onScheduledDueAtChange: (value: string) => void
-  onDefaultConsumeLocationChange: (value: string) => void
-  onDefaultProduceLocationChange: (value: string) => void
 }
 
 export function WorkOrderHeaderSection({
@@ -47,15 +42,12 @@ export function WorkOrderHeaderSection({
   quantityLabel = 'Quantity planned',
   scheduledStartAt,
   scheduledDueAt,
-  defaultConsumeLocationId,
-  defaultProduceLocationId,
   items,
   itemsLoading,
-  locationsLoading,
   selectedItem,
-  locationOptions,
-  consumeMissing,
-  produceMissing,
+  stageLabel,
+  consumeLocationLabel = 'Auto-derived at save time',
+  produceLocationLabel = 'Auto-derived at save time',
   isPending,
   onDescriptionChange,
   onOutputItemChange,
@@ -63,8 +55,6 @@ export function WorkOrderHeaderSection({
   onQuantityPlannedChange,
   onScheduledStartAtChange,
   onScheduledDueAtChange,
-  onDefaultConsumeLocationChange,
-  onDefaultProduceLocationChange,
 }: Props) {
   return (
     <Section title="Header">
@@ -121,54 +111,38 @@ export function WorkOrderHeaderSection({
         </FormField>
         <FormField label="Scheduled start">
           <Input
-            type="date"
+            type="text"
             value={scheduledStartAt}
             onChange={(e) => onScheduledStartAtChange(e.target.value)}
+            placeholder="DD-MM-YY"
             disabled={isPending}
           />
         </FormField>
         <FormField label="Scheduled due">
           <Input
-            type="date"
+            type="text"
             value={scheduledDueAt}
             onChange={(e) => onScheduledDueAtChange(e.target.value)}
+            placeholder="DD-MM-YY"
             disabled={isPending}
           />
         </FormField>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        <FormField label="Default consume location" helper={selectedItem?.defaultLocationId && defaultConsumeLocationId === selectedItem.defaultLocationId ? 'Auto from item default location' : undefined}>
-          <select
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            value={defaultConsumeLocationId}
-            onChange={(e) => onDefaultConsumeLocationChange(e.target.value)}
-            disabled={isPending || locationsLoading}
-          >
-            <option value="">None</option>
-            {locationOptions.map((loc) => (
-              <option key={loc.value} value={loc.value}>
-                {loc.label}
-              </option>
-            ))}
-            {consumeMissing && <option value={defaultConsumeLocationId}>Current selection</option>}
-          </select>
+        <FormField label="Production stage">
+          <Input value={stageLabel || 'Auto-derived'} disabled />
         </FormField>
-        <FormField label="Default produce location" helper={selectedItem?.defaultLocationId && defaultProduceLocationId === selectedItem.defaultLocationId ? 'Auto from item default location' : undefined}>
-          <select
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            value={defaultProduceLocationId}
-            onChange={(e) => onDefaultProduceLocationChange(e.target.value)}
-            disabled={isPending || locationsLoading}
-          >
-            <option value="">None</option>
-            {locationOptions.map((loc) => (
-              <option key={loc.value} value={loc.value}>
-                {loc.label}
-              </option>
-            ))}
-            {produceMissing && <option value={defaultProduceLocationId}>Current selection</option>}
-          </select>
+        <FormField label="Consume location">
+          <Input value={consumeLocationLabel} disabled />
         </FormField>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <FormField label="Produce location">
+          <Input value={produceLocationLabel} disabled />
+        </FormField>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+          Locations are derived from the work-order stage and are locked for operators.
+        </div>
       </div>
     </Section>
   )

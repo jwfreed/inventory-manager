@@ -11,17 +11,11 @@ vi.mock('@features/workOrders/components/WorkOrderHeader', () => ({
 vi.mock('@features/workOrders/components/ExecutionSummaryPanel', () => ({
   ExecutionSummaryPanel: () => <div>__execution_summary__</div>,
 }))
-vi.mock('@features/workOrders/components/IssueDraftForm', () => ({
-  IssueDraftForm: () => <div>__issue_draft_form__</div>,
-}))
-vi.mock('@features/workOrders/components/CompletionDraftForm', () => ({
-  CompletionDraftForm: () => <div>__completion_draft_form__</div>,
-}))
 vi.mock('@features/workOrders/components/RecordBatchForm', () => ({
   RecordBatchForm: () => <div>__record_batch_form__</div>,
 }))
-vi.mock('@features/workOrders/components/ReportProductionForm', () => ({
-  ReportProductionForm: () => <div>__report_production_form__</div>,
+vi.mock('@features/workOrders/components/WorkOrderExecutionWorkspace', () => ({
+  WorkOrderExecutionWorkspace: () => <div>__execution_workspace__</div>,
 }))
 vi.mock('@features/workOrders/components/WorkOrderRequirementsTable', () => ({
   WorkOrderRequirementsTable: () => <div>__requirements_table__</div>,
@@ -45,6 +39,7 @@ vi.mock('@features/locations/queries', () => ({
 vi.mock('@features/workOrders/queries', () => ({
   useWorkOrder: vi.fn(),
   useWorkOrderExecution: vi.fn(),
+  useWorkOrderReadiness: vi.fn(),
   useWorkOrderRequirements: vi.fn(),
   workOrdersQueryKeys: {
     all: ['work-orders'],
@@ -66,7 +61,7 @@ vi.mock('../../app/layout/usePageChrome', () => ({
 import { useItem, useItemsList } from '@features/items/queries'
 import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
 import { useLocationsList } from '@features/locations/queries'
-import { useWorkOrder, useWorkOrderExecution, useWorkOrderRequirements } from '@features/workOrders/queries'
+import { useWorkOrder, useWorkOrderExecution, useWorkOrderReadiness, useWorkOrderRequirements } from '@features/workOrders/queries'
 import { getAtp } from '@api/reports'
 
 const mockedUseItem = vi.mocked(useItem)
@@ -77,6 +72,7 @@ const mockedUseNextStepBoms = vi.mocked(useNextStepBoms)
 const mockedUseLocationsList = vi.mocked(useLocationsList)
 const mockedUseWorkOrder = vi.mocked(useWorkOrder)
 const mockedUseWorkOrderExecution = vi.mocked(useWorkOrderExecution)
+const mockedUseWorkOrderReadiness = vi.mocked(useWorkOrderReadiness)
 const mockedUseWorkOrderRequirements = vi.mocked(useWorkOrderRequirements)
 const mockedGetAtp = vi.mocked(getAtp)
 
@@ -84,7 +80,7 @@ function makeWorkOrder(overrides: Partial<WorkOrder> = {}): WorkOrder {
   return {
     id: 'wo-1',
     number: 'WO-0001',
-    status: 'released',
+    status: 'ready',
     kind: 'production',
     outputItemId: 'item-1',
     outputUom: 'kg',
@@ -128,7 +124,7 @@ describe('WorkOrderDetailPage tabs', () => {
       data: {
         workOrder: {
           id: 'wo-1',
-          status: 'released',
+          status: 'ready',
           kind: 'production',
           outputItemId: 'item-1',
           outputUom: 'kg',
@@ -143,6 +139,21 @@ describe('WorkOrderDetailPage tabs', () => {
       isLoading: false,
       isError: false,
       refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderReadiness.mockReturnValue({
+      data: {
+        workOrderId: 'wo-1',
+        stageType: 'generic_production',
+        stageLabel: 'Production',
+        status: 'ready',
+        consumeLocation: null,
+        produceLocation: null,
+        quantities: { planned: 10, produced: 0, scrapped: 0, remaining: 10 },
+        hasShortage: false,
+        lines: [],
+      },
+      isLoading: false,
+      isError: false,
     } as any)
     mockedUseWorkOrderRequirements.mockReturnValue({
       data: { lines: [], bomVersionId: null },
@@ -164,10 +175,10 @@ describe('WorkOrderDetailPage tabs', () => {
 
     renderPage()
     expect(await screen.findByText('__work_order_header__')).toBeInTheDocument()
-    expect(screen.getByText(/Remaining to complete:/i)).toBeInTheDocument()
+    expect(screen.getByText('__execution_summary__')).toBeInTheDocument()
   })
 
-  it('renders report production panel on batch tab for production work orders', async () => {
+  it('renders unified execution workspace for production work orders', async () => {
     mockedUseWorkOrder.mockReturnValue({
       data: makeWorkOrder({ kind: 'production' }),
       isLoading: false,
@@ -178,9 +189,8 @@ describe('WorkOrderDetailPage tabs', () => {
 
     renderPage()
     await screen.findByText('__work_order_header__')
-    fireEvent.click(screen.getByRole('button', { name: 'Report production' }))
 
-    expect(screen.getByText('__report_production_form__')).toBeInTheDocument()
+    expect(screen.getByText('__execution_workspace__')).toBeInTheDocument()
   })
 
   it('hides report production panel for disassembly work orders', async () => {
@@ -195,7 +205,7 @@ describe('WorkOrderDetailPage tabs', () => {
       data: {
         workOrder: {
           id: 'wo-1',
-          status: 'released',
+          status: 'ready',
           kind: 'disassembly',
           outputItemId: 'item-1',
           outputUom: 'kg',
@@ -214,13 +224,12 @@ describe('WorkOrderDetailPage tabs', () => {
 
     renderPage()
     await screen.findByText('__work_order_header__')
-    fireEvent.click(screen.getByRole('button', { name: 'Disassemble & record outputs' }))
 
-    expect(screen.queryByText('__report_production_form__')).toBeNull()
+    expect(screen.queryByText('__execution_workspace__')).toBeNull()
     expect(screen.getByText('__record_batch_form__')).toBeInTheDocument()
   })
 
-  it('switches tabs between issues and completions', async () => {
+  it('opens the execution workspace from the primary execution path', async () => {
     mockedUseWorkOrder.mockReturnValue({
       data: makeWorkOrder({ kind: 'production' }),
       isLoading: false,
@@ -232,10 +241,7 @@ describe('WorkOrderDetailPage tabs', () => {
     renderPage()
     await screen.findByText('__work_order_header__')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Use materials' }))
-    expect(screen.getByText('__issue_draft_form__')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Make product' }))
-    expect(screen.getByText('__completion_draft_form__')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Review readiness' }))
+    expect(screen.getByText('__execution_workspace__')).toBeInTheDocument()
   })
 })

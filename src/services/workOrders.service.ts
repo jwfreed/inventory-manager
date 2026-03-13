@@ -10,6 +10,13 @@ import { recordAuditLog } from '../lib/audit';
 import { convertToCanonical } from './uomCanonical.service';
 import { expandBomWithCycleGuard, getCanonicalYieldQuantity } from './bomTraversal.service';
 import { getEffectiveBomLinesForParent } from './bomEdges.service';
+import { normalizeDateInputToIso } from '../core/dateAdapter';
+import {
+  assertWorkOrderStatusTransition,
+  isEditableWorkOrderStatus,
+  normalizeWorkOrderStatus
+} from './workOrderLifecycle.service';
+import { deriveWorkOrderStageRouting } from './stageRouting.service';
 
 type WorkOrderCreateInput = z.infer<typeof workOrderCreateSchema>;
 type WorkOrderListQuery = z.infer<typeof workOrderListQuerySchema>;
@@ -29,6 +36,7 @@ type WorkOrderRow = {
   output_uom: string;
   quantity_planned: string | number;
   quantity_completed: string | number | null;
+  quantity_scrapped: string | number | null;
   default_consume_location_id: string | null;
   default_produce_location_id: string | null;
   scheduled_start_at: string | null;
@@ -45,7 +53,7 @@ function mapWorkOrder(row: WorkOrderRow) {
   return {
     id: row.id,
     number: row.number ?? row.work_order_number,
-    status: row.status,
+    status: normalizeWorkOrderStatus(row.status),
     kind: row.kind,
     bomId: row.bom_id,
     bomVersionId: row.bom_version_id,
@@ -56,6 +64,7 @@ function mapWorkOrder(row: WorkOrderRow) {
     outputUom: row.output_uom,
     quantityPlanned: roundQuantity(Number(row.quantity_planned)),
     quantityCompleted: row.quantity_completed !== null ? roundQuantity(Number(row.quantity_completed)) : null,
+    quantityScrapped: row.quantity_scrapped !== null ? roundQuantity(Number(row.quantity_scrapped)) : null,
     defaultConsumeLocationId: row.default_consume_location_id,
     defaultProduceLocationId: row.default_produce_location_id,
     scheduledStartAt: row.scheduled_start_at,
@@ -147,11 +156,33 @@ async function withReportProductionLocationHint(
   workOrder: WorkOrderMapped,
   client?: PoolClient
 ) {
+  const routing = await deriveWorkOrderStageRouting(
+    tenantId,
+    {
+      kind: workOrder.kind,
+      outputItemId: workOrder.outputItemId,
+      bomId: workOrder.bomId,
+      defaultConsumeLocationId: workOrder.defaultConsumeLocationId,
+      defaultProduceLocationId: workOrder.defaultProduceLocationId,
+      produceToLocationIdSnapshot: workOrder.produceToLocationIdSnapshot
+    },
+    client
+  );
+
   if (workOrder.produceToLocationIdSnapshot) {
     const snapshotLocation = await resolveLocationHintById(tenantId, workOrder.produceToLocationIdSnapshot, client);
     if (snapshotLocation) {
       return {
         ...workOrder,
+        stageType: routing.stageType,
+        stageLabel: routing.stageLabel,
+        routingLocked: routing.routingLocked,
+        derivedConsumeLocationId: routing.defaultConsumeLocation?.id ?? null,
+        derivedConsumeLocationCode: routing.defaultConsumeLocation?.code ?? null,
+        derivedConsumeLocationName: routing.defaultConsumeLocation?.name ?? null,
+        derivedProduceLocationId: routing.defaultProduceLocation?.id ?? null,
+        derivedProduceLocationCode: routing.defaultProduceLocation?.code ?? null,
+        derivedProduceLocationName: routing.defaultProduceLocation?.name ?? null,
         reportProductionReceiveToLocationId: snapshotLocation.id,
         reportProductionReceiveToLocationCode: snapshotLocation.code,
         reportProductionReceiveToLocationName: snapshotLocation.name,
@@ -165,6 +196,15 @@ async function withReportProductionLocationHint(
     if (snapshotLocation) {
       return {
         ...workOrder,
+        stageType: routing.stageType,
+        stageLabel: routing.stageLabel,
+        routingLocked: routing.routingLocked,
+        derivedConsumeLocationId: routing.defaultConsumeLocation?.id ?? null,
+        derivedConsumeLocationCode: routing.defaultConsumeLocation?.code ?? null,
+        derivedConsumeLocationName: routing.defaultConsumeLocation?.name ?? null,
+        derivedProduceLocationId: routing.defaultProduceLocation?.id ?? null,
+        derivedProduceLocationCode: routing.defaultProduceLocation?.code ?? null,
+        derivedProduceLocationName: routing.defaultProduceLocation?.name ?? null,
         reportProductionReceiveToLocationId: snapshotLocation.id,
         reportProductionReceiveToLocationCode: snapshotLocation.code,
         reportProductionReceiveToLocationName: snapshotLocation.name,
@@ -178,6 +218,15 @@ async function withReportProductionLocationHint(
     if (defaultLocation) {
       return {
         ...workOrder,
+        stageType: routing.stageType,
+        stageLabel: routing.stageLabel,
+        routingLocked: routing.routingLocked,
+        derivedConsumeLocationId: routing.defaultConsumeLocation?.id ?? null,
+        derivedConsumeLocationCode: routing.defaultConsumeLocation?.code ?? null,
+        derivedConsumeLocationName: routing.defaultConsumeLocation?.name ?? null,
+        derivedProduceLocationId: routing.defaultProduceLocation?.id ?? null,
+        derivedProduceLocationCode: routing.defaultProduceLocation?.code ?? null,
+        derivedProduceLocationName: routing.defaultProduceLocation?.name ?? null,
         reportProductionReceiveToLocationId: defaultLocation.id,
         reportProductionReceiveToLocationCode: defaultLocation.code,
         reportProductionReceiveToLocationName: defaultLocation.name,
@@ -188,6 +237,15 @@ async function withReportProductionLocationHint(
 
   return {
     ...workOrder,
+    stageType: routing.stageType,
+    stageLabel: routing.stageLabel,
+    routingLocked: routing.routingLocked,
+    derivedConsumeLocationId: routing.defaultConsumeLocation?.id ?? null,
+    derivedConsumeLocationCode: routing.defaultConsumeLocation?.code ?? null,
+    derivedConsumeLocationName: routing.defaultConsumeLocation?.name ?? null,
+    derivedProduceLocationId: routing.defaultProduceLocation?.id ?? null,
+    derivedProduceLocationCode: routing.defaultProduceLocation?.code ?? null,
+    derivedProduceLocationName: routing.defaultProduceLocation?.name ?? null,
     reportProductionReceiveToLocationId: null,
     reportProductionReceiveToLocationCode: null,
     reportProductionReceiveToLocationName: null,
@@ -232,10 +290,6 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
   );
   const outputItemDefaults = outputItemRes.rows[0];
   const outputUom = data.outputUom || outputItemDefaults?.default_uom || data.outputUom;
-  const defaultConsumeLocationId =
-    data.defaultConsumeLocationId ?? outputItemDefaults?.default_location_id ?? null;
-  const defaultProduceLocationId =
-    data.defaultProduceLocationId ?? outputItemDefaults?.default_location_id ?? null;
   const plannedQty = toNumber(data.quantityPlanned);
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -274,10 +328,22 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
           kind === 'production'
             ? await resolveDefaultRoutingId(tenantId, data.outputItemId, client)
             : null;
-        const produceLocationSnapshot =
-          routingId
-            ? await resolveRoutingFinalStepLocationHint(tenantId, routingId, client)
-            : null;
+        const stageRouting = await deriveWorkOrderStageRouting(
+          tenantId,
+          {
+            kind,
+            outputItemId: data.outputItemId,
+            bomId: data.bomId ?? null,
+            defaultConsumeLocationId: data.defaultConsumeLocationId ?? outputItemDefaults?.default_location_id ?? null,
+            defaultProduceLocationId: data.defaultProduceLocationId ?? outputItemDefaults?.default_location_id ?? null,
+            produceToLocationIdSnapshot: null
+          },
+          client
+        );
+        const defaultConsumeLocationId =
+          stageRouting.defaultConsumeLocation?.id ?? outputItemDefaults?.default_location_id ?? null;
+        const defaultProduceLocationId =
+          stageRouting.defaultProduceLocation?.id ?? outputItemDefaults?.default_location_id ?? null;
         const inserted = await client.query(
           `INSERT INTO work_orders (
               id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, related_work_order_id,
@@ -307,15 +373,15 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
             data.bomVersionId ?? null,
             data.relatedWorkOrderId ?? null,
             routingId,
-            produceLocationSnapshot?.id ?? null,
+            stageRouting.defaultProduceLocation?.id ?? null,
             data.outputItemId,
             outputUom,
             plannedQty,
             data.quantityCompleted ?? null,
             defaultConsumeLocationId,
             defaultProduceLocationId,
-            data.scheduledStartAt ? new Date(data.scheduledStartAt) : null,
-            data.scheduledDueAt ? new Date(data.scheduledDueAt) : null,
+            data.scheduledStartAt ? new Date(normalizeDateInputToIso(data.scheduledStartAt) ?? data.scheduledStartAt) : null,
+            data.scheduledDueAt ? new Date(normalizeDateInputToIso(data.scheduledDueAt) ?? data.scheduledDueAt) : null,
             data.description ?? null,
             now
           ]
@@ -337,7 +403,7 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
 export async function getWorkOrderById(tenantId: string, id: string) {
   const result = await query<WorkOrderRow>(
     `SELECT id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, routing_id, produce_to_location_id_snapshot, related_work_order_id,
-            output_item_id, output_uom, quantity_planned, quantity_completed, default_consume_location_id,
+            output_item_id, output_uom, quantity_planned, quantity_completed, quantity_scrapped, default_consume_location_id,
             default_produce_location_id, scheduled_start_at, scheduled_due_at, released_at, completed_at,
             notes, description, created_at, updated_at
      FROM work_orders WHERE id = $1 AND tenant_id = $2`,
@@ -357,7 +423,7 @@ export async function listWorkOrders(tenantId: string, filters: WorkOrderListQue
   const params: any[] = [tenantId];
 
   if (filters.status) {
-    params.push(filters.status);
+    params.push(normalizeWorkOrderStatus(filters.status));
     clauses.push(`status = $${params.length}`);
   }
   if (filters.kind) {
@@ -365,11 +431,11 @@ export async function listWorkOrders(tenantId: string, filters: WorkOrderListQue
     clauses.push(`kind = $${params.length}`);
   }
   if (filters.plannedFrom) {
-    params.push(new Date(filters.plannedFrom));
+    params.push(new Date(normalizeDateInputToIso(filters.plannedFrom) ?? filters.plannedFrom));
     clauses.push(`scheduled_start_at >= $${params.length}`);
   }
   if (filters.plannedTo) {
-    params.push(new Date(filters.plannedTo));
+    params.push(new Date(normalizeDateInputToIso(filters.plannedTo) ?? filters.plannedTo));
     clauses.push(`scheduled_due_at <= $${params.length}`);
   }
 
@@ -378,7 +444,7 @@ export async function listWorkOrders(tenantId: string, filters: WorkOrderListQue
 
   const { rows } = await query<WorkOrderRow>(
     `SELECT id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, routing_id, produce_to_location_id_snapshot, related_work_order_id,
-            output_item_id, output_uom, quantity_planned, quantity_completed, default_consume_location_id,
+            output_item_id, output_uom, quantity_planned, quantity_completed, quantity_scrapped, default_consume_location_id,
             default_produce_location_id, scheduled_start_at, scheduled_due_at, released_at, completed_at,
             notes, description, created_at, updated_at
      FROM work_orders ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -601,46 +667,12 @@ export async function updateWorkOrderDefaults(
   workOrderId: string,
   defaults: { defaultConsumeLocationId?: string | null; defaultProduceLocationId?: string | null }
 ) {
-  if ('defaultConsumeLocationId' in defaults && defaults.defaultConsumeLocationId) {
-    const { rowCount } = await query(
-      'SELECT 1 FROM locations WHERE id = $1 AND tenant_id = $2',
-      [defaults.defaultConsumeLocationId, tenantId]
-    );
-    if (rowCount === 0) {
-      throw new Error('WO_DEFAULT_CONSUME_LOCATION_NOT_FOUND');
-    }
+  const workOrder = await getWorkOrderById(tenantId, workOrderId);
+  if (!workOrder) return null;
+  if (!isEditableWorkOrderStatus(workOrder.status)) {
+    throw new Error('WO_ROUTING_LOCKED');
   }
-  if ('defaultProduceLocationId' in defaults && defaults.defaultProduceLocationId) {
-    const { rowCount } = await query(
-      'SELECT 1 FROM locations WHERE id = $1 AND tenant_id = $2',
-      [defaults.defaultProduceLocationId, tenantId]
-    );
-    if (rowCount === 0) {
-      throw new Error('WO_DEFAULT_PRODUCE_LOCATION_NOT_FOUND');
-    }
-  }
-
-  const now = new Date();
-  const sets: string[] = [];
-  const params: any[] = [];
-
-  if ('defaultConsumeLocationId' in defaults) {
-    params.push(defaults.defaultConsumeLocationId);
-    sets.push(`default_consume_location_id = $${params.length}`);
-  }
-  if ('defaultProduceLocationId' in defaults) {
-    params.push(defaults.defaultProduceLocationId);
-    sets.push(`default_produce_location_id = $${params.length}`);
-  }
-  params.push(now);
-  const updatedAtIdx = params.length;
-  sets.push(`updated_at = $${updatedAtIdx}`);
-  params.unshift(workOrderId);
-
-  const sql = `UPDATE work_orders SET ${sets.join(', ')} WHERE id = $1 AND tenant_id = $${params.length + 1}`;
-  params.push(tenantId);
-  await query(sql, params);
-  return getWorkOrderById(tenantId, workOrderId);
+  throw new Error('WO_ROUTING_LOCKED');
 }
 
 export async function updateWorkOrderDescription(
@@ -655,6 +687,29 @@ export async function updateWorkOrderDescription(
             updated_at = $2
       WHERE id = $3 AND tenant_id = $4`,
     [description, now, workOrderId, tenantId]
+  );
+  return getWorkOrderById(tenantId, workOrderId);
+}
+
+export async function transitionWorkOrderStatus(
+  tenantId: string,
+  workOrderId: string,
+  nextStatus: 'ready' | 'closed' | 'canceled'
+) {
+  const current = await getWorkOrderById(tenantId, workOrderId);
+  if (!current) {
+    throw new Error('WO_NOT_FOUND');
+  }
+  assertWorkOrderStatusTransition(current.status, nextStatus);
+  const now = new Date();
+  await query(
+    `UPDATE work_orders
+        SET status = $1,
+            completed_at = CASE WHEN $1 IN ('completed', 'closed') THEN COALESCE(completed_at, $2) ELSE completed_at END,
+            updated_at = $2
+      WHERE id = $3
+        AND tenant_id = $4`,
+    [nextStatus, now, workOrderId, tenantId]
   );
   return getWorkOrderById(tenantId, workOrderId);
 }

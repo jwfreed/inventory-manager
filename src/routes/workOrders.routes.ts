@@ -2,7 +2,6 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import {
   workOrderCreateSchema,
-  workOrderDefaultLocationsSchema,
   workOrderListQuerySchema,
   workOrderRequirementsQuerySchema,
   workOrderUpdateSchema
@@ -12,11 +11,13 @@ import {
   getWorkOrderById,
   getWorkOrderRequirements,
   listWorkOrders,
+  transitionWorkOrderStatus,
   updateWorkOrderDefaults,
   updateWorkOrderDescription,
   useActiveBomVersion
 } from '../services/workOrders.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { getWorkOrderReadiness } from '../services/workOrderReadiness.service';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
@@ -178,30 +179,63 @@ router.get('/work-orders/:id/requirements', async (req: Request, res: Response) 
   }
 });
 
+router.get('/work-orders/:id/readiness', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+  try {
+    const readiness = await getWorkOrderReadiness(req.auth!.tenantId, id);
+    if (!readiness) {
+      return res.status(404).json({ error: 'Work order not found.' });
+    }
+    return res.json(readiness);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to compute work order readiness.' });
+  }
+});
+
 router.patch('/work-orders/:id/default-locations', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ error: 'Invalid work order id.' });
   }
-  const parsed = workOrderDefaultLocationsSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    await updateWorkOrderDefaults(req.auth!.tenantId, id, req.body ?? {});
+    return res.status(409).json({ error: 'Work order routing is auto-derived and cannot be overridden.' });
+  } catch (error) {
+    if ((error as Error)?.message === 'WO_ROUTING_LOCKED') {
+      return res.status(409).json({ error: 'Work order routing is auto-derived and cannot be overridden.' });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to validate default locations.' });
+  }
+});
+
+router.post('/work-orders/:id/status/:status', async (req: Request, res: Response) => {
+  const { id, status } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid work order id.' });
+  }
+  if (!['ready', 'closed', 'canceled'].includes(status)) {
+    return res.status(400).json({ error: 'Unsupported work order status transition.' });
   }
   try {
-    const updated = await updateWorkOrderDefaults(req.auth!.tenantId, id, parsed.data);
+    const updated = await transitionWorkOrderStatus(req.auth!.tenantId, id, status as 'ready' | 'closed' | 'canceled');
     if (!updated) {
       return res.status(404).json({ error: 'Work order not found.' });
     }
     return res.json(updated);
-  } catch (error) {
-    if ((error as Error)?.message === 'WO_DEFAULT_CONSUME_LOCATION_NOT_FOUND') {
-      return res.status(404).json({ error: 'Default consume location not found.' });
+  } catch (error: any) {
+    if (error?.code === 'WO_STATUS_TRANSITION_INVALID' || error?.message === 'WO_STATUS_TRANSITION_INVALID') {
+      return res.status(409).json({ error: 'Invalid work order status transition.' });
     }
-    if ((error as Error)?.message === 'WO_DEFAULT_PRODUCE_LOCATION_NOT_FOUND') {
-      return res.status(404).json({ error: 'Default produce location not found.' });
+    if (error?.message === 'WO_NOT_FOUND') {
+      return res.status(404).json({ error: 'Work order not found.' });
     }
     console.error(error);
-    return res.status(500).json({ error: 'Failed to update default locations.' });
+    return res.status(500).json({ error: 'Failed to transition work order status.' });
   }
 });
 

@@ -1,7 +1,7 @@
 export type WorkOrder = {
   id: string
   number: string
-  status: string
+  status: 'draft' | 'ready' | 'in_progress' | 'partially_completed' | 'completed' | 'closed' | 'canceled'
   kind?: 'production' | 'disassembly'
   bomId?: string
   bomVersionId?: string | null
@@ -13,6 +13,7 @@ export type WorkOrder = {
   outputUom: string
   quantityPlanned: number
   quantityCompleted?: number | null
+  quantityScrapped?: number | null
   defaultConsumeLocationId?: string | null
   defaultProduceLocationId?: string | null
   scheduledStartAt?: string | null
@@ -20,6 +21,15 @@ export type WorkOrder = {
   releasedAt?: string | null
   completedAt?: string | null
   description?: string | null
+  stageType?: 'wrapped_bar' | 'boxing' | 'generic_production' | 'disassembly'
+  stageLabel?: string
+  routingLocked?: boolean
+  derivedConsumeLocationId?: string | null
+  derivedConsumeLocationCode?: string | null
+  derivedConsumeLocationName?: string | null
+  derivedProduceLocationId?: string | null
+  derivedProduceLocationCode?: string | null
+  derivedProduceLocationName?: string | null
   reportProductionReceiveToLocationId?: string | null
   reportProductionReceiveToLocationCode?: string | null
   reportProductionReceiveToLocationName?: string | null
@@ -43,6 +53,46 @@ export type WorkOrderRequirementLine = {
   scrapFactor: number | null
 }
 
+export type WorkOrderReadinessLine = WorkOrderRequirementLine & {
+  required: number
+  reserved: number
+  available: number
+  shortage: number
+  blocked: boolean
+  consumeLocationId?: string | null
+  consumeLocationCode?: string | null
+  consumeLocationName?: string | null
+  consumeLocationRole?: string | null
+}
+
+export type WorkOrderReadiness = {
+  workOrderId: string
+  stageType: 'wrapped_bar' | 'boxing' | 'generic_production' | 'disassembly'
+  stageLabel: string
+  status: string
+  consumeLocation?: {
+    id: string
+    code: string
+    name: string
+    role?: string | null
+  } | null
+  produceLocation?: {
+    id: string
+    code: string
+    name: string
+    role?: string | null
+  } | null
+  quantities: {
+    planned: number
+    produced: number
+    scrapped: number
+    remaining: number
+  }
+  hasShortage: boolean
+  executionSummary?: WorkOrderExecutionSummary | null
+  lines: WorkOrderReadinessLine[]
+}
+
 export type WorkOrderRequirements = {
   workOrderId: string
   outputItemId: string
@@ -64,6 +114,7 @@ export type WorkOrderExecutionSummary = {
     outputUom: string
     quantityPlanned: number
     quantityCompleted: number
+    quantityScrapped?: number
     completedAt?: string | null
   }
   issuedTotals: {

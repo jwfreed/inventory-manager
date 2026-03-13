@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { WorkOrderRequirementLine } from '@api/types'
+import type { WorkOrderReadinessLine, WorkOrderRequirementLine } from '@api/types'
 import { DataTable } from '@shared/ui'
 
 type IssuedTotal = {
@@ -9,7 +9,7 @@ type IssuedTotal = {
 }
 
 type Props = {
-  lines: WorkOrderRequirementLine[]
+  lines: Array<WorkOrderRequirementLine | WorkOrderReadinessLine>
   issuedTotals?: IssuedTotal[]
   componentLabel: (id: string, name?: string | null, sku?: string | null) => string
 }
@@ -22,6 +22,7 @@ export function WorkOrderRequirementsTable({ lines, issuedTotals = [], component
     })
     return map
   }, [issuedTotals])
+  const hasReadiness = lines.some((line) => 'required' in line)
 
   return (
     <DataTable
@@ -42,8 +43,44 @@ export function WorkOrderRequirementsTable({ lines, issuedTotals = [], component
         {
           id: 'required',
           header: 'Required',
-          cell: (line) => `${line.quantityRequired} ${line.uom}`,
+          cell: (line) => `${'required' in line ? line.required : line.quantityRequired} ${line.uom}`,
         },
+        ...(hasReadiness
+          ? [
+              {
+                id: 'consumeLocation',
+                header: 'Consume location',
+                cell: (line: WorkOrderRequirementLine | WorkOrderReadinessLine) =>
+                  'consumeLocationCode' in line
+                    ? [line.consumeLocationCode, line.consumeLocationName].filter(Boolean).join(' — ') || 'Unresolved'
+                    : 'Auto-derived',
+              },
+              {
+                id: 'reserved',
+                header: 'Reserved',
+                cell: (line: WorkOrderRequirementLine | WorkOrderReadinessLine) =>
+                  'reserved' in line ? `${line.reserved} ${line.uom}` : '0',
+              },
+              {
+                id: 'available',
+                header: 'Available',
+                cell: (line: WorkOrderRequirementLine | WorkOrderReadinessLine) =>
+                  'available' in line ? `${line.available} ${line.uom}` : '0',
+              },
+              {
+                id: 'shortage',
+                header: 'Shortage',
+                cell: (line: WorkOrderRequirementLine | WorkOrderReadinessLine) =>
+                  'shortage' in line ? (
+                    <span className={line.shortage > 0 ? 'font-semibold text-rose-700' : 'text-emerald-700'}>
+                      {line.shortage} {line.uom}
+                    </span>
+                  ) : (
+                    `0 ${line.uom}`
+                  ),
+              },
+            ]
+          : []),
         {
           id: 'issued',
           header: 'Issued',

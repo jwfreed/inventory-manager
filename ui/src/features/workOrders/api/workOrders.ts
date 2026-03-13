@@ -6,6 +6,7 @@ import type {
   WorkOrderIssue,
   WorkOrderCompletion,
   WorkOrderRequirements,
+  WorkOrderReadiness,
 } from '../../../api/types'
 
 export type WorkOrderListParams = {
@@ -47,6 +48,10 @@ export async function getWorkOrderRequirements(
   return apiGet<WorkOrderRequirements>(`/work-orders/${id}/requirements`, { params })
 }
 
+export async function getWorkOrderReadiness(id: string): Promise<WorkOrderReadiness> {
+  return apiGet<WorkOrderReadiness>(`/work-orders/${id}/readiness`)
+}
+
 export type WorkOrderCreatePayload = {
   kind?: 'production' | 'disassembly'
   bomId?: string
@@ -56,8 +61,6 @@ export type WorkOrderCreatePayload = {
   outputUom: string
   quantityPlanned: number
   quantityCompleted?: number
-  defaultConsumeLocationId?: string
-  defaultProduceLocationId?: string
   scheduledStartAt?: string
   scheduledDueAt?: string
   description?: string
@@ -223,4 +226,32 @@ export async function reportWorkOrderProduction(
   payload: ReportProductionPayload,
 ): Promise<ReportProductionResult> {
   return apiPost<ReportProductionResult>(`/work-orders/${workOrderId}/report-production`, payload)
+}
+
+export type ReportScrapPayload = {
+  workOrderExecutionId: string
+  quantity: number
+  uom: string
+  reasonCode: string
+  occurredAt?: string
+  notes?: string | null
+  idempotencyKey?: string
+}
+
+export type ReportScrapResult = {
+  workOrderId: string
+  workOrderExecutionId: string
+  scrapMovementId: string
+  itemId: string
+  quantity: number
+  uom: string
+  idempotencyKey: string | null
+  replayed: boolean
+}
+
+export async function reportWorkOrderScrap(
+  workOrderId: string,
+  payload: ReportScrapPayload,
+): Promise<ReportScrapResult> {
+  return apiPost<ReportScrapResult>(`/work-orders/${workOrderId}/report-scrap`, payload)
 }

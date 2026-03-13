@@ -82,7 +82,10 @@ export const locationSchema = z.object({
   code: z.string().min(1).max(255),
   name: z.string().min(1).max(255),
   type: z.enum(['warehouse', 'bin', 'store', 'customer', 'vendor', 'scrap', 'virtual']),
-  role: z.enum(['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRAP']).nullable().optional(),
+  role: z
+    .enum(['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRAP', 'RM_STORE', 'WIP', 'PACKAGING', 'FG_STAGE', 'FG_SELLABLE'])
+    .nullable()
+    .optional(),
   isSellable: z.boolean().optional(),
   active: z.boolean().optional(),
   parentLocationId: z.string().uuid().nullable().optional(),
@@ -114,14 +117,15 @@ export const locationSchema = z.object({
     }
     return;
   }
-  if (data.role === 'SELLABLE' && data.isSellable === false) {
+  const roleIsSellable = data.role === 'SELLABLE' || data.role === 'FG_SELLABLE';
+  if (roleIsSellable && data.isSellable === false) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Location role must match sellable flag.',
       path: ['isSellable']
     });
   }
-  if (data.role && data.role !== 'SELLABLE' && data.isSellable === true) {
+  if (data.role && !roleIsSellable && data.isSellable === true) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Location role must match sellable flag.',

@@ -1,5 +1,21 @@
 import { z } from 'zod';
 import { uomSchema } from './shared/uom.schema';
+import { isSupportedDateInput, normalizeDateInputToIso } from '../core/dateAdapter';
+
+const workOrderStatusSchema = z.enum([
+  'draft',
+  'ready',
+  'released',
+  'in_progress',
+  'partially_completed',
+  'completed',
+  'closed',
+  'canceled'
+]);
+
+const workOrderDateSchema = z.string().trim().min(1).refine((value) => isSupportedDateInput(value), {
+  message: 'Date must be ISO or DD-MM-YY.'
+}).transform((value) => normalizeDateInputToIso(value)!);
 
 export const workOrderCreateSchema = z
   .object({
@@ -12,8 +28,8 @@ export const workOrderCreateSchema = z
     quantityCompleted: z.number().min(0).optional(),
     defaultConsumeLocationId: z.string().uuid().optional(),
     defaultProduceLocationId: z.string().uuid().optional(),
-    scheduledStartAt: z.string().datetime().optional(),
-    scheduledDueAt: z.string().datetime().optional(),
+    scheduledStartAt: workOrderDateSchema.optional(),
+    scheduledDueAt: workOrderDateSchema.optional(),
     description: z.string().max(2000).optional(),
     relatedWorkOrderId: z.string().uuid().optional()
   })
@@ -31,7 +47,7 @@ export const workOrderCreateSchema = z
       if (!(start instanceof Date && !Number.isNaN(start.valueOf()) && due instanceof Date && !Number.isNaN(due.valueOf()))) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'scheduledStartAt and scheduledDueAt must be valid ISO datetimes.',
+          message: 'scheduledStartAt and scheduledDueAt must be valid dates.',
           path: ['scheduledStartAt']
         });
         return;
@@ -47,10 +63,10 @@ export const workOrderCreateSchema = z
   });
 
 export const workOrderListQuerySchema = z.object({
-  status: z.enum(['draft', 'released', 'in_progress', 'completed', 'canceled']).optional(),
+  status: workOrderStatusSchema.optional(),
   kind: z.enum(['production', 'disassembly']).optional(),
-  plannedFrom: z.string().datetime().optional(),
-  plannedTo: z.string().datetime().optional(),
+  plannedFrom: workOrderDateSchema.optional(),
+  plannedTo: workOrderDateSchema.optional(),
   limit: z.string().optional(),
   offset: z.string().optional()
 });
@@ -58,11 +74,6 @@ export const workOrderListQuerySchema = z.object({
 export const workOrderRequirementsQuerySchema = z.object({
   quantity: z.string().optional(),
   packSize: z.string().optional()
-});
-
-export const workOrderDefaultLocationsSchema = z.object({
-  defaultConsumeLocationId: z.string().uuid().nullable().optional(),
-  defaultProduceLocationId: z.string().uuid().nullable().optional()
 });
 
 export const workOrderUpdateSchema = z.object({

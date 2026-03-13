@@ -1,8 +1,9 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
-import type { ApiError, WorkOrder, WorkOrderExecutionSummary, WorkOrderRequirements } from '../../api/types'
+import type { ApiError, WorkOrder, WorkOrderExecutionSummary, WorkOrderReadiness, WorkOrderRequirements } from '../../api/types'
 import {
   getWorkOrder,
   getWorkOrderExecution,
+  getWorkOrderReadiness,
   getWorkOrderRequirements,
   listWorkOrders,
   type WorkOrderListParams,
@@ -13,6 +14,7 @@ export const workOrdersQueryKeys = {
   list: (params: WorkOrderListParams = {}) => [...workOrdersQueryKeys.all, 'list', params] as const,
   detail: (id: string) => [...workOrdersQueryKeys.all, 'detail', id] as const,
   execution: (id: string) => [...workOrdersQueryKeys.all, 'execution', id] as const,
+  readiness: (id: string) => [...workOrdersQueryKeys.all, 'readiness', id] as const,
   requirements: (id: string, params?: { quantity?: number; packSize?: number }) =>
     [...workOrdersQueryKeys.all, 'requirements', id, params ?? {}] as const,
 }
@@ -31,6 +33,11 @@ type ExecutionOptions = Omit<
 
 type RequirementsOptions = Omit<
   UseQueryOptions<WorkOrderRequirements, ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type ReadinessOptions = Omit<
+  UseQueryOptions<WorkOrderReadiness, ApiError>,
   'queryKey' | 'queryFn'
 >
 
@@ -57,6 +64,16 @@ export function useWorkOrderExecution(id?: string, options: ExecutionOptions = {
   return useQuery({
     queryKey: workOrdersQueryKeys.execution(id ?? ''),
     queryFn: () => getWorkOrderExecution(id as string),
+    enabled: Boolean(id),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useWorkOrderReadiness(id?: string, options: ReadinessOptions = {}) {
+  return useQuery({
+    queryKey: workOrdersQueryKeys.readiness(id ?? ''),
+    queryFn: () => getWorkOrderReadiness(id as string),
     enabled: Boolean(id),
     retry: 1,
     ...options,

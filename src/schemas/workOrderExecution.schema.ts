@@ -1,5 +1,19 @@
 import { z } from 'zod';
 import { uomSchema } from './shared/uom.schema';
+import { normalizeDateInputToIso } from '../core/dateAdapter';
+
+const workOrderExecutionDateSchema = z.string().trim().transform((value, ctx) => {
+  const normalized = normalizeDateInputToIso(value) ?? value;
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Invalid date. Expected DD-MM-YY or ISO timestamp.'
+    });
+    return z.NEVER;
+  }
+  return parsed.toISOString();
+});
 
 export const workOrderIssueLineSchema = z.object({
   lineNumber: z.number().int().positive().optional(),
@@ -12,7 +26,7 @@ export const workOrderIssueLineSchema = z.object({
 });
 
 export const workOrderIssueCreateSchema = z.object({
-  occurredAt: z.string().datetime(),
+  occurredAt: workOrderExecutionDateSchema,
   notes: z.string().max(2000).optional(),
   lines: z.array(workOrderIssueLineSchema).min(1)
 });
@@ -28,13 +42,13 @@ export const workOrderCompletionLineSchema = z.object({
 });
 
 export const workOrderCompletionCreateSchema = z.object({
-  occurredAt: z.string().datetime(),
+  occurredAt: workOrderExecutionDateSchema,
   notes: z.string().max(2000).optional(),
   lines: z.array(workOrderCompletionLineSchema).min(1)
 });
 
 export const workOrderBatchSchema = z.object({
-  occurredAt: z.string().datetime(),
+  occurredAt: workOrderExecutionDateSchema,
   notes: z.string().max(2000).optional(),
   overrideNegative: z.boolean().optional(),
   overrideReason: z.string().max(2000).optional(),
@@ -80,7 +94,7 @@ export const workOrderReportProductionSchema = z.object({
       quantity: z.number().positive()
     })
   ).optional(),
-  occurredAt: z.string().datetime().optional(),
+  occurredAt: workOrderExecutionDateSchema.optional(),
   notes: z.string().max(2000).optional(),
   clientRequestId: z.string().uuid().optional(),
   idempotencyKey: z.string().min(1).max(255).optional(),
@@ -114,7 +128,7 @@ export const workOrderReportScrapSchema = z.object({
   quantity: z.number().positive(),
   uom: uomSchema.max(32),
   reasonCode: z.string().min(1).max(255),
-  occurredAt: z.string().datetime().optional(),
+  occurredAt: workOrderExecutionDateSchema.optional(),
   notes: z.string().max(2000).optional(),
   idempotencyKey: z.string().min(1).max(255).optional()
 });

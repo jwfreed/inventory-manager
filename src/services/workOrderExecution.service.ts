@@ -50,6 +50,17 @@ import {
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
+import {
+  isTerminalWorkOrderStatus,
+  nextStatusAfterExecutionStart,
+  nextStatusFromProgress,
+  normalizeWorkOrderStatus
+} from './workOrderLifecycle.service';
+import {
+  assertWorkOrderRoutingLine,
+  deriveComponentConsumeLocation,
+  deriveWorkOrderStageRouting
+} from './stageRouting.service';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
 // (never inventory_adjustments). External refs include work order ids for traceability.
@@ -79,6 +90,17 @@ function domainError(code: string, details?: Record<string, unknown>): DomainErr
     error.details = details;
   }
   return error;
+}
+
+function workOrderRoutingContext(workOrder: WorkOrderRow) {
+  return {
+    kind: workOrder.kind,
+    outputItemId: workOrder.output_item_id,
+    bomId: workOrder.bom_id,
+    defaultConsumeLocationId: workOrder.default_consume_location_id,
+    defaultProduceLocationId: workOrder.default_produce_location_id,
+    produceToLocationIdSnapshot: workOrder.produce_to_location_id_snapshot
+  };
 }
 
 type ManufacturingMutationState =
@@ -322,28 +344,6 @@ function compareNormalizedOverrideKey(
   return compareNullableText(left.componentItemId, right.componentItemId);
 }
 
-async function resolveWarehouseRootId(
-  client: PoolClient | undefined,
-  tenantId: string,
-  warehouseRef?: string | null
-): Promise<string | null> {
-  const executor = client ? client.query.bind(client) : query;
-  if (!warehouseRef) return null;
-  const ref = warehouseRef.trim();
-  if (!ref) return null;
-  const res = await executor<{ id: string }>(
-    `SELECT id
-       FROM locations
-      WHERE tenant_id = $1
-        AND type = 'warehouse'
-        AND (id::text = $2 OR code = $2)
-      ORDER BY id
-      LIMIT 1`,
-    [tenantId, ref]
-  );
-  return res.rows[0]?.id ?? null;
-}
-
 type NormalizedBatchConsumeLine = {
   componentItemId: string;
   fromLocationId: string;
@@ -446,10 +446,15 @@ type WorkOrderRow = {
   kind: string;
   bom_id: string | null;
   bom_version_id: string | null;
+  routing_id: string | null;
+  produce_to_location_id_snapshot: string | null;
   output_item_id: string;
   output_uom: string;
   quantity_planned: string | number;
   quantity_completed: string | number | null;
+  quantity_scrapped: string | number | null;
+  default_consume_location_id: string | null;
+  default_produce_location_id: string | null;
   completed_at: string | null;
   updated_at: string;
 };
@@ -925,68 +930,6 @@ async function fetchWorkOrderById(
   return result.rowCount === 0 ? null : result.rows[0];
 }
 
-async function resolveRoutingFinalStepProduceLocation(
-  tenantId: string,
-  outputItemId: string,
-  client?: PoolClient
-): Promise<string | null> {
-  const executor = client ? client.query.bind(client) : query;
-  const res = await executor<{ location_id: string | null }>(
-    `WITH selected_routing AS (
-       SELECT r.id
-         FROM routings r
-        WHERE r.tenant_id = $1
-          AND r.item_id = $2
-        ORDER BY
-          CASE WHEN r.is_default THEN 0 ELSE 1 END,
-          CASE
-            WHEN r.status = 'active' THEN 0
-            WHEN r.status = 'draft' THEN 1
-            ELSE 2
-          END,
-          r.updated_at DESC,
-          r.created_at DESC,
-          r.id
-        LIMIT 1
-     )
-     SELECT wc.location_id
-       FROM selected_routing sr
-       JOIN routing_steps rs
-         ON rs.routing_id = sr.id
-        AND rs.tenant_id = $1
-       JOIN work_centers wc
-         ON wc.id = rs.work_center_id
-        AND wc.tenant_id = $1
-      WHERE wc.location_id IS NOT NULL
-      ORDER BY rs.sequence_number DESC
-      LIMIT 1`,
-    [tenantId, outputItemId]
-  );
-  return res.rows[0]?.location_id ?? null;
-}
-
-async function resolveRoutingFinalStepProduceLocationByRoutingId(
-  tenantId: string,
-  routingId: string,
-  client?: PoolClient
-): Promise<string | null> {
-  const executor = client ? client.query.bind(client) : query;
-  const res = await executor<{ location_id: string | null }>(
-    `SELECT wc.location_id
-       FROM routing_steps rs
-       JOIN work_centers wc
-         ON wc.id = rs.work_center_id
-        AND wc.tenant_id = $1
-      WHERE rs.tenant_id = $1
-        AND rs.routing_id = $2
-        AND wc.location_id IS NOT NULL
-      ORDER BY rs.sequence_number DESC
-      LIMIT 1`,
-    [tenantId, routingId]
-  );
-  return res.rows[0]?.location_id ?? null;
-}
-
 function buildAutoOutputLotCode(workOrderNumber: string, executionId: string) {
   const normalizedOrder = workOrderNumber.replace(/[^A-Za-z0-9-]/g, '').slice(0, 48) || 'WO';
   return `WO-${normalizedOrder}-${executionId.slice(0, 8).toUpperCase()}`;
@@ -1414,8 +1357,20 @@ export async function createWorkOrderIssue(
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
     }
-    if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
+    if (isTerminalWorkOrderStatus(workOrder.status)) {
       throw new Error('WO_INVALID_STATE');
+    }
+
+    if (workOrder.kind !== 'disassembly') {
+      for (const line of normalizedLines) {
+        await assertWorkOrderRoutingLine({
+          tenantId,
+          context: workOrderRoutingContext(workOrder),
+          componentItemId: line.componentItemId,
+          consumeLocationId: line.fromLocationId,
+          client
+        });
+      }
     }
 
     await client.query(
@@ -1497,7 +1452,7 @@ export async function postWorkOrderIssue(
       if (!workOrder) {
         throw new Error('WO_NOT_FOUND');
       }
-      if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
+      if (isTerminalWorkOrderStatus(workOrder.status)) {
         throw new Error('WO_INVALID_STATE');
       }
 
@@ -1784,14 +1739,14 @@ export async function postWorkOrderIssue(
           [movement.movementId, now, issueId, tenantId]
         );
 
-        if (workOrder!.status === 'draft') {
+        if (normalizeWorkOrderStatus(workOrder!.status) === 'draft' || normalizeWorkOrderStatus(workOrder!.status) === 'ready') {
           await projectionClient.query(
             `UPDATE work_orders
-                SET status = 'in_progress',
-                    updated_at = $2
+                SET status = $2,
+                    updated_at = $3
               WHERE id = $1
-                AND tenant_id = $3`,
-            [workOrderId, now, tenantId]
+                AND tenant_id = $4`,
+            [workOrderId, nextStatusAfterExecutionStart(workOrder!.status), now, tenantId]
           );
         }
 
@@ -1800,12 +1755,11 @@ export async function postWorkOrderIssue(
           const newCompleted = currentCompleted + issuedTotal;
           const planned = toNumber(workOrder!.quantity_planned);
           const completedAt = newCompleted >= planned ? now : null;
-          const nextStatus =
-            newCompleted >= planned
-              ? 'completed'
-              : workOrder!.status === 'draft'
-                ? 'in_progress'
-                : workOrder!.status;
+          const nextStatus = nextStatusFromProgress({
+            currentStatus: workOrder!.status,
+            plannedQuantity: planned,
+            completedQuantity: newCompleted
+          });
           await projectionClient.query(
             `UPDATE work_orders
                 SET quantity_completed = $2,
@@ -1900,8 +1854,19 @@ export async function createWorkOrderCompletion(
     if (!workOrder) {
       throw new Error('WO_NOT_FOUND');
     }
-    if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
+    if (isTerminalWorkOrderStatus(workOrder.status)) {
       throw new Error('WO_INVALID_STATE');
+    }
+
+    if (workOrder.kind !== 'disassembly') {
+      for (const line of normalizedLines) {
+        await assertWorkOrderRoutingLine({
+          tenantId,
+          context: workOrderRoutingContext(workOrder),
+          produceLocationId: line.toLocationId,
+          client
+        });
+      }
     }
 
     await client.query(
@@ -1982,7 +1947,7 @@ export async function postWorkOrderCompletion(
       if (!workOrder) {
         throw new Error('WO_NOT_FOUND');
       }
-      if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
+      if (isTerminalWorkOrderStatus(workOrder.status)) {
         throw new Error('WO_INVALID_STATE');
       }
 
@@ -2270,12 +2235,11 @@ export async function postWorkOrderCompletion(
           const newCompleted = currentCompleted + totalProduced;
           const planned = toNumber(workOrder!.quantity_planned);
           const completedAt = newCompleted >= planned ? now : null;
-          const newStatus =
-            newCompleted >= planned
-              ? 'completed'
-              : workOrder!.status === 'draft'
-                ? 'in_progress'
-                : workOrder!.status;
+          const newStatus = nextStatusFromProgress({
+            currentStatus: workOrder!.status,
+            plannedQuantity: planned,
+            completedQuantity: newCompleted
+          });
           await projectionClient.query(
             `UPDATE work_orders
                 SET quantity_completed = $2,
@@ -2306,24 +2270,28 @@ export async function postWorkOrderCompletion(
               tenantId
             ]
           );
-        } else if (workOrder!.status === 'draft') {
+        } else if (
+          normalizeWorkOrderStatus(workOrder!.status) === 'draft'
+          || normalizeWorkOrderStatus(workOrder!.status) === 'ready'
+        ) {
           await projectionClient.query(
             `UPDATE work_orders
-                SET status = 'in_progress',
-                    wip_total_cost = COALESCE(wip_total_cost, 0) + $2,
-                    wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $3,
+                SET status = $2,
+                    wip_total_cost = COALESCE(wip_total_cost, 0) + $3,
+                    wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $4,
                     wip_unit_cost = CASE
-                      WHEN (COALESCE(wip_quantity_canonical, 0) + $3) > 0
-                      THEN (COALESCE(wip_total_cost, 0) + $2) / (COALESCE(wip_quantity_canonical, 0) + $3)
+                      WHEN (COALESCE(wip_quantity_canonical, 0) + $4) > 0
+                      THEN (COALESCE(wip_total_cost, 0) + $3) / (COALESCE(wip_quantity_canonical, 0) + $4)
                       ELSE NULL
                     END,
-                    wip_cost_method = $4,
-                    wip_costed_at = $5,
-                    updated_at = $6
+                    wip_cost_method = $5,
+                    wip_costed_at = $6,
+                    updated_at = $7
               WHERE id = $1
-                AND tenant_id = $7`,
+                AND tenant_id = $8`,
             [
               workOrderId,
+              nextStatusAfterExecutionStart(workOrder!.status),
               totalIssueCost,
               totalProducedCanonical,
               WIP_COST_METHOD,
@@ -2436,6 +2404,7 @@ export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId
 
   const planned = roundQuantity(toNumber(workOrder.quantity_planned));
   const completed = roundQuantity(toNumber(workOrder.quantity_completed ?? 0));
+  const scrapped = roundQuantity(toNumber(workOrder.quantity_scrapped ?? 0));
 
   const bom = workOrder.bom_id ? await fetchBomById(tenantId, workOrder.bom_id) : null;
 
@@ -2450,6 +2419,7 @@ export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId
       outputUom: workOrder.output_uom,
       quantityPlanned: planned,
       quantityCompleted: completed,
+      quantityScrapped: scrapped,
       completedAt: workOrder.completed_at
     },
     issuedTotals: issuedRows.rows.map((row: any) => ({
@@ -3048,42 +3018,16 @@ export async function reportWorkOrderProduction(
     throw new Error('WO_REPORT_INVALID_OCCURRED_AT');
   }
 
-  const routingSnapshotProduceLocationId = workOrder.produceToLocationIdSnapshot ?? null;
-  const runtimeRoutingProduceLocationId = workOrder.routingId
-    ? await resolveRoutingFinalStepProduceLocationByRoutingId(tenantId, workOrder.routingId)
-    : await resolveRoutingFinalStepProduceLocation(tenantId, workOrder.outputItemId);
-  const warehouseFromRoutingSnapshot = routingSnapshotProduceLocationId
-    ? await resolveWarehouseIdForLocation(tenantId, routingSnapshotProduceLocationId)
-    : null;
-  const warehouseFromRoutingStep = runtimeRoutingProduceLocationId
-    ? await resolveWarehouseIdForLocation(tenantId, runtimeRoutingProduceLocationId)
-    : null;
-  const effectiveSnapshotProduceLocationId = warehouseFromRoutingSnapshot ? routingSnapshotProduceLocationId : null;
-  const effectiveRuntimeRoutingProduceLocationId = warehouseFromRoutingStep ? runtimeRoutingProduceLocationId : null;
-  const warehouseFromInput = await resolveWarehouseRootId(undefined, tenantId, data.warehouseId ?? null);
-  const warehouseFromProduceDefault = workOrder.defaultProduceLocationId
-    ? await resolveWarehouseIdForLocation(tenantId, workOrder.defaultProduceLocationId)
-    : null;
-  const warehouseFromConsumeDefault = workOrder.defaultConsumeLocationId
-    ? await resolveWarehouseIdForLocation(tenantId, workOrder.defaultConsumeLocationId)
-    : null;
-  const warehouseId =
-    warehouseFromInput ??
-    warehouseFromRoutingSnapshot ??
-    warehouseFromRoutingStep ??
-    warehouseFromProduceDefault ??
-    warehouseFromConsumeDefault;
-  if (!warehouseId) {
-    throw new Error('WO_REPORT_WAREHOUSE_REQUIRED');
-  }
-
-  const consumeLocationId = await getWarehouseDefaultLocationId(tenantId, warehouseId, 'SELLABLE');
-  const produceLocationId =
-    effectiveSnapshotProduceLocationId ??
-    effectiveRuntimeRoutingProduceLocationId ??
-    workOrder.defaultProduceLocationId ??
-    await getWarehouseDefaultLocationId(tenantId, warehouseId, 'QA');
-  if (!consumeLocationId || !produceLocationId) {
+  const routing = await deriveWorkOrderStageRouting(tenantId, {
+    kind: workOrder.kind,
+    outputItemId: workOrder.outputItemId,
+    bomId: workOrder.bomId,
+    defaultConsumeLocationId: workOrder.defaultConsumeLocationId,
+    defaultProduceLocationId: workOrder.defaultProduceLocationId,
+    produceToLocationIdSnapshot: workOrder.produceToLocationIdSnapshot
+  });
+  const produceLocationId = routing.defaultProduceLocation?.id ?? null;
+  if (!produceLocationId) {
     throw new Error('WO_REPORT_DEFAULT_LOCATIONS_REQUIRED');
   }
 
@@ -3118,8 +3062,8 @@ export async function reportWorkOrderProduction(
     }
   }
 
-  const consumeLines = requirements.lines
-    .map((line) => {
+  const consumeLines = await Promise.all(
+    requirements.lines.map(async (line) => {
       const override = overrides.get(line.componentItemId);
       const quantity = override ? override.quantity : roundQuantity(toNumber(line.quantityRequired));
       if (quantity < 0) {
@@ -3128,22 +3072,38 @@ export async function reportWorkOrderProduction(
       if (quantity === 0) {
         return null;
       }
+      const consumeLocation = await deriveComponentConsumeLocation(
+        tenantId,
+        {
+          kind: workOrder.kind,
+          outputItemId: workOrder.outputItemId,
+          bomId: workOrder.bomId,
+          defaultConsumeLocationId: workOrder.defaultConsumeLocationId,
+          defaultProduceLocationId: workOrder.defaultProduceLocationId,
+          produceToLocationIdSnapshot: workOrder.produceToLocationIdSnapshot
+        },
+        { componentItemId: line.componentItemId }
+      );
+      if (!consumeLocation) {
+        throw new Error('WO_REPORT_DEFAULT_LOCATIONS_REQUIRED');
+      }
       return {
         componentItemId: line.componentItemId,
-        fromLocationId: consumeLocationId,
+        fromLocationId: consumeLocation.id,
         uom: override?.uom ?? line.uom,
         quantity,
         reasonCode: override ? 'work_order_backflush_override' : 'work_order_backflush',
         notes: override?.reason ?? undefined
       };
     })
-    .filter((line): line is NonNullable<typeof line> => line !== null);
+  );
+  const resolvedConsumeLines = consumeLines.filter((line): line is NonNullable<typeof line> => line !== null);
 
-  if (consumeLines.length === 0) {
+  if (resolvedConsumeLines.length === 0) {
     throw new Error('WO_REPORT_NO_COMPONENT_CONSUMPTION');
   }
   if (Array.isArray(data.inputLots) && data.inputLots.length > 0) {
-    const consumableComponentIds = new Set(consumeLines.map((line) => line.componentItemId));
+    const consumableComponentIds = new Set(resolvedConsumeLines.map((line) => line.componentItemId));
     for (const inputLot of data.inputLots) {
       if (!consumableComponentIds.has(inputLot.componentItemId)) {
         throw new Error('WO_REPORT_INPUT_LOT_COMPONENT_UNKNOWN');
@@ -3167,7 +3127,7 @@ export async function reportWorkOrderProduction(
       {
         occurredAt: occurredAt.toISOString(),
         notes: data.notes ?? undefined,
-        consumeLines,
+        consumeLines: resolvedConsumeLines,
         produceLines
       },
     context,
@@ -4031,6 +3991,20 @@ export async function reportWorkOrderScrap(
         throw new Error('WO_SCRAP_PREPARE_REQUIRED');
       }
       const transferExecution = await executeTransferInventoryMutation(preparedTransfer, client);
+      const now = new Date();
+      const projectionOps = [...transferExecution.projectionOps];
+      if (transferExecution.result.created) {
+        projectionOps.push(async (projectionClient) => {
+          await projectionClient.query(
+            `UPDATE work_orders
+                SET quantity_scrapped = COALESCE(quantity_scrapped, 0) + $1,
+                    updated_at = $2
+              WHERE id = $3
+                AND tenant_id = $4`,
+            [quantity, now, workOrderId, tenantId]
+          );
+        });
+      }
       return {
         responseBody: {
           workOrderId,
@@ -4044,7 +4018,7 @@ export async function reportWorkOrderScrap(
         },
         responseStatus: transferExecution.result.created ? 201 : 200,
         events: transferExecution.events,
-        projectionOps: transferExecution.projectionOps
+        projectionOps
       };
     }
   });
@@ -4170,7 +4144,7 @@ export async function recordWorkOrderBatch(
       if (!workOrder) {
         throw new Error('WO_NOT_FOUND');
       }
-      if (workOrder.status === 'canceled' || workOrder.status === 'completed') {
+      if (isTerminalWorkOrderStatus(workOrder.status)) {
         throw new Error('WO_INVALID_STATE');
       }
       consumeLinesOrdered = [...normalizedConsumes].sort(compareBatchConsumeKey);
@@ -4237,7 +4211,6 @@ export async function recordWorkOrderBatch(
         if (missingLocs.length > 0) {
           throw new Error(`WO_BATCH_LOCATIONS_MISSING:${missingLocs.join(',')}`);
         }
-        const locationById = new Map(locRes.rows.map((row) => [row.id, row]));
         for (const row of locRes.rows) {
           if (row.warehouse_id) {
             warehouseByLocationId.set(row.id, row.warehouse_id);
@@ -4258,16 +4231,21 @@ export async function recordWorkOrderBatch(
         }
         if (!isDisassembly) {
           for (const line of consumeLinesOrdered) {
-            const sourceLocation = locationById.get(line.fromLocationId);
-            if (!sourceLocation || sourceLocation.is_sellable !== true) {
-              throw domainError('MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE', {
-                workOrderId,
-                locationId: line.fromLocationId,
-                componentItemId: line.componentItemId,
-                role: sourceLocation?.role ?? null,
-                isSellable: sourceLocation?.is_sellable ?? null
-              });
-            }
+            await assertWorkOrderRoutingLine({
+              tenantId,
+              context: workOrderRoutingContext(workOrder),
+              componentItemId: line.componentItemId,
+              consumeLocationId: line.fromLocationId,
+              client
+            });
+          }
+          for (const line of produceLinesOrdered) {
+            await assertWorkOrderRoutingLine({
+              tenantId,
+              context: workOrderRoutingContext(workOrder),
+              produceLocationId: line.toLocationId,
+              client
+            });
           }
         }
       }
@@ -4747,12 +4725,11 @@ export async function recordWorkOrderBatch(
       const newCompleted = currentCompleted + progressQty;
       const planned = toNumber(workOrder.quantity_planned);
       const completedAt = newCompleted >= planned ? now : null;
-      const newStatus =
-        newCompleted >= planned
-          ? 'completed'
-          : workOrder.status === 'draft'
-            ? 'in_progress'
-            : workOrder.status;
+      const newStatus = nextStatusFromProgress({
+        currentStatus: workOrder.status,
+        plannedQuantity: planned,
+        completedQuantity: newCompleted
+      });
 
       projectionOps.push(async (projectionClient) => {
         await projectionClient.query(

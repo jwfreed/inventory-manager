@@ -10,6 +10,7 @@ import type { ApiError, Bom, Item } from '@api/types'
 import { Alert, Button, Card } from '@shared/ui'
 import { WorkOrderBomSection } from '../components/WorkOrderBomSection'
 import { WorkOrderHeaderSection } from '../components/WorkOrderHeaderSection'
+import { normalizeDateInputToIso } from '../../../core/dateAdapter'
 
 const formatError = (err: unknown): string => {
   if (!err) return ''
@@ -36,8 +37,6 @@ export default function WorkOrderCreatePage() {
   const [scheduledDueAt, setScheduledDueAt] = useState('')
   const [selectedBomId, setSelectedBomId] = useState('')
   const [selectedVersionId, setSelectedVersionId] = useState('')
-  const [defaultConsumeLocationId, setDefaultConsumeLocationId] = useState('')
-  const [defaultProduceLocationId, setDefaultProduceLocationId] = useState('')
   const [quantityError, setQuantityError] = useState<string | null>(null)
   const prefillDoneRef = useRef(false)
 
@@ -84,15 +83,6 @@ export default function WorkOrderCreatePage() {
     )
   }, [itemsQuery.data, kind])
 
-  const locationOptions = useMemo(
-    () =>
-      (locationsQuery.data?.data ?? []).map((loc) => ({
-        value: loc.id,
-        label: `${loc.code} — ${loc.name}`,
-      })),
-    [locationsQuery.data],
-  )
-
   const bomOptions = useMemo(
     () =>
       (bomsQuery.data?.boms ?? []).map((bom) => ({
@@ -108,8 +98,6 @@ export default function WorkOrderCreatePage() {
     const item = itemsById.get(outputItemId)
     if (!item) return
     setOutputUom((prev) => prev || item.defaultUom || '')
-    setDefaultConsumeLocationId((prev) => (prev ? prev : item.defaultLocationId ?? ''))
-    setDefaultProduceLocationId((prev) => (prev ? prev : item.defaultLocationId ?? ''))
   }, [itemsById, outputItemId])
 
   useEffect(() => {
@@ -148,13 +136,54 @@ export default function WorkOrderCreatePage() {
     [bomDetailQuery.data, bomsQuery.data, selectedBomId],
   )
   const selectedItem = itemsById.get(outputItemId)
+  const selectedVersion = useMemo(
+    () => selectedBom?.versions.find((version) => version.id === selectedVersionId) ?? selectedBom?.versions[0],
+    [selectedBom, selectedVersionId],
+  )
 
-  const consumeMissing =
-    Boolean(defaultConsumeLocationId) &&
-    !locationOptions.some((opt) => opt.value === defaultConsumeLocationId)
-  const produceMissing =
-    Boolean(defaultProduceLocationId) &&
-    !locationOptions.some((opt) => opt.value === defaultProduceLocationId)
+  const stagePreview = useMemo(() => {
+    const locations = locationsQuery.data?.data ?? []
+    const resolveLocationLabel = (roles: string[], codes: string[]) => {
+      const location = locations.find((candidate) => roles.includes(candidate.role ?? '') || codes.includes(candidate.code))
+      if (!location) return 'Auto-derived at save time'
+      return `${location.code} — ${location.name}`
+    }
+
+    if (kind === 'disassembly') {
+      return {
+        stageLabel: 'Disassembly',
+        consumeLocationLabel: resolveLocationLabel(['FG_STAGE', 'FG_SELLABLE', 'SELLABLE'], ['FACTORY_FG_STAGE', 'FACTORY_SELLABLE']),
+        produceLocationLabel: resolveLocationLabel(['RM_STORE'], ['FACTORY_RM_STORE']),
+      }
+    }
+
+    const stageType =
+      selectedItem?.type === 'wip'
+        ? 'wrapped_bar'
+        : selectedItem?.type === 'finished' && selectedVersion?.components.some((component) => itemsById.get(component.componentItemId)?.type === 'wip')
+          ? 'boxing'
+          : 'generic_production'
+
+    if (stageType === 'wrapped_bar') {
+      return {
+        stageLabel: 'Wrapped bar',
+        consumeLocationLabel: resolveLocationLabel(['RM_STORE'], ['FACTORY_RM_STORE']),
+        produceLocationLabel: resolveLocationLabel(['WIP'], ['FACTORY_WIP_WRAPPED', 'FACTORY_PRODUCTION']),
+      }
+    }
+    if (stageType === 'boxing') {
+      return {
+        stageLabel: 'Boxing',
+        consumeLocationLabel: resolveLocationLabel(['WIP'], ['FACTORY_WIP_WRAPPED', 'FACTORY_PRODUCTION']),
+        produceLocationLabel: resolveLocationLabel(['FG_STAGE'], ['FACTORY_FG_STAGE']),
+      }
+    }
+    return {
+      stageLabel: 'Production',
+      consumeLocationLabel: 'Auto-derived at save time',
+      produceLocationLabel: 'Auto-derived at save time',
+    }
+  }, [itemsById, kind, locationsQuery.data?.data, selectedItem?.type, selectedVersion?.components])
 
   const handleOutputItemChange = (nextValue: string) => {
     setOutputItemId(nextValue)
@@ -199,9 +228,8 @@ export default function WorkOrderCreatePage() {
       setQuantityError('Quantity planned must be greater than 0.')
       return
     }
-    const toDateTime = (value: string) => (value ? `${value}T00:00:00.000Z` : undefined)
-    const start = toDateTime(scheduledStartAt)
-    const due = toDateTime(scheduledDueAt)
+    const start = normalizeDateInputToIso(scheduledStartAt) ?? undefined
+    const due = normalizeDateInputToIso(scheduledDueAt) ?? undefined
 
     mutation.mutate({
       kind,
@@ -210,8 +238,6 @@ export default function WorkOrderCreatePage() {
       outputItemId,
       outputUom,
       quantityPlanned: Number(quantityPlanned),
-      defaultConsumeLocationId: defaultConsumeLocationId || undefined,
-      defaultProduceLocationId: defaultProduceLocationId || undefined,
       scheduledStartAt: start || undefined,
       scheduledDueAt: due || undefined,
       description: description || undefined,
@@ -274,15 +300,12 @@ export default function WorkOrderCreatePage() {
             quantityLabel={kind === 'disassembly' ? 'Quantity to disassemble' : undefined}
             scheduledStartAt={scheduledStartAt}
             scheduledDueAt={scheduledDueAt}
-            defaultConsumeLocationId={defaultConsumeLocationId}
-            defaultProduceLocationId={defaultProduceLocationId}
             items={availableItems}
             itemsLoading={itemsQuery.isLoading}
-            locationsLoading={locationsQuery.isLoading}
             selectedItem={selectedItem}
-            locationOptions={locationOptions}
-            consumeMissing={consumeMissing}
-            produceMissing={produceMissing}
+            stageLabel={stagePreview.stageLabel}
+            consumeLocationLabel={stagePreview.consumeLocationLabel}
+            produceLocationLabel={stagePreview.produceLocationLabel}
             isPending={mutation.isPending}
             onDescriptionChange={setDescription}
             onOutputItemChange={handleOutputItemChange}
@@ -290,8 +313,6 @@ export default function WorkOrderCreatePage() {
             onQuantityPlannedChange={handleQuantityChange}
             onScheduledStartAtChange={setScheduledStartAt}
             onScheduledDueAtChange={setScheduledDueAt}
-            onDefaultConsumeLocationChange={setDefaultConsumeLocationId}
-            onDefaultProduceLocationChange={setDefaultProduceLocationId}
           />
           {kind === 'production' && (
             <WorkOrderBomSection

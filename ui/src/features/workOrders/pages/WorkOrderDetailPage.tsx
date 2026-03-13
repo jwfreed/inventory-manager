@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useItem, useItemsList } from '@features/items/queries'
 import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createWorkOrder, updateWorkOrderDescription, useActiveBomVersion as activateWorkOrderBomVersion } from '../api/workOrders'
 import type { ApiError } from '@api/types'
-import { useWorkOrder, useWorkOrderExecution, useWorkOrderRequirements, workOrdersQueryKeys } from '../queries'
+import { useWorkOrder, useWorkOrderExecution, useWorkOrderReadiness, useWorkOrderRequirements, workOrdersQueryKeys } from '../queries'
 import {
   Alert,
   Banner,
@@ -23,18 +23,14 @@ import {
 } from '@shared/ui'
 import { WorkOrderHeader } from '../components/WorkOrderHeader'
 import { ExecutionSummaryPanel } from '../components/ExecutionSummaryPanel'
-import { IssueDraftForm } from '../components/IssueDraftForm'
-import { CompletionDraftForm } from '../components/CompletionDraftForm'
 import { RecordBatchForm } from '../components/RecordBatchForm'
-import { ReportProductionForm } from '../components/ReportProductionForm'
+import { WorkOrderExecutionWorkspace } from '../components/WorkOrderExecutionWorkspace'
 import { WorkOrderRequirementsTable } from '../components/WorkOrderRequirementsTable'
 import { WorkOrderNextStepPanel } from '../components/WorkOrderNextStepPanel'
 import { useLocationsList } from '@features/locations/queries'
 import { getAtp } from '@api/reports'
 import type { AtpResult } from '@api/types'
 import { formatNumber } from '@shared/formatters'
-
-type TabKey = 'summary' | 'issues' | 'completions' | 'batch'
 
 const workOrderDetailSections = [
   { id: 'overview', label: 'Overview' },
@@ -47,12 +43,7 @@ const workOrderDetailSections = [
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const [tab, setTab] = useState<TabKey>('summary')
-  const [pendingScroll, setPendingScroll] = useState(false)
-  const [highlightIssues, setHighlightIssues] = useState(false)
   const actionsRef = useRef<HTMLDivElement | null>(null)
-  const issuesHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const [showNextStep, setShowNextStep] = useState(false)
   const [selectedBomId, setSelectedBomId] = useState('')
   const [nextQuantity, setNextQuantity] = useState<number | ''>(1)
@@ -117,69 +108,11 @@ export default function WorkOrderDetailPage() {
     [nextStepBomsQuery.data, itemLabel],
   )
 
-  const actionParamToTab = useCallback((value: string | null): TabKey | null => {
-    switch (value) {
-      case 'use-materials':
-        return 'issues'
-      case 'make-product':
-        return 'completions'
-      case 'issue-complete':
-        return 'batch'
-      case 'overview':
-        return 'summary'
-      default:
-        return null
+  const scrollToExecutionWorkspace = useCallback(() => {
+    if (typeof actionsRef.current?.scrollIntoView === 'function') {
+      actionsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [])
-
-  const tabToActionParam = useCallback((value: TabKey): string => {
-    switch (value) {
-      case 'issues':
-        return 'use-materials'
-      case 'completions':
-        return 'make-product'
-      case 'batch':
-        return 'issue-complete'
-      default:
-        return 'overview'
-    }
-  }, [])
-
-  const updateTab = useCallback(
-    (nextTab: TabKey) => {
-      setTab(nextTab)
-      const nextParams = new URLSearchParams(searchParams)
-      nextParams.set('action', tabToActionParam(nextTab))
-      setSearchParams(nextParams, { replace: false })
-    },
-    [searchParams, setSearchParams, tabToActionParam],
-  )
-
-  const goToIssues = useCallback(() => {
-    updateTab('issues')
-    setPendingScroll(true)
-  }, [updateTab])
-
-  useEffect(() => {
-    const tabFromQuery = actionParamToTab(searchParams.get('action'))
-    if (tabFromQuery && tabFromQuery !== tab) {
-      setTab(tabFromQuery)
-    }
-  }, [actionParamToTab, searchParams, tab])
-
-  useEffect(() => {
-    if (!pendingScroll || tab !== 'issues') return
-    const target = actionsRef.current
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-    requestAnimationFrame(() => {
-      issuesHeadingRef.current?.focus({ preventScroll: true })
-      setHighlightIssues(true)
-      setTimeout(() => setHighlightIssues(false), 1200)
-    })
-    setPendingScroll(false)
-  }, [pendingScroll, tab])
 
   const createNextStep = async () => {
     if (!workOrderQuery.data) return
@@ -222,6 +155,10 @@ export default function WorkOrderDetailPage() {
   }, [workOrderQuery.data?.description])
 
   const isDisassembly = workOrderQuery.data?.kind === 'disassembly'
+  const readinessQuery = useWorkOrderReadiness(id, {
+    enabled: Boolean(id) && Boolean(workOrderQuery.data) && !isDisassembly,
+    staleTime: 10_000,
+  })
   const requirementsQuery = useWorkOrderRequirements(id, undefined, {
     staleTime: 60_000,
     enabled: Boolean(id) && Boolean(workOrderQuery.data) && !isDisassembly,
@@ -600,8 +537,8 @@ export default function WorkOrderDetailPage() {
                   <div className="text-sm font-semibold text-slate-900">Next step</div>
                   <div className="mt-1 text-sm text-slate-700">{nextStepMessage}</div>
                   <div className="mt-3">
-                    <Button size="sm" onClick={goToIssues} disabled={!preferredConsumeLocation}>
-                      Consume parent item
+                    <Button size="sm" onClick={scrollToExecutionWorkspace} disabled={!preferredConsumeLocation}>
+                      Open execution workspace
                     </Button>
                   </div>
                 </div>
@@ -610,28 +547,28 @@ export default function WorkOrderDetailPage() {
                 {[
                   {
                     step: 1,
-                    title: isDisassembly ? 'Consume parent item' : 'Use materials',
-                    detail: isDisassembly ? 'Consume the item being disassembled.' : 'Issue components to start work.',
-                    cta: isDisassembly ? 'Consume' : 'Issue materials',
-                    onClick: goToIssues,
+                    title: 'Component readiness',
+                    detail: 'Validate required, reserved, available, and shortage before execution.',
+                    cta: 'Review readiness',
+                    onClick: scrollToExecutionWorkspace,
                   },
                   {
                     step: 2,
-                    title: isDisassembly ? 'Produce components' : 'Make product',
-                    detail: isDisassembly ? 'Record recovered components as outputs.' : 'Post completions as output is produced.',
-                    cta: isDisassembly ? 'Record outputs' : 'Post completion',
-                    onClick: () => updateTab('completions'),
+                    title: isDisassembly ? 'Record outputs' : 'Produce output',
+                    detail: isDisassembly ? 'Use the workspace to post disassembly outputs.' : 'Post wrapped or boxed output with locked stage routing.',
+                    cta: 'Open workspace',
+                    onClick: scrollToExecutionWorkspace,
                   },
                   {
                     step: 3,
-                    title: 'Review & continue',
-                    detail: remaining === 0 ? 'Finish this step or continue production.' : 'Review movements and next steps.',
-                    cta: remaining === 0 && nextStepAvailable ? 'Create next step WO' : 'View movements',
+                    title: 'Review movements',
+                    detail: remaining === 0 ? 'Finish this step or continue production.' : 'Confirm deterministic issue and receipt postings.',
+                    cta: remaining === 0 && nextStepAvailable ? 'Create next step WO' : 'Review workspace',
                     onClick: () => {
                       if (remaining === 0 && nextStepAvailable) {
                         setShowNextStep(true)
-                      } else if (workOrderQuery.data) {
-                        navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data.id)}`)
+                      } else {
+                        scrollToExecutionWorkspace()
                       }
                     },
                   },
@@ -706,7 +643,7 @@ export default function WorkOrderDetailPage() {
                     </div>
                   ) : null}
                   <WorkOrderRequirementsTable
-                    lines={requirementsQuery.data.lines}
+                    lines={readinessQuery.data?.lines?.length ? readinessQuery.data.lines : requirementsQuery.data.lines}
                     issuedTotals={executionQuery.data.issuedTotals}
                     componentLabel={componentLabel}
                   />
@@ -717,111 +654,33 @@ export default function WorkOrderDetailPage() {
         ) : null}
 
         <section id="actions">
-          <Panel title="Actions" description="Post issues, completions, and batch records from one execution surface.">
+          <Panel title="Execution workspace" description="Locked routing, readiness, deterministic posting, and movement review in one place.">
             <div id="work-order-actions" ref={actionsRef} className="scroll-mt-24">
-          <div className="flex gap-2 border-b border-slate-200">
-            {(['summary', 'issues', 'completions', 'batch'] as TabKey[]).map((key) => (
-              <button
-                key={key}
-                className={`px-3 py-2 text-sm font-semibold ${
-                  tab === key ? 'border-b-2 border-brand-600 text-brand-700' : 'text-slate-600'
-                }`}
-                onClick={() => updateTab(key)}
-              >
-                {key === 'summary'
-                  ? 'Overview'
-                  : key === 'issues'
-                    ? isDisassembly
-                      ? 'Consume parent item'
-                      : 'Use materials'
-                    : key === 'completions'
-                      ? isDisassembly
-                        ? 'Produce components'
-                        : 'Make product'
-                      : isDisassembly
-                        ? 'Disassemble & record outputs'
-                        : 'Report production'}
-              </button>
-            ))}
-          </div>
-
-          {tab === 'summary' && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <div className="text-sm text-slate-700">
-                {isDisassembly
-                  ? 'Consume the parent item, then record recovered components as outputs. Posting creates inventory movements and cannot be edited.'
-                  : 'Use materials to issue components, then make product to post completions. Posting creates inventory movements and cannot be edited.'}{' '}
-                <span className="font-semibold">
-                  {isDisassembly ? 'Remaining to disassemble' : 'Remaining to complete'}:{' '}
-                  {remaining} {workOrderQuery.data?.outputUom}
-                </span>
-              </div>
-              {!executionQuery.data && !executionQuery.isLoading && (
-                <EmptyState
-                  title="No execution yet"
-                  description="Create an issue or completion to begin execution."
+              {workOrderQuery.data && !isDisassembly ? (
+                <WorkOrderExecutionWorkspace
+                  workOrder={workOrderQuery.data}
+                  readiness={readinessQuery.data}
+                  isLoading={readinessQuery.isLoading}
+                  isError={readinessQuery.isError}
+                  errorMessage={readinessQuery.error?.message}
+                  onRefresh={refreshAll}
                 />
-              )}
-            </div>
-          )}
-
-          {tab === 'issues' && workOrderQuery.data && (
-            <div
-              id="use-materials"
-              className={`mt-4 rounded-lg border p-4 transition-colors ${
-                highlightIssues ? 'border-brand-400 bg-brand-50' : 'border-slate-200 bg-white'
-              }`}
-            >
-              <h3
-                ref={issuesHeadingRef}
-                tabIndex={-1}
-                className="text-sm font-semibold text-slate-900 focus:outline-none"
-              >
-                {isDisassembly ? 'Consume parent item' : 'Use materials'}
-              </h3>
-              <div className="mt-3">
-                <IssueDraftForm
+              ) : workOrderQuery.data ? (
+                <RecordBatchForm
                   workOrder={workOrderQuery.data}
                   outputItem={outputItemQuery.data}
                   onRefetch={refreshAll}
                 />
-              </div>
-            </div>
-          )}
-
-          {tab === 'completions' && workOrderQuery.data && (
-            <CompletionDraftForm
-              workOrder={workOrderQuery.data}
-              outputItem={outputItemQuery.data}
-              onRefetch={refreshAll}
-            />
-          )}
-
-          {tab === 'batch' && workOrderQuery.data && (
-            <div className="space-y-4">
-              {!isDisassembly && (
-                <ReportProductionForm workOrder={workOrderQuery.data} onRefetch={refreshAll} />
+              ) : (
+                <EmptyState
+                  title="No execution yet"
+                  description="Create or load a work order to begin execution."
+                />
               )}
-              <details
-                className="rounded-lg border border-slate-200 bg-white"
-                open={isDisassembly}
-              >
-                <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">
-                  Advanced: Record batch (manual consume/produce lines)
-                </summary>
-                <div className="border-t border-slate-200 p-4">
-                  <RecordBatchForm
-                    workOrder={workOrderQuery.data}
-                    outputItem={outputItemQuery.data}
-                    onRefetch={refreshAll}
-                  />
-                </div>
-              </details>
             </div>
-          )}
 
-          {!isDisassembly && workOrderQuery.data && (
-            <div className="mt-4">
+	          {!isDisassembly && workOrderQuery.data && (
+	            <div className="mt-4">
               {remaining === 0 || showNextStep ? (
                 <WorkOrderNextStepPanel
                   isOpen={true}
@@ -852,12 +711,11 @@ export default function WorkOrderDetailPage() {
                     </Button>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-          </Panel>
-        </section>
+	              )}
+	            </div>
+	          )}
+	          </Panel>
+	        </section>
       </EntityPageLayout>
 
       <Modal

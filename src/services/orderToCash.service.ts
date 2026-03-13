@@ -617,6 +617,9 @@ export async function createSalesOrder(tenantId: string, data: SalesOrderInput) 
       if (item.lifecycleStatus !== ItemLifecycleStatus.ACTIVE) {
         throw new Error(`ITEM_NOT_ACTIVE: ${item.sku} is ${item.lifecycleStatus}`);
       }
+      if (item.type === 'wip') {
+        throw new Error(`ITEM_NOT_SELLABLE: ${item.sku} is WIP and cannot be ordered`);
+      }
 
       const lineResult = await client.query(
         `INSERT INTO sales_order_lines (

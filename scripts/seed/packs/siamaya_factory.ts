@@ -51,9 +51,22 @@ const FACTORY_OPERATIONAL_LOCATIONS = [
   { code: 'FACTORY_PRODUCTION', localCode: 'PRODUCTION', name: 'Factory Production' },
   { code: 'FACTORY_FG_STAGE', localCode: 'FG_STAGE', name: 'Factory Finished Goods Stage' }
 ] as const;
-// Non-root locations currently require a role by DB constraint; HOLD keeps them non-sellable
-// while preserving distinct operational codes (RECEIVING/RM_STORE/PACK_STORE/PRODUCTION/FG_STAGE).
-const OPERATIONAL_LOCATION_ROLE = 'HOLD';
+
+function operationalLocationRole(localCode: string) {
+  switch (localCode) {
+    case 'RM_STORE':
+      return 'RM_STORE' as const;
+    case 'PACK_STORE':
+      return 'PACKAGING' as const;
+    case 'PRODUCTION':
+      return 'WIP' as const;
+    case 'FG_STAGE':
+      return 'FG_STAGE' as const;
+    case 'RECEIVING':
+    default:
+      return 'HOLD' as const;
+  }
+}
 
 const DEFAULT_OPTIONS = {
   pack: 'siamaya_factory',
@@ -1219,6 +1232,7 @@ async function upsertWarehouseRoleLocation(
   const isSellable = args.role === 'SELLABLE';
   if ((existing.rowCount ?? 0) > 0) {
     const locationId = existing.rows[0].id;
+    const role = operationalLocationRole(args.localCode);
     await client.query(
       `UPDATE locations
           SET local_code = $3,
@@ -1290,12 +1304,13 @@ async function upsertOperationalLocation(
               updated_at = now()
         WHERE tenant_id = $1
           AND id = $2`,
-      [args.tenantId, locationId, args.localCode, args.name, OPERATIONAL_LOCATION_ROLE, args.warehouseId]
+      [args.tenantId, locationId, args.localCode, args.name, role, args.warehouseId]
     );
     return { id: locationId, code: args.code, created: false };
   }
 
   const locationId = deterministicId('location', args.tenantId, args.code);
+  const role = operationalLocationRole(args.localCode);
   await client.query(
     `INSERT INTO locations (
         id,
@@ -1312,7 +1327,7 @@ async function upsertOperationalLocation(
         created_at,
         updated_at
      ) VALUES ($1, $2, $3, $4, $5, 'bin', $6, false, true, $7, $7, now(), now())`,
-    [locationId, args.tenantId, args.code, args.localCode, args.name, OPERATIONAL_LOCATION_ROLE, args.warehouseId]
+    [locationId, args.tenantId, args.code, args.localCode, args.name, role, args.warehouseId]
   );
   return { id: locationId, code: args.code, created: true };
 }

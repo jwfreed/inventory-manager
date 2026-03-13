@@ -3,8 +3,11 @@ import { ActiveFiltersSummary, Button, FilterBar } from '@shared/ui'
 const statusOptions = [
   { label: 'All statuses', value: '' },
   { label: 'Draft', value: 'draft' },
+  { label: 'Ready', value: 'ready' },
   { label: 'In Progress', value: 'in_progress' },
+  { label: 'Partially Completed', value: 'partially_completed' },
   { label: 'Completed', value: 'completed' },
+  { label: 'Closed', value: 'closed' },
   { label: 'Canceled', value: 'canceled' },
 ]
 
@@ -109,7 +112,8 @@ export function WorkOrdersFilters({
         </div>
         <input
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          type="date"
+          type="text"
+          placeholder="DD-MM-YY"
           value={plannedDate}
           onChange={(e) => onPlannedDateChange(e.target.value)}
           disabled={isFetching}

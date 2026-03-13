@@ -410,21 +410,25 @@ export function mapLocation(row: any) {
   };
 }
 
+function isSellableLocationRole(role: string | null | undefined) {
+  return role === 'SELLABLE' || role === 'FG_SELLABLE';
+}
+
 export async function createLocation(tenantId: string, data: LocationInput) {
   const now = new Date();
   const id = uuidv4();
   const active = data.active ?? true;
   const role = data.type === 'warehouse' ? null : (data.role === undefined ? 'SELLABLE' : data.role);
-  const isSellable = data.type === 'warehouse' ? false : (data.isSellable ?? role === 'SELLABLE');
+  const isSellable = data.type === 'warehouse' ? false : (data.isSellable ?? isSellableLocationRole(role));
 
   return withTransaction(async (client) => {
     if (data.type !== 'warehouse' && role == null) {
       throw new Error('LOCATION_ROLE_REQUIRED');
     }
-    if (role === 'SELLABLE' && !isSellable) {
+    if (isSellableLocationRole(role) && !isSellable) {
       throw new Error('LOCATION_ROLE_SELLABLE_MISMATCH');
     }
-    if (role !== 'SELLABLE' && isSellable) {
+    if (!isSellableLocationRole(role) && isSellable) {
       throw new Error('LOCATION_ROLE_SELLABLE_MISMATCH');
     }
     const res = await client.query(
@@ -497,13 +501,13 @@ export async function updateLocation(tenantId: string, id: string, data: Locatio
       parentLocationId = null;
     } else {
       role = data.role === undefined ? (existing.role ?? 'SELLABLE') : data.role;
-      isSellable = data.isSellable ?? existing.is_sellable ?? role === 'SELLABLE';
+      isSellable = data.isSellable ?? existing.is_sellable ?? isSellableLocationRole(role);
       parentLocationId = data.parentLocationId ?? null;
     }
-    if (role === 'SELLABLE' && !isSellable) {
+    if (isSellableLocationRole(role) && !isSellable) {
       throw new Error('LOCATION_ROLE_SELLABLE_MISMATCH');
     }
-    if (role !== 'SELLABLE' && isSellable) {
+    if (!isSellableLocationRole(role) && isSellable) {
       throw new Error('LOCATION_ROLE_SELLABLE_MISMATCH');
     }
     const res = await client.query(

@@ -3,8 +3,8 @@ import type { Severity } from './severity'
 
 export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'critical'
 
-const successStatuses = new Set(['ready', 'active', 'completed'])
-const infoStatuses = new Set(['posted', 'in progress', 'in_progress'])
+const successStatuses = new Set(['ready', 'active', 'completed', 'closed'])
+const infoStatuses = new Set(['posted', 'in progress', 'in_progress', 'partially completed', 'partially_completed'])
 const warningStatuses = new Set([
   'warning',
   'watch',
@@ -12,7 +12,6 @@ const warningStatuses = new Set([
   'optional',
   'draft',
   'late posted',
-  'released',
   'phase-out',
   'phase out',
 ])
