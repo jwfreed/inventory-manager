@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import type { z } from 'zod';
 import { createHash } from 'crypto';
-import { query, withTransaction, withTransactionRetry } from '../db';
+import { query, withTransaction } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { fetchBomById } from './boms.service';
 import { getWorkOrderById, getWorkOrderRequirements } from './workOrders.service';
@@ -39,17 +39,12 @@ import {
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import {
   runInventoryCommand,
-  type InventoryCommandEvent,
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
 import {
   buildInventoryBalanceProjectionOp,
-  buildReplayCorruptionError,
-  buildMovementPostedEvent,
-  buildPostedDocumentReplayResult,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
-import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
 import {
   isTerminalWorkOrderStatus,
   nextStatusAfterExecutionStart,
@@ -66,6 +61,13 @@ import {
   ensureWorkOrderReservationsReady
 } from './inventoryReservation.service';
 import { assertWorkOrderExecutionInvariants } from './manufacturingInvariant.service';
+import * as movementPlanner from './inventoryMovementPlanner';
+import * as replayEngine from './inventoryReplayEngine';
+import * as statePolicy from './inventoryStatePolicy';
+import * as eventFactory from './inventoryEventFactory';
+import * as wipEngine from './wipAccountingEngine';
+import * as projectionEngine from './inventoryProjectionEngine';
+import * as lotTraceability from './lotTraceabilityEngine';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
 // (never inventory_adjustments). External refs include work order ids for traceability.
@@ -74,12 +76,10 @@ type WorkOrderIssueCreateInput = z.infer<typeof workOrderIssueCreateSchema>;
 type WorkOrderCompletionCreateInput = z.infer<typeof workOrderCompletionCreateSchema>;
 type WorkOrderBatchInput = z.infer<typeof workOrderBatchSchema>;
 type WorkOrderReportProductionInput = z.infer<typeof workOrderReportProductionSchema>;
-type WorkOrderReportProductionInputLot = NonNullable<WorkOrderReportProductionInput['inputLots']>[number];
 type WorkOrderVoidReportProductionInput = z.infer<typeof workOrderVoidReportProductionSchema>;
 type WorkOrderReportScrapInput = z.infer<typeof workOrderReportScrapSchema>;
 
 const WIP_COST_METHOD = 'fifo';
-const WIP_INTEGRITY_EPSILON = 1e-6;
 const WORK_ORDER_POST_RETRY_OPTIONS = { isolationLevel: 'SERIALIZABLE' as const, retries: 8 };
 const FORCED_LOT_LINK_FAILURE_KEYS = new Set<string>();
 
@@ -116,44 +116,6 @@ type ManufacturingMutationState =
   | 'posted_completion'
   | 'reversal';
 
-type WipValuationType =
-  | 'issue'
-  | 'completion'
-  | 'report'
-  | 'reversal_to_wip'
-  | 'reversal_from_wip';
-
-function workOrderWipIntegrityError(details: Record<string, unknown>) {
-  const error = new Error('WO_WIP_INTEGRITY_FAILED') as Error & {
-    code?: string;
-    details?: Record<string, unknown>;
-  };
-  error.code = 'WO_WIP_INTEGRITY_FAILED';
-  error.details = details;
-  return error;
-}
-
-function assertManufacturingTransition(params: {
-  flow: string;
-  currentState: ManufacturingMutationState;
-  allowedFrom: ManufacturingMutationState[];
-  targetState: ManufacturingMutationState;
-  workOrderId: string;
-  executionOrDocumentId: string;
-}) {
-  if (params.allowedFrom.includes(params.currentState)) {
-    return;
-  }
-  throw domainError('WO_INVALID_STATE', {
-    flow: params.flow,
-    workOrderId: params.workOrderId,
-    executionOrDocumentId: params.executionOrDocumentId,
-    currentState: params.currentState,
-    allowedFrom: params.allowedFrom,
-    targetState: params.targetState
-  });
-}
-
 function deriveIssueMutationState(issue: WorkOrderMaterialIssueRow): ManufacturingMutationState {
   if (issue.status === 'draft') {
     return 'planned_issue';
@@ -186,94 +148,6 @@ function deriveCompletionMutationState(params: {
     reason: params.execution.status === 'posted'
       ? 'posted_completion_missing_authoritative_movement'
       : 'completion_state_unrecognized'
-  });
-}
-
-function buildWorkOrderIssuePostedEvent(params: {
-  issueId: string;
-  workOrderId: string;
-  movementId: string;
-  producerIdempotencyKey?: string | null;
-}): InventoryCommandEvent {
-  return buildInventoryRegistryEvent('workOrderIssuePosted', {
-    producerIdempotencyKey: params.producerIdempotencyKey,
-    payload: {
-      issueId: params.issueId,
-      workOrderId: params.workOrderId,
-      movementId: params.movementId
-    }
-  });
-}
-
-function buildWorkOrderCompletionPostedEvent(params: {
-  executionId: string;
-  workOrderId: string;
-  movementId: string;
-  producerIdempotencyKey?: string | null;
-}) {
-  return buildInventoryRegistryEvent('workOrderCompletionPosted', {
-    producerIdempotencyKey: params.producerIdempotencyKey,
-    payload: {
-      executionId: params.executionId,
-      workOrderId: params.workOrderId,
-      movementId: params.movementId
-    }
-  });
-}
-
-function buildWorkOrderProductionReportedEvent(params: {
-  executionId: string;
-  workOrderId: string;
-  issueMovementId: string;
-  receiveMovementId: string;
-  producerIdempotencyKey?: string | null;
-}) {
-  return buildInventoryRegistryEvent('workOrderProductionReported', {
-    producerIdempotencyKey: params.producerIdempotencyKey,
-    payload: {
-      executionId: params.executionId,
-      workOrderId: params.workOrderId,
-      issueMovementId: params.issueMovementId,
-      receiveMovementId: params.receiveMovementId
-    }
-  });
-}
-
-function buildWorkOrderProductionReversedEvent(params: {
-  executionId: string;
-  workOrderId: string;
-  componentReturnMovementId: string;
-  outputReversalMovementId: string;
-  producerIdempotencyKey?: string | null;
-}) {
-  return buildInventoryRegistryEvent('workOrderProductionReversed', {
-    producerIdempotencyKey: params.producerIdempotencyKey,
-    payload: {
-      executionId: params.executionId,
-      workOrderId: params.workOrderId,
-      componentReturnMovementId: params.componentReturnMovementId,
-      outputReversalMovementId: params.outputReversalMovementId
-    }
-  });
-}
-
-function buildWorkOrderWipValuationRecordedEvent(params: {
-  executionId?: string | null;
-  workOrderId: string;
-  movementId: string;
-  valuationType: WipValuationType;
-  valueDelta: number;
-  producerIdempotencyKey?: string | null;
-}) {
-  return buildInventoryRegistryEvent('workOrderWipValuationRecorded', {
-    producerIdempotencyKey: params.producerIdempotencyKey,
-    payload: {
-      executionId: params.executionId ?? null,
-      workOrderId: params.workOrderId,
-      movementId: params.movementId,
-      valuationType: params.valuationType,
-      valueDelta: roundQuantity(params.valueDelta)
-    }
   });
 }
 
@@ -576,354 +450,6 @@ function mapExecution(row: WorkOrderExecutionRow, lines: WorkOrderExecutionLineR
   };
 }
 
-async function ensurePostedMovementReady(
-  client: PoolClient,
-  tenantId: string,
-  movementId: string
-) {
-  const movementRes = await client.query<{ status: string }>(
-    `SELECT status
-       FROM inventory_movements
-      WHERE id = $1
-        AND tenant_id = $2
-      FOR UPDATE`,
-    [movementId, tenantId]
-  );
-  if (movementRes.rowCount === 0) {
-    throw new Error('WO_POSTING_MOVEMENT_MISSING');
-  }
-  if (movementRes.rows[0].status !== 'posted') {
-    throw new Error('WO_POSTING_IDEMPOTENCY_CONFLICT');
-  }
-  const lineRes = await client.query(
-    `SELECT 1
-       FROM inventory_movement_lines
-      WHERE tenant_id = $1
-        AND movement_id = $2
-      LIMIT 1`,
-    [tenantId, movementId]
-  );
-  if (lineRes.rowCount === 0) {
-    throw new Error('WO_POSTING_IDEMPOTENCY_INCOMPLETE');
-  }
-}
-
-type WorkOrderWipValuationRecordRow = {
-  id: string;
-  tenant_id: string;
-  work_order_id: string;
-  work_order_execution_id: string | null;
-  inventory_movement_id: string;
-  valuation_type: WipValuationType;
-  value_delta: string | number;
-  quantity_canonical: string | number | null;
-  canonical_uom: string | null;
-  cost_method: string | null;
-  reversal_of_valuation_record_id: string | null;
-  notes: string | null;
-  created_at: string;
-};
-
-async function createWorkOrderWipValuationRecord(
-  client: PoolClient,
-  params: {
-    tenantId: string;
-    workOrderId: string;
-    executionId?: string | null;
-    movementId: string;
-    valuationType: WipValuationType;
-    valueDelta: number;
-    quantityCanonical?: number | null;
-    canonicalUom?: string | null;
-    reversalOfValuationRecordId?: string | null;
-    notes?: string | null;
-  }
-) {
-  const insertResult = await client.query<WorkOrderWipValuationRecordRow>(
-    `INSERT INTO work_order_wip_valuation_records (
-        id,
-        tenant_id,
-        work_order_id,
-        work_order_execution_id,
-        inventory_movement_id,
-        valuation_type,
-        value_delta,
-        quantity_canonical,
-        canonical_uom,
-        cost_method,
-        reversal_of_valuation_record_id,
-        notes,
-        created_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-     ON CONFLICT (tenant_id, inventory_movement_id, valuation_type) DO NOTHING
-     RETURNING *`,
-    [
-      uuidv4(),
-      params.tenantId,
-      params.workOrderId,
-      params.executionId ?? null,
-      params.movementId,
-      params.valuationType,
-      roundQuantity(params.valueDelta),
-      params.quantityCanonical != null ? roundQuantity(params.quantityCanonical) : null,
-      params.canonicalUom ?? null,
-      WIP_COST_METHOD,
-      params.reversalOfValuationRecordId ?? null,
-      params.notes ?? null,
-      new Date()
-    ]
-  );
-  if ((insertResult.rowCount ?? 0) > 0) {
-    return insertResult.rows[0];
-  }
-  const existing = await client.query<WorkOrderWipValuationRecordRow>(
-    `SELECT *
-       FROM work_order_wip_valuation_records
-      WHERE tenant_id = $1
-        AND inventory_movement_id = $2
-        AND valuation_type = $3
-      LIMIT 1`,
-    [params.tenantId, params.movementId, params.valuationType]
-  );
-  if (existing.rowCount === 0) {
-    throw new Error('WO_WIP_VALUATION_RECORD_MISSING');
-  }
-  return existing.rows[0];
-}
-
-async function loadWorkOrderWipValuationRecordsByMovementIds(
-  client: PoolClient,
-  tenantId: string,
-  movementIds: string[]
-) {
-  if (movementIds.length === 0) {
-    return [];
-  }
-  const result = await client.query<WorkOrderWipValuationRecordRow>(
-    `SELECT *
-       FROM work_order_wip_valuation_records
-      WHERE tenant_id = $1
-        AND inventory_movement_id = ANY($2::uuid[])
-      ORDER BY valuation_type ASC, inventory_movement_id ASC, created_at ASC, id ASC`,
-    [tenantId, movementIds]
-  );
-  return result.rows;
-}
-
-async function verifyWorkOrderWipIntegrity(
-  client: PoolClient,
-  tenantId: string,
-  workOrderId: string
-) {
-  const result = await client.query<Pick<WorkOrderWipValuationRecordRow, 'valuation_type' | 'value_delta'>>(
-    `SELECT valuation_type, value_delta
-       FROM work_order_wip_valuation_records
-      WHERE tenant_id = $1
-        AND work_order_id = $2
-      ORDER BY created_at ASC, id ASC
-      FOR UPDATE`,
-    [tenantId, workOrderId]
-  );
-
-  let issueValue = 0;
-  let completionConsumptionValue = 0;
-  let reversalToWipValue = 0;
-  let reversalFromWipValue = 0;
-  let signedLedgerBalance = 0;
-
-  for (const row of result.rows) {
-    const valueDelta = roundQuantity(toNumber(row.value_delta));
-    signedLedgerBalance += valueDelta;
-    switch (row.valuation_type) {
-      case 'issue':
-        if (valueDelta < -WIP_INTEGRITY_EPSILON) {
-          throw workOrderWipIntegrityError({
-            tenantId,
-            workOrderId,
-            reason: 'issue_value_delta_negative',
-            valuationType: row.valuation_type,
-            valueDelta
-          });
-        }
-        issueValue += valueDelta;
-        break;
-      case 'completion':
-      case 'report':
-        if (valueDelta > WIP_INTEGRITY_EPSILON) {
-          throw workOrderWipIntegrityError({
-            tenantId,
-            workOrderId,
-            reason: 'completion_value_delta_positive',
-            valuationType: row.valuation_type,
-            valueDelta
-          });
-        }
-        completionConsumptionValue += Math.abs(valueDelta);
-        break;
-      case 'reversal_to_wip':
-        if (valueDelta < -WIP_INTEGRITY_EPSILON) {
-          throw workOrderWipIntegrityError({
-            tenantId,
-            workOrderId,
-            reason: 'reversal_to_wip_negative',
-            valuationType: row.valuation_type,
-            valueDelta
-          });
-        }
-        reversalToWipValue += valueDelta;
-        break;
-      case 'reversal_from_wip':
-        if (valueDelta > WIP_INTEGRITY_EPSILON) {
-          throw workOrderWipIntegrityError({
-            tenantId,
-            workOrderId,
-            reason: 'reversal_from_wip_positive',
-            valuationType: row.valuation_type,
-            valueDelta
-          });
-        }
-        reversalFromWipValue += Math.abs(valueDelta);
-        break;
-      default:
-        throw workOrderWipIntegrityError({
-          tenantId,
-          workOrderId,
-          reason: 'valuation_type_unrecognized',
-          valuationType: row.valuation_type
-        });
-    }
-  }
-
-  const expectedWipBalance = roundQuantity(
-    issueValue + reversalToWipValue - completionConsumptionValue - reversalFromWipValue
-  );
-  const normalizedSignedLedgerBalance = roundQuantity(signedLedgerBalance);
-  if (
-    Math.abs(expectedWipBalance - normalizedSignedLedgerBalance) > WIP_INTEGRITY_EPSILON
-  ) {
-    throw workOrderWipIntegrityError({
-      tenantId,
-      workOrderId,
-      reason: 'signed_wip_balance_mismatch',
-      expectedWipBalance,
-      actualWipBalance: normalizedSignedLedgerBalance,
-      issueValue,
-      completionConsumptionValue,
-      reversalToWipValue,
-      reversalFromWipValue
-    });
-  }
-  if (normalizedSignedLedgerBalance < -WIP_INTEGRITY_EPSILON) {
-    throw workOrderWipIntegrityError({
-      tenantId,
-      workOrderId,
-      reason: 'negative_wip_balance',
-      actualWipBalance: normalizedSignedLedgerBalance,
-      issueValue,
-      completionConsumptionValue,
-      reversalToWipValue,
-      reversalFromWipValue
-    });
-  }
-
-  return {
-    issueValue,
-    completionConsumptionValue,
-    reversalToWipValue,
-    reversalFromWipValue,
-    wipBalance: normalizedSignedLedgerBalance
-  };
-}
-
-async function findPostedBatchByIdempotencyKey(
-  client: PoolClient,
-  tenantId: string,
-  idempotencyKey: string,
-  expectedRequestHash: string
-) {
-  const existing = await client.query<{
-    id: string;
-    work_order_id: string;
-    status: string;
-    consumption_movement_id: string | null;
-    production_movement_id: string | null;
-    quantity_completed: string | number | null;
-    work_order_status: string;
-    idempotency_request_hash: string | null;
-  }>(
-    `SELECT e.id,
-            e.work_order_id,
-            e.status,
-            e.consumption_movement_id,
-            e.production_movement_id,
-            w.quantity_completed,
-            w.status AS work_order_status,
-            e.idempotency_request_hash
-       FROM work_order_executions e
-       JOIN work_orders w
-         ON w.id = e.work_order_id
-        AND w.tenant_id = e.tenant_id
-      WHERE e.tenant_id = $1
-        AND e.idempotency_key = $2
-      FOR UPDATE OF e`,
-    [tenantId, idempotencyKey]
-  );
-  if (existing.rowCount === 0) {
-    return null;
-  }
-  const row = existing.rows[0];
-  if (!row.idempotency_request_hash) {
-    throw domainError('WO_POSTING_IDEMPOTENCY_CONFLICT', {
-      reason: 'missing_request_hash',
-      executionId: row.id
-    });
-  }
-  if (row.idempotency_request_hash !== expectedRequestHash) {
-    throw domainError('WO_POSTING_IDEMPOTENCY_CONFLICT', {
-      reason: 'request_hash_mismatch',
-      executionId: row.id
-    });
-  }
-  if (row.status !== 'posted') {
-    throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-      reason: 'execution_not_posted',
-      missingExecutionIds: [row.id],
-      hint: 'Retry with the same Idempotency-Key or contact admin'
-    });
-  }
-  if (!row.consumption_movement_id || !row.production_movement_id) {
-    throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-      reason: 'missing_execution_movements',
-      missingExecutionIds: [row.id],
-      hint: 'Retry with the same Idempotency-Key or contact admin'
-    });
-  }
-  try {
-    await ensurePostedMovementReady(client, tenantId, row.consumption_movement_id);
-    await ensurePostedMovementReady(client, tenantId, row.production_movement_id);
-  } catch (error: any) {
-    if (
-      error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
-      error?.message === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE'
-    ) {
-      throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-        reason: 'movement_not_ready',
-        missingExecutionIds: [row.id],
-        hint: 'Retry with the same Idempotency-Key or contact admin'
-      });
-    }
-    throw error;
-  }
-  return {
-    executionId: row.id,
-    workOrderId: row.work_order_id,
-    issueMovementId: row.consumption_movement_id,
-    receiveMovementId: row.production_movement_id,
-    quantityCompleted: roundQuantity(toNumber(row.quantity_completed ?? 0)),
-    workOrderStatus: row.work_order_status
-  };
-}
-
 async function fetchWorkOrderById(
   tenantId: string,
   id: string,
@@ -937,402 +463,18 @@ async function fetchWorkOrderById(
   return result.rowCount === 0 ? null : result.rows[0];
 }
 
-function buildAutoOutputLotCode(workOrderNumber: string, executionId: string) {
-  const normalizedOrder = workOrderNumber.replace(/[^A-Za-z0-9-]/g, '').slice(0, 48) || 'WO';
-  return `WO-${normalizedOrder}-${executionId.slice(0, 8).toUpperCase()}`;
-}
-
-async function resolveOrCreateOutputLot(
-  client: PoolClient,
-  params: {
-    tenantId: string;
-    outputItemId: string;
-    outputLotId?: string | null;
-    outputLotCode?: string | null;
-    workOrderNumber: string;
-    executionId: string;
-    occurredAt: Date;
-  }
-): Promise<{ id: string; lotCode: string }> {
-  const {
-    tenantId,
-    outputItemId,
-    outputLotId,
-    outputLotCode,
-    workOrderNumber,
-    executionId,
-    occurredAt
-  } = params;
-
-  if (outputLotId) {
-    const existing = await client.query<{ id: string; item_id: string; lot_code: string }>(
-      `SELECT id, item_id, lot_code
-         FROM lots
-        WHERE id = $1
-          AND tenant_id = $2`,
-      [outputLotId, tenantId]
-    );
-    if (!existing.rows[0]) {
-      throw new Error('WO_REPORT_OUTPUT_LOT_NOT_FOUND');
-    }
-    if (existing.rows[0].item_id !== outputItemId) {
-      throw new Error('WO_REPORT_OUTPUT_LOT_ITEM_MISMATCH');
-    }
-    return { id: existing.rows[0].id, lotCode: existing.rows[0].lot_code };
-  }
-
-  const lotCode = (outputLotCode?.trim() || buildAutoOutputLotCode(workOrderNumber, executionId)).slice(0, 120);
-  const found = await client.query<{ id: string; lot_code: string }>(
-    `SELECT id, lot_code
-       FROM lots
-      WHERE tenant_id = $1
-        AND item_id = $2
-        AND lot_code = $3
-      LIMIT 1`,
-    [tenantId, outputItemId, lotCode]
-  );
-  if (found.rows[0]) {
-    return { id: found.rows[0].id, lotCode: found.rows[0].lot_code };
-  }
-
-  const now = new Date();
-  const lotId = uuidv4();
-  try {
-    const inserted = await client.query<{ id: string; lot_code: string }>(
-      `INSERT INTO lots (
-         id, tenant_id, item_id, lot_code, status, manufactured_at, notes, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $7)
-       RETURNING id, lot_code`,
-      [
-        lotId,
-        tenantId,
-        outputItemId,
-        lotCode,
-        occurredAt,
-        `Auto-created from report-production execution ${executionId}`,
-        now
-      ]
-    );
-    return { id: inserted.rows[0].id, lotCode: inserted.rows[0].lot_code };
-  } catch (error: any) {
-    if (error?.code === '23505') {
-      const replayFound = await client.query<{ id: string; lot_code: string }>(
-        `SELECT id, lot_code
-           FROM lots
-          WHERE tenant_id = $1
-            AND item_id = $2
-            AND lot_code = $3
-          LIMIT 1`,
-        [tenantId, outputItemId, lotCode]
-      );
-      if (replayFound.rows[0]) {
-        return { id: replayFound.rows[0].id, lotCode: replayFound.rows[0].lot_code };
-      }
-    }
-    throw error;
-  }
-}
-
 export async function verifyWorkOrderWipIntegrityForClose(
   tenantId: string,
   workOrderId: string,
   client?: PoolClient
 ) {
   if (client) {
-    await verifyWorkOrderWipIntegrity(client, tenantId, workOrderId);
+    await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
     return;
   }
   await withTransaction(async (tx) => {
-    await verifyWorkOrderWipIntegrity(tx, tenantId, workOrderId);
+    await wipEngine.verifyWipIntegrity(tx, tenantId, workOrderId);
   });
-}
-
-async function persistWorkOrderLotLinks(
-  tenantId: string,
-  params: {
-    executionId: string;
-    outputItemId: string;
-    outputQty: number;
-    outputUom: string;
-    outputLotId?: string;
-    outputLotCode?: string;
-    inputLots?: WorkOrderReportProductionInputLot[];
-    workOrderNumber: string;
-    occurredAt: Date;
-  }
-): Promise<{ outputLotId: string; outputLotCode: string; inputLotCount: number }> {
-  const {
-    executionId,
-    outputItemId,
-    outputQty,
-    outputUom,
-    outputLotId,
-    outputLotCode,
-    inputLots,
-    workOrderNumber,
-    occurredAt
-  } = params;
-
-  return withTransactionRetry(async (client) => {
-    const executionRes = await client.query<{ id: string; production_movement_id: string | null }>(
-      `SELECT id, production_movement_id
-         FROM work_order_executions
-        WHERE tenant_id = $1
-          AND id = $2
-        FOR UPDATE`,
-      [tenantId, executionId]
-    );
-    if (!executionRes.rows[0]) {
-      throw new Error('WO_REPORT_EXECUTION_NOT_FOUND');
-    }
-    const productionMovementId = executionRes.rows[0].production_movement_id;
-    if (!productionMovementId) {
-      throw new Error('WO_REPORT_EXECUTION_NOT_POSTED');
-    }
-
-    const resolvedOutputLot = await resolveOrCreateOutputLot(client, {
-      tenantId,
-      outputItemId,
-      outputLotId: outputLotId ?? null,
-      outputLotCode: outputLotCode ?? null,
-      workOrderNumber,
-      executionId,
-      occurredAt
-    });
-
-    const now = new Date();
-    await client.query(
-      `INSERT INTO work_order_lot_links (
-         id, tenant_id, work_order_execution_id, role, item_id, lot_id, uom, quantity, created_at
-       ) VALUES ($1, $2, $3, 'produce', $4, $5, $6, $7, $8)
-       ON CONFLICT (tenant_id, work_order_execution_id, role, item_id, lot_id, uom) DO NOTHING`,
-      [
-        uuidv4(),
-        tenantId,
-        executionId,
-        outputItemId,
-        resolvedOutputLot.id,
-        outputUom,
-        roundQuantity(outputQty),
-        now
-      ]
-    );
-
-    const producedLines = await client.query<{
-      id: string;
-      uom: string;
-      quantity_delta: string | number;
-    }>(
-      `SELECT id, uom, quantity_delta
-         FROM inventory_movement_lines
-        WHERE tenant_id = $1
-          AND movement_id = $2
-          AND item_id = $3
-          AND quantity_delta > 0
-        ORDER BY id`,
-      [tenantId, productionMovementId, outputItemId]
-    );
-    if ((producedLines.rowCount ?? 0) === 0) {
-      throw new Error('WO_REPORT_OUTPUT_MOVEMENT_LINES_MISSING');
-    }
-    for (const producedLine of producedLines.rows) {
-      await client.query(
-        `INSERT INTO inventory_movement_lots (
-           id, tenant_id, inventory_movement_line_id, lot_id, uom, quantity_delta, created_at
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (tenant_id, inventory_movement_line_id, lot_id) DO NOTHING`,
-        [
-          uuidv4(),
-          tenantId,
-          producedLine.id,
-          resolvedOutputLot.id,
-          producedLine.uom,
-          roundQuantity(toNumber(producedLine.quantity_delta)),
-          now
-        ]
-      );
-    }
-
-    const normalizedInputLots = Array.isArray(inputLots) ? inputLots : [];
-    if (normalizedInputLots.length > 0) {
-      const lotIds = Array.from(new Set(normalizedInputLots.map((lot) => lot.lotId)));
-      const lotRows = await client.query<{ id: string; item_id: string }>(
-        `SELECT id, item_id
-           FROM lots
-          WHERE tenant_id = $1
-            AND id = ANY($2::uuid[])`,
-        [tenantId, lotIds]
-      );
-      const byId = new Map(lotRows.rows.map((row) => [row.id, row]));
-      for (const inputLot of normalizedInputLots) {
-        const lotRow = byId.get(inputLot.lotId);
-        if (!lotRow) {
-          throw new Error('WO_REPORT_INPUT_LOT_NOT_FOUND');
-        }
-        if (lotRow.item_id !== inputLot.componentItemId) {
-          throw new Error('WO_REPORT_INPUT_LOT_ITEM_MISMATCH');
-        }
-      }
-
-      for (const inputLot of normalizedInputLots) {
-        await client.query(
-          `INSERT INTO work_order_lot_links (
-             id, tenant_id, work_order_execution_id, role, item_id, lot_id, uom, quantity, created_at
-           ) VALUES ($1, $2, $3, 'consume', $4, $5, $6, $7, $8)
-           ON CONFLICT (tenant_id, work_order_execution_id, role, item_id, lot_id, uom) DO NOTHING`,
-          [
-            uuidv4(),
-            tenantId,
-            executionId,
-            inputLot.componentItemId,
-            inputLot.lotId,
-            inputLot.uom,
-            roundQuantity(toNumber(inputLot.quantity)),
-            now
-          ]
-        );
-      }
-    }
-
-    return {
-      outputLotId: resolvedOutputLot.id,
-      outputLotCode: resolvedOutputLot.lotCode,
-      inputLotCount: normalizedInputLots.length
-    };
-  });
-}
-
-async function allocateWipCostFromMovement(
-  client: PoolClient,
-  tenantId: string,
-  executionId: string,
-  movementId: string,
-  allocatedAt: Date
-): Promise<number> {
-  const rows = await client.query<{ id: string; extended_cost: string | number }>(
-    `SELECT id, extended_cost
-       FROM cost_layer_consumptions
-      WHERE tenant_id = $1
-        AND movement_id = $2
-        AND consumption_type = 'production_input'
-        AND wip_execution_id IS NULL
-      FOR UPDATE`,
-    [tenantId, movementId]
-  );
-
-  if (rows.rowCount === 0) {
-    throw new Error('WO_WIP_COST_NO_CONSUMPTIONS');
-  }
-
-  const ids = rows.rows.map((row) => row.id);
-  const totalCost = rows.rows.reduce((sum, row) => sum + toNumber(row.extended_cost), 0);
-
-  await client.query(
-    `UPDATE cost_layer_consumptions
-        SET wip_execution_id = $1,
-            wip_allocated_at = $2
-      WHERE tenant_id = $3
-        AND id = ANY($4::uuid[])`,
-    [executionId, allocatedAt, tenantId, ids]
-  );
-
-  return totalCost;
-}
-
-type PendingWipCostAllocation = {
-  consumptionIds: string[];
-  totalCost: number;
-};
-
-async function lockUnallocatedWipCostFromMovement(
-  client: PoolClient,
-  tenantId: string,
-  movementId: string
-): Promise<PendingWipCostAllocation> {
-  const rows = await client.query<{ id: string; extended_cost: string | number }>(
-    `SELECT id, extended_cost
-       FROM cost_layer_consumptions
-      WHERE tenant_id = $1
-        AND movement_id = $2
-        AND consumption_type = 'production_input'
-        AND wip_execution_id IS NULL
-      FOR UPDATE`,
-    [tenantId, movementId]
-  );
-
-  if (rows.rowCount === 0) {
-    throw new Error('WO_WIP_COST_NO_CONSUMPTIONS');
-  }
-
-  return {
-    consumptionIds: rows.rows.map((row) => row.id),
-    totalCost: rows.rows.reduce((sum, row) => sum + toNumber(row.extended_cost), 0)
-  };
-}
-
-async function lockUnallocatedWipCostFromWorkOrderIssues(
-  client: PoolClient,
-  tenantId: string,
-  workOrderId: string
-): Promise<PendingWipCostAllocation> {
-  const rows = await client.query<{ id: string; extended_cost: string | number }>(
-    `SELECT clc.id, clc.extended_cost
-       FROM cost_layer_consumptions clc
-       JOIN work_order_material_issues wmi
-         ON wmi.id = clc.consumption_document_id
-        AND wmi.tenant_id = clc.tenant_id
-      WHERE wmi.work_order_id = $1
-        AND wmi.status = 'posted'
-        AND clc.tenant_id = $2
-        AND clc.consumption_type = 'production_input'
-        AND clc.wip_execution_id IS NULL
-      FOR UPDATE OF clc`,
-    [workOrderId, tenantId]
-  );
-
-  if (rows.rowCount === 0) {
-    throw new Error('WO_WIP_COST_NO_CONSUMPTIONS');
-  }
-
-  return {
-    consumptionIds: rows.rows.map((row) => row.id),
-    totalCost: rows.rows.reduce((sum, row) => sum + toNumber(row.extended_cost), 0)
-  };
-}
-
-async function applyWipCostAllocation(
-  client: PoolClient,
-  tenantId: string,
-  executionId: string,
-  allocatedAt: Date,
-  pending: PendingWipCostAllocation
-): Promise<number> {
-  await client.query(
-    `UPDATE cost_layer_consumptions
-        SET wip_execution_id = $1,
-            wip_allocated_at = $2
-      WHERE tenant_id = $3
-        AND id = ANY($4::uuid[])`,
-    [executionId, allocatedAt, tenantId, pending.consumptionIds]
-  );
-  return pending.totalCost;
-}
-
-async function allocateWipCostFromWorkOrderIssues(
-  client: PoolClient,
-  tenantId: string,
-  workOrderId: string,
-  executionId: string,
-  allocatedAt: Date
-): Promise<number> {
-  return applyWipCostAllocation(
-    client,
-    tenantId,
-    executionId,
-    allocatedAt,
-    await lockUnallocatedWipCostFromWorkOrderIssues(client, tenantId, workOrderId)
-  );
 }
 
 export async function createWorkOrderIssue(
@@ -1370,7 +512,7 @@ export async function createWorkOrderIssue(
         `SELECT id FROM work_order_material_issues WHERE tenant_id = $1 AND idempotency_key = $2`,
         [tenantId, idempotencyKey]
       );
-      if (existing.rowCount > 0) {
+      if ((existing.rowCount ?? 0) > 0) {
         return fetchWorkOrderIssue(tenantId, workOrderId, existing.rows[0].id, client);
       }
     }
@@ -1526,6 +668,7 @@ export async function postWorkOrderIssue(
           );
         }
       }
+      await ensureWorkOrderReservationsReady(tenantId, workOrderId, client);
       return linesForPosting.map((line) => ({
         tenantId,
         warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
@@ -1582,18 +725,55 @@ export async function postWorkOrderIssue(
         canonicalUom: entry.canonicalFields.canonicalUom,
         sourceLineId: entry.sourceLineId
       }));
+      const occurredAt = new Date(issue.occurred_at);
+      const baseIssueMovement = movementPlanner.buildIssueMovement({
+        header: {
+          id: issue.inventory_movement_id ?? uuidv4(),
+          tenantId,
+          movementType: 'issue',
+          status: 'posted',
+          externalRef: isDisassembly
+            ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
+            : `work_order_issue:${issueId}:${workOrderId}`,
+          sourceType: 'work_order_issue_post',
+          sourceId: issueId,
+          idempotencyKey: `wo-issue-post:${issueId}`,
+          occurredAt,
+          postedAt: occurredAt,
+          notes: issue.notes ?? null,
+          metadata: null,
+          createdAt: occurredAt,
+          updatedAt: occurredAt
+        },
+        lines: sortedMovementLines.map((preparedLine) => ({
+          sourceLineId: preparedLine.sourceLineId,
+          warehouseId: preparedLine.warehouseId,
+          itemId: preparedLine.line.component_item_id,
+          locationId: preparedLine.line.from_location_id,
+          canonicalFields: preparedLine.canonicalFields,
+          reasonCode: preparedLine.reasonCode,
+          lineNotes:
+            preparedLine.line.notes ?? `Work order issue ${issueId} line ${preparedLine.line.line_number}`
+        }))
+      });
       if (issueState === 'posted_issue') {
-        return buildWorkOrderIssueReplayResult({
+        return replayEngine.replayIssue({
           tenantId,
           workOrderId,
           issueId,
           movementId: issue.inventory_movement_id!,
-          expectedLineCount: sortedMovementLines.length,
-          client
+          expectedLineCount: baseIssueMovement.expectedLineCount,
+          expectedDeterministicHash: baseIssueMovement.expectedDeterministicHash,
+          client,
+          preFetchIntegrityCheck: async () => {
+            await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
+          },
+          fetchAggregateView: () =>
+            fetchWorkOrderIssue(tenantId, workOrderId, issueId, client)
         });
       }
 
-      assertManufacturingTransition({
+      statePolicy.assertManufacturingTransition({
         flow: 'issue',
         currentState: issueState,
         allowedFrom: ['planned_issue'],
@@ -1603,7 +783,6 @@ export async function postWorkOrderIssue(
       });
 
       const now = new Date();
-      const occurredAt = new Date(issue.occurred_at);
       const validation = await validateSufficientStock(
         tenantId,
         occurredAt,
@@ -1654,61 +833,63 @@ export async function postWorkOrderIssue(
         });
       }
 
-      const movement = await persistInventoryMovement(client, {
-        id: movementId,
-        tenantId,
-        movementType: 'issue',
-        status: 'posted',
-        externalRef: isDisassembly
-          ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
-          : `work_order_issue:${issueId}:${workOrderId}`,
-        sourceType: 'work_order_issue_post',
-        sourceId: issueId,
-        idempotencyKey: `wo-issue-post:${issueId}`,
-        occurredAt,
-        postedAt: now,
-        notes: issue.notes ?? null,
-        metadata: {
-          workOrderId,
-          workOrderNumber,
-          ...(validation.overrideMetadata ?? {})
+      const plannedIssueMovement = movementPlanner.buildIssueMovement({
+        header: {
+          id: movementId,
+          tenantId,
+          movementType: 'issue',
+          status: 'posted',
+          externalRef: isDisassembly
+            ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
+            : `work_order_issue:${issueId}:${workOrderId}`,
+          sourceType: 'work_order_issue_post',
+          sourceId: issueId,
+          idempotencyKey: `wo-issue-post:${issueId}`,
+          occurredAt,
+          postedAt: now,
+          notes: issue.notes ?? null,
+          metadata: {
+            workOrderId,
+            workOrderNumber,
+            ...(validation.overrideMetadata ?? {})
+          },
+          createdAt: now,
+          updatedAt: now
         },
-        createdAt: now,
-        updatedAt: now,
         lines: plannedMovementLines.map(({ preparedLine, issueCost }) => {
           const canonicalQty = Math.abs(preparedLine.canonicalFields.quantityDeltaCanonical);
           const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
           const extendedCost = issueCost !== null ? -issueCost : null;
           return {
-            warehouseId: preparedLine.warehouseId,
             sourceLineId: preparedLine.sourceLineId,
+            warehouseId: preparedLine.warehouseId,
             itemId: preparedLine.line.component_item_id,
             locationId: preparedLine.line.from_location_id,
-            quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
-            uom: preparedLine.canonicalFields.canonicalUom,
-            quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
-            uomEntered: preparedLine.canonicalFields.uomEntered,
-            quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
-            canonicalUom: preparedLine.canonicalFields.canonicalUom,
-            uomDimension: preparedLine.canonicalFields.uomDimension,
-            unitCost,
-            extendedCost,
+            canonicalFields: preparedLine.canonicalFields,
             reasonCode: preparedLine.reasonCode,
             lineNotes:
               preparedLine.line.notes ?? `Work order issue ${issueId} line ${preparedLine.line.line_number}`,
-            createdAt: now
+            unitCost,
+            extendedCost
           };
         })
       });
+      const movement = await persistInventoryMovement(client, plannedIssueMovement.persistInput);
 
       if (!movement.created) {
-        return buildWorkOrderIssueReplayResult({
+        return replayEngine.replayIssue({
           tenantId,
           workOrderId,
           issueId,
           movementId: movement.movementId,
-          expectedLineCount: sortedMovementLines.length,
-          client
+          expectedLineCount: plannedIssueMovement.expectedLineCount,
+          expectedDeterministicHash: plannedIssueMovement.expectedDeterministicHash,
+          client,
+          preFetchIntegrityCheck: async () => {
+            await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
+          },
+          fetchAggregateView: () =>
+            fetchWorkOrderIssue(tenantId, workOrderId, issueId, client)
         });
       }
 
@@ -1739,7 +920,7 @@ export async function postWorkOrderIssue(
         );
       }
 
-      await createWorkOrderWipValuationRecord(client, {
+      await wipEngine.createWipValuationRecord(client, {
         tenantId,
         workOrderId,
         executionId: null,
@@ -1748,78 +929,33 @@ export async function postWorkOrderIssue(
         valueDelta: totalIssueCost,
         notes: `Work-order issue WIP valuation for issue ${issueId}`
       });
-
-      projectionOps.push(async (projectionClient) => {
-        await projectionClient.query(
-          `UPDATE work_order_material_issues
-              SET status = 'posted',
-                  inventory_movement_id = $1,
-                  updated_at = $2
-            WHERE id = $3
-              AND tenant_id = $4`,
-          [movement.movementId, now, issueId, tenantId]
-        );
-
-        if (normalizeWorkOrderStatus(workOrder!.status) === 'draft' || normalizeWorkOrderStatus(workOrder!.status) === 'ready') {
-          await projectionClient.query(
-            `UPDATE work_orders
-                SET status = $2,
-                    updated_at = $3
-              WHERE id = $1
-                AND tenant_id = $4`,
-            [workOrderId, nextStatusAfterExecutionStart(workOrder!.status), now, tenantId]
-          );
-        }
-
-        if (isDisassembly) {
-          const currentCompleted = toNumber(workOrder!.quantity_completed ?? 0);
-          const newCompleted = currentCompleted + issuedTotal;
-          const planned = toNumber(workOrder!.quantity_planned);
-          const completedAt = newCompleted >= planned ? now : null;
-          const nextStatus = nextStatusFromProgress({
-            currentStatus: workOrder!.status,
-            plannedQuantity: planned,
-            completedQuantity: newCompleted
-          });
-          await projectionClient.query(
-            `UPDATE work_orders
-                SET quantity_completed = $2,
-                    status = $3,
-                    completed_at = COALESCE(completed_at, $4),
-                    updated_at = $5
-              WHERE id = $1
-                AND tenant_id = $6`,
-            [workOrderId, newCompleted, nextStatus, completedAt, now, tenantId]
-          );
-        }
-
-        if (validation.overrideMetadata && context.actor) {
-          await recordAuditLog(
-            {
-              tenantId,
-              actorType: context.actor.type,
-              actorId: context.actor.id ?? null,
-              action: 'negative_override',
-              entityType: 'inventory_movement',
-              entityId: movement.movementId,
-              occurredAt: now,
-              metadata: {
-                reason: validation.overrideMetadata.override_reason ?? null,
-                workOrderId,
-                issueId,
-                reference: validation.overrideMetadata.override_reference ?? null,
-                lines: linesForPosting.map((line) => ({
-                  itemId: line.component_item_id,
-                  locationId: line.from_location_id,
-                  uom: line.uom,
-                  quantity: roundQuantity(toNumber(line.quantity_issued))
-                }))
-              }
-            },
-            projectionClient
-          );
-        }
-      });
+      await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
+      await consumeWorkOrderReservations(
+        tenantId,
+        workOrderId,
+        linesForPosting.map((line) => ({
+          componentItemId: line.component_item_id,
+          locationId: line.from_location_id,
+          uom: line.uom,
+          quantity: roundQuantity(toNumber(line.quantity_issued))
+        })),
+        client
+      );
+      projectionOps.push(
+        ...projectionEngine.buildIssueProjectionOps({
+          tenantId,
+          issueId,
+          movementId: movement.movementId,
+          now,
+          workOrderId,
+          workOrder,
+          isDisassembly,
+          issuedTotal,
+          validationOverrideMetadata: validation.overrideMetadata ?? null,
+          context,
+          linesForPosting
+        })
+      );
 
       return {
         responseBody: mapMaterialIssue(
@@ -1833,8 +969,8 @@ export async function postWorkOrderIssue(
         ),
         responseStatus: 200,
         events: [
-          buildMovementPostedEvent(movement.movementId),
-          buildWorkOrderIssuePostedEvent({
+          eventFactory.buildInventoryMovementPostedEvent(movement.movementId),
+          eventFactory.buildWorkOrderIssuePostedEvent({
             issueId,
             workOrderId,
             movementId: movement.movementId
@@ -1867,7 +1003,7 @@ export async function createWorkOrderCompletion(
         `SELECT id FROM work_order_executions WHERE tenant_id = $1 AND idempotency_key = $2`,
         [tenantId, idempotencyKey]
       );
-      if (existing.rowCount > 0) {
+      if ((existing.rowCount ?? 0) > 0) {
         return fetchWorkOrderCompletion(tenantId, workOrderId, existing.rows[0].id, client);
       }
     }
@@ -2086,18 +1222,57 @@ export async function postWorkOrderCompletion(
         canonicalUom: entry.canonicalFields.canonicalUom,
         sourceLineId: entry.sourceLineId
       }));
+      const occurredAt = new Date(execution.occurred_at);
+      const baseCompletionMovement = movementPlanner.buildCompletionMovement({
+        header: {
+          id: execution.production_movement_id ?? uuidv4(),
+          tenantId,
+          movementType: 'receive',
+          status: 'posted',
+          externalRef: isDisassembly
+            ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
+            : `work_order_completion:${completionId}:${workOrderId}`,
+          sourceType: 'work_order_completion_post',
+          sourceId: completionId,
+          idempotencyKey: `wo-completion-post:${completionId}`,
+          occurredAt,
+          postedAt: occurredAt,
+          notes: execution.notes ?? null,
+          metadata: {
+            workOrderId,
+            workOrderNumber: workOrder.number ?? workOrder.work_order_number
+          },
+          createdAt: occurredAt,
+          updatedAt: occurredAt
+        },
+        lines: sortedMovementLines.map((preparedLine) => ({
+          sourceLineId: preparedLine.sourceLineId,
+          warehouseId: preparedLine.warehouseId,
+          itemId: preparedLine.line.item_id,
+          locationId: preparedLine.line.to_location_id!,
+          canonicalFields: preparedLine.canonicalFields,
+          reasonCode: preparedLine.reasonCode,
+          lineNotes: preparedLine.line.notes ?? `Work order completion ${completionId}`
+        }))
+      });
       if (completionState === 'posted_completion') {
-        return buildWorkOrderCompletionReplayResult({
+        return replayEngine.replayCompletion({
           tenantId,
           workOrderId,
           completionId,
           movementId: execution.production_movement_id!,
-          expectedLineCount: sortedMovementLines.length,
-          client
+          expectedLineCount: baseCompletionMovement.expectedLineCount,
+          expectedDeterministicHash: baseCompletionMovement.expectedDeterministicHash,
+          client,
+          preFetchIntegrityCheck: async () => {
+            await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
+          },
+          fetchAggregateView: () =>
+            fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client)
         });
       }
 
-      assertManufacturingTransition({
+      statePolicy.assertManufacturingTransition({
         flow: 'completion',
         currentState: completionState,
         allowedFrom: ['planned_completion'],
@@ -2110,11 +1285,10 @@ export async function postWorkOrderCompletion(
       if (totalProducedCanonical <= 0) {
         throw new Error('WO_WIP_COST_INVALID_OUTPUT_QTY');
       }
-      const pendingWipAllocation = await lockUnallocatedWipCostFromWorkOrderIssues(
-        client,
+      const pendingWipAllocation = await wipEngine.lockOpenWip(client, {
         tenantId,
-        workOrderId
-      );
+        scope: { kind: 'workOrder', workOrderId }
+      });
       const totalIssueCost = pendingWipAllocation.totalCost;
       const plannedMovementLines = sortedMovementLines.map((preparedLine) => {
         const allocationRatio = preparedLine.canonicalFields.quantityDeltaCanonical / totalProducedCanonical;
@@ -2130,54 +1304,56 @@ export async function postWorkOrderCompletion(
         };
       });
       const movementId = uuidv4();
-      const movement = await persistInventoryMovement(client, {
-        id: movementId,
-        tenantId,
-        movementType: 'receive',
-        status: 'posted',
-        externalRef: isDisassembly
-          ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
-          : `work_order_completion:${completionId}:${workOrderId}`,
-        sourceType: 'work_order_completion_post',
-        sourceId: completionId,
-        idempotencyKey: `wo-completion-post:${completionId}`,
-        occurredAt: execution.occurred_at,
-        postedAt: now,
-        notes: execution.notes ?? null,
-        metadata: {
-          workOrderId,
-          workOrderNumber: workOrder.number ?? workOrder.work_order_number
+      const plannedCompletionMovement = movementPlanner.buildCompletionMovement({
+        header: {
+          id: movementId,
+          tenantId,
+          movementType: 'receive',
+          status: 'posted',
+          externalRef: isDisassembly
+            ? `work_order_disassembly_completion:${completionId}:${workOrderId}`
+            : `work_order_completion:${completionId}:${workOrderId}`,
+          sourceType: 'work_order_completion_post',
+          sourceId: completionId,
+          idempotencyKey: `wo-completion-post:${completionId}`,
+          occurredAt,
+          postedAt: now,
+          notes: execution.notes ?? null,
+          metadata: {
+            workOrderId,
+            workOrderNumber: workOrder.number ?? workOrder.work_order_number
+          },
+          createdAt: now,
+          updatedAt: now
         },
-        createdAt: now,
-        updatedAt: now,
         lines: plannedMovementLines.map(({ preparedLine, allocatedCost, unitCost }) => ({
-          warehouseId: preparedLine.warehouseId,
           sourceLineId: preparedLine.sourceLineId,
+          warehouseId: preparedLine.warehouseId,
           itemId: preparedLine.line.item_id,
           locationId: preparedLine.line.to_location_id!,
-          quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
-          uom: preparedLine.canonicalFields.canonicalUom,
-          quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
-          uomEntered: preparedLine.canonicalFields.uomEntered,
-          quantityDeltaCanonical: preparedLine.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: preparedLine.canonicalFields.canonicalUom,
-          uomDimension: preparedLine.canonicalFields.uomDimension,
-          unitCost,
-          extendedCost: allocatedCost,
+          canonicalFields: preparedLine.canonicalFields,
           reasonCode: preparedLine.reasonCode,
           lineNotes: preparedLine.line.notes ?? `Work order completion ${completionId}`,
-          createdAt: now
+          unitCost,
+          extendedCost: allocatedCost
         }))
       });
+      const movement = await persistInventoryMovement(client, plannedCompletionMovement.persistInput);
 
       if (!movement.created) {
-        return buildWorkOrderCompletionReplayResult({
+        return replayEngine.replayCompletion({
           tenantId,
           workOrderId,
           completionId,
           movementId: movement.movementId,
-          expectedLineCount: sortedMovementLines.length,
-          client
+          expectedLineCount: plannedCompletionMovement.expectedLineCount,
+          expectedDeterministicHash: plannedCompletionMovement.expectedDeterministicHash,
+          client,
+          preFetchIntegrityCheck: async () => {
+            await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
+          },
+          fetchAggregateView: () =>
+            fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client)
         });
       }
       const wipUnitCostCanonical = totalIssueCost / totalProducedCanonical;
@@ -2207,14 +1383,19 @@ export async function postWorkOrderCompletion(
           })
         );
       }
-      await applyWipCostAllocation(client, tenantId, completionId, now, pendingWipAllocation);
+      await wipEngine.allocateWipCost(client, {
+        tenantId,
+        executionId: completionId,
+        allocatedAt: now,
+        pending: pendingWipAllocation
+      });
 
       const completionUomSet = new Set(
         sortedMovementLines.map((line) => line.canonicalFields.canonicalUom)
       );
       const completionCanonicalUom =
         completionUomSet.size === 1 ? sortedMovementLines[0]?.canonicalFields.canonicalUom ?? null : null;
-      await createWorkOrderWipValuationRecord(client, {
+      await wipEngine.createWipValuationRecord(client, {
         tenantId,
         workOrderId,
         executionId: completionId,
@@ -2225,129 +1406,22 @@ export async function postWorkOrderCompletion(
         canonicalUom: completionCanonicalUom,
         notes: `Work-order completion WIP capitalization for execution ${completionId}`
       });
-      await verifyWorkOrderWipIntegrity(client, tenantId, workOrderId);
-
-      projectionOps.push(async (projectionClient) => {
-        await projectionClient.query(
-          `UPDATE work_order_executions
-              SET status = 'posted',
-                  production_movement_id = $1,
-                  wip_total_cost = $2,
-                  wip_unit_cost = $3,
-                  wip_quantity_canonical = $4,
-                  wip_cost_method = $5,
-                  wip_costed_at = $6
-            WHERE id = $7
-              AND tenant_id = $8`,
-          [
-            movement.movementId,
-            totalIssueCost,
-            wipUnitCostCanonical,
-            totalProducedCanonical,
-            WIP_COST_METHOD,
-            now,
-            completionId,
-            tenantId
-          ]
-        );
-
-        if (!isDisassembly) {
-          const currentCompleted = toNumber(workOrder!.quantity_completed ?? 0);
-          const newCompleted = currentCompleted + totalProduced;
-          const planned = toNumber(workOrder!.quantity_planned);
-          const completedAt = newCompleted >= planned ? now : null;
-          const newStatus = nextStatusFromProgress({
-            currentStatus: workOrder!.status,
-            plannedQuantity: planned,
-            completedQuantity: newCompleted
-          });
-          await projectionClient.query(
-            `UPDATE work_orders
-                SET quantity_completed = $2,
-                    status = $3,
-                    completed_at = COALESCE(completed_at, $4),
-                    wip_total_cost = COALESCE(wip_total_cost, 0) + $5,
-                    wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $6,
-                    wip_unit_cost = CASE
-                      WHEN (COALESCE(wip_quantity_canonical, 0) + $6) > 0
-                      THEN (COALESCE(wip_total_cost, 0) + $5) / (COALESCE(wip_quantity_canonical, 0) + $6)
-                      ELSE NULL
-                    END,
-                    wip_cost_method = $7,
-                    wip_costed_at = $8,
-                    updated_at = $9
-              WHERE id = $1
-                AND tenant_id = $10`,
-            [
-              workOrderId,
-              newCompleted,
-              newStatus,
-              completedAt,
-              totalIssueCost,
-              totalProducedCanonical,
-              WIP_COST_METHOD,
-              now,
-              now,
-              tenantId
-            ]
-          );
-        } else if (
-          normalizeWorkOrderStatus(workOrder!.status) === 'draft'
-          || normalizeWorkOrderStatus(workOrder!.status) === 'ready'
-        ) {
-          await projectionClient.query(
-            `UPDATE work_orders
-                SET status = $2,
-                    wip_total_cost = COALESCE(wip_total_cost, 0) + $3,
-                    wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $4,
-                    wip_unit_cost = CASE
-                      WHEN (COALESCE(wip_quantity_canonical, 0) + $4) > 0
-                      THEN (COALESCE(wip_total_cost, 0) + $3) / (COALESCE(wip_quantity_canonical, 0) + $4)
-                      ELSE NULL
-                    END,
-                    wip_cost_method = $5,
-                    wip_costed_at = $6,
-                    updated_at = $7
-              WHERE id = $1
-                AND tenant_id = $8`,
-            [
-              workOrderId,
-              nextStatusAfterExecutionStart(workOrder!.status),
-              totalIssueCost,
-              totalProducedCanonical,
-              WIP_COST_METHOD,
-              now,
-              now,
-              tenantId
-            ]
-          );
-        } else {
-          await projectionClient.query(
-            `UPDATE work_orders
-                SET wip_total_cost = COALESCE(wip_total_cost, 0) + $2,
-                    wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $3,
-                    wip_unit_cost = CASE
-                      WHEN (COALESCE(wip_quantity_canonical, 0) + $3) > 0
-                      THEN (COALESCE(wip_total_cost, 0) + $2) / (COALESCE(wip_quantity_canonical, 0) + $3)
-                      ELSE NULL
-                    END,
-                    wip_cost_method = $4,
-                    wip_costed_at = $5,
-                    updated_at = $6
-              WHERE id = $1
-                AND tenant_id = $7`,
-            [
-              workOrderId,
-              totalIssueCost,
-              totalProducedCanonical,
-              WIP_COST_METHOD,
-              now,
-              now,
-              tenantId
-            ]
-          );
-        }
-      });
+      await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
+      projectionOps.push(
+        ...projectionEngine.buildCompletionProjectionOps({
+          tenantId,
+          completionId,
+          movementId: movement.movementId,
+          now,
+          workOrderId,
+          workOrder,
+          isDisassembly,
+          totalIssueCost,
+          wipUnitCostCanonical,
+          totalProducedCanonical,
+          totalProduced
+        })
+      );
 
       return {
         responseBody: mapExecution(
@@ -2365,8 +1439,8 @@ export async function postWorkOrderCompletion(
         ),
         responseStatus: 200,
         events: [
-          buildMovementPostedEvent(movement.movementId),
-          buildWorkOrderCompletionPostedEvent({
+          eventFactory.buildInventoryMovementPostedEvent(movement.movementId),
+          eventFactory.buildWorkOrderCompletionPostedEvent({
             executionId: completionId,
             workOrderId,
             movementId: movement.movementId
@@ -2556,21 +1630,6 @@ function shouldSimulateLotLinkFailureOnce(idempotencyKey: string | null, replaye
   return true;
 }
 
-function isNonRetryableLotLinkError(error: any) {
-  const code = error?.code;
-  const message = error?.message;
-  return (
-    code === 'WO_REPORT_OUTPUT_LOT_NOT_FOUND' ||
-    message === 'WO_REPORT_OUTPUT_LOT_NOT_FOUND' ||
-    code === 'WO_REPORT_OUTPUT_LOT_ITEM_MISMATCH' ||
-    message === 'WO_REPORT_OUTPUT_LOT_ITEM_MISMATCH' ||
-    code === 'WO_REPORT_INPUT_LOT_NOT_FOUND' ||
-    message === 'WO_REPORT_INPUT_LOT_NOT_FOUND' ||
-    code === 'WO_REPORT_INPUT_LOT_ITEM_MISMATCH' ||
-    message === 'WO_REPORT_INPUT_LOT_ITEM_MISMATCH'
-  );
-}
-
 function assertVoidReason(reason: string) {
   const trimmed = reason.trim();
   if (!trimmed) {
@@ -2636,229 +1695,6 @@ async function fetchVoidMovementPair(
     componentReturnMovementId: component.id,
     outputReversalMovementId: output.id
   };
-}
-
-async function buildWorkOrderIssueReplayResult(params: {
-  tenantId: string;
-  workOrderId: string;
-  issueId: string;
-  movementId: string;
-  expectedLineCount?: number;
-  expectedDeterministicHash?: string | null;
-  client: PoolClient;
-  idempotencyKey?: string | null;
-}) {
-  return buildPostedDocumentReplayResult({
-    tenantId: params.tenantId,
-    authoritativeMovements: [
-      {
-        movementId: params.movementId,
-        expectedLineCount: params.expectedLineCount,
-        expectedDeterministicHash: params.expectedDeterministicHash ?? null
-      }
-    ],
-    client: params.client,
-    fetchAggregateView: () =>
-      fetchWorkOrderIssue(params.tenantId, params.workOrderId, params.issueId, params.client),
-    aggregateNotFoundError: new Error('WO_ISSUE_NOT_FOUND'),
-    authoritativeEvents: [
-      buildMovementPostedEvent(params.movementId, params.idempotencyKey ?? null),
-      buildWorkOrderIssuePostedEvent({
-        issueId: params.issueId,
-        workOrderId: params.workOrderId,
-        movementId: params.movementId,
-        producerIdempotencyKey: params.idempotencyKey ?? null
-      })
-    ]
-  });
-}
-
-async function buildWorkOrderCompletionReplayResult(params: {
-  tenantId: string;
-  workOrderId: string;
-  completionId: string;
-  movementId: string;
-  expectedLineCount?: number;
-  expectedDeterministicHash?: string | null;
-  client: PoolClient;
-  idempotencyKey?: string | null;
-}) {
-  return buildPostedDocumentReplayResult({
-    tenantId: params.tenantId,
-    authoritativeMovements: [
-      {
-        movementId: params.movementId,
-        expectedLineCount: params.expectedLineCount,
-        expectedDeterministicHash: params.expectedDeterministicHash ?? null
-      }
-    ],
-    client: params.client,
-    preFetchIntegrityCheck: async () => {
-      await verifyWorkOrderWipIntegrity(params.client, params.tenantId, params.workOrderId);
-    },
-    fetchAggregateView: () =>
-      fetchWorkOrderCompletion(params.tenantId, params.workOrderId, params.completionId, params.client),
-    aggregateNotFoundError: new Error('WO_COMPLETION_NOT_FOUND'),
-    authoritativeEvents: [
-      buildMovementPostedEvent(params.movementId, params.idempotencyKey ?? null),
-      buildWorkOrderCompletionPostedEvent({
-        executionId: params.completionId,
-        workOrderId: params.workOrderId,
-        movementId: params.movementId,
-        producerIdempotencyKey: params.idempotencyKey ?? null
-      })
-    ]
-  });
-}
-
-async function buildWorkOrderBatchReplayResult(params: {
-  tenantId: string;
-  workOrderId: string;
-  executionId: string;
-  issueMovementId: string;
-  receiveMovementId: string;
-  expectedIssueLineCount?: number;
-  expectedReceiveLineCount?: number;
-  expectedIssueDeterministicHash?: string | null;
-  expectedReceiveDeterministicHash?: string | null;
-  client: PoolClient;
-  idempotencyKey?: string | null;
-}) {
-  return buildPostedDocumentReplayResult({
-    tenantId: params.tenantId,
-    authoritativeMovements: [
-      {
-        movementId: params.issueMovementId,
-        expectedLineCount: params.expectedIssueLineCount,
-        expectedDeterministicHash: params.expectedIssueDeterministicHash ?? null
-      },
-      {
-        movementId: params.receiveMovementId,
-        expectedLineCount: params.expectedReceiveLineCount,
-        expectedDeterministicHash: params.expectedReceiveDeterministicHash ?? null
-      }
-    ],
-    client: params.client,
-    preFetchIntegrityCheck: async () => {
-      await verifyWorkOrderWipIntegrity(params.client, params.tenantId, params.workOrderId);
-    },
-    fetchAggregateView: async () => {
-      const res = await params.client.query<{
-        execution_id: string;
-        work_order_id: string;
-        quantity_completed: string | number | null;
-        work_order_status: string;
-      }>(
-        `SELECT e.id AS execution_id,
-                e.work_order_id,
-                w.quantity_completed,
-                w.status AS work_order_status
-           FROM work_order_executions e
-           JOIN work_orders w
-             ON w.id = e.work_order_id
-            AND w.tenant_id = e.tenant_id
-          WHERE e.tenant_id = $1
-            AND e.id = $2
-            AND e.work_order_id = $3
-          FOR UPDATE OF e`,
-        [params.tenantId, params.executionId, params.workOrderId]
-      );
-      const row = res.rows[0];
-      if (!row) {
-        return null;
-      }
-      return {
-        workOrderId: row.work_order_id,
-        executionId: row.execution_id,
-        issueMovementId: params.issueMovementId,
-        receiveMovementId: params.receiveMovementId,
-        quantityCompleted: roundQuantity(toNumber(row.quantity_completed ?? 0)),
-        workOrderStatus: row.work_order_status,
-        idempotencyKey: params.idempotencyKey ?? null,
-        replayed: true
-      };
-    },
-    aggregateNotFoundError: new Error('WO_EXECUTION_NOT_FOUND'),
-    authoritativeEvents: [
-      buildMovementPostedEvent(params.issueMovementId, params.idempotencyKey ?? null),
-      buildMovementPostedEvent(params.receiveMovementId, params.idempotencyKey ?? null),
-      buildWorkOrderProductionReportedEvent({
-        executionId: params.executionId,
-        workOrderId: params.workOrderId,
-        issueMovementId: params.issueMovementId,
-        receiveMovementId: params.receiveMovementId,
-        producerIdempotencyKey: params.idempotencyKey ?? null
-      })
-    ]
-  });
-}
-
-async function buildWorkOrderVoidReplayResult(params: {
-  tenantId: string;
-  workOrderId: string;
-  executionId: string;
-  componentReturnMovementId: string;
-  outputReversalMovementId: string;
-  expectedComponentLineCount?: number;
-  expectedOutputLineCount?: number;
-  expectedComponentDeterministicHash?: string | null;
-  expectedOutputDeterministicHash?: string | null;
-  client: PoolClient;
-  idempotencyKey?: string | null;
-}) {
-  return buildPostedDocumentReplayResult({
-    tenantId: params.tenantId,
-    authoritativeMovements: [
-      {
-        movementId: params.componentReturnMovementId,
-        expectedLineCount: params.expectedComponentLineCount,
-        expectedDeterministicHash: params.expectedComponentDeterministicHash ?? null
-      },
-      {
-        movementId: params.outputReversalMovementId,
-        expectedLineCount: params.expectedOutputLineCount,
-        expectedDeterministicHash: params.expectedOutputDeterministicHash ?? null
-      }
-    ],
-    client: params.client,
-    preFetchIntegrityCheck: async () => {
-      await verifyWorkOrderWipIntegrity(params.client, params.tenantId, params.workOrderId);
-    },
-    fetchAggregateView: async () => {
-      const res = await params.client.query<{ id: string; work_order_id: string }>(
-        `SELECT id, work_order_id
-           FROM work_order_executions
-          WHERE tenant_id = $1
-            AND id = $2
-            AND work_order_id = $3
-          FOR UPDATE`,
-        [params.tenantId, params.executionId, params.workOrderId]
-      );
-      if (res.rowCount === 0) {
-        return null;
-      }
-      return {
-        workOrderId: params.workOrderId,
-        workOrderExecutionId: params.executionId,
-        componentReturnMovementId: params.componentReturnMovementId,
-        outputReversalMovementId: params.outputReversalMovementId,
-        idempotencyKey: params.idempotencyKey ?? null,
-        replayed: true
-      };
-    },
-    aggregateNotFoundError: new Error('WO_VOID_EXECUTION_NOT_FOUND'),
-    authoritativeEvents: [
-      buildMovementPostedEvent(params.componentReturnMovementId, params.idempotencyKey ?? null),
-      buildMovementPostedEvent(params.outputReversalMovementId, params.idempotencyKey ?? null),
-      buildWorkOrderProductionReversedEvent({
-        executionId: params.executionId,
-        workOrderId: params.workOrderId,
-        componentReturnMovementId: params.componentReturnMovementId,
-        outputReversalMovementId: params.outputReversalMovementId,
-        producerIdempotencyKey: params.idempotencyKey ?? null
-      })
-    ]
-  });
 }
 
 async function loadMovementLineScopes(
@@ -3038,6 +1874,27 @@ export async function reportWorkOrderProduction(
   if (Number.isNaN(occurredAt.getTime())) {
     throw new Error('WO_REPORT_INVALID_OCCURRED_AT');
   }
+  if (data.warehouseId) {
+    const sellableDefaultRes = await query<{ location_id: string; is_sellable: boolean }>(
+      `SELECT wdl.location_id, l.is_sellable
+         FROM warehouse_default_location wdl
+         JOIN locations l
+           ON l.id = wdl.location_id
+          AND l.tenant_id = wdl.tenant_id
+        WHERE wdl.tenant_id = $1
+          AND wdl.warehouse_id = $2
+          AND wdl.role = 'SELLABLE'
+        LIMIT 1`,
+      [tenantId, data.warehouseId]
+    );
+    if (!sellableDefaultRes.rows[0]?.is_sellable) {
+      throw domainError('MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE', {
+        workOrderId,
+        warehouseId: data.warehouseId,
+        locationId: sellableDefaultRes.rows[0]?.location_id ?? null
+      });
+    }
+  }
 
   const routing = await deriveWorkOrderStageRouting(tenantId, {
     kind: workOrder.kind,
@@ -3047,7 +1904,9 @@ export async function reportWorkOrderProduction(
     defaultProduceLocationId: workOrder.defaultProduceLocationId,
     produceToLocationIdSnapshot: workOrder.produceToLocationIdSnapshot
   });
-  const produceLocationId = routing.defaultProduceLocation?.id ?? null;
+  const produceLocationId = workOrder.reportProductionReceiveToLocationId
+    ?? routing.defaultProduceLocation?.id
+    ?? null;
   if (!produceLocationId) {
     throw new Error('WO_REPORT_DEFAULT_LOCATIONS_REQUIRED');
   }
@@ -3145,16 +2004,34 @@ export async function reportWorkOrderProduction(
   const batchResult = await recordWorkOrderBatch(
     tenantId,
     workOrderId,
-      {
-        occurredAt: occurredAt.toISOString(),
-        notes: data.notes ?? undefined,
-        consumeLines: resolvedConsumeLines,
-        produceLines
-      },
+    {
+      occurredAt: occurredAt.toISOString(),
+      notes: data.notes ?? undefined,
+      consumeLines: resolvedConsumeLines,
+      produceLines
+    },
     context,
     {
       idempotencyKey: reportIdempotencyKey,
-      idempotencyEndpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_REPORT_PRODUCTION
+      idempotencyEndpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_REPORT_PRODUCTION,
+      traceability: {
+        outputItemId: workOrder.outputItemId,
+        outputQty,
+        outputUom,
+        outputLotId: data.outputLotId ?? null,
+        outputLotCode: data.outputLotCode ?? null,
+        productionBatchId: data.productionBatchId ?? null,
+        inputLots: Array.isArray(data.inputLots)
+          ? data.inputLots.map((inputLot) => ({
+            componentItemId: inputLot.componentItemId,
+            lotId: inputLot.lotId,
+            uom: inputLot.uom,
+            quantity: toNumber(inputLot.quantity)
+          }))
+          : [],
+        workOrderNumber: workOrder.number ?? workOrder.id,
+        occurredAt
+      }
     }
   );
 
@@ -3166,21 +2043,26 @@ export async function reportWorkOrderProduction(
     });
   }
 
-  let lotTracking: Awaited<ReturnType<typeof persistWorkOrderLotLinks>>;
+  let lotTracking: Awaited<ReturnType<typeof lotTraceability.appendTraceabilityLinks>>;
   try {
-    lotTracking = await persistWorkOrderLotLinks(tenantId, {
+    lotTracking = await lotTraceability.appendTraceabilityLinks(tenantId, {
       executionId: batchResult.executionId,
       outputItemId: workOrder.outputItemId,
       outputQty,
       outputUom,
-      outputLotId: data.outputLotId,
-      outputLotCode: data.outputLotCode,
-      inputLots: data.inputLots,
-      workOrderNumber: workOrder.number ?? workOrder.id,
-      occurredAt
+      outputLotId: data.outputLotId ?? null,
+      outputLotCode: data.outputLotCode ?? null,
+      inputLots: Array.isArray(data.inputLots)
+        ? data.inputLots.map((inputLot) => ({
+          componentItemId: inputLot.componentItemId,
+          lotId: inputLot.lotId,
+          uom: inputLot.uom,
+          quantity: toNumber(inputLot.quantity)
+        }))
+        : []
     });
   } catch (error: any) {
-    if (!isNonRetryableLotLinkError(error)) {
+    if (!lotTraceability.isNonRetryableLotLinkError(error)) {
       throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
         reason: 'lot_linking_incomplete_after_post',
         workOrderId,
@@ -3190,40 +2072,6 @@ export async function reportWorkOrderProduction(
       });
     }
     throw error;
-  }
-
-  if (lotTracking?.outputLotId || data.productionBatchId) {
-    const metadata: Record<string, unknown> = {};
-    if (lotTracking?.outputLotId) {
-      metadata.lotId = lotTracking.outputLotId;
-    }
-    if (data.productionBatchId) {
-      metadata.productionBatchId = data.productionBatchId;
-    }
-    await query(
-      `UPDATE work_order_executions
-          SET output_lot_id = COALESCE($1, output_lot_id),
-              production_batch_id = COALESCE($2, production_batch_id)
-        WHERE tenant_id = $3
-          AND id = $4`,
-      [lotTracking?.outputLotId ?? null, data.productionBatchId ?? null, tenantId, batchResult.executionId]
-    );
-    await query(
-      `UPDATE inventory_movements
-          SET lot_id = COALESCE($1, lot_id),
-              production_batch_id = COALESCE($2, production_batch_id),
-              metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
-              updated_at = now()
-        WHERE tenant_id = $4
-          AND id = $5`,
-      [
-        lotTracking?.outputLotId ?? null,
-        data.productionBatchId ?? null,
-        JSON.stringify(metadata),
-        tenantId,
-        batchResult.receiveMovementId
-      ]
-    );
   }
 
   return {
@@ -3271,17 +2119,41 @@ export async function voidWorkOrderProductionReport(
     requestHash: idempotencyRequestHash,
     retryOptions: WORK_ORDER_POST_RETRY_OPTIONS,
     onReplay: async ({ client, responseBody }) => {
-      return (
-        await buildWorkOrderVoidReplayResult({
+      const replay = await replayEngine.replayVoid({
           tenantId,
           workOrderId: responseBody.workOrderId,
           executionId: responseBody.workOrderExecutionId,
           componentReturnMovementId: responseBody.componentReturnMovementId,
           outputReversalMovementId: responseBody.outputReversalMovementId,
           client,
-          idempotencyKey
-        })
-      ).responseBody;
+          idempotencyKey,
+          preFetchIntegrityCheck: async () => {
+            await wipEngine.verifyWipIntegrity(client, tenantId, responseBody.workOrderId);
+          },
+          fetchAggregateView: async () => {
+            const res = await client.query<{ id: string; work_order_id: string }>(
+              `SELECT id, work_order_id
+                 FROM work_order_executions
+                WHERE tenant_id = $1
+                  AND id = $2
+                  AND work_order_id = $3
+                FOR UPDATE`,
+              [tenantId, responseBody.workOrderExecutionId, responseBody.workOrderId]
+            );
+            if (res.rowCount === 0) {
+              return null;
+            }
+            return {
+              workOrderId: responseBody.workOrderId,
+              workOrderExecutionId: responseBody.workOrderExecutionId,
+              componentReturnMovementId: responseBody.componentReturnMovementId,
+              outputReversalMovementId: responseBody.outputReversalMovementId,
+              idempotencyKey,
+              replayed: true
+            };
+          }
+        });
+      return replay.responseBody as WorkOrderVoidReportResult;
     },
     lockTargets: async (client) => {
       const executionRes = await client.query<LockedExecutionRow>(
@@ -3309,7 +2181,7 @@ export async function voidWorkOrderProductionReport(
           : execution.status === 'posted'
             ? 'posted_completion'
             : 'planned_completion';
-      assertManufacturingTransition({
+      statePolicy.assertManufacturingTransition({
         flow: 'reversal',
         currentState,
         allowedFrom: ['reported_production'],
@@ -3488,17 +2360,29 @@ export async function voidWorkOrderProductionReport(
       );
       const existingPair = await fetchVoidMovementPair(client, tenantId, execution.id);
       if (existingPair) {
-        return buildWorkOrderVoidReplayResult({
+        const replay = await replayEngine.replayVoid({
           tenantId,
           workOrderId,
-          executionId: execution.id,
+          executionId: currentExecution.id,
           componentReturnMovementId: existingPair.componentReturnMovementId,
           outputReversalMovementId: existingPair.outputReversalMovementId,
           expectedComponentLineCount: plannedComponentLines.length,
           expectedOutputLineCount: plannedOutputLines.length,
           client,
-          idempotencyKey
+          idempotencyKey,
+          preFetchIntegrityCheck: async () => {
+            await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
+          },
+          fetchAggregateView: async () => ({
+            workOrderId,
+            workOrderExecutionId: currentExecution.id,
+            componentReturnMovementId: existingPair.componentReturnMovementId,
+            outputReversalMovementId: existingPair.outputReversalMovementId,
+            idempotencyKey,
+            replayed: true
+          })
         });
+        return replay as any;
       }
 
       const now = new Date();
@@ -3512,10 +2396,10 @@ export async function voidWorkOrderProductionReport(
           location_id: plannedOutputLine.line.location_id,
           quantity: canonicalQty,
           consumption_type: 'scrap',
-          consumption_document_id: execution.id,
+          consumption_document_id: currentExecution.id,
           movement_id: outputMovementId,
           client,
-          notes: `work_order_void_output:${execution.id}`
+          notes: `work_order_void_output:${currentExecution.id}`
         });
         return {
           plannedOutputLine,
@@ -3535,98 +2419,102 @@ export async function voidWorkOrderProductionReport(
           extendedCost
         };
       });
-
-      const outputMovement = await persistInventoryMovement(client, {
-        id: outputMovementId,
-        tenantId,
-        movementType: 'issue',
-        status: 'posted',
-        externalRef: `${WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE}:${execution.id}:${workOrderId}`,
-        sourceType: WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE,
-        sourceId: execution.id,
-        idempotencyKey: idempotencyKey ? `${idempotencyKey}:output` : null,
-        occurredAt: now,
-        postedAt: now,
-        notes: data.notes ?? `Void production output for execution ${execution.id}: ${reason}`,
-        metadata: {
-          workOrderId,
-          workOrderExecutionId: execution.id,
-          reason
+      const plannedVoidMovement = movementPlanner.buildVoidMovement({
+        outputHeader: {
+          id: outputMovementId,
+          tenantId,
+          movementType: 'issue',
+          status: 'posted',
+          externalRef: `${WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE}:${currentExecution.id}:${workOrderId}`,
+          sourceType: WORK_ORDER_VOID_OUTPUT_SOURCE_TYPE,
+          sourceId: currentExecution.id,
+          idempotencyKey: idempotencyKey ? `${idempotencyKey}:output` : null,
+          occurredAt: now,
+          postedAt: now,
+          notes: data.notes ?? `Void production output for execution ${currentExecution.id}: ${reason}`,
+          metadata: {
+            workOrderId,
+            workOrderExecutionId: currentExecution.id,
+            reason
+          },
+          createdAt: now,
+          updatedAt: now
         },
-        createdAt: now,
-        updatedAt: now,
-        lines: plannedOutputMovementLines.map(({ plannedOutputLine, unitCost, extendedCost }) => ({
-          warehouseId: plannedOutputLine.warehouseId,
+        outputLines: plannedOutputMovementLines.map(({ plannedOutputLine, unitCost, extendedCost }) => ({
           sourceLineId: plannedOutputLine.sourceLineId,
+          warehouseId: plannedOutputLine.warehouseId,
           itemId: plannedOutputLine.line.item_id,
           locationId: plannedOutputLine.line.location_id,
-          quantityDelta: plannedOutputLine.canonicalFields.quantityDeltaCanonical,
-          uom: plannedOutputLine.canonicalFields.canonicalUom,
-          quantityDeltaEntered: plannedOutputLine.canonicalFields.quantityDeltaEntered,
-          uomEntered: plannedOutputLine.canonicalFields.uomEntered,
-          quantityDeltaCanonical: plannedOutputLine.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: plannedOutputLine.canonicalFields.canonicalUom,
-          uomDimension: plannedOutputLine.canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
+          canonicalFields: plannedOutputLine.canonicalFields,
           reasonCode: plannedOutputLine.reasonCode,
           lineNotes: plannedOutputLine.lineNotes,
-          createdAt: now
-        }))
-      });
-      const componentMovement = await persistInventoryMovement(client, {
-        id: componentMovementId,
-        tenantId,
-        movementType: 'receive',
-        status: 'posted',
-        externalRef: `${WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE}:${execution.id}:${workOrderId}`,
-        sourceType: WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE,
-        sourceId: execution.id,
-        idempotencyKey: idempotencyKey ? `${idempotencyKey}:components` : null,
-        occurredAt: now,
-        postedAt: now,
-        notes: data.notes ?? `Void component return for execution ${execution.id}: ${reason}`,
-        metadata: {
-          workOrderId,
-          workOrderExecutionId: execution.id,
-          reason
+          unitCost,
+          extendedCost
+        })),
+        componentHeader: {
+          id: componentMovementId,
+          tenantId,
+          movementType: 'receive',
+          status: 'posted',
+          externalRef: `${WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE}:${currentExecution.id}:${workOrderId}`,
+          sourceType: WORK_ORDER_VOID_COMPONENT_SOURCE_TYPE,
+          sourceId: currentExecution.id,
+          idempotencyKey: idempotencyKey ? `${idempotencyKey}:components` : null,
+          occurredAt: now,
+          postedAt: now,
+          notes: data.notes ?? `Void component return for execution ${currentExecution.id}: ${reason}`,
+          metadata: {
+            workOrderId,
+            workOrderExecutionId: currentExecution.id,
+            reason
+          },
+          createdAt: now,
+          updatedAt: now
         },
-        createdAt: now,
-        updatedAt: now,
-        lines: plannedComponentMovementLines.map(({ plannedComponentLine, unitCost, extendedCost }) => ({
-          warehouseId: plannedComponentLine.warehouseId,
+        componentLines: plannedComponentMovementLines.map(({ plannedComponentLine, unitCost, extendedCost }) => ({
           sourceLineId: plannedComponentLine.sourceLineId,
+          warehouseId: plannedComponentLine.warehouseId,
           itemId: plannedComponentLine.line.item_id,
           locationId: plannedComponentLine.line.location_id,
-          quantityDelta: plannedComponentLine.canonicalFields.quantityDeltaCanonical,
-          uom: plannedComponentLine.canonicalFields.canonicalUom,
-          quantityDeltaEntered: plannedComponentLine.canonicalFields.quantityDeltaEntered,
-          uomEntered: plannedComponentLine.canonicalFields.uomEntered,
-          quantityDeltaCanonical: plannedComponentLine.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: plannedComponentLine.canonicalFields.canonicalUom,
-          uomDimension: plannedComponentLine.canonicalFields.uomDimension,
-          unitCost,
-          extendedCost,
+          canonicalFields: plannedComponentLine.canonicalFields,
           reasonCode: plannedComponentLine.reasonCode,
           lineNotes: plannedComponentLine.lineNotes,
-          createdAt: now
+          unitCost,
+          extendedCost
         }))
       });
 
+      const outputMovement = await persistInventoryMovement(client, plannedVoidMovement.output.persistInput);
+      const componentMovement = await persistInventoryMovement(client, plannedVoidMovement.components.persistInput);
+
       if (!outputMovement.created || !componentMovement.created) {
-        const replayPair = await fetchVoidMovementPair(client, tenantId, execution.id);
+        const replayPair = await fetchVoidMovementPair(client, tenantId, currentExecution.id);
         if (replayPair) {
-          return buildWorkOrderVoidReplayResult({
+          const replay = await replayEngine.replayVoid({
             tenantId,
             workOrderId,
-            executionId: execution.id,
+            executionId: currentExecution.id,
             componentReturnMovementId: replayPair.componentReturnMovementId,
             outputReversalMovementId: replayPair.outputReversalMovementId,
-            expectedComponentLineCount: plannedComponentLines.length,
-            expectedOutputLineCount: plannedOutputLines.length,
+            expectedComponentLineCount: plannedVoidMovement.components.expectedLineCount,
+            expectedOutputLineCount: plannedVoidMovement.output.expectedLineCount,
+            expectedComponentDeterministicHash: plannedVoidMovement.components.expectedDeterministicHash,
+            expectedOutputDeterministicHash: plannedVoidMovement.output.expectedDeterministicHash,
             client,
-            idempotencyKey
+            idempotencyKey,
+            preFetchIntegrityCheck: async () => {
+              await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
+            },
+            fetchAggregateView: async () => ({
+              workOrderId,
+              workOrderExecutionId: currentExecution.id,
+              componentReturnMovementId: replayPair.componentReturnMovementId,
+              outputReversalMovementId: replayPair.outputReversalMovementId,
+              idempotencyKey,
+              replayed: true
+            })
           });
+          return replay as any;
         }
         throw new Error('WO_VOID_INCOMPLETE');
       }
@@ -3643,10 +2531,10 @@ export async function voidWorkOrderProductionReport(
           location_id: plannedOutputLine.line.location_id,
           quantity: canonicalQty,
           consumption_type: 'scrap',
-          consumption_document_id: execution.id,
+          consumption_document_id: currentExecution.id,
           movement_id: outputMovementId,
           client,
-          notes: `work_order_void_output:${execution.id}`,
+          notes: `work_order_void_output:${currentExecution.id}`,
           plan: consumptionPlan
         });
         totalOutputReversalCost += consumptionPlan.total_cost;
@@ -3680,70 +2568,42 @@ export async function voidWorkOrderProductionReport(
           quantity: plannedComponentLine.canonicalFields.quantityDeltaCanonical,
           unit_cost: unitCost,
           source_type: 'adjustment',
-          source_document_id: execution.id,
+          source_document_id: currentExecution.id,
           movement_id: componentMovementId,
-          notes: `Work-order void component return for execution ${execution.id}`,
+          notes: `Work-order void component return for execution ${currentExecution.id}`,
           client
         });
       }
 
-      const originalValuationRecords = await loadWorkOrderWipValuationRecordsByMovementIds(
-        client,
-        tenantId,
-        [execution.consumption_movement_id!, execution.production_movement_id!]
-      );
-      const originalIssueValuation = originalValuationRecords.find((row) => row.valuation_type === 'issue');
-      const originalReportValuation = originalValuationRecords.find((row) =>
-        row.valuation_type === 'report' || row.valuation_type === 'completion'
-      );
-      await createWorkOrderWipValuationRecord(client, {
+      await wipEngine.reverseWipCost(client, {
         tenantId,
         workOrderId,
-        executionId: execution.id,
-        movementId: outputMovementId,
-        valuationType: 'reversal_to_wip',
-        valueDelta: totalOutputReversalCost,
-        reversalOfValuationRecordId: originalReportValuation?.id ?? null,
-        notes: `Work-order reversal moves finished-goods value back into WIP for execution ${execution.id}`
+        executionId: currentExecution.id,
+        originalIssueMovementId: currentExecution.consumption_movement_id!,
+        originalReportMovementId: currentExecution.production_movement_id!,
+        outputMovementId: outputMovementId,
+        componentMovementId: componentMovementId,
+        outputReversalCost: totalOutputReversalCost,
+        componentReturnCost: totalComponentReturnCost
       });
-      await createWorkOrderWipValuationRecord(client, {
-        tenantId,
-        workOrderId,
-        executionId: execution.id,
-        movementId: componentMovementId,
-        valuationType: 'reversal_from_wip',
-        valueDelta: -totalComponentReturnCost,
-        reversalOfValuationRecordId: originalIssueValuation?.id ?? null,
-        notes: `Work-order reversal returns component value out of WIP for execution ${execution.id}`
-      });
-      await verifyWorkOrderWipIntegrity(client, tenantId, workOrderId);
 
-      projectionOps.push(async (projectionClient) => {
-        await recordAuditLog(
-          {
-            tenantId,
-            actorType: actor.type,
-            actorId: actor.id ?? null,
-            action: 'update',
-            entityType: 'work_order_execution',
-            entityId: execution!.id,
-            occurredAt: now,
-            metadata: {
-              workOrderId,
-              workOrderExecutionId: execution!.id,
-              outputReversalMovementId: outputMovementId,
-              componentReturnMovementId: componentMovementId,
-              reason
-            }
-          },
-          projectionClient
-        );
-      });
+      projectionOps.push(
+        ...projectionEngine.buildVoidProjectionOps({
+          tenantId,
+          workOrderId,
+          executionId: currentExecution.id,
+          outputReversalMovementId: outputMovementId,
+          componentReturnMovementId: componentMovementId,
+          reason,
+          actor,
+          now
+        })
+      );
 
       return {
         responseBody: {
           workOrderId,
-          workOrderExecutionId: execution.id,
+          workOrderExecutionId: currentExecution.id,
           componentReturnMovementId: componentMovementId,
           outputReversalMovementId: outputMovementId,
           idempotencyKey,
@@ -3751,10 +2611,10 @@ export async function voidWorkOrderProductionReport(
         },
         responseStatus: 201,
         events: [
-          buildMovementPostedEvent(componentMovementId, idempotencyKey),
-          buildMovementPostedEvent(outputMovementId, idempotencyKey),
-          buildWorkOrderProductionReversedEvent({
-            executionId: execution.id,
+          eventFactory.buildInventoryMovementPostedEvent(componentMovementId, idempotencyKey),
+          eventFactory.buildInventoryMovementPostedEvent(outputMovementId, idempotencyKey),
+          eventFactory.buildWorkOrderProductionReversedEvent({
+            executionId: currentExecution.id,
             workOrderId,
             componentReturnMovementId: componentMovementId,
             outputReversalMovementId: outputMovementId,
@@ -3820,95 +2680,16 @@ export async function reportWorkOrderScrap(
     requestHash: idempotencyRequestHash,
     retryOptions: WORK_ORDER_POST_RETRY_OPTIONS,
     onReplay: async ({ client, responseBody }) => {
-      const executionRes = await client.query<LockedExecutionRow>(
-        `SELECT id,
-                work_order_id,
-                status,
-                occurred_at,
-                consumption_movement_id,
-                production_movement_id
-           FROM work_order_executions
-          WHERE tenant_id = $1
-            AND id = $2
-            AND work_order_id = $3
-          FOR UPDATE`,
-        [tenantId, responseBody.workOrderExecutionId, workOrderId]
-      );
-      if (executionRes.rowCount === 0) {
-        throw buildReplayCorruptionError({
-          tenantId,
-          aggregateType: 'work_order_execution',
-          aggregateId: responseBody.workOrderExecutionId,
-          reason: 'work_order_scrap_execution_missing'
-        });
-      }
-      const currentExecution = executionRes.rows[0];
-      if (!currentExecution.production_movement_id) {
-        throw buildReplayCorruptionError({
-          tenantId,
-          aggregateType: 'work_order_execution',
-          aggregateId: responseBody.workOrderExecutionId,
-          reason: 'work_order_scrap_execution_movement_missing'
-        });
-      }
-
-      const qaSourceRows = await client.query<{
-        location_id: string;
-        warehouse_id: string | null;
-      }>(
-        `SELECT iml.location_id,
-                l.warehouse_id
-           FROM inventory_movement_lines iml
-           JOIN locations l
-             ON l.id = iml.location_id
-            AND l.tenant_id = iml.tenant_id
-          WHERE iml.tenant_id = $1
-            AND iml.movement_id = $2
-            AND iml.item_id = $3
-            AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
-            AND l.role = 'QA'
-          GROUP BY iml.location_id, l.warehouse_id`,
-        [tenantId, currentExecution.production_movement_id, responseBody.itemId]
-      );
-      if (qaSourceRows.rowCount !== 1 || !qaSourceRows.rows[0]?.warehouse_id) {
-        throw buildReplayCorruptionError({
-          tenantId,
-          aggregateType: 'work_order_execution',
-          aggregateId: responseBody.workOrderExecutionId,
-          reason: 'work_order_scrap_replay_scope_unresolved'
-        });
-      }
-      const replaySourceLocationId = qaSourceRows.rows[0].location_id;
-      const replayWarehouseId = qaSourceRows.rows[0].warehouse_id;
-      const replayScrapLocationId = await getWarehouseDefaultLocationId(
+      await replayEngine.replayTransferBackedScrap({
         tenantId,
-        replayWarehouseId,
-        'SCRAP',
-        client
-      );
-      if (!replayScrapLocationId) {
-        throw buildReplayCorruptionError({
-          tenantId,
-          aggregateType: 'work_order_execution',
-          aggregateId: responseBody.workOrderExecutionId,
-          reason: 'work_order_scrap_location_missing'
-        });
-      }
-
-      await buildTransferReplayResult({
-        tenantId,
-        movementId: responseBody.scrapMovementId,
-        normalizedIdempotencyKey: idempotencyKey ? `${idempotencyKey}:transfer` : null,
-        replayed: true,
-        client,
-        sourceLocationId: replaySourceLocationId,
-        destinationLocationId: replayScrapLocationId,
+        workOrderId,
+        workOrderExecutionId: responseBody.workOrderExecutionId,
         itemId: responseBody.itemId,
         quantity: responseBody.quantity,
         uom: responseBody.uom,
-        sourceWarehouseId: replayWarehouseId,
-        destinationWarehouseId: replayWarehouseId,
-        expectedLineCount: 2
+        scrapMovementId: responseBody.scrapMovementId,
+        idempotencyKey,
+        client
       });
       return {
         ...responseBody,
@@ -3993,10 +2774,23 @@ export async function reportWorkOrderScrap(
       }
       sourceLocationId = qaSource.location_id;
       warehouseId = qaSource.warehouse_id;
-      scrapLocationId = await getWarehouseDefaultLocationId(tenantId, warehouseId, 'SCRAP', client);
-      if (!scrapLocationId) {
+      const resolvedScrapLocationId = await getWarehouseDefaultLocationId(
+        tenantId,
+        warehouseId,
+        'SCRAP',
+        client
+      );
+      if (!resolvedScrapLocationId) {
         throw new Error('WO_SCRAP_LOCATION_REQUIRED');
       }
+      scrapLocationId = resolvedScrapLocationId;
+      statePolicy.assertInventoryStateTransition({
+        flow: 'scrap',
+        currentState: 'QA',
+        targetState: 'SCRAP',
+        workOrderId,
+        executionOrDocumentId: execution.id
+      });
 
       const availableRes = await client.query<{ qty: string | number }>(
         `SELECT COALESCE(SUM(remaining_quantity), 0)::numeric AS qty
@@ -4045,33 +2839,24 @@ export async function reportWorkOrderScrap(
       if (!execution || !preparedTransfer || !itemId || !sourceLocationId || !scrapLocationId || !warehouseId) {
         throw new Error('WO_SCRAP_PREPARE_REQUIRED');
       }
-      const transferExecution = await executeTransferInventoryMutation(preparedTransfer, client);
+      const plannedScrapMovement = movementPlanner.buildScrapMovement({
+        preparedTransfer
+      });
+      const transferExecution = await executeTransferInventoryMutation(
+        plannedScrapMovement.preparedTransfer,
+        client
+      );
       const now = new Date();
-      const projectionOps = [...transferExecution.projectionOps];
-      if (transferExecution.result.created) {
-        projectionOps.push(async (projectionClient) => {
-          await projectionClient.query(
-            `UPDATE work_orders
-                SET quantity_scrapped = COALESCE(quantity_scrapped, 0) + $1,
-                    status = CASE
-                      WHEN COALESCE(quantity_completed, 0) + COALESCE(quantity_scrapped, 0) + $1 >= quantity_planned
-                        THEN 'completed'
-                      WHEN COALESCE(quantity_completed, 0) > 0 OR COALESCE(quantity_scrapped, 0) + $1 > 0
-                        THEN 'partially_completed'
-                      ELSE status
-                    END,
-                    completed_at = CASE
-                      WHEN COALESCE(quantity_completed, 0) + COALESCE(quantity_scrapped, 0) + $1 >= quantity_planned
-                        THEN COALESCE(completed_at, $2)
-                      ELSE completed_at
-                    END,
-                    updated_at = $2
-              WHERE id = $3
-                AND tenant_id = $4`,
-            [quantity, now, workOrderId, tenantId]
-          );
-        });
-      }
+      const projectionOps = [
+        ...transferExecution.projectionOps,
+        ...projectionEngine.buildScrapProjectionOps({
+          tenantId,
+          workOrderId,
+          quantity,
+          now,
+          created: transferExecution.result.created
+        })
+      ];
       return {
         responseBody: {
           workOrderId,
@@ -4096,7 +2881,21 @@ export async function recordWorkOrderBatch(
   workOrderId: string,
   data: WorkOrderBatchInput,
   context: NegativeOverrideContext = {},
-  options?: { idempotencyKey?: string | null; idempotencyEndpoint?: string }
+  options?: {
+    idempotencyKey?: string | null;
+    idempotencyEndpoint?: string;
+    traceability?: {
+      outputItemId: string;
+      outputQty: number;
+      outputUom: string;
+      outputLotId?: string | null;
+      outputLotCode?: string | null;
+      productionBatchId?: string | null;
+      inputLots?: lotTraceability.WorkOrderInputLotLink[];
+      workOrderNumber: string;
+      occurredAt: Date;
+    };
+  }
 ): Promise<{
   workOrderId: string;
   executionId: string;
@@ -4157,10 +2956,12 @@ export async function recordWorkOrderBatch(
     })
     : null;
   let workOrder: WorkOrderRow | null = null;
-  let existingBatchReplay: Awaited<ReturnType<typeof findPostedBatchByIdempotencyKey>> | null = null;
+  let existingBatchReplay: Awaited<ReturnType<typeof replayEngine.findPostedBatchByIdempotencyKey>> | null = null;
   let warehouseByLocationId = new Map<string, string>();
   let consumeLinesOrdered: NormalizedBatchConsumeLine[] = [];
   let produceLinesOrdered: NormalizedBatchProduceLine[] = [];
+  let preparedTraceability: lotTraceability.PreparedWorkOrderTraceability | null = null;
+  let reservationSnapshot: Awaited<ReturnType<typeof ensureWorkOrderReservationsReady>> = [];
 
   return runInventoryCommand<{
     workOrderId: string;
@@ -4179,8 +2980,7 @@ export async function recordWorkOrderBatch(
     requestHash: transactionalRequestHash,
     retryOptions: WORK_ORDER_POST_RETRY_OPTIONS,
     onReplay: async ({ client, responseBody }) => {
-      return (
-        await buildWorkOrderBatchReplayResult({
+      const replay = await replayEngine.replayBatch({
           tenantId,
           workOrderId: responseBody.workOrderId,
           executionId: responseBody.executionId,
@@ -4189,14 +2989,64 @@ export async function recordWorkOrderBatch(
           expectedIssueLineCount: normalizedConsumes.length,
           expectedReceiveLineCount: normalizedProduces.length,
           client,
-          idempotencyKey: batchIdempotencyKey
-        })
-      ).responseBody;
+          idempotencyKey: batchIdempotencyKey,
+          preFetchIntegrityCheck: async () => {
+            await wipEngine.verifyWipIntegrity(client, tenantId, responseBody.workOrderId);
+          },
+          fetchAggregateView: async () => {
+            const res = await client.query<{
+              execution_id: string;
+              work_order_id: string;
+              quantity_completed: string | number | null;
+              work_order_status: string;
+            }>(
+              `SELECT e.id AS execution_id,
+                      e.work_order_id,
+                      w.quantity_completed,
+                      w.status AS work_order_status
+                 FROM work_order_executions e
+                 JOIN work_orders w
+                   ON w.id = e.work_order_id
+                  AND w.tenant_id = e.tenant_id
+                WHERE e.tenant_id = $1
+                  AND e.id = $2
+                  AND e.work_order_id = $3
+                FOR UPDATE OF e`,
+              [tenantId, responseBody.executionId, responseBody.workOrderId]
+            );
+            const row = res.rows[0];
+            if (!row) {
+              return null;
+            }
+            return {
+              workOrderId: row.work_order_id,
+              executionId: row.execution_id,
+              issueMovementId: responseBody.issueMovementId,
+              receiveMovementId: responseBody.receiveMovementId,
+              quantityCompleted: roundQuantity(toNumber(row.quantity_completed ?? 0)),
+              workOrderStatus: row.work_order_status,
+              idempotencyKey: batchIdempotencyKey,
+              replayed: true
+            };
+          }
+        });
+      return replay.responseBody as {
+        workOrderId: string;
+        executionId: string;
+        issueMovementId: string;
+        receiveMovementId: string;
+        quantityCompleted: number;
+        workOrderStatus: string;
+        idempotencyKey: string | null;
+        replayed: boolean;
+      };
     },
     lockTargets: async (client) => {
       existingBatchReplay = null;
+      preparedTraceability = null;
+      reservationSnapshot = [];
       if (batchIdempotencyKey) {
-        existingBatchReplay = await findPostedBatchByIdempotencyKey(
+        existingBatchReplay = await replayEngine.findPostedBatchByIdempotencyKey(
           client,
           tenantId,
           batchIdempotencyKey,
@@ -4214,7 +3064,7 @@ export async function recordWorkOrderBatch(
       if (isTerminalWorkOrderStatus(workOrder.status)) {
         throw new Error('WO_INVALID_STATE');
       }
-      await ensureWorkOrderReservationsReady(tenantId, workOrderId, client);
+      reservationSnapshot = await ensureWorkOrderReservationsReady(tenantId, workOrderId, client);
       if (normalizeWorkOrderStatus(workOrder.status) === 'draft') {
         await client.query(
           `UPDATE work_orders
@@ -4308,6 +3158,17 @@ export async function recordWorkOrderBatch(
           throw new Error(
             `WO_BATCH_LOCATION_WAREHOUSE_MISSING:${Array.from(new Set(missingWarehouseBindings)).join(',')}`
           );
+        }
+        const locationById = new Map(locRes.rows.map((row) => [row.id, row]));
+        for (const line of consumeLinesOrdered) {
+          const consumeLocation = locationById.get(line.fromLocationId);
+          if (!consumeLocation?.is_sellable) {
+            throw domainError('MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE', {
+              workOrderId,
+              componentItemId: line.componentItemId,
+              locationId: line.fromLocationId
+            });
+          }
         }
         if (!isDisassembly) {
           for (const line of consumeLinesOrdered) {
@@ -4434,7 +3295,7 @@ export async function recordWorkOrderBatch(
         client
       });
       if (existingBatchReplay) {
-        return buildWorkOrderBatchReplayResult({
+        const replay = await replayEngine.replayBatch({
           tenantId,
           workOrderId: existingBatchReplay.workOrderId,
           executionId: existingBatchReplay.executionId,
@@ -4443,11 +3304,25 @@ export async function recordWorkOrderBatch(
           expectedIssueLineCount: sortedConsumes.length,
           expectedReceiveLineCount: sortedProduces.length,
           client,
-          idempotencyKey: batchIdempotencyKey
+          idempotencyKey: batchIdempotencyKey,
+          preFetchIntegrityCheck: async () => {
+            await wipEngine.verifyWipIntegrity(client, tenantId, existingBatchReplay!.workOrderId);
+          },
+          fetchAggregateView: async () => ({
+            workOrderId: existingBatchReplay!.workOrderId,
+            executionId: existingBatchReplay!.executionId,
+            issueMovementId: existingBatchReplay!.issueMovementId,
+            receiveMovementId: existingBatchReplay!.receiveMovementId,
+            quantityCompleted: existingBatchReplay!.quantityCompleted,
+            workOrderStatus: existingBatchReplay!.workOrderStatus,
+            idempotencyKey: batchIdempotencyKey,
+            replayed: true
+          })
         });
+        return replay as any;
       }
       const executionId = uuidv4();
-      assertManufacturingTransition({
+      statePolicy.assertManufacturingTransition({
         flow: 'report',
         currentState: 'planned_completion',
         allowedFrom: ['planned_completion'],
@@ -4459,16 +3334,60 @@ export async function recordWorkOrderBatch(
       const issueId = uuidv4();
       const now = new Date();
       const workOrderNumber = workOrder.number ?? workOrder.work_order_number;
+      const reservationOpenByKey = new Map(
+        reservationSnapshot.map((line) => [
+          `${line.componentItemId}:${line.locationId}:${line.uom}`,
+          line.openReservedQty
+        ])
+      );
+      const validationByKey = new Map<
+        string,
+        { warehouseId: string; itemId: string; locationId: string; uom: string; requestedQty: number }
+      >();
+      for (const preparedConsume of sortedConsumes) {
+        const key = `${preparedConsume.line.componentItemId}:${preparedConsume.line.fromLocationId}:${preparedConsume.canonicalFields.canonicalUom}`;
+        const existing = validationByKey.get(key);
+        const requestedQty = Math.abs(preparedConsume.canonicalFields.quantityDeltaCanonical);
+        if (existing) {
+          existing.requestedQty = roundQuantity(existing.requestedQty + requestedQty);
+        } else {
+          validationByKey.set(key, {
+            warehouseId: preparedConsume.warehouseId,
+            itemId: preparedConsume.line.componentItemId,
+            locationId: preparedConsume.line.fromLocationId,
+            uom: preparedConsume.canonicalFields.canonicalUom,
+            requestedQty
+          });
+        }
+      }
+      const validationLines = Array.from(validationByKey.entries())
+        .map(([key, line]) => ({
+          warehouseId: line.warehouseId,
+          itemId: line.itemId,
+          locationId: line.locationId,
+          uom: line.uom,
+          quantityToConsume: roundQuantity(
+            Math.max(0, line.requestedQty - (reservationOpenByKey.get(key) ?? 0))
+          )
+        }))
+        .filter((line) => line.quantityToConsume > 1e-6);
+      if (options?.traceability) {
+        preparedTraceability = await lotTraceability.prepareTraceability(client, {
+          tenantId,
+          executionId,
+          outputItemId: options.traceability.outputItemId,
+          outputLotId: options.traceability.outputLotId ?? null,
+          outputLotCode: options.traceability.outputLotCode ?? null,
+          productionBatchId: options.traceability.productionBatchId ?? null,
+          inputLots: options.traceability.inputLots ?? [],
+          workOrderNumber: options.traceability.workOrderNumber,
+          occurredAt: options.traceability.occurredAt
+        });
+      }
       const validation = await validateSufficientStock(
         tenantId,
         occurredAt,
-        consumeLinesOrdered.map((line) => ({
-          warehouseId: warehouseByLocationId.get(line.fromLocationId) ?? '',
-          itemId: line.componentItemId,
-          locationId: line.fromLocationId,
-          uom: line.uom,
-          quantityToConsume: roundQuantity(line.quantity)
-        })),
+        validationLines,
         {
           actorId: context.actor?.id ?? null,
           actorRole: context.actor?.role ?? null,
@@ -4530,111 +3449,130 @@ export async function recordWorkOrderBatch(
           unitCost
         };
       });
-
-      const issueMovement = await persistInventoryMovement(client, {
-        id: issueMovementId,
-        tenantId,
-        movementType: 'issue',
-        status: 'posted',
-        externalRef: isDisassembly
-          ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
-          : `work_order_batch_issue:${issueId}:${workOrderId}`,
-        sourceType: 'work_order_batch_post_issue',
-        sourceId: executionId,
-        idempotencyKey: batchIdempotencyKey ? `${batchIdempotencyKey}:issue` : `wo-batch-issue-post:${executionId}`,
-        occurredAt,
-        postedAt: now,
-        notes: data.notes ?? null,
-        metadata: {
-          workOrderId,
-          workOrderNumber,
-          ...(validation.overrideMetadata ?? {})
+      const plannedBatchMovement = movementPlanner.buildBatchMovement({
+        issueHeader: {
+          id: issueMovementId,
+          tenantId,
+          movementType: 'issue',
+          status: 'posted',
+          externalRef: isDisassembly
+            ? `work_order_disassembly_issue:${issueId}:${workOrderId}`
+            : `work_order_batch_issue:${issueId}:${workOrderId}`,
+          sourceType: 'work_order_batch_post_issue',
+          sourceId: executionId,
+          idempotencyKey: batchIdempotencyKey
+            ? `${batchIdempotencyKey}:issue`
+            : `wo-batch-issue-post:${executionId}`,
+          occurredAt,
+          postedAt: now,
+          notes: data.notes ?? null,
+          metadata: {
+            workOrderId,
+            workOrderNumber,
+            ...(validation.overrideMetadata ?? {})
+          },
+          createdAt: now,
+          updatedAt: now
         },
-        createdAt: now,
-        updatedAt: now,
-        lines: plannedIssueMovementLines.map(({ preparedConsume, issueCost }) => {
+        issueLines: plannedIssueMovementLines.map(({ preparedConsume, issueCost }) => {
           const canonicalQty = Math.abs(preparedConsume.canonicalFields.quantityDeltaCanonical);
           const unitCost = issueCost !== null && canonicalQty !== 0 ? issueCost / canonicalQty : null;
           const extendedCost = issueCost !== null ? -issueCost : null;
           return {
-            warehouseId: preparedConsume.warehouseId,
             sourceLineId: preparedConsume.sourceLineId,
+            warehouseId: preparedConsume.warehouseId,
             itemId: preparedConsume.line.componentItemId,
             locationId: preparedConsume.line.fromLocationId,
-            quantityDelta: preparedConsume.canonicalFields.quantityDeltaCanonical,
-            uom: preparedConsume.canonicalFields.canonicalUom,
-            quantityDeltaEntered: preparedConsume.canonicalFields.quantityDeltaEntered,
-            uomEntered: preparedConsume.canonicalFields.uomEntered,
-            quantityDeltaCanonical: preparedConsume.canonicalFields.quantityDeltaCanonical,
-            canonicalUom: preparedConsume.canonicalFields.canonicalUom,
-            uomDimension: preparedConsume.canonicalFields.uomDimension,
-            unitCost,
-            extendedCost,
+            canonicalFields: preparedConsume.canonicalFields,
             reasonCode: preparedConsume.reasonCode,
             lineNotes: preparedConsume.line.notes ?? null,
-            createdAt: now
+            unitCost,
+            extendedCost
           };
-        })
-      });
-      const receiveMovement = await persistInventoryMovement(client, {
-        id: receiveMovementId,
-        tenantId,
-        movementType: 'receive',
-        status: 'posted',
-        externalRef: isDisassembly
-          ? `work_order_disassembly_completion:${executionId}:${workOrderId}`
-          : `work_order_batch_completion:${executionId}:${workOrderId}`,
-        sourceType: 'work_order_batch_post_completion',
-        sourceId: executionId,
-        idempotencyKey: batchIdempotencyKey
-          ? `${batchIdempotencyKey}:completion`
-          : `wo-batch-completion-post:${executionId}`,
-        occurredAt,
-        postedAt: now,
-        notes: data.notes ?? null,
-        metadata: { workOrderId, workOrderNumber },
-        createdAt: now,
-        updatedAt: now,
-        lines: plannedReceiveMovementLines.map(({ preparedProduce, allocatedCost, unitCost }) => ({
-          warehouseId: preparedProduce.warehouseId,
+        }),
+        completionHeader: {
+          id: receiveMovementId,
+          tenantId,
+          movementType: 'receive',
+          status: 'posted',
+          externalRef: isDisassembly
+            ? `work_order_disassembly_completion:${executionId}:${workOrderId}`
+            : `work_order_batch_completion:${executionId}:${workOrderId}`,
+          sourceType: 'work_order_batch_post_completion',
+          sourceId: executionId,
+          idempotencyKey: batchIdempotencyKey
+            ? `${batchIdempotencyKey}:completion`
+            : `wo-batch-completion-post:${executionId}`,
+          occurredAt,
+          postedAt: now,
+          notes: data.notes ?? null,
+          metadata: {
+            workOrderId,
+            workOrderNumber,
+            ...(preparedTraceability
+              ? {
+                lotId: preparedTraceability.outputLotId,
+                productionBatchId: preparedTraceability.productionBatchId
+              }
+              : {})
+          },
+          createdAt: now,
+          updatedAt: now,
+          lotId: preparedTraceability?.outputLotId ?? null,
+          productionBatchId: preparedTraceability?.productionBatchId ?? null
+        },
+        completionLines: plannedReceiveMovementLines.map(({ preparedProduce, allocatedCost, unitCost }) => ({
           sourceLineId: preparedProduce.sourceLineId,
+          warehouseId: preparedProduce.warehouseId,
           itemId: preparedProduce.line.outputItemId,
           locationId: preparedProduce.line.toLocationId,
-          quantityDelta: preparedProduce.canonicalFields.quantityDeltaCanonical,
-          uom: preparedProduce.canonicalFields.canonicalUom,
-          quantityDeltaEntered: preparedProduce.canonicalFields.quantityDeltaEntered,
-          uomEntered: preparedProduce.canonicalFields.uomEntered,
-          quantityDeltaCanonical: preparedProduce.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: preparedProduce.canonicalFields.canonicalUom,
-          uomDimension: preparedProduce.canonicalFields.uomDimension,
-          unitCost,
-          extendedCost: allocatedCost,
+          canonicalFields: preparedProduce.canonicalFields,
           reasonCode: preparedProduce.reasonCode,
           lineNotes: preparedProduce.line.notes ?? null,
-          createdAt: now
+          unitCost,
+          extendedCost: allocatedCost
         }))
       });
 
+      const issueMovement = await persistInventoryMovement(client, plannedBatchMovement.issue.persistInput);
+      const receiveMovement = await persistInventoryMovement(client, plannedBatchMovement.completion.persistInput);
+
       if (!issueMovement.created || !receiveMovement.created) {
         if (batchIdempotencyKey) {
-          const replay = await findPostedBatchByIdempotencyKey(
+          const replay = await replayEngine.findPostedBatchByIdempotencyKey(
             client,
             tenantId,
             batchIdempotencyKey,
             requestHash
           );
           if (replay) {
-            return buildWorkOrderBatchReplayResult({
+            const replayResult = await replayEngine.replayBatch({
               tenantId,
               workOrderId,
               executionId: replay.executionId,
               issueMovementId: replay.issueMovementId,
               receiveMovementId: replay.receiveMovementId,
-              expectedIssueLineCount: sortedConsumes.length,
-              expectedReceiveLineCount: sortedProduces.length,
+              expectedIssueLineCount: plannedBatchMovement.issue.expectedLineCount,
+              expectedReceiveLineCount: plannedBatchMovement.completion.expectedLineCount,
+              expectedIssueDeterministicHash: plannedBatchMovement.issue.expectedDeterministicHash,
+              expectedReceiveDeterministicHash: plannedBatchMovement.completion.expectedDeterministicHash,
               client,
-              idempotencyKey: batchIdempotencyKey
+              idempotencyKey: batchIdempotencyKey,
+              preFetchIntegrityCheck: async () => {
+                await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
+              },
+              fetchAggregateView: async () => ({
+                workOrderId,
+                executionId: replay.executionId,
+                issueMovementId: replay.issueMovementId,
+                receiveMovementId: replay.receiveMovementId,
+                quantityCompleted: replay.quantityCompleted,
+                workOrderStatus: replay.workOrderStatus,
+                idempotencyKey: batchIdempotencyKey,
+                replayed: true
+              })
             });
+            return replayResult as any;
           }
         }
         throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
@@ -4713,8 +3651,9 @@ export async function recordWorkOrderBatch(
       await client.query(
         `INSERT INTO work_order_executions (
             id, tenant_id, work_order_id, occurred_at, status, consumption_movement_id, production_movement_id,
-            notes, idempotency_key, idempotency_request_hash, idempotency_request_summary, created_at
-         ) VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $8, $9, $10::jsonb, $11)`,
+            output_lot_id, production_batch_id, notes, idempotency_key, idempotency_request_hash,
+            idempotency_request_summary, created_at
+         ) VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13)`,
         [
           executionId,
           tenantId,
@@ -4722,6 +3661,8 @@ export async function recordWorkOrderBatch(
           occurredAt,
           issueMovementId,
           receiveMovementId,
+          preparedTraceability?.outputLotId ?? null,
+          preparedTraceability?.productionBatchId ?? null,
           data.notes ?? null,
           batchIdempotencyKey,
           batchIdempotencyKey ? requestHash : null,
@@ -4758,13 +3699,16 @@ export async function recordWorkOrderBatch(
         );
       }
 
-      const totalIssueCost = await allocateWipCostFromMovement(
-        client,
+      const pendingWipAllocation = await wipEngine.lockOpenWip(client, {
+        tenantId,
+        scope: { kind: 'movement', movementId: issueMovementId }
+      });
+      const totalIssueCost = await wipEngine.allocateWipCost(client, {
         tenantId,
         executionId,
-        issueMovementId,
-        now
-      );
+        allocatedAt: now,
+        pending: pendingWipAllocation
+      });
       const wipUnitCostCanonical = totalIssueCost / producedCanonicalTotal;
       for (const { preparedProduce, allocatedCost, unitCost } of plannedReceiveMovementLines) {
         await createCostLayer({
@@ -4791,7 +3735,7 @@ export async function recordWorkOrderBatch(
         );
       }
 
-      await createWorkOrderWipValuationRecord(client, {
+      await wipEngine.createWipValuationRecord(client, {
         tenantId,
         workOrderId,
         executionId,
@@ -4805,7 +3749,7 @@ export async function recordWorkOrderBatch(
       );
       const outputCanonicalUom =
         outputUomSet.size === 1 ? sortedProduces[0]?.canonicalFields.canonicalUom ?? null : null;
-      await createWorkOrderWipValuationRecord(client, {
+      await wipEngine.createWipValuationRecord(client, {
         tenantId,
         workOrderId,
         executionId,
@@ -4816,7 +3760,7 @@ export async function recordWorkOrderBatch(
         canonicalUom: outputCanonicalUom,
         notes: `Work-order production report WIP capitalization for execution ${executionId}`
       });
-      await verifyWorkOrderWipIntegrity(client, tenantId, workOrderId);
+      await wipEngine.verifyWipIntegrity(client, tenantId, workOrderId);
       await consumeWorkOrderReservations(
         tenantId,
         workOrderId,
@@ -4842,84 +3786,25 @@ export async function recordWorkOrderBatch(
         scrappedQuantity: toNumber(workOrder.quantity_scrapped ?? 0)
       });
 
-      projectionOps.push(async (projectionClient) => {
-        await projectionClient.query(
-          `UPDATE work_order_executions
-              SET wip_total_cost = $1,
-                  wip_unit_cost = $2,
-                  wip_quantity_canonical = $3,
-                  wip_cost_method = $4,
-                  wip_costed_at = $5
-            WHERE id = $6
-              AND tenant_id = $7`,
-          [
-            totalIssueCost,
-            wipUnitCostCanonical,
-            producedCanonicalTotal,
-            WIP_COST_METHOD,
-            now,
-            executionId,
-            tenantId
-          ]
-        );
-        await projectionClient.query(
-          `UPDATE work_orders
-              SET quantity_completed = $2,
-                  status = $3,
-                  completed_at = COALESCE(completed_at, $4),
-                  wip_total_cost = COALESCE(wip_total_cost, 0) + $5,
-                  wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $6,
-                  wip_unit_cost = CASE
-                    WHEN (COALESCE(wip_quantity_canonical, 0) + $6) > 0
-                    THEN (COALESCE(wip_total_cost, 0) + $5) / (COALESCE(wip_quantity_canonical, 0) + $6)
-                    ELSE NULL
-                  END,
-                  wip_cost_method = $7,
-                  wip_costed_at = $8,
-                  updated_at = $9
-            WHERE id = $1
-              AND tenant_id = $10`,
-          [
-            workOrderId,
-            newCompleted,
-            newStatus,
-            completedAt,
-            totalIssueCost,
-            producedCanonicalTotal,
-            WIP_COST_METHOD,
-            now,
-            now,
-            tenantId
-          ]
-        );
-
-        if (validation.overrideMetadata && context.actor) {
-          await recordAuditLog(
-            {
-              tenantId,
-              actorType: context.actor.type,
-              actorId: context.actor.id ?? null,
-              action: 'negative_override',
-              entityType: 'inventory_movement',
-              entityId: issueMovementId,
-              occurredAt: now,
-              metadata: {
-                reason: validation.overrideMetadata.override_reason ?? null,
-                workOrderId,
-                executionId,
-                reference: validation.overrideMetadata.override_reference ?? null,
-                lines: consumeLinesOrdered.map((line) => ({
-                  itemId: line.componentItemId,
-                  locationId: line.fromLocationId,
-                  uom: line.uom,
-                  quantity: roundQuantity(line.quantity)
-                }))
-              }
-            },
-            projectionClient
-          );
-        }
-      });
+      projectionOps.push(
+        ...projectionEngine.buildBatchProjectionOps({
+          tenantId,
+          executionId,
+          workOrderId,
+          issueMovementId,
+          now,
+          workOrder,
+          totalIssueCost,
+          wipUnitCostCanonical,
+          producedCanonicalTotal,
+          newCompleted,
+          newStatus,
+          completedAt,
+          validationOverrideMetadata: validation.overrideMetadata ?? null,
+          context,
+          consumeLinesOrdered
+        })
+      );
 
       return {
         responseBody: {
@@ -4934,9 +3819,9 @@ export async function recordWorkOrderBatch(
         },
         responseStatus: 201,
         events: [
-          buildMovementPostedEvent(issueMovementId, batchIdempotencyKey),
-          buildMovementPostedEvent(receiveMovementId, batchIdempotencyKey),
-          buildWorkOrderProductionReportedEvent({
+          eventFactory.buildInventoryMovementPostedEvent(issueMovementId, batchIdempotencyKey),
+          eventFactory.buildInventoryMovementPostedEvent(receiveMovementId, batchIdempotencyKey),
+          eventFactory.buildWorkOrderProductionReportedEvent({
             executionId,
             workOrderId,
             issueMovementId,

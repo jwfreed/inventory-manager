@@ -346,6 +346,11 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
           stageRouting.defaultConsumeLocation?.id ?? outputItemDefaults?.default_location_id ?? null;
         const defaultProduceLocationId =
           stageRouting.defaultProduceLocation?.id ?? outputItemDefaults?.default_location_id ?? null;
+        const reportProductionLocationHint = routingId
+          ? await resolveRoutingFinalStepLocationHint(tenantId, routingId, client)
+          : null;
+        const produceToLocationSnapshotId =
+          reportProductionLocationHint?.id ?? stageRouting.defaultProduceLocation?.id ?? null;
         const inserted = await client.query(
           `INSERT INTO work_orders (
               id, tenant_id, work_order_number, number, status, kind, bom_id, bom_version_id, related_work_order_id,
@@ -375,7 +380,7 @@ export async function createWorkOrder(tenantId: string, data: WorkOrderCreateInp
             data.bomVersionId ?? null,
             data.relatedWorkOrderId ?? null,
             routingId,
-            stageRouting.defaultProduceLocation?.id ?? null,
+            produceToLocationSnapshotId,
             data.outputItemId,
             outputUom,
             plannedQty,

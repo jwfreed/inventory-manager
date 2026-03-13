@@ -364,18 +364,18 @@ export async function syncWorkOrderReservations(
           [reservationStatus, fulfilledQty, fulfilledQty, now, existing.id, tenantId]
         );
       } else {
-        reservationStatus = 'RESERVED';
+        reservationStatus = existing.status === 'ALLOCATED' ? 'ALLOCATED' : 'RESERVED';
         await client.query(
           `UPDATE inventory_reservations
-              SET status = 'RESERVED',
-                  quantity_reserved = $1,
-                  updated_at = $2,
+              SET status = $1,
+                  quantity_reserved = $2,
+                  updated_at = $3,
                   released_at = NULL,
                   canceled_at = NULL,
                   release_reason_code = NULL
-            WHERE id = $3
-              AND tenant_id = $4`,
-          [nextQuantityReserved, now, existing.id, tenantId]
+            WHERE id = $4
+              AND tenant_id = $5`,
+          [reservationStatus, nextQuantityReserved, now, existing.id, tenantId]
         );
       }
     } else if (nextQuantityReserved > 0) {
@@ -647,6 +647,31 @@ export async function consumeWorkOrderReservations(
     }
     const nextFulfilled = roundQuantity(fulfilledQty + line.quantity);
     const nextOpen = roundQuantity(Math.max(0, reservedQty - nextFulfilled));
+    if (reservation.status === 'RESERVED') {
+      await client.query(
+        `UPDATE inventory_reservations
+            SET quantity_fulfilled = $1,
+                status = 'ALLOCATED',
+                updated_at = $2
+          WHERE id = $3
+            AND tenant_id = $4`,
+        [nextFulfilled, now, reservation.id, tenantId]
+      );
+      if (nextOpen <= 0) {
+        await client.query(
+          `UPDATE inventory_reservations
+              SET status = 'FULFILLED',
+                  fulfilled_at = COALESCE(fulfilled_at, $1),
+                  updated_at = $1
+            WHERE id = $2
+              AND tenant_id = $3`,
+          [now, reservation.id, tenantId]
+        );
+      }
+      continue;
+    }
+
+    const nextStatus = nextOpen <= 0 ? 'FULFILLED' : 'ALLOCATED';
     await client.query(
       `UPDATE inventory_reservations
           SET quantity_fulfilled = $1,
@@ -655,7 +680,7 @@ export async function consumeWorkOrderReservations(
               updated_at = $3
         WHERE id = $4
           AND tenant_id = $5`,
-      [nextFulfilled, nextOpen <= 0 ? 'FULFILLED' : 'RESERVED', now, reservation.id, tenantId]
+      [nextFulfilled, nextStatus, now, reservation.id, tenantId]
     );
   }
 }
