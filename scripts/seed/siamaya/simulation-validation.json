@@ -24,30 +24,117 @@
   },
   "simulationRuns": [
     {
-      "itemName": "Apple Pie Milk Chocolate - Halloween (75g)",
+      "itemName": "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
       "success": true,
       "blocked": null
     },
     {
-      "itemName": "Banana Crunch Milk Chocolate (75g)",
+      "itemName": "Banana Crunch Milk Chocolate - Boxed (75g)",
       "success": true,
       "blocked": null
     },
     {
-      "itemName": "Coconut Curry Dark Chocolate (75g)",
+      "itemName": "Coconut Curry Dark Chocolate - Boxed (75g)",
       "success": true,
       "blocked": null
     },
     {
-      "itemName": "Coconut Milk 65% Dark Chocolate (75g)",
+      "itemName": "Coconut Milk 65% Dark Chocolate - Boxed (75g)",
       "success": true,
       "blocked": null
     },
     {
-      "itemName": "Coffee Crunch Milk Chocolate (75g)",
+      "itemName": "Coffee Crunch Milk Chocolate - Boxed (75g)",
       "success": true,
       "blocked": null
     }
   ],
-  "simulationsSucceeded": true
+  "simulationsSucceeded": true,
+  "twoStageProduction": {
+    "wrappedBarCount": 25,
+    "boxedBarCount": 25,
+    "wrappedBarsAreIntermediates": true,
+    "boxedBarsAreFinishedGoods": true,
+    "wrappedStagePackagingLeakCount": 0,
+    "wrappedBarsInOpeningStock": {
+      "minimal": 0,
+      "base": 0
+    },
+    "boxedBarsInOpeningStock": {
+      "minimal": 0,
+      "base": 0
+    },
+    "workOrderScenarioSummary": {
+      "totalWorkOrders": 50,
+      "wrappedBarWorkOrders": 25,
+      "boxedBarWorkOrders": 25,
+      "twoStageFlows": 25
+    },
+    "workflowSummary": {
+      "totalTasks": 17,
+      "wrappedStageTasks": 2,
+      "boxedStageTasks": 4,
+      "twoStageFlowRepresented": true,
+      "shippingWrappedBarsSuggested": false
+    }
+  },
+  "sellability": {
+    "wrappedBarsSellable": false,
+    "boxedBarsSellable": true,
+    "wrappedBarsShippable": false,
+    "boxedBarKeys": [
+      "apple pie milk chocolate halloween boxed 75g",
+      "banana crunch milk chocolate boxed 75g",
+      "coconut curry dark chocolate boxed 75g",
+      "coconut milk 65 dark chocolate boxed 75g",
+      "coffee crunch milk chocolate boxed 75g",
+      "durian milk chocolate boxed 75g",
+      "german chocolate cake 70 dark chocolate christmas boxed 75g",
+      "gingerbread cookie milk chocolate christmas boxed 75g",
+      "hill coffee and pomelo dark chocolate boxed 75g",
+      "khao soi curry milk chocolate boxed 75g",
+      "mango chili dark chocolate boxed 75g",
+      "mango jelly popping candy milk chocolate loi kratong boxed 75g",
+      "masala chai milk chocolate boxed 75g",
+      "mooncake milk chocolate boxed 75g",
+      "peanut curry dark chocolate boxed 75g",
+      "signature dark 70 dark chocolate boxed 75g",
+      "signature dark 85 dark chocolate boxed 75g",
+      "signature milk chocolate boxed 75g",
+      "simply cacao plus milk paleo robbie boxed 75g",
+      "simply cacao plus milk with almonds and sea salt paleo robbie boxed 75g",
+      "simply cacao plus milk with vanilla bean paleo robbie boxed 75g",
+      "smash daddy s banana split milk chocolate boxed 75g",
+      "thai bullet chili dark chocolate boxed 75g",
+      "thai tea milk chocolate boxed 75g",
+      "tom yum dark chocolate boxed 75g"
+    ],
+    "wrappedBarKeys": [
+      "apple pie milk chocolate halloween wrapped 75g",
+      "banana crunch milk chocolate wrapped 75g",
+      "coconut curry dark chocolate wrapped 75g",
+      "coconut milk 65 dark chocolate wrapped 75g",
+      "coffee crunch milk chocolate wrapped 75g",
+      "durian milk chocolate wrapped 75g",
+      "german chocolate cake 70 dark chocolate christmas wrapped 75g",
+      "gingerbread cookie milk chocolate christmas wrapped 75g",
+      "hill coffee and pomelo dark chocolate wrapped 75g",
+      "khao soi curry milk chocolate wrapped 75g",
+      "mango chili dark chocolate wrapped 75g",
+      "mango jelly popping candy milk chocolate loi kratong wrapped 75g",
+      "masala chai milk chocolate wrapped 75g",
+      "mooncake milk chocolate wrapped 75g",
+      "peanut curry dark chocolate wrapped 75g",
+      "signature dark 70 dark chocolate wrapped 75g",
+      "signature dark 85 dark chocolate wrapped 75g",
+      "signature milk chocolate wrapped 75g",
+      "simply cacao plus milk paleo robbie wrapped 75g",
+      "simply cacao plus milk with almonds and sea salt paleo robbie wrapped 75g",
+      "simply cacao plus milk with vanilla bean paleo robbie wrapped 75g",
+      "smash daddy s banana split milk chocolate wrapped 75g",
+      "thai bullet chili dark chocolate wrapped 75g",
+      "thai tea milk chocolate wrapped 75g",
+      "tom yum dark chocolate wrapped 75g"
+    ]
+  }
 }

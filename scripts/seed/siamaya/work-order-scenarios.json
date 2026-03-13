@@ -1,334 +1,47 @@
 {
   "generatedAt": "2026-03-12T00:00:00.000Z",
+  "summary": {
+    "totalWorkOrders": 50,
+    "wrappedBarWorkOrders": 25,
+    "boxedBarWorkOrders": 25,
+    "twoStageFlows": 25
+  },
   "workOrders": [
     {
       "workOrderCode": "WO-SIAMAYA-75G-001",
-      "itemKey": "cacao nibs raw material",
-      "itemName": "Cacao Nibs - Raw Material",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "apple pie milk chocolate halloween boxed 75g",
+      "stageGroupName": "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
+      "itemKey": "apple pie milk chocolate halloween wrapped 75g",
+      "itemName": "Apple Pie Milk Chocolate - Halloween - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
       "simulationState": "PLANNED",
       "platformStatus": "draft",
       "scheduledStartAt": "2026-01-05T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-06T16:00:00.000Z",
+      "scheduledDueAt": "2026-01-05T11:00:00.000Z",
       "quantityPlanned": 1,
-      "outputUom": "kg",
-      "routing": {
-        "workCenterCode": "ROASTER",
-        "operationCode": "ROAST",
-        "setupTimeMinutes": 30,
-        "runTimeMinutes": 90
-      },
-      "materialRequirements": [
-        {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 1.25,
-          "uom": "kg"
-        }
-      ],
-      "lifecycle": [
-        {
-          "state": "PLANNED",
-          "at": "2026-01-04T09:00:00.000Z"
-        }
-      ]
-    },
-    {
-      "workOrderCode": "WO-SIAMAYA-75G-002",
-      "itemKey": "base 70 dark chocolate",
-      "itemName": "Base - 70% Dark Chocolate",
-      "simulationState": "PLANNED",
-      "platformStatus": "draft",
-      "scheduledStartAt": "2026-01-06T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-07T16:00:00.000Z",
-      "quantityPlanned": 1,
-      "outputUom": "kg",
-      "routing": {
-        "workCenterCode": "GRINDER",
-        "operationCode": "PREREFINE",
-        "setupTimeMinutes": 30,
-        "runTimeMinutes": 120
-      },
-      "materialRequirements": [
-        {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 812.5,
-          "uom": "g"
-        },
-        {
-          "itemKey": "cacao butter",
-          "itemName": "Cacao Butter",
-          "quantity": 50,
-          "uom": "g"
-        },
-        {
-          "itemKey": "organic cane sugar",
-          "itemName": "Organic Cane Sugar",
-          "quantity": 300,
-          "uom": "g"
-        }
-      ],
-      "lifecycle": [
-        {
-          "state": "PLANNED",
-          "at": "2026-01-05T09:00:00.000Z"
-        }
-      ]
-    },
-    {
-      "workOrderCode": "WO-SIAMAYA-75G-003",
-      "itemKey": "base 85 dark chocolate",
-      "itemName": "Base - 85% Dark Chocolate",
-      "simulationState": "PLANNED",
-      "platformStatus": "draft",
-      "scheduledStartAt": "2026-01-07T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-08T16:00:00.000Z",
-      "quantityPlanned": 1,
-      "outputUom": "kg",
-      "routing": {
-        "workCenterCode": "GRINDER",
-        "operationCode": "PREREFINE",
-        "setupTimeMinutes": 30,
-        "runTimeMinutes": 120
-      },
-      "materialRequirements": [
-        {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 1.0625,
-          "uom": "kg"
-        },
-        {
-          "itemKey": "organic cane sugar",
-          "itemName": "Organic Cane Sugar",
-          "quantity": 150,
-          "uom": "g"
-        }
-      ],
-      "lifecycle": [
-        {
-          "state": "PLANNED",
-          "at": "2026-01-06T09:00:00.000Z"
-        }
-      ]
-    },
-    {
-      "workOrderCode": "WO-SIAMAYA-75G-004",
-      "itemKey": "base milk chocolate",
-      "itemName": "Base - Milk Chocolate",
-      "simulationState": "PLANNED",
-      "platformStatus": "draft",
-      "scheduledStartAt": "2026-01-08T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-09T16:00:00.000Z",
-      "quantityPlanned": 1,
-      "outputUom": "kg",
-      "routing": {
-        "workCenterCode": "GRINDER",
-        "operationCode": "PREREFINE",
-        "setupTimeMinutes": 30,
-        "runTimeMinutes": 120
-      },
-      "materialRequirements": [
-        {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 500,
-          "uom": "g"
-        },
-        {
-          "itemKey": "cacao butter",
-          "itemName": "Cacao Butter",
-          "quantity": 100,
-          "uom": "g"
-        },
-        {
-          "itemKey": "organic cane sugar",
-          "itemName": "Organic Cane Sugar",
-          "quantity": 350,
-          "uom": "g"
-        },
-        {
-          "itemKey": "powdered milk",
-          "itemName": "Powdered Milk",
-          "quantity": 150,
-          "uom": "g"
-        },
-        {
-          "itemKey": "sunflower lecithin",
-          "itemName": "Sunflower Lecithin",
-          "quantity": 3,
-          "uom": "g"
-        }
-      ],
-      "lifecycle": [
-        {
-          "state": "PLANNED",
-          "at": "2026-01-07T09:00:00.000Z"
-        }
-      ]
-    },
-    {
-      "workOrderCode": "WO-SIAMAYA-75G-005",
-      "itemKey": "base coconut milk chocolate",
-      "itemName": "Base - Coconut Milk Chocolate",
-      "simulationState": "PLANNED",
-      "platformStatus": "draft",
-      "scheduledStartAt": "2026-01-09T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-10T16:00:00.000Z",
-      "quantityPlanned": 1,
-      "outputUom": "kg",
-      "routing": {
-        "workCenterCode": "GRINDER",
-        "operationCode": "PREREFINE",
-        "setupTimeMinutes": 30,
-        "runTimeMinutes": 120
-      },
-      "materialRequirements": [
-        {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 775,
-          "uom": "g"
-        },
-        {
-          "itemKey": "cacao butter",
-          "itemName": "Cacao Butter",
-          "quantity": 30,
-          "uom": "g"
-        },
-        {
-          "itemKey": "coconut milk powder",
-          "itemName": "Coconut Milk Powder",
-          "quantity": 100,
-          "uom": "g"
-        },
-        {
-          "itemKey": "organic cane sugar",
-          "itemName": "Organic Cane Sugar",
-          "quantity": 250,
-          "uom": "g"
-        }
-      ],
-      "lifecycle": [
-        {
-          "state": "PLANNED",
-          "at": "2026-01-08T09:00:00.000Z"
-        }
-      ]
-    },
-    {
-      "workOrderCode": "WO-SIAMAYA-75G-006",
-      "itemKey": "base pomelo",
-      "itemName": "Base - Pomelo",
-      "simulationState": "PLANNED",
-      "platformStatus": "draft",
-      "scheduledStartAt": "2026-01-10T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-11T16:00:00.000Z",
-      "quantityPlanned": 1,
-      "outputUom": "kg",
-      "routing": {
-        "workCenterCode": "GRINDER",
-        "operationCode": "PREREFINE",
-        "setupTimeMinutes": 30,
-        "runTimeMinutes": 120
-      },
-      "materialRequirements": [
-        {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 887.5,
-          "uom": "g"
-        },
-        {
-          "itemKey": "coffee beans",
-          "itemName": "Coffee Beans",
-          "quantity": 20,
-          "uom": "g"
-        },
-        {
-          "itemKey": "organic cane sugar",
-          "itemName": "Organic Cane Sugar",
-          "quantity": 270,
-          "uom": "g"
-        }
-      ],
-      "lifecycle": [
-        {
-          "state": "PLANNED",
-          "at": "2026-01-09T09:00:00.000Z"
-        }
-      ]
-    },
-    {
-      "workOrderCode": "WO-SIAMAYA-75G-007",
-      "itemKey": "base sugar free",
-      "itemName": "Base - Sugar Free",
-      "simulationState": "PLANNED",
-      "platformStatus": "draft",
-      "scheduledStartAt": "2026-01-11T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-12T16:00:00.000Z",
-      "quantityPlanned": 1,
-      "outputUom": "kg",
-      "routing": {
-        "workCenterCode": "GRINDER",
-        "operationCode": "PREREFINE",
-        "setupTimeMinutes": 30,
-        "runTimeMinutes": 120
-      },
-      "materialRequirements": [
-        {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 1.0625,
-          "uom": "kg"
-        },
-        {
-          "itemKey": "powdered milk",
-          "itemName": "Powdered Milk",
-          "quantity": 150,
-          "uom": "g"
-        }
-      ],
-      "lifecycle": [
-        {
-          "state": "PLANNED",
-          "at": "2026-01-10T09:00:00.000Z"
-        }
-      ]
-    },
-    {
-      "workOrderCode": "WO-SIAMAYA-75G-008",
-      "itemKey": "apple pie milk chocolate halloween 75g",
-      "itemName": "Apple Pie Milk Chocolate - Halloween (75g)",
-      "simulationState": "PLANNED",
-      "platformStatus": "draft",
-      "scheduledStartAt": "2026-01-12T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-13T16:00:00.000Z",
-      "quantityPlanned": 1,
-      "outputUom": "piece",
+      "outputUom": "each",
       "routing": {
         "workCenterCode": "WRAPPER",
-        "operationCode": "WRAP",
-        "setupTimeMinutes": 10,
-        "runTimeMinutes": 30
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
       },
       "materialRequirements": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 62.137,
+          "uom": "g"
+        },
         {
           "itemKey": "biscuit",
           "itemName": "Biscuit",
           "quantity": 3.195,
-          "uom": "g"
-        },
-        {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 31.0685,
-          "uom": "g"
-        },
-        {
-          "itemKey": "cacao butter",
-          "itemName": "Cacao Butter",
-          "quantity": 6.2137,
           "uom": "g"
         },
         {
@@ -345,27 +58,54 @@
         },
         {
           "itemKey": "flow wrap foil",
-          "itemName": "Flow Wrap Foil",
+          "itemName": "flow wrap Foil",
           "quantity": 3,
           "uom": "g"
-        },
+        }
+      ],
+      "lifecycle": [
         {
-          "itemKey": "organic cane sugar",
-          "itemName": "Organic Cane Sugar",
-          "quantity": 21.74795,
-          "uom": "g"
-        },
+          "state": "PLANNED",
+          "at": "2026-01-04T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-002",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-001",
+      "stageGroupKey": "apple pie milk chocolate halloween boxed 75g",
+      "stageGroupName": "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
+      "itemKey": "apple pie milk chocolate halloween boxed 75g",
+      "itemName": "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "apple pie milk chocolate halloween boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-05T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-05T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
         {
-          "itemKey": "powdered milk",
-          "itemName": "Powdered Milk",
-          "quantity": 9.32055,
-          "uom": "g"
-        },
-        {
-          "itemKey": "sunflower lecithin",
-          "itemName": "Sunflower Lecithin",
-          "quantity": 0.186411,
-          "uom": "g"
+          "itemKey": "apple pie milk chocolate halloween wrapped 75g",
+          "itemName": "Apple Pie Milk Chocolate - Halloween - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
         },
         {
           "itemKey": "wrapper apple pie milk chocolate halloween 75g",
@@ -377,25 +117,1263 @@
       "lifecycle": [
         {
           "state": "PLANNED",
-          "at": "2026-01-11T09:00:00.000Z"
+          "at": "2026-01-04T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-003",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "banana crunch milk chocolate boxed 75g",
+      "stageGroupName": "Banana Crunch Milk Chocolate - Boxed (75g)",
+      "itemKey": "banana crunch milk chocolate wrapped 75g",
+      "itemName": "Banana Crunch Milk Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-06T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-06T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "banana chips",
+          "itemName": "Banana Chips",
+          "quantity": 6.638,
+          "uom": "g"
+        },
+        {
+          "itemKey": "banana powder",
+          "itemName": "Banana Powder",
+          "quantity": 1.988,
+          "uom": "g"
+        },
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 66.375,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-05T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-004",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-003",
+      "stageGroupKey": "banana crunch milk chocolate boxed 75g",
+      "stageGroupName": "Banana Crunch Milk Chocolate - Boxed (75g)",
+      "itemKey": "banana crunch milk chocolate boxed 75g",
+      "itemName": "Banana Crunch Milk Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "banana crunch milk chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-06T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-06T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "banana crunch milk chocolate wrapped 75g",
+          "itemName": "Banana Crunch Milk Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper banana crunch 75g",
+          "itemName": "Wrapper - Banana Crunch (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-05T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-005",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "coconut curry dark chocolate boxed 75g",
+      "stageGroupName": "Coconut Curry Dark Chocolate - Boxed (75g)",
+      "itemKey": "coconut curry dark chocolate wrapped 75g",
+      "itemName": "Coconut Curry Dark Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-07T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-07T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base coconut milk chocolate",
+          "itemName": "Base - Coconut Milk Chocolate",
+          "quantity": 62.111,
+          "uom": "g"
+        },
+        {
+          "itemKey": "chili powder",
+          "itemName": "Chili Powder",
+          "quantity": 0.128,
+          "uom": "g"
+        },
+        {
+          "itemKey": "dried coconut flakes",
+          "itemName": "Dried Coconut Flakes",
+          "quantity": 6.21,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "galangal oil",
+          "itemName": "Galangal Oil",
+          "quantity": 0.15,
+          "uom": "g"
+        },
+        {
+          "itemKey": "kaffir lime oil",
+          "itemName": "Kaffir Lime Oil",
+          "quantity": 0.064,
+          "uom": "g"
+        },
+        {
+          "itemKey": "lemongrass oil",
+          "itemName": "Lemongrass Oil",
+          "quantity": 0.128,
+          "uom": "g"
+        },
+        {
+          "itemKey": "tomato dried",
+          "itemName": "Tomato, Dried",
+          "quantity": 6.21,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-06T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-006",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-005",
+      "stageGroupKey": "coconut curry dark chocolate boxed 75g",
+      "stageGroupName": "Coconut Curry Dark Chocolate - Boxed (75g)",
+      "itemKey": "coconut curry dark chocolate boxed 75g",
+      "itemName": "Coconut Curry Dark Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "coconut curry dark chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-07T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-07T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "coconut curry dark chocolate wrapped 75g",
+          "itemName": "Coconut Curry Dark Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper coconut curry 75g",
+          "itemName": "Wrapper - Coconut Curry (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-06T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-007",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "coconut milk 65 dark chocolate boxed 75g",
+      "stageGroupName": "Coconut Milk 65% Dark Chocolate - Boxed (75g)",
+      "itemKey": "coconut milk 65 dark chocolate wrapped 75g",
+      "itemName": "Coconut Milk 65% Dark Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-08T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-08T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base coconut milk chocolate",
+          "itemName": "Base - Coconut Milk Chocolate",
+          "quantity": 69.375,
+          "uom": "g"
+        },
+        {
+          "itemKey": "dried coconut flakes",
+          "itemName": "Dried Coconut Flakes",
+          "quantity": 5.625,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-07T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-008",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-007",
+      "stageGroupKey": "coconut milk 65 dark chocolate boxed 75g",
+      "stageGroupName": "Coconut Milk 65% Dark Chocolate - Boxed (75g)",
+      "itemKey": "coconut milk 65 dark chocolate boxed 75g",
+      "itemName": "Coconut Milk 65% Dark Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "coconut milk 65 dark chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-08T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-08T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "coconut milk 65 dark chocolate wrapped 75g",
+          "itemName": "Coconut Milk 65% Dark Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper coconut milk 75g",
+          "itemName": "Wrapper - Coconut Milk (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-07T13:00:00.000Z"
         }
       ]
     },
     {
       "workOrderCode": "WO-SIAMAYA-75G-009",
-      "itemKey": "masala chai milk chocolate 75g",
-      "itemName": "Masala Chai Milk Chocolate (75g)",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "coffee crunch milk chocolate boxed 75g",
+      "stageGroupName": "Coffee Crunch Milk Chocolate - Boxed (75g)",
+      "itemKey": "coffee crunch milk chocolate wrapped 75g",
+      "itemName": "Coffee Crunch Milk Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-09T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-09T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 73.53,
+          "uom": "g"
+        },
+        {
+          "itemKey": "coffee beans",
+          "itemName": "Coffee Beans",
+          "quantity": 1.47,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-08T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-010",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-009",
+      "stageGroupKey": "coffee crunch milk chocolate boxed 75g",
+      "stageGroupName": "Coffee Crunch Milk Chocolate - Boxed (75g)",
+      "itemKey": "coffee crunch milk chocolate boxed 75g",
+      "itemName": "Coffee Crunch Milk Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "coffee crunch milk chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-09T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-09T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "coffee crunch milk chocolate wrapped 75g",
+          "itemName": "Coffee Crunch Milk Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper coffee crunch 75g",
+          "itemName": "Wrapper - Coffee Crunch (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-08T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-011",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "durian milk chocolate boxed 75g",
+      "stageGroupName": "Durian Milk Chocolate - Boxed (75g)",
+      "itemKey": "durian milk chocolate wrapped 75g",
+      "itemName": "Durian Milk Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-10T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-10T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 73.17,
+          "uom": "g"
+        },
+        {
+          "itemKey": "durian powder",
+          "itemName": "Durian Powder",
+          "quantity": 1.83,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-09T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-012",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-011",
+      "stageGroupKey": "durian milk chocolate boxed 75g",
+      "stageGroupName": "Durian Milk Chocolate - Boxed (75g)",
+      "itemKey": "durian milk chocolate boxed 75g",
+      "itemName": "Durian Milk Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "durian milk chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-10T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-10T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "durian milk chocolate wrapped 75g",
+          "itemName": "Durian Milk Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper durian 75g",
+          "itemName": "Wrapper - Durian (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-09T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-013",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "german chocolate cake 70 dark chocolate christmas boxed 75g",
+      "stageGroupName": "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g)",
+      "itemKey": "german chocolate cake 70 dark chocolate christmas wrapped 75g",
+      "itemName": "German Chocolate Cake 70% Dark Chocolate - Christmas - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-11T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-11T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 58.62,
+          "uom": "g"
+        },
+        {
+          "itemKey": "dried coconut flakes",
+          "itemName": "Dried Coconut Flakes",
+          "quantity": 4.68,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "pecans",
+          "itemName": "Pecans",
+          "quantity": 5.85,
+          "uom": "g"
+        },
+        {
+          "itemKey": "toffee",
+          "itemName": "Toffee",
+          "quantity": 5.85,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-10T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-014",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-013",
+      "stageGroupKey": "german chocolate cake 70 dark chocolate christmas boxed 75g",
+      "stageGroupName": "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g)",
+      "itemKey": "german chocolate cake 70 dark chocolate christmas boxed 75g",
+      "itemName": "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "german chocolate cake 70 dark chocolate christmas boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-11T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-11T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "german chocolate cake 70 dark chocolate christmas wrapped 75g",
+          "itemName": "German Chocolate Cake 70% Dark Chocolate - Christmas - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper german chocolate cake 70 dark chocolate christmas 75g",
+          "itemName": "Wrapper - German Chocolate Cake 70% Dark Chocolate - Christmas (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-10T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-015",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "gingerbread cookie milk chocolate christmas boxed 75g",
+      "stageGroupName": "Gingerbread Cookie Milk Chocolate - Christmas - Boxed (75g)",
+      "itemKey": "gingerbread cookie milk chocolate christmas wrapped 75g",
+      "itemName": "Gingerbread Cookie Milk Chocolate - Christmas - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-12T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-12T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 66.96,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cinnamon powder",
+          "itemName": "Cinnamon Powder",
+          "quantity": 0.4,
+          "uom": "g"
+        },
+        {
+          "itemKey": "clove powder",
+          "itemName": "Clove Powder",
+          "quantity": 0.16,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "flow wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "ginger powder",
+          "itemName": "Ginger Powder",
+          "quantity": 0.78,
+          "uom": "g"
+        },
+        {
+          "itemKey": "gingerbread cookie",
+          "itemName": "Gingerbread Cookie",
+          "quantity": 6.7,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-11T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-016",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-015",
+      "stageGroupKey": "gingerbread cookie milk chocolate christmas boxed 75g",
+      "stageGroupName": "Gingerbread Cookie Milk Chocolate - Christmas - Boxed (75g)",
+      "itemKey": "gingerbread cookie milk chocolate christmas boxed 75g",
+      "itemName": "Gingerbread Cookie Milk Chocolate - Christmas - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "gingerbread cookie milk chocolate christmas boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-12T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-12T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "gingerbread cookie milk chocolate christmas wrapped 75g",
+          "itemName": "Gingerbread Cookie Milk Chocolate - Christmas - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper gingerbread cookie milk chocolate christmas 75g",
+          "itemName": "Wrapper - Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-11T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-017",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "hill coffee and pomelo dark chocolate boxed 75g",
+      "stageGroupName": "Hill Coffee and Pomelo Dark Chocolate - Boxed (75g)",
+      "itemKey": "hill coffee and pomelo dark chocolate wrapped 75g",
+      "itemName": "Hill Coffee and Pomelo Dark Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
       "simulationState": "PLANNED",
       "platformStatus": "draft",
       "scheduledStartAt": "2026-01-13T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-14T16:00:00.000Z",
+      "scheduledDueAt": "2026-01-13T11:00:00.000Z",
       "quantityPlanned": 1,
-      "outputUom": "piece",
+      "outputUom": "each",
       "routing": {
         "workCenterCode": "WRAPPER",
-        "operationCode": "WRAP",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base pomelo",
+          "itemName": "Base - Pomelo",
+          "quantity": 68.25,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "pomelo dried",
+          "itemName": "Pomelo, Dried",
+          "quantity": 6.75,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-12T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-018",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-017",
+      "stageGroupKey": "hill coffee and pomelo dark chocolate boxed 75g",
+      "stageGroupName": "Hill Coffee and Pomelo Dark Chocolate - Boxed (75g)",
+      "itemKey": "hill coffee and pomelo dark chocolate boxed 75g",
+      "itemName": "Hill Coffee and Pomelo Dark Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "hill coffee and pomelo dark chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-13T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-13T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
         "setupTimeMinutes": 10,
-        "runTimeMinutes": 30
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "hill coffee and pomelo dark chocolate wrapped 75g",
+          "itemName": "Hill Coffee and Pomelo Dark Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper hill coffee and pomelo 75g",
+          "itemName": "Wrapper - Hill Coffee and Pomelo (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-12T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-019",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "khao soi curry milk chocolate boxed 75g",
+      "stageGroupName": "Khao Soi Curry Milk Chocolate - Boxed (75g)",
+      "itemKey": "khao soi curry milk chocolate wrapped 75g",
+      "itemName": "Khao Soi Curry Milk Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-14T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-14T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 67.683,
+          "uom": "g"
+        },
+        {
+          "itemKey": "chili powder",
+          "itemName": "Chili Powder",
+          "quantity": 0.105,
+          "uom": "g"
+        },
+        {
+          "itemKey": "curry powder",
+          "itemName": "Curry Powder",
+          "quantity": 0.405,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "khao soi crispy noodles",
+          "itemName": "Khao Soi Crispy Noodles",
+          "quantity": 4.74,
+          "uom": "g"
+        },
+        {
+          "itemKey": "salt",
+          "itemName": "Salt",
+          "quantity": 0.035,
+          "uom": "g"
+        },
+        {
+          "itemKey": "shallots dried",
+          "itemName": "Shallots, Dried",
+          "quantity": 2.033,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-13T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-020",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-019",
+      "stageGroupKey": "khao soi curry milk chocolate boxed 75g",
+      "stageGroupName": "Khao Soi Curry Milk Chocolate - Boxed (75g)",
+      "itemKey": "khao soi curry milk chocolate boxed 75g",
+      "itemName": "Khao Soi Curry Milk Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "khao soi curry milk chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-14T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-14T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "khao soi curry milk chocolate wrapped 75g",
+          "itemName": "Khao Soi Curry Milk Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper khao soi 75g",
+          "itemName": "Wrapper - Khao Soi (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-13T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-021",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "mango chili dark chocolate boxed 75g",
+      "stageGroupName": "Mango Chili Dark Chocolate - Boxed (75g)",
+      "itemKey": "mango chili dark chocolate wrapped 75g",
+      "itemName": "Mango Chili Dark Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-15T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-15T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 64.913,
+          "uom": "g"
+        },
+        {
+          "itemKey": "chili powder",
+          "itemName": "Chili Powder",
+          "quantity": 0.225,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "mango dried",
+          "itemName": "Mango, Dried",
+          "quantity": 9.735,
+          "uom": "g"
+        },
+        {
+          "itemKey": "salt",
+          "itemName": "Salt",
+          "quantity": 0.128,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-14T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-022",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-021",
+      "stageGroupKey": "mango chili dark chocolate boxed 75g",
+      "stageGroupName": "Mango Chili Dark Chocolate - Boxed (75g)",
+      "itemKey": "mango chili dark chocolate boxed 75g",
+      "itemName": "Mango Chili Dark Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "mango chili dark chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-15T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-15T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "mango chili dark chocolate wrapped 75g",
+          "itemName": "Mango Chili Dark Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper mango chili 75g",
+          "itemName": "Wrapper - Mango Chili (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-14T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-023",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "mango jelly popping candy milk chocolate loi kratong boxed 75g",
+      "stageGroupName": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Boxed (75g)",
+      "itemKey": "mango jelly popping candy milk chocolate loi kratong wrapped 75g",
+      "itemName": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-16T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-16T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 56.183,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "mango jelly",
+          "itemName": "Mango Jelly",
+          "quantity": 11.235,
+          "uom": "g"
+        },
+        {
+          "itemKey": "popping candy",
+          "itemName": "Popping Candy",
+          "quantity": 7.583,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-15T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-024",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-023",
+      "stageGroupKey": "mango jelly popping candy milk chocolate loi kratong boxed 75g",
+      "stageGroupName": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Boxed (75g)",
+      "itemKey": "mango jelly popping candy milk chocolate loi kratong boxed 75g",
+      "itemName": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "mango jelly popping candy milk chocolate loi kratong boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-16T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-16T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "mango jelly popping candy milk chocolate loi kratong wrapped 75g",
+          "itemName": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper mango jelly popping candy milk chocolate loi kratong 75g",
+          "itemName": "Wrapper - Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-15T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-025",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "masala chai milk chocolate boxed 75g",
+      "stageGroupName": "Masala Chai Milk Chocolate - Boxed (75g)",
+      "itemKey": "masala chai milk chocolate wrapped 75g",
+      "itemName": "Masala Chai Milk Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-17T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-17T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
       },
       "materialRequirements": [
         {
@@ -405,15 +1383,9 @@
           "uom": "g"
         },
         {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 34.803,
-          "uom": "g"
-        },
-        {
-          "itemKey": "cacao butter",
-          "itemName": "Cacao Butter",
-          "quantity": 6.9606,
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 69.606,
           "uom": "g"
         },
         {
@@ -447,28 +1419,55 @@
           "uom": "g"
         },
         {
-          "itemKey": "organic cane sugar",
-          "itemName": "Organic Cane Sugar",
-          "quantity": 24.3621,
-          "uom": "g"
-        },
-        {
-          "itemKey": "powdered milk",
-          "itemName": "Powdered Milk",
-          "quantity": 10.4409,
-          "uom": "g"
-        },
-        {
           "itemKey": "star anise powder",
           "itemName": "Star Anise Powder",
           "quantity": 0.74,
           "uom": "g"
-        },
+        }
+      ],
+      "lifecycle": [
         {
-          "itemKey": "sunflower lecithin",
-          "itemName": "Sunflower Lecithin",
-          "quantity": 0.208818,
-          "uom": "g"
+          "state": "PLANNED",
+          "at": "2026-01-16T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-026",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-025",
+      "stageGroupKey": "masala chai milk chocolate boxed 75g",
+      "stageGroupName": "Masala Chai Milk Chocolate - Boxed (75g)",
+      "itemKey": "masala chai milk chocolate boxed 75g",
+      "itemName": "Masala Chai Milk Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "masala chai milk chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-17T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-17T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "masala chai milk chocolate wrapped 75g",
+          "itemName": "Masala Chai Milk Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
         },
         {
           "itemKey": "wrapper masala chai 75g",
@@ -480,37 +1479,1233 @@
       "lifecycle": [
         {
           "state": "PLANNED",
-          "at": "2026-01-12T09:00:00.000Z"
+          "at": "2026-01-16T13:00:00.000Z"
         }
       ]
     },
     {
-      "workOrderCode": "WO-SIAMAYA-75G-010",
-      "itemKey": "tom yum dark chocolate 75g",
-      "itemName": "Tom Yum Dark Chocolate (75g)",
+      "workOrderCode": "WO-SIAMAYA-75G-027",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "mooncake milk chocolate boxed 75g",
+      "stageGroupName": "Mooncake Milk Chocolate - Boxed (75g)",
+      "itemKey": "mooncake milk chocolate wrapped 75g",
+      "itemName": "Mooncake Milk Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
       "simulationState": "PLANNED",
       "platformStatus": "draft",
-      "scheduledStartAt": "2026-01-14T08:00:00.000Z",
-      "scheduledDueAt": "2026-01-15T16:00:00.000Z",
+      "scheduledStartAt": "2026-01-18T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-18T11:00:00.000Z",
       "quantityPlanned": 1,
-      "outputUom": "piece",
+      "outputUom": "each",
       "routing": {
         "workCenterCode": "WRAPPER",
-        "operationCode": "WRAP",
-        "setupTimeMinutes": 10,
-        "runTimeMinutes": 30
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
       },
       "materialRequirements": [
         {
-          "itemKey": "cacao beans",
-          "itemName": "Cacao Beans",
-          "quantity": 54.017438,
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 62.09,
           "uom": "g"
         },
         {
-          "itemKey": "cacao butter",
-          "itemName": "Cacao Butter",
-          "quantity": 3.32415,
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "lotus seed",
+          "itemName": "Lotus Seed",
+          "quantity": 3.35,
+          "uom": "g"
+        },
+        {
+          "itemKey": "salted egg powder",
+          "itemName": "Salted Egg Powder",
+          "quantity": 3.35,
+          "uom": "g"
+        },
+        {
+          "itemKey": "sunflower seeds",
+          "itemName": "Sunflower Seeds",
+          "quantity": 6.21,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-17T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-028",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-027",
+      "stageGroupKey": "mooncake milk chocolate boxed 75g",
+      "stageGroupName": "Mooncake Milk Chocolate - Boxed (75g)",
+      "itemKey": "mooncake milk chocolate boxed 75g",
+      "itemName": "Mooncake Milk Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "mooncake milk chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-18T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-18T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "mooncake milk chocolate wrapped 75g",
+          "itemName": "Mooncake Milk Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper mooncake 75g",
+          "itemName": "Wrapper - Mooncake (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-17T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-029",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "peanut curry dark chocolate boxed 75g",
+      "stageGroupName": "Peanut Curry Dark Chocolate - Boxed (75g)",
+      "itemKey": "peanut curry dark chocolate wrapped 75g",
+      "itemName": "Peanut Curry Dark Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-19T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-19T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 61.937,
+          "uom": "g"
+        },
+        {
+          "itemKey": "chili powder",
+          "itemName": "Chili Powder",
+          "quantity": 0.063,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cinnamon powder",
+          "itemName": "Cinnamon Powder",
+          "quantity": 0.188,
+          "uom": "g"
+        },
+        {
+          "itemKey": "clove oil",
+          "itemName": "Clove Oil",
+          "quantity": 0.063,
+          "uom": "g"
+        },
+        {
+          "itemKey": "curry powder",
+          "itemName": "Curry Powder",
+          "quantity": 0.27,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "ginger dried",
+          "itemName": "Ginger, Dried",
+          "quantity": 6.195,
+          "uom": "g"
+        },
+        {
+          "itemKey": "lemongrass oil",
+          "itemName": "Lemongrass Oil",
+          "quantity": 0.09,
+          "uom": "g"
+        },
+        {
+          "itemKey": "peanuts",
+          "itemName": "Peanuts",
+          "quantity": 6.195,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-18T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-030",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-029",
+      "stageGroupKey": "peanut curry dark chocolate boxed 75g",
+      "stageGroupName": "Peanut Curry Dark Chocolate - Boxed (75g)",
+      "itemKey": "peanut curry dark chocolate boxed 75g",
+      "itemName": "Peanut Curry Dark Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "peanut curry dark chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-19T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-19T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "peanut curry dark chocolate wrapped 75g",
+          "itemName": "Peanut Curry Dark Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper peanut curry 75g",
+          "itemName": "Wrapper - Peanut Curry (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-18T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-031",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "signature dark 70 dark chocolate boxed 75g",
+      "stageGroupName": "Signature Dark 70% Dark Chocolate - Boxed (75g)",
+      "itemKey": "signature dark 70 dark chocolate wrapped 75g",
+      "itemName": "Signature Dark 70% Dark Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-20T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-20T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 75,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-19T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-032",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-031",
+      "stageGroupKey": "signature dark 70 dark chocolate boxed 75g",
+      "stageGroupName": "Signature Dark 70% Dark Chocolate - Boxed (75g)",
+      "itemKey": "signature dark 70 dark chocolate boxed 75g",
+      "itemName": "Signature Dark 70% Dark Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "signature dark 70 dark chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-20T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-20T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "signature dark 70 dark chocolate wrapped 75g",
+          "itemName": "Signature Dark 70% Dark Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper signature dark 70 75g",
+          "itemName": "Wrapper - Signature Dark 70% (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-19T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-033",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "signature dark 85 dark chocolate boxed 75g",
+      "stageGroupName": "Signature Dark 85% Dark Chocolate - Boxed (75g)",
+      "itemKey": "signature dark 85 dark chocolate wrapped 75g",
+      "itemName": "Signature Dark 85% Dark Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-21T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-21T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base 85 dark chocolate",
+          "itemName": "Base - 85% Dark Chocolate",
+          "quantity": 75,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-20T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-034",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-033",
+      "stageGroupKey": "signature dark 85 dark chocolate boxed 75g",
+      "stageGroupName": "Signature Dark 85% Dark Chocolate - Boxed (75g)",
+      "itemKey": "signature dark 85 dark chocolate boxed 75g",
+      "itemName": "Signature Dark 85% Dark Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "signature dark 85 dark chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-21T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-21T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "signature dark 85 dark chocolate wrapped 75g",
+          "itemName": "Signature Dark 85% Dark Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper signature dark 85 75g",
+          "itemName": "Wrapper - Signature Dark 85% (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-20T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-035",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "signature milk chocolate boxed 75g",
+      "stageGroupName": "Signature Milk Chocolate - Boxed (75g)",
+      "itemKey": "signature milk chocolate wrapped 75g",
+      "itemName": "Signature Milk Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-22T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-22T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 75,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-21T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-036",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-035",
+      "stageGroupKey": "signature milk chocolate boxed 75g",
+      "stageGroupName": "Signature Milk Chocolate - Boxed (75g)",
+      "itemKey": "signature milk chocolate boxed 75g",
+      "itemName": "Signature Milk Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "signature milk chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-22T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-22T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "signature milk chocolate wrapped 75g",
+          "itemName": "Signature Milk Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper signature milk 75g",
+          "itemName": "Wrapper - Signature Milk (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-21T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-037",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "simply cacao plus milk paleo robbie boxed 75g",
+      "stageGroupName": "Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g)",
+      "itemKey": "simply cacao plus milk paleo robbie wrapped 75g",
+      "itemName": "Simply Cacao Plus Milk - Paleo Robbie - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-23T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-23T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base sugar free",
+          "itemName": "Base - Sugar Free",
+          "quantity": 75,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-22T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-038",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-037",
+      "stageGroupKey": "simply cacao plus milk paleo robbie boxed 75g",
+      "stageGroupName": "Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g)",
+      "itemKey": "simply cacao plus milk paleo robbie boxed 75g",
+      "itemName": "Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "simply cacao plus milk paleo robbie boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-23T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-23T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "simply cacao plus milk paleo robbie wrapped 75g",
+          "itemName": "Simply Cacao Plus Milk - Paleo Robbie - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "stickers clear",
+          "itemName": "Stickers - Clear",
+          "quantity": 1,
+          "uom": "piece"
+        },
+        {
+          "itemKey": "wrapper simply cacao plus milk paleo robbie 75g",
+          "itemName": "Wrapper - Simply Cacao Plus Milk - Paleo Robbie (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-22T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-039",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "simply cacao plus milk with almonds and sea salt paleo robbie boxed 75g",
+      "stageGroupName": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Boxed (75g)",
+      "itemKey": "simply cacao plus milk with almonds and sea salt paleo robbie wrapped 75g",
+      "itemName": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-24T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-24T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "almonds chopped",
+          "itemName": "Almonds, Chopped",
+          "quantity": 6.81,
+          "uom": "g"
+        },
+        {
+          "itemKey": "base sugar free",
+          "itemName": "Base - Sugar Free",
+          "quantity": 68.122,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "pink salt",
+          "itemName": "Pink Salt",
+          "quantity": 0.068,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-23T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-040",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-039",
+      "stageGroupKey": "simply cacao plus milk with almonds and sea salt paleo robbie boxed 75g",
+      "stageGroupName": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Boxed (75g)",
+      "itemKey": "simply cacao plus milk with almonds and sea salt paleo robbie boxed 75g",
+      "itemName": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "simply cacao plus milk with almonds and sea salt paleo robbie boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-24T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-24T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "simply cacao plus milk with almonds and sea salt paleo robbie wrapped 75g",
+          "itemName": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "stickers clear",
+          "itemName": "Stickers - Clear",
+          "quantity": 1,
+          "uom": "piece"
+        },
+        {
+          "itemKey": "wrapper simply cacao almonds paleo robbie 75g",
+          "itemName": "Wrapper - Simply Cacao Almonds - Paleo Robbie (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-23T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-041",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "simply cacao plus milk with vanilla bean paleo robbie boxed 75g",
+      "stageGroupName": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Boxed (75g)",
+      "itemKey": "simply cacao plus milk with vanilla bean paleo robbie wrapped 75g",
+      "itemName": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-25T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-25T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base sugar free",
+          "itemName": "Base - Sugar Free",
+          "quantity": 74.48,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "vanilla oil",
+          "itemName": "Vanilla Oil",
+          "quantity": 0.52,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-24T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-042",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-041",
+      "stageGroupKey": "simply cacao plus milk with vanilla bean paleo robbie boxed 75g",
+      "stageGroupName": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Boxed (75g)",
+      "itemKey": "simply cacao plus milk with vanilla bean paleo robbie boxed 75g",
+      "itemName": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "simply cacao plus milk with vanilla bean paleo robbie boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-25T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-25T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "simply cacao plus milk with vanilla bean paleo robbie wrapped 75g",
+          "itemName": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "stickers clear",
+          "itemName": "Stickers - Clear",
+          "quantity": 1,
+          "uom": "piece"
+        },
+        {
+          "itemKey": "wrapper simply cacao vanilla paleo robbie 75g",
+          "itemName": "Wrapper - Simply Cacao Vanilla - Paleo Robbie (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-24T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-043",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "smash daddy s banana split milk chocolate boxed 75g",
+      "stageGroupName": "Smash Daddy's Banana Split Milk Chocolate - Boxed (75g)",
+      "itemKey": "smash daddy s banana split milk chocolate wrapped 75g",
+      "itemName": "Smash Daddy's Banana Split Milk Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-26T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-26T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "banana chips",
+          "itemName": "Banana Chips",
+          "quantity": 3.15,
+          "uom": "g"
+        },
+        {
+          "itemKey": "banana powder",
+          "itemName": "Banana Powder",
+          "quantity": 1.89,
+          "uom": "g"
+        },
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 63.03,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "peanuts",
+          "itemName": "Peanuts",
+          "quantity": 3.15,
+          "uom": "g"
+        },
+        {
+          "itemKey": "strawberries dried",
+          "itemName": "Strawberries, Dried",
+          "quantity": 3.15,
+          "uom": "g"
+        },
+        {
+          "itemKey": "strawberries freeze dried",
+          "itemName": "Strawberries, Freeze Dried",
+          "quantity": 0.63,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-25T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-044",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-043",
+      "stageGroupKey": "smash daddy s banana split milk chocolate boxed 75g",
+      "stageGroupName": "Smash Daddy's Banana Split Milk Chocolate - Boxed (75g)",
+      "itemKey": "smash daddy s banana split milk chocolate boxed 75g",
+      "itemName": "Smash Daddy's Banana Split Milk Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "smash daddy s banana split milk chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-26T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-26T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "smash daddy s banana split milk chocolate wrapped 75g",
+          "itemName": "Smash Daddy's Banana Split Milk Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper smash daddy s banana split 75g",
+          "itemName": "Wrapper - Smash Daddy's Banana Split (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-25T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-045",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "thai bullet chili dark chocolate boxed 75g",
+      "stageGroupName": "Thai Bullet Chili Dark Chocolate - Boxed (75g)",
+      "itemKey": "thai bullet chili dark chocolate wrapped 75g",
+      "itemName": "Thai Bullet Chili Dark Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-27T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-27T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 74.258,
+          "uom": "g"
+        },
+        {
+          "itemKey": "chili powder",
+          "itemName": "Chili Powder",
+          "quantity": 0.743,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-26T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-046",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-045",
+      "stageGroupKey": "thai bullet chili dark chocolate boxed 75g",
+      "stageGroupName": "Thai Bullet Chili Dark Chocolate - Boxed (75g)",
+      "itemKey": "thai bullet chili dark chocolate boxed 75g",
+      "itemName": "Thai Bullet Chili Dark Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "thai bullet chili dark chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-27T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-27T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "thai bullet chili dark chocolate wrapped 75g",
+          "itemName": "Thai Bullet Chili Dark Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper thai bullet chili 75g",
+          "itemName": "Wrapper - Thai Bullet Chili (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-26T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-047",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "thai tea milk chocolate boxed 75g",
+      "stageGroupName": "Thai Tea Milk Chocolate - Boxed (75g)",
+      "itemKey": "thai tea milk chocolate wrapped 75g",
+      "itemName": "Thai Tea Milk Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-28T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-28T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 74.11,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "thai tea powder",
+          "itemName": "Thai Tea Powder",
+          "quantity": 0.89,
+          "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-27T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-048",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-047",
+      "stageGroupKey": "thai tea milk chocolate boxed 75g",
+      "stageGroupName": "Thai Tea Milk Chocolate - Boxed (75g)",
+      "itemKey": "thai tea milk chocolate boxed 75g",
+      "itemName": "Thai Tea Milk Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "thai tea milk chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-28T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-28T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "thai tea milk chocolate wrapped 75g",
+          "itemName": "Thai Tea Milk Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
+        },
+        {
+          "itemKey": "wrapper thai tea 75g",
+          "itemName": "Wrapper - Thai Tea (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-27T13:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-049",
+      "stage": "WRAPPED_BAR",
+      "stageSequence": 1,
+      "stageGroupKey": "tom yum dark chocolate boxed 75g",
+      "stageGroupName": "Tom Yum Dark Chocolate - Boxed (75g)",
+      "itemKey": "tom yum dark chocolate wrapped 75g",
+      "itemName": "Tom Yum Dark Chocolate - Wrapped (75g)",
+      "outputClassification": "production_output",
+      "sellable": false,
+      "shipEligible": false,
+      "producedToLocationCode": "FACTORY_PRODUCTION",
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-29T08:00:00.000Z",
+      "scheduledDueAt": "2026-01-29T11:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "FLOW_WRAP",
+        "setupTimeMinutes": 15,
+        "runTimeMinutes": 45
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 66.483,
           "uom": "g"
         },
         {
@@ -538,12 +2733,6 @@
           "uom": "g"
         },
         {
-          "itemKey": "organic cane sugar",
-          "itemName": "Organic Cane Sugar",
-          "quantity": 19.9449,
-          "uom": "g"
-        },
-        {
           "itemKey": "tom yum powder",
           "itemName": "Tom Yum Powder",
           "quantity": 1.663,
@@ -554,6 +2743,51 @@
           "itemName": "Tomato, Dried",
           "quantity": 6.653,
           "uom": "g"
+        }
+      ],
+      "lifecycle": [
+        {
+          "state": "PLANNED",
+          "at": "2026-01-28T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "workOrderCode": "WO-SIAMAYA-75G-050",
+      "stage": "BOXED_BAR",
+      "stageSequence": 2,
+      "consumesWorkOrderCode": "WO-SIAMAYA-75G-049",
+      "stageGroupKey": "tom yum dark chocolate boxed 75g",
+      "stageGroupName": "Tom Yum Dark Chocolate - Boxed (75g)",
+      "itemKey": "tom yum dark chocolate boxed 75g",
+      "itemName": "Tom Yum Dark Chocolate - Boxed (75g)",
+      "outputClassification": "finished_good",
+      "sellable": true,
+      "shipEligible": true,
+      "producedToLocationCode": "FACTORY_FG_STAGE",
+      "downstreamTransfer": {
+        "fromLocationCode": "FACTORY_FG_STAGE",
+        "toLocationCode": "FACTORY_SELLABLE",
+        "itemKey": "tom yum dark chocolate boxed 75g"
+      },
+      "simulationState": "PLANNED",
+      "platformStatus": "draft",
+      "scheduledStartAt": "2026-01-29T12:00:00.000Z",
+      "scheduledDueAt": "2026-01-29T15:00:00.000Z",
+      "quantityPlanned": 1,
+      "outputUom": "each",
+      "routing": {
+        "workCenterCode": "WRAPPER",
+        "operationCode": "BOX",
+        "setupTimeMinutes": 10,
+        "runTimeMinutes": 20
+      },
+      "materialRequirements": [
+        {
+          "itemKey": "tom yum dark chocolate wrapped 75g",
+          "itemName": "Tom Yum Dark Chocolate - Wrapped (75g)",
+          "quantity": 1,
+          "uom": "each"
         },
         {
           "itemKey": "wrapper tom yum 75g",
@@ -565,7 +2799,7 @@
       "lifecycle": [
         {
           "state": "PLANNED",
-          "at": "2026-01-13T09:00:00.000Z"
+          "at": "2026-01-28T13:00:00.000Z"
         }
       ]
     }

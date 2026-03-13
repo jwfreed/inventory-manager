@@ -16,7 +16,7 @@
     "malformedNumericQuantityCount": 6,
     "unreachableOutputCount": 90,
     "unreachableLeafCount": 72,
-    "deterministicRepairCount": 3,
+    "deterministicRepairCount": 5,
     "inScopeFatalCount": 0,
     "outOfScopeFatalCount": 8,
     "fatalCount": 8
@@ -39,6 +39,18 @@
       "line": 219,
       "before": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP -> German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP",
       "after": "German Chocolate Cake 70% Dark Chocolate - Christmas (75g) -> German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP"
+    },
+    {
+      "code": "MOVE_75G_PACKAGING_COMPONENT_TO_BOXED_OUTPUT",
+      "line": 218,
+      "before": "Gingerbread Cookie Milk Chocolate - Christmas - Wrapped (75g) -> Wrapper - Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+      "after": "Gingerbread Cookie Milk Chocolate - Christmas - Boxed (75g) -> Wrapper - Gingerbread Cookie Milk Chocolate - Christmas (75g)"
+    },
+    {
+      "code": "MOVE_75G_PACKAGING_COMPONENT_TO_BOXED_OUTPUT",
+      "line": 220,
+      "before": "German Chocolate Cake 70% Dark Chocolate - Christmas - Wrapped (75g) -> Wrapper - German Chocolate Cake 70% Dark Chocolate - Christmas (75g)",
+      "after": "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g) -> Wrapper - German Chocolate Cake 70% Dark Chocolate - Christmas (75g)"
     }
   ],
   "fatalIssues": {
@@ -274,36 +286,272 @@
     "intermediateOutputCount": 32,
     "rawLeafCount": 50,
     "packagingLeafCount": 26,
+    "wrappedBarCount": 25,
+    "boxedFinishedGoodCount": 25,
     "finalOutputs": [
-      "Apple Pie Milk Chocolate - Halloween (75g)",
-      "Banana Crunch Milk Chocolate (75g)",
-      "Coconut Curry Dark Chocolate (75g)",
-      "Coconut Milk 65% Dark Chocolate (75g)",
-      "Coffee Crunch Milk Chocolate (75g)",
-      "Durian Milk Chocolate (75g)",
-      "German Chocolate Cake 70% Dark Chocolate - Christmas (75g)",
-      "Gingerbread Cookie Milk Chocolate - Christmas (75g)",
-      "Hill Coffee and Pomelo Dark Chocolate (75g)",
-      "Khao Soi Curry Milk Chocolate (75g)",
-      "Mango Chili Dark Chocolate (75g)",
-      "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g)",
-      "Masala Chai Milk Chocolate (75g)",
-      "Mooncake Milk Chocolate (75g)",
-      "Peanut Curry Dark Chocolate (75g)",
-      "Signature Dark 70% Dark Chocolate (75g)",
-      "Signature Dark 85% Dark Chocolate (75g)",
-      "Signature Milk Chocolate (75g)",
-      "Simply Cacao Plus Milk - Paleo Robbie (75g)",
-      "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g)",
-      "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g)",
-      "Smash Daddy's Banana Split Milk Chocolate (75g)",
-      "Thai Bullet Chili Dark Chocolate (75g)",
-      "Thai Tea Milk Chocolate (75g)",
-      "Tom Yum Dark Chocolate (75g)"
+      "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
+      "Banana Crunch Milk Chocolate - Boxed (75g)",
+      "Coconut Curry Dark Chocolate - Boxed (75g)",
+      "Coconut Milk 65% Dark Chocolate - Boxed (75g)",
+      "Coffee Crunch Milk Chocolate - Boxed (75g)",
+      "Durian Milk Chocolate - Boxed (75g)",
+      "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g)",
+      "Gingerbread Cookie Milk Chocolate - Christmas - Boxed (75g)",
+      "Hill Coffee and Pomelo Dark Chocolate - Boxed (75g)",
+      "Khao Soi Curry Milk Chocolate - Boxed (75g)",
+      "Mango Chili Dark Chocolate - Boxed (75g)",
+      "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Boxed (75g)",
+      "Masala Chai Milk Chocolate - Boxed (75g)",
+      "Mooncake Milk Chocolate - Boxed (75g)",
+      "Peanut Curry Dark Chocolate - Boxed (75g)",
+      "Signature Dark 70% Dark Chocolate - Boxed (75g)",
+      "Signature Dark 85% Dark Chocolate - Boxed (75g)",
+      "Signature Milk Chocolate - Boxed (75g)",
+      "Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g)",
+      "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Boxed (75g)",
+      "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Boxed (75g)",
+      "Smash Daddy's Banana Split Milk Chocolate - Boxed (75g)",
+      "Thai Bullet Chili Dark Chocolate - Boxed (75g)",
+      "Thai Tea Milk Chocolate - Boxed (75g)",
+      "Tom Yum Dark Chocolate - Boxed (75g)"
+    ],
+    "wrappedBarNodes": [
+      "Apple Pie Milk Chocolate - Halloween - Wrapped (75g)",
+      "Banana Crunch Milk Chocolate - Wrapped (75g)",
+      "Coconut Curry Dark Chocolate - Wrapped (75g)",
+      "Coconut Milk 65% Dark Chocolate - Wrapped (75g)",
+      "Coffee Crunch Milk Chocolate - Wrapped (75g)",
+      "Durian Milk Chocolate - Wrapped (75g)",
+      "German Chocolate Cake 70% Dark Chocolate - Christmas - Wrapped (75g)",
+      "Gingerbread Cookie Milk Chocolate - Christmas - Wrapped (75g)",
+      "Hill Coffee and Pomelo Dark Chocolate - Wrapped (75g)",
+      "Khao Soi Curry Milk Chocolate - Wrapped (75g)",
+      "Mango Chili Dark Chocolate - Wrapped (75g)",
+      "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Wrapped (75g)",
+      "Masala Chai Milk Chocolate - Wrapped (75g)",
+      "Mooncake Milk Chocolate - Wrapped (75g)",
+      "Peanut Curry Dark Chocolate - Wrapped (75g)",
+      "Signature Dark 70% Dark Chocolate - Wrapped (75g)",
+      "Signature Dark 85% Dark Chocolate - Wrapped (75g)",
+      "Signature Milk Chocolate - Wrapped (75g)",
+      "Simply Cacao Plus Milk - Paleo Robbie - Wrapped (75g)",
+      "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Wrapped (75g)",
+      "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Wrapped (75g)",
+      "Smash Daddy's Banana Split Milk Chocolate - Wrapped (75g)",
+      "Thai Bullet Chili Dark Chocolate - Wrapped (75g)",
+      "Thai Tea Milk Chocolate - Wrapped (75g)",
+      "Tom Yum Dark Chocolate - Wrapped (75g)"
+    ],
+    "boxedFinishedGoods": [
+      "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
+      "Banana Crunch Milk Chocolate - Boxed (75g)",
+      "Coconut Curry Dark Chocolate - Boxed (75g)",
+      "Coconut Milk 65% Dark Chocolate - Boxed (75g)",
+      "Coffee Crunch Milk Chocolate - Boxed (75g)",
+      "Durian Milk Chocolate - Boxed (75g)",
+      "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g)",
+      "Gingerbread Cookie Milk Chocolate - Christmas - Boxed (75g)",
+      "Hill Coffee and Pomelo Dark Chocolate - Boxed (75g)",
+      "Khao Soi Curry Milk Chocolate - Boxed (75g)",
+      "Mango Chili Dark Chocolate - Boxed (75g)",
+      "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Boxed (75g)",
+      "Masala Chai Milk Chocolate - Boxed (75g)",
+      "Mooncake Milk Chocolate - Boxed (75g)",
+      "Peanut Curry Dark Chocolate - Boxed (75g)",
+      "Signature Dark 70% Dark Chocolate - Boxed (75g)",
+      "Signature Dark 85% Dark Chocolate - Boxed (75g)",
+      "Signature Milk Chocolate - Boxed (75g)",
+      "Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g)",
+      "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Boxed (75g)",
+      "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Boxed (75g)",
+      "Smash Daddy's Banana Split Milk Chocolate - Boxed (75g)",
+      "Thai Bullet Chili Dark Chocolate - Boxed (75g)",
+      "Thai Tea Milk Chocolate - Boxed (75g)",
+      "Tom Yum Dark Chocolate - Boxed (75g)"
+    ],
+    "stageLinks": [
+      {
+        "wrappedBarNode": "Apple Pie Milk Chocolate - Halloween - Wrapped (75g)",
+        "boxedFinishedGood": "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Apple Pie Milk Chocolate - Halloween (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Banana Crunch Milk Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Banana Crunch Milk Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Banana Crunch (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Coconut Curry Dark Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Coconut Curry Dark Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Coconut Curry (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Coconut Milk 65% Dark Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Coconut Milk 65% Dark Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Coconut Milk (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Coffee Crunch Milk Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Coffee Crunch Milk Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Coffee Crunch (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Durian Milk Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Durian Milk Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Durian (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "German Chocolate Cake 70% Dark Chocolate - Christmas - Wrapped (75g)",
+        "boxedFinishedGood": "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - German Chocolate Cake 70% Dark Chocolate - Christmas (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Gingerbread Cookie Milk Chocolate - Christmas - Wrapped (75g)",
+        "boxedFinishedGood": "Gingerbread Cookie Milk Chocolate - Christmas - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Gingerbread Cookie Milk Chocolate - Christmas (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Hill Coffee and Pomelo Dark Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Hill Coffee and Pomelo Dark Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Hill Coffee and Pomelo (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Khao Soi Curry Milk Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Khao Soi Curry Milk Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Khao Soi (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Mango Chili Dark Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Mango Chili Dark Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Mango Chili (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Wrapped (75g)",
+        "boxedFinishedGood": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Masala Chai Milk Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Masala Chai Milk Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Masala Chai (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Mooncake Milk Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Mooncake Milk Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Mooncake (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Peanut Curry Dark Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Peanut Curry Dark Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Peanut Curry (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Signature Dark 70% Dark Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Signature Dark 70% Dark Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Signature Dark 70% (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Signature Dark 85% Dark Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Signature Dark 85% Dark Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Signature Dark 85% (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Signature Milk Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Signature Milk Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Signature Milk (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Simply Cacao Plus Milk - Paleo Robbie - Wrapped (75g)",
+        "boxedFinishedGood": "Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g)",
+        "boxingComponents": [
+          "Stickers - Clear",
+          "Wrapper - Simply Cacao Plus Milk - Paleo Robbie (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Wrapped (75g)",
+        "boxedFinishedGood": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Boxed (75g)",
+        "boxingComponents": [
+          "Stickers - Clear",
+          "Wrapper - Simply Cacao Almonds - Paleo Robbie (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Wrapped (75g)",
+        "boxedFinishedGood": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Boxed (75g)",
+        "boxingComponents": [
+          "Stickers - Clear",
+          "Wrapper - Simply Cacao Vanilla - Paleo Robbie (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Smash Daddy's Banana Split Milk Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Smash Daddy's Banana Split Milk Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Smash Daddy's Banana Split (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Thai Bullet Chili Dark Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Thai Bullet Chili Dark Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Thai Bullet Chili (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Thai Tea Milk Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Thai Tea Milk Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Thai Tea (75g)"
+        ]
+      },
+      {
+        "wrappedBarNode": "Tom Yum Dark Chocolate - Wrapped (75g)",
+        "boxedFinishedGood": "Tom Yum Dark Chocolate - Boxed (75g)",
+        "boxingComponents": [
+          "Wrapper - Tom Yum (75g)"
+        ]
+      }
     ],
     "intermediateOutputs": [
-      "Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP",
-      "Banana Crunch Milk Chocolate (75g) - FLOW WRAP",
+      "Apple Pie Milk Chocolate - Halloween - Wrapped (75g)",
+      "Banana Crunch Milk Chocolate - Wrapped (75g)",
       "Base - 70% Dark Chocolate",
       "Base - 85% Dark Chocolate",
       "Base - Coconut Milk Chocolate",
@@ -311,29 +559,29 @@
       "Base - Pomelo",
       "Base - Sugar Free",
       "Cacao Nibs - Raw Material",
-      "Coconut Curry Dark Chocolate (75g) - FLOW WRAP",
-      "Coconut Milk 65% Dark Chocolate (75g) - FLOW WRAP",
-      "Coffee Crunch Milk Chocolate (75g) - FLOW WRAP",
-      "Durian Milk Chocolate (75g) - FLOW WRAP",
-      "German Chocolate Cake 70% Dark Chocolate - Christmas (75g) - FLOW WRAP",
-      "Gingerbread Cookie Milk Chocolate - Christmas (75g) - FLOW WRAP",
-      "Hill Coffee and Pomelo Dark Chocolate (75g) - FLOW WRAP",
-      "Khao Soi Curry Milk Chocolate (75g) - FLOW WRAP",
-      "Mango Chili Dark Chocolate (75g) - FLOW WRAP",
-      "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g) - FLOW WRAP",
-      "Masala Chai Milk Chocolate (75g) - FLOW WRAP",
-      "Mooncake Milk Chocolate (75g) - FLOW WRAP",
-      "Peanut Curry Dark Chocolate (75g) - FLOW WRAP",
-      "Signature Dark 70% Dark Chocolate (75g) - FLOW WRAP",
-      "Signature Dark 85% Dark Chocolate (75g) - FLOW WRAP",
-      "Signature Milk Chocolate (75g) - FLOW WRAP",
-      "Simply Cacao Plus Milk - Paleo Robbie (75g) - FLOW WRAP",
-      "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie (75g) - FLOW WRAP",
-      "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie (75g) - FLOW WRAP",
-      "Smash Daddy's Banana Split Milk Chocolate (75g) - FLOW WRAP",
-      "Thai Bullet Chili Dark Chocolate (75g) - FLOW WRAP",
-      "Thai Tea Milk Chocolate (75g) - FLOW WRAP",
-      "Tom Yum Dark Chocolate (75g) - FLOW WRAP"
+      "Coconut Curry Dark Chocolate - Wrapped (75g)",
+      "Coconut Milk 65% Dark Chocolate - Wrapped (75g)",
+      "Coffee Crunch Milk Chocolate - Wrapped (75g)",
+      "Durian Milk Chocolate - Wrapped (75g)",
+      "German Chocolate Cake 70% Dark Chocolate - Christmas - Wrapped (75g)",
+      "Gingerbread Cookie Milk Chocolate - Christmas - Wrapped (75g)",
+      "Hill Coffee and Pomelo Dark Chocolate - Wrapped (75g)",
+      "Khao Soi Curry Milk Chocolate - Wrapped (75g)",
+      "Mango Chili Dark Chocolate - Wrapped (75g)",
+      "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Wrapped (75g)",
+      "Masala Chai Milk Chocolate - Wrapped (75g)",
+      "Mooncake Milk Chocolate - Wrapped (75g)",
+      "Peanut Curry Dark Chocolate - Wrapped (75g)",
+      "Signature Dark 70% Dark Chocolate - Wrapped (75g)",
+      "Signature Dark 85% Dark Chocolate - Wrapped (75g)",
+      "Signature Milk Chocolate - Wrapped (75g)",
+      "Simply Cacao Plus Milk - Paleo Robbie - Wrapped (75g)",
+      "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Wrapped (75g)",
+      "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Wrapped (75g)",
+      "Smash Daddy's Banana Split Milk Chocolate - Wrapped (75g)",
+      "Thai Bullet Chili Dark Chocolate - Wrapped (75g)",
+      "Thai Tea Milk Chocolate - Wrapped (75g)",
+      "Tom Yum Dark Chocolate - Wrapped (75g)"
     ],
     "rawLeafs": [
       "Allspice Powder",
@@ -419,6 +667,1407 @@
   "uomEnforcement": {
     "finishedPieceCount": 25,
     "totalFinishedCount": 25,
-    "violations": []
-  }
+    "wrappedPieceCount": 25,
+    "totalWrappedCount": 25,
+    "violations": [],
+    "wrappedViolations": []
+  },
+  "stageModels": [
+    {
+      "boxedItemKey": "apple pie milk chocolate halloween boxed 75g",
+      "boxedItemName": "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "apple pie milk chocolate halloween wrapped 75g",
+      "wrappedItemName": "Apple Pie Milk Chocolate - Halloween - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 62.137,
+          "uom": "g"
+        },
+        {
+          "itemKey": "biscuit",
+          "itemName": "Biscuit",
+          "quantity": 3.195,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cinnamon powder",
+          "itemName": "Cinnamon Powder",
+          "quantity": 0.285,
+          "uom": "g"
+        },
+        {
+          "itemKey": "dried apple",
+          "itemName": "Dried Apple",
+          "quantity": 6.383,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "flow wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper apple pie milk chocolate halloween 75g",
+          "itemName": "Wrapper - Apple Pie Milk Chocolate - Halloween (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "banana crunch milk chocolate boxed 75g",
+      "boxedItemName": "Banana Crunch Milk Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "banana crunch milk chocolate wrapped 75g",
+      "wrappedItemName": "Banana Crunch Milk Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "banana chips",
+          "itemName": "Banana Chips",
+          "quantity": 6.638,
+          "uom": "g"
+        },
+        {
+          "itemKey": "banana powder",
+          "itemName": "Banana Powder",
+          "quantity": 1.988,
+          "uom": "g"
+        },
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 66.375,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper banana crunch 75g",
+          "itemName": "Wrapper - Banana Crunch (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "coconut curry dark chocolate boxed 75g",
+      "boxedItemName": "Coconut Curry Dark Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "coconut curry dark chocolate wrapped 75g",
+      "wrappedItemName": "Coconut Curry Dark Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base coconut milk chocolate",
+          "itemName": "Base - Coconut Milk Chocolate",
+          "quantity": 62.111,
+          "uom": "g"
+        },
+        {
+          "itemKey": "chili powder",
+          "itemName": "Chili Powder",
+          "quantity": 0.128,
+          "uom": "g"
+        },
+        {
+          "itemKey": "dried coconut flakes",
+          "itemName": "Dried Coconut Flakes",
+          "quantity": 6.21,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "galangal oil",
+          "itemName": "Galangal Oil",
+          "quantity": 0.15,
+          "uom": "g"
+        },
+        {
+          "itemKey": "kaffir lime oil",
+          "itemName": "Kaffir Lime Oil",
+          "quantity": 0.064,
+          "uom": "g"
+        },
+        {
+          "itemKey": "lemongrass oil",
+          "itemName": "Lemongrass Oil",
+          "quantity": 0.128,
+          "uom": "g"
+        },
+        {
+          "itemKey": "tomato dried",
+          "itemName": "Tomato, Dried",
+          "quantity": 6.21,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper coconut curry 75g",
+          "itemName": "Wrapper - Coconut Curry (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "coconut milk 65 dark chocolate boxed 75g",
+      "boxedItemName": "Coconut Milk 65% Dark Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "coconut milk 65 dark chocolate wrapped 75g",
+      "wrappedItemName": "Coconut Milk 65% Dark Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base coconut milk chocolate",
+          "itemName": "Base - Coconut Milk Chocolate",
+          "quantity": 69.375,
+          "uom": "g"
+        },
+        {
+          "itemKey": "dried coconut flakes",
+          "itemName": "Dried Coconut Flakes",
+          "quantity": 5.625,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper coconut milk 75g",
+          "itemName": "Wrapper - Coconut Milk (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "coffee crunch milk chocolate boxed 75g",
+      "boxedItemName": "Coffee Crunch Milk Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "coffee crunch milk chocolate wrapped 75g",
+      "wrappedItemName": "Coffee Crunch Milk Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 73.53,
+          "uom": "g"
+        },
+        {
+          "itemKey": "coffee beans",
+          "itemName": "Coffee Beans",
+          "quantity": 1.47,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper coffee crunch 75g",
+          "itemName": "Wrapper - Coffee Crunch (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "durian milk chocolate boxed 75g",
+      "boxedItemName": "Durian Milk Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "durian milk chocolate wrapped 75g",
+      "wrappedItemName": "Durian Milk Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 73.17,
+          "uom": "g"
+        },
+        {
+          "itemKey": "durian powder",
+          "itemName": "Durian Powder",
+          "quantity": 1.83,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper durian 75g",
+          "itemName": "Wrapper - Durian (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "german chocolate cake 70 dark chocolate christmas boxed 75g",
+      "boxedItemName": "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "german chocolate cake 70 dark chocolate christmas wrapped 75g",
+      "wrappedItemName": "German Chocolate Cake 70% Dark Chocolate - Christmas - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 58.62,
+          "uom": "g"
+        },
+        {
+          "itemKey": "dried coconut flakes",
+          "itemName": "Dried Coconut Flakes",
+          "quantity": 4.68,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "pecans",
+          "itemName": "Pecans",
+          "quantity": 5.85,
+          "uom": "g"
+        },
+        {
+          "itemKey": "toffee",
+          "itemName": "Toffee",
+          "quantity": 5.85,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper german chocolate cake 70 dark chocolate christmas 75g",
+          "itemName": "Wrapper - German Chocolate Cake 70% Dark Chocolate - Christmas (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "gingerbread cookie milk chocolate christmas boxed 75g",
+      "boxedItemName": "Gingerbread Cookie Milk Chocolate - Christmas - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "gingerbread cookie milk chocolate christmas wrapped 75g",
+      "wrappedItemName": "Gingerbread Cookie Milk Chocolate - Christmas - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 66.96,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cinnamon powder",
+          "itemName": "Cinnamon Powder",
+          "quantity": 0.4,
+          "uom": "g"
+        },
+        {
+          "itemKey": "clove powder",
+          "itemName": "Clove Powder",
+          "quantity": 0.16,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "flow wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "ginger powder",
+          "itemName": "Ginger Powder",
+          "quantity": 0.78,
+          "uom": "g"
+        },
+        {
+          "itemKey": "gingerbread cookie",
+          "itemName": "Gingerbread Cookie",
+          "quantity": 6.7,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper gingerbread cookie milk chocolate christmas 75g",
+          "itemName": "Wrapper - Gingerbread Cookie Milk Chocolate - Christmas (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "hill coffee and pomelo dark chocolate boxed 75g",
+      "boxedItemName": "Hill Coffee and Pomelo Dark Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "hill coffee and pomelo dark chocolate wrapped 75g",
+      "wrappedItemName": "Hill Coffee and Pomelo Dark Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base pomelo",
+          "itemName": "Base - Pomelo",
+          "quantity": 68.25,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "pomelo dried",
+          "itemName": "Pomelo, Dried",
+          "quantity": 6.75,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper hill coffee and pomelo 75g",
+          "itemName": "Wrapper - Hill Coffee and Pomelo (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "khao soi curry milk chocolate boxed 75g",
+      "boxedItemName": "Khao Soi Curry Milk Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "khao soi curry milk chocolate wrapped 75g",
+      "wrappedItemName": "Khao Soi Curry Milk Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 67.683,
+          "uom": "g"
+        },
+        {
+          "itemKey": "chili powder",
+          "itemName": "Chili Powder",
+          "quantity": 0.105,
+          "uom": "g"
+        },
+        {
+          "itemKey": "curry powder",
+          "itemName": "Curry Powder",
+          "quantity": 0.405,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "khao soi crispy noodles",
+          "itemName": "Khao Soi Crispy Noodles",
+          "quantity": 4.74,
+          "uom": "g"
+        },
+        {
+          "itemKey": "salt",
+          "itemName": "Salt",
+          "quantity": 0.035,
+          "uom": "g"
+        },
+        {
+          "itemKey": "shallots dried",
+          "itemName": "Shallots, Dried",
+          "quantity": 2.033,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper khao soi 75g",
+          "itemName": "Wrapper - Khao Soi (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "mango chili dark chocolate boxed 75g",
+      "boxedItemName": "Mango Chili Dark Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "mango chili dark chocolate wrapped 75g",
+      "wrappedItemName": "Mango Chili Dark Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 64.913,
+          "uom": "g"
+        },
+        {
+          "itemKey": "chili powder",
+          "itemName": "Chili Powder",
+          "quantity": 0.225,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "mango dried",
+          "itemName": "Mango, Dried",
+          "quantity": 9.735,
+          "uom": "g"
+        },
+        {
+          "itemKey": "salt",
+          "itemName": "Salt",
+          "quantity": 0.128,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper mango chili 75g",
+          "itemName": "Wrapper - Mango Chili (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "mango jelly popping candy milk chocolate loi kratong boxed 75g",
+      "boxedItemName": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "mango jelly popping candy milk chocolate loi kratong wrapped 75g",
+      "wrappedItemName": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 56.183,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "mango jelly",
+          "itemName": "Mango Jelly",
+          "quantity": 11.235,
+          "uom": "g"
+        },
+        {
+          "itemKey": "popping candy",
+          "itemName": "Popping Candy",
+          "quantity": 7.583,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper mango jelly popping candy milk chocolate loi kratong 75g",
+          "itemName": "Wrapper - Mango Jelly Popping Candy Milk Chocolate - Loi Kratong (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "masala chai milk chocolate boxed 75g",
+      "boxedItemName": "Masala Chai Milk Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "masala chai milk chocolate wrapped 75g",
+      "wrappedItemName": "Masala Chai Milk Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "allspice powder",
+          "itemName": "Allspice Powder",
+          "quantity": 0.74,
+          "uom": "g"
+        },
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 69.606,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cardamom powder",
+          "itemName": "Cardamom Powder",
+          "quantity": 0.185,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cinnamon powder",
+          "itemName": "Cinnamon Powder",
+          "quantity": 3.3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "clove oil",
+          "itemName": "Clove Oil",
+          "quantity": 0.062,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "ginger oil",
+          "itemName": "Ginger Oil",
+          "quantity": 0.367,
+          "uom": "g"
+        },
+        {
+          "itemKey": "star anise powder",
+          "itemName": "Star Anise Powder",
+          "quantity": 0.74,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper masala chai 75g",
+          "itemName": "Wrapper - Masala Chai (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "mooncake milk chocolate boxed 75g",
+      "boxedItemName": "Mooncake Milk Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "mooncake milk chocolate wrapped 75g",
+      "wrappedItemName": "Mooncake Milk Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 62.09,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "lotus seed",
+          "itemName": "Lotus Seed",
+          "quantity": 3.35,
+          "uom": "g"
+        },
+        {
+          "itemKey": "salted egg powder",
+          "itemName": "Salted Egg Powder",
+          "quantity": 3.35,
+          "uom": "g"
+        },
+        {
+          "itemKey": "sunflower seeds",
+          "itemName": "Sunflower Seeds",
+          "quantity": 6.21,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper mooncake 75g",
+          "itemName": "Wrapper - Mooncake (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "peanut curry dark chocolate boxed 75g",
+      "boxedItemName": "Peanut Curry Dark Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "peanut curry dark chocolate wrapped 75g",
+      "wrappedItemName": "Peanut Curry Dark Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 61.937,
+          "uom": "g"
+        },
+        {
+          "itemKey": "chili powder",
+          "itemName": "Chili Powder",
+          "quantity": 0.063,
+          "uom": "g"
+        },
+        {
+          "itemKey": "cinnamon powder",
+          "itemName": "Cinnamon Powder",
+          "quantity": 0.188,
+          "uom": "g"
+        },
+        {
+          "itemKey": "clove oil",
+          "itemName": "Clove Oil",
+          "quantity": 0.063,
+          "uom": "g"
+        },
+        {
+          "itemKey": "curry powder",
+          "itemName": "Curry Powder",
+          "quantity": 0.27,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "ginger dried",
+          "itemName": "Ginger, Dried",
+          "quantity": 6.195,
+          "uom": "g"
+        },
+        {
+          "itemKey": "lemongrass oil",
+          "itemName": "Lemongrass Oil",
+          "quantity": 0.09,
+          "uom": "g"
+        },
+        {
+          "itemKey": "peanuts",
+          "itemName": "Peanuts",
+          "quantity": 6.195,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper peanut curry 75g",
+          "itemName": "Wrapper - Peanut Curry (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "signature dark 70 dark chocolate boxed 75g",
+      "boxedItemName": "Signature Dark 70% Dark Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "signature dark 70 dark chocolate wrapped 75g",
+      "wrappedItemName": "Signature Dark 70% Dark Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 75,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper signature dark 70 75g",
+          "itemName": "Wrapper - Signature Dark 70% (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "signature dark 85 dark chocolate boxed 75g",
+      "boxedItemName": "Signature Dark 85% Dark Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "signature dark 85 dark chocolate wrapped 75g",
+      "wrappedItemName": "Signature Dark 85% Dark Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base 85 dark chocolate",
+          "itemName": "Base - 85% Dark Chocolate",
+          "quantity": 75,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper signature dark 85 75g",
+          "itemName": "Wrapper - Signature Dark 85% (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "signature milk chocolate boxed 75g",
+      "boxedItemName": "Signature Milk Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "signature milk chocolate wrapped 75g",
+      "wrappedItemName": "Signature Milk Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 75,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper signature milk 75g",
+          "itemName": "Wrapper - Signature Milk (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "simply cacao plus milk paleo robbie boxed 75g",
+      "boxedItemName": "Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "simply cacao plus milk paleo robbie wrapped 75g",
+      "wrappedItemName": "Simply Cacao Plus Milk - Paleo Robbie - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base sugar free",
+          "itemName": "Base - Sugar Free",
+          "quantity": 75,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "stickers clear",
+          "itemName": "Stickers - Clear",
+          "quantity": 1,
+          "uom": "piece"
+        },
+        {
+          "itemKey": "wrapper simply cacao plus milk paleo robbie 75g",
+          "itemName": "Wrapper - Simply Cacao Plus Milk - Paleo Robbie (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "simply cacao plus milk with almonds and sea salt paleo robbie boxed 75g",
+      "boxedItemName": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "simply cacao plus milk with almonds and sea salt paleo robbie wrapped 75g",
+      "wrappedItemName": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "almonds chopped",
+          "itemName": "Almonds, Chopped",
+          "quantity": 6.81,
+          "uom": "g"
+        },
+        {
+          "itemKey": "base sugar free",
+          "itemName": "Base - Sugar Free",
+          "quantity": 68.122,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "pink salt",
+          "itemName": "Pink Salt",
+          "quantity": 0.068,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "stickers clear",
+          "itemName": "Stickers - Clear",
+          "quantity": 1,
+          "uom": "piece"
+        },
+        {
+          "itemKey": "wrapper simply cacao almonds paleo robbie 75g",
+          "itemName": "Wrapper - Simply Cacao Almonds - Paleo Robbie (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "simply cacao plus milk with vanilla bean paleo robbie boxed 75g",
+      "boxedItemName": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "simply cacao plus milk with vanilla bean paleo robbie wrapped 75g",
+      "wrappedItemName": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base sugar free",
+          "itemName": "Base - Sugar Free",
+          "quantity": 74.48,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "vanilla oil",
+          "itemName": "Vanilla Oil",
+          "quantity": 0.52,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "stickers clear",
+          "itemName": "Stickers - Clear",
+          "quantity": 1,
+          "uom": "piece"
+        },
+        {
+          "itemKey": "wrapper simply cacao vanilla paleo robbie 75g",
+          "itemName": "Wrapper - Simply Cacao Vanilla - Paleo Robbie (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "smash daddy s banana split milk chocolate boxed 75g",
+      "boxedItemName": "Smash Daddy's Banana Split Milk Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "smash daddy s banana split milk chocolate wrapped 75g",
+      "wrappedItemName": "Smash Daddy's Banana Split Milk Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "banana chips",
+          "itemName": "Banana Chips",
+          "quantity": 3.15,
+          "uom": "g"
+        },
+        {
+          "itemKey": "banana powder",
+          "itemName": "Banana Powder",
+          "quantity": 1.89,
+          "uom": "g"
+        },
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 63.03,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "peanuts",
+          "itemName": "Peanuts",
+          "quantity": 3.15,
+          "uom": "g"
+        },
+        {
+          "itemKey": "strawberries dried",
+          "itemName": "Strawberries, Dried",
+          "quantity": 3.15,
+          "uom": "g"
+        },
+        {
+          "itemKey": "strawberries freeze dried",
+          "itemName": "Strawberries, Freeze Dried",
+          "quantity": 0.63,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper smash daddy s banana split 75g",
+          "itemName": "Wrapper - Smash Daddy's Banana Split (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "thai bullet chili dark chocolate boxed 75g",
+      "boxedItemName": "Thai Bullet Chili Dark Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "thai bullet chili dark chocolate wrapped 75g",
+      "wrappedItemName": "Thai Bullet Chili Dark Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 74.258,
+          "uom": "g"
+        },
+        {
+          "itemKey": "chili powder",
+          "itemName": "Chili Powder",
+          "quantity": 0.743,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper thai bullet chili 75g",
+          "itemName": "Wrapper - Thai Bullet Chili (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "thai tea milk chocolate boxed 75g",
+      "boxedItemName": "Thai Tea Milk Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "thai tea milk chocolate wrapped 75g",
+      "wrappedItemName": "Thai Tea Milk Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base milk chocolate",
+          "itemName": "Base - Milk Chocolate",
+          "quantity": 74.11,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "thai tea powder",
+          "itemName": "Thai Tea Powder",
+          "quantity": 0.89,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper thai tea 75g",
+          "itemName": "Wrapper - Thai Tea (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    },
+    {
+      "boxedItemKey": "tom yum dark chocolate boxed 75g",
+      "boxedItemName": "Tom Yum Dark Chocolate - Boxed (75g)",
+      "boxedOutputQuantity": 1,
+      "boxedOutputUom": "each",
+      "wrappedItemKey": "tom yum dark chocolate wrapped 75g",
+      "wrappedItemName": "Tom Yum Dark Chocolate - Wrapped (75g)",
+      "wrappedOutputQuantity": 1,
+      "wrappedOutputUom": "each",
+      "wrappedComponents": [
+        {
+          "itemKey": "base 70 dark chocolate",
+          "itemName": "Base - 70% Dark Chocolate",
+          "quantity": 66.483,
+          "uom": "g"
+        },
+        {
+          "itemKey": "flow wrap foil",
+          "itemName": "Flow Wrap Foil",
+          "quantity": 3,
+          "uom": "g"
+        },
+        {
+          "itemKey": "galangal oil",
+          "itemName": "Galangal Oil",
+          "quantity": 0.067,
+          "uom": "g"
+        },
+        {
+          "itemKey": "kaffir lime oil",
+          "itemName": "Kaffir Lime Oil",
+          "quantity": 0.067,
+          "uom": "g"
+        },
+        {
+          "itemKey": "lemongrass oil",
+          "itemName": "Lemongrass Oil",
+          "quantity": 0.067,
+          "uom": "g"
+        },
+        {
+          "itemKey": "tom yum powder",
+          "itemName": "Tom Yum Powder",
+          "quantity": 1.663,
+          "uom": "g"
+        },
+        {
+          "itemKey": "tomato dried",
+          "itemName": "Tomato, Dried",
+          "quantity": 6.653,
+          "uom": "g"
+        }
+      ],
+      "boxingComponents": [
+        {
+          "itemKey": "wrapper tom yum 75g",
+          "itemName": "Wrapper - Tom Yum (75g)",
+          "quantity": 1,
+          "uom": "piece"
+        }
+      ],
+      "inventoryClass": {
+        "wrapped": "production_output",
+        "boxed": "finished_good"
+      },
+      "sellability": {
+        "wrapped": false,
+        "boxed": true
+      }
+    }
+  ]
 }

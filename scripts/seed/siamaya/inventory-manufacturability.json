@@ -1,0 +1,220 @@
+{
+  "generatedAt": "2026-03-12T00:00:00.000Z",
+  "skuCount": 25,
+  "minimalProfile": {
+    "manufacturableOnce": true,
+    "minimumPerSkuRuns": 1,
+    "missing": []
+  },
+  "baseProfile": {
+    "manufacturableFiveRuns": true,
+    "minimumPerSkuRuns": 5,
+    "missing": []
+  },
+  "perSku": {
+    "minimal": [
+      {
+        "itemName": "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Banana Crunch Milk Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Coconut Curry Dark Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Coconut Milk 65% Dark Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Coffee Crunch Milk Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Durian Milk Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Gingerbread Cookie Milk Chocolate - Christmas - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Hill Coffee and Pomelo Dark Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Khao Soi Curry Milk Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Mango Chili Dark Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Masala Chai Milk Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Mooncake Milk Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Peanut Curry Dark Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Signature Dark 70% Dark Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Signature Dark 85% Dark Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Signature Milk Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Smash Daddy's Banana Split Milk Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Thai Bullet Chili Dark Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Thai Tea Milk Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      },
+      {
+        "itemName": "Tom Yum Dark Chocolate - Boxed (75g)",
+        "maxRuns": 1
+      }
+    ],
+    "base": [
+      {
+        "itemName": "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Banana Crunch Milk Chocolate - Boxed (75g)",
+        "maxRuns": 7
+      },
+      {
+        "itemName": "Coconut Curry Dark Chocolate - Boxed (75g)",
+        "maxRuns": 7
+      },
+      {
+        "itemName": "Coconut Milk 65% Dark Chocolate - Boxed (75g)",
+        "maxRuns": 7
+      },
+      {
+        "itemName": "Coffee Crunch Milk Chocolate - Boxed (75g)",
+        "maxRuns": 7
+      },
+      {
+        "itemName": "Durian Milk Chocolate - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Gingerbread Cookie Milk Chocolate - Christmas - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Hill Coffee and Pomelo Dark Chocolate - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Khao Soi Curry Milk Chocolate - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Mango Chili Dark Chocolate - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Mango Jelly Popping Candy Milk Chocolate - Loi Kratong - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Masala Chai Milk Chocolate - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Mooncake Milk Chocolate - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Peanut Curry Dark Chocolate - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Signature Dark 70% Dark Chocolate - Boxed (75g)",
+        "maxRuns": 7
+      },
+      {
+        "itemName": "Signature Dark 85% Dark Chocolate - Boxed (75g)",
+        "maxRuns": 7
+      },
+      {
+        "itemName": "Signature Milk Chocolate - Boxed (75g)",
+        "maxRuns": 7
+      },
+      {
+        "itemName": "Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g)",
+        "maxRuns": 7
+      },
+      {
+        "itemName": "Simply Cacao Plus Milk with Almonds and Sea Salt - Paleo Robbie - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Simply Cacao Plus Milk with Vanilla Bean - Paleo Robbie - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Smash Daddy's Banana Split Milk Chocolate - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Thai Bullet Chili Dark Chocolate - Boxed (75g)",
+        "maxRuns": 7
+      },
+      {
+        "itemName": "Thai Tea Milk Chocolate - Boxed (75g)",
+        "maxRuns": 5
+      },
+      {
+        "itemName": "Tom Yum Dark Chocolate - Boxed (75g)",
+        "maxRuns": 5
+      }
+    ]
+  }
+}

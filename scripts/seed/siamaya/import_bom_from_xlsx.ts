@@ -60,6 +60,8 @@ type BomAccumulator = {
 };
 
 export const UOM_ALIASES: Record<string, string> = {
+  each: 'each',
+  ea: 'each',
   kg: 'kg',
   kilogram: 'kg',
   kilograms: 'kg',

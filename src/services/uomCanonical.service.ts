@@ -200,33 +200,56 @@ async function lookupConversionFactor(
 ): Promise<number | null> {
   const executor = client ? client.query.bind(client) : query;
   const params = [tenantId, itemId, fromUom, toUom];
-  const direct = await executor<{ factor: string }>(
-    `SELECT multiplier::text AS factor
-       FROM item_uom_overrides
-      WHERE tenant_id = $1
-        AND item_id = $2
-        AND active = true
-        AND LOWER(from_uom) = LOWER($3)
-        AND LOWER(to_uom) = LOWER($4)`,
-    params
-  );
-  if (direct.rowCount && direct.rows[0]) {
-    return Number(direct.rows[0].factor);
+
+  const lookupFromTable = async (
+    tableName: 'item_uom_overrides' | 'uom_conversions',
+    factorColumn: 'multiplier' | 'factor',
+    activeClause = ''
+  ) => {
+    const direct = await executor<{ factor: string }>(
+      `SELECT ${factorColumn}::text AS factor
+         FROM ${tableName}
+        WHERE tenant_id = $1
+          AND item_id = $2
+          ${activeClause}
+          AND LOWER(from_uom) = LOWER($3)
+          AND LOWER(to_uom) = LOWER($4)`,
+      params
+    );
+    if (direct.rowCount && direct.rows[0]) {
+      return Number(direct.rows[0].factor);
+    }
+
+    const reverse = await executor<{ factor: string }>(
+      `SELECT ${factorColumn}::text AS factor
+         FROM ${tableName}
+        WHERE tenant_id = $1
+          AND item_id = $2
+          ${activeClause}
+          AND LOWER(from_uom) = LOWER($4)
+          AND LOWER(to_uom) = LOWER($3)`,
+      params
+    );
+    if (reverse.rowCount && reverse.rows[0]) {
+      return 1 / Number(reverse.rows[0].factor);
+    }
+
+    return null;
+  };
+
+  try {
+    const overrideFactor = await lookupFromTable('item_uom_overrides', 'multiplier', 'AND active = true');
+    if (overrideFactor !== null) {
+      return overrideFactor;
+    }
+  } catch (error: any) {
+    // Some dev/test databases still rely on legacy uom_conversions without the overrides table.
+    if (error?.code !== '42P01') {
+      throw error;
+    }
   }
-  const reverse = await executor<{ factor: string }>(
-    `SELECT multiplier::text AS factor
-       FROM item_uom_overrides
-      WHERE tenant_id = $1
-        AND item_id = $2
-        AND active = true
-        AND LOWER(from_uom) = LOWER($4)
-        AND LOWER(to_uom) = LOWER($3)`,
-    params
-  );
-  if (reverse.rowCount && reverse.rows[0]) {
-    return 1 / Number(reverse.rows[0].factor);
-  }
-  return null;
+
+  return lookupFromTable('uom_conversions', 'factor');
 }
 
 export async function convertToCanonical(

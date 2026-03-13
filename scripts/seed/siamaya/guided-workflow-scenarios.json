@@ -1,5 +1,12 @@
 {
   "generatedAt": "2026-03-12T00:00:00.000Z",
+  "summary": {
+    "totalTasks": 17,
+    "wrappedStageTasks": 2,
+    "boxedStageTasks": 4,
+    "twoStageFlowRepresented": true,
+    "shippingWrappedBarsSuggested": false
+  },
   "tasks": [
     {
       "taskId": "WF-75G-001",
@@ -119,89 +126,126 @@
     },
     {
       "taskId": "WF-75G-008",
-      "description": "Temper Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP as a discrete intermediate.",
+      "description": "Run Work Order 1 to create Apple Pie Milk Chocolate - Halloween - Wrapped (75g) from base chocolate, inclusions, and foil.",
       "expectedActions": [
-        "Create tempering work order",
-        "Issue base chocolate and foil",
-        "Report one-piece output"
+        "Create wrapped-bar work order",
+        "Issue base and inclusions",
+        "Report wrapped output to FACTORY_PRODUCTION"
       ],
       "itemsInvolved": [
-        "Apple Pie Milk Chocolate - Halloween (75g)",
-        "Apple Pie Milk Chocolate - Halloween (75g) - FLOW WRAP",
-        "Flow Wrap Foil"
+        "Apple Pie Milk Chocolate - Halloween - Wrapped (75g)",
+        "Base - Milk Chocolate",
+        "Biscuit",
+        "Cinnamon Powder",
+        "Dried Apple",
+        "flow wrap Foil"
       ],
       "successCriteria": [
-        "Intermediate output UOM is piece",
-        "Base chocolate issue remains in g"
+        "Wrapped output UOM is each",
+        "Wrapped bars remain in non-sellable production inventory"
       ]
     },
     {
       "taskId": "WF-75G-009",
-      "description": "Wrap Durian Milk Chocolate (75g) into sellable finished goods.",
+      "description": "Inspect Apple Pie Milk Chocolate - Halloween - Wrapped (75g) and confirm it cannot be treated as sellable finished stock.",
       "expectedActions": [
-        "Issue flow-wrap intermediate",
-        "Issue printed wrapper",
-        "Report wrapped bar"
+        "Open wrapped intermediate item",
+        "Review location and UOM",
+        "Confirm downstream boxing dependency"
       ],
       "itemsInvolved": [
-        "Durian Milk Chocolate (75g)",
-        "Durian Milk Chocolate (75g) - FLOW WRAP"
+        "Apple Pie Milk Chocolate - Halloween - Wrapped (75g)"
       ],
       "successCriteria": [
-        "Finished bar is stocked as piece",
-        "Wrapper consumption is one piece"
+        "Wrapped bars are classified as production output",
+        "No workflow step suggests shipping the wrapped bar"
       ]
     },
     {
       "taskId": "WF-75G-010",
-      "description": "Verify piece-count inventory for Masala Chai Milk Chocolate (75g).",
+      "description": "Run Work Order 2 to box Apple Pie Milk Chocolate - Halloween - Boxed (75g) from Apple Pie Milk Chocolate - Halloween - Wrapped (75g).",
       "expectedActions": [
-        "Open item detail",
-        "Review on-hand by location",
-        "Confirm count-based UOM"
+        "Create boxing work order",
+        "Issue wrapped bars and pack-out materials",
+        "Report boxed output to FACTORY_FG_STAGE"
       ],
       "itemsInvolved": [
-        "Masala Chai Milk Chocolate (75g)"
+        "Apple Pie Milk Chocolate - Halloween - Boxed (75g)",
+        "Apple Pie Milk Chocolate - Halloween - Wrapped (75g)",
+        "Wrapper - Apple Pie Milk Chocolate - Halloween (75g)"
       ],
       "successCriteria": [
-        "Finished item UOM is piece only",
-        "No weight-based stockkeeping is shown"
+        "Boxed output is each-counted",
+        "Wrapping and sticker components are consumed at box-out"
       ]
     },
     {
       "taskId": "WF-75G-011",
-      "description": "Pick Simply Cacao Plus Milk - Paleo Robbie (75g) for an outbound order.",
+      "description": "Transfer German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g) from FACTORY_FG_STAGE to FACTORY_SELLABLE for finished-goods handling.",
       "expectedActions": [
-        "Create allocation",
-        "Pick from SELLABLE",
-        "Confirm quantity in pieces"
+        "Complete boxed work order",
+        "Transfer finished goods to SELLABLE",
+        "Verify no wrapped stock is moved to sellable locations"
       ],
       "itemsInvolved": [
-        "Simply Cacao Plus Milk - Paleo Robbie (75g)"
+        "German Chocolate Cake 70% Dark Chocolate - Christmas - Boxed (75g)",
+        "German Chocolate Cake 70% Dark Chocolate - Christmas - Wrapped (75g)"
       ],
       "successCriteria": [
-        "Picked quantity is counted by piece",
-        "ATP decreases correctly"
+        "Only boxed bars reach sellable locations",
+        "Wrapped intermediates stay out of shipping flow"
       ]
     },
     {
       "taskId": "WF-75G-012",
-      "description": "Pack and ship Tom Yum Dark Chocolate (75g) to a customer.",
+      "description": "Verify each-count inventory and sellable status for Masala Chai Milk Chocolate - Boxed (75g).",
       "expectedActions": [
-        "Create shipment",
-        "Pack bars",
-        "Post shipment"
+        "Open item detail",
+        "Review on-hand by location",
+        "Confirm count-based stockkeeping"
       ],
       "itemsInvolved": [
-        "Tom Yum Dark Chocolate (75g)"
+        "Masala Chai Milk Chocolate - Boxed (75g)"
       ],
       "successCriteria": [
-        "Inventory decreases from SELLABLE",
-        "Shipment closes successfully"
+        "Boxed finished item UOM is each only",
+        "Sellable workflow points only to boxed stock"
       ]
     },
     {
       "taskId": "WF-75G-013",
+      "description": "Pick Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g) for an outbound order.",
+      "expectedActions": [
+        "Create allocation",
+        "Pick from SELLABLE",
+        "Confirm quantity in eaches"
+      ],
+      "itemsInvolved": [
+        "Simply Cacao Plus Milk - Paleo Robbie - Boxed (75g)"
+      ],
+      "successCriteria": [
+        "Picked quantity is counted by each",
+        "No wrapped intermediate can be allocated for shipping"
+      ]
+    },
+    {
+      "taskId": "WF-75G-014",
+      "description": "Pack and ship Tom Yum Dark Chocolate - Boxed (75g) to a customer.",
+      "expectedActions": [
+        "Create shipment",
+        "Pack boxed bars",
+        "Post shipment"
+      ],
+      "itemsInvolved": [
+        "Tom Yum Dark Chocolate - Boxed (75g)"
+      ],
+      "successCriteria": [
+        "Inventory decreases from SELLABLE",
+        "Shipment closes successfully without touching wrapped stock"
+      ]
+    },
+    {
+      "taskId": "WF-75G-015",
       "description": "Inspect minimal-stock shortage behavior after one full unit of every retained 75 g SKU is planned.",
       "expectedActions": [
         "Load minimal profile",
@@ -217,7 +261,7 @@
       ]
     },
     {
-      "taskId": "WF-75G-014",
+      "taskId": "WF-75G-016",
       "description": "Inspect base-stock normal production behavior across repeated 75 g runs.",
       "expectedActions": [
         "Load base profile",
@@ -233,18 +277,19 @@
       ]
     },
     {
-      "taskId": "WF-75G-015",
-      "description": "Verify only BOM-derived 75 g finished bars remain in scope.",
+      "taskId": "WF-75G-017",
+      "description": "Verify only boxed 75 g bars remain as finished goods in the focused BOM.",
       "expectedActions": [
         "Open focused BOM dataset",
-        "Review finished outputs",
+        "Review wrapped and boxed nodes",
         "Confirm exclusions"
       ],
       "itemsInvolved": [
         "Focused BOM dataset"
       ],
       "successCriteria": [
-        "No 8 g, 20 g, 1 kg, powder, nib pack, gift box, or sauce outputs remain as finished goods"
+        "No 8 g, 20 g, 1 kg, powder, nib pack, gift box, or sauce outputs remain as finished goods",
+        "Wrapped bars appear only as intermediates"
       ]
     }
   ]

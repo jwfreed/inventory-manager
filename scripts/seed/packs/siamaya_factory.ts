@@ -190,7 +190,7 @@ type ParsedManualBomDataset = {
 
 const PLACEHOLDER_ITEM_SKU_REGEX = /^(EXP|RES|WO-ITEM)-/i;
 const PLACEHOLDER_ITEM_NAME_REGEX = /^Item\s+(EXP|RES|WO-ITEM)-/i;
-const MATCH_SUFFIX_REGEX = /\s*-\s*(UNWRAPPED|FLOW WRAP|GOLD FOIL|SILVER FOIL|FOIL|MAHABHIROM|ANANTARA)\b/gi;
+const MATCH_SUFFIX_REGEX = /\s*-\s*(UNWRAPPED|FLOW WRAP|WRAPPED\s*\(75G\)|BOXED\s*\(75G\)|GOLD FOIL|SILVER FOIL|FOIL|MAHABHIROM|ANANTARA)\b/gi;
 const PAREN_UOM_REGEX = /\([^)]*\)/g;
 
 function resolveFirstExistingPath(primary: string | undefined, candidates: readonly string[]): string | null {
@@ -281,14 +281,14 @@ function inferTypeWithSets(
   outputKeys: Set<string>,
   componentKeys: Set<string>
 ): 'raw' | 'wip' | 'finished' | 'packaging' {
-  if (isPackagingKeyword(item.name)) {
-    return 'packaging';
-  }
   if (outputKeys.has(item.key)) {
     if (isWipName(item.name) || /\b(base|mix|paste|ganache)\b/i.test(item.name)) {
       return 'wip';
     }
     return 'finished';
+  }
+  if (isPackagingKeyword(item.name)) {
+    return 'packaging';
   }
   if (componentKeys.has(item.key)) {
     return 'raw';
@@ -973,6 +973,7 @@ function isWipName(name: string): boolean {
   return (
     normalized.startsWith('Base - ')
     || normalized.includes(' - FLOW WRAP')
+    || normalized.includes(' - Wrapped (75g)')
     || normalized.includes(' - GOLD FOIL')
     || normalized.includes(' - UNWRAPPED')
     || normalized === 'Cacao Nibs - Raw Material'

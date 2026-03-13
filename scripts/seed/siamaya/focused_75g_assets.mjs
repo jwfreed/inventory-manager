@@ -24,6 +24,7 @@ const PROCUREMENT_PATH = path.resolve(SIAMAYA_DIR, 'procurement-metadata.json');
 const WORK_ORDERS_PATH = path.resolve(SIAMAYA_DIR, 'work-order-scenarios.json');
 const WORKFLOW_PATH = path.resolve(SIAMAYA_DIR, 'guided-workflow-scenarios.json');
 const VALIDATION_PATH = path.resolve(SIAMAYA_DIR, 'simulation-validation.json');
+const MANUFACTURABILITY_PATH = path.resolve(SIAMAYA_DIR, 'inventory-manufacturability.json');
 const MRP_CSV_PATH = path.resolve(SIAMAYA_DIR, 'mrp-explosion.csv');
 const DAG_DOT_PATH = path.resolve(SIAMAYA_DIR, 'factory-dag.dot');
 const INGREDIENT_DOT_PATH = path.resolve(SIAMAYA_DIR, 'factory-ingredient-flow.dot');
@@ -36,6 +37,8 @@ const UOM_ALIASES = new Map([
   ['kg', 'kg'],
   ['kilogram', 'kg'],
   ['kilograms', 'kg'],
+  ['each', 'each'],
+  ['ea', 'each'],
   ['unit', 'piece'],
   ['units', 'piece'],
   ['piece', 'piece'],
@@ -127,8 +130,12 @@ function normalizeUom(raw) {
 
 function uomDimension(uom) {
   if (uom === 'g' || uom === 'kg') return 'mass';
-  if (uom === 'piece') return 'count';
+  if (uom === 'piece' || uom === 'each') return 'count';
   return uom;
+}
+
+function isCountUom(uom) {
+  return uom === 'piece' || uom === 'each';
 }
 
 function parseCsvLine(line) {
@@ -195,6 +202,53 @@ function classifyFoilLike(name) {
   return name.toLowerCase().includes('foil');
 }
 
+function base75gSkuName(name) {
+  const collapsed = collapseWhitespace(name)
+    .replace(/\s*-\s*FLOW WRAP$/i, '')
+    .replace(/\s*-\s*Wrapped\s*\(75g\)$/i, '')
+    .replace(/\s*-\s*Boxed\s*\(75g\)$/i, '');
+  return collapseWhitespace(collapsed.replace(/\s*\(75g\)$/i, ''));
+}
+
+function wrappedLifecycleName(name) {
+  return `${base75gSkuName(name)} - Wrapped (75g)`;
+}
+
+function boxedLifecycleName(name) {
+  return `${base75gSkuName(name)} - Boxed (75g)`;
+}
+
+function is75gWrappedOutputName(name) {
+  return /\s*-\s*Wrapped\s*\(75g\)$/i.test(collapseWhitespace(name));
+}
+
+function is75gBoxedOutputName(name) {
+  return /\s*-\s*Boxed\s*\(75g\)$/i.test(collapseWhitespace(name));
+}
+
+function boxedNameFromWrapped(name) {
+  return boxedLifecycleName(name);
+}
+
+function normalize75gLifecycleName(name) {
+  const collapsed = collapseWhitespace(name);
+  if (!/\(75g\)/i.test(collapsed)) return collapsed;
+  if (classifyPackagingLike(collapsed) && !/\s*-\s*FLOW WRAP$/i.test(collapsed)) return collapsed;
+  if (is75gWrappedOutputName(collapsed) || /\s*-\s*FLOW WRAP$/i.test(collapsed)) {
+    return wrappedLifecycleName(collapsed);
+  }
+  return boxedLifecycleName(collapsed);
+}
+
+function normalize75gLifecycleUom(name, uom) {
+  if (is75gWrappedOutputName(name) || is75gBoxedOutputName(name)) return 'each';
+  return uom;
+}
+
+function isBoxingStageComponent(name) {
+  return classifyPackagingLike(name) && !classifyFoilLike(name);
+}
+
 function classifyLeafCategory(name, uom) {
   const lower = name.toLowerCase();
   if (classifyPackagingLike(name)) {
@@ -238,7 +292,7 @@ function classifyLeafCategory(name, uom) {
   ) {
     return 'spices';
   }
-  if (uom === 'piece') return 'packaging';
+  if (isCountUom(uom)) return 'packaging';
   return 'inclusions';
 }
 
@@ -270,7 +324,7 @@ function leadTimeDays(category) {
 }
 
 function minimumOrderQty(category, uom) {
-  if (uom === 'piece') {
+  if (isCountUom(uom)) {
     if (category === 'labels') return 250;
     if (category === 'packaging') return 100;
     return 50;
@@ -292,7 +346,7 @@ function unitCostForLeaf(name, uom, category) {
     if (exact.uom === 'g' && uom === 'kg') return exact.value.mul(1000);
   }
 
-  if (uom === 'piece') {
+  if (isCountUom(uom)) {
     if (category === 'labels') return new Decimal('0.01');
     return new Decimal('0.05');
   }
@@ -418,6 +472,69 @@ function parseAuthoritativeSection(sourceFile = SOURCE_CSV_PATH) {
   return { rows, sectionHeaderRow: sectionHeaderRow + 1 };
 }
 
+function relocate75gPackagingRows(rows, corrections) {
+  const outputSpecs = new Map();
+  const existingFinalComponentSignatures = new Set();
+
+  rows.forEach((row) => {
+    if (!outputSpecs.has(row.outputKey)) {
+      outputSpecs.set(row.outputKey, {
+        outputKey: row.outputKey,
+        outputName: row.outputName,
+        outputQty: row.outputQty,
+        outputUom: row.outputUom
+      });
+    }
+    if (is75gBoxedOutputName(row.outputName)) {
+      existingFinalComponentSignatures.add(
+        `${row.outputKey}|${row.componentKey}|${formatDecimal(row.componentQty, 12)}|${row.componentUom}`
+      );
+    }
+  });
+
+  return rows.flatMap((row) => {
+    if (!is75gWrappedOutputName(row.outputName) || !isBoxingStageComponent(row.componentName)) {
+      return [row];
+    }
+
+    const boxedName = boxedNameFromWrapped(row.outputName);
+    const boxedKey = normalizeKey(boxedName);
+    const boxedSpec = outputSpecs.get(boxedKey);
+    if (!boxedSpec) {
+      return [row];
+    }
+
+    const movedSignature = `${boxedKey}|${row.componentKey}|${formatDecimal(row.componentQty, 12)}|${row.componentUom}`;
+    corrections.push({
+      code: 'MOVE_75G_PACKAGING_COMPONENT_TO_BOXED_OUTPUT',
+      line: row.line,
+      before: `${row.outputName} -> ${row.componentName}`,
+      after: `${boxedSpec.outputName} -> ${row.componentName}`
+    });
+
+    if (existingFinalComponentSignatures.has(movedSignature)) {
+      corrections.push({
+        code: 'DROP_75G_PACKAGING_DUPLICATE_ON_BOXED_OUTPUT',
+        line: row.line,
+        before: `${boxedSpec.outputName} -> ${row.componentName}`,
+        after: `${boxedSpec.outputName} -> ${row.componentName}`
+      });
+      return [];
+    }
+
+    existingFinalComponentSignatures.add(movedSignature);
+    return [
+      {
+        ...row,
+        outputKey: boxedSpec.outputKey,
+        outputName: boxedSpec.outputName,
+        outputQty: boxedSpec.outputQty,
+        outputUom: boxedSpec.outputUom
+      }
+    ];
+  });
+}
+
 function buildNormalizedDataset(sourceFile = SOURCE_CSV_PATH) {
   const { rows: parsedRows, sectionHeaderRow } = parseAuthoritativeSection(sourceFile);
   const stat = fs.statSync(sourceFile);
@@ -452,21 +569,9 @@ function buildNormalizedDataset(sourceFile = SOURCE_CSV_PATH) {
     const componentQty = decimalFromRaw(row.componentQtyRaw);
     const componentUom = normalizeUom(row.componentUomRaw);
 
-    const outputKey = normalizeKey(outputName);
     if (!outputName) {
       issues.missingProductNames.push({ line: row.line, row });
       continue;
-    }
-
-    if ((operationCode || workCenterCode || row.note) && !operationsByOutput.has(outputKey)) {
-      operationsByOutput.set(outputKey, []);
-    }
-    if (operationCode || workCenterCode || row.note) {
-      operationsByOutput.get(outputKey).push({
-        operation: operationCode || row.operation,
-        workCenter: workCenterCode || row.workCenter,
-        note: row.note || null
-      });
     }
 
     if (!componentName) {
@@ -479,6 +584,7 @@ function buildNormalizedDataset(sourceFile = SOURCE_CSV_PATH) {
     let normalizedOutputName = outputName;
     let normalizedComponentName = componentName;
 
+    const outputKey = normalizeKey(outputName);
     const componentKey = normalizeKey(componentName);
     if (outputKey === componentKey) {
       const finalName = outputName.replace(/\s*-\s*FLOW WRAP$/i, '').trim();
@@ -511,6 +617,24 @@ function buildNormalizedDataset(sourceFile = SOURCE_CSV_PATH) {
       }
     }
 
+    normalizedOutputName = normalize75gLifecycleName(normalizedOutputName);
+    normalizedComponentName = normalize75gLifecycleName(normalizedComponentName);
+    const normalizedOutputKey = normalizeKey(normalizedOutputName);
+    const normalizedComponentKey = normalizeKey(normalizedComponentName);
+    const normalizedOutputUom = normalize75gLifecycleUom(normalizedOutputName, outputUom);
+    const normalizedComponentUom = normalize75gLifecycleUom(normalizedComponentName, componentUom);
+
+    if ((operationCode || workCenterCode || row.note) && !operationsByOutput.has(normalizedOutputKey)) {
+      operationsByOutput.set(normalizedOutputKey, []);
+    }
+    if (operationCode || workCenterCode || row.note) {
+      operationsByOutput.get(normalizedOutputKey).push({
+        operation: operationCode || row.operation,
+        workCenter: workCenterCode || row.workCenter,
+        note: row.note || null
+      });
+    }
+
     if (!outputQty || !componentQty) {
       issues.malformedNumericQuantities.push({ line: row.line, outputName, componentName });
       continue;
@@ -532,22 +656,24 @@ function buildNormalizedDataset(sourceFile = SOURCE_CSV_PATH) {
 
     normalizedRows.push({
       line: row.line,
-      outputKey: normalizeKey(normalizedOutputName),
+      outputKey: normalizedOutputKey,
       outputName: normalizedOutputName,
       outputQty,
-      outputUom,
-      componentKey: normalizeKey(normalizedComponentName),
+      outputUom: normalizedOutputUom,
+      componentKey: normalizedComponentKey,
       componentName: normalizedComponentName,
       componentQty,
-      componentUom,
+      componentUom: normalizedComponentUom,
       operation: operationCode || null,
       workCenter: workCenterCode || null,
       note: row.note || null
     });
   }
 
+  const stageNormalizedRows = relocate75gPackagingRows(normalizedRows, corrections);
+
   const duplicateTracker = new Map();
-  for (const row of normalizedRows) {
+  for (const row of stageNormalizedRows) {
     const signature = [
       row.outputKey,
       formatDecimal(row.outputQty),
@@ -573,7 +699,7 @@ function buildNormalizedDataset(sourceFile = SOURCE_CSV_PATH) {
     sourceFile,
     processedAt: new Date(stat.mtimeMs).toISOString(),
     sectionHeaderRow,
-    rows: normalizedRows,
+    rows: stageNormalizedRows,
     corrections,
     operationsByOutput
   });
@@ -581,7 +707,7 @@ function buildNormalizedDataset(sourceFile = SOURCE_CSV_PATH) {
 
   const inScopeFinals = sortStrings(
     [...fullGraph.boms.values()]
-      .filter((bom) => /\(75g\)/i.test(bom.outputName) && !/\s*-\s*FLOW WRAP$/i.test(bom.outputName))
+      .filter((bom) => is75gBoxedOutputName(bom.outputName))
       .map((bom) => bom.outputName)
   );
 
@@ -600,7 +726,7 @@ function buildNormalizedDataset(sourceFile = SOURCE_CSV_PATH) {
     visit(normalizeKey(skuName));
   }
 
-  const scopedRows = normalizedRows.filter((row) => scopedOutputKeys.has(row.outputKey));
+  const scopedRows = stageNormalizedRows.filter((row) => scopedOutputKeys.has(row.outputKey));
   const scopedOperations = new Map(
     [...operationsByOutput.entries()].filter(([outputKey]) => scopedOutputKeys.has(outputKey))
   );
@@ -679,7 +805,7 @@ function buildNormalizedDataset(sourceFile = SOURCE_CSV_PATH) {
     sectionHeaderRow,
     summary: {
       parsedRowCount: parsedRows.length,
-      normalizedComponentRowCount: normalizedRows.length,
+      normalizedComponentRowCount: stageNormalizedRows.length,
       retainedComponentRowCount: scopedRows.length,
       retainedFinishedSkuCount: inScopeFinals.length,
       duplicateRowCount: issues.duplicateRows.length,
@@ -1095,6 +1221,7 @@ function preferredLeafUom(graph, leafKey, totalQuantity) {
   const node = graph.nodes.get(leafKey);
   const observed = [...(node?.componentUoms ?? [])];
   if (observed.includes('piece')) return 'piece';
+  if (observed.includes('each')) return 'each';
   const quantity = totalQuantity instanceof Decimal ? totalQuantity : new Decimal(totalQuantity);
   if (quantity.greaterThanOrEqualTo(1000)) return 'kg';
   return 'g';
@@ -1105,7 +1232,7 @@ function convertQuantity(quantity, fromUom, toUom) {
   if (fromUom === toUom) return value;
   if (fromUom === 'kg' && toUom === 'g') return value.mul(1000);
   if (fromUom === 'g' && toUom === 'kg') return value.div(1000);
-  if (fromUom === 'piece' && toUom === 'piece') return value;
+  if (isCountUom(fromUom) && isCountUom(toUom)) return value;
   throw new Error(`UNSUPPORTED_UOM_CONVERSION from=${fromUom} to=${toUom}`);
 }
 
@@ -1150,10 +1277,10 @@ function buildStockProfile(graph, aggregateLeafDemand, profile) {
     const preferredUom = preferredLeafUom(graph, leafKey, baseQuantity);
     const category = classifyLeafCategory(leafName, preferredUom);
     const multiplier = profile === 'base'
-      ? (preferredUom === 'piece' ? new Decimal(7) : new Decimal(5))
+      ? (isCountUom(preferredUom) ? new Decimal(7) : new Decimal(5))
       : new Decimal(1);
     let quantity = baseQuantity.mul(multiplier);
-    if (preferredUom === 'piece') {
+    if (isCountUom(preferredUom)) {
       quantity = quantity.ceil();
     } else {
       quantity = quantity.toDecimalPlaces(3, Decimal.ROUND_UP);
@@ -1163,13 +1290,13 @@ function buildStockProfile(graph, aggregateLeafDemand, profile) {
     const outputUom = preferredUom === 'kg' ? 'kg' : preferredUom;
     const normalizedQuantity = outputUom === 'kg' ? quantity.div(1000) : quantity;
     const unitCost = unitCostForLeaf(leafName, outputUom, category);
-    const locationCode = outputUom === 'piece' ? 'FACTORY_PACK_STORE' : 'FACTORY_RM_STORE';
+    const locationCode = isCountUom(outputUom) ? 'FACTORY_PACK_STORE' : 'FACTORY_RM_STORE';
     const lotCode = `${profile.toUpperCase()}-${slugify(leafName).toUpperCase()}-20260101`;
     const expirationDate = addDays(PRODUCTION_DATE, shelfLifeDays(category));
 
     items.push({
       itemKey: leafKey,
-      quantity: decimalToNumber(normalizedQuantity, outputUom === 'piece' ? 0 : 6),
+      quantity: decimalToNumber(normalizedQuantity, isCountUom(outputUom) ? 0 : 6),
       uom: outputUom,
       locationCode,
       lotCode,
@@ -1203,7 +1330,7 @@ function buildProcurementMetadata(graph, aggregateLeafDemand, baseProfile) {
       const baseStockItem = baseProfile.items.find((item) => item.itemKey === leafKey);
       const reorderPoint = Math.max(
         minOrderQty,
-        Number(formatDecimal(demandRate.mul(leadTime), preferredUom === 'piece' ? 0 : 3))
+        Number(formatDecimal(demandRate.mul(leadTime), isCountUom(preferredUom) ? 0 : 3))
       );
       return {
         itemKey: leafKey,
@@ -1214,7 +1341,7 @@ function buildProcurementMetadata(graph, aggregateLeafDemand, baseProfile) {
         leadTimeDays: leadTime,
         minimumOrderQty: minOrderQty,
         reorderPoint,
-        demandRatePerDay: decimalToNumber(demandRate, preferredUom === 'piece' ? 3 : 6),
+        demandRatePerDay: decimalToNumber(demandRate, isCountUom(preferredUom) ? 3 : 6),
         baseProfileQty: baseStockItem?.quantity ?? null
       };
     })
@@ -1234,7 +1361,7 @@ function buildMrpExplosionCsv(graph, leafDemand) {
         csvEscape(sku.itemKey),
         csvEscape(demand.itemName),
         csvEscape(demand.itemKey),
-        csvEscape(formatDecimal(quantity, uom === 'piece' ? 0 : 6)),
+        csvEscape(formatDecimal(quantity, isCountUom(uom) ? 0 : 6)),
         csvEscape(uom)
       ].join(','));
     }
@@ -1242,7 +1369,7 @@ function buildMrpExplosionCsv(graph, leafDemand) {
   return `${lines.join('\n')}\n`;
 }
 
-function buildDependencySummary(graph, finalSkuNames) {
+function buildDependencySummary(graph, finalSkuNames, stageModels) {
   const finalKeys = new Set(finalSkuNames.map((name) => normalizeKey(name)));
   const finalOutputs = [...finalKeys].map((key) => graph.nodes.get(key)?.name ?? key);
   const intermediateOutputs = [...graph.intermediateKeys]
@@ -1255,15 +1382,149 @@ function buildDependencySummary(graph, finalSkuNames) {
   const packagingLeafs = [...graph.packagingKeys]
     .map((key) => graph.nodes.get(key)?.name ?? key)
     .sort((left, right) => left.localeCompare(right));
+  const wrappedBarNodes = sortStrings(stageModels.map((model) => model.wrappedItemName));
+  const boxedFinishedGoods = sortStrings(stageModels.map((model) => model.boxedItemName));
   return {
     finalOutputCount: finalOutputs.length,
     intermediateOutputCount: intermediateOutputs.length,
     rawLeafCount: rawLeafs.length,
     packagingLeafCount: packagingLeafs.length,
+    wrappedBarCount: wrappedBarNodes.length,
+    boxedFinishedGoodCount: boxedFinishedGoods.length,
     finalOutputs,
+    wrappedBarNodes,
+    boxedFinishedGoods,
+    stageLinks: stageModels
+      .map((model) => ({
+        wrappedBarNode: model.wrappedItemName,
+        boxedFinishedGood: model.boxedItemName,
+        boxingComponents: model.boxingComponents.map((component) => component.itemName)
+      }))
+      .sort((left, right) => left.boxedFinishedGood.localeCompare(right.boxedFinishedGood)),
     intermediateOutputs,
     rawLeafs,
     packagingLeafs
+  };
+}
+
+function serializeBomComponent(component) {
+  return {
+    itemKey: component.componentKey,
+    itemName: component.componentName,
+    quantity: decimalToNumber(component.quantity, isCountUom(component.uom) ? 0 : 6),
+    uom: component.uom
+  };
+}
+
+function build75gStageModels(graph, finalSkuNames) {
+  const issues = [];
+  const models = finalSkuNames.map((boxedItemName) => {
+    const boxedItemKey = normalizeKey(boxedItemName);
+    const boxedBom = graph.boms.get(boxedItemKey);
+    if (!boxedBom) {
+      issues.push({ code: 'BOXED_BOM_MISSING', boxedItemName });
+      return null;
+    }
+
+    const wrappedInput = boxedBom.components.find(
+      (component) => is75gWrappedOutputName(component.componentName) && graph.boms.has(component.componentKey)
+    );
+    if (!wrappedInput) {
+      issues.push({ code: 'WRAPPED_INPUT_MISSING', boxedItemName });
+      return null;
+    }
+
+    const wrappedBom = graph.boms.get(wrappedInput.componentKey);
+    if (!wrappedBom) {
+      issues.push({ code: 'WRAPPED_BOM_MISSING', boxedItemName, wrappedItemName: wrappedInput.componentName });
+      return null;
+    }
+
+    const boxingComponents = boxedBom.components
+      .filter((component) => component.componentKey !== wrappedInput.componentKey)
+      .map(serializeBomComponent);
+    const wrappedComponents = wrappedBom.components.map(serializeBomComponent);
+    const wrappedPackagingLeak = wrappedComponents.filter((component) => isBoxingStageComponent(component.itemName));
+
+    if (!boxedBom.outputQty.eq(1) || boxedBom.outputUom !== 'each') {
+      issues.push({
+        code: 'BOXED_OUTPUT_UOM_INVALID',
+        boxedItemName,
+        outputQty: boxedBom.outputQty.toString(),
+        outputUom: boxedBom.outputUom
+      });
+    }
+    if (!wrappedBom.outputQty.eq(1) || wrappedBom.outputUom !== 'each') {
+      issues.push({
+        code: 'WRAPPED_OUTPUT_UOM_INVALID',
+        boxedItemName,
+        wrappedItemName: wrappedBom.outputName,
+        outputQty: wrappedBom.outputQty.toString(),
+        outputUom: wrappedBom.outputUom
+      });
+    }
+    if (boxingComponents.length === 0) {
+      issues.push({
+        code: 'BOXING_COMPONENTS_MISSING',
+        boxedItemName,
+        wrappedItemName: wrappedBom.outputName
+      });
+    }
+    if (wrappedPackagingLeak.length > 0) {
+      issues.push({
+        code: 'WRAPPED_STAGE_PACKAGING_LEAK',
+        boxedItemName,
+        wrappedItemName: wrappedBom.outputName,
+        leakedComponents: wrappedPackagingLeak.map((component) => component.itemName)
+      });
+    }
+
+    return {
+      boxedItemKey,
+      boxedItemName,
+      boxedOutputQuantity: decimalToNumber(boxedBom.outputQty, 6),
+      boxedOutputUom: boxedBom.outputUom,
+      wrappedItemKey: wrappedBom.outputKey,
+      wrappedItemName: wrappedBom.outputName,
+      wrappedOutputQuantity: decimalToNumber(wrappedBom.outputQty, 6),
+      wrappedOutputUom: wrappedBom.outputUom,
+      wrappedComponents,
+      boxingComponents,
+      inventoryClass: {
+        wrapped: 'production_output',
+        boxed: 'finished_good'
+      },
+      sellability: {
+        wrapped: false,
+        boxed: true
+      }
+    };
+  }).filter(Boolean);
+
+  return { models, issues };
+}
+
+function inferWrappedStageRouting(graph, stageModel) {
+  const route = inferPrimaryRouting(graph, stageModel.wrappedItemKey);
+  const hasFoil = stageModel.wrappedComponents.some((component) => classifyFoilLike(component.itemName));
+  if (hasFoil) {
+    return {
+      workCenterCode: 'WRAPPER',
+      operationCode: 'FLOW_WRAP',
+      setupTimeMinutes: 15,
+      runTimeMinutes: 45
+    };
+  }
+  return route;
+}
+
+function inferBoxedStageRouting(graph, stageModel) {
+  const route = inferPrimaryRouting(graph, stageModel.boxedItemKey);
+  return {
+    workCenterCode: route.workCenterCode || 'WRAPPER',
+    operationCode: 'BOX',
+    setupTimeMinutes: 10,
+    runTimeMinutes: 20
   };
 }
 
@@ -1282,67 +1543,100 @@ function inferPrimaryRouting(graph, outputKey) {
   };
 }
 
-function buildWorkOrderScenarios(graph, finalSkuNames, leafDemand) {
-  const scenarioNames = [
-    'Cacao Nibs - Raw Material',
-    'Base - 70% Dark Chocolate',
-    'Base - 85% Dark Chocolate',
-    'Base - Milk Chocolate',
-    'Base - Coconut Milk Chocolate',
-    'Base - Pomelo',
-    'Base - Sugar Free',
-    finalSkuNames[0],
-    finalSkuNames[Math.floor(finalSkuNames.length / 2)],
-    finalSkuNames[finalSkuNames.length - 1]
-  ].filter(Boolean);
+function buildWorkOrderScenarios(graph, stageModels) {
+  const workOrders = [];
 
-  const workOrders = scenarioNames.map((itemName, index) => {
-    const outputKey = normalizeKey(itemName);
-    const bom = graph.boms.get(outputKey);
-    const routing = inferPrimaryRouting(graph, outputKey);
-    const requirements = explodeToLeafDemand(graph, outputKey, new Decimal(1));
-    return {
-      workOrderCode: `WO-SIAMAYA-75G-${String(index + 1).padStart(3, '0')}`,
-      itemKey: outputKey,
-      itemName,
+  stageModels.forEach((model, index) => {
+    const wrappedCode = `WO-SIAMAYA-75G-${String(index * 2 + 1).padStart(3, '0')}`;
+    const boxedCode = `WO-SIAMAYA-75G-${String(index * 2 + 2).padStart(3, '0')}`;
+    const workDate = addDays('2026-01-05', index);
+
+    workOrders.push({
+      workOrderCode: wrappedCode,
+      stage: 'WRAPPED_BAR',
+      stageSequence: 1,
+      stageGroupKey: model.boxedItemKey,
+      stageGroupName: model.boxedItemName,
+      itemKey: model.wrappedItemKey,
+      itemName: model.wrappedItemName,
+      outputClassification: model.inventoryClass.wrapped,
+      sellable: model.sellability.wrapped,
+      shipEligible: false,
+      producedToLocationCode: 'FACTORY_PRODUCTION',
       simulationState: 'PLANNED',
       platformStatus: 'draft',
-      scheduledStartAt: addDays('2026-01-05', index).concat('T08:00:00.000Z'),
-      scheduledDueAt: addDays('2026-01-05', index + 1).concat('T16:00:00.000Z'),
-      quantityPlanned: decimalToNumber(bom?.outputQty ?? new Decimal(1), 6),
-      outputUom: bom?.outputUom ?? 'piece',
-      routing,
-      materialRequirements: sortStrings([...requirements.keys()]).map((leafKey) => {
-        const qty = requirements.get(leafKey);
-        const uom = preferredLeafUom(graph, leafKey, qty);
-        const normalizedQty = uom === 'kg' ? qty.div(1000) : qty;
-        return {
-          itemKey: leafKey,
-          itemName: graph.nodes.get(leafKey)?.name ?? leafKey,
-          quantity: decimalToNumber(normalizedQty, uom === 'piece' ? 0 : 6),
-          uom
-        };
-      }),
+      scheduledStartAt: `${workDate}T08:00:00.000Z`,
+      scheduledDueAt: `${workDate}T11:00:00.000Z`,
+      quantityPlanned: model.wrappedOutputQuantity,
+      outputUom: model.wrappedOutputUom,
+      routing: inferWrappedStageRouting(graph, model),
+      materialRequirements: model.wrappedComponents,
       lifecycle: [
-        { state: 'PLANNED', at: addDays('2026-01-04', index).concat('T09:00:00.000Z') }
+        { state: 'PLANNED', at: `${addDays('2026-01-04', index)}T09:00:00.000Z` }
       ]
-    };
+    });
+
+    workOrders.push({
+      workOrderCode: boxedCode,
+      stage: 'BOXED_BAR',
+      stageSequence: 2,
+      consumesWorkOrderCode: wrappedCode,
+      stageGroupKey: model.boxedItemKey,
+      stageGroupName: model.boxedItemName,
+      itemKey: model.boxedItemKey,
+      itemName: model.boxedItemName,
+      outputClassification: model.inventoryClass.boxed,
+      sellable: model.sellability.boxed,
+      shipEligible: true,
+      producedToLocationCode: 'FACTORY_FG_STAGE',
+      downstreamTransfer: {
+        fromLocationCode: 'FACTORY_FG_STAGE',
+        toLocationCode: 'FACTORY_SELLABLE',
+        itemKey: model.boxedItemKey
+      },
+      simulationState: 'PLANNED',
+      platformStatus: 'draft',
+      scheduledStartAt: `${workDate}T12:00:00.000Z`,
+      scheduledDueAt: `${workDate}T15:00:00.000Z`,
+      quantityPlanned: model.boxedOutputQuantity,
+      outputUom: model.boxedOutputUom,
+      routing: inferBoxedStageRouting(graph, model),
+      materialRequirements: [
+        {
+          itemKey: model.wrappedItemKey,
+          itemName: model.wrappedItemName,
+          quantity: model.wrappedOutputQuantity,
+          uom: model.wrappedOutputUom
+        },
+        ...model.boxingComponents
+      ].sort((left, right) => left.itemName.localeCompare(right.itemName)),
+      lifecycle: [
+        { state: 'PLANNED', at: `${addDays('2026-01-04', index)}T13:00:00.000Z` }
+      ]
+    });
   });
 
   return {
     generatedAt: GENERATED_AT,
+    summary: {
+      totalWorkOrders: workOrders.length,
+      wrappedBarWorkOrders: stageModels.length,
+      boxedBarWorkOrders: stageModels.length,
+      twoStageFlows: stageModels.length
+    },
     workOrders
   };
 }
 
-function buildGuidedWorkflowTasks(finalSkuNames) {
+function buildGuidedWorkflowTasks(stageModels) {
   const spotlight = [
-    finalSkuNames[0],
-    finalSkuNames[5],
-    finalSkuNames[12],
-    finalSkuNames[18],
-    finalSkuNames[24]
-  ];
+    stageModels[0],
+    stageModels[Math.floor(stageModels.length / 4)],
+    stageModels[Math.floor(stageModels.length / 2)],
+    stageModels[Math.floor((stageModels.length * 3) / 4)],
+    stageModels[stageModels.length - 1]
+  ].filter(Boolean);
+  const [primary, secondary, tertiary, quaternary, quinary] = spotlight;
   const tasks = [
     {
       taskId: 'WF-75G-001',
@@ -1395,64 +1689,85 @@ function buildGuidedWorkflowTasks(finalSkuNames) {
     },
     {
       taskId: 'WF-75G-008',
-      description: `Temper ${spotlight[0]} - FLOW WRAP as a discrete intermediate.`,
-      expectedActions: ['Create tempering work order', 'Issue base chocolate and foil', 'Report one-piece output'],
-      itemsInvolved: [spotlight[0], `${spotlight[0]} - FLOW WRAP`, 'Flow Wrap Foil'],
-      successCriteria: ['Intermediate output UOM is piece', 'Base chocolate issue remains in g']
+      description: `Run Work Order 1 to create ${primary.wrappedItemName} from base chocolate, inclusions, and foil.`,
+      expectedActions: ['Create wrapped-bar work order', 'Issue base and inclusions', 'Report wrapped output to FACTORY_PRODUCTION'],
+      itemsInvolved: [primary.wrappedItemName, ...primary.wrappedComponents.map((component) => component.itemName)],
+      successCriteria: ['Wrapped output UOM is each', 'Wrapped bars remain in non-sellable production inventory']
     },
     {
       taskId: 'WF-75G-009',
-      description: `Wrap ${spotlight[1]} into sellable finished goods.`,
-      expectedActions: ['Issue flow-wrap intermediate', 'Issue printed wrapper', 'Report wrapped bar'],
-      itemsInvolved: [spotlight[1], `${spotlight[1]} - FLOW WRAP`],
-      successCriteria: ['Finished bar is stocked as piece', 'Wrapper consumption is one piece']
+      description: `Inspect ${primary.wrappedItemName} and confirm it cannot be treated as sellable finished stock.`,
+      expectedActions: ['Open wrapped intermediate item', 'Review location and UOM', 'Confirm downstream boxing dependency'],
+      itemsInvolved: [primary.wrappedItemName],
+      successCriteria: ['Wrapped bars are classified as production output', 'No workflow step suggests shipping the wrapped bar']
     },
     {
       taskId: 'WF-75G-010',
-      description: `Verify piece-count inventory for ${spotlight[2]}.`,
-      expectedActions: ['Open item detail', 'Review on-hand by location', 'Confirm count-based UOM'],
-      itemsInvolved: [spotlight[2]],
-      successCriteria: ['Finished item UOM is piece only', 'No weight-based stockkeeping is shown']
+      description: `Run Work Order 2 to box ${primary.boxedItemName} from ${primary.wrappedItemName}.`,
+      expectedActions: ['Create boxing work order', 'Issue wrapped bars and pack-out materials', 'Report boxed output to FACTORY_FG_STAGE'],
+      itemsInvolved: [primary.boxedItemName, primary.wrappedItemName, ...primary.boxingComponents.map((component) => component.itemName)],
+      successCriteria: ['Boxed output is each-counted', 'Wrapping and sticker components are consumed at box-out']
     },
     {
       taskId: 'WF-75G-011',
-      description: `Pick ${spotlight[3]} for an outbound order.`,
-      expectedActions: ['Create allocation', 'Pick from SELLABLE', 'Confirm quantity in pieces'],
-      itemsInvolved: [spotlight[3]],
-      successCriteria: ['Picked quantity is counted by piece', 'ATP decreases correctly']
+      description: `Transfer ${secondary.boxedItemName} from FACTORY_FG_STAGE to FACTORY_SELLABLE for finished-goods handling.`,
+      expectedActions: ['Complete boxed work order', 'Transfer finished goods to SELLABLE', 'Verify no wrapped stock is moved to sellable locations'],
+      itemsInvolved: [secondary.boxedItemName, secondary.wrappedItemName],
+      successCriteria: ['Only boxed bars reach sellable locations', 'Wrapped intermediates stay out of shipping flow']
     },
     {
       taskId: 'WF-75G-012',
-      description: `Pack and ship ${spotlight[4]} to a customer.`,
-      expectedActions: ['Create shipment', 'Pack bars', 'Post shipment'],
-      itemsInvolved: [spotlight[4]],
-      successCriteria: ['Inventory decreases from SELLABLE', 'Shipment closes successfully']
+      description: `Verify each-count inventory and sellable status for ${tertiary.boxedItemName}.`,
+      expectedActions: ['Open item detail', 'Review on-hand by location', 'Confirm count-based stockkeeping'],
+      itemsInvolved: [tertiary.boxedItemName],
+      successCriteria: ['Boxed finished item UOM is each only', 'Sellable workflow points only to boxed stock']
     },
     {
       taskId: 'WF-75G-013',
+      description: `Pick ${quaternary.boxedItemName} for an outbound order.`,
+      expectedActions: ['Create allocation', 'Pick from SELLABLE', 'Confirm quantity in eaches'],
+      itemsInvolved: [quaternary.boxedItemName],
+      successCriteria: ['Picked quantity is counted by each', 'No wrapped intermediate can be allocated for shipping']
+    },
+    {
+      taskId: 'WF-75G-014',
+      description: `Pack and ship ${quinary.boxedItemName} to a customer.`,
+      expectedActions: ['Create shipment', 'Pack boxed bars', 'Post shipment'],
+      itemsInvolved: [quinary.boxedItemName],
+      successCriteria: ['Inventory decreases from SELLABLE', 'Shipment closes successfully without touching wrapped stock']
+    },
+    {
+      taskId: 'WF-75G-015',
       description: 'Inspect minimal-stock shortage behavior after one full unit of every retained 75 g SKU is planned.',
       expectedActions: ['Load minimal profile', 'Plan one run per 75 g SKU', 'Review remaining bottlenecks'],
       itemsInvolved: ['Minimal stock profile'],
       successCriteria: ['Every retained 75 g SKU is manufacturable exactly once', 'No unrelated leaf materials are stocked']
     },
     {
-      taskId: 'WF-75G-014',
+      taskId: 'WF-75G-016',
       description: 'Inspect base-stock normal production behavior across repeated 75 g runs.',
       expectedActions: ['Load base profile', 'Plan five runs per retained SKU', 'Review raw and packaging sufficiency'],
       itemsInvolved: ['Base stock profile'],
       successCriteria: ['Raw materials support >= 5 runs', 'Packaging supports >= 7 aggregated runs']
     },
     {
-      taskId: 'WF-75G-015',
-      description: 'Verify only BOM-derived 75 g finished bars remain in scope.',
-      expectedActions: ['Open focused BOM dataset', 'Review finished outputs', 'Confirm exclusions'],
+      taskId: 'WF-75G-017',
+      description: 'Verify only boxed 75 g bars remain as finished goods in the focused BOM.',
+      expectedActions: ['Open focused BOM dataset', 'Review wrapped and boxed nodes', 'Confirm exclusions'],
       itemsInvolved: ['Focused BOM dataset'],
-      successCriteria: ['No 8 g, 20 g, 1 kg, powder, nib pack, gift box, or sauce outputs remain as finished goods']
+      successCriteria: ['No 8 g, 20 g, 1 kg, powder, nib pack, gift box, or sauce outputs remain as finished goods', 'Wrapped bars appear only as intermediates']
     }
   ];
 
   return {
     generatedAt: GENERATED_AT,
+    summary: {
+      totalTasks: tasks.length,
+      wrappedStageTasks: 2,
+      boxedStageTasks: 4,
+      twoStageFlowRepresented: true,
+      shippingWrappedBarsSuggested: false
+    },
     tasks
   };
 }
@@ -1524,7 +1839,7 @@ function renderDotGraph(graph, mode) {
       if (!includeEdge(componentKey, outputKey)) continue;
       const bom = graph.boms.get(outputKey);
       const component = bom.components.find((entry) => entry.componentKey === componentKey);
-      const label = `${formatDecimal(component.quantity, component.uom === 'piece' ? 0 : 6)} ${component.uom}`;
+      const label = `${formatDecimal(component.quantity, isCountUom(component.uom) ? 0 : 6)} ${component.uom}`;
       edges.push(
         `  "${graph.nodes.get(componentKey)?.name ?? componentKey}" -> "${graph.nodes.get(outputKey)?.name ?? outputKey}" [label="${label}"];`
       );
@@ -1536,13 +1851,36 @@ function renderDotGraph(graph, mode) {
   return `${lines.join('\n')}\n`;
 }
 
-function buildValidationDocument(graph, finalSkuNames, minimalProfile, baseProfile, aggregateLeafDemand) {
+function buildValidationDocument(
+  graph,
+  finalSkuNames,
+  stageModels,
+  workOrderDocument,
+  workflowDocument,
+  minimalProfile,
+  baseProfile,
+  aggregateLeafDemand
+) {
   const minimalValidation = validateStockProfile(graph, finalSkuNames, aggregateLeafDemand, minimalProfile);
   const baseDemand = new Map(
     [...aggregateLeafDemand.entries()].map(([key, value]) => [key, value.mul(5)])
   );
   const baseValidation = validateStockProfile(graph, finalSkuNames, baseDemand, baseProfile);
   const cycleKeys = sortStrings(graph.cycleKeys.map((key) => graph.nodes.get(key)?.name ?? key));
+  const wrappedKeys = new Set(stageModels.map((model) => model.wrappedItemKey));
+  const boxedKeys = new Set(stageModels.map((model) => model.boxedItemKey));
+  const wrappedOpeningStock = {
+    minimal: minimalProfile.items.filter((item) => wrappedKeys.has(item.itemKey)).length,
+    base: baseProfile.items.filter((item) => wrappedKeys.has(item.itemKey)).length
+  };
+  const boxedOpeningStock = {
+    minimal: minimalProfile.items.filter((item) => boxedKeys.has(item.itemKey)).length,
+    base: baseProfile.items.filter((item) => boxedKeys.has(item.itemKey)).length
+  };
+  const wrappedPackagingLeakCount = stageModels.reduce(
+    (total, model) => total + model.wrappedComponents.filter((component) => isBoxingStageComponent(component.itemName)).length,
+    0
+  );
 
   const sampleRuns = finalSkuNames.slice(0, 5).map((itemName) => ({
     itemName,
@@ -1576,26 +1914,60 @@ function buildValidationDocument(graph, finalSkuNames, minimalProfile, baseProfi
     },
     simulationRuns: sampleRuns,
     simulationsSucceeded: cycleKeys.length === 0 && minimalValidation.valid && baseValidation.valid
+      && wrappedOpeningStock.minimal === 0
+      && wrappedOpeningStock.base === 0,
+    twoStageProduction: {
+      wrappedBarCount: stageModels.length,
+      boxedBarCount: stageModels.length,
+      wrappedBarsAreIntermediates: stageModels.every(
+        (model) => graph.intermediateKeys.has(model.wrappedItemKey) && !graph.finishedKeys.has(model.wrappedItemKey)
+      ),
+      boxedBarsAreFinishedGoods: stageModels.every(
+        (model) => graph.finishedKeys.has(model.boxedItemKey) && !graph.intermediateKeys.has(model.boxedItemKey)
+      ),
+      wrappedStagePackagingLeakCount: wrappedPackagingLeakCount,
+      wrappedBarsInOpeningStock: wrappedOpeningStock,
+      boxedBarsInOpeningStock: boxedOpeningStock,
+      workOrderScenarioSummary: workOrderDocument.summary,
+      workflowSummary: workflowDocument.summary
+    },
+    sellability: {
+      wrappedBarsSellable: false,
+      boxedBarsSellable: true,
+      wrappedBarsShippable: false,
+      boxedBarKeys: sortStrings([...boxedKeys]),
+      wrappedBarKeys: sortStrings([...wrappedKeys])
+    }
   };
 }
 
-function buildUomEnforcementSummary(graph, finalSkuNames) {
-  const violations = [];
+function buildUomEnforcementSummary(graph, finalSkuNames, stageModels) {
+  const boxedViolations = [];
   for (const skuName of finalSkuNames) {
     const skuKey = normalizeKey(skuName);
     const bom = graph.boms.get(skuKey);
-    if (!bom || bom.outputUom !== 'piece' || !bom.outputQty.eq(1)) {
-      violations.push({
+    if (!bom || bom.outputUom !== 'each' || !bom.outputQty.eq(1)) {
+      boxedViolations.push({
         itemName: skuName,
         outputQty: bom?.outputQty?.toString() ?? null,
         outputUom: bom?.outputUom ?? null
       });
     }
   }
+  const wrappedViolations = stageModels
+    .filter((model) => model.wrappedOutputUom !== 'each' || model.wrappedOutputQuantity !== 1)
+    .map((model) => ({
+      itemName: model.wrappedItemName,
+      outputQty: String(model.wrappedOutputQuantity),
+      outputUom: model.wrappedOutputUom
+    }));
   return {
-    finishedPieceCount: finalSkuNames.length - violations.length,
+    finishedPieceCount: finalSkuNames.length - boxedViolations.length,
     totalFinishedCount: finalSkuNames.length,
-    violations
+    wrappedPieceCount: stageModels.length - wrappedViolations.length,
+    totalWrappedCount: stageModels.length,
+    violations: boxedViolations,
+    wrappedViolations
   };
 }
 
@@ -1610,6 +1982,7 @@ function renderSimulationAssetFiles(assets) {
     [WORK_ORDERS_PATH, stableJson(assets.workOrderDocument)],
     [WORKFLOW_PATH, stableJson(assets.workflowDocument)],
     [VALIDATION_PATH, stableJson(assets.validationDocument)],
+    [MANUFACTURABILITY_PATH, stableJson(assets.inventoryManufacturabilityDocument)],
     [MRP_CSV_PATH, assets.mrpExplosionCsv],
     [DAG_DOT_PATH, assets.graphviz.dag],
     [INGREDIENT_DOT_PATH, assets.graphviz.ingredients],
@@ -1627,21 +2000,30 @@ function writeRenderedFiles(rendered) {
 function buildAssets(sourceFile = SOURCE_CSV_PATH) {
   const dataset = buildNormalizedDataset(sourceFile);
   const bomValidationReport = validateBomDataset(dataset.scopedDocument, dataset.scopedGraph);
-  const dependencySummary = buildDependencySummary(dataset.scopedGraph, dataset.inScopeFinals);
+  const stageModelDocument = build75gStageModels(dataset.scopedGraph, dataset.inScopeFinals);
+  if (stageModelDocument.issues.length > 0) {
+    const error = new Error(`SIAMAYA_TWO_STAGE_MODEL_INVALID count=${stageModelDocument.issues.length}`);
+    error.stageModelIssues = stageModelDocument.issues;
+    throw error;
+  }
+  const dependencySummary = buildDependencySummary(dataset.scopedGraph, dataset.inScopeFinals, stageModelDocument.models);
   const leafDemand = buildLeafDemand(dataset.scopedGraph, dataset.inScopeFinals);
   const minimalStockProfile = buildStockProfile(dataset.scopedGraph, leafDemand.aggregate, 'minimal');
   const baseStockProfile = buildStockProfile(dataset.scopedGraph, leafDemand.aggregate, 'base');
   const procurementDocument = buildProcurementMetadata(dataset.scopedGraph, leafDemand.aggregate, baseStockProfile);
-  const workOrderDocument = buildWorkOrderScenarios(dataset.scopedGraph, dataset.inScopeFinals, leafDemand);
-  const workflowDocument = buildGuidedWorkflowTasks(dataset.inScopeFinals);
+  const workOrderDocument = buildWorkOrderScenarios(dataset.scopedGraph, stageModelDocument.models);
+  const workflowDocument = buildGuidedWorkflowTasks(stageModelDocument.models);
   const validationDocument = buildValidationDocument(
     dataset.scopedGraph,
     dataset.inScopeFinals,
+    stageModelDocument.models,
+    workOrderDocument,
+    workflowDocument,
     minimalStockProfile,
     baseStockProfile,
     leafDemand.aggregate
   );
-  const uomEnforcement = buildUomEnforcementSummary(dataset.scopedGraph, dataset.inScopeFinals);
+  const uomEnforcement = buildUomEnforcementSummary(dataset.scopedGraph, dataset.inScopeFinals, stageModelDocument.models);
 
   const graphviz = {
     dag: renderDotGraph(dataset.scopedGraph, 'all'),
@@ -1652,7 +2034,31 @@ function buildAssets(sourceFile = SOURCE_CSV_PATH) {
   const bomSanityReport = {
     ...dataset.sanityReport,
     dependencySummary,
-    uomEnforcement
+    uomEnforcement,
+    stageModels: stageModelDocument.models
+  };
+  const inventoryManufacturabilityDocument = {
+    generatedAt: GENERATED_AT,
+    skuCount: dataset.inScopeFinals.length,
+    minimalProfile: {
+      manufacturableOnce: validationDocument.stockProfiles.minimal.manufacturableOnce,
+      minimumPerSkuRuns: validationDocument.stockProfiles.minimal.minimumPerSkuRuns,
+      missing: validationDocument.stockProfiles.minimal.missing
+    },
+    baseProfile: {
+      manufacturableFiveRuns: validationDocument.stockProfiles.base.manufacturableFiveRuns,
+      minimumPerSkuRuns: validationDocument.stockProfiles.base.minimumPerSkuRuns,
+      missing: validationDocument.stockProfiles.base.missing
+    },
+    perSku: {
+      minimal: validateStockProfile(dataset.scopedGraph, dataset.inScopeFinals, leafDemand.aggregate, minimalStockProfile).perSkuRuns,
+      base: validateStockProfile(
+        dataset.scopedGraph,
+        dataset.inScopeFinals,
+        new Map([...leafDemand.aggregate.entries()].map(([key, value]) => [key, value.mul(5)])),
+        baseStockProfile
+      ).perSkuRuns
+    }
   };
 
   const rendered = renderSimulationAssetFiles({
@@ -1665,6 +2071,7 @@ function buildAssets(sourceFile = SOURCE_CSV_PATH) {
     workOrderDocument,
     workflowDocument,
     validationDocument,
+    inventoryManufacturabilityDocument,
     mrpExplosionCsv: buildMrpExplosionCsv(dataset.scopedGraph, leafDemand),
     graphviz
   });
@@ -1678,6 +2085,7 @@ function buildAssets(sourceFile = SOURCE_CSV_PATH) {
     workOrderDocument,
     workflowDocument,
     validationDocument,
+    inventoryManufacturabilityDocument,
     mrpExplosionCsv: buildMrpExplosionCsv(dataset.scopedGraph, leafDemand),
     graphviz
   });
@@ -1713,6 +2121,8 @@ function buildAssets(sourceFile = SOURCE_CSV_PATH) {
     bomDocument: dataset.scopedDocument,
     bomSanityReport,
     scoped75gFinishedSkus: dataset.inScopeFinals,
+    wrappedBarNodes: stageModelDocument.models.map((model) => model.wrappedItemName),
+    boxedFinishedGoods: stageModelDocument.models.map((model) => model.boxedItemName),
     dependencySummary,
     uomEnforcementSummary: uomEnforcement,
     minimalStockProfile,
@@ -1723,6 +2133,7 @@ function buildAssets(sourceFile = SOURCE_CSV_PATH) {
     workOrderDocument,
     workflowDocument,
     validationDocument,
+    inventoryManufacturabilityDocument,
     bomValidationReport,
     stressSimulationDocument,
     graphviz,
