@@ -65,6 +65,9 @@ Execution order inside the transaction:
 - Replay must be single-sourced through `inventoryReplayEngine.ts`.
 - WIP must stay symmetric: issue adds value, completion/report removes value, void restores and removes with equal opposite sign.
 - Reservation lifecycle must remain `RESERVED -> ALLOCATED -> FULFILLED` for consumed work-order component demand.
+- Work-order reservations use quantity-derived active status.
+- Reopen from `FULFILLED` is allowed only for compensating manufacturing restores.
+- Non-manufacturing reservations keep their existing terminal semantics.
 - Projection tables may lag during execution failure, but the ledger may not be partially posted.
 - Traceability repair may append missing `inventory_movement_lots` or `work_order_lot_links` rows only.
 

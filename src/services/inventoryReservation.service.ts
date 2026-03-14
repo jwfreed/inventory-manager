@@ -51,6 +51,19 @@ type ReservationRow = {
   cancel_reason?: string | null;
 };
 
+type ReservationStateRow = Pick<
+  ReservationRow,
+  | 'status'
+  | 'quantity_fulfilled'
+  | 'updated_at'
+  | 'fulfilled_at'
+  | 'released_at'
+  | 'canceled_at'
+  | 'release_reason_code'
+  | 'cancel_reason'
+  | 'allocated_at'
+>;
+
 export type WorkOrderReservationPlanLine = {
   componentItemId: string;
   componentItemSku: string | null;
@@ -396,70 +409,16 @@ async function hasVoidReservationRestoreMarker(
   return result.rowCount > 0;
 }
 
-async function rebuildReservationAsReserved(
-  client: PoolClient,
-  row: ReservationRow,
-  nextFulfilled: number,
-  now: Date
-) {
-  await client.query(
-    `DELETE FROM inventory_reservations
-      WHERE id = $1
-        AND tenant_id = $2`,
-    [row.id, row.tenant_id]
-  );
-  await client.query(
-    `INSERT INTO inventory_reservations (
-        id,
-        tenant_id,
-        client_id,
-        status,
-        demand_type,
-        demand_id,
-        item_id,
-        location_id,
-        warehouse_id,
-        uom,
-        quantity_reserved,
-        quantity_fulfilled,
-        reserved_at,
-        released_at,
-        release_reason_code,
-        notes,
-        created_at,
-        updated_at,
-        idempotency_key,
-        allocated_at,
-        canceled_at,
-        fulfilled_at,
-        expires_at,
-        expired_at,
-        cancel_reason
-     ) VALUES (
-        $1,$2,$3,'RESERVED',$4,$5,$6,$7,$8,$9,$10,$11,$12,
-        NULL,NULL,$13,$14,$15,$16,NULL,NULL,NULL,$17,$18,NULL
-     )`,
-    [
-      row.id,
-      row.tenant_id,
-      row.client_id,
-      row.demand_type,
-      row.demand_id,
-      row.item_id,
-      row.location_id,
-      row.warehouse_id,
-      row.uom,
-      roundQuantity(toNumber(row.quantity_reserved)),
-      nextFulfilled,
-      row.reserved_at,
-      row.notes ?? null,
-      row.created_at,
-      now,
-      row.idempotency_key ?? null,
-      row.expires_at ?? null,
-      row.expired_at ?? null
-    ]
-  );
+function applyReservationState(row: ReservationRow, updated: ReservationStateRow) {
+  row.status = updated.status;
+  row.quantity_fulfilled = updated.quantity_fulfilled;
+  row.updated_at = updated.updated_at;
+  row.fulfilled_at = updated.fulfilled_at;
+  row.released_at = updated.released_at;
+  row.canceled_at = updated.canceled_at;
+  row.release_reason_code = updated.release_reason_code;
+  row.cancel_reason = updated.cancel_reason;
+  row.allocated_at = updated.allocated_at;
 }
 
 export async function syncWorkOrderReservations(
@@ -495,40 +454,46 @@ export async function syncWorkOrderReservations(
     let reservationStatus: string | null = existing?.status ?? null;
     if (existing) {
       if (nextQuantityReserved <= fulfilledQty) {
-        reservationStatus = fulfilledQty > 0 ? 'FULFILLED' : 'CANCELLED';
-        await client.query(
+        const updatedReservation = await client.query<{ status: string }>(
           `UPDATE inventory_reservations
-              SET status = $1,
-                  quantity_reserved = $2,
-                  quantity_fulfilled = $3,
-                  released_at = CASE WHEN $1 = 'CANCELLED' THEN $4 ELSE released_at END,
-                  canceled_at = CASE WHEN $1 = 'CANCELLED' THEN $4 ELSE canceled_at END,
-                  fulfilled_at = CASE WHEN $1 = 'FULFILLED' THEN COALESCE(fulfilled_at, $4) ELSE fulfilled_at END,
-                  release_reason_code = CASE WHEN $1 = 'CANCELLED' THEN 'work_order_reservation_sync' ELSE release_reason_code END,
-                  updated_at = $4
-            WHERE id = $5
-              AND tenant_id = $6`,
-          [reservationStatus, fulfilledQty, fulfilledQty, now, existing.id, tenantId]
+              SET quantity_reserved = $1,
+                  quantity_fulfilled = $2,
+                  status = CASE WHEN $2 <= 0 THEN 'CANCELLED' ELSE status END,
+                  released_at = CASE WHEN $2 <= 0 THEN $3 ELSE NULL END,
+                  canceled_at = CASE WHEN $2 <= 0 THEN $3 ELSE NULL END,
+                  fulfilled_at = CASE
+                    WHEN $2 > 0 AND $1 = $2 THEN COALESCE(fulfilled_at, $3)
+                    ELSE NULL
+                  END,
+                  release_reason_code = CASE
+                    WHEN $2 <= 0 THEN 'work_order_reservation_sync'
+                    ELSE NULL
+                  END,
+                  updated_at = $3
+            WHERE id = $4
+              AND tenant_id = $5
+        RETURNING status`,
+          [fulfilledQty, fulfilledQty, now, existing.id, tenantId]
         );
+        reservationStatus = updatedReservation.rows[0]?.status ?? reservationStatus;
       } else {
-        reservationStatus = existing.status === 'ALLOCATED' ? 'ALLOCATED' : 'RESERVED';
-        await client.query(
+        const updatedReservation = await client.query<{ status: string }>(
           `UPDATE inventory_reservations
-              SET status = $1,
-                  quantity_reserved = $2,
-                  updated_at = $3,
+              SET quantity_reserved = $1,
+                  updated_at = $2,
                   released_at = NULL,
                   canceled_at = NULL,
                   release_reason_code = NULL
-            WHERE id = $4
-              AND tenant_id = $5`,
-          [reservationStatus, nextQuantityReserved, now, existing.id, tenantId]
+            WHERE id = $3
+              AND tenant_id = $4
+        RETURNING status`,
+          [nextQuantityReserved, now, existing.id, tenantId]
         );
+        reservationStatus = updatedReservation.rows[0]?.status ?? reservationStatus;
       }
     } else if (nextQuantityReserved > 0) {
       reservationId = uuidv4();
-      reservationStatus = 'RESERVED';
-      await client.query(
+      const insertedReservation = await client.query<{ status: string }>(
         `INSERT INTO inventory_reservations (
             id,
             tenant_id,
@@ -546,7 +511,8 @@ export async function syncWorkOrderReservations(
             notes,
             created_at,
             updated_at
-         ) VALUES ($1,$2,$3,'RESERVED','work_order_component',$4,$5,$6,$7,$8,$9,0,$10,$11,$10,$10)`,
+         ) VALUES ($1,$2,$3,'RESERVED','work_order_component',$4,$5,$6,$7,$8,$9,0,$10,$11,$10,$10)
+      RETURNING status`,
         [
           reservationId,
           tenantId,
@@ -561,6 +527,7 @@ export async function syncWorkOrderReservations(
           `Auto-reserved for work order ${workOrderId}`
         ]
       );
+      reservationStatus = insertedReservation.rows[0]?.status ?? 'RESERVED';
     }
 
     snapshot.push({
@@ -793,41 +760,17 @@ export async function consumeWorkOrderReservations(
       throw error;
     }
     const nextFulfilled = roundQuantity(fulfilledQty + line.quantity);
-    const nextOpen = roundQuantity(Math.max(0, reservedQty - nextFulfilled));
-    if (reservation.status === 'RESERVED') {
-      await client.query(
-        `UPDATE inventory_reservations
-            SET quantity_fulfilled = $1,
-                status = 'ALLOCATED',
-                updated_at = $2
-          WHERE id = $3
-            AND tenant_id = $4`,
-        [nextFulfilled, now, reservation.id, tenantId]
-      );
-      if (nextOpen <= 0) {
-        await client.query(
-          `UPDATE inventory_reservations
-              SET status = 'FULFILLED',
-                  fulfilled_at = COALESCE(fulfilled_at, $1),
-                  updated_at = $1
-            WHERE id = $2
-              AND tenant_id = $3`,
-          [now, reservation.id, tenantId]
-        );
-      }
-      continue;
-    }
-
-    const nextStatus = nextOpen <= 0 ? 'FULFILLED' : 'ALLOCATED';
     await client.query(
       `UPDATE inventory_reservations
           SET quantity_fulfilled = $1,
-              status = $2,
-              fulfilled_at = CASE WHEN $2 = 'FULFILLED' THEN COALESCE(fulfilled_at, $3) ELSE fulfilled_at END,
-              updated_at = $3
-        WHERE id = $4
-          AND tenant_id = $5`,
-      [nextFulfilled, nextStatus, now, reservation.id, tenantId]
+              fulfilled_at = CASE
+                WHEN $1 >= quantity_reserved THEN COALESCE(fulfilled_at, $2)
+                ELSE NULL
+              END,
+              updated_at = $2
+        WHERE id = $3
+          AND tenant_id = $4`,
+      [nextFulfilled, now, reservation.id, tenantId]
     );
   }
 }
@@ -956,6 +899,21 @@ export async function restoreReservationsForVoid(
       if (fulfilledQty <= 1e-6) {
         continue;
       }
+      if (row.status === 'CANCELLED' || row.status === 'EXPIRED') {
+        logVoidReservationRestoreWarning({
+          tenantId,
+          workOrderId,
+          executionId,
+          reason: 'reservation_terminal_row_not_reopenable',
+          reservationId: row.id,
+          status: row.status,
+          itemId: restoreLine.item_id,
+          locationId: restoreLine.location_id,
+          uom: restoreLine.uom,
+          requestedRestoreQty: remainingToRestore
+        });
+        continue;
+      }
 
       const restoredQty = roundQuantity(Math.min(remainingToRestore, fulfilledQty));
       const nextFulfilled = roundQuantity(fulfilledQty - restoredQty);
@@ -965,29 +923,31 @@ export async function restoreReservationsForVoid(
         continue;
       }
 
-      if (row.status === 'RESERVED') {
-        await client.query(
-          `UPDATE inventory_reservations
-              SET quantity_fulfilled = $1,
-                  updated_at = $2,
-                  fulfilled_at = NULL
-            WHERE id = $3
-              AND tenant_id = $4`,
-          [nextFulfilled, now, row.id, tenantId]
-        );
-      } else {
-        await rebuildReservationAsReserved(client, row, nextFulfilled, now);
+      const updatedReservation = await client.query<ReservationStateRow>(
+        `UPDATE inventory_reservations
+            SET quantity_fulfilled = $1,
+                updated_at = $2,
+                fulfilled_at = CASE
+                  WHEN $1 < quantity_reserved THEN NULL
+                  ELSE fulfilled_at
+                END
+          WHERE id = $3
+            AND tenant_id = $4
+      RETURNING status,
+                quantity_fulfilled,
+                updated_at,
+                fulfilled_at,
+                released_at,
+                canceled_at,
+                release_reason_code,
+                cancel_reason,
+                allocated_at`,
+        [nextFulfilled, now, row.id, tenantId]
+      );
+      const updatedRow = updatedReservation.rows[0];
+      if (updatedRow) {
+        applyReservationState(row, updatedRow);
       }
-
-      row.status = 'RESERVED';
-      row.quantity_fulfilled = nextFulfilled;
-      row.updated_at = now.toISOString();
-      row.fulfilled_at = null;
-      row.released_at = null;
-      row.canceled_at = null;
-      row.release_reason_code = null;
-      row.cancel_reason = null;
-      row.allocated_at = null;
       remainingToRestore = roundQuantity(remainingToRestore - restoredQty);
     }
 
