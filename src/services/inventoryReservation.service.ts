@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { recordAuditLog } from '../lib/audit';
 import { convertToCanonical } from './uomCanonical.service';
 import { deriveComponentConsumeLocation, deriveWorkOrderStageRouting } from './stageRouting.service';
 import { fetchBomById, resolveEffectiveBom } from './boms.service';
@@ -24,7 +25,11 @@ type WorkOrderRow = {
 
 type ReservationRow = {
   id: string;
+  tenant_id: string;
+  client_id: string;
   status: string;
+  demand_type: string;
+  demand_id: string;
   item_id: string;
   location_id: string;
   warehouse_id: string;
@@ -32,7 +37,18 @@ type ReservationRow = {
   quantity_reserved: string | number;
   quantity_fulfilled: string | number | null;
   reserved_at: string;
+  released_at: string | null;
+  release_reason_code: string | null;
+  notes: string | null;
+  created_at: string;
   updated_at: string;
+  idempotency_key?: string | null;
+  allocated_at?: string | null;
+  canceled_at?: string | null;
+  fulfilled_at?: string | null;
+  expires_at?: string | null;
+  expired_at?: string | null;
+  cancel_reason?: string | null;
 };
 
 export type WorkOrderReservationPlanLine = {
@@ -264,7 +280,11 @@ async function loadExistingReservations(
 ) {
   const result = await client.query<ReservationRow>(
     `SELECT id,
+            tenant_id,
+            client_id,
             status,
+            demand_type,
+            demand_id,
             item_id,
             location_id,
             warehouse_id,
@@ -272,7 +292,18 @@ async function loadExistingReservations(
             quantity_reserved,
             quantity_fulfilled,
             reserved_at,
-            updated_at
+            released_at,
+            release_reason_code,
+            notes,
+            created_at,
+            updated_at,
+            idempotency_key,
+            allocated_at,
+            canceled_at,
+            fulfilled_at,
+            expires_at,
+            expired_at,
+            cancel_reason
        FROM inventory_reservations
       WHERE tenant_id = $1
         AND demand_type = 'work_order_component'
@@ -313,6 +344,122 @@ function reservationLineKey(line: {
 
 function reservationRowKey(row: ReservationRow) {
   return `${row.item_id}:${row.location_id}:${row.uom}`;
+}
+
+function logVoidReservationRestoreWarning(payload: Record<string, unknown>) {
+  console.warn('WO_VOID_RESERVATION_RESTORE_WARNING', payload);
+}
+
+function assertReservationFulfillmentBounds(
+  reservationId: string,
+  quantityReserved: number,
+  quantityFulfilled: number
+) {
+  if (quantityFulfilled < -1e-6 || quantityFulfilled - quantityReserved > 1e-6) {
+    const error = new Error('WO_RESERVATION_CORRUPT') as Error & {
+      code?: string;
+      details?: Record<string, unknown>;
+    };
+    error.code = 'WO_RESERVATION_CORRUPT';
+    error.details = {
+      reservationId,
+      quantityReserved,
+      quantityFulfilled
+    };
+    throw error;
+  }
+}
+
+function buildVoidReservationRestoreMetadata(executionId: string) {
+  return {
+    reservationRestore: 'void',
+    executionId
+  } as const;
+}
+
+async function hasVoidReservationRestoreMarker(
+  client: PoolClient,
+  tenantId: string,
+  executionId: string
+) {
+  const result = await client.query(
+    `SELECT 1
+       FROM audit_log
+      WHERE tenant_id = $1
+        AND entity_type = 'work_order_execution'
+        AND entity_id = $2
+        AND action = 'update'
+        AND COALESCE(metadata->>'reservationRestore', '') = 'void'
+      LIMIT 1`,
+    [tenantId, executionId]
+  );
+  return result.rowCount > 0;
+}
+
+async function rebuildReservationAsReserved(
+  client: PoolClient,
+  row: ReservationRow,
+  nextFulfilled: number,
+  now: Date
+) {
+  await client.query(
+    `DELETE FROM inventory_reservations
+      WHERE id = $1
+        AND tenant_id = $2`,
+    [row.id, row.tenant_id]
+  );
+  await client.query(
+    `INSERT INTO inventory_reservations (
+        id,
+        tenant_id,
+        client_id,
+        status,
+        demand_type,
+        demand_id,
+        item_id,
+        location_id,
+        warehouse_id,
+        uom,
+        quantity_reserved,
+        quantity_fulfilled,
+        reserved_at,
+        released_at,
+        release_reason_code,
+        notes,
+        created_at,
+        updated_at,
+        idempotency_key,
+        allocated_at,
+        canceled_at,
+        fulfilled_at,
+        expires_at,
+        expired_at,
+        cancel_reason
+     ) VALUES (
+        $1,$2,$3,'RESERVED',$4,$5,$6,$7,$8,$9,$10,$11,$12,
+        NULL,NULL,$13,$14,$15,$16,NULL,NULL,NULL,$17,$18,NULL
+     )`,
+    [
+      row.id,
+      row.tenant_id,
+      row.client_id,
+      row.demand_type,
+      row.demand_id,
+      row.item_id,
+      row.location_id,
+      row.warehouse_id,
+      row.uom,
+      roundQuantity(toNumber(row.quantity_reserved)),
+      nextFulfilled,
+      row.reserved_at,
+      row.notes ?? null,
+      row.created_at,
+      now,
+      row.idempotency_key ?? null,
+      row.expires_at ?? null,
+      row.expired_at ?? null
+    ]
+  );
 }
 
 export async function syncWorkOrderReservations(
@@ -683,6 +830,195 @@ export async function consumeWorkOrderReservations(
       [nextFulfilled, nextStatus, now, reservation.id, tenantId]
     );
   }
+}
+
+export async function restoreReservationsForVoid(
+  tenantId: string,
+  workOrderId: string,
+  executionId: string,
+  client?: PoolClient
+): Promise<void> {
+  if (!client) {
+    return withTransaction((tx) => restoreReservationsForVoid(tenantId, workOrderId, executionId, tx));
+  }
+
+  if (await hasVoidReservationRestoreMarker(client, tenantId, executionId)) {
+    return;
+  }
+
+  const executionResult = await client.query<{ consumption_movement_id: string | null }>(
+    `SELECT consumption_movement_id
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND id = $2
+        AND work_order_id = $3
+      FOR UPDATE`,
+    [tenantId, executionId, workOrderId]
+  );
+  if (executionResult.rowCount === 0) {
+    throw new Error('WO_VOID_EXECUTION_NOT_FOUND');
+  }
+  const consumptionMovementId = executionResult.rows[0]?.consumption_movement_id;
+  if (!consumptionMovementId) {
+    throw new Error('WO_VOID_EXECUTION_MOVEMENTS_MISSING');
+  }
+
+  const restoreDemandResult = await client.query<{
+    item_id: string;
+    location_id: string;
+    uom: string;
+    quantity: string | number;
+  }>(
+    `SELECT item_id,
+            location_id,
+            COALESCE(canonical_uom, uom) AS uom,
+            ABS(SUM(COALESCE(quantity_delta_canonical, quantity_delta)))::numeric AS quantity
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND COALESCE(quantity_delta_canonical, quantity_delta) < 0
+      GROUP BY item_id, location_id, COALESCE(canonical_uom, uom)
+      ORDER BY item_id ASC, location_id ASC, COALESCE(canonical_uom, uom) ASC`,
+    [tenantId, consumptionMovementId]
+  );
+  if (restoreDemandResult.rowCount === 0) {
+    await recordAuditLog(
+      {
+        tenantId,
+        actorType: 'system',
+        actorId: null,
+        action: 'update',
+        entityType: 'work_order_execution',
+        entityId: executionId,
+        metadata: {
+          ...buildVoidReservationRestoreMetadata(executionId),
+          skipped: true,
+          reason: 'no_consumption_lines'
+        }
+      },
+      client
+    );
+    return;
+  }
+
+  const reservations = await loadExistingReservations(client, tenantId, workOrderId);
+  const reservationsByKey = new Map<string, ReservationRow[]>();
+  for (const reservation of reservations) {
+    const key = reservationRowKey(reservation);
+    const existing = reservationsByKey.get(key);
+    if (existing) {
+      existing.push(reservation);
+    } else {
+      reservationsByKey.set(key, [reservation]);
+    }
+  }
+  for (const rows of reservationsByKey.values()) {
+    rows.sort((left, right) => {
+      const fulfilledCompare =
+        roundQuantity(toNumber(right.quantity_fulfilled ?? 0))
+        - roundQuantity(toNumber(left.quantity_fulfilled ?? 0));
+      if (Math.abs(fulfilledCompare) > 1e-6) {
+        return fulfilledCompare > 0 ? 1 : -1;
+      }
+      return left.id.localeCompare(right.id);
+    });
+  }
+
+  const now = new Date();
+  for (const restoreLine of restoreDemandResult.rows) {
+    const key = reservationLineKey({
+      componentItemId: restoreLine.item_id,
+      locationId: restoreLine.location_id,
+      uom: restoreLine.uom
+    });
+    const matchingRows = reservationsByKey.get(key) ?? [];
+    if (matchingRows.length === 0) {
+      logVoidReservationRestoreWarning({
+        tenantId,
+        workOrderId,
+        executionId,
+        reason: 'reservation_row_missing',
+        itemId: restoreLine.item_id,
+        locationId: restoreLine.location_id,
+        uom: restoreLine.uom,
+        requestedRestoreQty: roundQuantity(toNumber(restoreLine.quantity))
+      });
+      continue;
+    }
+
+    let remainingToRestore = roundQuantity(toNumber(restoreLine.quantity));
+    for (const row of matchingRows) {
+      if (remainingToRestore <= 1e-6) {
+        break;
+      }
+      const quantityReserved = roundQuantity(toNumber(row.quantity_reserved));
+      const fulfilledQty = roundQuantity(toNumber(row.quantity_fulfilled ?? 0));
+      if (fulfilledQty <= 1e-6) {
+        continue;
+      }
+
+      const restoredQty = roundQuantity(Math.min(remainingToRestore, fulfilledQty));
+      const nextFulfilled = roundQuantity(fulfilledQty - restoredQty);
+      assertReservationFulfillmentBounds(row.id, quantityReserved, nextFulfilled);
+
+      if (Math.abs(restoredQty) <= 1e-6) {
+        continue;
+      }
+
+      if (row.status === 'RESERVED') {
+        await client.query(
+          `UPDATE inventory_reservations
+              SET quantity_fulfilled = $1,
+                  updated_at = $2,
+                  fulfilled_at = NULL
+            WHERE id = $3
+              AND tenant_id = $4`,
+          [nextFulfilled, now, row.id, tenantId]
+        );
+      } else {
+        await rebuildReservationAsReserved(client, row, nextFulfilled, now);
+      }
+
+      row.status = 'RESERVED';
+      row.quantity_fulfilled = nextFulfilled;
+      row.updated_at = now.toISOString();
+      row.fulfilled_at = null;
+      row.released_at = null;
+      row.canceled_at = null;
+      row.release_reason_code = null;
+      row.cancel_reason = null;
+      row.allocated_at = null;
+      remainingToRestore = roundQuantity(remainingToRestore - restoredQty);
+    }
+
+    if (remainingToRestore > 1e-6) {
+      logVoidReservationRestoreWarning({
+        tenantId,
+        workOrderId,
+        executionId,
+        reason: 'reservation_fulfilled_shortfall',
+        itemId: restoreLine.item_id,
+        locationId: restoreLine.location_id,
+        uom: restoreLine.uom,
+        requestedRestoreQty: roundQuantity(toNumber(restoreLine.quantity)),
+        restoredQty: roundQuantity(toNumber(restoreLine.quantity) - remainingToRestore),
+        shortfallQty: remainingToRestore
+      });
+    }
+  }
+
+  await recordAuditLog(
+    {
+      tenantId,
+      actorType: 'system',
+      actorId: null,
+      action: 'update',
+      entityType: 'work_order_execution',
+      entityId: executionId,
+      metadata: buildVoidReservationRestoreMetadata(executionId)
+    },
+    client
+  );
 }
 
 export async function releaseWorkOrderReservations(

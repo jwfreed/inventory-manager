@@ -373,20 +373,29 @@ export async function createServiceHarness(options = {}) {
   }
 
   async function qcAcceptReceiptLine({ receiptLineId, quantity, uom = 'each', actorId = null }) {
-    return createQcEvent(
-      tenantId,
-      {
-        purchaseOrderReceiptLineId: receiptLineId,
-        eventType: 'accept',
-        quantity,
-        uom,
-        actorType: actorId ? 'user' : 'system',
-        actorId
-      },
-      {
-        idempotencyKey: `qc-accept:${tenantId}:${receiptLineId}:${quantity}:${uom}`
+    const idempotencyKey = `qc-accept:${tenantId}:${receiptLineId}:${quantity}:${uom}`;
+    const retryDelaysMs = [50, 100, 200];
+    for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+      try {
+        return await createQcEvent(
+          tenantId,
+          {
+            purchaseOrderReceiptLineId: receiptLineId,
+            eventType: 'accept',
+            quantity,
+            uom,
+            actorType: actorId ? 'user' : 'system',
+            actorId
+          },
+          { idempotencyKey }
+        );
+      } catch (error) {
+        if (error?.code !== 'TX_RETRY_EXHAUSTED' || attempt === retryDelaysMs.length) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
       }
-    );
+    }
   }
 
   async function createBomAndActivate({ outputItemId, components, suffix }) {

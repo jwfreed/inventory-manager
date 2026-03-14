@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 const execFileAsync = promisify(execFile);
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const QC_RETRY_DELAYS_MS = [50, 100, 200];
 
 export const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 export const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
@@ -28,6 +29,14 @@ export async function apiRequest(method, path, { token, body, params, headers } 
   const isJson = contentType.includes('application/json');
   const payload = isJson ? await res.json().catch(() => null) : await res.text().catch(() => '');
   return { res, payload };
+}
+
+function isRetryableQcTxExhausted(result) {
+  return result?.res?.status === 409 && result?.payload?.error?.code === 'TX_RETRY_EXHAUSTED';
+}
+
+function sleep(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 export async function createVendor(token) {
@@ -104,18 +113,27 @@ export async function createReceipt({
 }
 
 export async function qcAcceptReceiptLine(token, receiptLineId, quantity) {
-  const res = await apiRequest('POST', '/qc-events', {
-    token,
-    headers: { 'Idempotency-Key': `wo-fixture-qc:${receiptLineId}` },
-    body: {
-      purchaseOrderReceiptLineId: receiptLineId,
-      eventType: 'accept',
-      quantity,
-      uom: 'each',
-      actorType: 'system'
+  const idempotencyKey = `wo-fixture-qc:${receiptLineId}`;
+  for (let attempt = 0; attempt <= QC_RETRY_DELAYS_MS.length; attempt += 1) {
+    const res = await apiRequest('POST', '/qc-events', {
+      token,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: {
+        purchaseOrderReceiptLineId: receiptLineId,
+        eventType: 'accept',
+        quantity,
+        uom: 'each',
+        actorType: 'system'
+      }
+    });
+    if (res.res.status === 201 || res.res.status === 200) {
+      return;
     }
-  });
-  assert.equal(res.res.status, 201, JSON.stringify(res.payload));
+    if (!isRetryableQcTxExhausted(res) || attempt === QC_RETRY_DELAYS_MS.length) {
+      assert.equal(res.res.status, 201, JSON.stringify(res.payload));
+    }
+    await sleep(QC_RETRY_DELAYS_MS[attempt]);
+  }
 }
 
 export async function createBom(token, outputItemId, components, suffix) {

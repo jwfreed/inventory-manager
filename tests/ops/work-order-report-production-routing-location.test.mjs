@@ -96,18 +96,28 @@ async function createReceipt({ token, vendorId, itemId, locationId, quantity, un
 }
 
 async function qcAcceptReceiptLine(token, receiptLineId, quantity) {
-  const res = await apiRequest('POST', '/qc-events', {
-    token,
-    headers: { 'Idempotency-Key': `wo-routing-qc:${receiptLineId}` },
-    body: {
-      purchaseOrderReceiptLineId: receiptLineId,
-      eventType: 'accept',
-      quantity,
-      uom: 'each',
-      actorType: 'system'
+  const idempotencyKey = `wo-routing-qc:${receiptLineId}`;
+  const retryDelaysMs = [50, 100, 200];
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    const res = await apiRequest('POST', '/qc-events', {
+      token,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: {
+        purchaseOrderReceiptLineId: receiptLineId,
+        eventType: 'accept',
+        quantity,
+        uom: 'each',
+        actorType: 'system'
+      }
+    });
+    if (res.res.status === 201 || res.res.status === 200) {
+      return;
     }
-  });
-  assert.equal(res.res.status, 201, JSON.stringify(res.payload));
+    if (res.res.status !== 409 || res.payload?.error?.code !== 'TX_RETRY_EXHAUSTED' || attempt === retryDelaysMs.length) {
+      assert.equal(res.res.status, 201, JSON.stringify(res.payload));
+    }
+    await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
+  }
 }
 
 async function createBom(token, outputItemId, componentItemId, suffix) {

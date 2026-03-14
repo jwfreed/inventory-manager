@@ -82,6 +82,18 @@ test('report-scrap moves output from QA to SCRAP with FIFO relocation and ATP ex
     }
   });
   assert.equal(reportRes.res.status, 201, JSON.stringify(reportRes.payload));
+  const reservationSnapshotBeforeScrap = await db.query(
+    `SELECT item_id,
+            status,
+            quantity_reserved::numeric AS quantity_reserved,
+            COALESCE(quantity_fulfilled, 0)::numeric AS quantity_fulfilled
+       FROM inventory_reservations
+      WHERE tenant_id = $1
+        AND demand_type = 'work_order_component'
+        AND demand_id = $2
+      ORDER BY item_id ASC`,
+    [tenantId, workOrder.id]
+  );
 
   const preQa = await readOnHand(db, tenantId, output, defaults.QA.id);
   const preScrap = await readOnHand(db, tenantId, output, defaults.SCRAP.id);
@@ -114,6 +126,32 @@ test('report-scrap moves output from QA to SCRAP with FIFO relocation and ATP ex
   const postScrap = await readOnHand(db, tenantId, output, defaults.SCRAP.id);
   assert.ok(Math.abs(postQa - (preQa - 7)) < 1e-6, `qa drift pre=${preQa} post=${postQa}`);
   assert.ok(Math.abs(postScrap - (preScrap + 7)) < 1e-6, `scrap drift pre=${preScrap} post=${postScrap}`);
+  const reservationSnapshotAfterScrap = await db.query(
+    `SELECT item_id,
+            status,
+            quantity_reserved::numeric AS quantity_reserved,
+            COALESCE(quantity_fulfilled, 0)::numeric AS quantity_fulfilled
+       FROM inventory_reservations
+      WHERE tenant_id = $1
+        AND demand_type = 'work_order_component'
+        AND demand_id = $2
+      ORDER BY item_id ASC`,
+    [tenantId, workOrder.id]
+  );
+  assert.deepEqual(
+    reservationSnapshotAfterScrap.rows.map((row) => ({
+      itemId: row.item_id,
+      status: row.status,
+      reserved: Number(row.quantity_reserved),
+      fulfilled: Number(row.quantity_fulfilled)
+    })),
+    reservationSnapshotBeforeScrap.rows.map((row) => ({
+      itemId: row.item_id,
+      status: row.status,
+      reserved: Number(row.quantity_reserved),
+      fulfilled: Number(row.quantity_fulfilled)
+    }))
+  );
 
   const movementRoleCheck = await db.query(
     `SELECT SUM(CASE WHEN qty < 0 AND role = 'QA' THEN 1 ELSE 0 END)::int AS qa_out,

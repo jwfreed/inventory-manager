@@ -38,6 +38,17 @@ type CreateQcEventResult = {
   replayed: boolean;
 };
 
+function qcRetryDebugEnabled() {
+  return process.env.NODE_ENV === 'test' || process.env.DEBUG_QC_TX_RETRY === 'true';
+}
+
+function logQcRetry(event: string, payload: Record<string, unknown>) {
+  if (!qcRetryDebugEnabled()) {
+    return;
+  }
+  console.warn(`[qc.tx.${event}]`, payload);
+}
+
 function mapQcEvent(row: any) {
   return {
     id: row.id,
@@ -116,14 +127,29 @@ export async function createQcEvent(
   let transferNotes: string | null = null;
   let preparedTransfer: PreparedTransferMutation | null = null;
 
-  return runInventoryCommand<CreateQcEventResult>({
-    tenantId,
-    endpoint: IDEMPOTENCY_ENDPOINTS.QC_EVENTS_CREATE,
-    operation: 'qc_event_create',
-    idempotencyKey,
-    requestHash,
-    retryOptions: { isolationLevel: 'SERIALIZABLE', retries: 2 },
-    onReplay: async ({ client, responseBody }) => {
+  try {
+    return await runInventoryCommand<CreateQcEventResult>({
+      tenantId,
+      endpoint: IDEMPOTENCY_ENDPOINTS.QC_EVENTS_CREATE,
+      operation: 'qc_event_create',
+      idempotencyKey,
+      requestHash,
+      retryOptions: {
+        isolationLevel: 'SERIALIZABLE',
+        retries: 2,
+        onRetry: ({ attempt, sqlState, delayMs }) => {
+          logQcRetry('retry', {
+            tenantId,
+            sourceId,
+            sourceType,
+            eventType: data.eventType,
+            attempt,
+            sqlState,
+            delayMs
+          });
+        }
+      },
+      onReplay: async ({ client, responseBody }) => {
       const qcEventResult = await client.query(
         `SELECT *
            FROM qc_events
@@ -161,8 +187,8 @@ export async function createQcEvent(
         event: mapQcEvent(qcEventResult.rows[0]),
         replayed: true
       };
-    },
-    lockTargets: async (client) => {
+      },
+      lockTargets: async (client) => {
       itemId = null;
       locationId = null;
       sourceId = null;
@@ -330,8 +356,8 @@ export async function createQcEvent(
         client
       );
       return buildTransferLockTargets(preparedTransfer);
-    },
-    execute: async ({ client }) => {
+      },
+      execute: async ({ client }) => {
       if (!sourceId || !sourceLocationId || !destinationLocationId || !itemId || !preparedTransfer) {
         throw new Error('QC_PREPARE_REQUIRED');
       }
@@ -424,10 +450,10 @@ export async function createQcEvent(
         }
       }
 
-      return {
-        responseBody: {
-          eventId: created.id,
-          event: mapQcEvent(created),
+        return {
+          responseBody: {
+            eventId: created.id,
+            event: mapQcEvent(created),
           movementId: transferExecution.result.movementId,
           sourceLocationId,
           destinationLocationId,
@@ -441,9 +467,22 @@ export async function createQcEvent(
         responseStatus: transferExecution.result.created ? 201 : 200,
         events: transferExecution.events,
         projectionOps: transferExecution.projectionOps
-      };
+        };
+      }
+    });
+  } catch (error: any) {
+    if (error?.code === 'TX_RETRY_EXHAUSTED') {
+      logQcRetry('exhausted', {
+        tenantId,
+        sourceId,
+        sourceType,
+        eventType: data.eventType,
+        sqlState: typeof error?.retrySqlState === 'string' ? error.retrySqlState : null,
+        attempts: Number.isFinite(Number(error?.retryAttempts)) ? Number(error.retryAttempts) : null
+      });
     }
-  });
+    throw error;
+  }
 }
 
 export async function postQcWarehouseDisposition(

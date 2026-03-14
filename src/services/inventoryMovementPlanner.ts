@@ -1,21 +1,36 @@
-import type { CanonicalMovementFields } from './uomCanonical.service';
+import type { PoolClient } from 'pg';
 import { buildMovementDeterministicHash, sortDeterministicMovementLines } from '../modules/platform/application/inventoryMutationSupport';
 import type { PersistInventoryMovementInput, PersistInventoryMovementLineInput } from '../domains/inventory';
 import type { PreparedTransferMutation } from './transfers.service';
+import { getCanonicalMovementFields, type CanonicalMovementFields } from './uomCanonical.service';
 
-type PlannedWorkOrderMovementLine = {
+type RawMovementLineDescriptor = Readonly<{
   sourceLineId: string;
   warehouseId: string;
   itemId: string;
   locationId: string;
-  canonicalFields: CanonicalMovementFields;
+  quantity: number;
+  uom: string;
+  defaultReasonCode: string;
+  explicitReasonCode?: string | null;
+  lineNotes?: string | null;
+  unitCost?: number | null;
+  extendedCost?: number | null;
+}>;
+
+type PlannedWorkOrderMovementLine = Readonly<{
+  sourceLineId: string;
+  warehouseId: string;
+  itemId: string;
+  locationId: string;
+  canonicalFields: Readonly<CanonicalMovementFields>;
   reasonCode: string;
   lineNotes: string | null;
   unitCost?: number | null;
   extendedCost?: number | null;
-};
+}>;
 
-type PlannedMovementHeader = {
+type PlannedMovementHeader = Readonly<{
   id: string;
   tenantId: string;
   movementType: string;
@@ -32,24 +47,60 @@ type PlannedMovementHeader = {
   updatedAt: Date | string;
   lotId?: string | null;
   productionBatchId?: string | null;
-};
+}>;
 
-export type PlannedWorkOrderMovement = {
-  sortedLines: PlannedWorkOrderMovementLine[];
-  persistInput: PersistInventoryMovementInput;
+export type PlannedWorkOrderMovement = Readonly<{
+  sortedLines: ReadonlyArray<PlannedWorkOrderMovementLine>;
+  persistInput: Readonly<PersistInventoryMovementInput>;
   expectedLineCount: number;
   expectedDeterministicHash: string;
-};
+}>;
 
-export type PlannedBatchMovement = {
+export type PlannedBatchMovement = Readonly<{
   issue: PlannedWorkOrderMovement;
   completion: PlannedWorkOrderMovement;
-};
+}>;
 
-export type PlannedVoidMovement = {
+export type PlannedVoidMovement = Readonly<{
   output: PlannedWorkOrderMovement;
   components: PlannedWorkOrderMovement;
-};
+}>;
+
+function resolveReasonCode(line: RawMovementLineDescriptor) {
+  const explicitReasonCode = line.explicitReasonCode?.trim();
+  return explicitReasonCode && explicitReasonCode.length > 0
+    ? explicitReasonCode
+    : line.defaultReasonCode;
+}
+
+async function canonicalizeMovementLines(
+  tenantId: string,
+  lines: ReadonlyArray<RawMovementLineDescriptor>,
+  client: PoolClient
+): Promise<ReadonlyArray<PlannedWorkOrderMovementLine>> {
+  const canonicalized = await Promise.all(lines.map(async (line) => ({
+    sourceLineId: line.sourceLineId,
+    warehouseId: line.warehouseId,
+    itemId: line.itemId,
+    locationId: line.locationId,
+    canonicalFields: Object.freeze(
+      await getCanonicalMovementFields(tenantId, line.itemId, line.quantity, line.uom, client)
+    ),
+    reasonCode: resolveReasonCode(line),
+    lineNotes: line.lineNotes ?? null,
+    unitCost: line.unitCost ?? null,
+    extendedCost: line.extendedCost ?? null
+  })));
+
+  return sortDeterministicMovementLines(canonicalized, (line) => ({
+    tenantId,
+    warehouseId: line.warehouseId,
+    locationId: line.locationId,
+    itemId: line.itemId,
+    canonicalUom: line.canonicalFields.canonicalUom,
+    sourceLineId: line.sourceLineId
+  }));
+}
 
 function mapPersistMovementLine(line: PlannedWorkOrderMovementLine): PersistInventoryMovementLineInput {
   return {
@@ -72,24 +123,33 @@ function mapPersistMovementLine(line: PlannedWorkOrderMovementLine): PersistInve
   };
 }
 
-function buildPlannedMovement(
-  header: PlannedMovementHeader,
-  lines: PlannedWorkOrderMovementLine[]
-): PlannedWorkOrderMovement {
-  const sortedLines = sortDeterministicMovementLines(lines, (line) => ({
-    tenantId: header.tenantId,
-    warehouseId: line.warehouseId,
-    locationId: line.locationId,
-    itemId: line.itemId,
-    canonicalUom: line.canonicalFields.canonicalUom,
-    sourceLineId: line.sourceLineId
-  }));
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) {
+    return value;
+  }
+  Object.freeze(value);
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    deepFreeze(child);
+  }
+  return value;
+}
+
+async function buildPlannedMovement(params: {
+  client: PoolClient;
+  header: PlannedMovementHeader;
+  lines: ReadonlyArray<RawMovementLineDescriptor>;
+}): Promise<PlannedWorkOrderMovement> {
+  const sortedLines = await canonicalizeMovementLines(
+    params.header.tenantId,
+    params.lines,
+    params.client
+  );
   const expectedDeterministicHash = buildMovementDeterministicHash({
-    tenantId: header.tenantId,
-    movementType: header.movementType,
-    occurredAt: header.occurredAt,
-    sourceType: header.sourceType,
-    sourceId: header.sourceId,
+    tenantId: params.header.tenantId,
+    movementType: params.header.movementType,
+    occurredAt: params.header.occurredAt,
+    sourceType: params.header.sourceType,
+    sourceId: params.header.sourceId,
     lines: sortedLines.map((line) => ({
       itemId: line.itemId,
       locationId: line.locationId,
@@ -100,78 +160,98 @@ function buildPlannedMovement(
     }))
   });
 
-  return {
+  return deepFreeze({
     sortedLines,
     expectedLineCount: sortedLines.length,
     expectedDeterministicHash,
     persistInput: {
-      id: header.id,
-      tenantId: header.tenantId,
-      movementType: header.movementType,
-      status: header.status,
-      externalRef: header.externalRef,
-      sourceType: header.sourceType,
-      sourceId: header.sourceId,
-      idempotencyKey: header.idempotencyKey ?? null,
-      occurredAt: header.occurredAt,
-      postedAt: header.postedAt,
-      notes: header.notes ?? null,
-      metadata: header.metadata ?? null,
-      createdAt: header.createdAt,
-      updatedAt: header.updatedAt,
-      lotId: header.lotId ?? null,
-      productionBatchId: header.productionBatchId ?? null,
+      id: params.header.id,
+      tenantId: params.header.tenantId,
+      movementType: params.header.movementType,
+      status: params.header.status,
+      externalRef: params.header.externalRef,
+      sourceType: params.header.sourceType,
+      sourceId: params.header.sourceId,
+      idempotencyKey: params.header.idempotencyKey ?? null,
+      occurredAt: params.header.occurredAt,
+      postedAt: params.header.postedAt,
+      notes: params.header.notes ?? null,
+      metadata: params.header.metadata ?? null,
+      createdAt: params.header.createdAt,
+      updatedAt: params.header.updatedAt,
+      lotId: params.header.lotId ?? null,
+      productionBatchId: params.header.productionBatchId ?? null,
       lines: sortedLines.map(mapPersistMovementLine)
     }
-  };
+  });
 }
 
-export function buildIssueMovement(params: {
+export async function buildIssueMovement(params: {
+  client: PoolClient;
   header: PlannedMovementHeader;
-  lines: PlannedWorkOrderMovementLine[];
+  lines: ReadonlyArray<RawMovementLineDescriptor>;
 }) {
-  return buildPlannedMovement(params.header, params.lines);
+  return buildPlannedMovement(params);
 }
 
-export function buildCompletionMovement(params: {
+export async function buildCompletionMovement(params: {
+  client: PoolClient;
   header: PlannedMovementHeader;
-  lines: PlannedWorkOrderMovementLine[];
+  lines: ReadonlyArray<RawMovementLineDescriptor>;
 }) {
-  return buildPlannedMovement(params.header, params.lines);
+  return buildPlannedMovement(params);
 }
 
-export function buildBatchMovement(params: {
+export async function buildBatchMovement(params: {
+  client: PoolClient;
   issueHeader: PlannedMovementHeader;
-  issueLines: PlannedWorkOrderMovementLine[];
+  issueLines: ReadonlyArray<RawMovementLineDescriptor>;
   completionHeader: PlannedMovementHeader;
-  completionLines: PlannedWorkOrderMovementLine[];
-}): PlannedBatchMovement {
-  return {
-    issue: buildPlannedMovement(params.issueHeader, params.issueLines),
-    completion: buildPlannedMovement(params.completionHeader, params.completionLines)
-  };
+  completionLines: ReadonlyArray<RawMovementLineDescriptor>;
+}): Promise<PlannedBatchMovement> {
+  return deepFreeze({
+    issue: await buildPlannedMovement({
+      client: params.client,
+      header: params.issueHeader,
+      lines: params.issueLines
+    }),
+    completion: await buildPlannedMovement({
+      client: params.client,
+      header: params.completionHeader,
+      lines: params.completionLines
+    })
+  });
 }
 
-export function buildVoidMovement(params: {
+export async function buildVoidMovement(params: {
+  client: PoolClient;
   outputHeader: PlannedMovementHeader;
-  outputLines: PlannedWorkOrderMovementLine[];
+  outputLines: ReadonlyArray<RawMovementLineDescriptor>;
   componentHeader: PlannedMovementHeader;
-  componentLines: PlannedWorkOrderMovementLine[];
-}): PlannedVoidMovement {
-  return {
-    output: buildPlannedMovement(params.outputHeader, params.outputLines),
-    components: buildPlannedMovement(params.componentHeader, params.componentLines)
-  };
+  componentLines: ReadonlyArray<RawMovementLineDescriptor>;
+}): Promise<PlannedVoidMovement> {
+  return deepFreeze({
+    output: await buildPlannedMovement({
+      client: params.client,
+      header: params.outputHeader,
+      lines: params.outputLines
+    }),
+    components: await buildPlannedMovement({
+      client: params.client,
+      header: params.componentHeader,
+      lines: params.componentLines
+    })
+  });
 }
 
 export function buildScrapMovement(params: {
   preparedTransfer: PreparedTransferMutation;
 }) {
-  return {
+  return deepFreeze({
     sourceState: 'QA' as const,
     targetState: 'SCRAP' as const,
     preparedTransfer: params.preparedTransfer
-  };
+  });
 }
 
-export type { PlannedWorkOrderMovementLine, PlannedMovementHeader };
+export type { PlannedWorkOrderMovementLine, PlannedMovementHeader, RawMovementLineDescriptor };
