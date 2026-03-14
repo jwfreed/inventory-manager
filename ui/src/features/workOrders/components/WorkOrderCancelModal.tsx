@@ -22,14 +22,14 @@ export function WorkOrderCancelModal({
     <Modal
       isOpen={isOpen}
       onClose={onCancel}
-      title={`Cancel ${workOrder?.number ?? 'work order'}?`}
+      title={workOrder?.number ? `Cancel Work Order ${workOrder.number}?` : 'Cancel Work Order?'}
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onCancel} disabled={isPending}>
-            Keep work order
+            Keep Work Order
           </Button>
           <Button variant="danger" size="sm" onClick={onConfirm} disabled={isPending}>
-            {isPending ? 'Canceling...' : 'Confirm cancel'}
+            {isPending ? 'Canceling...' : 'Confirm Cancel Work Order'}
           </Button>
         </div>
       }

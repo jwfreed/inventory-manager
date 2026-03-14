@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ApiError, Location } from '@api/types'
 import { useItemsList } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
@@ -11,6 +11,7 @@ import {
   createEmptyInventoryCountLine,
   type InventoryCountFormValues,
 } from '../components/InventoryCountForm'
+import { inventoryQueryKeys } from '../queries'
 
 function buildWarehouseOptions(locations: Location[]) {
   const warehouseRoots = locations.filter((location) => location.type === 'warehouse')
@@ -50,6 +51,7 @@ function formatError(err: unknown, fallback: string) {
 
 export default function InventoryCountCreatePage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [submitError, setSubmitError] = useState<string | null>(null)
   const locationsQuery = useLocationsList({ active: true, limit: 1000 }, { staleTime: 60_000 })
   const itemsQuery = useItemsList({ lifecycleStatus: 'Active', limit: 500 }, { staleTime: 60_000 })
@@ -115,8 +117,9 @@ export default function InventoryCountCreatePage() {
           notes: line.notes.trim() || undefined,
         })),
       }),
-    onSuccess: (count) => {
+    onSuccess: async (count) => {
       setSubmitError(null)
+      await queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.countsListRoot })
       navigate(`/inventory-counts/${count.id}`)
     },
     onError: (err) => {

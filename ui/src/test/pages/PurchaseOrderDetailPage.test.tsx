@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '../testUtils'
 import PurchaseOrderDetailPage from '@features/purchaseOrders/pages/PurchaseOrderDetailPage'
@@ -9,6 +9,10 @@ vi.mock('@features/locations/queries', () => ({
 }))
 vi.mock('@features/purchaseOrders/queries', () => ({
   usePurchaseOrder: vi.fn(),
+  purchaseOrdersQueryKeys: {
+    all: ['purchase-orders'],
+    detail: (id: string) => ['purchase-orders', 'detail', id],
+  },
 }))
 vi.mock('@features/purchaseOrders/api/purchaseOrders', () => ({
   approvePurchaseOrder: vi.fn(),
@@ -29,9 +33,11 @@ vi.mock('../../features/audit/components/AuditTrailTable', () => ({
 
 import { useLocationsList } from '@features/locations/queries'
 import { usePurchaseOrder } from '@features/purchaseOrders/queries'
+import { closePurchaseOrder } from '@features/purchaseOrders/api/purchaseOrders'
 
 const mockedUseLocationsList = vi.mocked(useLocationsList)
 const mockedUsePurchaseOrder = vi.mocked(usePurchaseOrder)
+const mockedClosePurchaseOrder = vi.mocked(closePurchaseOrder)
 
 function renderPage() {
   const router = createMemoryRouter(
@@ -78,6 +84,17 @@ describe('PurchaseOrderDetailPage', () => {
       error: null,
       refetch: vi.fn(),
     } as any)
+    mockedClosePurchaseOrder.mockResolvedValue({
+      id: 'po-1',
+      poNumber: 'PO-0001',
+      vendorId: 'vendor-1',
+      vendorCode: 'SUP-1',
+      vendorName: 'Supplier',
+      status: 'closed',
+      shipToLocationId: 'loc-1',
+      receivingLocationId: 'loc-2',
+      lines: [],
+    } as any)
   })
 
   it('shows header and line close entrypoints for approved purchase orders', async () => {
@@ -88,5 +105,35 @@ describe('PurchaseOrderDetailPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Close PO' }))
     expect(screen.getByText('Close purchase order')).toBeInTheDocument()
+  })
+
+  it('confirms purchase order close and invalidates purchase order queries', async () => {
+    const { queryClient } = renderPage()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Close PO' }))
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Supplier confirmed closure' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm close' }))
+
+    await waitFor(() => {
+      expect(mockedClosePurchaseOrder).toHaveBeenCalledWith('po-1', {
+        closeAs: 'closed',
+        reason: 'Supplier confirmed closure',
+        notes: undefined,
+      })
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['purchase-orders'] })
+  })
+
+  it('surfaces backend close conflicts', async () => {
+    mockedClosePurchaseOrder.mockRejectedValueOnce({ status: 409, message: 'Already closed' })
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Close PO' }))
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Duplicate close attempt' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm close' }))
+
+    expect(await screen.findByText('Already closed')).toBeInTheDocument()
   })
 })

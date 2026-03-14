@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   approvePurchaseOrder,
@@ -12,7 +12,7 @@ import { Alert, Button, Card, LoadingSpinner, Modal, Section } from '@shared/ui'
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from 'react'
 import { useLocationsList } from '@features/locations/queries'
-import { usePurchaseOrder } from '../queries'
+import { purchaseOrdersQueryKeys, usePurchaseOrder } from '../queries'
 import { formatDate } from '@shared/formatters'
 import { PurchaseOrderLinesTable } from '../components/PurchaseOrderLinesTable'
 import { PurchaseOrderStatusHeader } from '../components/PurchaseOrderStatusHeader'
@@ -54,7 +54,6 @@ function AuditTrailPanel({ entityId }: { entityId?: string }) {
 
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [orderDate, setOrderDate] = useState('')
   const [expectedDate, setExpectedDate] = useState('')
@@ -224,8 +223,9 @@ export default function PurchaseOrderDetailPage() {
       setShowCancelConfirm(false)
       setCloseError(null)
       setCloseMessage('Purchase order canceled.')
+      queryClient.setQueryData(purchaseOrdersQueryKeys.detail(updated.id), updated)
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] }),
+        queryClient.invalidateQueries({ queryKey: purchaseOrdersQueryKeys.all }),
         poQuery.refetch(),
       ])
     },
@@ -242,8 +242,9 @@ export default function PurchaseOrderDetailPage() {
       setShowHeaderCloseModal(false)
       setCloseError(null)
       setCloseMessage('Purchase order closed.')
+      queryClient.setQueryData(purchaseOrdersQueryKeys.detail(updated.id), updated)
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] }),
+        queryClient.invalidateQueries({ queryKey: purchaseOrdersQueryKeys.all }),
         poQuery.refetch(),
       ])
     },
@@ -264,8 +265,11 @@ export default function PurchaseOrderDetailPage() {
       setLineToClose(null)
       setCloseError(null)
       setCloseMessage('Purchase order line closed.')
-      queryClient.setQueryData(['purchase-orders', 'detail', id as string], result.purchaseOrder)
-      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      queryClient.setQueryData(
+        purchaseOrdersQueryKeys.detail(result.purchaseOrder.id),
+        result.purchaseOrder,
+      )
+      await queryClient.invalidateQueries({ queryKey: purchaseOrdersQueryKeys.all })
     },
     onError: (err: ApiError | unknown) => {
       setCloseMessage(null)

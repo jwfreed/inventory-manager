@@ -147,7 +147,7 @@ export default function InventoryCountDetailPage() {
       setSaveError(null)
       setSaveMessage('Inventory count saved.')
       queryClient.setQueryData(inventoryQueryKeys.countsDetail(updated.id), updated)
-      await queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.countsList({ warehouseId: updated.warehouseId }) })
+      await queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.countsListRoot })
     },
     onError: (err) => {
       setSaveMessage(null)
@@ -163,7 +163,7 @@ export default function InventoryCountDetailPage() {
       setShowPostConfirm(false)
       queryClient.setQueryData(inventoryQueryKeys.countsDetail(updated.id), updated)
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.countsList({ warehouseId: updated.warehouseId }) }),
+        queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.countsListRoot }),
         queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.all }),
       ])
     },

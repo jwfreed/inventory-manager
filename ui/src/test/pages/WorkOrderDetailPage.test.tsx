@@ -42,6 +42,10 @@ vi.mock('@features/workOrders/queries', () => ({
   workOrdersQueryKeys: {
     all: ['work-orders'],
     detail: (id: string) => ['work-orders', 'detail', id],
+    execution: (id: string) => ['work-orders', 'execution', id],
+    readiness: (id: string) => ['work-orders', 'readiness', id],
+    requirements: (id: string) => ['work-orders', 'requirements', id],
+    disassemblyPlan: (id: string) => ['work-orders', 'disassembly-plan', id],
   },
 }))
 vi.mock('@features/workOrders/api/workOrders', () => ({
@@ -71,6 +75,11 @@ import {
   useWorkOrderRequirements,
 } from '@features/workOrders/queries'
 import { getAtp } from '@api/reports'
+import {
+  cancelWorkOrder as cancelWorkOrderMutation,
+  closeWorkOrder as closeWorkOrderMutation,
+  markWorkOrderReady as markWorkOrderReadyMutation,
+} from '@features/workOrders/api/workOrders'
 
 const mockedUseItem = vi.mocked(useItem)
 const mockedUseItemsList = vi.mocked(useItemsList)
@@ -84,6 +93,9 @@ const mockedUseWorkOrderExecution = vi.mocked(useWorkOrderExecution)
 const mockedUseWorkOrderReadiness = vi.mocked(useWorkOrderReadiness)
 const mockedUseWorkOrderRequirements = vi.mocked(useWorkOrderRequirements)
 const mockedGetAtp = vi.mocked(getAtp)
+const mockedCancelWorkOrder = vi.mocked(cancelWorkOrderMutation)
+const mockedCloseWorkOrder = vi.mocked(closeWorkOrderMutation)
+const mockedMarkWorkOrderReady = vi.mocked(markWorkOrderReadyMutation)
 
 function makeWorkOrder(overrides: Partial<WorkOrder> = {}): WorkOrder {
   return {
@@ -178,6 +190,9 @@ describe('WorkOrderDetailPage tabs', () => {
       refetch: vi.fn(),
     } as any)
     mockedGetAtp.mockResolvedValue({ data: [] } as any)
+    mockedMarkWorkOrderReady.mockResolvedValue(makeWorkOrder({ status: 'ready' }))
+    mockedCancelWorkOrder.mockResolvedValue(makeWorkOrder({ status: 'canceled' }))
+    mockedCloseWorkOrder.mockResolvedValue(makeWorkOrder({ status: 'closed', quantityCompleted: 10 }))
   })
 
   it('renders summary tab by default', async () => {
@@ -323,6 +338,33 @@ describe('WorkOrderDetailPage tabs', () => {
 
     expect(await screen.findByText('Execution locked')).toBeInTheDocument()
     expect(screen.queryByText('__execution_workspace__')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Close work order' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close Work Order' })).toBeInTheDocument()
+  })
+
+  it('opens the detail cancel confirmation and invalidates all work-order branches on confirm', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'ready' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    const { queryClient } = renderPage()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel Work Order' }))
+    expect(screen.getByText('Cancel Work Order WO-0001?')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Cancel Work Order' }))
+
+    await screen.findByText('Lifecycle updated')
+    expect(mockedCancelWorkOrder).toHaveBeenCalledWith('wo-1')
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'detail', 'wo-1'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'execution', 'wo-1'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'readiness', 'wo-1'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'requirements', 'wo-1'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'disassembly-plan', 'wo-1'] })
   })
 })

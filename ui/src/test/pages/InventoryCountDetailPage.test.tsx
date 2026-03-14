@@ -14,6 +14,7 @@ vi.mock('@features/inventory/queries', () => ({
   useInventoryCount: vi.fn(),
   inventoryQueryKeys: {
     all: ['inventory'],
+    countsListRoot: ['inventory', 'counts-list'],
     countsDetail: (id: string) => ['inventory', 'counts-detail', id],
     countsList: () => ['inventory', 'counts-list'],
   },

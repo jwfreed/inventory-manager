@@ -55,7 +55,7 @@ Ledger authority remains solely in `inventory_movements` + `inventory_movement_l
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20.19+
 - PostgreSQL instance you can connect to
 - `DATABASE_URL` environment variable pointing at the target database (e.g., `postgres://user:pass@localhost:5432/inventory_manager`)
 - `JWT_SECRET` environment variable for signing access tokens (required for auth)

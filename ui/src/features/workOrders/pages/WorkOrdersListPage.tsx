@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { ApiError, WorkOrder } from '@api/types'
+import type { WorkOrder } from '@api/types'
 import { useItemsList } from '@features/items/queries'
 import { cancelWorkOrder, markWorkOrderReady } from '../api/workOrders'
 import { useWorkOrdersList, workOrdersQueryKeys } from '../queries'
@@ -10,17 +10,9 @@ import { WorkOrdersFilters } from '../components/WorkOrdersFilters'
 import { WorkOrdersTable } from '../components/WorkOrdersTable'
 import { WorkOrderCancelModal } from '../components/WorkOrderCancelModal'
 import { getWorkOrderActionPolicy } from '../lib/workOrderActionPolicy'
+import { formatWorkOrderLifecycleError } from '../lib/workOrderErrorMessaging'
 import { useWorkOrdersListData } from '../hooks/useWorkOrdersListData'
 import { usePageChrome } from '../../../app/layout/usePageChrome'
-
-function formatError(err: unknown, fallback: string) {
-  if (!err) return fallback
-  if (typeof err === 'string') return err
-  if (err instanceof Error && err.message) return err.message
-  const apiErr = err as ApiError
-  if (typeof apiErr?.message === 'string') return apiErr.message
-  return fallback
-}
 
 export default function WorkOrdersListPage() {
   const navigate = useNavigate()
@@ -56,8 +48,15 @@ export default function WorkOrdersListPage() {
     search,
   )
 
-  const invalidateWorkOrders = async () => {
-    await queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.all })
+  const invalidateWorkOrder = async (workOrderId: string) => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.all }),
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.detail(workOrderId) }),
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.execution(workOrderId) }),
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.readiness(workOrderId) }),
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.requirements(workOrderId) }),
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.disassemblyPlan(workOrderId) }),
+    ])
   }
 
   const markReadyMutation = useMutation({
@@ -68,11 +67,13 @@ export default function WorkOrdersListPage() {
     onSuccess: async (updated) => {
       setLifecycleError(null)
       setLifecycleMessage(`${updated.number} is ready for production.`)
-      await invalidateWorkOrders()
+      await invalidateWorkOrder(updated.id)
     },
     onError: (err) => {
       setLifecycleMessage(null)
-      setLifecycleError(formatError(err, 'Failed to mark work order ready.'))
+      setLifecycleError(
+        formatWorkOrderLifecycleError(err, 'Failed to ready the work order.'),
+      )
     },
     onSettled: () => {
       setPendingActionId(null)
@@ -88,11 +89,13 @@ export default function WorkOrdersListPage() {
       setLifecycleError(null)
       setLifecycleMessage(`${updated.number} was canceled.`)
       setSelectedCancelOrder(null)
-      await invalidateWorkOrders()
+      await invalidateWorkOrder(updated.id)
     },
     onError: (err) => {
       setLifecycleMessage(null)
-      setLifecycleError(formatError(err, 'Failed to cancel work order.'))
+      setLifecycleError(
+        formatWorkOrderLifecycleError(err, 'Failed to cancel the work order.'),
+      )
     },
     onSettled: () => {
       setPendingActionId(null)
@@ -194,7 +197,7 @@ export default function WorkOrdersListPage() {
                       }}
                       disabled={rowPending}
                     >
-                      {markReadyMutation.isPending && rowPending ? 'Marking...' : 'Mark ready'}
+                      {markReadyMutation.isPending && rowPending ? 'Readying...' : 'Ready Work Order'}
                     </Button>
                   ) : null}
                   {policy.canQuickCancel ? (
@@ -209,7 +212,7 @@ export default function WorkOrdersListPage() {
                       }}
                       disabled={rowPending}
                     >
-                      {cancelMutation.isPending && rowPending ? 'Canceling...' : 'Cancel'}
+                      {cancelMutation.isPending && rowPending ? 'Canceling...' : 'Cancel Work Order'}
                     </Button>
                   ) : null}
                 </>

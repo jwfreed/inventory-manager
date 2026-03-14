@@ -38,17 +38,17 @@ export function WorkOrderLifecycleActions({
       <div className="flex flex-wrap items-center justify-end gap-2">
         {canMarkReady ? (
           <Button size="sm" onClick={onMarkReady} disabled={isMarkReadyPending}>
-            {isMarkReadyPending ? 'Marking ready...' : 'Mark ready'}
+            {isMarkReadyPending ? 'Readying...' : 'Ready Work Order'}
           </Button>
         ) : null}
         {canCancel ? (
           <Button size="sm" variant="danger" onClick={onRequestCancel} disabled={isCancelPending}>
-            {isCancelPending ? 'Canceling...' : 'Cancel work order'}
+            {isCancelPending ? 'Canceling...' : 'Cancel Work Order'}
           </Button>
         ) : null}
         {canClose ? (
           <Button size="sm" variant="secondary" onClick={onRequestClose} disabled={isClosePending}>
-            {isClosePending ? 'Closing...' : 'Close work order'}
+            {isClosePending ? 'Closing...' : 'Close Work Order'}
           </Button>
         ) : null}
       </div>

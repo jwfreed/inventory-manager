@@ -9,14 +9,22 @@ import {
 } from './workOrderActionPolicy'
 
 describe('workOrderActionPolicy', () => {
-  it('allows cancel and quick cancel for draft and ready only', () => {
-    expect(canCancelWorkOrder('draft')).toBe(true)
-    expect(canQuickCancelWorkOrder('draft')).toBe(true)
-    expect(canCancelWorkOrder('ready')).toBe(true)
-    expect(canQuickCancelWorkOrder('ready')).toBe(true)
-    expect(canCancelWorkOrder('in_progress')).toBe(false)
-    expect(canCancelWorkOrder('partially_completed')).toBe(false)
-    expect(canCancelWorkOrder('completed')).toBe(false)
+  it('enforces the cancel matrix across every work order status', () => {
+    const expectations = [
+      { status: 'draft', canCancel: true, locked: false },
+      { status: 'ready', canCancel: true, locked: false },
+      { status: 'in_progress', canCancel: false, locked: false },
+      { status: 'partially_completed', canCancel: false, locked: false },
+      { status: 'completed', canCancel: false, locked: true },
+      { status: 'closed', canCancel: false, locked: true },
+      { status: 'canceled', canCancel: false, locked: true },
+    ] as const
+
+    expectations.forEach(({ status, canCancel, locked }) => {
+      expect(canCancelWorkOrder(status)).toBe(canCancel)
+      expect(canQuickCancelWorkOrder(status)).toBe(canCancel)
+      expect(isExecutionLockedWorkOrder(status)).toBe(locked)
+    })
   })
 
   it('locks execution for terminal work orders only', () => {
@@ -61,6 +69,19 @@ describe('workOrderActionPolicy', () => {
         {
           workOrderExecutionId: 'exec-1',
           productionReportId: 'exec-1',
+          scrapPosted: false,
+        },
+      ).canVoidRecentReport,
+    ).toBe(false)
+  })
+
+  it('blocks recent void when the recent report context is incomplete', () => {
+    expect(
+      getWorkOrderActionPolicy(
+        { status: 'ready' },
+        {
+          workOrderExecutionId: '',
+          productionReportId: 'report-1',
           scrapPosted: false,
         },
       ).canVoidRecentReport,

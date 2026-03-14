@@ -12,6 +12,11 @@ vi.mock('@features/workOrders/queries', () => ({
   useWorkOrdersList: vi.fn(),
   workOrdersQueryKeys: {
     all: ['work-orders'],
+    detail: (id: string) => ['work-orders', 'detail', id],
+    execution: (id: string) => ['work-orders', 'execution', id],
+    readiness: (id: string) => ['work-orders', 'readiness', id],
+    requirements: (id: string) => ['work-orders', 'requirements', id],
+    disassemblyPlan: (id: string) => ['work-orders', 'disassembly-plan', id],
   },
 }))
 vi.mock('@features/workOrders/api/workOrders', () => ({
@@ -85,19 +90,47 @@ describe('WorkOrdersListPage', () => {
     renderPage()
 
     expect(await screen.findByText('WO-DRAFT')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Cancel' })).toHaveLength(2)
-    expect(screen.getByRole('button', { name: 'Mark ready' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Cancel Work Order' })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Ready Work Order' })).toBeInTheDocument()
   })
 
   it('opens a confirmation modal before canceling a ready work order', async () => {
     renderPage()
 
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Cancel' }))[1])
-    expect(screen.getByText('Cancel WO-READY?')).toBeInTheDocument()
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Cancel Work Order' }))[1])
+    expect(screen.getByText('Cancel Work Order WO-READY?')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Cancel Work Order' }))
     await waitFor(() => {
       expect(mockedCancelWorkOrder).toHaveBeenCalledWith('wo-ready')
     })
+  })
+
+  it('invalidates list and detail branches after ready and cancel quick actions', async () => {
+    const { queryClient } = renderPage()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ready Work Order' }))
+    await waitFor(() => {
+      expect(mockedMarkWorkOrderReady).toHaveBeenCalledWith('wo-draft')
+    })
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Cancel Work Order' }))[1])
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Cancel Work Order' }))
+    await waitFor(() => {
+      expect(mockedCancelWorkOrder).toHaveBeenCalledWith('wo-ready')
+    })
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'detail', 'wo-draft'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'execution', 'wo-draft'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'readiness', 'wo-draft'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'requirements', 'wo-draft'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'disassembly-plan', 'wo-draft'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'detail', 'wo-ready'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'execution', 'wo-ready'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'readiness', 'wo-ready'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'requirements', 'wo-ready'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'disassembly-plan', 'wo-ready'] })
   })
 })

@@ -93,6 +93,7 @@ export function canVoidRecentProductionReport(
   recentReport?: RecentProductionReportCandidate | null,
 ) {
   if (!recentReport) return false
+  if (!recentReport.workOrderExecutionId || !recentReport.productionReportId) return false
   if (recentReport.scrapPosted) return false
   return !isExecutionLockedWorkOrder(status)
 }
@@ -102,6 +103,9 @@ export function getVoidRecentReportDisabledReason(
   recentReport?: RecentProductionReportCandidate | null,
 ) {
   if (!recentReport) return 'Only the most recent production report from this session can be voided.'
+  if (!recentReport.workOrderExecutionId || !recentReport.productionReportId) {
+    return 'The recent production report context is incomplete. Post production again from this page before voiding.'
+  }
   if (recentReport.scrapPosted) {
     return 'Production reports that also posted scrap cannot be voided from the UI.'
   }

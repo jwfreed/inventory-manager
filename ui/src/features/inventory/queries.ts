@@ -18,14 +18,18 @@ import {
   type InventoryCountsListParams,
 } from './api/counts'
 
+const inventoryBaseKey = ['inventory'] as const
+const inventoryCountsListRootKey = [...inventoryBaseKey, 'counts-list'] as const
+
 export const inventoryQueryKeys = {
-  all: ['inventory'] as const,
+  all: inventoryBaseKey,
   snapshotSummary: (params: InventorySnapshotSummaryParams = {}) =>
     [...inventoryQueryKeys.all, 'snapshot-summary', params] as const,
   snapshotSummaryDetailed: (params: InventorySnapshotSummaryParams = {}) =>
     [...inventoryQueryKeys.all, 'snapshot-summary-detailed', params] as const,
+  countsListRoot: inventoryCountsListRootKey,
   countsList: (params: Partial<InventoryCountsListParams> = {}) =>
-    [...inventoryQueryKeys.all, 'counts-list', params] as const,
+    [...inventoryQueryKeys.countsListRoot, params] as const,
   countsDetail: (id: string) => [...inventoryQueryKeys.all, 'counts-detail', id] as const,
 }
 

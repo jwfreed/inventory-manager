@@ -52,6 +52,10 @@ import {
   type RecentProductionReportCandidate,
   getWorkOrderActionPolicy,
 } from '../lib/workOrderActionPolicy'
+import {
+  formatWorkOrderError,
+  formatWorkOrderLifecycleError,
+} from '../lib/workOrderErrorMessaging'
 
 const workOrderDetailSections = [
   { id: 'overview', label: 'Overview' },
@@ -60,15 +64,6 @@ const workOrderDetailSections = [
   { id: 'requirements', label: 'Requirements' },
   { id: 'actions', label: 'Actions' },
 ] as const
-
-function formatError(err: unknown, fallback: string) {
-  if (!err) return fallback
-  if (typeof err === 'string') return err
-  if (err instanceof Error && err.message) return err.message
-  const apiErr = err as ApiError
-  if (typeof apiErr?.message === 'string') return apiErr.message
-  return fallback
-}
 
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -240,14 +235,14 @@ export default function WorkOrderDetailPage() {
 
   const switchBomMutation = useMutation({
     mutationFn: () => activateWorkOrderBomVersion(id as string),
-    onSuccess: () => {
+    onSuccess: async () => {
       setShowBomSwitchConfirm(false)
       setBomSwitchError(null)
       void workOrderQuery.refetch()
       void requirementsQuery.refetch()
       void bomQuery.refetch()
       void bomsByItemQuery.refetch()
-      void queryClient.invalidateQueries({ queryKey: ['work-orders'] })
+      await invalidateWorkOrderQueries()
     },
     onError: (err: ApiError | unknown) => {
       const apiErr = err as ApiError
@@ -286,7 +281,9 @@ export default function WorkOrderDetailPage() {
     },
     onError: (err) => {
       setLifecycleMessage(null)
-      setLifecycleError(formatError(err, 'Failed to mark work order ready.'))
+      setLifecycleError(
+        formatWorkOrderLifecycleError(err, 'Failed to ready the work order.'),
+      )
     },
   })
 
@@ -301,7 +298,9 @@ export default function WorkOrderDetailPage() {
     },
     onError: (err) => {
       setLifecycleMessage(null)
-      setLifecycleError(formatError(err, 'Failed to cancel work order.'))
+      setLifecycleError(
+        formatWorkOrderLifecycleError(err, 'Failed to cancel the work order.'),
+      )
     },
   })
 
@@ -315,7 +314,9 @@ export default function WorkOrderDetailPage() {
     },
     onError: (err) => {
       setLifecycleMessage(null)
-      setLifecycleError(formatError(err, 'Failed to close work order.'))
+      setLifecycleError(
+        formatWorkOrderLifecycleError(err, 'Failed to close the work order.'),
+      )
     },
   })
 
@@ -337,7 +338,9 @@ export default function WorkOrderDetailPage() {
     },
     onError: (err) => {
       setLifecycleMessage(null)
-      setLifecycleError(formatError(err, 'Failed to void production report.'))
+      setLifecycleError(
+        formatWorkOrderLifecycleError(err, 'Failed to void the production report.'),
+      )
     },
   })
 
@@ -680,7 +683,12 @@ export default function WorkOrderDetailPage() {
                   <Alert
                     variant="error"
                     title="Update failed"
-                    message={(descriptionMutation.error as ApiError)?.message ?? 'Failed to update operator notes.'}
+                    message={
+                      formatWorkOrderError(
+                        descriptionMutation.error,
+                        'Failed to update operator notes.',
+                      )
+                    }
                   />
                 ) : null}
               </div>
@@ -904,7 +912,7 @@ export default function WorkOrderDetailPage() {
                           setShowVoidConfirm(true)
                         }}
                       >
-                        Void production report
+                        Void Production Report
                       </Button>
                     ) : null}
                   </div>
@@ -985,14 +993,14 @@ export default function WorkOrderDetailPage() {
       <Modal
         isOpen={showCloseConfirm}
         onClose={() => setShowCloseConfirm(false)}
-        title="Close work order?"
+        title="Close Work Order?"
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={() => setShowCloseConfirm(false)}>
-              Keep open
+              Keep Open
             </Button>
             <Button size="sm" onClick={() => closeMutation.mutate()} disabled={closeMutation.isPending}>
-              {closeMutation.isPending ? 'Closing...' : 'Confirm close'}
+              {closeMutation.isPending ? 'Closing...' : 'Confirm Close Work Order'}
             </Button>
           </div>
         }
@@ -1014,11 +1022,11 @@ export default function WorkOrderDetailPage() {
       <Modal
         isOpen={showVoidConfirm}
         onClose={() => setShowVoidConfirm(false)}
-        title="Void recent production report?"
+        title="Void Production Report?"
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={() => setShowVoidConfirm(false)}>
-              Keep report
+              Keep Report
             </Button>
             <Button
               size="sm"
@@ -1026,7 +1034,7 @@ export default function WorkOrderDetailPage() {
               onClick={() => voidMutation.mutate()}
               disabled={voidMutation.isPending || !voidReason.trim()}
             >
-              {voidMutation.isPending ? 'Voiding...' : 'Confirm void'}
+              {voidMutation.isPending ? 'Voiding...' : 'Confirm Void Production Report'}
             </Button>
           </div>
         }
