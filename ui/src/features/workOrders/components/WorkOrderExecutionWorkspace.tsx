@@ -7,6 +7,7 @@ import {
   executeWorkOrderDisassembly,
   reportWorkOrderProduction,
   reportWorkOrderScrap,
+  type ReportProductionResult,
 } from '../api/workOrders'
 import { normalizeDateInputToIso } from '../../../core/dateAdapter'
 
@@ -18,6 +19,10 @@ type Props = {
   isError?: boolean
   errorMessage?: string
   onRefresh: (options?: { showSummaryToast?: boolean }) => void
+  onProductionReported?: (
+    result: ReportProductionResult,
+    meta: { occurredAt: string; notes: string | null; scrapPosted: boolean },
+  ) => void
 }
 
 function buildLocationLabel(location?: { code?: string | null; name?: string | null } | null) {
@@ -34,6 +39,7 @@ export function WorkOrderExecutionWorkspace({
   isError = false,
   errorMessage,
   onRefresh,
+  onProductionReported,
 }: Props) {
   const isDisassembly = workOrder.kind === 'disassembly'
   const [executionQty, setExecutionQty] = useState<number | ''>('')
@@ -161,7 +167,14 @@ export function WorkOrderExecutionWorkspace({
       }
       return production
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (!isDisassembly) {
+        onProductionReported?.(result as ReportProductionResult, {
+          occurredAt: normalizeDateInputToIso(occurredAt) ?? occurredAt,
+          notes: notes.trim() || null,
+          scrapPosted: normalizedScrapQty > 0,
+        })
+      }
       onRefresh({ showSummaryToast: true })
       setNotes('')
       setConfirmPreview(false)

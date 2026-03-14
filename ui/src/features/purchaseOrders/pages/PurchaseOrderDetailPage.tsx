@@ -1,12 +1,14 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   approvePurchaseOrder,
+  closePurchaseOrder,
+  closePurchaseOrderLine,
   cancelPurchaseOrderApi,
   updatePurchaseOrder,
 } from '../api/purchaseOrders'
 import type { ApiError } from '@api/types'
-import { Alert, Button, Card, LoadingSpinner, Section } from '@shared/ui'
+import { Alert, Button, Card, LoadingSpinner, Modal, Section } from '@shared/ui'
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from 'react'
 import { useLocationsList } from '@features/locations/queries'
@@ -18,8 +20,14 @@ import { PurchaseOrderAlerts } from '../components/PurchaseOrderAlerts'
 import { PurchaseOrderDetailsForm } from '../components/PurchaseOrderDetailsForm'
 import { PurchaseOrderChecklistPanel } from '../components/PurchaseOrderChecklistPanel'
 import { PurchaseOrderActionBar } from '../components/PurchaseOrderActionBar'
+import { PurchaseOrderCloseModal } from '../components/PurchaseOrderCloseModal'
 import { useAuditLog } from '../../audit/queries'
 import { AuditTrailTable } from '../../audit/components/AuditTrailTable'
+import {
+  canClosePurchaseOrderHeader,
+  canClosePurchaseOrderLine as canClosePurchaseOrderLinePolicy,
+  getPurchaseOrderHeaderCloseOptions,
+} from '../lib/purchaseOrderClosePolicy'
 
 function AuditTrailPanel({ entityId }: { entityId?: string }) {
   const auditQuery = useAuditLog(
@@ -47,6 +55,7 @@ function AuditTrailPanel({ entityId }: { entityId?: string }) {
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [orderDate, setOrderDate] = useState('')
   const [expectedDate, setExpectedDate] = useState('')
   const [shipToLocationId, setShipToLocationId] = useState('')
@@ -60,7 +69,12 @@ export default function PurchaseOrderDetailPage() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [approveMessage, setApproveMessage] = useState<string | null>(null)
   const [approveError, setApproveError] = useState<string | null>(null)
+  const [closeMessage, setCloseMessage] = useState<string | null>(null)
+  const [closeError, setCloseError] = useState<string | null>(null)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [showHeaderCloseModal, setShowHeaderCloseModal] = useState(false)
+  const [lineToClose, setLineToClose] = useState<string | null>(null)
 
   const normalizeDateInput = (value?: string | null) => {
     if (!value) return ''
@@ -206,8 +220,56 @@ export default function PurchaseOrderDetailPage() {
 
   const cancelMutation = useMutation({
     mutationFn: () => cancelPurchaseOrderApi(id as string),
-    onSuccess: () => {
-      void poQuery.refetch()
+    onSuccess: async (updated) => {
+      setShowCancelConfirm(false)
+      setCloseError(null)
+      setCloseMessage('Purchase order canceled.')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] }),
+        poQuery.refetch(),
+      ])
+    },
+    onError: (err: ApiError | unknown) => {
+      setCloseMessage(null)
+      setCloseError(formatError(err, 'Cancel failed. Check the PO status and try again.'))
+    },
+  })
+
+  const headerCloseMutation = useMutation({
+    mutationFn: (payload: { closeAs: 'closed' | 'cancelled'; reason: string; notes?: string }) =>
+      closePurchaseOrder(id as string, payload),
+    onSuccess: async (updated) => {
+      setShowHeaderCloseModal(false)
+      setCloseError(null)
+      setCloseMessage('Purchase order closed.')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] }),
+        poQuery.refetch(),
+      ])
+    },
+    onError: (err: ApiError | unknown) => {
+      setCloseMessage(null)
+      setCloseError(formatError(err, 'Purchase order close failed.'))
+    },
+  })
+
+  const lineCloseMutation = useMutation({
+    mutationFn: (payload: { lineId: string; closeAs: 'short' | 'cancelled'; reason: string; notes?: string }) =>
+      closePurchaseOrderLine(payload.lineId, {
+        closeAs: payload.closeAs,
+        reason: payload.reason,
+        notes: payload.notes,
+      }),
+    onSuccess: async (result) => {
+      setLineToClose(null)
+      setCloseError(null)
+      setCloseMessage('Purchase order line closed.')
+      queryClient.setQueryData(['purchase-orders', 'detail', id as string], result.purchaseOrder)
+      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+    },
+    onError: (err: ApiError | unknown) => {
+      setCloseMessage(null)
+      setCloseError(formatError(err, 'Purchase order line close failed.'))
     },
   })
 
@@ -292,7 +354,13 @@ export default function PurchaseOrderDetailPage() {
   const isEditable = statusKey === 'draft'
   const isLocked = !isEditable
   const isCancelable = ['draft', 'submitted', 'approved'].includes(statusKey)
+  const canCloseHeader = canClosePurchaseOrderHeader(po)
+  const headerCloseOptions = getPurchaseOrderHeaderCloseOptions(po).map((option) => ({
+    value: option,
+    label: option === 'closed' ? 'Closed' : 'Cancelled',
+  }))
   const poLines = po.lines ?? []
+  const lineCloseTarget = poLines.find((line) => line.id === lineToClose) ?? null
   const hasLines = poLines.length > 0
   const quantitiesValid = hasLines && poLines.every((line) => (line.quantityOrdered ?? 0) > 0)
   const checklist = [
@@ -306,7 +374,12 @@ export default function PurchaseOrderDetailPage() {
   const missingChecklist = checklist.filter((item) => !item.ok).map((item) => item.label)
   const isReadyToSubmit = missingChecklist.length === 0
   const isBusy =
-    updateMutation.isPending || submitMutation.isPending || approveMutation.isPending || cancelMutation.isPending
+    updateMutation.isPending ||
+    submitMutation.isPending ||
+    approveMutation.isPending ||
+    cancelMutation.isPending ||
+    headerCloseMutation.isPending ||
+    lineCloseMutation.isPending
 
   const handleSave = () => {
     setSaveMessage(null)
@@ -364,9 +437,11 @@ export default function PurchaseOrderDetailPage() {
             submitError={submitError}
             approveError={approveError}
             saveError={saveError}
+            closeError={closeError}
             submitMessage={submitMessage}
             approveMessage={approveMessage}
             saveMessage={saveMessage}
+            closeMessage={closeMessage}
           />
           <PurchaseOrderDetailsForm
             poNumber={po.poNumber}
@@ -434,11 +509,20 @@ export default function PurchaseOrderDetailPage() {
             submitPending={submitMutation.isPending}
             savePending={updateMutation.isPending}
             canCancel={isCancelable}
+            canClose={canCloseHeader}
             onSubmitIntent={handleSubmitIntent}
             onSave={handleSave}
-            onCancel={() => {
+            onCancelRequest={() => {
               if (!isCancelable) return
-              cancelMutation.mutate()
+              setCloseMessage(null)
+              setCloseError(null)
+              setShowCancelConfirm(true)
+            }}
+            onCloseRequest={() => {
+              if (!canCloseHeader) return
+              setCloseMessage(null)
+              setCloseError(null)
+              setShowHeaderCloseModal(true)
             }}
           />
         </Card>
@@ -449,11 +533,86 @@ export default function PurchaseOrderDetailPage() {
           <div className="mb-3 text-xs text-slate-500">
             Ordered vs received/in-transit is not surfaced yet in this UI; use Receiving/Putaway to verify what has arrived.
           </div>
-          <PurchaseOrderLinesTable lines={po.lines ?? []} />
+          <PurchaseOrderLinesTable
+            lines={po.lines ?? []}
+            canCloseLine={(line) => canClosePurchaseOrderLinePolicy(po, line)}
+            closingLineId={lineCloseMutation.isPending ? lineToClose : null}
+            onCloseLineRequest={(line) => {
+              setCloseMessage(null)
+              setCloseError(null)
+              setLineToClose(line.id)
+            }}
+          />
         </Card>
       </Section>
 
       <AuditTrailPanel entityId={id} />
+
+      <Modal
+        isOpen={showCancelConfirm}
+        onClose={() => setShowCancelConfirm(false)}
+        title="Cancel purchase order?"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowCancelConfirm(false)}>
+              Keep PO
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+              {cancelMutation.isPending ? 'Canceling...' : 'Confirm cancel'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-sm text-slate-700">
+          <p>This permanently cancels the purchase order from the UI workflow.</p>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+            {po.poNumber}
+          </div>
+        </div>
+      </Modal>
+
+      <PurchaseOrderCloseModal
+        isOpen={showHeaderCloseModal}
+        title="Close purchase order"
+        description="Choose how to close this purchase order. Cancelled is only available when no receipt activity exists."
+        closeAsOptions={headerCloseOptions}
+        confirmLabel="Confirm close"
+        isPending={headerCloseMutation.isPending}
+        onClose={() => setShowHeaderCloseModal(false)}
+        onConfirm={(payload) =>
+          headerCloseMutation.mutate({
+            closeAs: payload.closeAs as 'closed' | 'cancelled',
+            reason: payload.reason,
+            notes: payload.notes,
+          })
+        }
+      />
+
+      <PurchaseOrderCloseModal
+        isOpen={Boolean(lineCloseTarget)}
+        title="Close PO line"
+        description="Close the selected line as short or cancelled."
+        closeAsOptions={
+          statusKey === 'partially_received' || (lineCloseTarget?.quantityReceived ?? 0) > 0
+            ? [{ value: 'short', label: 'Short' }]
+            : [
+                { value: 'short', label: 'Short' },
+                { value: 'cancelled', label: 'Cancelled' },
+              ]
+        }
+        confirmLabel="Confirm line close"
+        isPending={lineCloseMutation.isPending}
+        onClose={() => setLineToClose(null)}
+        onConfirm={(payload) => {
+          if (!lineToClose) return
+          lineCloseMutation.mutate({
+            lineId: lineToClose,
+            closeAs: payload.closeAs as 'short' | 'cancelled',
+            reason: payload.reason,
+            notes: payload.notes,
+          })
+        }}
+      />
     </div>
   )
 }

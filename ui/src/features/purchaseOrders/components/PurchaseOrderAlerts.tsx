@@ -8,9 +8,11 @@ type Props = {
   submitError?: string | null
   approveError?: string | null
   saveError?: string | null
+  closeError?: string | null
   submitMessage?: string | null
   approveMessage?: string | null
   saveMessage?: string | null
+  closeMessage?: string | null
 }
 
 export function PurchaseOrderAlerts({
@@ -20,12 +22,22 @@ export function PurchaseOrderAlerts({
   submitError,
   approveError,
   saveError,
+  closeError,
   submitMessage,
   approveMessage,
   saveMessage,
+  closeMessage,
 }: Props) {
   const hasAlerts =
-    isLocked || submitError || approveError || saveError || submitMessage || approveMessage || saveMessage
+    isLocked ||
+    submitError ||
+    approveError ||
+    saveError ||
+    closeError ||
+    submitMessage ||
+    approveMessage ||
+    saveMessage ||
+    closeMessage
 
   if (!hasAlerts) return null
 
@@ -41,6 +53,7 @@ export function PurchaseOrderAlerts({
       {submitError && <Alert variant="error" title="Submission failed" message={submitError} />}
       {approveError && <Alert variant="error" title="Approval failed" message={approveError} />}
       {saveError && <Alert variant="error" title="Save failed" message={saveError} />}
+      {closeError && <Alert variant="error" title="Close failed" message={closeError} />}
       {submitMessage && (
         <Alert
           variant="success"
@@ -72,6 +85,7 @@ export function PurchaseOrderAlerts({
         />
       )}
       {saveMessage && <Alert variant="success" title="Draft saved" message={saveMessage} />}
+      {closeMessage && <Alert variant="success" title="PO updated" message={closeMessage} />}
     </div>
   )
 }

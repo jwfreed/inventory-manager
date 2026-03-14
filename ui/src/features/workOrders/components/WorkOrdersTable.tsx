@@ -2,6 +2,7 @@ import type { WorkOrder } from '@api/types'
 import { Badge, DataTable, StatusCell, formatStatusLabel, statusTone } from '@shared/ui'
 import { formatNumber } from '@shared/formatters'
 import { Link } from 'react-router-dom'
+import type { ReactNode } from 'react'
 import { cn } from '../../../lib/utils'
 
 type Props = {
@@ -9,9 +10,10 @@ type Props = {
   onSelect: (row: WorkOrder) => void
   formatOutput: (row: WorkOrder) => string
   remaining: (row: WorkOrder) => number
+  renderActions?: (row: WorkOrder) => ReactNode
 }
 
-export function WorkOrdersTable({ rows, onSelect, formatOutput, remaining }: Props) {
+export function WorkOrdersTable({ rows, onSelect, formatOutput, remaining, renderActions }: Props) {
   return (
     <DataTable
       stickyHeader
@@ -40,13 +42,16 @@ export function WorkOrdersTable({ rows, onSelect, formatOutput, remaining }: Pro
         )
       }
       rowActions={(row) => (
-        <Link
-          className="inline-flex rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-          to={`/work-orders/${row.id}`}
-          onClick={(event) => event.stopPropagation()}
-        >
-          View
-        </Link>
+        <div className="flex flex-wrap justify-end gap-2">
+          {renderActions?.(row)}
+          <Link
+            className="inline-flex rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            to={`/work-orders/${row.id}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            View
+          </Link>
+        </div>
       )}
       columns={[
         {

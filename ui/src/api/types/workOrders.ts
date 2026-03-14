@@ -185,6 +185,15 @@ export type WorkOrderExecutionSummary = {
   remainingToComplete: number
 }
 
+export type WorkOrderVoidReportResult = {
+  workOrderId: string
+  workOrderExecutionId: string
+  componentReturnMovementId: string
+  outputReversalMovementId: string
+  idempotencyKey: string | null
+  replayed: boolean
+}
+
 export type WorkOrderIssue = {
   id: string
   workOrderId: string

@@ -79,3 +79,59 @@ export type InventoryChangesResponse = {
   nextSeq: string
   resetRequired?: boolean
 }
+
+export type InventoryTransferResult = {
+  transferId: string
+  movementId: string
+  idempotencyKey?: string | null
+  replayed?: boolean
+}
+
+export type InventoryCountLine = {
+  id?: string
+  lineNumber: number
+  itemId: string
+  locationId: string
+  uom: string
+  countedQuantity: number
+  unitCostForPositiveAdjustment?: number | null
+  systemQuantity: number
+  varianceQuantity: number
+  varianceRatio: number
+  variancePct: number
+  accuracyPct: number
+  hit: boolean
+  reasonCode?: string | null
+  notes?: string | null
+  createdAt?: string
+}
+
+export type InventoryCountSummary = {
+  totalAbsVariance: number
+  totalSystemQty: number
+  lineCount: number
+  linesWithVariance: number
+  hits: number
+  hitRate: number
+  weightedVariancePct: number
+  weightedAccuracyPct: number
+}
+
+export type InventoryCount = {
+  id: string
+  warehouseId: string
+  status: string
+  countedAt: string
+  locationId?: string | null
+  inventoryAdjustmentId?: string | null
+  inventoryMovementId?: string | null
+  notes?: string | null
+  counterId?: string | null
+  approvedBy?: string | null
+  approvedAt?: string | null
+  postedAt?: string | null
+  createdAt?: string
+  updatedAt?: string
+  lines: InventoryCountLine[]
+  summary: InventoryCountSummary
+}

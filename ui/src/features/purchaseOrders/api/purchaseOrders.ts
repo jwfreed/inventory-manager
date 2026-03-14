@@ -1,5 +1,6 @@
 import { apiGet, apiPost, apiPut } from '../../../api/http'
 import type { PurchaseOrder } from '../../../api/types'
+import { buildIdempotencyHeaders, createIdempotencyKey } from '../../../lib/idempotency'
 
 export type PurchaseOrderListResponse = {
   data: PurchaseOrder[]
@@ -26,6 +27,56 @@ export async function approvePurchaseOrder(id: string): Promise<PurchaseOrder> {
 
 export async function cancelPurchaseOrderApi(id: string): Promise<PurchaseOrder> {
   return apiPost<PurchaseOrder>(`/purchase-orders/${id}/cancel`, {})
+}
+
+export type PurchaseOrderClosePayload = {
+  closeAs: 'closed' | 'cancelled'
+  reason: string
+  notes?: string
+}
+
+export async function closePurchaseOrder(
+  id: string,
+  payload: PurchaseOrderClosePayload,
+): Promise<PurchaseOrder> {
+  const idempotencyKey = createIdempotencyKey(`purchase-order-close:${id}`)
+  return apiPost<PurchaseOrder>(
+    `/purchase-orders/${id}/close`,
+    {
+      ...payload,
+      idempotencyKey,
+    },
+    {
+      headers: buildIdempotencyHeaders(idempotencyKey),
+    },
+  )
+}
+
+export type PurchaseOrderLineClosePayload = {
+  closeAs: 'short' | 'cancelled'
+  reason: string
+  notes?: string
+}
+
+export type PurchaseOrderLineCloseResponse = {
+  purchaseOrder: PurchaseOrder
+}
+
+export async function closePurchaseOrderLine(
+  lineId: string,
+  payload: PurchaseOrderLineClosePayload,
+): Promise<PurchaseOrderLineCloseResponse> {
+  const idempotencyKey = createIdempotencyKey(`purchase-order-line-close:${lineId}`)
+  return apiPost<PurchaseOrderLineCloseResponse>(
+    `/purchase-order-lines/${lineId}/close`,
+    {
+      ...payload,
+      idempotencyKey,
+    },
+    {
+      headers: buildIdempotencyHeaders(idempotencyKey),
+    },
+  )
 }
 
 export type PurchaseOrderCreateInput = {

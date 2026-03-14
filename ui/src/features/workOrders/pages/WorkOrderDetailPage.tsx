@@ -3,7 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useItem, useItemsList } from '@features/items/queries'
 import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createWorkOrder, updateWorkOrderDescription, useActiveBomVersion as activateWorkOrderBomVersion } from '../api/workOrders'
+import {
+  cancelWorkOrder,
+  closeWorkOrder,
+  createWorkOrder,
+  markWorkOrderReady,
+  updateWorkOrderDescription,
+  useActiveBomVersion as activateWorkOrderBomVersion,
+  voidWorkOrderProductionReport,
+} from '../api/workOrders'
 import type { ApiError } from '@api/types'
 import {
   useWorkOrder,
@@ -21,6 +29,7 @@ import {
   EmptyState,
   EntityPageLayout,
   ErrorState,
+  Input,
   LoadingSpinner,
   Modal,
   PageHeader,
@@ -31,12 +40,18 @@ import {
 import { WorkOrderHeader } from '../components/WorkOrderHeader'
 import { ExecutionSummaryPanel } from '../components/ExecutionSummaryPanel'
 import { WorkOrderExecutionWorkspace } from '../components/WorkOrderExecutionWorkspace'
+import { WorkOrderLifecycleActions } from '../components/WorkOrderLifecycleActions'
+import { WorkOrderCancelModal } from '../components/WorkOrderCancelModal'
 import { WorkOrderRequirementsTable } from '../components/WorkOrderRequirementsTable'
 import { WorkOrderNextStepPanel } from '../components/WorkOrderNextStepPanel'
 import { useLocationsList } from '@features/locations/queries'
 import { getAtp } from '@api/reports'
 import type { AtpResult } from '@api/types'
 import { formatNumber } from '@shared/formatters'
+import {
+  type RecentProductionReportCandidate,
+  getWorkOrderActionPolicy,
+} from '../lib/workOrderActionPolicy'
 
 const workOrderDetailSections = [
   { id: 'overview', label: 'Overview' },
@@ -45,6 +60,15 @@ const workOrderDetailSections = [
   { id: 'requirements', label: 'Requirements' },
   { id: 'actions', label: 'Actions' },
 ] as const
+
+function formatError(err: unknown, fallback: string) {
+  if (!err) return fallback
+  if (typeof err === 'string') return err
+  if (err instanceof Error && err.message) return err.message
+  const apiErr = err as ApiError
+  if (typeof apiErr?.message === 'string') return apiErr.message
+  return fallback
+}
 
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -58,6 +82,15 @@ export default function WorkOrderDetailPage() {
   const [bomSwitchError, setBomSwitchError] = useState<string | null>(null)
   const [descriptionDraft, setDescriptionDraft] = useState('')
   const [summaryFlash, setSummaryFlash] = useState(false)
+  const [lifecycleMessage, setLifecycleMessage] = useState<string | null>(null)
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  const [showVoidConfirm, setShowVoidConfirm] = useState(false)
+  const [voidReason, setVoidReason] = useState('')
+  const [voidNotes, setVoidNotes] = useState('')
+  const [recentProductionReport, setRecentProductionReport] =
+    useState<RecentProductionReportCandidate | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -160,6 +193,17 @@ export default function WorkOrderDetailPage() {
     setDescriptionDraft(workOrderQuery.data?.description ?? '')
   }, [workOrderQuery.data?.description])
 
+  useEffect(() => {
+    setRecentProductionReport(null)
+    setLifecycleMessage(null)
+    setLifecycleError(null)
+    setShowCancelConfirm(false)
+    setShowCloseConfirm(false)
+    setShowVoidConfirm(false)
+    setVoidReason('')
+    setVoidNotes('')
+  }, [id])
+
   const isDisassembly = workOrderQuery.data?.kind === 'disassembly'
   const readinessQuery = useWorkOrderReadiness(id, {
     enabled: Boolean(id) && Boolean(workOrderQuery.data),
@@ -221,6 +265,82 @@ export default function WorkOrderDetailPage() {
     },
   })
 
+  const invalidateWorkOrderQueries = async () => {
+    if (!id) return
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.all }),
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.detail(id) }),
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.execution(id) }),
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.readiness(id) }),
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.requirements(id) }),
+      queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.disassemblyPlan(id) }),
+    ])
+  }
+
+  const readyMutation = useMutation({
+    mutationFn: () => markWorkOrderReady(id as string),
+    onSuccess: async (updated) => {
+      setLifecycleError(null)
+      setLifecycleMessage(`${updated.number} is ready for production.`)
+      await invalidateWorkOrderQueries()
+    },
+    onError: (err) => {
+      setLifecycleMessage(null)
+      setLifecycleError(formatError(err, 'Failed to mark work order ready.'))
+    },
+  })
+
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelWorkOrder(id as string),
+    onSuccess: async (updated) => {
+      setLifecycleError(null)
+      setLifecycleMessage(`${updated.number} was canceled.`)
+      setShowCancelConfirm(false)
+      setRecentProductionReport(null)
+      await invalidateWorkOrderQueries()
+    },
+    onError: (err) => {
+      setLifecycleMessage(null)
+      setLifecycleError(formatError(err, 'Failed to cancel work order.'))
+    },
+  })
+
+  const closeMutation = useMutation({
+    mutationFn: () => closeWorkOrder(id as string),
+    onSuccess: async (updated) => {
+      setLifecycleError(null)
+      setLifecycleMessage(`${updated.number} was closed.`)
+      setShowCloseConfirm(false)
+      await invalidateWorkOrderQueries()
+    },
+    onError: (err) => {
+      setLifecycleMessage(null)
+      setLifecycleError(formatError(err, 'Failed to close work order.'))
+    },
+  })
+
+  const voidMutation = useMutation({
+    mutationFn: () =>
+      voidWorkOrderProductionReport(id as string, {
+        workOrderExecutionId: recentProductionReport?.workOrderExecutionId ?? '',
+        reason: voidReason.trim(),
+        notes: voidNotes.trim() || null,
+      }),
+    onSuccess: async () => {
+      setLifecycleError(null)
+      setLifecycleMessage('Recent production report was voided.')
+      setShowVoidConfirm(false)
+      setVoidReason('')
+      setVoidNotes('')
+      setRecentProductionReport(null)
+      await invalidateWorkOrderQueries()
+    },
+    onError: (err) => {
+      setLifecycleMessage(null)
+      setLifecycleError(formatError(err, 'Failed to void production report.'))
+    },
+  })
+
   const refreshAll = (options?: { showSummaryToast?: boolean }) => {
     void workOrderQuery.refetch()
     void executionQuery.refetch()
@@ -236,6 +356,10 @@ export default function WorkOrderDetailPage() {
       (workOrderQuery.data.quantityPlanned || 0) - (workOrderQuery.data.quantityCompleted ?? 0),
     )
   }, [workOrderQuery.data])
+  const actionPolicy = useMemo(
+    () => getWorkOrderActionPolicy(workOrderQuery.data ?? null, recentProductionReport),
+    [recentProductionReport, workOrderQuery.data],
+  )
   const issuedTotal = useMemo(() => {
     if (!executionQuery.data?.issuedTotals?.length) return 0
     return executionQuery.data.issuedTotals.reduce((sum, row) => sum + (row.quantityIssued || 0), 0)
@@ -426,20 +550,51 @@ export default function WorkOrderDetailPage() {
               title="Work order detail"
               subtitle="Track readiness, execution, and next actions from one operational page."
               action={
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => navigate('/work-orders')}>
-                    Back to list
-                  </Button>
-                  {workOrderQuery.data ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() =>
-                        navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data!.id)}`)
-                      }
-                    >
-                      View movements
+                <div className="space-y-3">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button variant="secondary" size="sm" onClick={() => navigate('/work-orders')}>
+                      Back to list
                     </Button>
+                    {workOrderQuery.data ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() =>
+                          navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data!.id)}`)
+                        }
+                      >
+                        View movements
+                      </Button>
+                    ) : null}
+                  </div>
+                  {workOrderQuery.data ? (
+                    <WorkOrderLifecycleActions
+                      canMarkReady={actionPolicy.canMarkReady}
+                      canCancel={actionPolicy.canCancel}
+                      canClose={actionPolicy.canClose}
+                      cancelDisabledReason={actionPolicy.cancelDisabledReason}
+                      closeDisabledReason={actionPolicy.closeDisabledReason}
+                      isMarkReadyPending={readyMutation.isPending}
+                      isCancelPending={cancelMutation.isPending}
+                      isClosePending={closeMutation.isPending}
+                      lifecycleMessage={lifecycleMessage}
+                      lifecycleError={lifecycleError}
+                      onMarkReady={() => {
+                        setLifecycleMessage(null)
+                        setLifecycleError(null)
+                        readyMutation.mutate()
+                      }}
+                      onRequestCancel={() => {
+                        setLifecycleMessage(null)
+                        setLifecycleError(null)
+                        setShowCancelConfirm(true)
+                      }}
+                      onRequestClose={() => {
+                        setLifecycleMessage(null)
+                        setLifecycleError(null)
+                        setShowCloseConfirm(true)
+                      }}
+                    />
                   ) : null}
                 </div>
               }
@@ -493,12 +648,15 @@ export default function WorkOrderDetailPage() {
 
         {workOrderQuery.data ? (
           <section id="execution" className="space-y-6">
-            <Panel title="Description" description="Operator-facing note for this work order.">
+            <Panel
+              title="Operator notes"
+              description="Shift notes only. This does not edit BOM, routing, quantities, or execution-derived history."
+            >
               <div className="space-y-3">
                 <Textarea
                   value={descriptionDraft}
                   onChange={(event) => setDescriptionDraft(event.target.value)}
-                  placeholder="Optional note for humans"
+                  placeholder="Optional handoff or execution note"
                   disabled={descriptionMutation.isPending}
                 />
                 <div className="flex justify-end gap-2">
@@ -515,14 +673,14 @@ export default function WorkOrderDetailPage() {
                     onClick={() => descriptionMutation.mutate(descriptionDraft)}
                     disabled={!hasDescriptionChanges || descriptionMutation.isPending}
                   >
-                    Save description
+                    Save operator notes
                   </Button>
                 </div>
                 {descriptionMutation.isError ? (
                   <Alert
                     variant="error"
                     title="Update failed"
-                    message={(descriptionMutation.error as ApiError)?.message ?? 'Failed to update description.'}
+                    message={(descriptionMutation.error as ApiError)?.message ?? 'Failed to update operator notes.'}
                   />
                 ) : null}
               </div>
@@ -666,7 +824,26 @@ export default function WorkOrderDetailPage() {
         <section id="actions">
           <Panel title="Execution workspace" description="Locked routing, readiness, deterministic posting, and movement review in one place.">
             <div id="work-order-actions" ref={actionsRef} className="scroll-mt-24">
-              {workOrderQuery.data && !isDisassembly ? (
+              {workOrderQuery.data && actionPolicy.executionLocked ? (
+                <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <Alert
+                    variant="info"
+                    title="Execution locked"
+                    message={actionPolicy.executionLockedReason}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() =>
+                        navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data.id)}`)
+                      }
+                    >
+                      View movements
+                    </Button>
+                  </div>
+                </div>
+              ) : workOrderQuery.data && !isDisassembly ? (
                 <WorkOrderExecutionWorkspace
                   workOrder={workOrderQuery.data}
                   readiness={readinessQuery.data}
@@ -675,6 +852,19 @@ export default function WorkOrderDetailPage() {
                   isError={readinessQuery.isError}
                   errorMessage={readinessQuery.error?.message}
                   onRefresh={refreshAll}
+                  onProductionReported={(result, meta) => {
+                    if (meta.scrapPosted) {
+                      setRecentProductionReport(null)
+                      return
+                    }
+                    setRecentProductionReport({
+                      workOrderExecutionId: result.productionReportId,
+                      productionReportId: result.productionReportId,
+                      occurredAt: meta.occurredAt,
+                      notes: meta.notes,
+                      scrapPosted: meta.scrapPosted,
+                    })
+                  }}
                 />
               ) : workOrderQuery.data ? (
                 <WorkOrderExecutionWorkspace
@@ -694,7 +884,57 @@ export default function WorkOrderDetailPage() {
               )}
             </div>
 
-	          {!isDisassembly && workOrderQuery.data && (
+            {workOrderQuery.data && (
+              <div className="mt-4">
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">Recent production report</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        Only the most recent report from this page session can be voided.
+                      </div>
+                    </div>
+                    {actionPolicy.canVoidRecentReport && recentProductionReport ? (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => {
+                          setLifecycleMessage(null)
+                          setLifecycleError(null)
+                          setShowVoidConfirm(true)
+                        }}
+                      >
+                        Void production report
+                      </Button>
+                    ) : null}
+                  </div>
+                  {recentProductionReport ? (
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                      <div className="font-semibold text-slate-900">
+                        Execution {recentProductionReport.workOrderExecutionId}
+                      </div>
+                      <div className="mt-1">
+                        Reported at {recentProductionReport.occurredAt ?? 'Unknown time'}
+                      </div>
+                      {recentProductionReport.notes ? (
+                        <div className="mt-1">Notes: {recentProductionReport.notes}</div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-sm text-slate-600">
+                      Post production from this page to enable the recent-report void action.
+                    </div>
+                  )}
+                  {!actionPolicy.canVoidRecentReport && actionPolicy.voidRecentReportDisabledReason ? (
+                    <div className="mt-3 text-xs text-slate-500">
+                      {actionPolicy.voidRecentReportDisabledReason}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            {!isDisassembly && workOrderQuery.data && !actionPolicy.executionLocked && (
 	            <div className="mt-4">
               {remaining === 0 || showNextStep ? (
                 <WorkOrderNextStepPanel
@@ -732,6 +972,91 @@ export default function WorkOrderDetailPage() {
 	          </Panel>
 	        </section>
       </EntityPageLayout>
+
+      <WorkOrderCancelModal
+        isOpen={showCancelConfirm}
+        workOrder={workOrderQuery.data}
+        isPending={cancelMutation.isPending}
+        errorMessage={showCancelConfirm ? lifecycleError : null}
+        onCancel={() => setShowCancelConfirm(false)}
+        onConfirm={() => cancelMutation.mutate()}
+      />
+
+      <Modal
+        isOpen={showCloseConfirm}
+        onClose={() => setShowCloseConfirm(false)}
+        title="Close work order?"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowCloseConfirm(false)}>
+              Keep open
+            </Button>
+            <Button size="sm" onClick={() => closeMutation.mutate()} disabled={closeMutation.isPending}>
+              {closeMutation.isPending ? 'Closing...' : 'Confirm close'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-sm text-slate-700">
+          <p>
+            Closing finalizes the completed work order and prevents further lifecycle actions from
+            the UI.
+          </p>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+            {workOrderQuery.data?.number ?? 'Work order'}
+          </div>
+          {showCloseConfirm && lifecycleError ? (
+            <Alert variant="error" title="Close failed" message={lifecycleError} />
+          ) : null}
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showVoidConfirm}
+        onClose={() => setShowVoidConfirm(false)}
+        title="Void recent production report?"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowVoidConfirm(false)}>
+              Keep report
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => voidMutation.mutate()}
+              disabled={voidMutation.isPending || !voidReason.trim()}
+            >
+              {voidMutation.isPending ? 'Voiding...' : 'Confirm void'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-700">
+            This reverses the most recent production report from this page session if the output has
+            not moved out of QA.
+          </p>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+            <div className="font-semibold text-slate-900">
+              Execution {recentProductionReport?.workOrderExecutionId ?? 'Unavailable'}
+            </div>
+            {recentProductionReport?.occurredAt ? (
+              <div className="mt-1">Reported at {recentProductionReport.occurredAt}</div>
+            ) : null}
+          </div>
+          <label className="grid gap-1 text-sm text-slate-700">
+            <span className="font-medium">Reason</span>
+            <Input value={voidReason} onChange={(event) => setVoidReason(event.target.value)} />
+          </label>
+          <label className="grid gap-1 text-sm text-slate-700">
+            <span className="font-medium">Notes</span>
+            <Textarea value={voidNotes} onChange={(event) => setVoidNotes(event.target.value)} />
+          </label>
+          {showVoidConfirm && lifecycleError ? (
+            <Alert variant="error" title="Void failed" message={lifecycleError} />
+          ) : null}
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showBomSwitchConfirm}

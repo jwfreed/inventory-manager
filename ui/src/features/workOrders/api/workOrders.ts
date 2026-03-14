@@ -8,7 +8,9 @@ import type {
   WorkOrderCompletion,
   WorkOrderRequirements,
   WorkOrderReadiness,
+  WorkOrderVoidReportResult,
 } from '../../../api/types'
+import { buildIdempotencyHeaders, createIdempotencyKey } from '../../../lib/idempotency'
 
 export type WorkOrderListParams = {
   status?: string
@@ -160,6 +162,27 @@ export async function updateWorkOrderDescription(
   return apiPatch<WorkOrder>(`/work-orders/${workOrderId}`, payload)
 }
 
+export type WorkOrderStatusTransition = 'ready' | 'canceled' | 'closed'
+
+export async function transitionWorkOrderStatus(
+  workOrderId: string,
+  status: WorkOrderStatusTransition,
+): Promise<WorkOrder> {
+  return apiPost<WorkOrder>(`/work-orders/${workOrderId}/status/${status}`, {})
+}
+
+export async function markWorkOrderReady(workOrderId: string): Promise<WorkOrder> {
+  return transitionWorkOrderStatus(workOrderId, 'ready')
+}
+
+export async function cancelWorkOrder(workOrderId: string): Promise<WorkOrder> {
+  return transitionWorkOrderStatus(workOrderId, 'canceled')
+}
+
+export async function closeWorkOrder(workOrderId: string): Promise<WorkOrder> {
+  return transitionWorkOrderStatus(workOrderId, 'closed')
+}
+
 export type RecordBatchPayload = {
   occurredAt: string
   notes?: string | null
@@ -265,6 +288,29 @@ export async function reportWorkOrderScrap(
   payload: ReportScrapPayload,
 ): Promise<ReportScrapResult> {
   return apiPost<ReportScrapResult>(`/work-orders/${workOrderId}/report-scrap`, payload)
+}
+
+export type VoidProductionReportPayload = {
+  workOrderExecutionId: string
+  reason: string
+  notes?: string | null
+}
+
+export async function voidWorkOrderProductionReport(
+  workOrderId: string,
+  payload: VoidProductionReportPayload,
+): Promise<WorkOrderVoidReportResult> {
+  const idempotencyKey = createIdempotencyKey(`work-order-void:${workOrderId}`)
+  return apiPost<WorkOrderVoidReportResult>(
+    `/work-orders/${workOrderId}/void-report-production`,
+    {
+      ...payload,
+      idempotencyKey,
+    },
+    {
+      headers: buildIdempotencyHeaders(idempotencyKey),
+    },
+  )
 }
 
 export type ExecuteDisassemblyPayload = {

@@ -1,22 +1,41 @@
 import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import type { ApiError, WorkOrder } from '@api/types'
 import { useItemsList } from '@features/items/queries'
-import { useWorkOrdersList } from '../queries'
+import { cancelWorkOrder, markWorkOrderReady } from '../api/workOrders'
+import { useWorkOrdersList, workOrdersQueryKeys } from '../queries'
 import { Alert, Button, EmptyState, LoadingSpinner, PageHeader, Panel } from '@shared/ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { WorkOrdersFilters } from '../components/WorkOrdersFilters'
 import { WorkOrdersTable } from '../components/WorkOrdersTable'
+import { WorkOrderCancelModal } from '../components/WorkOrderCancelModal'
+import { getWorkOrderActionPolicy } from '../lib/workOrderActionPolicy'
 import { useWorkOrdersListData } from '../hooks/useWorkOrdersListData'
 import { usePageChrome } from '../../../app/layout/usePageChrome'
+
+function formatError(err: unknown, fallback: string) {
+  if (!err) return fallback
+  if (typeof err === 'string') return err
+  if (err instanceof Error && err.message) return err.message
+  const apiErr = err as ApiError
+  if (typeof apiErr?.message === 'string') return apiErr.message
+  return fallback
+}
 
 export default function WorkOrdersListPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { hideTitle } = usePageChrome()
-  
+  const queryClient = useQueryClient()
+
   const [status, setStatus] = useState(() => searchParams.get('status') || '')
   const [search, setSearch] = useState('')
   const [plannedDate, setPlannedDate] = useState('')
   const [kind, setKind] = useState('')
+  const [selectedCancelOrder, setSelectedCancelOrder] = useState<WorkOrder | null>(null)
+  const [lifecycleMessage, setLifecycleMessage] = useState<string | null>(null)
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null)
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null)
 
   const itemsQuery = useItemsList({ limit: 500 }, { staleTime: 60_000 })
 
@@ -36,6 +55,49 @@ export default function WorkOrdersListPage() {
     itemsQuery.data?.data ?? [],
     search,
   )
+
+  const invalidateWorkOrders = async () => {
+    await queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.all })
+  }
+
+  const markReadyMutation = useMutation({
+    mutationFn: async (workOrder: WorkOrder) => {
+      setPendingActionId(workOrder.id)
+      return markWorkOrderReady(workOrder.id)
+    },
+    onSuccess: async (updated) => {
+      setLifecycleError(null)
+      setLifecycleMessage(`${updated.number} is ready for production.`)
+      await invalidateWorkOrders()
+    },
+    onError: (err) => {
+      setLifecycleMessage(null)
+      setLifecycleError(formatError(err, 'Failed to mark work order ready.'))
+    },
+    onSettled: () => {
+      setPendingActionId(null)
+    },
+  })
+
+  const cancelMutation = useMutation({
+    mutationFn: async (workOrder: WorkOrder) => {
+      setPendingActionId(workOrder.id)
+      return cancelWorkOrder(workOrder.id)
+    },
+    onSuccess: async (updated) => {
+      setLifecycleError(null)
+      setLifecycleMessage(`${updated.number} was canceled.`)
+      setSelectedCancelOrder(null)
+      await invalidateWorkOrders()
+    },
+    onError: (err) => {
+      setLifecycleMessage(null)
+      setLifecycleError(formatError(err, 'Failed to cancel work order.'))
+    },
+    onSettled: () => {
+      setPendingActionId(null)
+    },
+  })
 
   return (
     <div className="space-y-6">
@@ -85,6 +147,12 @@ export default function WorkOrdersListPage() {
           </div>
           {isFetching && <span className="text-xs uppercase tracking-wide text-slate-400">Updating…</span>}
         </div>
+        {lifecycleMessage ? (
+          <Alert variant="success" title="Work order updated" message={lifecycleMessage} />
+        ) : null}
+        {lifecycleError ? (
+          <Alert variant="error" title="Lifecycle update failed" message={lifecycleError} />
+        ) : null}
         {isLoading && <LoadingSpinner label="Loading work orders..." />}
         {isError && error && (
           <Alert
@@ -110,9 +178,60 @@ export default function WorkOrdersListPage() {
             onSelect={(row) => navigate(`/work-orders/${row.id}`)}
             formatOutput={formatOutput}
             remaining={remaining}
+            renderActions={(row) => {
+              const policy = getWorkOrderActionPolicy(row)
+              const rowPending = pendingActionId === row.id
+              return (
+                <>
+                  {policy.canQuickMarkReady ? (
+                    <Button
+                      size="sm"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setLifecycleMessage(null)
+                        setLifecycleError(null)
+                        markReadyMutation.mutate(row)
+                      }}
+                      disabled={rowPending}
+                    >
+                      {markReadyMutation.isPending && rowPending ? 'Marking...' : 'Mark ready'}
+                    </Button>
+                  ) : null}
+                  {policy.canQuickCancel ? (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setLifecycleMessage(null)
+                        setLifecycleError(null)
+                        setSelectedCancelOrder(row)
+                      }}
+                      disabled={rowPending}
+                    >
+                      {cancelMutation.isPending && rowPending ? 'Canceling...' : 'Cancel'}
+                    </Button>
+                  ) : null}
+                </>
+              )
+            }}
           />
         )}
       </Panel>
+      <WorkOrderCancelModal
+        isOpen={Boolean(selectedCancelOrder)}
+        workOrder={selectedCancelOrder}
+        isPending={cancelMutation.isPending}
+        errorMessage={selectedCancelOrder ? lifecycleError : null}
+        onCancel={() => {
+          setSelectedCancelOrder(null)
+          setLifecycleError(null)
+        }}
+        onConfirm={() => {
+          if (!selectedCancelOrder) return
+          cancelMutation.mutate(selectedCancelOrder)
+        }}
+      />
     </div>
   )
 }

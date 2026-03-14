@@ -1,18 +1,41 @@
 import type { PurchaseOrderLine } from '@api/types'
-import { DataTable } from '@shared/ui'
+import { Button, DataTable } from '@shared/ui'
 
 const emptyMessage = 'No lines on this purchase order.'
 
 type Props = {
   lines: PurchaseOrderLine[]
+  canCloseLine?: (line: PurchaseOrderLine) => boolean
+  closingLineId?: string | null
+  onCloseLineRequest?: (line: PurchaseOrderLine) => void
 }
 
-export function PurchaseOrderLinesTable({ lines }: Props) {
+export function PurchaseOrderLinesTable({
+  lines,
+  canCloseLine,
+  closingLineId,
+  onCloseLineRequest,
+}: Props) {
   return (
     <DataTable
       rows={lines}
       rowKey={(row) => row.id}
       emptyMessage={emptyMessage}
+      rowActions={
+        onCloseLineRequest
+          ? (row) =>
+              canCloseLine?.(row) ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => onCloseLineRequest(row)}
+                  disabled={closingLineId === row.id}
+                >
+                  {closingLineId === row.id ? 'Closing...' : 'Close line'}
+                </Button>
+              ) : null
+          : undefined
+      }
       columns={[
         {
           id: 'line',
@@ -35,9 +58,19 @@ export function PurchaseOrderLinesTable({ lines }: Props) {
           cell: (row) => row.quantityOrdered ?? '—',
         },
         {
+          id: 'received',
+          header: 'Received',
+          cell: (row) => row.quantityReceived ?? '—',
+        },
+        {
           id: 'uom',
           header: 'UOM',
           cell: (row) => row.uom ?? '—',
+        },
+        {
+          id: 'status',
+          header: 'Status',
+          cell: (row) => row.status ?? 'open',
         },
         {
           id: 'unitPrice',

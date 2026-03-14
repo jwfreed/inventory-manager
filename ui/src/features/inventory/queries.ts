@@ -1,6 +1,7 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import type {
   ApiError,
+  InventoryCount,
   InventorySnapshotRow,
   InventorySnapshotSummaryDetailed,
   MovementLotAllocation,
@@ -11,6 +12,11 @@ import {
   type InventorySnapshotSummaryParams,
 } from './api/inventorySnapshot'
 import { listLots, listMovementLotAllocations, type ListLotsParams } from './api/lots'
+import {
+  getInventoryCount as getInventoryCountApi,
+  listInventoryCounts as listInventoryCountsApi,
+  type InventoryCountsListParams,
+} from './api/counts'
 
 export const inventoryQueryKeys = {
   all: ['inventory'] as const,
@@ -18,6 +24,9 @@ export const inventoryQueryKeys = {
     [...inventoryQueryKeys.all, 'snapshot-summary', params] as const,
   snapshotSummaryDetailed: (params: InventorySnapshotSummaryParams = {}) =>
     [...inventoryQueryKeys.all, 'snapshot-summary-detailed', params] as const,
+  countsList: (params: Partial<InventoryCountsListParams> = {}) =>
+    [...inventoryQueryKeys.all, 'counts-list', params] as const,
+  countsDetail: (id: string) => [...inventoryQueryKeys.all, 'counts-detail', id] as const,
 }
 
 export const lotsQueryKeys = {
@@ -46,6 +55,16 @@ type LotsListOptions = Omit<
 
 type LotAllocationsOptions = Omit<
   UseQueryOptions<MovementLotAllocation[], ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type InventoryCountsListOptions = Omit<
+  UseQueryOptions<Awaited<ReturnType<typeof listInventoryCountsApi>>, ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type InventoryCountDetailOptions = Omit<
+  UseQueryOptions<InventoryCount, ApiError>,
   'queryKey' | 'queryFn'
 >
 
@@ -90,6 +109,29 @@ export function useMovementLotAllocations(
     queryKey: lotsQueryKeys.movementAllocations(movementLineId ?? ''),
     queryFn: () => listMovementLotAllocations(movementLineId as string),
     enabled: Boolean(movementLineId),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useInventoryCountsList(
+  params?: InventoryCountsListParams,
+  options: InventoryCountsListOptions = {},
+) {
+  return useQuery({
+    queryKey: inventoryQueryKeys.countsList(params),
+    queryFn: () => listInventoryCountsApi(params as InventoryCountsListParams),
+    enabled: Boolean(params?.warehouseId),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useInventoryCount(id?: string, options: InventoryCountDetailOptions = {}) {
+  return useQuery({
+    queryKey: inventoryQueryKeys.countsDetail(id ?? ''),
+    queryFn: () => getInventoryCountApi(id as string),
+    enabled: Boolean(id),
     retry: 1,
     ...options,
   })

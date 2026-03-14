@@ -18,6 +18,13 @@ export type PurchaseOrderLine = {
   requiresSerial?: boolean | null
   requiresQc?: boolean | null
   notes?: string | null
+  quantityReceived?: number
+  status?: 'open' | 'complete' | 'closed_short' | 'cancelled'
+  closedReason?: string | null
+  closedNotes?: string | null
+  closedAt?: string | null
+  closedByUserId?: string | null
+  createdAt?: string
 }
 
 export type PurchaseOrder = {
@@ -37,6 +44,10 @@ export type PurchaseOrder = {
   receivingLocationName?: string | null
   vendorReference?: string
   notes?: string
+  closeReason?: string | null
+  closeNotes?: string | null
+  closedAt?: string | null
+  closedByUserId?: string | null
   createdAt?: string
   updatedAt?: string
   lines?: PurchaseOrderLine[]

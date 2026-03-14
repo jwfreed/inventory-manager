@@ -45,9 +45,13 @@ vi.mock('@features/workOrders/queries', () => ({
   },
 }))
 vi.mock('@features/workOrders/api/workOrders', () => ({
+  cancelWorkOrder: vi.fn(),
+  closeWorkOrder: vi.fn(),
   createWorkOrder: vi.fn(),
+  markWorkOrderReady: vi.fn(),
   updateWorkOrderDescription: vi.fn(),
   useActiveBomVersion: vi.fn(),
+  voidWorkOrderProductionReport: vi.fn(),
 }))
 vi.mock('@api/reports', () => ({
   getAtp: vi.fn(),
@@ -269,5 +273,56 @@ describe('WorkOrderDetailPage tabs', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Review readiness' }))
     expect(screen.getByText('__execution_workspace__')).toBeInTheDocument()
+  })
+
+  it('relables description as operator notes', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ description: 'Shift handoff' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    expect(await screen.findByText('Operator notes')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save operator notes' })).toBeInTheDocument()
+  })
+
+  it('locks execution for completed work orders', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1',
+          status: 'completed',
+          kind: 'production',
+          outputItemId: 'item-1',
+          outputUom: 'kg',
+          quantityPlanned: 10,
+          quantityCompleted: 10,
+          completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    expect(await screen.findByText('Execution locked')).toBeInTheDocument()
+    expect(screen.queryByText('__execution_workspace__')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close work order' })).toBeInTheDocument()
   })
 })
