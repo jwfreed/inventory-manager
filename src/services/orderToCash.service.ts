@@ -99,7 +99,7 @@ type StructuredServiceError = Error & {
 };
 
 type AtpErrorContext = {
-  operation: 'reserve' | 'allocate' | 'cancel' | 'fulfill' | 'shipment_post' | 'expire';
+  operation: 'reserve' | 'allocate' | 'cancel' | 'fulfill' | 'shipment_post' | 'shipment_create_allocate' | 'expire';
   tenantId: string;
   warehouseIds?: string[];
   itemIds?: string[];
@@ -465,6 +465,12 @@ async function getCanonicalAvailability(
 }
 export type ShipmentInput = z.infer<typeof shipmentSchema>;
 export type ReturnAuthorizationInput = z.infer<typeof returnAuthorizationSchema>;
+type PreparedShipmentLineInput = ShipmentInput['lines'][number] & { id: string };
+type ShipmentSalesOrderLineRow = { id: string; item_id: string };
+type ShipmentWarehouseScope = {
+  salesOrderWarehouseId: string | null;
+  shipFromWarehouseId: string | null;
+};
 
 function normalizeLineNumbers<T extends { lineNumber?: number }>(lines: T[]) {
   const lineNumbers = new Set<number>();
@@ -1600,60 +1606,331 @@ export function mapShipment(row: any, lines: any[]) {
   };
 }
 
+async function validateShipmentWarehouseScope(
+  client: PoolClient,
+  tenantId: string,
+  salesOrderId: string,
+  shipFromLocationId?: string | null
+): Promise<ShipmentWarehouseScope> {
+  if (!shipFromLocationId) {
+    return {
+      salesOrderWarehouseId: null,
+      shipFromWarehouseId: null
+    };
+  }
+
+  const orderRes = await client.query<{ warehouse_id: string | null }>(
+    `SELECT warehouse_id
+       FROM sales_orders
+      WHERE tenant_id = $1
+        AND id = $2
+      LIMIT 1`,
+    [tenantId, salesOrderId]
+  );
+  const salesOrderWarehouseId = orderRes.rows[0]?.warehouse_id ?? null;
+  const shipFromWarehouseId = await resolveWarehouseIdForLocation(tenantId, shipFromLocationId, client);
+  if (!salesOrderWarehouseId || !shipFromWarehouseId) {
+    throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+  }
+  if (salesOrderWarehouseId !== shipFromWarehouseId) {
+    throw new Error('WAREHOUSE_SCOPE_MISMATCH');
+  }
+  return {
+    salesOrderWarehouseId,
+    shipFromWarehouseId
+  };
+}
+
+async function loadShipmentSalesOrderLines(
+  client: PoolClient,
+  tenantId: string,
+  salesOrderId: string,
+  lineIds: string[],
+  options?: { forUpdate?: boolean }
+) {
+  const uniqueLineIds = Array.from(new Set(lineIds)).sort((left, right) => left.localeCompare(right));
+  const res = await client.query<ShipmentSalesOrderLineRow>(
+    `SELECT id, item_id
+       FROM sales_order_lines
+      WHERE tenant_id = $1
+        AND sales_order_id = $2
+        AND id = ANY($3::uuid[])
+      ORDER BY id ASC
+      ${options?.forUpdate ? 'FOR UPDATE' : ''}`,
+    [tenantId, salesOrderId, uniqueLineIds]
+  );
+  if (res.rowCount !== uniqueLineIds.length) {
+    throw new Error('SHIPMENT_LINE_INVALID_REFERENCE');
+  }
+  return res.rows;
+}
+
+async function insertShipmentDocument(
+  client: PoolClient,
+  tenantId: string,
+  shipmentId: string,
+  data: ShipmentInput,
+  now: Date,
+  preparedLines: PreparedShipmentLineInput[]
+) {
+  const shipment = await client.query(
+    `INSERT INTO sales_order_shipments (
+      id, tenant_id, sales_order_id, shipped_at, ship_from_location_id, inventory_movement_id, external_ref, notes, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING *`,
+    [
+      shipmentId,
+      tenantId,
+      data.salesOrderId,
+      data.shippedAt,
+      data.shipFromLocationId ?? null,
+      null,
+      data.externalRef ?? null,
+      data.notes ?? null,
+      now,
+    ],
+  );
+
+  const lines: any[] = [];
+  for (const line of preparedLines) {
+    const lineResult = await client.query(
+      `INSERT INTO sales_order_shipment_lines (
+        id, tenant_id, sales_order_shipment_id, sales_order_line_id, uom, quantity_shipped
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *`,
+      [line.id, tenantId, shipmentId, line.salesOrderLineId, line.uom, line.quantityShipped],
+    );
+    lines.push(lineResult.rows[0]);
+  }
+
+  return {
+    shipment: shipment.rows[0],
+    lines
+  };
+}
+
 export async function createShipment(tenantId: string, data: ShipmentInput) {
   const now = new Date();
   const id = uuidv4();
-  return withTransaction(async (client) => {
-    if (data.shipFromLocationId) {
-      const orderRes = await client.query<{ warehouse_id: string | null }>(
-        `SELECT warehouse_id
-           FROM sales_orders
-          WHERE tenant_id = $1
-            AND id = $2
-          LIMIT 1`,
-        [tenantId, data.salesOrderId]
-      );
-      const orderWarehouseId = orderRes.rows[0]?.warehouse_id ?? null;
-      const shipFromWarehouseId = await resolveWarehouseIdForLocation(tenantId, data.shipFromLocationId, client);
-      if (!orderWarehouseId || !shipFromWarehouseId) {
-        throw new Error('WAREHOUSE_SCOPE_REQUIRED');
-      }
-      if (orderWarehouseId !== shipFromWarehouseId) {
-        throw new Error('WAREHOUSE_SCOPE_MISMATCH');
-      }
-    }
+  const preparedLines: PreparedShipmentLineInput[] = data.lines.map((line) => ({
+    ...line,
+    id: uuidv4()
+  }));
 
-    const shipment = await client.query(
-      `INSERT INTO sales_order_shipments (
-        id, tenant_id, sales_order_id, shipped_at, ship_from_location_id, inventory_movement_id, external_ref, notes, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING *`,
-      [
-        id,
+  if (data.autoAllocateReservations) {
+    let createRetryContext: AtpErrorContext = {
+      operation: 'shipment_create_allocate',
+      tenantId,
+      warehouseIds: [],
+      itemIds: [],
+      lockKeysCount: 0
+    };
+    let salesOrderLines: ShipmentSalesOrderLineRow[] = [];
+    let shipFromWarehouseId: string | null = null;
+    let salesOrderWarehouseId: string | null = null;
+    let createdShipment: any;
+
+    try {
+      createdShipment = await runInventoryCommand<any>({
         tenantId,
-        data.salesOrderId,
-        data.shippedAt,
-        data.shipFromLocationId ?? null,
-        null,
-        data.externalRef ?? null,
-        data.notes ?? null,
-        now,
-      ],
-    );
+        endpoint: IDEMPOTENCY_ENDPOINTS.RESERVATIONS_ALLOCATE,
+        operation: 'shipment_create_allocate',
+        retryOptions: buildAtpRetryOptions(createRetryContext, ATP_SERIALIZABLE_RETRIES),
+        lockTargets: async (client) => {
+          if (!data.shipFromLocationId) {
+            throw new Error('SHIPMENT_LOCATION_REQUIRED');
+          }
 
-    const lines: any[] = [];
-    for (const line of data.lines) {
-      const lineResult = await client.query(
-        `INSERT INTO sales_order_shipment_lines (
-          id, tenant_id, sales_order_shipment_id, sales_order_line_id, uom, quantity_shipped
-        ) VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *`,
-        [uuidv4(), tenantId, id, line.salesOrderLineId, line.uom, line.quantityShipped],
-      );
-      lines.push(lineResult.rows[0]);
+          const scope = await validateShipmentWarehouseScope(
+            client,
+            tenantId,
+            data.salesOrderId,
+            data.shipFromLocationId
+          );
+          salesOrderWarehouseId = scope.salesOrderWarehouseId;
+          shipFromWarehouseId = scope.shipFromWarehouseId;
+          if (!shipFromWarehouseId || !salesOrderWarehouseId) {
+            throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+          }
+
+          await assertSellableLocationOrThrow(client, tenantId, data.shipFromLocationId, {
+            expectedWarehouseId: shipFromWarehouseId
+          });
+
+          salesOrderLines = await loadShipmentSalesOrderLines(
+            client,
+            tenantId,
+            data.salesOrderId,
+            preparedLines.map((line) => line.salesOrderLineId),
+            { forUpdate: true }
+          );
+          const itemIds = mapUniqueValues(salesOrderLines.map((line) => line.item_id));
+          const advisoryTargets = itemIds.map((itemId) => ({
+            tenantId,
+            warehouseId: shipFromWarehouseId!,
+            itemId
+          }));
+          createRetryContext = {
+            operation: 'shipment_create_allocate',
+            tenantId,
+            warehouseIds: [shipFromWarehouseId],
+            itemIds,
+            lockKeysCount: buildAtpLockKeys(advisoryTargets).length
+          };
+          return advisoryTargets;
+        },
+        execute: async ({ client }) => {
+          if (!shipFromWarehouseId) {
+            throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+          }
+
+          const { shipment, lines } = await insertShipmentDocument(
+            client,
+            tenantId,
+            id,
+            data,
+            now,
+            preparedLines
+          );
+
+          const lineRowsById = new Map(salesOrderLines.map((line) => [line.id, line]));
+          const demandIds = mapUniqueValues(preparedLines.map((line) => line.salesOrderLineId));
+          const reservationsRes = await client.query<ReservationRow>(
+            `SELECT *
+               FROM inventory_reservations
+              WHERE tenant_id = $1
+                AND warehouse_id = $2
+                AND demand_type = 'sales_order_line'
+                AND demand_id = ANY($3::uuid[])
+                AND location_id = $4
+              ORDER BY demand_id ASC, item_id ASC, uom ASC, id ASC
+              FOR UPDATE`,
+            [tenantId, shipFromWarehouseId, demandIds, data.shipFromLocationId]
+          );
+          const reservationsByKey = new Map<string, ReservationRow>();
+          for (const reservation of reservationsRes.rows) {
+            reservationsByKey.set(
+              [
+                reservation.demand_id,
+                reservation.item_id,
+                reservation.location_id,
+                reservation.uom
+              ].join(':'),
+              reservation
+            );
+          }
+
+          const events: InventoryCommandEvent[] = [];
+          const projectionOps: InventoryCommandProjectionOp[] = [];
+
+          for (const line of preparedLines) {
+            const salesOrderLine = lineRowsById.get(line.salesOrderLineId);
+            if (!salesOrderLine) {
+              throw new Error('SHIPMENT_LINE_INVALID_REFERENCE');
+            }
+            const canonicalRequested = await convertToCanonical(
+              tenantId,
+              salesOrderLine.item_id,
+              line.quantityShipped,
+              line.uom,
+              client
+            );
+            const shipmentQty = roundQuantity(Math.max(0, canonicalRequested.quantity));
+            if (shipmentQty <= 1e-6) {
+              continue;
+            }
+
+            const reservation = reservationsByKey.get(
+              [
+                line.salesOrderLineId,
+                salesOrderLine.item_id,
+                data.shipFromLocationId,
+                canonicalRequested.canonicalUom
+              ].join(':')
+            );
+            if (!reservation || reservation.status !== 'RESERVED') {
+              continue;
+            }
+
+            const openQty = roundQuantity(
+              Math.max(0, toNumber(reservation.quantity_reserved) - toNumber(reservation.quantity_fulfilled ?? 0))
+            );
+            if (openQty <= 1e-6 || openQty - shipmentQty > 1e-6) {
+              continue;
+            }
+
+            const transition = await client.query(
+              `UPDATE inventory_reservations
+                  SET status = 'ALLOCATED',
+                      allocated_at = COALESCE(allocated_at, $1),
+                      updated_at = $1
+                WHERE id = $2
+                  AND tenant_id = $3
+                  AND warehouse_id = $4
+                  AND status = 'RESERVED'`,
+              [now, reservation.id, tenantId, shipFromWarehouseId]
+            );
+            if (transition.rowCount === 0) {
+              throw reservationInvalidState();
+            }
+
+            const eventVersion = await insertReservationEvent(
+              client,
+              tenantId,
+              reservation.id,
+              'ALLOCATED',
+              -openQty,
+              openQty
+            );
+            const updated = await client.query(
+              `SELECT *
+                 FROM inventory_reservations
+                WHERE id = $1
+                  AND tenant_id = $2
+                  AND warehouse_id = $3`,
+              [reservation.id, tenantId, shipFromWarehouseId]
+            );
+            const updatedReservation = updated.rows[0] ?? {
+              ...reservation,
+              status: 'ALLOCATED',
+              allocated_at: now,
+              updated_at: now
+            };
+
+            events.push(buildReservationChangedEvent(updatedReservation, eventVersion));
+            projectionOps.push(
+              buildInventoryBalanceProjectionOp({
+                tenantId,
+                itemId: reservation.item_id,
+                locationId: reservation.location_id,
+                uom: reservation.uom,
+                deltaReserved: -openQty,
+                deltaAllocated: openQty
+              })
+            );
+          }
+
+          return {
+            responseBody: mapShipment(shipment, lines),
+            responseStatus: 201,
+            events,
+            projectionOps
+          };
+        }
+      });
+    } catch (error) {
+      withAtpRetryHandling(error, createRetryContext);
     }
+    if (shipFromWarehouseId) {
+      invalidateAtpCacheForWarehouse(tenantId, shipFromWarehouseId);
+    }
+    return createdShipment;
+  }
 
-    return mapShipment(shipment.rows[0], lines);
+  return withTransaction(async (client) => {
+    await validateShipmentWarehouseScope(client, tenantId, data.salesOrderId, data.shipFromLocationId);
+    const { shipment, lines } = await insertShipmentDocument(client, tenantId, id, data, now, preparedLines);
+    return mapShipment(shipment, lines);
   });
 }
 

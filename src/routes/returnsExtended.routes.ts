@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
+import { getIdempotencyKey } from '../lib/idempotency';
 import {
   returnDispositionLineSchema,
   returnDispositionSchema,
@@ -15,6 +16,7 @@ import {
   getReturnReceipt,
   listReturnDispositions,
   listReturnReceipts,
+  postReturnReceipt,
 } from '../services/returnsExtended.service';
 
 const router = Router();
@@ -50,6 +52,105 @@ router.get('/return-receipts/:id', async (req: Request, res: Response) => {
   const receipt = await getReturnReceipt(req.auth!.tenantId, id);
   if (!receipt) return res.status(404).json({ error: 'Return receipt not found.' });
   return res.json(receipt);
+});
+
+router.post('/return-receipts/:id/post', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ error: 'Invalid return receipt id.' });
+  }
+  const idempotencyKey = getIdempotencyKey(req);
+  if (!idempotencyKey) {
+    return res.status(400).json({ error: 'Idempotency-Key header is required.' });
+  }
+  try {
+    const receipt = await postReturnReceipt(req.auth!.tenantId, id, { idempotencyKey });
+    return res.json(receipt);
+  } catch (error: any) {
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS' || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+          message: 'Return receipt posting already in progress for this idempotency key.'
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS',
+          message: 'Idempotency key was already used for a different endpoint.'
+        }
+      });
+    }
+    if (
+      error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+      || error?.message === 'IDEMPOTENCY_HASH_MISMATCH'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD',
+          message: 'Idempotency key reused with a different request payload.'
+        }
+      });
+    }
+    if (error?.message === 'RETURN_RECEIPT_NOT_FOUND') {
+      return res.status(404).json({ error: 'Return receipt not found.' });
+    }
+    if (error?.message === 'RETURN_RECEIPT_CANCELED') {
+      return res.status(409).json({ error: 'Canceled return receipts cannot be posted.' });
+    }
+    if (error?.message === 'RETURN_RECEIPT_NO_LINES') {
+      return res.status(400).json({ error: 'Return receipt must have at least one line before posting.' });
+    }
+    if (error?.message === 'RETURN_AUTH_NOT_FOUND') {
+      return res.status(409).json({ error: 'Return authorization is missing for this receipt.' });
+    }
+    if (error?.message === 'RETURN_AUTH_NOT_POSTABLE') {
+      return res.status(409).json({ error: 'Return authorization is not in a postable state.' });
+    }
+    if (error?.message === 'RETURN_RECEIPT_LINE_INVALID_REFERENCE') {
+      return res.status(400).json({ error: 'Return receipt line references an invalid return authorization line.' });
+    }
+    if (error?.message === 'RETURN_RECEIPT_LINE_REFERENCE_MISMATCH') {
+      return res.status(409).json({ error: 'Return receipt line does not match its return authorization line item or UOM.' });
+    }
+    if (error?.message === 'RETURN_RECEIPT_QTY_EXCEEDS_AUTHORIZED') {
+      return res.status(409).json({ error: 'Posting this return receipt would exceed the authorized return quantity.' });
+    }
+    if (error?.message === 'WAREHOUSE_SCOPE_REQUIRED') {
+      return res.status(400).json({
+        error: {
+          code: 'WAREHOUSE_SCOPE_REQUIRED',
+          message: 'Return receipt location must resolve to a warehouse.'
+        }
+      });
+    }
+    if (error?.code === 'RETURN_RECEIPT_POST_INCOMPLETE' || error?.message === 'RETURN_RECEIPT_POST_INCOMPLETE') {
+      return res.status(409).json({
+        error: {
+          code: 'RETURN_RECEIPT_POST_INCOMPLETE',
+          message: 'Return receipt posting integrity failed closed.',
+          details: error?.details ?? null
+        }
+      });
+    }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Return receipt replay integrity failed closed.',
+          details: error?.details ?? null
+        }
+      });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to post return receipt.' });
+  }
 });
 
 router.post('/return-receipts/:id/lines', async (req: Request, res: Response) => {

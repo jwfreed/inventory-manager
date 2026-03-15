@@ -89,6 +89,7 @@ export const shipmentSchema = z.object({
   shipFromLocationId: uuid().optional(),
   externalRef: z.string().max(255).optional(),
   notes: z.string().max(2000).optional(),
+  autoAllocateReservations: z.boolean().optional(),
   lines: z.array(shipmentLineSchema).min(1),
 });
 

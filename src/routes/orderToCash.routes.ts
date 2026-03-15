@@ -534,6 +534,12 @@ router.post('/shipments', async (req: Request, res: Response) => {
     const shipment = await createShipment(req.auth!.tenantId, parsed.data);
     return res.status(201).json(shipment);
   } catch (error: any) {
+    if (mapAtpConcurrencyExhausted(error, res)) {
+      return;
+    }
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.message === 'WAREHOUSE_SCOPE_REQUIRED') {
       return res.status(400).json({
         error: {
@@ -547,6 +553,38 @@ router.post('/shipments', async (req: Request, res: Response) => {
         error: {
           code: 'WAREHOUSE_SCOPE_MISMATCH',
           message: 'Shipment ship-from location must be in the sales order warehouse.'
+        }
+      });
+    }
+    if (error?.message === 'SHIPMENT_LOCATION_REQUIRED') {
+      return res.status(400).json({
+        error: {
+          code: 'SHIPMENT_LOCATION_REQUIRED',
+          message: 'shipFromLocationId is required when autoAllocateReservations is enabled.'
+        }
+      });
+    }
+    if (error?.message === 'SHIPMENT_LINE_INVALID_REFERENCE') {
+      return res.status(400).json({
+        error: {
+          code: 'SHIPMENT_LINE_INVALID_REFERENCE',
+          message: 'One or more shipment lines do not belong to the referenced sales order.'
+        }
+      });
+    }
+    if (error?.message === 'RESERVATION_INVALID_TRANSITION' || error?.message === 'RESERVATION_INVALID_STATE') {
+      return res.status(409).json({
+        error: {
+          code: 'RESERVATION_INVALID_STATE',
+          message: 'A matching reservation could not be allocated from its current state.'
+        }
+      });
+    }
+    if (error?.message === 'NON_SELLABLE_LOCATION') {
+      return res.status(409).json({
+        error: {
+          code: 'NON_SELLABLE_LOCATION',
+          message: 'Auto-allocation requires a sellable ship-from location.'
         }
       });
     }

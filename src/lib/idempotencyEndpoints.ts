@@ -14,6 +14,7 @@ export const IDEMPOTENCY_ENDPOINTS = Object.freeze({
   RESERVATIONS_CANCEL: 'otc.cancel_reservation',
   RESERVATIONS_FULFILL: 'otc.fulfill_reservation',
   SHIPMENTS_POST: 'otc.post_shipment',
+  RETURN_RECEIPTS_POST: 'returns.post_return_receipt',
   WORK_ORDER_REPORT_PRODUCTION: 'wo.report_production',
   WORK_ORDER_RECORD_BATCH: 'wo.record_batch',
   WORK_ORDER_VOID_REPORT_PRODUCTION: 'wo.void_report_production',
