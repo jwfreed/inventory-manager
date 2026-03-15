@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Alert, Button } from '@shared/ui'
+import { ActionGuardMessage, Alert, Button } from '@shared/ui'
 
 type Props = {
   isLocked: boolean
@@ -44,8 +44,7 @@ export function PurchaseOrderAlerts({
   return (
     <div className="mt-3 space-y-2">
       {isLocked && (
-        <Alert
-          variant="info"
+        <ActionGuardMessage
           title="Locked"
           message={`This PO is ${statusLabel.toLowerCase()} and read-only. Use Repeat to create a new draft if changes are needed.`}
         />

@@ -3,8 +3,10 @@ import { AtpQueryPage } from './pages/AtpQueryPage'
 import InventoryCountCreatePage from './pages/InventoryCountCreatePage'
 import InventoryCountDetailPage from './pages/InventoryCountDetailPage'
 import { InventoryCountsListPage } from './pages/InventoryCountsListPage'
+import InventoryOperationsDashboardPage from './pages/InventoryOperationsDashboardPage'
 import { InventoryTransferCreatePage } from './pages/InventoryTransferCreatePage'
 import { LicensePlatesPage } from './pages/LicensePlatesPage'
+import WarehouseActivityBoardPage from './pages/WarehouseActivityBoardPage'
 
 export const atpRoutes: AppRouteObject[] = [
   {
@@ -50,6 +52,34 @@ export const atpRoutes: AppRouteObject[] = [
     },
   },
   {
+    path: 'inventory/operations',
+    element: <InventoryOperationsDashboardPage />,
+    handle: {
+      breadcrumb: 'Inventory Operations',
+      nav: {
+        label: 'Inventory Operations',
+        to: '/inventory/operations',
+        section: 'inventory',
+        order: 38,
+        description: 'Latest operational activity across warehouse workflows',
+      },
+    },
+  },
+  {
+    path: 'inventory/activity',
+    element: <WarehouseActivityBoardPage />,
+    handle: {
+      breadcrumb: 'Warehouse Activity',
+      nav: {
+        label: 'Warehouse Activity',
+        to: '/inventory/activity',
+        section: 'inventory',
+        order: 37,
+        description: 'Latest warehouse execution activity across outbound and production workflows',
+      },
+    },
+  },
+  {
     path: 'inventory-counts',
     element: <InventoryCountsListPage />,
     handle: {
@@ -58,7 +88,7 @@ export const atpRoutes: AppRouteObject[] = [
         label: 'Inventory Counts',
         to: '/inventory-counts',
         section: 'inventory',
-        order: 37,
+        order: 39,
         description: 'Create and post warehouse cycle counts',
       },
     },

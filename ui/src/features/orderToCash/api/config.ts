@@ -3,4 +3,6 @@ export const ORDER_TO_CASH_ENDPOINTS = {
   reservations: '/reservations',
   shipments: '/shipments',
   returns: '/returns',
+  returnReceipts: '/return-receipts',
+  returnDispositions: '/return-dispositions',
 }

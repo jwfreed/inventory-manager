@@ -28,6 +28,7 @@ import {
   canClosePurchaseOrderLine as canClosePurchaseOrderLinePolicy,
   getPurchaseOrderHeaderCloseOptions,
 } from '../lib/purchaseOrderClosePolicy'
+import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
 
 function AuditTrailPanel({ entityId }: { entityId?: string }) {
   const auditQuery = useAuditLog(
@@ -230,6 +231,7 @@ export default function PurchaseOrderDetailPage() {
       ])
     },
     onError: (err: ApiError | unknown) => {
+      logOperationalMutationFailure('purchase-orders', 'cancel-purchase-order', err, { purchaseOrderId: id })
       setCloseMessage(null)
       setCloseError(formatError(err, 'Cancel failed. Check the PO status and try again.'))
     },
@@ -249,6 +251,7 @@ export default function PurchaseOrderDetailPage() {
       ])
     },
     onError: (err: ApiError | unknown) => {
+      logOperationalMutationFailure('purchase-orders', 'close-purchase-order', err, { purchaseOrderId: id })
       setCloseMessage(null)
       setCloseError(formatError(err, 'Purchase order close failed.'))
     },
@@ -272,6 +275,10 @@ export default function PurchaseOrderDetailPage() {
       await queryClient.invalidateQueries({ queryKey: purchaseOrdersQueryKeys.all })
     },
     onError: (err: ApiError | unknown) => {
+      logOperationalMutationFailure('purchase-orders', 'close-purchase-order-line', err, {
+        purchaseOrderId: id,
+        purchaseOrderLineId: lineToClose,
+      })
       setCloseMessage(null)
       setCloseError(formatError(err, 'Purchase order line close failed.'))
     },

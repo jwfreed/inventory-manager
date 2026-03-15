@@ -2,6 +2,7 @@ export type SalesOrder = {
   id: string
   soNumber: string
   customerId: string
+  warehouseId?: string | null
   status: string
   orderDate?: string
   requestedShipDate?: string
@@ -21,6 +22,7 @@ export type SalesOrderLine = {
   itemId?: string
   uom?: string
   quantityOrdered?: number
+  derivedBackorderQty?: number
   unitPrice?: number | null
   currencyCode?: string | null
   exchangeRateToBase?: number | null
@@ -32,14 +34,22 @@ export type SalesOrderLine = {
 export type Reservation = {
   id: string
   status?: string
+  state?: string
   demandType?: string
   demandId?: string
   itemId?: string
   locationId?: string
+  warehouseId?: string
   uom?: string
   quantityReserved?: number
   quantityFulfilled?: number | null
   reservedAt?: string
+  allocatedAt?: string | null
+  canceledAt?: string | null
+  fulfilledAt?: string | null
+  expiredAt?: string | null
+  expiresAt?: string | null
+  cancelReason?: string | null
   releasedAt?: string | null
   releaseReasonCode?: string | null
   notes?: string | null
@@ -53,6 +63,8 @@ export type Shipment = {
   shippedAt?: string
   shipFromLocationId?: string
   inventoryMovementId?: string | null
+  status?: string | null
+  postedAt?: string | null
   externalRef?: string | null
   notes?: string | null
   createdAt?: string
@@ -91,6 +103,55 @@ export type ReturnAuthorizationLine = {
   uom?: string
   quantityAuthorized?: number
   reasonCode?: string | null
+  notes?: string | null
+  createdAt?: string
+}
+
+export type ReturnReceipt = {
+  id: string
+  returnAuthorizationId?: string
+  status?: string
+  receivedAt?: string
+  receivedToLocationId?: string
+  inventoryMovementId?: string | null
+  externalRef?: string | null
+  notes?: string | null
+  createdAt?: string
+  lines?: ReturnReceiptLine[]
+}
+
+export type ReturnReceiptLine = {
+  id: string
+  returnReceiptId?: string
+  returnAuthorizationLineId?: string | null
+  itemId?: string
+  uom?: string
+  quantityReceived?: number
+  notes?: string | null
+  createdAt?: string
+}
+
+export type ReturnDisposition = {
+  id: string
+  returnReceiptId?: string
+  status?: string
+  occurredAt?: string
+  dispositionType?: string
+  fromLocationId?: string
+  toLocationId?: string | null
+  inventoryMovementId?: string | null
+  notes?: string | null
+  createdAt?: string
+  lines?: ReturnDispositionLine[]
+}
+
+export type ReturnDispositionLine = {
+  id: string
+  returnDispositionId?: string
+  lineNumber?: number | null
+  itemId?: string
+  uom?: string
+  quantity?: number
   notes?: string | null
   createdAt?: string
 }

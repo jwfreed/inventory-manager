@@ -1,13 +1,18 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useReturnsList } from '../queries'
-import { Alert } from '../../../components/Alert'
-import { Badge } from '../../../components/Badge'
-import { Button } from '../../../components/Button'
-import { Card } from '../../../components/Card'
-import { EmptyState } from '../../../components/EmptyState'
-import { LoadingSpinner } from '../../../components/Loading'
-import { Section } from '../../../components/Section'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  LoadingSpinner,
+  PageHeader,
+  Panel,
+} from '@shared/ui'
+import { formatDate } from '@shared/formatters'
+import { formatStatusLabel } from '@shared/ui'
 import { usePageChrome } from '../../../app/layout/usePageChrome'
 
 export default function ReturnsListPage() {
@@ -15,62 +20,62 @@ export default function ReturnsListPage() {
   const { hideTitle } = usePageChrome()
   const [search, setSearch] = useState('')
 
-  const { data, isLoading, isError, error, refetch } = useReturnsList()
+  const { data, isLoading, isError, error, refetch } = useReturnsList({ limit: 100 })
 
   const filtered = useMemo(() => {
     const list = data?.data ?? []
     if (!search) return list
     const needle = search.toLowerCase()
-    return list.filter(
-      (r) =>
-        (r.id || '').toLowerCase().includes(needle) ||
-        (r.rmaNumber || '').toLowerCase().includes(needle) ||
-        (r.customerId || '').toLowerCase().includes(needle),
+    return list.filter((returnDoc) =>
+      [returnDoc.id, returnDoc.rmaNumber, returnDoc.customerId, returnDoc.salesOrderId]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle)),
     )
   }, [data?.data, search])
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Returns</h2>}
-        <p className="max-w-3xl text-sm text-slate-600">
-          Read-only browsing. Return documents may link to inventory movements.
-        </p>
-      </div>
+      <PageHeader
+        title={hideTitle ? '' : 'Returns'}
+        subtitle="Create and manage return authorizations, receipts, and dispositions without inventing non-existent posting APIs."
+        action={
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => navigate('/returns/new')}>
+              New return authorization
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void refetch()}>
+              Refresh
+            </Button>
+          </div>
+        }
+      />
 
-      <Section title="Filters">
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            placeholder="Search by return id"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Button variant="secondary" size="sm" onClick={() => void refetch()}>
-            Refresh
-          </Button>
-        </div>
-      </Section>
+      <Panel title="Search" description="Search returns by RMA number, customer, sales order, or return id.">
+        <input
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          placeholder="Search by return id, customer, or sales order"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </Panel>
 
-      <Section title="Returns">
+      <Panel title="Return authorizations" description="Return authorizations document approval. Receipts and dispositions can be executed from the return detail view.">
         <Card>
           {isLoading && <LoadingSpinner label="Loading returns..." />}
-          {isError && error && (
-            <Alert variant="error" title="Failed to load" message={error.message} />
-          )}
-          {!isLoading && !isError && filtered.length === 0 && (
+          {isError && error && <Alert variant="error" title="Failed to load" message={error.message} />}
+          {!isLoading && !isError && filtered.length === 0 ? (
             <EmptyState
               title="No returns found"
-              description="Create returns via API; this list is read-only."
+              description="Create a return authorization to begin the returns workflow."
             />
-          )}
-          {!isLoading && !isError && filtered.length > 0 && (
+          ) : null}
+          {!isLoading && !isError && filtered.length > 0 ? (
             <div className="overflow-hidden rounded-xl border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      RMA Number
+                      RMA number
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Status
@@ -81,31 +86,37 @@ export default function ReturnsListPage() {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Sales order
                     </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Authorized at
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white">
-                  {filtered.map((r) => (
+                  {filtered.map((returnDoc) => (
                     <tr
-                      key={r.id}
+                      key={returnDoc.id}
                       className="cursor-pointer hover:bg-slate-50"
-                      onClick={() => navigate(`/returns/${r.id}`)}
+                      onClick={() => navigate(`/returns/${returnDoc.id}`)}
                     >
                       <td className="px-4 py-3 text-sm font-semibold text-slate-900">
-                        {r.rmaNumber || r.id}
+                        {returnDoc.rmaNumber || returnDoc.id}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-800">
-                        <Badge variant="neutral">{r.status || '—'}</Badge>
+                        <Badge variant="neutral">{formatStatusLabel(returnDoc.status)}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-800">{r.customerId || '—'}</td>
-                      <td className="px-4 py-3 text-sm text-slate-800">{r.salesOrderId || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-slate-800">{returnDoc.customerId || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-slate-800">{returnDoc.salesOrderId || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-slate-800">
+                        {returnDoc.authorizedAt ? formatDate(returnDoc.authorizedAt) : '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          )}
+          ) : null}
         </Card>
-      </Section>
+      </Panel>
     </div>
   )
 }

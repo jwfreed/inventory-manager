@@ -1,22 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { ApiError } from '@api/types'
 import { useItemsList } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
-import { Alert, Button, PageHeader, Panel } from '@shared/ui'
+import { Button, PageHeader } from '@shared/ui'
 import { createInventoryTransfer } from '../api/transfers'
 import { InventoryTransferForm, type InventoryTransferFormValues } from '../components/InventoryTransferForm'
+import { TransferOperationPanel } from '../components/TransferOperationPanel'
 import { inventoryQueryKeys } from '../queries'
-
-function formatError(err: unknown, fallback: string) {
-  if (!err) return fallback
-  if (typeof err === 'string') return err
-  if (err instanceof Error && err.message) return err.message
-  const apiErr = err as ApiError
-  if (typeof apiErr?.message === 'string') return apiErr.message
-  return fallback
-}
+import { ledgerQueryKeys } from '@features/ledger/queries'
+import { formatTransferOperationError } from '../lib/inventoryOperationErrorMessaging'
+import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
 
 function createInitialValues(): InventoryTransferFormValues {
   const now = new Date()
@@ -38,6 +32,7 @@ export function InventoryTransferCreatePage() {
   const queryClient = useQueryClient()
   const [formValues, setFormValues] = useState<InventoryTransferFormValues>(() => createInitialValues())
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [validationMessages, setValidationMessages] = useState<string[]>([])
 
   const itemsQuery = useItemsList({ lifecycleStatus: 'Active', limit: 500 }, { staleTime: 60_000 })
   const locationsQuery = useLocationsList({ active: true, limit: 1000 }, { staleTime: 60_000 })
@@ -83,12 +78,42 @@ export function InventoryTransferCreatePage() {
       }),
     onSuccess: async () => {
       setSubmitError(null)
-      await queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.all })
+      setValidationMessages([])
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.all }),
+        queryClient.invalidateQueries({ queryKey: ledgerQueryKeys.all }),
+      ])
     },
     onError: (err) => {
-      setSubmitError(formatError(err, 'Failed to post inventory transfer.'))
+      logOperationalMutationFailure('inventory-transfers', 'create-transfer', err, {
+        itemId: formValues.itemId,
+        sourceLocationId: formValues.sourceLocationId,
+        destinationLocationId: formValues.destinationLocationId,
+      })
+      setSubmitError(formatTransferOperationError(err, 'Failed to post inventory transfer.'))
     },
   })
+
+  const validateTransferForm = () => {
+    const errors: string[] = []
+    if (!formValues.itemId) errors.push('Select an item before posting the transfer.')
+    if (!formValues.sourceLocationId) errors.push('Select a source location.')
+    if (!formValues.destinationLocationId) errors.push('Select a destination location.')
+    if (
+      formValues.sourceLocationId &&
+      formValues.destinationLocationId &&
+      formValues.sourceLocationId === formValues.destinationLocationId
+    ) {
+      errors.push('Source and destination locations must differ.')
+    }
+    if (!(Number(formValues.quantity) > 0)) {
+      errors.push('Transfer quantity must be greater than zero.')
+    }
+    if (!formValues.uom.trim()) {
+      errors.push('Enter a unit of measure before posting the transfer.')
+    }
+    return errors
+  }
 
   return (
     <div className="space-y-6">
@@ -103,39 +128,17 @@ export function InventoryTransferCreatePage() {
           </Link>
         }
       />
-      <Panel
-        title="Transfer details"
-        description="Use this screen for direct operational transfers. Negative overrides are intentionally unavailable."
+      <TransferOperationPanel
+        validationMessages={validationMessages}
+        errorMessage={submitError}
+        result={transferMutation.data ?? null}
+        onReset={() => {
+          setFormValues(createInitialValues())
+          setSubmitError(null)
+          setValidationMessages([])
+          transferMutation.reset()
+        }}
       >
-        {submitError ? <Alert variant="error" title="Transfer failed" message={submitError} /> : null}
-        {transferMutation.isSuccess ? (
-          <Alert
-            variant="success"
-            title="Transfer posted"
-            message="Inventory transfer posted successfully."
-            action={
-              <div className="flex flex-wrap gap-2">
-                {transferMutation.data?.movementId ? (
-                  <Link to={`/movements/${transferMutation.data.movementId}`}>
-                    <Button size="sm" variant="secondary">
-                      View movement
-                    </Button>
-                  </Link>
-                ) : null}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    setFormValues(createInitialValues())
-                    transferMutation.reset()
-                  }}
-                >
-                  New transfer
-                </Button>
-              </div>
-            }
-          />
-        ) : null}
         <InventoryTransferForm
           value={{
             ...formValues,
@@ -159,11 +162,17 @@ export function InventoryTransferCreatePage() {
             }))
           }
           onSubmit={() => {
+            const nextValidationMessages = validateTransferForm()
+            setValidationMessages(nextValidationMessages)
+            if (nextValidationMessages.length > 0) {
+              setSubmitError(null)
+              return
+            }
             setSubmitError(null)
             transferMutation.mutate()
           }}
         />
-      </Panel>
+      </TransferOperationPanel>
     </div>
   )
 }

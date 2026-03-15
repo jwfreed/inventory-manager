@@ -13,6 +13,7 @@ import { getWorkOrderActionPolicy } from '../lib/workOrderActionPolicy'
 import { formatWorkOrderLifecycleError } from '../lib/workOrderErrorMessaging'
 import { useWorkOrdersListData } from '../hooks/useWorkOrdersListData'
 import { usePageChrome } from '../../../app/layout/usePageChrome'
+import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
 
 export default function WorkOrdersListPage() {
   const navigate = useNavigate()
@@ -70,6 +71,7 @@ export default function WorkOrdersListPage() {
       await invalidateWorkOrder(updated.id)
     },
     onError: (err) => {
+      logOperationalMutationFailure('work-orders', 'ready-work-order', err, { workOrderId: pendingActionId })
       setLifecycleMessage(null)
       setLifecycleError(
         formatWorkOrderLifecycleError(err, 'Failed to ready the work order.'),
@@ -92,6 +94,7 @@ export default function WorkOrdersListPage() {
       await invalidateWorkOrder(updated.id)
     },
     onError: (err) => {
+      logOperationalMutationFailure('work-orders', 'cancel-work-order', err, { workOrderId: pendingActionId })
       setLifecycleMessage(null)
       setLifecycleError(
         formatWorkOrderLifecycleError(err, 'Failed to cancel the work order.'),

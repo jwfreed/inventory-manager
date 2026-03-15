@@ -1,5 +1,13 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
-import type { ApiError, Reservation, ReturnDoc, SalesOrder, Shipment } from '../../api/types'
+import type {
+  ApiError,
+  Reservation,
+  ReturnDisposition,
+  ReturnDoc,
+  ReturnReceipt,
+  SalesOrder,
+  Shipment,
+} from '../../api/types'
 import {
   getSalesOrder,
   listSalesOrders,
@@ -8,6 +16,16 @@ import {
 import { getShipment, listShipments, type ShipmentListParams } from './api/shipments'
 import { getReturn, listReturns, type ReturnListParams } from './api/returns'
 import { getReservation, listReservations, type ReservationListParams } from './api/reservations'
+import {
+  getReturnReceipt,
+  listReturnReceipts,
+  type ReturnReceiptListParams,
+} from './api/returnReceipts'
+import {
+  getReturnDisposition,
+  listReturnDispositions,
+  type ReturnDispositionListParams,
+} from './api/returnDispositions'
 
 export const orderToCashQueryKeys = {
   salesOrders: {
@@ -27,6 +45,19 @@ export const orderToCashQueryKeys = {
     list: (params: ReturnListParams = {}) =>
       [...orderToCashQueryKeys.returns.all, 'list', params] as const,
     detail: (id: string) => [...orderToCashQueryKeys.returns.all, 'detail', id] as const,
+  },
+  returnReceipts: {
+    all: ['return-receipts'] as const,
+    list: (params: ReturnReceiptListParams = {}) =>
+      [...orderToCashQueryKeys.returnReceipts.all, 'list', params] as const,
+    detail: (id: string) => [...orderToCashQueryKeys.returnReceipts.all, 'detail', id] as const,
+  },
+  returnDispositions: {
+    all: ['return-dispositions'] as const,
+    list: (params: ReturnDispositionListParams = {}) =>
+      [...orderToCashQueryKeys.returnDispositions.all, 'list', params] as const,
+    detail: (id: string) =>
+      [...orderToCashQueryKeys.returnDispositions.all, 'detail', id] as const,
   },
   reservations: {
     all: ['reservations'] as const,
@@ -56,6 +87,26 @@ type ReturnsListOptions = Omit<
 >
 
 type ReturnOptions = Omit<UseQueryOptions<ReturnDoc, ApiError>, 'queryKey' | 'queryFn'>
+
+type ReturnReceiptsListOptions = Omit<
+  UseQueryOptions<Awaited<ReturnType<typeof listReturnReceipts>>, ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type ReturnReceiptOptions = Omit<
+  UseQueryOptions<ReturnReceipt, ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type ReturnDispositionsListOptions = Omit<
+  UseQueryOptions<Awaited<ReturnType<typeof listReturnDispositions>>, ApiError>,
+  'queryKey' | 'queryFn'
+>
+
+type ReturnDispositionOptions = Omit<
+  UseQueryOptions<ReturnDisposition, ApiError>,
+  'queryKey' | 'queryFn'
+>
 
 type ReservationsListOptions = Omit<
   UseQueryOptions<Awaited<ReturnType<typeof listReservations>>, ApiError>,
@@ -124,6 +175,50 @@ export function useReturn(id?: string, options: ReturnOptions = {}) {
   return useQuery({
     queryKey: orderToCashQueryKeys.returns.detail(id ?? ''),
     queryFn: () => getReturn(id as string),
+    enabled: Boolean(id),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useReturnReceiptsList(
+  params: ReturnReceiptListParams = {},
+  options: ReturnReceiptsListOptions = {},
+) {
+  return useQuery({
+    queryKey: orderToCashQueryKeys.returnReceipts.list(params),
+    queryFn: () => listReturnReceipts(params),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useReturnReceipt(id?: string, options: ReturnReceiptOptions = {}) {
+  return useQuery({
+    queryKey: orderToCashQueryKeys.returnReceipts.detail(id ?? ''),
+    queryFn: () => getReturnReceipt(id as string),
+    enabled: Boolean(id),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useReturnDispositionsList(
+  params: ReturnDispositionListParams = {},
+  options: ReturnDispositionsListOptions = {},
+) {
+  return useQuery({
+    queryKey: orderToCashQueryKeys.returnDispositions.list(params),
+    queryFn: () => listReturnDispositions(params),
+    retry: 1,
+    ...options,
+  })
+}
+
+export function useReturnDisposition(id?: string, options: ReturnDispositionOptions = {}) {
+  return useQuery({
+    queryKey: orderToCashQueryKeys.returnDispositions.detail(id ?? ''),
+    queryFn: () => getReturnDisposition(id as string),
     enabled: Boolean(id),
     retry: 1,
     ...options,

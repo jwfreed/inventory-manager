@@ -1,6 +1,8 @@
 export { default as ReservationDetailPage } from './pages/ReservationDetailPage'
 export { default as ReservationsListPage } from './pages/ReservationsListPage'
+export { default as ReturnAuthorizationPage } from './pages/ReturnAuthorizationPage'
 export { default as ReturnDetailPage } from './pages/ReturnDetailPage'
+export { default as ReturnReceiptPage } from './pages/ReturnReceiptPage'
 export { default as ReturnsListPage } from './pages/ReturnsListPage'
 export { default as SalesOrderCreatePage } from './pages/SalesOrderCreatePage'
 export { default as SalesOrderDetailPage } from './pages/SalesOrderDetailPage'

@@ -31,6 +31,11 @@ export function InventoryCountsTable({ rows, onSelect }: Props) {
             <div className="space-y-1">
               <div className="font-semibold text-slate-900">{row.id}</div>
               <div className="text-xs text-slate-500">{new Date(row.countedAt).toLocaleString()}</div>
+              {row.updatedAt ? (
+                <div className="text-xs text-slate-500">
+                  Updated {new Date(row.updatedAt).toLocaleString()}
+                </div>
+              ) : null}
             </div>
           ),
         },
@@ -48,6 +53,20 @@ export function InventoryCountsTable({ rows, onSelect }: Props) {
           header: 'Lines',
           align: 'right',
           cell: (row) => formatNumber(row.summary.lineCount),
+        },
+        {
+          id: 'progress',
+          header: 'Progress',
+          cell: (row) => (
+            <div className="space-y-1 text-sm">
+              <div className="font-medium text-slate-900">
+                {formatNumber(row.summary.linesWithVariance)} / {formatNumber(row.summary.lineCount)} variance lines
+              </div>
+              <div className="text-xs text-slate-500">
+                Hit rate {formatNumber(row.summary.hitRate * 100)}%
+              </div>
+            </div>
+          ),
         },
         {
           id: 'variance',

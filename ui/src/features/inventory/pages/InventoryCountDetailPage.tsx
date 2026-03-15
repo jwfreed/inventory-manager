@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ApiError, InventoryCount, Location } from '@api/types'
 import { useItemsList } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
-import { Alert, Button, LoadingSpinner, Modal, PageHeader, Panel } from '@shared/ui'
+import { ActionGuardMessage, Alert, Button, LoadingSpinner, Modal, PageHeader, Panel } from '@shared/ui'
 import { postInventoryCount, updateInventoryCount } from '../api/counts'
 import {
   InventoryCountForm,
@@ -12,6 +12,8 @@ import {
   createEmptyInventoryCountLine,
 } from '../components/InventoryCountForm'
 import { inventoryQueryKeys, useInventoryCount } from '../queries'
+import { formatInventoryOperationError } from '../lib/inventoryOperationErrorMessaging'
+import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
 
 function buildWarehouseOptions(locations: Location[]) {
   const warehouseRoots = locations.filter((location) => location.type === 'warehouse')
@@ -63,15 +65,6 @@ function mapCountToFormValues(count: InventoryCount): InventoryCountFormValues {
           }))
         : [createEmptyInventoryCountLine(1)],
   }
-}
-
-function formatError(err: unknown, fallback: string) {
-  if (!err) return fallback
-  if (typeof err === 'string') return err
-  if (err instanceof Error && err.message) return err.message
-  const apiErr = err as ApiError
-  if (typeof apiErr?.message === 'string') return apiErr.message
-  return fallback
 }
 
 export default function InventoryCountDetailPage() {
@@ -150,8 +143,9 @@ export default function InventoryCountDetailPage() {
       await queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.countsListRoot })
     },
     onError: (err) => {
+      logOperationalMutationFailure('inventory-counts', 'save-draft', err, { countId: id })
       setSaveMessage(null)
-      setSaveError(formatError(err, 'Failed to update inventory count.'))
+      setSaveError(formatInventoryOperationError(err, 'Failed to update inventory count.'))
     },
   })
 
@@ -168,8 +162,9 @@ export default function InventoryCountDetailPage() {
       ])
     },
     onError: (err) => {
+      logOperationalMutationFailure('inventory-counts', 'post-count', err, { countId: id })
       setSaveMessage(null)
-      setSaveError(formatError(err, 'Failed to post inventory count.'))
+      setSaveError(formatInventoryOperationError(err, 'Failed to post inventory count.'))
     },
   })
 
@@ -179,12 +174,12 @@ export default function InventoryCountDetailPage() {
 
   if (countQuery.isError || !countQuery.data) {
     return (
-      <Alert
-        variant="error"
-        title="Inventory count unavailable"
-        message={formatError(countQuery.error, 'Failed to load inventory count.')}
-      />
-    )
+        <Alert
+          variant="error"
+          title="Inventory count unavailable"
+          message={formatInventoryOperationError(countQuery.error, 'Failed to load inventory count.')}
+        />
+      )
   }
 
   const count = countQuery.data
@@ -238,9 +233,29 @@ export default function InventoryCountDetailPage() {
               {(count.summary.weightedAccuracyPct * 100).toFixed(1)}%
             </div>
           </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Last updated</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">
+              {count.updatedAt ? new Date(count.updatedAt).toLocaleString() : 'Unavailable'}
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Posted at</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">
+              {count.postedAt ? new Date(count.postedAt).toLocaleString() : 'Draft'}
+            </div>
+          </div>
         </div>
       </Panel>
       <Panel title="Count details" description={isLocked ? 'Posted and canceled counts are read-only.' : 'Edit draft lines before posting.'}>
+        {isLocked ? (
+          <div className="mb-4">
+            <ActionGuardMessage
+              title="Count locked"
+              message="This inventory count is no longer editable. Review the recorded lines and linked movement for audit history."
+            />
+          </div>
+        ) : null}
         <InventoryCountForm
           value={formValues}
           warehouseOptions={warehouseOptions}

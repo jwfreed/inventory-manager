@@ -1,7 +1,9 @@
 import type { AppRouteObject } from '../../shared/routes'
 import ReservationDetailPage from './pages/ReservationDetailPage'
 import ReservationsListPage from './pages/ReservationsListPage'
+import ReturnAuthorizationPage from './pages/ReturnAuthorizationPage'
 import ReturnDetailPage from './pages/ReturnDetailPage'
+import ReturnReceiptPage from './pages/ReturnReceiptPage'
 import ReturnsListPage from './pages/ReturnsListPage'
 import SalesOrderCreatePage from './pages/SalesOrderCreatePage'
 import SalesOrderDetailPage from './pages/SalesOrderDetailPage'
@@ -95,10 +97,24 @@ export const orderToCashRoutes: AppRouteObject[] = [
     },
   },
   {
+    path: 'returns/new',
+    element: <ReturnAuthorizationPage />,
+    handle: {
+      breadcrumb: 'New return authorization',
+    },
+  },
+  {
     path: 'returns/:id',
     element: <ReturnDetailPage />,
     handle: {
       breadcrumb: 'Return',
+    },
+  },
+  {
+    path: 'return-receipts/:id',
+    element: <ReturnReceiptPage />,
+    handle: {
+      breadcrumb: 'Return receipt',
     },
   },
 ]

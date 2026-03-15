@@ -33,6 +33,13 @@ vi.mock('@features/boms/queries', () => ({
 vi.mock('@features/locations/queries', () => ({
   useLocationsList: vi.fn(),
 }))
+vi.mock('@features/ledger/queries', () => ({
+  useMovementsList: vi.fn(),
+  ledgerQueryKeys: {
+    all: ['movements'],
+    list: (params: unknown) => ['movements', 'list', params],
+  },
+}))
 vi.mock('@features/workOrders/queries', () => ({
   useWorkOrder: vi.fn(),
   useWorkOrderDisassemblyPlan: vi.fn(),
@@ -67,6 +74,7 @@ vi.mock('../../app/layout/usePageChrome', () => ({
 import { useItem, useItemsList } from '@features/items/queries'
 import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
 import { useLocationsList } from '@features/locations/queries'
+import { useMovementsList } from '@features/ledger/queries'
 import {
   useWorkOrder,
   useWorkOrderDisassemblyPlan,
@@ -87,6 +95,7 @@ const mockedUseBom = vi.mocked(useBom)
 const mockedUseBomsByItem = vi.mocked(useBomsByItem)
 const mockedUseNextStepBoms = vi.mocked(useNextStepBoms)
 const mockedUseLocationsList = vi.mocked(useLocationsList)
+const mockedUseMovementsList = vi.mocked(useMovementsList)
 const mockedUseWorkOrder = vi.mocked(useWorkOrder)
 const mockedUseWorkOrderDisassemblyPlan = vi.mocked(useWorkOrderDisassemblyPlan)
 const mockedUseWorkOrderExecution = vi.mocked(useWorkOrderExecution)
@@ -141,6 +150,24 @@ describe('WorkOrderDetailPage tabs', () => {
       error: null,
     } as any)
     mockedUseLocationsList.mockReturnValue({ data: { data: [] } } as any)
+    mockedUseMovementsList.mockReturnValue({
+      data: {
+        data: [
+          {
+            id: 'movement-1',
+            status: 'posted',
+            occurredAt: '2026-03-14T10:00:00.000Z',
+            postedAt: '2026-03-14T10:01:00.000Z',
+            externalRef: 'work_order_batch_completion:exec-1:wo-1',
+            notes: 'Batch completion posted',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
     mockedUseWorkOrderExecution.mockReturnValue({
       data: {
         workOrder: {
@@ -305,6 +332,25 @@ describe('WorkOrderDetailPage tabs', () => {
     expect(screen.getByRole('button', { name: 'Save operator notes' })).toBeInTheDocument()
   })
 
+  it('renders an operational history panel from ledger movements', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'ready' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    expect(await screen.findByText('Operational History')).toBeInTheDocument()
+    expect(screen.getByText('Production report exec-1 posted')).toBeInTheDocument()
+    expect(mockedUseMovementsList).toHaveBeenCalledWith(
+      { externalRef: 'wo-1', limit: 100 },
+      expect.objectContaining({ enabled: true, staleTime: 30_000 }),
+    )
+  })
+
   it('locks execution for completed work orders', async () => {
     mockedUseWorkOrder.mockReturnValue({
       data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
@@ -337,6 +383,7 @@ describe('WorkOrderDetailPage tabs', () => {
     renderPage()
 
     expect(await screen.findByText('Execution locked')).toBeInTheDocument()
+    expect(screen.getByText('Operational History')).toBeInTheDocument()
     expect(screen.queryByText('__execution_workspace__')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close Work Order' })).toBeInTheDocument()
   })
@@ -366,5 +413,6 @@ describe('WorkOrderDetailPage tabs', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'readiness', 'wo-1'] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'requirements', 'wo-1'] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'disassembly-plan', 'wo-1'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['movements'] })
   })
 })

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useItem, useItemsList } from '@features/items/queries'
 import { useBom, useBomsByItem, useNextStepBoms } from '@features/boms/queries'
+import { ledgerQueryKeys, useMovementsList } from '@features/ledger/queries'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   cancelWorkOrder,
@@ -23,6 +24,7 @@ import {
 } from '../queries'
 import {
   Alert,
+  ActionGuardMessage,
   Banner,
   Button,
   ContextRail,
@@ -32,6 +34,7 @@ import {
   Input,
   LoadingSpinner,
   Modal,
+  OperationTimeline,
   PageHeader,
   Panel,
   SectionNav,
@@ -56,6 +59,8 @@ import {
   formatWorkOrderError,
   formatWorkOrderLifecycleError,
 } from '../lib/workOrderErrorMessaging'
+import { getWorkOrderOperationalHistoryItems } from '../lib/workOrderOperationalHistory'
+import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
 
 const workOrderDetailSections = [
   { id: 'overview', label: 'Overview' },
@@ -181,6 +186,13 @@ export default function WorkOrderDetailPage() {
   }
 
   const executionQuery = useWorkOrderExecution(id)
+  const operationalHistoryQuery = useMovementsList(
+    { externalRef: id, limit: 100 },
+    {
+      enabled: Boolean(id) && Boolean(workOrderQuery.data),
+      staleTime: 30_000,
+    },
+  )
   const descriptionBase = workOrderQuery.data?.description ?? ''
   const hasDescriptionChanges = descriptionDraft !== descriptionBase
 
@@ -269,6 +281,7 @@ export default function WorkOrderDetailPage() {
       queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.readiness(id) }),
       queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.requirements(id) }),
       queryClient.invalidateQueries({ queryKey: workOrdersQueryKeys.disassemblyPlan(id) }),
+      queryClient.invalidateQueries({ queryKey: ledgerQueryKeys.all }),
     ])
   }
 
@@ -280,6 +293,7 @@ export default function WorkOrderDetailPage() {
       await invalidateWorkOrderQueries()
     },
     onError: (err) => {
+      logOperationalMutationFailure('work-orders', 'ready-work-order', err, { workOrderId: id })
       setLifecycleMessage(null)
       setLifecycleError(
         formatWorkOrderLifecycleError(err, 'Failed to ready the work order.'),
@@ -297,6 +311,7 @@ export default function WorkOrderDetailPage() {
       await invalidateWorkOrderQueries()
     },
     onError: (err) => {
+      logOperationalMutationFailure('work-orders', 'cancel-work-order', err, { workOrderId: id })
       setLifecycleMessage(null)
       setLifecycleError(
         formatWorkOrderLifecycleError(err, 'Failed to cancel the work order.'),
@@ -313,6 +328,7 @@ export default function WorkOrderDetailPage() {
       await invalidateWorkOrderQueries()
     },
     onError: (err) => {
+      logOperationalMutationFailure('work-orders', 'close-work-order', err, { workOrderId: id })
       setLifecycleMessage(null)
       setLifecycleError(
         formatWorkOrderLifecycleError(err, 'Failed to close the work order.'),
@@ -337,6 +353,10 @@ export default function WorkOrderDetailPage() {
       await invalidateWorkOrderQueries()
     },
     onError: (err) => {
+      logOperationalMutationFailure('work-orders', 'void-production-report', err, {
+        workOrderId: id,
+        workOrderExecutionId: recentProductionReport?.workOrderExecutionId ?? null,
+      })
       setLifecycleMessage(null)
       setLifecycleError(
         formatWorkOrderLifecycleError(err, 'Failed to void the production report.'),
@@ -347,6 +367,7 @@ export default function WorkOrderDetailPage() {
   const refreshAll = (options?: { showSummaryToast?: boolean }) => {
     void workOrderQuery.refetch()
     void executionQuery.refetch()
+    void operationalHistoryQuery.refetch()
     if (options?.showSummaryToast) {
       setSummaryFlash(true)
     }
@@ -362,6 +383,11 @@ export default function WorkOrderDetailPage() {
   const actionPolicy = useMemo(
     () => getWorkOrderActionPolicy(workOrderQuery.data ?? null, recentProductionReport),
     [recentProductionReport, workOrderQuery.data],
+  )
+  const operationalHistoryItems = useMemo(
+    () =>
+      id ? getWorkOrderOperationalHistoryItems(operationalHistoryQuery.data?.data ?? [], id) : [],
+    [id, operationalHistoryQuery.data],
   )
   const issuedTotal = useMemo(() => {
     if (!executionQuery.data?.issuedTotals?.length) return 0
@@ -707,6 +733,30 @@ export default function WorkOrderDetailPage() {
               />
             </Panel>
 
+            <Panel
+              title="Operational History"
+              description="Read-only posted activity from the inventory ledger for this work order."
+            >
+              {operationalHistoryQuery.isLoading ? (
+                <LoadingSpinner label="Loading operational history..." />
+              ) : operationalHistoryQuery.isError ? (
+                <Alert
+                  variant="error"
+                  title="Operational history unavailable"
+                  message={
+                    operationalHistoryQuery.error?.message ??
+                    'Failed to load operational history for this work order.'
+                  }
+                />
+              ) : (
+                <OperationTimeline
+                  items={operationalHistoryItems}
+                  emptyTitle="No posted activity yet"
+                  emptyDescription="Post production, disassembly, or void activity to populate the operational history."
+                />
+              )}
+            </Panel>
+
             <Panel title="Primary execution path" description="Recommended next step based on current execution state.">
               {isDisassembly ? (
                 <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
@@ -833,13 +883,10 @@ export default function WorkOrderDetailPage() {
           <Panel title="Execution workspace" description="Locked routing, readiness, deterministic posting, and movement review in one place.">
             <div id="work-order-actions" ref={actionsRef} className="scroll-mt-24">
               {workOrderQuery.data && actionPolicy.executionLocked ? (
-                <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <Alert
-                    variant="info"
-                    title="Execution locked"
-                    message={actionPolicy.executionLockedReason}
-                  />
-                  <div className="flex flex-wrap gap-2">
+                <ActionGuardMessage
+                  title="Execution locked"
+                  message={actionPolicy.executionLockedReason}
+                  action={
                     <Button
                       variant="secondary"
                       size="sm"
@@ -849,8 +896,8 @@ export default function WorkOrderDetailPage() {
                     >
                       View movements
                     </Button>
-                  </div>
-                </div>
+                  }
+                />
               ) : workOrderQuery.data && !isDisassembly ? (
                 <WorkOrderExecutionWorkspace
                   workOrder={workOrderQuery.data}

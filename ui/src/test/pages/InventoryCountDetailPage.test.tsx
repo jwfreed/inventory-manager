@@ -108,4 +108,40 @@ describe('InventoryCountDetailPage', () => {
       expect(mockedPostInventoryCount).toHaveBeenCalledWith('count-1', { warehouseId: 'wh-1' })
     })
   })
+
+  it('shows count status metadata and read-only guard for posted counts', async () => {
+    mockedUseInventoryCount.mockReturnValue({
+      data: {
+        id: 'count-1',
+        warehouseId: 'wh-1',
+        status: 'posted',
+        countedAt: '2026-03-14T00:00:00.000Z',
+        updatedAt: '2026-03-14T01:00:00.000Z',
+        postedAt: '2026-03-14T02:00:00.000Z',
+        inventoryMovementId: 'movement-1',
+        notes: '',
+        lines: [],
+        summary: {
+          lineCount: 1,
+          totalAbsVariance: 0,
+          hits: 1,
+          hitRate: 1,
+          linesWithVariance: 0,
+          totalSystemQty: 0,
+          weightedVariancePct: 0,
+          weightedAccuracyPct: 1,
+        },
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as any)
+
+    renderPage()
+
+    expect(await screen.findByText('Last updated')).toBeInTheDocument()
+    expect(screen.getByText('Posted at')).toBeInTheDocument()
+    expect(screen.getByText('Count locked')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View movement' })).toBeInTheDocument()
+  })
 })

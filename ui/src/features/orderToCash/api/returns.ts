@@ -1,4 +1,4 @@
-import { apiGet } from '../../../api/http'
+import { apiGet, apiPost } from '../../../api/http'
 import type { ReturnDoc } from '../../../api/types'
 import { ORDER_TO_CASH_ENDPOINTS } from './config'
 
@@ -30,7 +30,27 @@ function mapReturn(row: ReturnApiRow): ReturnDoc {
     notes: row.notes ?? undefined,
     createdAt: row.createdAt ?? row.created_at ?? undefined,
     updatedAt: row.updatedAt ?? row.updated_at ?? undefined,
+    lines: row.lines,
   }
+}
+
+export type ReturnAuthorizationPayload = {
+  rmaNumber: string
+  customerId: string
+  salesOrderId?: string
+  status?: 'draft' | 'authorized' | 'closed' | 'canceled'
+  severity?: string
+  authorizedAt?: string
+  notes?: string
+  lines: Array<{
+    lineNumber?: number
+    salesOrderLineId?: string
+    itemId: string
+    uom: string
+    quantityAuthorized: number
+    reasonCode?: string
+    notes?: string
+  }>
 }
 
 export async function listReturns(params: ReturnListParams = {}): Promise<ListResponse> {
@@ -50,5 +70,11 @@ export async function listReturns(params: ReturnListParams = {}): Promise<ListRe
 }
 
 export async function getReturn(id: string): Promise<ReturnDoc> {
-  return await apiGet<ReturnDoc>(`${ORDER_TO_CASH_ENDPOINTS.returns}/${id}`)
+  const returnDoc = await apiGet<ReturnApiRow>(`${ORDER_TO_CASH_ENDPOINTS.returns}/${id}`)
+  return mapReturn(returnDoc)
+}
+
+export async function createReturnAuthorization(payload: ReturnAuthorizationPayload): Promise<ReturnDoc> {
+  const returnDoc = await apiPost<ReturnApiRow>(ORDER_TO_CASH_ENDPOINTS.returns, payload)
+  return mapReturn(returnDoc)
 }
