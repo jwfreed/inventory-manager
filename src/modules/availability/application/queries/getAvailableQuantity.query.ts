@@ -11,24 +11,6 @@ type GetAvailableQuantityParams = {
   client?: PoolClient;
 };
 
-type CanonicalAvailabilityError = Error & {
-  code?: string;
-  details?: Record<string, unknown>;
-};
-
-function unresolvedAvailabilityError(params: GetAvailableQuantityParams): CanonicalAvailabilityError {
-  const error = new Error('CANONICAL_AVAILABILITY_UNRESOLVED') as CanonicalAvailabilityError;
-  error.code = 'CANONICAL_AVAILABILITY_UNRESOLVED';
-  error.details = {
-    tenantId: params.tenantId,
-    warehouseId: params.warehouseId,
-    itemId: params.itemId,
-    locationId: params.locationId,
-    uom: params.uom
-  };
-  return error;
-}
-
 // inventory_ledger is the physical authority and reservations are the commitment
 // authority. This query reads only the ledger-derived availability view and must
 // never fall back to projection tables.
@@ -47,7 +29,9 @@ export async function getAvailableQuantity(params: GetAvailableQuantityParams): 
 
   const availableQty = availableRes.rows[0]?.available_qty;
   if (availableQty == null) {
-    throw unresolvedAvailabilityError(params);
+    // No canonical row means no on-hand and no active commitments for the scope.
+    // Callers need a numeric zero here, not an exception path.
+    return 0;
   }
 
   return roundQuantity(toNumber(availableQty));
