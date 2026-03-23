@@ -452,13 +452,18 @@ function mapExecution(row: WorkOrderExecutionRow, lines: WorkOrderExecutionLineR
 async function fetchWorkOrderById(
   tenantId: string,
   id: string,
-  client?: PoolClient
+  client?: PoolClient,
+  options?: { forUpdate?: boolean }
 ): Promise<WorkOrderRow | null> {
   const executor = client ? client.query.bind(client) : query;
-  const result = await executor<WorkOrderRow>('SELECT * FROM work_orders WHERE id = $1 AND tenant_id = $2', [
-    id,
-    tenantId
-  ]);
+  const lockClause = client && options?.forUpdate ? ' FOR UPDATE' : '';
+  const result = await executor<WorkOrderRow>(
+    `SELECT *
+       FROM work_orders
+      WHERE id = $1
+        AND tenant_id = $2${lockClause}`,
+    [id, tenantId]
+  );
   return result.rowCount === 0 ? null : result.rows[0];
 }
 
@@ -610,7 +615,7 @@ export async function postWorkOrderIssue(
     operation: 'work_order_issue_post',
     retryOptions: WORK_ORDER_POST_RETRY_OPTIONS,
     lockTargets: async (client) => {
-      workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
+      workOrder = await fetchWorkOrderById(tenantId, workOrderId, client, { forUpdate: true });
       if (!workOrder) {
         throw new Error('WO_NOT_FOUND');
       }
@@ -1084,7 +1089,7 @@ export async function postWorkOrderCompletion(
     operation: 'work_order_completion_post',
     retryOptions: WORK_ORDER_POST_RETRY_OPTIONS,
     lockTargets: async (client) => {
-      workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
+      workOrder = await fetchWorkOrderById(tenantId, workOrderId, client, { forUpdate: true });
       if (!workOrder) {
         throw new Error('WO_NOT_FOUND');
       }
@@ -3065,7 +3070,7 @@ export async function recordWorkOrderBatch(
         }
       }
 
-      workOrder = await fetchWorkOrderById(tenantId, workOrderId, client);
+      workOrder = await fetchWorkOrderById(tenantId, workOrderId, client, { forUpdate: true });
       if (!workOrder) {
         throw new Error('WO_NOT_FOUND');
       }

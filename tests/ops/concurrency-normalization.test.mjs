@@ -218,7 +218,18 @@ test('concurrent manufacturing reports preserve work-order valuation and replay 
     }
   ]);
 
-  assert.equal(outcomes.filter((outcome) => outcome.status === 'fulfilled').length, 2);
+  const rejected = outcomes
+    .filter((outcome) => outcome.status === 'rejected')
+    .map((outcome) => ({
+      code: outcome.reason?.code ?? null,
+      message: outcome.reason?.message ?? null,
+      details: outcome.reason?.details ?? null
+    }));
+  assert.equal(
+    outcomes.filter((outcome) => outcome.status === 'fulfilled').length,
+    2,
+    `unexpected concurrent report rejection: ${JSON.stringify(rejected)}`
+  );
   assert.equal(await harness.readOnHand(outputItemId, topology.defaults.QA.id), 10);
   await harness.runStrictInvariants();
 });
