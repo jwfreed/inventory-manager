@@ -285,6 +285,15 @@ router.post('/work-orders/:id/issues/:issueId/post', async (req: Request, res: R
         error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
       });
     }
+    if (error?.code === 'WO_RESERVATION_SHORTAGE' || error?.message === 'WO_RESERVATION_SHORTAGE') {
+      return res.status(409).json({
+        error: {
+          code: 'INSUFFICIENT_STOCK',
+          message: 'Work-order execution is blocked because reserved component inventory is short.',
+          details: error?.details ?? {}
+        }
+      });
+    }
     if (error?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
       return res.status(400).json({
         error: {
