@@ -184,6 +184,20 @@ function createStartBarrier(participants) {
   };
 }
 
+async function retryOnTxRetryExhausted(action, retryDelaysMs = [50, 100, 200]) {
+  // Mirror the API contract for retryable serializable-contention failures in direct service tests.
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    try {
+      return await action();
+    } catch (error) {
+      if (error?.code !== 'TX_RETRY_EXHAUSTED' || attempt === retryDelaysMs.length) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
+    }
+  }
+}
+
 export async function createServiceHarness(options = {}) {
   const pool = getDbPool();
   const tenantSlug = options.tenantSlug ?? buildTenantSlug(options.tenantPrefix ?? 'ops');
@@ -374,28 +388,20 @@ export async function createServiceHarness(options = {}) {
 
   async function qcAcceptReceiptLine({ receiptLineId, quantity, uom = 'each', actorId = null }) {
     const idempotencyKey = `qc-accept:${tenantId}:${receiptLineId}:${quantity}:${uom}`;
-    const retryDelaysMs = [50, 100, 200];
-    for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
-      try {
-        return await createQcEvent(
-          tenantId,
-          {
-            purchaseOrderReceiptLineId: receiptLineId,
-            eventType: 'accept',
-            quantity,
-            uom,
-            actorType: actorId ? 'user' : 'system',
-            actorId
-          },
-          { idempotencyKey }
-        );
-      } catch (error) {
-        if (error?.code !== 'TX_RETRY_EXHAUSTED' || attempt === retryDelaysMs.length) {
-          throw error;
-        }
-        await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
-      }
-    }
+    return retryOnTxRetryExhausted(() =>
+      createQcEvent(
+        tenantId,
+        {
+          purchaseOrderReceiptLineId: receiptLineId,
+          eventType: 'accept',
+          quantity,
+          uom,
+          actorType: actorId ? 'user' : 'system',
+          actorId
+        },
+        { idempotencyKey }
+      )
+    );
   }
 
   async function createBomAndActivate({ outputItemId, components, suffix }) {
@@ -655,7 +661,9 @@ export async function createServiceHarness(options = {}) {
     recordBatch: (workOrderId, data, context, options) =>
       recordWorkOrderBatch(tenantId, workOrderId, data, context, options),
     reportProduction: (workOrderId, data, context, options) =>
-      reportWorkOrderProduction(tenantId, workOrderId, data, context, options),
+      retryOnTxRetryExhausted(() =>
+        reportWorkOrderProduction(tenantId, workOrderId, data, context, options)
+      ),
     voidProductionReport: (workOrderId, data, actor, options) =>
       voidWorkOrderProductionReport(tenantId, workOrderId, data, actor, options),
     qcWarehouseDisposition: (action, data, actor, options) =>
