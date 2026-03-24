@@ -18,6 +18,7 @@ import { atpRoutes } from '../features/inventory/routes'
 import { reportRoutes } from '../features/reports/routes'
 import { apRoutes } from '../features/ap'
 import { adminRoutes } from '../features/admin'
+import { replenishmentPolicyRoutes } from '../features/replenishmentPolicies'
 
 const coreRoutes: AppRouteObject[] = [
   {
@@ -32,6 +33,7 @@ export const appShellRoutes: AppRouteObject[] = [
   ...ledgerRoutes,
   ...adjustmentRoutes,
   ...atpRoutes,
+  ...replenishmentPolicyRoutes,
   ...reportRoutes,
   ...apRoutes,
   ...workOrderRoutes,

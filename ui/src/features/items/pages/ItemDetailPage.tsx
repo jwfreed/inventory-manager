@@ -85,6 +85,7 @@ export default function ItemDetailPage() {
               onBack={() => navigate('/items')}
               onEdit={() => setShowEdit((value) => !value)}
               onAdjustStock={() => id && navigate(`/inventory-adjustments/new?itemId=${id}`)}
+              onCreateReplenishmentPolicy={() => id && navigate(`/replenishment-policies/new?itemId=${id}&source=item`)}
               onCopyId={copyId}
               idCopied={idCopied}
             />

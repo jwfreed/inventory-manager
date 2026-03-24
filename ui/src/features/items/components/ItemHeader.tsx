@@ -9,6 +9,7 @@ type Props = {
   onBack: () => void
   onEdit: () => void
   onAdjustStock: () => void
+  onCreateReplenishmentPolicy?: () => void
   onCopyId: () => void
   idCopied?: boolean
 }
@@ -31,6 +32,7 @@ export function ItemHeader({
   onBack,
   onEdit,
   onAdjustStock,
+  onCreateReplenishmentPolicy,
   onCopyId,
   idCopied = false,
 }: Props) {
@@ -61,6 +63,11 @@ export function ItemHeader({
               <Button variant="secondary" size="sm" onClick={onAdjustStock}>
                 Adjust stock
               </Button>
+              {onCreateReplenishmentPolicy ? (
+                <Button variant="secondary" size="sm" onClick={onCreateReplenishmentPolicy}>
+                  Create replenishment policy
+                </Button>
+              ) : null}
               <Button variant="secondary" size="sm" onClick={onCopyId}>
                 <ClipboardDocumentIcon className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {idCopied ? 'Copied' : 'Copy ID'}

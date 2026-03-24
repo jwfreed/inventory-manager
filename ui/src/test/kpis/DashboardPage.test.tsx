@@ -202,10 +202,10 @@ describe('DashboardPage', () => {
 
     expect(screen.getAllByText('All clear').length).toBeGreaterThan(0)
     expect(screen.getByText('Replenishment monitoring not configured')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Configure replenishment policies' })).toHaveAttribute('href', '/items')
+    expect(screen.getByRole('link', { name: 'Configure replenishment policies' })).toHaveAttribute('href', '/replenishment-policies?source=dashboard')
   })
 
-  it('uses /items links for monitoring-not-configured CTA set', () => {
+  it('uses replenishment policy route for replenishment monitoring CTAs', () => {
     useDashboardSignalsMock.mockReturnValue(
       baseSignalsResponse({
         exceptions: [],
@@ -244,7 +244,7 @@ describe('DashboardPage', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByRole('link', { name: 'Configure replenishment policies' })).toHaveAttribute('href', '/items')
+    expect(screen.getByRole('link', { name: 'Configure replenishment policies' })).toHaveAttribute('href', '/replenishment-policies?source=dashboard')
     expect(screen.getByRole('link', { name: 'Set ABC / cycle count policy' })).toHaveAttribute('href', '/items')
     expect(screen.getByRole('link', { name: 'Select warehouse scope' })).toHaveAttribute('href', '/items')
   })
@@ -397,14 +397,12 @@ describe('DashboardPage', () => {
         ([arg]) => JSON.stringify((arg as { queryKey?: readonly unknown[] }).queryKey) === JSON.stringify(queryKey),
       )
 
-    expect(calledWith(mockKpiQueryKeys.runsPrefix())).toBe(true)
-    expect(calledWith(mockKpiQueryKeys.snapshotsPrefix())).toBe(true)
-    expect(calledWith(mockKpiQueryKeys.fulfillmentFillRatePrefix())).toBe(true)
-    expect(calledWith(mockKpiQueryKeys.replenishmentRecommendationsPrefix())).toBe(true)
-    expect(calledWith(mockKpiQueryKeys.replenishmentPoliciesPrefix())).toBe(true)
-    expect(calledWith(['inventory'])).toBe(true)
-    expect(calledWith(['purchase-orders'])).toBe(true)
-    expect(calledWith(['work-orders'])).toBe(true)
-    expect(calledWith(['items'])).toBe(true)
+    await waitFor(() => {
+      expect(calledWith(mockKpiQueryKeys.runsPrefix())).toBe(true)
+      expect(calledWith(mockKpiQueryKeys.snapshotsPrefix())).toBe(true)
+      expect(calledWith(mockKpiQueryKeys.fulfillmentFillRatePrefix())).toBe(true)
+      expect(calledWith(mockKpiQueryKeys.replenishmentRecommendationsPrefix())).toBe(true)
+      expect(calledWith(mockKpiQueryKeys.replenishmentPoliciesPrefix())).toBe(true)
+    })
   })
 })

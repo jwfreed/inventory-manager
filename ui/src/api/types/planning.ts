@@ -5,14 +5,22 @@ export type ReplenishmentPolicy = {
   itemId: string
   uom: string
   siteLocationId: string | null
-  policyType: string
-  status: string
+  policyType: 'q_rop' | 'min_max' | 't_oul' | string
+  status: 'active' | 'inactive' | string
   leadTimeDays?: number | null
+  demandRatePerDay?: number | null
+  safetyStockMethod?: 'none' | 'fixed' | 'ppis' | string | null
+  safetyStockQty?: number | null
+  ppisPeriods?: number | null
+  reviewPeriodDays?: number | null
   reorderPointQty?: number | null
   orderUpToLevelQty?: number | null
   orderQuantityQty?: number | null
   minOrderQty?: number | null
   maxOrderQty?: number | null
+  notes?: string | null
+  createdAt?: string
+  updatedAt?: string
 }
 
 export type ReplenishmentRecommendation = {

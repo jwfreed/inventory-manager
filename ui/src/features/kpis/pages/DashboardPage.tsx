@@ -61,7 +61,7 @@ function isActionableSignal(signal: {
 
 const KPI_WINDOW_DAYS = 90
 const MONITORING_CTA_LINKS = {
-  replenishment: '/items',
+  replenishment: '/replenishment-policies?source=dashboard',
   cycleCount: '/items',
   warehouseScope: '/items',
 } as const
