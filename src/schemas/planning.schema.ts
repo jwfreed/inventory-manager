@@ -75,25 +75,104 @@ export const mrpGrossRequirementsCreateSchema = z.object({
   requirements: z.array(mrpGrossRequirementSchema).min(1)
 });
 
-export const replenishmentPolicySchema = z.object({
-  itemId: z.string().uuid(),
-  uom: uomSchema.max(32),
-  siteLocationId: z.string().uuid().nullable().optional(),
-  policyType: z.enum(['q_rop', 't_oul']),
-  status: z.enum(['active', 'inactive']).optional(),
-  leadTimeDays: z.number().int().nonnegative().optional(),
-  demandRatePerDay: z.number().nonnegative().optional(),
-  safetyStockMethod: z.enum(['none', 'fixed', 'ppis']),
-  safetyStockQty: z.number().nonnegative().optional(),
-  ppisPeriods: z.number().int().positive().optional(),
-  reviewPeriodDays: z.number().int().positive().optional(),
-  orderUpToLevelQty: z.number().nonnegative().optional(),
-  reorderPointQty: z.number().nonnegative().optional(),
-  orderQuantityQty: z.number().positive().optional(),
-  minOrderQty: z.number().nonnegative().optional(),
-  maxOrderQty: z.number().nonnegative().optional(),
-  notes: z.string().max(4000).optional()
-});
+export const replenishmentPolicySchema = z
+  .object({
+    itemId: z.string().uuid(),
+    uom: uomSchema.max(32),
+    siteLocationId: z.string().uuid().nullable().optional(),
+    policyType: z.enum(['q_rop', 't_oul', 'min_max']),
+    status: z.enum(['active', 'inactive']).optional(),
+    leadTimeDays: z.number().int().nonnegative().optional(),
+    demandRatePerDay: z.number().nonnegative().optional(),
+    safetyStockMethod: z.enum(['none', 'fixed', 'ppis']),
+    safetyStockQty: z.number().nonnegative().optional(),
+    ppisPeriods: z.number().int().positive().optional(),
+    reviewPeriodDays: z.number().int().positive().optional(),
+    orderUpToLevelQty: z.number().nonnegative().optional(),
+    reorderPointQty: z.number().nonnegative().optional(),
+    orderQuantityQty: z.number().positive().optional(),
+    minOrderQty: z.number().nonnegative().optional(),
+    maxOrderQty: z.number().nonnegative().optional(),
+    notes: z.string().max(4000).optional()
+  })
+  .superRefine((value, ctx) => {
+    const hasExplicitReorderPoint = value.reorderPointQty !== undefined && value.reorderPointQty !== null;
+    const hasDerivedReorderPointInputs = value.leadTimeDays !== undefined && value.demandRatePerDay !== undefined;
+
+    if (!hasExplicitReorderPoint && !hasDerivedReorderPointInputs) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reorderPointQty'],
+        message: 'Provide reorderPointQty or both leadTimeDays and demandRatePerDay.'
+      });
+    }
+
+    if (value.policyType === 'q_rop' && value.orderQuantityQty === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['orderQuantityQty'],
+        message: 'Q/ROP requires orderQuantityQty.'
+      });
+    }
+
+    if ((value.policyType === 't_oul' || value.policyType === 'min_max') && value.orderUpToLevelQty === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['orderUpToLevelQty'],
+        message: 'Min-Max requires orderUpToLevelQty.'
+      });
+    }
+
+    if (
+      (value.policyType === 't_oul' || value.policyType === 'min_max') &&
+      value.orderUpToLevelQty !== undefined &&
+      value.reorderPointQty !== undefined &&
+      value.orderUpToLevelQty < value.reorderPointQty
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['orderUpToLevelQty'],
+        message: 'orderUpToLevelQty must be greater than or equal to reorderPointQty.'
+      });
+    }
+
+    if (value.safetyStockMethod === 'fixed' && value.safetyStockQty === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['safetyStockQty'],
+        message: 'Fixed safety stock requires safetyStockQty.'
+      });
+    }
+
+    if (value.safetyStockMethod === 'ppis') {
+      if (value.ppisPeriods === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['ppisPeriods'],
+          message: 'PPIS cycle coverage requires ppisPeriods.'
+        });
+      }
+      if (value.demandRatePerDay === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['demandRatePerDay'],
+          message: 'PPIS cycle coverage requires demandRatePerDay.'
+        });
+      }
+    }
+
+    if (
+      value.minOrderQty !== undefined &&
+      value.maxOrderQty !== undefined &&
+      value.maxOrderQty < value.minOrderQty
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['maxOrderQty'],
+        message: 'maxOrderQty must be greater than or equal to minOrderQty.'
+      });
+    }
+  });
 
 export const kpiRunSchema = z.object({
   status: z.enum(['draft', 'computed', 'published', 'archived']).optional(),

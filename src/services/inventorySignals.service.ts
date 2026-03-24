@@ -733,11 +733,12 @@ function buildExceptionRows(params: {
     }
   });
 
-  params.recommendations.filter((recommendation) => recommendation.recommendation.reorderNeeded).forEach((recommendation) => {
-    const threshold =
-      recommendation.policyType === 'q_rop'
-        ? toFiniteNumber(recommendation.inputs.reorderPointQty)
-        : toFiniteNumber(recommendation.inputs.orderUpToLevelQty);
+  params.recommendations
+    .filter(
+      (recommendation) => recommendation.status === 'actionable' && recommendation.recommendation.reorderNeeded
+    )
+    .forEach((recommendation) => {
+    const threshold = toFiniteNumber(recommendation.inputs.effectiveReorderPointQty);
     const gap = Math.max(0, threshold - toFiniteNumber(recommendation.inventory.inventoryPosition));
     const severity: SignalSeverity = gap > Math.max(10, threshold * 0.25) ? 'action' : 'watch';
     const warehouseId = resolveWarehouseId(recommendation.locationId, new Map(params.locations.map((location) => [location.id, location]))) ?? undefined;
@@ -1269,10 +1270,10 @@ function computeInventoryRiskSection(params: {
   demandStats: Map<string, DemandStat>;
 }) : DashboardSignalSection {
   const itemsBelowSafetyStock = params.recommendations.filter((recommendation) => {
-    const threshold =
-      recommendation.policyType === 'q_rop'
-        ? toFiniteNumber(recommendation.inputs.reorderPointQty)
-        : toFiniteNumber(recommendation.inputs.orderUpToLevelQty);
+    if (recommendation.status === 'invalid_policy' || recommendation.status === 'inventory_unavailable') {
+      return false;
+    }
+    const threshold = toFiniteNumber(recommendation.inputs.effectiveReorderPointQty);
     return threshold > 0 && toFiniteNumber(recommendation.inventory.inventoryPosition) < threshold;
   });
   const projected7 = params.coverageRows.filter((row) => row.daysOfSupply !== null && row.daysOfSupply < 7);

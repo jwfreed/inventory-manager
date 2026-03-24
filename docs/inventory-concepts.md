@@ -1,16 +1,17 @@
 # Inventory Concepts (Phase 1)
 
-This doc is the operational glossary for the inventory snapshot endpoint (`GET /inventory-snapshot`). All quantities are numeric, default to `0`, and never `null`.
+This doc is the operational glossary for the inventory snapshot endpoint (`GET /inventory-snapshot`) and the replenishment planning path. Snapshot semantics and replenishment semantics intentionally diverge in this phase. All quantities are numeric, default to `0`, and never `null`.
 
 ## Field definitions
 
-- `onHand`: Posted inventory movement quantity for the `itemId` at `locationId` and `uom` (ledger-derived, `inventory_movements.status = 'posted'`, using canonical quantity when present).
+- `onHand`: Posted physical stock quantity for the `itemId` at `locationId` and `uom` (ledger-derived, `inventory_movements.status = 'posted'`, using canonical quantity when present).
+- `usableOnHand`: Sellable on-hand stock used only by replenishment logic. This is derived from `inventory_available_location_sellable_v`, not exposed by the snapshot API, and may be lower than physical `onHand`.
 - `reserved`: Open commitment quantity shown by snapshot as total commitments (`RESERVED + ALLOCATED` open qty at the same `itemId`/`locationId`/`uom`).
-- `available`: Canonical availability: `onHand - reservedQty - allocatedQty` (no additional clamping). In snapshot payload, this is exposed directly as `available`.
-- `onOrder`: Outstanding purchase order quantity (`submitted` POs only) for the `itemId` and `uom` shipping to `locationId`, computed as `quantity_ordered - quantity_received`, clamped at `0`.
+- `available`: ATP metric: `onHand - reservedQty - allocatedQty` (no additional clamping). In snapshot payload, this is exposed directly as `available`.
+- `onOrder`: Replenishment inbound approximation based on approved / partially received PO outstanding quantity for the `itemId` and `uom` shipping to `locationId`, computed as `quantity_ordered - quantity_received`, clamped at `0`.
 - `inTransit`: Received-but-not-posted/putaway quantity for the `itemId` and `uom` tied to `locationId` via `received_to_location_id` (fallback to PO `ship_to_location_id`), using accepted receipt qty minus posted putaway qty. Pending putaways remain in `inTransit`.
-- `backordered`: Always `0` in Phase 1 (no first-class backorder source available yet).
-- `inventoryPosition`: `onHand + onOrder + inTransit - reserved - backordered`.
+- `backordered`: Replenishment-only unmet demand bucket derived from live open demand at the same scope. It is kept separate from `reserved`.
+- `inventoryPosition`: General snapshot coverage field. Replenishment planning does not rely on this field directly in this phase.
 
 ## Reservation commitment mapping
 
@@ -68,7 +69,8 @@ This doc is the operational glossary for the inventory snapshot endpoint (`GET /
 ## Relationships
 
 - `available = onHand - reservedQty - allocatedQty`
-- `inventoryPosition = onHand + onOrder + inTransit - reserved - backordered`
+- Snapshot `inventoryPosition` remains a shared read-model field.
+- Replenishment planning uses `usableOnHand + onOrder + inTransit - reserved - backordered`.
 
 ## Warehouse Topology
 
@@ -81,28 +83,34 @@ This doc is the operational glossary for the inventory snapshot endpoint (`GET /
 
 ## Approximations & limitations
 
-- `onOrder` only considers POs in `submitted` status; drafts are ignored.
+- `onOrder` uses approved / partially received PO outstanding quantity because shipment / ASN visibility does not exist in the current repo.
+- WARNING: this may overstate inbound supply and delay replenishment triggers until shipment visibility is modeled explicitly.
 - `inTransit` uses receipt lines where `received_to_location_id` (or PO `ship_to_location_id` if missing) matches the requested `locationId`, and counts accepted quantity minus posted putaway movements. If QC is on hold with no accepted qty, `inTransit` will be `0` for that line.
-- `backordered` is reported as `0` until a reliable signal exists.
+- `backordered` in replenishment is derived from live open demand and `usableOnHand`; it is not sourced from snapshot response fields.
 
 ## Glossary (API field → meaning)
 
 - `itemId`: Item UUID (`items.id`), the canonical item key (not SKU).
 - `locationId`: Location UUID (`locations.id`) — warehouse/bin/store/etc.
 - `uom`: Unit of measure code used for the row.
-- `onHand`: Posted quantity in ledger for that item/location/uom.
+- `onHand`: Posted physical quantity in ledger for that item/location/uom.
+- `usableOnHand`: Sellable stock used only by replenishment evaluation.
 - `reserved`: Snapshot-facing committed quantity (`RESERVED + ALLOCATED` open qty).
-- `available`: On-hand less open commitments; what remains to promise/consume.
+- `available`: ATP quantity; what remains to promise/consume.
 - `onOrder`: Open PO quantity expected into that location/uom.
 - `inTransit`: Received/accepted quantity not yet posted to inventory for that location/uom.
-- `backordered`: Unfulfilled demand without stock; `0` here.
-- `inventoryPosition`: Coverage metric (`onHand + onOrder + inTransit - reserved - backordered`).
+- `backordered`: Replenishment-only unmet demand kept separate from reserved commitment.
+- `inventoryPosition`: Snapshot-facing coverage metric. Replenishment uses a separate internal position formula.
 
 ## Planning and replenishment (Phase 2)
 
-- Position-based checks: `inventoryPosition` is the decision quantity for reorder/Order-Up-To logic.
-- Q/ROP: reorder when `inventoryPosition < reorderPointQty`; recommended quantity uses fixed `orderQuantityQty` (or the gap) with min/max applied.
-- T/OUL: recommended quantity = `max(0, orderUpToLevelQty - inventoryPosition)` with min/max applied.
+- Position-based checks: `inventoryPosition` is the decision quantity for replenishment logic.
+- Replenishment inventory position is computed internally as `usableOnHand + onOrder + inTransit - reserved - backordered`.
+- Q/ROP: reorder when `inventoryPosition <= reorderPointQty`; recommended quantity uses fixed `orderQuantityQty` with min/max applied.
+- Min-Max: reorder when `inventoryPosition <= reorderPointQty`; recommended quantity = `max(0, orderUpToLevelQty - inventoryPosition)` with min/max applied.
+- Legacy `t_oul` is treated as a compatibility alias for Min-Max runtime behavior.
+- Explicit `reorderPointQty` wins. If absent, reorder point is derived deterministically as `(demandRatePerDay * leadTimeDays) + fixedSafetyStockQty`.
+- `ppis` is cycle coverage metadata, not safety stock, and does not inflate reorder point in this path.
 - Assumptions: Responses include an `assumptions[]` list when data is missing or heuristics are applied.
 - Measured metric: “Fulfillment Fill Rate (measured)” = shipped quantity / ordered quantity from sales order shipment lines over a window; reported as `null` if no data exists.
 
@@ -119,6 +127,7 @@ Expect `200` and `data` array sorted by `uom`; fields present with numeric value
 2) Invariants to spot-check on a sample row:
 
 - `available === onHand - reservedQty - allocatedQty` (internally), and snapshot `reserved` already includes both commitment buckets
-- `inventoryPosition === onHand + onOrder + inTransit - reserved - backordered`
+- Snapshot API invariants remain specific to the snapshot read model.
+- Replenishment invariants use `usableOnHand + onOrder + inTransit - reserved - backordered`.
 - Missing sources imply `0` (never `null`)
 - Query param UUIDs invalid → `400`; unknown `itemId`/`locationId` → `404`

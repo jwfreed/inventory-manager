@@ -2,8 +2,23 @@ import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
 import { query, withTransaction } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
-import { getInventorySnapshot } from './inventorySnapshot.service';
 import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
+import { getDerivedBackorderBatch } from './backorderDerivation.service';
+import {
+  computeCycleCoverageQty,
+  computeEffectiveReorderPoint,
+  computeEffectiveSafetyStockQty,
+  computeInventoryPosition,
+  computeRecommendedOrderQty,
+  normalizePolicyType,
+  validateReplenishmentPolicy,
+  type NormalizedPolicyType
+} from './replenishmentMath';
+import {
+  buildReplenishmentScopeKey,
+  loadReplenishmentPositionBatch,
+  type ReplenishmentPositionRow
+} from './replenishmentPosition.service';
 import type {
   kpiRollupInputsCreateSchema,
   kpiRunSchema,
@@ -341,7 +356,7 @@ export function mapReplenishmentPolicy(row: any) {
     itemId: row.item_id,
     uom: row.uom,
     siteLocationId: row.site_location_id,
-    policyType: row.policy_type,
+    policyType: row.policy_type === 't_oul' ? 'min_max' : row.policy_type,
     status: row.status,
     leadTimeDays: row.lead_time_days,
     demandRatePerDay: row.demand_rate_per_day,
@@ -364,6 +379,7 @@ export async function createReplenishmentPolicy(tenantId: string, data: Replenis
   const id = uuidv4();
   const now = new Date();
   const status = data.status ?? 'active';
+  const dbPolicyType = data.policyType === 'min_max' ? 't_oul' : data.policyType;
   const res = await query(
     `INSERT INTO replenishment_policies (
       id, tenant_id, item_id, uom, site_location_id, policy_type, status, lead_time_days, demand_rate_per_day,
@@ -377,7 +393,7 @@ export async function createReplenishmentPolicy(tenantId: string, data: Replenis
       data.itemId,
       data.uom,
       data.siteLocationId ?? null,
-      data.policyType,
+      dbPolicyType,
       status,
       data.leadTimeDays ?? null,
       data.demandRatePerDay ?? null,
@@ -575,20 +591,54 @@ type ReplenishmentRecommendation = {
   locationId: string;
   uom: string;
   policyType: string;
+  normalizedPolicyType: NormalizedPolicyType;
+  status: 'actionable' | 'not_needed' | 'invalid_policy' | 'inventory_unavailable';
   inputs: {
     leadTimeDays: number | null;
+    demandRatePerDay: number | null;
+    safetyStockMethod: string | null;
+    safetyStockQty: number | null;
+    ppisPeriods: number | null;
+    reviewPeriodDays: number | null;
     reorderPointQty: number | null;
     orderUpToLevelQty: number | null;
     orderQuantityQty: number | null;
     minOrderQty: number | null;
     maxOrderQty: number | null;
+    effectiveSafetyStockQty: number | null;
+    effectiveReorderPointQty: number | null;
+    reorderPointSource: 'explicit' | 'derived' | 'missing';
+    cycleCoverageQty: number | null;
   };
-  inventory: any;
+  inventory: {
+    itemId: string;
+    locationId: string;
+    uom: string;
+    onHand: number;
+    usableOnHand: number;
+    reserved: number;
+    available: number;
+    held: number;
+    rejected: number;
+    nonUsable: number;
+    onOrder: number;
+    inTransit: number;
+    backordered: number;
+    inventoryPosition: number;
+  };
+  inventoryComponents: {
+    openPurchaseSupply: number;
+    acceptedPendingPutawaySupply: number;
+    transferInboundSupply: number;
+    qaHeldSupply: number;
+    rejectedSupply: number;
+  };
   recommendation: {
     reorderNeeded: boolean;
     recommendedOrderQty: number;
     recommendedOrderDate: string | null;
   };
+  validationErrors: string[];
   assumptions: string[];
 };
 
@@ -598,8 +648,12 @@ function defaultInventorySnapshot(itemId: string, locationId: string, uom: strin
     locationId,
     uom,
     onHand: 0,
+    usableOnHand: 0,
     reserved: 0,
     available: 0,
+    held: 0,
+    rejected: 0,
+    nonUsable: 0,
     onOrder: 0,
     inTransit: 0,
     backordered: 0,
@@ -607,54 +661,47 @@ function defaultInventorySnapshot(itemId: string, locationId: string, uom: strin
   };
 }
 
-function applyMinMax(qty: number, minOrder: number | null, maxOrder: number | null, assumptions: string[]) {
-  let result = qty;
-  if (minOrder !== null && result < minOrder) {
-    result = minOrder;
-    assumptions.push(`Applied min order quantity (${minOrder}).`);
-  }
-  if (maxOrder !== null && result > maxOrder) {
-    result = maxOrder;
-    assumptions.push(`Applied max order quantity (${maxOrder}).`);
-  }
-  return roundQuantity(result);
+function defaultInventoryComponents() {
+  return {
+    openPurchaseSupply: 0,
+    acceptedPendingPutawaySupply: 0,
+    transferInboundSupply: 0,
+    qaHeldSupply: 0,
+    rejectedSupply: 0
+  };
 }
 
-function computeQropRecommendation(
-  policy: any,
-  snapshot: any,
-  assumptions: string[]
-): { reorderNeeded: boolean; recommendedOrderQty: number; recommendedOrderDate: string | null } {
-  const reorderPoint = toNumber(policy.reorder_point_qty ?? 0);
-  const orderQty = policy.order_quantity_qty != null ? toNumber(policy.order_quantity_qty) : null;
-  const inventoryPosition = toNumber(snapshot.inventoryPosition ?? 0);
-  const minOrder = policy.min_order_qty != null ? toNumber(policy.min_order_qty) : null;
-  const maxOrder = policy.max_order_qty != null ? toNumber(policy.max_order_qty) : null;
-
-  const reorderNeeded = inventoryPosition < reorderPoint;
-  if (!reorderNeeded) {
-    return { reorderNeeded, recommendedOrderQty: 0, recommendedOrderDate: null };
-  }
-
-  const suggested = orderQty != null ? orderQty : Math.max(0, reorderPoint - inventoryPosition);
-  const recommendedOrderQty = applyMinMax(roundQuantity(suggested), minOrder, maxOrder, assumptions);
-  return { reorderNeeded, recommendedOrderQty, recommendedOrderDate: null };
+async function resolveWarehouseScopeMap(tenantId: string, locationIds: string[]) {
+  const entries = await Promise.all(
+    locationIds.map(async (locationId) => {
+      try {
+        const warehouseId = await resolveWarehouseIdForLocation(tenantId, locationId);
+        return [locationId, warehouseId] as const;
+      } catch {
+        return [locationId, null] as const;
+      }
+    })
+  );
+  return new Map(entries);
 }
 
-function computeToulRecommendation(
-  policy: any,
-  snapshot: any,
-  assumptions: string[]
-): { reorderNeeded: boolean; recommendedOrderQty: number; recommendedOrderDate: string | null } {
-  const target = toNumber(policy.order_up_to_level_qty ?? 0);
-  const inventoryPosition = toNumber(snapshot.inventoryPosition ?? 0);
-  const minOrder = policy.min_order_qty != null ? toNumber(policy.min_order_qty) : null;
-  const maxOrder = policy.max_order_qty != null ? toNumber(policy.max_order_qty) : null;
-
-  let recommendedOrderQty = roundQuantity(Math.max(0, target - inventoryPosition));
-  const reorderNeeded = recommendedOrderQty > 0;
-  recommendedOrderQty = applyMinMax(recommendedOrderQty, minOrder, maxOrder, assumptions);
-  return { reorderNeeded, recommendedOrderQty, recommendedOrderDate: null };
+function mapPositionToInventory(position: ReplenishmentPositionRow, backorderedQty: number) {
+  return {
+    itemId: position.itemId,
+    locationId: position.locationId,
+    uom: position.uom,
+    onHand: position.onHand,
+    usableOnHand: position.usableOnHand,
+    reserved: position.reservedCommitment,
+    available: position.available,
+    held: position.qaHeldSupply,
+    rejected: position.rejectedSupply,
+    nonUsable: roundQuantity(position.qaHeldSupply + position.rejectedSupply),
+    onOrder: position.onOrder,
+    inTransit: position.inTransit,
+    backordered: backorderedQty,
+    inventoryPosition: 0
+  };
 }
 
 export async function computeReplenishmentRecommendations(tenantId: string, limit: number, offset: number) {
@@ -667,9 +714,74 @@ export async function computeReplenishmentRecommendations(tenantId: string, limi
   );
 
   const recommendations: ReplenishmentRecommendation[] = [];
+  const locationIds = Array.from(
+    new Set(
+      rows
+        .map((row) => (typeof row.site_location_id === 'string' ? row.site_location_id : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const warehouseScopeByLocation = await resolveWarehouseScopeMap(tenantId, locationIds);
 
-  for (const row of rows) {
+  const scopedRows = rows.map((row) => ({
+    row,
+    warehouseId: row.site_location_id ? warehouseScopeByLocation.get(row.site_location_id) ?? null : null
+  }));
+  const replenishmentKeys = scopedRows
+    .filter(({ row, warehouseId }) => Boolean(row.site_location_id && warehouseId))
+    .map(({ row, warehouseId }) => ({
+      warehouseId: warehouseId!,
+      itemId: row.item_id,
+      locationId: row.site_location_id,
+      uom: row.uom
+    }));
+
+  const { positionByScope, usableSupplyByScope, inboundSupplyByScope } = await loadReplenishmentPositionBatch(
+    tenantId,
+    replenishmentKeys
+  );
+  const backorderedByScope = await getDerivedBackorderBatch({
+    tenantId,
+    keys: replenishmentKeys,
+    usableSupplyByScope,
+    inboundSupplyByScope
+  });
+  const evaluatedAt = new Date().toISOString();
+
+  for (const { row, warehouseId } of scopedRows) {
     const assumptions: string[] = [];
+    const validationErrors = validateReplenishmentPolicy({
+      policyType: row.policy_type,
+      leadTimeDays: row.lead_time_days,
+      demandRatePerDay: row.demand_rate_per_day,
+      safetyStockMethod: row.safety_stock_method,
+      safetyStockQty: row.safety_stock_qty,
+      ppisPeriods: row.ppis_periods,
+      reviewPeriodDays: row.review_period_days,
+      reorderPointQty: row.reorder_point_qty,
+      orderUpToLevelQty: row.order_up_to_level_qty,
+      orderQuantityQty: row.order_quantity_qty,
+      minOrderQty: row.min_order_qty,
+      maxOrderQty: row.max_order_qty
+    });
+    const normalizedPolicyType = normalizePolicyType(row.policy_type);
+    const effectiveReorderPoint = computeEffectiveReorderPoint({
+      reorderPointQty: row.reorder_point_qty,
+      leadTimeDays: row.lead_time_days,
+      demandRatePerDay: row.demand_rate_per_day,
+      safetyStockMethod: row.safety_stock_method,
+      safetyStockQty: row.safety_stock_qty,
+      ppisPeriods: row.ppis_periods
+    });
+    const effectiveSafetyStockQty = computeEffectiveSafetyStockQty({
+      safetyStockMethod: row.safety_stock_method,
+      safetyStockQty: row.safety_stock_qty
+    });
+    const cycleCoverageQty = computeCycleCoverageQty({
+      safetyStockMethod: row.safety_stock_method,
+      demandRatePerDay: row.demand_rate_per_day,
+      ppisPeriods: row.ppis_periods
+    });
 
     if (!row.site_location_id) {
       assumptions.push('Missing site/location on policy; cannot compute recommendation.');
@@ -679,42 +791,166 @@ export async function computeReplenishmentRecommendations(tenantId: string, limi
         locationId: '',
         uom: row.uom,
         policyType: row.policy_type,
+        normalizedPolicyType,
+        status: 'invalid_policy',
         inputs: {
           leadTimeDays: row.lead_time_days ?? null,
+          demandRatePerDay: row.demand_rate_per_day ?? null,
+          safetyStockMethod: row.safety_stock_method ?? null,
+          safetyStockQty: row.safety_stock_qty ?? null,
+          ppisPeriods: row.ppis_periods ?? null,
+          reviewPeriodDays: row.review_period_days ?? null,
           reorderPointQty: row.reorder_point_qty ?? null,
           orderUpToLevelQty: row.order_up_to_level_qty ?? null,
           orderQuantityQty: row.order_quantity_qty ?? null,
           minOrderQty: row.min_order_qty ?? null,
-          maxOrderQty: row.max_order_qty ?? null
+          maxOrderQty: row.max_order_qty ?? null,
+          effectiveSafetyStockQty,
+          effectiveReorderPointQty: effectiveReorderPoint.value,
+          reorderPointSource: effectiveReorderPoint.source,
+          cycleCoverageQty
         },
         inventory: defaultInventorySnapshot(row.item_id, '', row.uom),
+        inventoryComponents: defaultInventoryComponents(),
         recommendation: { reorderNeeded: false, recommendedOrderQty: 0, recommendedOrderDate: null },
+        validationErrors: ['Policy site/location scope is required.'],
         assumptions
       });
       continue;
     }
 
-    let snapshot = defaultInventorySnapshot(row.item_id, row.site_location_id, row.uom);
-    try {
-      const warehouseId = await resolveWarehouseIdForLocation(tenantId, row.site_location_id);
-      const snap = await getInventorySnapshot(tenantId, {
-        warehouseId,
+    if (!warehouseId) {
+      assumptions.push('Warehouse scope could not be resolved for the policy location.');
+      recommendations.push({
+        policyId: row.id,
         itemId: row.item_id,
         locationId: row.site_location_id,
-        uom: row.uom
+        uom: row.uom,
+        policyType: row.policy_type,
+        normalizedPolicyType,
+        status: 'inventory_unavailable',
+        inputs: {
+          leadTimeDays: row.lead_time_days ?? null,
+          demandRatePerDay: row.demand_rate_per_day ?? null,
+          safetyStockMethod: row.safety_stock_method ?? null,
+          safetyStockQty: row.safety_stock_qty ?? null,
+          ppisPeriods: row.ppis_periods ?? null,
+          reviewPeriodDays: row.review_period_days ?? null,
+          reorderPointQty: row.reorder_point_qty ?? null,
+          orderUpToLevelQty: row.order_up_to_level_qty ?? null,
+          orderQuantityQty: row.order_quantity_qty ?? null,
+          minOrderQty: row.min_order_qty ?? null,
+          maxOrderQty: row.max_order_qty ?? null,
+          effectiveSafetyStockQty,
+          effectiveReorderPointQty: effectiveReorderPoint.value,
+          reorderPointSource: effectiveReorderPoint.source,
+          cycleCoverageQty
+        },
+        inventory: defaultInventorySnapshot(row.item_id, row.site_location_id, row.uom),
+        inventoryComponents: defaultInventoryComponents(),
+        recommendation: { reorderNeeded: false, recommendedOrderQty: 0, recommendedOrderDate: null },
+        validationErrors,
+        assumptions
       });
-      if (snap.length > 0) {
-        snapshot = snap[0];
-      }
-    } catch (err) {
-      assumptions.push('Inventory snapshot unavailable; defaulting to zero.');
+      continue;
     }
 
-    let recommendation;
-    if (row.policy_type === 'q_rop') {
-      recommendation = computeQropRecommendation(row, snapshot, assumptions);
-    } else {
-      recommendation = computeToulRecommendation(row, snapshot, assumptions);
+    const scopeKey = buildReplenishmentScopeKey(tenantId, {
+      warehouseId,
+      itemId: row.item_id,
+      locationId: row.site_location_id,
+      uom: row.uom
+    });
+    const position = positionByScope.get(scopeKey);
+    if (!position) {
+      assumptions.push('Inventory position unavailable for the policy scope.');
+      recommendations.push({
+        policyId: row.id,
+        itemId: row.item_id,
+        locationId: row.site_location_id,
+        uom: row.uom,
+        policyType: row.policy_type,
+        normalizedPolicyType,
+        status: 'inventory_unavailable',
+        inputs: {
+          leadTimeDays: row.lead_time_days ?? null,
+          demandRatePerDay: row.demand_rate_per_day ?? null,
+          safetyStockMethod: row.safety_stock_method ?? null,
+          safetyStockQty: row.safety_stock_qty ?? null,
+          ppisPeriods: row.ppis_periods ?? null,
+          reviewPeriodDays: row.review_period_days ?? null,
+          reorderPointQty: row.reorder_point_qty ?? null,
+          orderUpToLevelQty: row.order_up_to_level_qty ?? null,
+          orderQuantityQty: row.order_quantity_qty ?? null,
+          minOrderQty: row.min_order_qty ?? null,
+          maxOrderQty: row.max_order_qty ?? null,
+          effectiveSafetyStockQty,
+          effectiveReorderPointQty: effectiveReorderPoint.value,
+          reorderPointSource: effectiveReorderPoint.source,
+          cycleCoverageQty
+        },
+        inventory: defaultInventorySnapshot(row.item_id, row.site_location_id, row.uom),
+        inventoryComponents: defaultInventoryComponents(),
+        recommendation: { reorderNeeded: false, recommendedOrderQty: 0, recommendedOrderDate: null },
+        validationErrors,
+        assumptions
+      });
+      continue;
+    }
+
+    const backorderedQty = backorderedByScope.get(scopeKey) ?? 0;
+    const inventoryPosition = computeInventoryPosition({
+      usableOnHand: position.usableOnHand,
+      onOrder: position.onOrder,
+      inTransit: position.inTransit,
+      reservedCommitment: position.reservedCommitment,
+      backorderedQty
+    });
+    const inventory = mapPositionToInventory(position, backorderedQty);
+    inventory.inventoryPosition = inventoryPosition;
+
+    const status: ReplenishmentRecommendation['status'] =
+      validationErrors.length > 0 || effectiveReorderPoint.value == null ? 'invalid_policy' : 'not_needed';
+    if (row.review_period_days != null) {
+      assumptions.push('Review period is stored but periodic-review replenishment is not implemented in this path.');
+    }
+    if (String(row.safety_stock_method ?? '').toLowerCase() === 'ppis') {
+      assumptions.push('PPIS is treated as cycle coverage metadata and does not inflate safety stock.');
+    }
+    if (effectiveReorderPoint.source === 'derived') {
+      assumptions.push('Reorder point derived from demand rate, lead time, and fixed safety stock.');
+    }
+
+    let recommendation = { reorderNeeded: false, recommendedOrderQty: 0, recommendedOrderDate: null as string | null };
+    let finalStatus: ReplenishmentRecommendation['status'] = status;
+    if (validationErrors.length === 0 && effectiveReorderPoint.value !== null) {
+      // invariant: replenishment decision must be traceable in a single execution path.
+      // inventoryPosition, inbound supply, and derived backorder MUST use
+      // identical scope dimensions.
+      const reorderNeededBase = inventoryPosition <= effectiveReorderPoint.value;
+      // TODO: when persisting recommendations or creating POs, use an idempotency
+      // key derived from tenantId + warehouseId + itemId + locationId + uom + evaluationWindow.
+      const recommendedOrderQty = reorderNeededBase
+        ? computeRecommendedOrderQty({
+            policy: {
+              policyType: row.policy_type,
+              orderQuantityQty: row.order_quantity_qty,
+              orderUpToLevelQty: row.order_up_to_level_qty,
+              minOrderQty: row.min_order_qty,
+              maxOrderQty: row.max_order_qty
+            },
+            normalizedPolicyType,
+            inventoryPosition,
+            reorderPoint: effectiveReorderPoint.value
+          })
+        : 0;
+      const reorderNeeded = reorderNeededBase && recommendedOrderQty > 0;
+      recommendation = {
+        reorderNeeded,
+        recommendedOrderQty,
+        recommendedOrderDate: reorderNeeded ? evaluatedAt : null
+      };
+      finalStatus = reorderNeeded ? 'actionable' : 'not_needed';
     }
 
     recommendations.push({
@@ -723,16 +959,35 @@ export async function computeReplenishmentRecommendations(tenantId: string, limi
       locationId: row.site_location_id,
       uom: row.uom,
       policyType: row.policy_type,
+      normalizedPolicyType,
+      status: finalStatus,
       inputs: {
         leadTimeDays: row.lead_time_days ?? null,
+        demandRatePerDay: row.demand_rate_per_day ?? null,
+        safetyStockMethod: row.safety_stock_method ?? null,
+        safetyStockQty: row.safety_stock_qty ?? null,
+        ppisPeriods: row.ppis_periods ?? null,
+        reviewPeriodDays: row.review_period_days ?? null,
         reorderPointQty: row.reorder_point_qty ?? null,
         orderUpToLevelQty: row.order_up_to_level_qty ?? null,
         orderQuantityQty: row.order_quantity_qty ?? null,
         minOrderQty: row.min_order_qty ?? null,
-        maxOrderQty: row.max_order_qty ?? null
+        maxOrderQty: row.max_order_qty ?? null,
+        effectiveSafetyStockQty,
+        effectiveReorderPointQty: effectiveReorderPoint.value,
+        reorderPointSource: effectiveReorderPoint.source,
+        cycleCoverageQty
       },
-      inventory: snapshot,
+      inventory,
+      inventoryComponents: {
+        openPurchaseSupply: position.openPurchaseSupply,
+        acceptedPendingPutawaySupply: position.acceptedPendingPutawaySupply,
+        transferInboundSupply: position.transferInboundSupply,
+        qaHeldSupply: position.qaHeldSupply,
+        rejectedSupply: position.rejectedSupply
+      },
       recommendation,
+      validationErrors,
       assumptions
     });
   }
