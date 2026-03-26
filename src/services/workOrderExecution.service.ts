@@ -76,6 +76,7 @@ import {
   type NormalizedBatchConsumeLine,
   type NormalizedBatchProduceLine
 } from './workOrderExecution.request';
+import { mapExecution, mapMaterialIssue } from './workOrderExecution.response';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
 // (never inventory_adjustments). External refs include work order ids for traceability.
@@ -314,61 +315,6 @@ type WorkOrderExecutionLineRow = {
   notes: string | null;
   created_at: string;
 };
-
-function mapMaterialIssue(row: WorkOrderMaterialIssueRow, lines: WorkOrderMaterialIssueLineRow[]) {
-  return {
-    id: row.id,
-    workOrderId: row.work_order_id,
-    status: row.status,
-    occurredAt: row.occurred_at,
-    inventoryMovementId: row.inventory_movement_id,
-    notes: row.notes,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    lines: lines.map((line) => ({
-      id: line.id,
-      lineNumber: line.line_number,
-      componentItemId: line.component_item_id,
-      fromLocationId: line.from_location_id,
-      uom: line.uom,
-      quantityIssued: roundQuantity(toNumber(line.quantity_issued)),
-      reasonCode: line.reason_code,
-      notes: line.notes,
-      createdAt: line.created_at
-    }))
-  };
-}
-
-function mapExecution(row: WorkOrderExecutionRow, lines: WorkOrderExecutionLineRow[]) {
-  return {
-    id: row.id,
-    workOrderId: row.work_order_id,
-    status: row.status,
-    occurredAt: row.occurred_at,
-    consumptionMovementId: row.consumption_movement_id,
-    productionMovementId: row.production_movement_id,
-    wipTotalCost: row.wip_total_cost !== null ? toNumber(row.wip_total_cost) : null,
-    wipUnitCost: row.wip_unit_cost !== null ? toNumber(row.wip_unit_cost) : null,
-    wipQuantityCanonical: row.wip_quantity_canonical !== null ? toNumber(row.wip_quantity_canonical) : null,
-    wipCostMethod: row.wip_cost_method ?? null,
-    wipCostedAt: row.wip_costed_at ?? null,
-    notes: row.notes,
-    createdAt: row.created_at,
-    lines: lines.map((line) => ({
-      id: line.id,
-      lineType: line.line_type,
-      itemId: line.item_id,
-      uom: line.uom,
-      quantity: roundQuantity(toNumber(line.quantity)),
-      packSize: line.pack_size !== null ? roundQuantity(toNumber(line.pack_size)) : null,
-      fromLocationId: line.from_location_id,
-      toLocationId: line.to_location_id,
-      reasonCode: line.reason_code,
-      notes: line.notes,
-      createdAt: line.created_at
-    }))
-  };
-}
 
 async function fetchWorkOrderById(
   tenantId: string,
