@@ -76,6 +76,13 @@ import {
   type NormalizedBatchConsumeLine,
   type NormalizedBatchProduceLine
 } from './workOrderExecution.request';
+import {
+  compareBatchConsumeKey,
+  compareBatchProduceKey,
+  compareIssueLineLockKey,
+  compareNormalizedOverrideKey,
+  compareProduceLineLockKey
+} from './workOrderExecution.ordering';
 import { mapExecution, mapMaterialIssue } from './workOrderExecution.response';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
@@ -158,78 +165,6 @@ function deriveCompletionMutationState(params: {
       ? 'posted_completion_missing_authoritative_movement'
       : 'completion_state_unrecognized'
   });
-}
-
-function compareNullableText(a: string | null | undefined, b: string | null | undefined) {
-  const left = a ?? '';
-  const right = b ?? '';
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
-}
-
-function compareIssueLineLockKey(a: WorkOrderMaterialIssueLineRow, b: WorkOrderMaterialIssueLineRow) {
-  return (
-    compareNullableText(a.component_item_id, b.component_item_id) ||
-    compareNullableText(a.from_location_id, b.from_location_id) ||
-    compareNullableText(a.uom, b.uom) ||
-    a.line_number - b.line_number ||
-    compareNullableText(a.id, b.id)
-  );
-}
-
-function compareProduceLineLockKey(a: WorkOrderExecutionLineRow, b: WorkOrderExecutionLineRow) {
-  return (
-    compareNullableText(a.item_id, b.item_id) ||
-    compareNullableText(a.to_location_id, b.to_location_id) ||
-    compareNullableText(a.uom, b.uom) ||
-    compareNullableText(a.id, b.id)
-  );
-}
-
-function compareBatchConsumeKey(
-  a: {
-    componentItemId: string;
-    fromLocationId: string;
-    uom: string;
-  },
-  b: {
-    componentItemId: string;
-    fromLocationId: string;
-    uom: string;
-  }
-) {
-  return (
-    compareNullableText(a.componentItemId, b.componentItemId) ||
-    compareNullableText(a.fromLocationId, b.fromLocationId) ||
-    compareNullableText(a.uom, b.uom)
-  );
-}
-
-function compareBatchProduceKey(
-  a: {
-    outputItemId: string;
-    toLocationId: string;
-    uom: string;
-  },
-  b: {
-    outputItemId: string;
-    toLocationId: string;
-    uom: string;
-  }
-) {
-  return (
-    compareNullableText(a.outputItemId, b.outputItemId) ||
-    compareNullableText(a.toLocationId, b.toLocationId) ||
-    compareNullableText(a.uom, b.uom)
-  );
-}
-
-function compareNormalizedOverrideKey(
-  left: { componentItemId: string },
-  right: { componentItemId: string }
-) {
-  return compareNullableText(left.componentItemId, right.componentItemId);
 }
 
 type NegativeOverrideContext = {
