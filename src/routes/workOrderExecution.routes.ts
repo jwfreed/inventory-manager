@@ -31,7 +31,7 @@ import {
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
-import { mapTxRetryExhausted, mapAtpConcurrencyExhausted, mapAtpInsufficientAvailable } from './orderToCash.shipmentConflicts';
+import { mapTxRetryExhausted, mapAtpConcurrencyExhausted, mapAtpInsufficientAvailable } from './shared/inventoryMutationConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();

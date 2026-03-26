@@ -4,7 +4,7 @@ import { movementListQuerySchema, movementWindowQuerySchema } from '../schemas/l
 import { getMovement, getMovementLines, getMovementWindow, listMovements } from '../services/ledger.service';
 import { voidTransferMovement } from '../services/transfers.service';
 import { getIdempotencyKey } from '../lib/idempotency';
-import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
+import { mapTxRetryExhausted } from './shared/inventoryMutationConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();

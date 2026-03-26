@@ -11,7 +11,7 @@ import {
 } from '../services/qc.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { getIdempotencyKey } from '../lib/idempotency';
-import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
+import { mapTxRetryExhausted } from './shared/inventoryMutationConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();

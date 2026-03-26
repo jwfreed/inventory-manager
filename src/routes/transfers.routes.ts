@@ -3,7 +3,7 @@ import { inventoryTransferCreateSchema } from '../schemas/transfers.schema';
 import { postInventoryTransfer } from '../services/transfers.service';
 import { getIdempotencyKey } from '../lib/idempotency';
 import { invalidateAtpCacheForWarehouse } from '../services/atpCache.service';
-import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
+import { mapTxRetryExhausted } from './shared/inventoryMutationConflicts';
 
 const router = Router();
 

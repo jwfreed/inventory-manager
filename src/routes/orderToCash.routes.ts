@@ -27,12 +27,12 @@ import {
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
+import { handlePostShipmentConflict } from './orderToCash.shipmentConflicts';
 import {
-  handlePostShipmentConflict,
   mapAtpConcurrencyExhausted,
   mapAtpInsufficientAvailable,
   mapTxRetryExhausted
-} from './orderToCash.shipmentConflicts';
+} from './shared/inventoryMutationConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();

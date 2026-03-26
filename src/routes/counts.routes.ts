@@ -11,7 +11,7 @@ import { inventoryCountSchema, inventoryCountUpdateSchema } from '../schemas/cou
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { emitEvent } from '../lib/events';
 import { getIdempotencyKey } from '../lib/idempotency';
-import { mapTxRetryExhausted } from './orderToCash.shipmentConflicts';
+import { mapTxRetryExhausted } from './shared/inventoryMutationConflicts';
 
 const router = Router();
 const uuidSchema = z.string().uuid();
