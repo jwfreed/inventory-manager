@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import type { z } from 'zod';
-import { createHash } from 'crypto';
 import { query, withTransaction } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { fetchBomById } from './boms.service';
@@ -67,6 +66,16 @@ import * as eventFactory from './inventoryEventFactory';
 import * as wipEngine from './wipAccountingEngine';
 import * as projectionEngine from './inventoryProjectionEngine';
 import * as lotTraceability from './lotTraceabilityEngine';
+import {
+  assertScrapReasonCode,
+  assertVoidReason,
+  hashNormalizedBatchRequest,
+  normalizeBatchRequestPayload,
+  normalizedOptionalIdempotencyKey,
+  resolveReportProductionIdempotencyKey,
+  type NormalizedBatchConsumeLine,
+  type NormalizedBatchProduceLine
+} from './workOrderExecution.request';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
 // (never inventory_adjustments). External refs include work order ids for traceability.
@@ -220,94 +229,6 @@ function compareNormalizedOverrideKey(
   right: { componentItemId: string }
 ) {
   return compareNullableText(left.componentItemId, right.componentItemId);
-}
-
-type NormalizedBatchConsumeLine = {
-  componentItemId: string;
-  fromLocationId: string;
-  uom: string;
-  quantity: number;
-  reasonCode: string | null;
-  notes: string | null;
-};
-
-type NormalizedBatchProduceLine = {
-  outputItemId: string;
-  toLocationId: string;
-  uom: string;
-  quantity: number;
-  packSize: number | null;
-  reasonCode: string | null;
-  notes: string | null;
-};
-
-function normalizedBatchConsumeSortKey(line: NormalizedBatchConsumeLine) {
-  return [
-    line.componentItemId,
-    line.fromLocationId,
-    line.uom,
-    line.quantity.toString(),
-    line.reasonCode ?? '',
-    line.notes ?? ''
-  ].join('|');
-}
-
-function normalizedBatchProduceSortKey(line: NormalizedBatchProduceLine) {
-  return [
-    line.outputItemId,
-    line.toLocationId,
-    line.uom,
-    line.quantity.toString(),
-    line.packSize?.toString() ?? '',
-    line.reasonCode ?? '',
-    line.notes ?? ''
-  ].join('|');
-}
-
-function normalizeBatchRequestPayload(params: {
-  workOrderId: string;
-  occurredAt: Date;
-  notes?: string | null;
-  overrideNegative?: boolean;
-  overrideReason?: string | null;
-  consumeLines: NormalizedBatchConsumeLine[];
-  produceLines: NormalizedBatchProduceLine[];
-}) {
-  const normalizedConsumeLines = [...params.consumeLines]
-    .map((line) => ({
-      componentItemId: line.componentItemId,
-      fromLocationId: line.fromLocationId,
-      uom: line.uom,
-      quantity: roundQuantity(line.quantity),
-      reasonCode: line.reasonCode ?? null,
-      notes: line.notes ?? null
-    }))
-    .sort((a, b) => normalizedBatchConsumeSortKey(a).localeCompare(normalizedBatchConsumeSortKey(b)));
-  const normalizedProduceLines = [...params.produceLines]
-    .map((line) => ({
-      outputItemId: line.outputItemId,
-      toLocationId: line.toLocationId,
-      uom: line.uom,
-      quantity: roundQuantity(line.quantity),
-      packSize: line.packSize !== null ? roundQuantity(line.packSize) : null,
-      reasonCode: line.reasonCode ?? null,
-      notes: line.notes ?? null
-    }))
-    .sort((a, b) => normalizedBatchProduceSortKey(a).localeCompare(normalizedBatchProduceSortKey(b)));
-
-  return {
-    workOrderId: params.workOrderId,
-    occurredAt: params.occurredAt.toISOString(),
-    notes: params.notes ?? null,
-    overrideNegative: params.overrideNegative ?? false,
-    overrideReason: params.overrideReason ?? null,
-    consumeLines: normalizedConsumeLines,
-    produceLines: normalizedProduceLines
-  };
-}
-
-function hashNormalizedBatchRequest(payload: Record<string, unknown>) {
-  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 
 type NegativeOverrideContext = {
@@ -1576,28 +1497,6 @@ type ExistingVoidMovementsRow = {
   status: string;
 };
 
-function normalizedOptionalIdempotencyKey(key?: string | null) {
-  if (!key) return null;
-  const trimmed = key.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function resolveReportProductionIdempotencyKey(
-  workOrderId: string,
-  data: WorkOrderReportProductionInput,
-  options?: { idempotencyKey?: string | null }
-) {
-  const explicit = normalizedOptionalIdempotencyKey(options?.idempotencyKey ?? data.idempotencyKey ?? null);
-  if (explicit) {
-    return explicit;
-  }
-  const clientRequestId = normalizedOptionalIdempotencyKey(data.clientRequestId ?? null);
-  if (!clientRequestId) {
-    return null;
-  }
-  return `wo-report:${workOrderId}:${clientRequestId}`;
-}
-
 function shouldSimulateLotLinkFailureOnce(idempotencyKey: string | null, replayed: boolean) {
   if (replayed || !idempotencyKey) return false;
   // Guarded by an explicit test-only key marker to avoid env-coupled flakiness.
@@ -1605,22 +1504,6 @@ function shouldSimulateLotLinkFailureOnce(idempotencyKey: string | null, replaye
   if (FORCED_LOT_LINK_FAILURE_KEYS.has(idempotencyKey)) return false;
   FORCED_LOT_LINK_FAILURE_KEYS.add(idempotencyKey);
   return true;
-}
-
-function assertVoidReason(reason: string) {
-  const trimmed = reason.trim();
-  if (!trimmed) {
-    throw new Error('WO_VOID_REASON_REQUIRED');
-  }
-  return trimmed;
-}
-
-function assertScrapReasonCode(reasonCode: string) {
-  const trimmed = reasonCode.trim();
-  if (!trimmed) {
-    throw new Error('WO_SCRAP_REASON_REQUIRED');
-  }
-  return trimmed;
 }
 
 function assertSameWorkOrderExecution(
