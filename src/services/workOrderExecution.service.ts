@@ -5,7 +5,6 @@ import { query, withTransaction } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { fetchBomById } from './boms.service';
 import { getWorkOrderById, getWorkOrderRequirements } from './workOrders.service';
-import { recordAuditLog } from '../lib/audit';
 import { validateSufficientStock } from './stockValidation.service';
 import {
   applyPlannedCostLayerConsumption,
@@ -26,7 +25,6 @@ import {
 } from '../schemas/workOrderExecution.schema';
 import {
   buildTransferLockTargets,
-  buildTransferReplayResult,
   executeTransferInventoryMutation,
   prepareTransferMutation,
   type PreparedTransferMutation
@@ -44,7 +42,6 @@ import {
 } from '../modules/platform/application/inventoryMutationSupport';
 import {
   isTerminalWorkOrderStatus,
-  nextStatusAfterExecutionStart,
   nextStatusFromProgress,
   normalizeWorkOrderStatus
 } from './workOrderLifecycle.service';
@@ -94,6 +91,15 @@ type WorkOrderBatchInput = z.infer<typeof workOrderBatchSchema>;
 type WorkOrderReportProductionInput = z.infer<typeof workOrderReportProductionSchema>;
 type WorkOrderVoidReportProductionInput = z.infer<typeof workOrderVoidReportProductionSchema>;
 type WorkOrderReportScrapInput = z.infer<typeof workOrderReportScrapSchema>;
+type WorkOrderIssueRecord = ReturnType<typeof mapMaterialIssue>;
+type WorkOrderCompletionRecord = ReturnType<typeof mapExecution>;
+type WorkOrderIssueReplayResult = Awaited<ReturnType<typeof replayEngine.replayIssue>> & {
+  responseBody: WorkOrderIssueRecord;
+};
+type WorkOrderCompletionReplayResult = Awaited<ReturnType<typeof replayEngine.replayCompletion>> & {
+  responseBody: WorkOrderCompletionRecord;
+};
+type RetryableSqlStateError = { retrySqlState?: string; code?: string };
 
 const WIP_COST_METHOD = 'fifo';
 const WORK_ORDER_POST_RETRY_OPTIONS = { isolationLevel: 'SERIALIZABLE' as const, retries: 8 };
@@ -249,6 +255,22 @@ type WorkOrderExecutionLineRow = {
   reason_code: string | null;
   notes: string | null;
   created_at: string;
+};
+
+type WorkOrderIssuedTotalRow = {
+  component_item_id: string;
+  component_item_sku: string;
+  component_item_name: string;
+  uom: string;
+  qty: string | number;
+};
+
+type WorkOrderCompletedTotalRow = {
+  item_id: string;
+  item_sku: string;
+  item_name: string;
+  uom: string;
+  qty: string | number;
 };
 
 async function fetchWorkOrderById(
@@ -411,7 +433,7 @@ export async function postWorkOrderIssue(
   let linesForPosting: WorkOrderMaterialIssueLineRow[] = [];
   let warehouseIdsByLocation = new Map<string, string>();
 
-  return runInventoryCommand<any>({
+  return runInventoryCommand<WorkOrderIssueRecord>({
     tenantId,
     endpoint: 'wo.issue.post',
     operation: 'work_order_issue_post',
@@ -540,7 +562,7 @@ export async function postWorkOrderIssue(
       });
       const sortedMovementLines = baseIssueMovement.sortedLines;
       if (issueState === 'posted_issue') {
-        return replayEngine.replayIssue({
+        const replay = await replayEngine.replayIssue({
           tenantId,
           workOrderId,
           issueId,
@@ -553,7 +575,8 @@ export async function postWorkOrderIssue(
           },
           fetchAggregateView: () =>
             fetchWorkOrderIssue(tenantId, workOrderId, issueId, client)
-        });
+        }) as WorkOrderIssueReplayResult;
+        return replay;
       }
 
       statePolicy.assertManufacturingTransition({
@@ -668,7 +691,7 @@ export async function postWorkOrderIssue(
       const movement = await persistInventoryMovement(client, plannedIssueMovement.persistInput);
 
       if (!movement.created) {
-        return replayEngine.replayIssue({
+        const replay = await replayEngine.replayIssue({
           tenantId,
           workOrderId,
           issueId,
@@ -681,7 +704,8 @@ export async function postWorkOrderIssue(
           },
           fetchAggregateView: () =>
             fetchWorkOrderIssue(tenantId, workOrderId, issueId, client)
-        });
+        }) as WorkOrderIssueReplayResult;
+        return replay;
       }
 
       let totalIssueCost = 0;
@@ -885,7 +909,7 @@ export async function postWorkOrderCompletion(
   let linesForPosting: WorkOrderExecutionLineRow[] = [];
   let warehouseIdsByLocation = new Map<string, string>();
 
-  return runInventoryCommand<any>({
+  return runInventoryCommand<WorkOrderCompletionRecord>({
     tenantId,
     endpoint: 'wo.completion.post',
     operation: 'work_order_completion_post',
@@ -1027,7 +1051,7 @@ export async function postWorkOrderCompletion(
         0
       );
       if (completionState === 'posted_completion') {
-        return replayEngine.replayCompletion({
+        const replay = await replayEngine.replayCompletion({
           tenantId,
           workOrderId,
           completionId,
@@ -1040,7 +1064,8 @@ export async function postWorkOrderCompletion(
           },
           fetchAggregateView: () =>
             fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client)
-        });
+        }) as WorkOrderCompletionReplayResult;
+        return replay;
       }
 
       statePolicy.assertManufacturingTransition({
@@ -1120,7 +1145,7 @@ export async function postWorkOrderCompletion(
       const movement = await persistInventoryMovement(client, plannedCompletionMovement.persistInput);
 
       if (!movement.created) {
-        return replayEngine.replayCompletion({
+        const replay = await replayEngine.replayCompletion({
           tenantId,
           workOrderId,
           completionId,
@@ -1133,7 +1158,8 @@ export async function postWorkOrderCompletion(
           },
           fetchAggregateView: () =>
             fetchWorkOrderCompletion(tenantId, workOrderId, completionId, client)
-        });
+        }) as WorkOrderCompletionReplayResult;
+        return replay;
       }
       const wipUnitCostCanonical = totalIssueCost / totalProducedCanonical;
 
@@ -1241,7 +1267,7 @@ export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId
   }
   const workOrder = workOrderResult.rows[0];
 
-  const issuedRows = await query(
+  const issuedRows = await query<WorkOrderIssuedTotalRow>(
     `SELECT l.component_item_id,
             i.sku AS component_item_sku,
             i.name AS component_item_name,
@@ -1258,7 +1284,7 @@ export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId
     [workOrderId, tenantId]
   );
 
-  const producedRows = await query(
+  const producedRows = await query<WorkOrderCompletedTotalRow>(
     `SELECT l.item_id,
             i.sku AS item_sku,
             i.name AS item_name,
@@ -1296,14 +1322,14 @@ export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId
       quantityScrapped: scrapped,
       completedAt: workOrder.completed_at
     },
-    issuedTotals: issuedRows.rows.map((row: any) => ({
+    issuedTotals: issuedRows.rows.map((row) => ({
       componentItemId: row.component_item_id,
       componentItemSku: row.component_item_sku,
       componentItemName: row.component_item_name,
       uom: row.uom,
       quantityIssued: roundQuantity(toNumber(row.qty))
     })),
-    completedTotals: producedRows.rows.map((row: any) => ({
+    completedTotals: producedRows.rows.map((row) => ({
       outputItemId: row.item_id,
       outputItemSku: row.item_sku,
       outputItemName: row.item_name,
@@ -1345,6 +1371,17 @@ export type WorkOrderScrapReportResult = {
   itemId: string;
   quantity: number;
   uom: string;
+  idempotencyKey: string | null;
+  replayed: boolean;
+};
+
+type WorkOrderBatchResult = {
+  workOrderId: string;
+  executionId: string;
+  issueMovementId: string;
+  receiveMovementId: string;
+  quantityCompleted: number;
+  workOrderStatus: string;
   idempotencyKey: string | null;
   replayed: boolean;
 };
@@ -1802,13 +1839,14 @@ export async function reportWorkOrderProduction(
         }))
         : []
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (!lotTraceability.isNonRetryableLotLinkError(error)) {
+      const retryableError = error as RetryableSqlStateError;
       throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
         reason: 'lot_linking_incomplete_after_post',
         workOrderId,
         executionId: batchResult.executionId,
-        sqlState: error?.retrySqlState ?? error?.code ?? null,
+        sqlState: retryableError.retrySqlState ?? retryableError.code ?? null,
         hint: 'Retry with the same Idempotency-Key to finalize lot linking.'
       });
     }
@@ -2149,7 +2187,10 @@ export async function voidWorkOrderProductionReport(
             replayed: true
           })
         });
-        return replay as any;
+        return {
+          ...replay,
+          responseBody: replay.responseBody as WorkOrderVoidReportResult
+        };
       }
       const plannedOutputMovementLines = await Promise.all(plannedOutputLines.map(async (plannedOutputLine) => {
         const sourceLine = outputLineBySourceId.get(plannedOutputLine.sourceLineId);
@@ -2290,7 +2331,10 @@ export async function voidWorkOrderProductionReport(
               replayed: true
             })
           });
-          return replay as any;
+          return {
+            ...replay,
+            responseBody: replay.responseBody as WorkOrderVoidReportResult
+          };
         }
         throw new Error('WO_VOID_INCOMPLETE');
       }
@@ -2673,16 +2717,7 @@ export async function recordWorkOrderBatch(
       occurredAt: Date;
     };
   }
-): Promise<{
-  workOrderId: string;
-  executionId: string;
-  issueMovementId: string;
-  receiveMovementId: string;
-  quantityCompleted: number;
-  workOrderStatus: string;
-  idempotencyKey: string | null;
-  replayed: boolean;
-}> {
+): Promise<WorkOrderBatchResult> {
   const batchIdempotencyKey = options?.idempotencyKey?.trim() ? options.idempotencyKey.trim() : null;
   const idempotencyEndpoint = options?.idempotencyEndpoint ?? IDEMPOTENCY_ENDPOINTS.WORK_ORDER_RECORD_BATCH;
   const normalizedConsumes: NormalizedBatchConsumeLine[] = data.consumeLines.map((line) => {
@@ -2740,16 +2775,7 @@ export async function recordWorkOrderBatch(
   let preparedTraceability: lotTraceability.PreparedWorkOrderTraceability | null = null;
   let reservationSnapshot: Awaited<ReturnType<typeof ensureWorkOrderReservationsReady>> = [];
 
-  return runInventoryCommand<{
-    workOrderId: string;
-    executionId: string;
-    issueMovementId: string;
-    receiveMovementId: string;
-    quantityCompleted: number;
-    workOrderStatus: string;
-    idempotencyKey: string | null;
-    replayed: boolean;
-  }>({
+  return runInventoryCommand<WorkOrderBatchResult>({
     tenantId,
     endpoint: idempotencyEndpoint,
     operation: 'work_order_batch_post',
@@ -2807,16 +2833,7 @@ export async function recordWorkOrderBatch(
             };
           }
         });
-      return replay.responseBody as {
-        workOrderId: string;
-        executionId: string;
-        issueMovementId: string;
-        receiveMovementId: string;
-        quantityCompleted: number;
-        workOrderStatus: string;
-        idempotencyKey: string | null;
-        replayed: boolean;
-      };
+      return replay.responseBody as WorkOrderBatchResult;
     },
     lockTargets: async (client) => {
       existingBatchReplay = null;
@@ -3116,7 +3133,10 @@ export async function recordWorkOrderBatch(
             replayed: true
           })
         });
-        return replay as any;
+        return {
+          ...replay,
+          responseBody: replay.responseBody as WorkOrderBatchResult
+        };
       }
       const executionId = uuidv4();
       statePolicy.assertManufacturingTransition({
@@ -3385,7 +3405,10 @@ export async function recordWorkOrderBatch(
                 replayed: true
               })
             });
-            return replayResult as any;
+            return {
+              ...replayResult,
+              responseBody: replayResult.responseBody as WorkOrderBatchResult
+            };
           }
         }
         throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
