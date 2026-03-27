@@ -54,6 +54,8 @@ test('movement hash integrity fails closed after authoritative hash tampering', 
   assert.equal(cleanAudit.movementAudit.replayIntegrityFailures.count, 0);
   assert.equal(cleanAudit.eventRegistryFailures.count, 0);
 
+  // BREAK INVARIANT: mutate the persisted authoritative movement hash on an append-only ledger row.
+  // EXPECT: replay determinism audit must report hash-corruption for this exact movement.
   const client = await db.connect();
   try {
     await client.query('BEGIN');

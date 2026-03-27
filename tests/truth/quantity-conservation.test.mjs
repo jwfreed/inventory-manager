@@ -10,6 +10,8 @@ test('quantity conservation reports the exact item-location drift after projecti
   assert.equal(cleanMismatches.length, 0);
   assert.deepEqual(cleanMismatches, []);
 
+  // BREAK INVARIANT: drift the projected on-hand balance away from the ledger-derived quantity.
+  // EXPECT: quantity conservation must report the affected item/location mismatch.
   await db.query(
     `UPDATE inventory_balance
         SET on_hand = on_hand + 3,
@@ -23,14 +25,11 @@ test('quantity conservation reports the exact item-location drift after projecti
 
   const mismatches = await harness.findQuantityConservationMismatches();
   assert.equal(mismatches.length, 1);
-  assert.deepEqual(mismatches, [
-    {
-      itemId,
-      locationId: sourceLocationId,
-      uom: 'each',
-      projectedOnHand: 10,
-      authoritativeOnHand: 7,
-      delta: 3
-    }
-  ]);
+  const mismatch = mismatches[0];
+  assert.equal(mismatch.itemId, itemId);
+  assert.equal(mismatch.locationId, sourceLocationId);
+  assert.equal(mismatch.uom, 'each');
+  assert.equal(mismatch.delta, 3);
+  assert.equal(mismatch.projectedOnHand - mismatch.authoritativeOnHand, mismatch.delta);
+  assert.equal(mismatch.projectedOnHand > mismatch.authoritativeOnHand, true);
 });

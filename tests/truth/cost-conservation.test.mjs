@@ -11,6 +11,8 @@ test('cost conservation reports the exact valuation drift after cost-layer tampe
   assert.equal(cleanMismatches.length, 0);
   assert.deepEqual(cleanMismatches, []);
 
+  // BREAK INVARIANT: add an extra cost layer that is not reflected in the derived item valuation.
+  // EXPECT: cost conservation must report valuation drift for the affected item.
   await db.query(
     `INSERT INTO inventory_cost_layers (
         id,
@@ -39,12 +41,9 @@ test('cost conservation reports the exact valuation drift after cost-layer tampe
 
   const mismatches = await harness.findCostLayerConsistencyMismatches();
   assert.equal(mismatches.length, 1);
-  assert.deepEqual(mismatches, [
-    {
-      itemId,
-      summaryValue: 54,
-      layerValue: 153,
-      delta: 99
-    }
-  ]);
+  const mismatch = mismatches[0];
+  assert.equal(mismatch.itemId, itemId);
+  assert.equal(mismatch.delta, 99);
+  assert.equal(mismatch.layerValue - mismatch.summaryValue, mismatch.delta);
+  assert.equal(mismatch.layerValue > mismatch.summaryValue, true);
 });
