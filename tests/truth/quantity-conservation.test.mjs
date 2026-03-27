@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLedgerProofFixture } from './helpers/ledgerProofFixture.mjs';
 
-test('quantity conservation detects projection drift for item-location balances', async () => {
-  const { harness, itemId, sourceLocationId } = await createLedgerProofFixture('truth-quantity');
+test('quantity conservation reports the exact item-location drift after projection tampering', async () => {
+  const { harness, itemId, sourceLocationId } = await createLedgerProofFixture('truth-quantity-conservation');
   const { pool: db, tenantId } = harness;
 
-  const before = await harness.findQuantityConservationMismatches();
-  assert.deepEqual(before, []);
+  const cleanMismatches = await harness.findQuantityConservationMismatches();
+  assert.equal(cleanMismatches.length, 0);
+  assert.deepEqual(cleanMismatches, []);
 
   await db.query(
     `UPDATE inventory_balance
@@ -20,7 +21,16 @@ test('quantity conservation detects projection drift for item-location balances'
     [tenantId, itemId, sourceLocationId]
   );
 
-  const after = await harness.findQuantityConservationMismatches();
-  assert.ok(after.length > 0);
-  assert.ok(after.some((row) => row.itemId === itemId && row.locationId === sourceLocationId));
+  const mismatches = await harness.findQuantityConservationMismatches();
+  assert.equal(mismatches.length, 1);
+  assert.deepEqual(mismatches, [
+    {
+      itemId,
+      locationId: sourceLocationId,
+      uom: 'each',
+      projectedOnHand: 10,
+      authoritativeOnHand: 7,
+      delta: 3
+    }
+  ]);
 });

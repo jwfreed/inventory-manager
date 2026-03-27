@@ -4,16 +4,19 @@ import { randomUUID } from 'node:crypto';
 import { createServiceHarness } from '../helpers/service-harness.mjs';
 import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 
-test('movement hash audit fails closed on authoritative hash tampering', async () => {
+const FIXED_OCCURRED_AT = '2026-03-02T00:00:00.000Z';
+const TAMPERED_HASH = 'f'.repeat(64);
+
+test('movement hash integrity fails closed after authoritative hash tampering', async () => {
   const harness = await createServiceHarness({
-    tenantPrefix: 'truth-movement-hash',
-    tenantName: 'Truth Movement Hash'
+    tenantPrefix: 'truth-movement-hash-integrity',
+    tenantName: 'Truth Movement Hash Integrity'
   });
   const { tenantId, pool: db, topology } = harness;
 
   const item = await harness.createItem({
     defaultLocationId: topology.defaults.SELLABLE.id,
-    skuPrefix: 'HASH',
+    skuPrefix: 'TRUTH-HASH',
     type: 'raw'
   });
 
@@ -23,10 +26,9 @@ test('movement hash audit fails closed on authoritative hash tampering', async (
     tenantId,
     movementType: 'receive',
     sourceType: 'truth_hash_fixture',
-    sourceId: movementId,
-    externalRef: `truth-hash:${movementId}`,
-    occurredAt: '2026-03-02T00:00:00.000Z',
-    movementDeterministicHash: '0'.repeat(64),
+    sourceId: randomUUID(),
+    externalRef: 'truth-hash:fixture-1',
+    occurredAt: FIXED_OCCURRED_AT,
     lines: [
       {
         itemId: item.id,
@@ -45,11 +47,43 @@ test('movement hash audit fails closed on authoritative hash tampering', async (
     ]
   });
 
-  const audit = await harness.auditReplayDeterminism(10);
-  assert.equal(audit.movementAudit.rowsMissingDeterministicHash, 0);
-  assert.equal(audit.movementAudit.replayIntegrityFailures.count, 1);
-  assert.deepEqual(
-    new Set(audit.movementAudit.replayIntegrityFailures.sample.map((entry) => entry.reason)),
-    new Set(['authoritative_movement_hash_mismatch'])
+  const cleanAudit = await harness.auditReplayDeterminism(10);
+  assert.equal(cleanAudit.movementAudit.totalMovements, 1);
+  assert.equal(cleanAudit.movementAudit.rowsMissingDeterministicHash, 0);
+  assert.equal(cleanAudit.movementAudit.postCutoffRowsMissingHash, 0);
+  assert.equal(cleanAudit.movementAudit.replayIntegrityFailures.count, 0);
+  assert.equal(cleanAudit.eventRegistryFailures.count, 0);
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL session_replication_role = replica');
+    await client.query(
+      `UPDATE inventory_movements
+          SET movement_deterministic_hash = $1,
+              updated_at = now()
+        WHERE tenant_id = $2
+          AND id = $3`,
+      [TAMPERED_HASH, tenantId, movementId]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const tamperedAudit = await harness.auditReplayDeterminism(10);
+  assert.equal(tamperedAudit.movementAudit.totalMovements, 1);
+  assert.equal(tamperedAudit.movementAudit.rowsMissingDeterministicHash, 0);
+  assert.equal(tamperedAudit.movementAudit.postCutoffRowsMissingHash, 0);
+  assert.equal(tamperedAudit.movementAudit.replayIntegrityFailures.count, 1);
+  assert.equal(tamperedAudit.movementAudit.replayIntegrityFailures.sample.length, 1);
+  assert.equal(tamperedAudit.movementAudit.replayIntegrityFailures.sample[0].movementId, movementId);
+  assert.equal(
+    tamperedAudit.movementAudit.replayIntegrityFailures.sample[0].reason,
+    'authoritative_movement_hash_mismatch'
   );
+  assert.equal(tamperedAudit.eventRegistryFailures.count, 0);
 });

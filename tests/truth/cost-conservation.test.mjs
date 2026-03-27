@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createLedgerProofFixture } from './helpers/ledgerProofFixture.mjs';
 
-test('cost layer consistency detects valuation drift between layers and derived item valuation', async () => {
-  const { harness, itemId, sourceLocationId } = await createLedgerProofFixture('truth-cost');
+test('cost conservation reports the exact valuation drift after cost-layer tampering', async () => {
+  const { harness, itemId, sourceLocationId } = await createLedgerProofFixture('truth-cost-conservation');
   const { pool: db, tenantId } = harness;
 
-  const before = await harness.findCostLayerConsistencyMismatches();
-  assert.deepEqual(before, []);
+  const cleanMismatches = await harness.findCostLayerConsistencyMismatches();
+  assert.equal(cleanMismatches.length, 0);
+  assert.deepEqual(cleanMismatches, []);
 
   await db.query(
     `INSERT INTO inventory_cost_layers (
@@ -31,12 +32,19 @@ test('cost layer consistency detects valuation drift between layers and derived 
         created_at,
         updated_at
       ) VALUES (
-        $1, $2, $3, $4, 'each', now(), 999, 1, 1, 99, 99, 'opening_balance', $5, NULL, NULL, 'tampered truth layer', now(), now()
+        $1, $2, $3, $4, 'each', '2026-03-02T00:00:00.000Z', 999, 1, 1, 99, 99, 'opening_balance', $5, NULL, NULL, 'tampered truth layer', '2026-03-02T00:00:00.000Z', '2026-03-02T00:00:00.000Z'
       )`,
     [randomUUID(), tenantId, itemId, sourceLocationId, randomUUID()]
   );
 
-  const after = await harness.findCostLayerConsistencyMismatches();
-  assert.ok(after.length > 0);
-  assert.ok(after.some((row) => row.itemId === itemId && Math.abs(row.delta) > 0));
+  const mismatches = await harness.findCostLayerConsistencyMismatches();
+  assert.equal(mismatches.length, 1);
+  assert.deepEqual(mismatches, [
+    {
+      itemId,
+      summaryValue: 54,
+      layerValue: 153,
+      delta: 99
+    }
+  ]);
 });
