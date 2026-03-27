@@ -6,7 +6,8 @@
   "useSetupImport": true,
   "directories": [
     "tests/ops",
-    "tests/load"
+    "tests/load",
+    "tests/db"
   ],
   "excludeFiles": [
     "tests/ops/cycle-count-idempotency.test.mjs",

@@ -5,7 +5,10 @@
   "concurrency": 1,
   "useSetupImport": true,
   "files": [
-    "tests/api/00_bootstrap.test.mjs",
+    "tests/contracts/adjustment.test.mjs",
+    "tests/contracts/license-plate-move.test.mjs",
+    "tests/contracts/return-receipt-post.test.mjs",
+    "tests/contracts/shipment.test.mjs",
     "tests/api/warehouse-root-create.test.mjs",
     "tests/ops/cycle-count-idempotency.test.mjs",
     "tests/ops/ledger-reconcile.test.mjs",
@@ -15,6 +18,8 @@
     "tests/ops/reservations-lifecycle.test.mjs",
     "tests/ops/transactional-idempotency-receipts.test.mjs",
     "tests/ops/transfer-idempotency.test.mjs",
-    "tests/ops/work-order-production-report.test.mjs"
+    "tests/ops/work-order-production-report.test.mjs",
+    "tests/contracts/work-order-issue.test.mjs",
+    "tests/contracts/work-order-reversal.test.mjs"
   ]
 }
