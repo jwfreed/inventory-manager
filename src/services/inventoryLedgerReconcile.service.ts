@@ -52,6 +52,7 @@ export type ItemValuationSummaryMismatchRow = {
 type LedgerQueryOptions = {
   keys?: BalanceKey[];
   asOf?: Date | null;
+  client?: PoolClient;
 };
 
 function buildKeysValues(keys: BalanceKey[]) {
@@ -67,10 +68,22 @@ function normalizeQty(value: unknown): number {
   return roundQuantity(toNumber(value));
 }
 
+async function executeReconcileQuery(
+  client: PoolClient | undefined,
+  sql: string,
+  params: any[]
+) {
+  if (client) {
+    return client.query(sql, params);
+  }
+  return query(sql, params);
+}
+
 export async function recomputeBalancesFromLedger(
   tenantId: string,
   options: LedgerQueryOptions = {}
 ): Promise<LedgerBalanceRow[]> {
+  const client = options.client;
   if (!options.asOf) {
     const params: any[] = [tenantId];
     let keysFilter = '';
@@ -82,7 +95,8 @@ export async function recomputeBalancesFromLedger(
       keysFilter = `AND (v.item_id, v.location_id, v.uom) IN (VALUES ${valuesWithOffset})`;
     }
 
-    const res = await query(
+    const res = await executeReconcileQuery(
+      client,
       `SELECT v.tenant_id,
               v.item_id,
               v.location_id,
@@ -144,7 +158,7 @@ export async function recomputeBalancesFromLedger(
      GROUP BY l.tenant_id, l.item_id, l.location_id, COALESCE(l.canonical_uom, l.uom)
   `;
 
-  const res = await query(sql, params);
+  const res = await executeReconcileQuery(client, sql, params);
   return res.rows.map((row: any) => ({
     tenantId: row.tenant_id,
     itemId: row.item_id,
@@ -161,6 +175,7 @@ export async function compareBalances(
   tenantId: string,
   options: LedgerQueryOptions & { tolerance?: number } = {}
 ): Promise<BalanceMismatchRow[]> {
+  const client = options.client;
   const tolerance = options.tolerance ?? DEFAULT_TOLERANCE;
   if (!options.asOf) {
     const params: any[] = [tenantId];
@@ -213,7 +228,7 @@ export async function compareBalances(
          )
     `;
 
-    const res = await query(sql, [...params, tolerance]);
+    const res = await executeReconcileQuery(client, sql, [...params, tolerance]);
     return res.rows.map((row: any) => ({
       tenantId: row.tenant_id,
       itemId: row.item_id,
@@ -290,7 +305,7 @@ export async function compareBalances(
        AND ABS(COALESCE(b.on_hand, 0) - COALESCE(ledger.on_hand_qty, 0)) > $${params.length + 1}
   `;
 
-  const res = await query(sql, [...params, tolerance]);
+  const res = await executeReconcileQuery(client, sql, [...params, tolerance]);
   return res.rows.map((row: any) => ({
     tenantId: row.tenant_id,
     itemId: row.item_id,
@@ -311,7 +326,7 @@ export async function compareBalances(
 export async function repairBalancesFromLedger(
   tenantId: string,
   mismatches: BalanceMismatchRow[],
-  options: { runId?: string; actor?: string; maxRepairRows?: number } = {}
+  options: { runId?: string; actor?: string; maxRepairRows?: number; client?: PoolClient } = {}
 ): Promise<{ repairedCount: number; runId: string }> {
   const maxRepairRows = options.maxRepairRows ?? DEFAULT_MAX_REPAIR;
   if (mismatches.length > maxRepairRows) {
@@ -322,11 +337,12 @@ export async function repairBalancesFromLedger(
   }
   const runId = options.runId ?? uuidv4();
   const actor = options.actor ?? 'system';
+  const client = options.client;
   let repairedCount = 0;
 
   for (const mismatch of mismatches) {
-    await withTransaction(async (client: PoolClient) => {
-      await client.query(
+    const repairMismatch = async (tx: PoolClient) => {
+      await tx.query(
         `INSERT INTO inventory_balance (
             tenant_id, item_id, location_id, uom, on_hand, reserved, allocated, created_at, updated_at
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
@@ -346,7 +362,7 @@ export async function repairBalancesFromLedger(
           mismatch.authoritativeAllocatedQty
         ]
       );
-      await client.query(
+      await tx.query(
         `INSERT INTO inventory_balance_rebuild_audit (
             id, run_id, tenant_id, item_id, location_id, uom, before_qty, after_qty, delta_qty, actor, created_at
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())`,
@@ -364,7 +380,12 @@ export async function repairBalancesFromLedger(
         ]
       );
       repairedCount += 1;
-    });
+    };
+    if (client) {
+      await repairMismatch(client);
+      continue;
+    }
+    await withTransaction(repairMismatch);
   }
 
   return { repairedCount, runId };
@@ -372,10 +393,12 @@ export async function repairBalancesFromLedger(
 
 export async function compareItemQuantitySummaries(
   tenantId: string,
-  options: { tolerance?: number } = {}
+  options: { tolerance?: number; client?: PoolClient } = {}
 ): Promise<ItemQuantitySummaryMismatchRow[]> {
+  const client = options.client;
   const tolerance = options.tolerance ?? DEFAULT_TOLERANCE;
-  const res = await query(
+  const res = await executeReconcileQuery(
+    client,
     `WITH ledger AS (
        SELECT l.tenant_id,
               l.item_id,
@@ -412,12 +435,14 @@ export async function compareItemQuantitySummaries(
 
 export async function repairItemQuantitySummaries(
   tenantId: string,
-  mismatches: ItemQuantitySummaryMismatchRow[]
+  mismatches: ItemQuantitySummaryMismatchRow[],
+  options: { client?: PoolClient } = {}
 ): Promise<number> {
+  const client = options.client;
   let repaired = 0;
   for (const mismatch of mismatches) {
-    await withTransaction(async (client: PoolClient) => {
-      await client.query(
+    const repairMismatch = async (tx: PoolClient) => {
+      await tx.query(
         `UPDATE items
             SET quantity_on_hand = $1,
                 updated_at = now()
@@ -425,7 +450,12 @@ export async function repairItemQuantitySummaries(
             AND id = $3`,
         [mismatch.ledgerQty, tenantId, mismatch.itemId]
       );
-    });
+    };
+    if (client) {
+      await repairMismatch(client);
+    } else {
+      await withTransaction(repairMismatch);
+    }
     repaired += 1;
   }
   return repaired;
@@ -433,10 +463,12 @@ export async function repairItemQuantitySummaries(
 
 export async function compareItemValuationSummaries(
   tenantId: string,
-  options: { tolerance?: number } = {}
+  options: { tolerance?: number; client?: PoolClient } = {}
 ): Promise<ItemValuationSummaryMismatchRow[]> {
+  const client = options.client;
   const tolerance = options.tolerance ?? DEFAULT_TOLERANCE;
-  const res = await query(
+  const res = await executeReconcileQuery(
+    client,
     `WITH layers AS (
        SELECT tenant_id,
               item_id,
@@ -481,12 +513,14 @@ export async function compareItemValuationSummaries(
 
 export async function repairItemValuationSummaries(
   tenantId: string,
-  mismatches: ItemValuationSummaryMismatchRow[]
+  mismatches: ItemValuationSummaryMismatchRow[],
+  options: { client?: PoolClient } = {}
 ): Promise<number> {
+  const client = options.client;
   let repaired = 0;
   for (const mismatch of mismatches) {
-    await withTransaction(async (client: PoolClient) => {
-      await client.query(
+    const repairMismatch = async (tx: PoolClient) => {
+      await tx.query(
         `UPDATE items
             SET average_cost = $1,
                 updated_at = now()
@@ -494,8 +528,57 @@ export async function repairItemValuationSummaries(
             AND id = $3`,
         [mismatch.layerAverageCost, tenantId, mismatch.itemId]
       );
-    });
+    };
+    if (client) {
+      await repairMismatch(client);
+    } else {
+      await withTransaction(repairMismatch);
+    }
     repaired += 1;
   }
   return repaired;
+}
+
+export type ProjectionRebuildPhase = 'balances' | 'quantities' | 'valuations';
+
+export async function rebuildDerivedProjectionsAtomically(
+  tenantId: string,
+  options: {
+    runId?: string;
+    actor?: string;
+    maxRepairRows?: number;
+    onPhaseApplied?: (phase: ProjectionRebuildPhase) => Promise<void> | void;
+  } = {}
+) {
+  return withTransaction(async (client) => {
+    const balanceMismatches = await compareBalances(tenantId, { client });
+    const balanceRepair = await repairBalancesFromLedger(tenantId, balanceMismatches, {
+      runId: options.runId,
+      actor: options.actor,
+      maxRepairRows: options.maxRepairRows,
+      client
+    });
+    await options.onPhaseApplied?.('balances');
+
+    const quantityMismatches = await compareItemQuantitySummaries(tenantId, { client });
+    const repairedQuantityCount = await repairItemQuantitySummaries(tenantId, quantityMismatches, {
+      client
+    });
+    await options.onPhaseApplied?.('quantities');
+
+    const valuationMismatches = await compareItemValuationSummaries(tenantId, { client });
+    const repairedValuationCount = await repairItemValuationSummaries(tenantId, valuationMismatches, {
+      client
+    });
+    await options.onPhaseApplied?.('valuations');
+
+    return {
+      balanceMismatches,
+      repairedBalanceCount: balanceRepair.repairedCount,
+      quantityMismatches,
+      repairedQuantityCount,
+      valuationMismatches,
+      repairedValuationCount
+    };
+  });
 }

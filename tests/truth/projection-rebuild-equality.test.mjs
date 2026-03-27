@@ -22,13 +22,33 @@ test('projection rebuild returns derived projections to exact pre-clear state', 
     assert.equal(row.averageCost, null);
   }
 
-  const rebuild = await harness.rebuildDerivedProjections();
+  const visiblePhaseSnapshots = [];
+  const rebuild = await harness.rebuildDerivedProjections({
+    onPhaseApplied: async (phase) => {
+      visiblePhaseSnapshots.push({
+        phase,
+        state: await harness.snapshotDerivedProjections()
+      });
+    }
+  });
   assert.equal(rebuild.balanceMismatches.length > 0, true);
   assert.equal(rebuild.repairedBalanceCount, rebuild.balanceMismatches.length);
   assert.equal(rebuild.quantityMismatches.length > 0, true);
   assert.equal(rebuild.repairedQuantityCount, rebuild.quantityMismatches.length);
   assert.equal(rebuild.valuationMismatches.length > 0, true);
   assert.equal(rebuild.repairedValuationCount, rebuild.valuationMismatches.length);
+
+  assert.deepEqual(
+    visiblePhaseSnapshots.map((entry) => entry.phase),
+    ['balances', 'quantities', 'valuations']
+  );
+  for (const observation of visiblePhaseSnapshots) {
+    assert.deepEqual(
+      observation.state,
+      cleared,
+      `externally visible projections must stay fully cleared during ${observation.phase}`
+    );
+  }
 
   const after = await harness.snapshotDerivedProjections();
   assert.deepEqual(after, before);

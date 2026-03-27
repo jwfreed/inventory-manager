@@ -16,7 +16,7 @@ const { createItem: createItemService, createLocation } = require('../../../src/
 const { ensureWarehouseDefaultsForWarehouse } = require('../../../src/services/warehouseDefaults.service.ts');
 const { createVendor: createVendorService } = require('../../../src/services/vendors.service.ts');
 const { createPurchaseOrder } = require('../../../src/services/purchaseOrders.service.ts');
-const { createPurchaseOrderReceipt } = require('../../../src/services/receipts.service.ts');
+const { createPurchaseOrderReceipt, voidReceipt } = require('../../../src/services/receipts.service.ts');
 const {
   createSalesOrder,
   createShipment,
@@ -42,14 +42,15 @@ const {
 } = require('../../../src/services/workOrderExecution.service.ts');
 const { createQcEvent, postQcWarehouseDisposition } = require('../../../src/services/qc.service.ts');
 const { postInventoryTransfer } = require('../../../src/services/transfers.service.ts');
-const { createInventoryCount, postInventoryCount } = require('../../../src/services/counts.service.ts');
+const { createInventoryCount, getInventoryCount, postInventoryCount } = require('../../../src/services/counts.service.ts');
 const {
   compareBalances,
   repairBalancesFromLedger,
   compareItemQuantitySummaries,
   repairItemQuantitySummaries,
   compareItemValuationSummaries,
-  repairItemValuationSummaries
+  repairItemValuationSummaries,
+  rebuildDerivedProjectionsAtomically
 } = require('../../../src/services/inventoryLedgerReconcile.service.ts');
 const {
   validatePersistedInventoryEventRegistryRow
@@ -309,6 +310,18 @@ export async function createServiceHarness(options = {}) {
     );
   }
 
+  async function createInventoryCountDraft(data, options) {
+    return createInventoryCount(tenantId, data, options);
+  }
+
+  async function getInventoryCountDocument(countId) {
+    return getInventoryCount(tenantId, countId);
+  }
+
+  async function postInventoryCountDocument(countId, idempotencyKey, context) {
+    return postInventoryCount(tenantId, countId, idempotencyKey, context);
+  }
+
   async function createReceipt(params) {
     const purchaseOrder = await createPurchaseOrder(
       tenantId,
@@ -364,6 +377,10 @@ export async function createServiceHarness(options = {}) {
       params,
       { type: 'system', id: null }
     );
+  }
+
+  async function voidReceiptDocument(receiptId, params) {
+    return voidReceipt(tenantId, receiptId, params);
   }
 
   async function createInventoryAdjustmentDraft(data, actor, options) {
@@ -510,24 +527,12 @@ export async function createServiceHarness(options = {}) {
     );
   }
 
-  async function rebuildDerivedProjections() {
-    const balanceMismatches = await compareBalances(tenantId);
-    const balanceRepair = await repairBalancesFromLedger(tenantId, balanceMismatches, {
-      actor: 'service-harness'
+  async function rebuildDerivedProjections(options = {}) {
+    return rebuildDerivedProjectionsAtomically(tenantId, {
+      actor: 'service-harness',
+      maxRepairRows: options.maxRepairRows,
+      onPhaseApplied: options.onPhaseApplied
     });
-    const quantityMismatches = await compareItemQuantitySummaries(tenantId);
-    const quantityRepaired = await repairItemQuantitySummaries(tenantId, quantityMismatches);
-    const valuationMismatches = await compareItemValuationSummaries(tenantId);
-    const valuationRepaired = await repairItemValuationSummaries(tenantId, valuationMismatches);
-
-    return {
-      balanceMismatches,
-      repairedBalanceCount: balanceRepair.repairedCount,
-      quantityMismatches,
-      repairedQuantityCount: quantityRepaired,
-      valuationMismatches,
-      repairedValuationCount: valuationRepaired
-    };
   }
 
   async function findQuantityConservationMismatches() {
@@ -637,9 +642,13 @@ export async function createServiceHarness(options = {}) {
     createVendor,
     createCustomer,
     seedStockViaCount,
+    createInventoryCountDraft,
+    getInventoryCount: getInventoryCountDocument,
+    postInventoryCount: postInventoryCountDocument,
     createReceipt,
     createPurchaseOrder: createPurchaseOrderDocument,
     postReceipt: postReceiptDocument,
+    voidReceipt: voidReceiptDocument,
     createInventoryAdjustmentDraft,
     postInventoryAdjustmentDraft,
     createSalesOrder: createSalesOrderDocument,
