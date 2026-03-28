@@ -14,6 +14,7 @@ class CacheAdapter {
   private redis: Redis | null = null
   private fallbackCache: QueryCache<string> | null = null
   private isRedisAvailable = false
+  private hasLoggedRedisFallback = false
 
   constructor() {
     if (process.env.REDIS_URL) {
@@ -23,26 +24,37 @@ class CacheAdapter {
           enableReadyCheck: true,
           enableOfflineQueue: false,
           lazyConnect: true,
+          retryStrategy: () => null,
         })
 
         this.redis.on('connect', () => {
           console.log('✅ Redis connected successfully')
           this.isRedisAvailable = true
+          this.hasLoggedRedisFallback = false
         })
 
         this.redis.on('error', (err) => {
-          console.error('❌ Redis connection error:', err.message)
+          if (!this.hasLoggedRedisFallback) {
+            console.warn(`⚠️  Redis unavailable (${err.message}); using in-memory cache`)
+            this.hasLoggedRedisFallback = true
+          }
           this.isRedisAvailable = false
         })
 
         this.redis.on('close', () => {
-          console.warn('⚠️  Redis connection closed, falling back to in-memory cache')
+          if (!this.hasLoggedRedisFallback) {
+            console.warn('⚠️  Redis connection closed; using in-memory cache')
+            this.hasLoggedRedisFallback = true
+          }
           this.isRedisAvailable = false
         })
 
         // Attempt initial connection
         this.redis.connect().catch((err) => {
-          console.error('Failed to connect to Redis:', err.message)
+          if (!this.hasLoggedRedisFallback) {
+            console.warn(`⚠️  Redis unavailable (${err.message}); using in-memory cache`)
+            this.hasLoggedRedisFallback = true
+          }
           this.isRedisAvailable = false
         })
       } catch (error) {
@@ -219,7 +231,13 @@ class CacheAdapter {
    */
   async disconnect(): Promise<void> {
     if (this.redis) {
-      await this.redis.quit()
+      try {
+        if (this.redis.status !== 'end') {
+          await this.redis.quit()
+        }
+      } catch {
+        // Ignore shutdown errors when Redis was already unavailable.
+      }
     }
     this.fallbackCache?.destroy()
   }

@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 const QUEUE_REDIS_URL = process.env.QUEUE_REDIS_URL ?? process.env.REDIS_URL ?? null;
 
 let connection: Redis | null = null;
+let hasLoggedQueueConnectionFailure = false;
 
 export function getQueueConnection(): Redis {
   if (!QUEUE_REDIS_URL) {
@@ -13,7 +14,14 @@ export function getQueueConnection(): Redis {
     maxRetriesPerRequest: null,
     enableReadyCheck: true,
     enableOfflineQueue: false,
-    lazyConnect: true
+    lazyConnect: true,
+    retryStrategy: () => null
+  });
+  connection.on('error', (error) => {
+    if (!hasLoggedQueueConnectionFailure) {
+      console.warn(`[queue] Redis connection unavailable: ${error.message}`);
+      hasLoggedQueueConnectionFailure = true;
+    }
   });
   connection.connect().catch(() => undefined);
   return connection;

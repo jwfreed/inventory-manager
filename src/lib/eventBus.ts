@@ -13,6 +13,8 @@ const EVENT_CHANNEL = process.env.EVENTS_CHANNEL ?? 'inventory:events';
 
 let publisher: Redis | null = null;
 let subscriber: Redis | null = null;
+let hasLoggedPublisherFailure = false;
+let hasLoggedSubscriberFailure = false;
 
 function getPublisher(): Redis | null {
   if (!process.env.REDIS_URL) return null;
@@ -21,7 +23,14 @@ function getPublisher(): Redis | null {
     maxRetriesPerRequest: 3,
     enableReadyCheck: true,
     enableOfflineQueue: false,
-    lazyConnect: true
+    lazyConnect: true,
+    retryStrategy: () => null
+  });
+  publisher.on('error', (error) => {
+    if (!hasLoggedPublisherFailure) {
+      console.warn(`[eventBus] Redis publisher unavailable: ${error.message}`);
+      hasLoggedPublisherFailure = true;
+    }
   });
   publisher.connect().catch(() => undefined);
   return publisher;
@@ -34,7 +43,14 @@ function getSubscriber(): Redis | null {
     maxRetriesPerRequest: 3,
     enableReadyCheck: true,
     enableOfflineQueue: false,
-    lazyConnect: true
+    lazyConnect: true,
+    retryStrategy: () => null
+  });
+  subscriber.on('error', (error) => {
+    if (!hasLoggedSubscriberFailure) {
+      console.warn(`[eventBus] Redis subscriber unavailable: ${error.message}`);
+      hasLoggedSubscriberFailure = true;
+    }
   });
   subscriber.connect().catch(() => undefined);
   return subscriber;
