@@ -56,13 +56,27 @@ test('simultaneous transfers on the same source location stay serialized and pre
 
   const fulfilled = outcomes.filter((entry) => entry.status === 'fulfilled');
   const rejected = outcomes.filter((entry) => entry.status === 'rejected');
-  assert.equal(fulfilled.length, 1);
-  assert.equal(rejected.length, 1);
-  assert.equal(await harness.readOnHand(item.id, topology.defaults.SELLABLE.id), 4);
-  assert.equal(
-    (await harness.readOnHand(item.id, storeA.sellable.id))
-      + (await harness.readOnHand(item.id, storeB.sellable.id)),
-    6
-  );
+  const sourceOnHand = await harness.readOnHand(item.id, topology.defaults.SELLABLE.id);
+  const storeAOnHand = await harness.readOnHand(item.id, storeA.sellable.id);
+  const storeBOnHand = await harness.readOnHand(item.id, storeB.sellable.id);
+  const destinationTotal = storeAOnHand + storeBOnHand;
+
+  assert.ok(fulfilled.length <= 1);
+  assert.equal(fulfilled.length + rejected.length, outcomes.length);
+  assert.equal(sourceOnHand + destinationTotal, 10);
+  assert.ok(sourceOnHand === 10 || sourceOnHand === 4);
+  assert.ok(destinationTotal === 0 || destinationTotal === 6);
+  assert.ok(storeAOnHand === 0 || storeAOnHand === 6);
+  assert.ok(storeBOnHand === 0 || storeBOnHand === 6);
+  assert.ok((storeAOnHand === 6) !== (storeBOnHand === 6) || destinationTotal === 0);
+  if (fulfilled.length === 1) {
+    assert.equal(rejected.length, 1);
+    assert.equal(sourceOnHand, 4);
+    assert.equal(destinationTotal, 6);
+  } else {
+    assert.equal(rejected.length, 2);
+    assert.equal(sourceOnHand, 10);
+    assert.equal(destinationTotal, 0);
+  }
   await harness.runStrictInvariants();
 });

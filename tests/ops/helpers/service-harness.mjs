@@ -77,19 +77,42 @@ async function ensureTenant(pool, { tenantSlug, tenantName }) {
   return tenantId;
 }
 
-async function ensureTopology(pool, tenantId) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
-    await seedWarehouseTopologyForTenant(client, tenantId, { fix: true });
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
+function isSerializableSetupRetryable(error) {
+  return error?.code === '40001' || error?.code === '40P01';
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withSerializableSetupRetry(action, retryDelaysMs = [10, 25, 50]) {
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    try {
+      return await action();
+    } catch (error) {
+      if (!isSerializableSetupRetryable(error) || attempt === retryDelaysMs.length) {
+        throw error;
+      }
+      await sleep(retryDelaysMs[attempt]);
+    }
   }
+}
+
+async function ensureTopology(pool, tenantId) {
+  await withSerializableSetupRetry(async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+      await seedWarehouseTopologyForTenant(client, tenantId, { fix: true });
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
 }
 
 async function loadWarehouseTopology(pool, tenantId, warehouseId = null) {

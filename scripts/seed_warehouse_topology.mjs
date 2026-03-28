@@ -32,6 +32,27 @@ function summarizeIssues(issues) {
   return issues.slice(0, 10).map((issue) => JSON.stringify(issue)).join('; ');
 }
 
+function isSerializableSetupRetryable(error) {
+  return error?.code === '40001' || error?.code === '40P01';
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withSerializableSetupRetry(action, retryDelaysMs = [10, 25, 50]) {
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    try {
+      return await action();
+    } catch (error) {
+      if (!isSerializableSetupRetryable(error) || attempt === retryDelaysMs.length) {
+        throw error;
+      }
+      await sleep(retryDelaysMs[attempt]);
+    }
+  }
+}
+
 export async function seedWarehouseTopologyForTenant(client, tenantId, options = {}) {
   // Topology fix/check performs broad location/default reads and writes that can conflict under
   // SERIALIZABLE when many test tenants initialize in parallel. Serialize this routine per tx.
@@ -85,15 +106,25 @@ export async function runSeedWarehouseTopology({ tenantId, topologyDir, fixMode 
     connectionTimeoutMillis: 5000
   });
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-    await client.query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
-    const summary = await seedWarehouseTopologyForTenant(client, resolvedTenantId, {
-      topologyDir,
-      fix: shouldFix
+    const summary = await withSerializableSetupRetry(async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+        const result = await seedWarehouseTopologyForTenant(client, resolvedTenantId, {
+          topologyDir,
+          fix: shouldFix
+        });
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
     });
-    await client.query('COMMIT');
     console.log(
       JSON.stringify({
         ok: true,
@@ -102,11 +133,7 @@ export async function runSeedWarehouseTopology({ tenantId, topologyDir, fixMode 
       })
     );
     return summary;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
   } finally {
-    client.release();
     await pool.end();
   }
 }

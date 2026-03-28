@@ -530,7 +530,7 @@ async function evaluateTopologyState(client, tenantId, topology) {
 
 async function createWarehouseRoot(client, tenantId, warehouse, now) {
   const id = deterministicId('warehouse', tenantId, warehouse.code);
-  await client.query(
+  const res = await client.query(
     `INSERT INTO locations (
         id,
         tenant_id,
@@ -545,15 +545,31 @@ async function createWarehouseRoot(client, tenantId, warehouse, now) {
         warehouse_id,
         created_at,
         updated_at
-     ) VALUES ($1, $2, $3, NULL, $4, 'warehouse', NULL, false, $5, NULL, $1, $6, $6)`,
+     ) VALUES ($1, $2, $3, NULL, $4, 'warehouse', NULL, false, $5, NULL, $1, $6, $6)
+     ON CONFLICT (tenant_id, code) DO NOTHING
+     RETURNING id`,
     [id, tenantId, warehouse.code, warehouse.name, warehouse.active, now]
   );
-  return id;
+  if ((res.rowCount ?? 0) > 0) {
+    return res.rows[0].id;
+  }
+  const existing = await client.query(
+    `SELECT id
+       FROM locations
+      WHERE tenant_id = $1
+        AND code = $2
+      LIMIT 1`,
+    [tenantId, warehouse.code]
+  );
+  if ((existing.rowCount ?? 0) > 0) {
+    return existing.rows[0].id;
+  }
+  throw new Error(`TOPOLOGY_WAREHOUSE_CREATE_CONFLICT warehouse=${warehouse.code}`);
 }
 
 async function createWarehouseLocation(client, tenantId, location, warehouseId, now) {
   const id = deterministicId('location', tenantId, `${location.warehouseCode}:${location.localCode}`);
-  await client.query(
+  const res = await client.query(
     `INSERT INTO locations (
         id,
         tenant_id,
@@ -568,7 +584,9 @@ async function createWarehouseLocation(client, tenantId, location, warehouseId, 
         warehouse_id,
         created_at,
         updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11, $11)`,
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11, $11)
+     ON CONFLICT (tenant_id, code) DO NOTHING
+     RETURNING id`,
     [
       id,
       tenantId,
@@ -583,7 +601,21 @@ async function createWarehouseLocation(client, tenantId, location, warehouseId, 
       now
     ]
   );
-  return id;
+  if ((res.rowCount ?? 0) > 0) {
+    return res.rows[0].id;
+  }
+  const existing = await client.query(
+    `SELECT id
+       FROM locations
+      WHERE tenant_id = $1
+        AND code = $2
+      LIMIT 1`,
+    [tenantId, location.code]
+  );
+  if ((existing.rowCount ?? 0) > 0) {
+    return existing.rows[0].id;
+  }
+  throw new Error(`TOPOLOGY_LOCATION_CREATE_CONFLICT code=${location.code}`);
 }
 
 function assertWarehouseRepairable(row, expectedWarehouse) {
@@ -762,12 +794,16 @@ export async function fix(client, tenantId, options = {}) {
     const key = `${warehouseId}:${defaultEntry.role}`;
     const existing = defaultByWarehouseRole.get(key);
     if (!existing) {
-      await client.query(
+      const insertRes = await client.query(
         `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
-         VALUES ($1, $2, $3, $4)`,
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (tenant_id, warehouse_id, role) DO NOTHING
+         RETURNING location_id`,
         [tenantId, warehouseId, defaultEntry.role, expectedLocationId]
       );
-      summary.defaults_set_count += 1;
+      if ((insertRes.rowCount ?? 0) > 0) {
+        summary.defaults_set_count += 1;
+      }
       continue;
     }
 
