@@ -10,7 +10,7 @@ const tier = args[0];
 const flags = new Set(args.slice(1));
 
 if (!tier) {
-  console.error('Usage: node scripts/run-test-tier.mjs <truth|contracts|scenarios> [--list]');
+  console.error('Usage: node scripts/run-test-tier.mjs <truth|fixtures|contracts|scenarios> [--list]');
   process.exit(1);
 }
 

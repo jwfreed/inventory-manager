@@ -44,6 +44,7 @@
     "test:financial-core": "node --test --test-reporter=spec --test-concurrency=1 --import ./tests/setup.mjs tests/architecture/ledger-immutability-guard.test.mjs tests/architecture/ledger-immutability-trigger-metadata.test.mjs tests/architecture/ledger-immutability-role-guard.test.mjs tests/architecture/ledger-migration-lint.test.mjs tests/architecture/idempotency-endpoint-uniqueness-guard.test.mjs && node --test --test-reporter=spec --import ./tests/setup.mjs tests/ops/transactional-idempotency-receipts.test.mjs tests/ops/transactional-idempotency-redis-down.test.mjs tests/ops/transactional-idempotency-cross-endpoint.test.mjs tests/ops/idempotency-retention-safety.test.mjs tests/ops/strict-invariants-expanded.test.mjs tests/ops/process-exit-cleanly.test.mjs",
     "test:db": "node --test --test-reporter=spec --test-timeout=120000 --import ./tests/setup.mjs tests/db/*.test.mjs",
     "test:truth": "node ./scripts/run-test-tier.mjs truth",
+    "test:fixtures": "node ./scripts/run-test-tier.mjs fixtures",
     "test:contracts": "node ./scripts/run-test-tier.mjs contracts",
     "test:scenarios": "node ./scripts/run-test-tier.mjs scenarios",
     "test:full": "npm run test:truth && npm run test:contracts && npm run test:scenarios",
