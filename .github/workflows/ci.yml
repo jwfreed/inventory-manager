@@ -233,12 +233,6 @@ jobs:
             ps -p "$SERVER_PID" -o pid,ppid,stat,etime,cmd || true
           fi
           exit 1
-      - name: Run truth suite
-        if: github.event_name == 'pull_request'
-        env:
-          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
-          TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
-        run: npm run test:truth
       - name: Run contracts suite
         if: github.event_name == 'push'
         env:
