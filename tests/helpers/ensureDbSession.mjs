@@ -31,12 +31,33 @@ export async function ensureDbSession({
   tenantName
 } = {}) {
   const request = apiRequest ?? defaultApiRequest;
-  await ensureTestServer();
-
   const resolvedAdminEmail = adminEmail ?? process.env.SEED_ADMIN_EMAIL ?? 'jon.freed@gmail.com';
   const resolvedAdminPassword = adminPassword ?? process.env.SEED_ADMIN_PASSWORD ?? 'admin@local';
   const resolvedTenantSlug = tenantSlug ?? process.env.SEED_TENANT_SLUG ?? 'default';
   const resolvedTenantName = tenantName ?? resolvedTenantSlug;
+  const pool = getDbPool();
+
+  const tenantRes = await pool.query('SELECT id FROM tenants WHERE slug = $1', [resolvedTenantSlug]);
+  const tenantId = tenantRes.rows[0]?.id ?? (
+    await pool.query(
+      `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
+       VALUES ($1, $2, $3, NULL, now())
+       RETURNING id`,
+      [randomUUID(), resolvedTenantName, resolvedTenantSlug]
+    )
+  ).rows[0].id;
+
+  const previousTestTenant = process.env.TEST_TENANT_ID;
+  process.env.TEST_TENANT_ID = tenantId;
+  try {
+    await ensureTestServer();
+  } finally {
+    if (previousTestTenant === undefined) {
+      delete process.env.TEST_TENANT_ID;
+    } else {
+      process.env.TEST_TENANT_ID = previousTestTenant;
+    }
+  }
 
   await request('POST', '/auth/bootstrap', {
     body: {
@@ -47,26 +68,11 @@ export async function ensureDbSession({
     }
   });
 
-  const pool = getDbPool();
   const userRes = await pool.query('SELECT id FROM users WHERE email = $1', [resolvedAdminEmail]);
   if ((userRes.rowCount ?? 0) === 0) {
     throw new Error(`DB_SESSION_FAILED admin user missing for ${resolvedAdminEmail}`);
   }
   const userId = userRes.rows[0].id;
-
-  let tenantId;
-  const tenantRes = await pool.query('SELECT id FROM tenants WHERE slug = $1', [resolvedTenantSlug]);
-  if ((tenantRes.rowCount ?? 0) === 0) {
-    const insertTenant = await pool.query(
-      `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
-       VALUES ($1, $2, $3, NULL, now())
-       RETURNING id`,
-      [randomUUID(), resolvedTenantName, resolvedTenantSlug]
-    );
-    tenantId = insertTenant.rows[0].id;
-  } else {
-    tenantId = tenantRes.rows[0].id;
-  }
 
   await pool.query(
     `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
