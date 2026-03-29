@@ -1,16 +1,11 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
-import type {
-  WarehouseDefaultRepairEndPayload,
-  WarehouseDefaultRepairStartPayload
-} from '../../observability/warehouseDefaults.events';
 import { query } from '../../db';
 import {
   DEFAULT_ROLES,
   detectWarehouseDefaultInvalidReason,
   REQUIRED_DEFAULT_ROLES,
   type LocationRole,
-  type QueryExecutor,
   type WarehouseDefaultRepairOptions
 } from './warehouseDefaultsDetection';
 import {
@@ -20,54 +15,30 @@ import {
   warehouseDefaultInvalidError
 } from './warehouseDefaultsDiagnostics';
 
-type DefaultLocationRepairCallbacks = {
-  onRepairing?: (payload: WarehouseDefaultRepairStartPayload) => void;
-  onRepaired?: (payload: WarehouseDefaultRepairEndPayload) => void;
-  onConfigIssueSkippedMissingTenant?: (payload: {
+type DefaultLocationRepairStartPayload = Parameters<typeof warehouseDefaultInvalidError>[0];
+type DefaultLocationRepairEndPayload = DefaultLocationRepairStartPayload & {
+  repaired: {
+    tenantId: string;
+    warehouseId: string;
+    role: LocationRole;
+    locationId: string;
+    defaultLocationId: string;
+    mappingId: string | null;
+  };
+};
+
+export type DefaultLocationRepairCallbacks = {
+  onRepairing?: (payload: DefaultLocationRepairStartPayload) => void;
+  onRepaired?: (payload: DefaultLocationRepairEndPayload) => void;
+  onAutoCreatedDefaultLocation?: (payload: {
     tenantId: string;
     warehouseId: string;
     role: LocationRole;
     locationId: string;
     localCode: string;
-  }) => void;
+    now: Date;
+  }) => Promise<void> | void;
 };
-
-async function insertWarehouseDefaultConfigIssue(params: {
-  executor: QueryExecutor;
-  tenantId: string;
-  warehouseId: string;
-  role: LocationRole;
-  locationId: string;
-  localCode: string;
-  now: Date;
-  callbacks?: DefaultLocationRepairCallbacks;
-}) {
-  const { executor, tenantId, warehouseId, role, locationId, localCode, now, callbacks } = params;
-  const configIssueRes = await executor(
-    `INSERT INTO config_issues (id, tenant_id, issue_type, entity_type, entity_id, details, created_at)
-     SELECT $1, $2, $3, $4, $5, $6::jsonb, $7
-       FROM tenants t
-      WHERE t.id = $2`,
-    [
-      uuidv4(),
-      tenantId,
-      'WAREHOUSE_DEFAULT_AUTO_CREATED',
-      'location',
-      locationId,
-      JSON.stringify({ role, warehouseId, localCode }),
-      now
-    ]
-  );
-  if (configIssueRes.rowCount === 0) {
-    callbacks?.onConfigIssueSkippedMissingTenant?.({
-      tenantId,
-      warehouseId,
-      role,
-      locationId,
-      localCode
-    });
-  }
-}
 
 export async function ensureDefaultsForWarehouse(
   tenantId: string,
@@ -288,15 +259,13 @@ export async function ensureDefaultsForWarehouse(
         );
         if ((insertRes.rowCount ?? 0) > 0 && insertRes.rows[0]?.id) {
           locationId = insertRes.rows[0].id;
-          await insertWarehouseDefaultConfigIssue({
-            executor,
+          await callbacks?.onAutoCreatedDefaultLocation?.({
             tenantId,
             warehouseId,
             role,
             locationId,
             localCode,
-            now,
-            callbacks
+            now
           });
           break;
         }
