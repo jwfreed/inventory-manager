@@ -1,6 +1,6 @@
 import { query } from '../../db';
 import type { OrphanWarehouseRootIssue } from './warehouseDefaultsDetection';
-import { shouldCreateRecoveredWarehouseRoot } from './warehouseTopologyPolicy';
+import { warehouseDefaultsPolicy } from './warehouseDefaultsPolicy';
 
 export type WarehouseTopologyRepairResult = {
   createdWarehouseRootsCount: number;
@@ -19,7 +19,7 @@ export async function repairOrphanWarehouseRoots(
   const createdWarehouseRootIds: string[] = [];
   const rootsToCreate = new Map<string, { tenantId: string; warehouseId: string }>();
   for (const issue of issues) {
-    if (!shouldCreateRecoveredWarehouseRoot(issue)) continue;
+    if (!warehouseDefaultsPolicy.topology.shouldCreateRecoveredWarehouseRoot(issue)) continue;
     rootsToCreate.set(`${issue.tenant_id}:${issue.warehouse_id}`, {
       tenantId: issue.tenant_id,
       warehouseId: issue.warehouse_id

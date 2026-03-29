@@ -5,12 +5,10 @@ import type {
   OrphanWarehouseRootIssue
 } from './warehouseDefaultsDetection';
 import {
-  buildExpectedWarehouseDefaultState,
+  warehouseDefaultsPolicy,
   type LocationRole,
-  type WarehouseDefaultInvalidReason,
-  warehouseDefaultRoleRequiresSellableFlag
+  type WarehouseDefaultInvalidReason
 } from './warehouseDefaultsPolicy';
-import { getUnresolvedOrphanWarehouseRootsReason } from './warehouseTopologyPolicy';
 
 export function summarizeOrphanWarehouseRootIssues(issues: OrphanWarehouseRootIssue[], tenantId?: string) {
   const sampleWarehouseIds = Array.from(new Set(issues.map((row) => row.warehouse_id).filter((row): row is string => Boolean(row)))).slice(0, 5);
@@ -24,7 +22,7 @@ export function summarizeOrphanWarehouseRootIssues(issues: OrphanWarehouseRootIs
 }
 
 export function buildWarehouseDefaultExpected(role: LocationRole, warehouseId: string): WarehouseDefaultValidationSnapshot {
-  return buildExpectedWarehouseDefaultState(role, warehouseId);
+  return warehouseDefaultsPolicy.defaults.buildExpectedState(role, warehouseId);
 }
 
 export function buildWarehouseDefaultActual(
@@ -42,7 +40,7 @@ export function buildWarehouseDefaultActual(
     warehouse_id: existingDefault?.warehouse_id ?? null,
     parent_location_id: existingDefault?.parent_location_id ?? null,
     type: existingDefault?.type ?? null,
-    is_sellable: warehouseDefaultRoleRequiresSellableFlag(role) ? (existingDefault?.is_sellable ?? null) : null
+    is_sellable: warehouseDefaultsPolicy.defaults.requiresSellableFlag(role) ? (existingDefault?.is_sellable ?? null) : null
   };
 }
 
@@ -96,7 +94,7 @@ export function warehouseOrphanRootsUnresolvedError(details: {
   error.code = 'WAREHOUSE_DEFAULT_ORPHAN_ROOTS_UNRESOLVED';
   error.details = {
     ...details,
-    reason: getUnresolvedOrphanWarehouseRootsReason(details.conflicts.length)
+    reason: warehouseDefaultsPolicy.topology.getUnresolvedOrphanWarehouseRootsReason(details.conflicts.length)
   };
   return error;
 }

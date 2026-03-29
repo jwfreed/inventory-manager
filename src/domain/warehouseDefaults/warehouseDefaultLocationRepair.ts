@@ -16,14 +16,9 @@ import {
 } from './warehouseDefaultsDiagnostics';
 import {
   DEFAULT_ROLES,
-  detectWarehouseDefaultInvalidReason,
-  getWarehouseDefaultLocationType,
-  isRequiredWarehouseDefaultRole,
-  shouldRepairInvalidWarehouseDefault,
-  warehouseDefaultRoleRequiresSellableFlag,
+  warehouseDefaultsPolicy,
   type LocationRole
 } from './warehouseDefaultsPolicy';
-import { formatWarehouseRootInvalidMessage, isWarehouseRootLocationValid } from './warehouseTopologyPolicy';
 
 export type DefaultLocationRepairCallbacks = {
   onRepairing?: (payload: WarehouseDefaultRepairStartPayload) => void;
@@ -84,8 +79,8 @@ export async function ensureDefaultsForWarehouse(
     }, { repairEnabled: repairInvalidDefaults });
   }
   const warehouse = warehouseRes.rows[0];
-  if (!isWarehouseRootLocationValid(warehouse)) {
-    throw new Error(formatWarehouseRootInvalidMessage(warehouse));
+  if (!warehouseDefaultsPolicy.topology.isWarehouseRootValid(warehouse)) {
+    throw new Error(warehouseDefaultsPolicy.topology.formatWarehouseRootInvalidMessage(warehouse));
   }
   const defaultsRes = await executor<{ role: LocationRole; location_id: string; mapping_id: string | null }>(
     `SELECT role,
@@ -155,7 +150,7 @@ export async function ensureDefaultsForWarehouse(
       });
     }
     const existingDefault = existingDefaultId ? defaultLocationById.get(existingDefaultId) : null;
-    const invalidReason = detectWarehouseDefaultInvalidReason({
+    const invalidReason = warehouseDefaultsPolicy.defaults.detectInvalidReason({
       tenantId,
       warehouseId,
       role,
@@ -173,10 +168,10 @@ export async function ensureDefaultsForWarehouse(
           actual: buildWarehouseDefaultActual(role, existingDefault)
         }
       : null;
-    const shouldRepairInvalidDefault = shouldRepairInvalidWarehouseDefault(invalidReason);
+    const repairDecision = warehouseDefaultsPolicy.repair.getRepairDecision(invalidReason);
 
     if (defaults.has(role)) {
-      if (invalidReason) {
+      if (repairDecision.requiresMappingDeletion) {
         const invalidError = warehouseDefaultInvalidError(invalidDetails!, { repairEnabled: repairInvalidDefaults });
         if (!repairInvalidDefaults) {
           throw invalidError;
@@ -193,8 +188,8 @@ export async function ensureDefaultsForWarehouse(
         );
         defaults.delete(role);
       }
-      if (!invalidReason) continue;
-    } else if (shouldRepairInvalidDefault) {
+      if (!repairDecision.requiresMappingDeletion) continue;
+    } else if (repairDecision.shouldRepair) {
       if (!repairInvalidDefaults) {
         throw warehouseDefaultInvalidError(invalidDetails!, { repairEnabled: repairInvalidDefaults });
       }
@@ -203,7 +198,7 @@ export async function ensureDefaultsForWarehouse(
       }
     }
 
-    const expectedType = getWarehouseDefaultLocationType(role);
+    const expectedType = warehouseDefaultsPolicy.defaults.getExpectedLocationType(role);
     const candidateRes = await executor<{ id: string }>(
       `SELECT id
          FROM locations
@@ -212,7 +207,7 @@ export async function ensureDefaultsForWarehouse(
           AND parent_location_id = $2
           AND role = $3
           AND type = $4
-          ${warehouseDefaultRoleRequiresSellableFlag(role) ? 'AND is_sellable = true' : ''}
+          ${warehouseDefaultsPolicy.defaults.requiresSellableFlag(role) ? 'AND is_sellable = true' : ''}
         ORDER BY created_at ASC, id ASC
         LIMIT 1`,
       [tenantId, warehouseId, role, expectedType]
@@ -220,7 +215,7 @@ export async function ensureDefaultsForWarehouse(
     let locationId = candidateRes.rows[0]?.id ?? null;
     if (!locationId) {
       if (!repairInvalidDefaults) {
-        if (isRequiredWarehouseDefaultRole(role)) {
+        if (warehouseDefaultsPolicy.roles.isRequiredRole(role)) {
           throw warehouseDefaultInvalidError(invalidDetails!, { repairEnabled: repairInvalidDefaults });
         }
         continue;
@@ -228,7 +223,7 @@ export async function ensureDefaultsForWarehouse(
       const id = uuidv4();
       const code = `${role}-${warehouseId}`;
       const name = `${role} Default`;
-      const isSellable = warehouseDefaultRoleRequiresSellableFlag(role);
+      const isSellable = warehouseDefaultsPolicy.defaults.requiresSellableFlag(role);
       const now = new Date();
       const localCodeCandidates = [role, `${role}_${warehouseId.slice(0, 8)}`];
 
@@ -285,7 +280,7 @@ export async function ensureDefaultsForWarehouse(
        DO NOTHING`,
       [tenantId, warehouseId, role, locationId]
     );
-    if (repairInvalidDefaults && shouldRepairInvalidDefault && invalidDetails) {
+    if (repairInvalidDefaults && repairDecision.shouldRepair && invalidDetails) {
       const ensuredMappingRes = await executor<{ location_id: string; mapping_id: string | null }>(
         `SELECT location_id,
                 to_jsonb(warehouse_default_location)->>'id' AS mapping_id
