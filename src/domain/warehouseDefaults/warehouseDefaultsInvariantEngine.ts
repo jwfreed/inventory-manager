@@ -1,14 +1,14 @@
 import { WAREHOUSE_DEFAULTS_REPAIR_HINT } from '../../config/warehouseDefaultsStartup';
 import type { WarehouseDefaultValidationSnapshot } from '../../observability/warehouseDefaults.events';
 import { buildWarehouseDefaultActual, buildWarehouseDefaultExpected, warehouseDefaultInvalidError } from './warehouseDefaultsDiagnostics';
-import { warehouseDefaultsInvariants } from './warehouseDefaultsInvariants';
-import { warehouseDefaultsPolicy } from './warehouseDefaultsPolicy';
+import { warehouseDefaultsInvariants, type WarehouseDefaultsInvariantOutcome } from './warehouseDefaultsInvariants';
 import type {
   LocationRole,
   WarehouseDefaultInvalidReason,
   WarehouseDefaultLocationState,
   WarehouseRootLocationState
 } from './warehouseDefaultsPolicy.contract';
+import { warehouseDefaultsPolicyContract } from './warehouseDefaultsPolicy.contract';
 
 export type WarehouseDefaultsRoleContext = {
   defaultLocationId: string | null;
@@ -56,6 +56,7 @@ export type WarehouseDefaultsInvariantFailure = {
 
 export type WarehouseDefaultsRoleEvaluation = WarehouseDefaultsRoleContext & {
   role: LocationRole;
+  failures: WarehouseDefaultsRoleInvariantFailure[];
   invalidReason: WarehouseDefaultInvalidReason | null;
   invariant:
     | 'default_location_state_valid'
@@ -80,29 +81,69 @@ function normalizeScope(scope: WarehouseDefaultsInvariantEngineScope = {}): Requ
   };
 }
 
-function mapInvalidReasonToInvariant(
-  reason: WarehouseDefaultInvalidReason
-): Exclude<WarehouseDefaultsRoleEvaluation['invariant'], null> {
-  if (reason === 'type_mismatch') return 'default_location_type_valid';
-  if (reason === 'sellable_flag') return 'default_location_sellable_flag_valid';
-  return 'default_location_state_valid';
+type WarehouseDefaultsRoleInvariantFailure = {
+  invariant: Exclude<WarehouseDefaultsRoleEvaluation['invariant'], null>;
+  reason: WarehouseDefaultInvalidReason;
+};
+
+const INVALID_REASON_PRIORITY: WarehouseDefaultInvalidReason[] = [
+  'missing_location',
+  'tenant_mismatch',
+  'role_mismatch',
+  'sellable_flag',
+  'warehouse_drift',
+  'parent_drift',
+  'type_mismatch'
+];
+
+function buildNeutralRepairBehavior(): WarehouseDefaultsInvariantFailure['repairBehavior'] {
+  return {
+    requiresMappingDeletion: false,
+    shouldRepair: false,
+    shouldProvisionLocation: false,
+    blocksValidation: false
+  };
 }
 
-function buildRepairBehavior(role: LocationRole, reason: WarehouseDefaultInvalidReason | null) {
-  const contractDecision = warehouseDefaultsPolicy.repair.getRepairDecision(reason);
-  if (reason === 'missing_location') {
+function deriveInvalidReasonFromFailures(
+  failures: WarehouseDefaultsRoleInvariantFailure[]
+): WarehouseDefaultInvalidReason | null {
+  for (const reason of INVALID_REASON_PRIORITY) {
+    if (failures.some((failure) => failure.reason === reason)) {
+      return reason;
+    }
+  }
+  return null;
+}
+
+function getPrimaryFailure(
+  failures: WarehouseDefaultsRoleInvariantFailure[]
+): WarehouseDefaultsRoleInvariantFailure | null {
+  const reason = deriveInvalidReasonFromFailures(failures);
+  if (!reason) return null;
+  return failures.find((failure) => failure.reason === reason) ?? null;
+}
+
+function buildRepairBehaviorFromFailure(
+  role: LocationRole,
+  failure: WarehouseDefaultsRoleInvariantFailure | null
+): WarehouseDefaultsInvariantFailure['repairBehavior'] {
+  if (!failure) {
+    return buildNeutralRepairBehavior();
+  }
+  if (failure.invariant === 'default_location_state_valid' && failure.reason === 'missing_location') {
     return {
       requiresMappingDeletion: false,
       shouldRepair: false,
       shouldProvisionLocation: true,
-      blocksValidation: warehouseDefaultsPolicy.roles.isRequiredRole(role)
+      blocksValidation: warehouseDefaultsPolicyContract.roles.isRequiredRole(role)
     };
   }
   return {
-    requiresMappingDeletion: contractDecision.requiresMappingDeletion,
-    shouldRepair: contractDecision.shouldRepair,
-    shouldProvisionLocation: contractDecision.requiresMappingDeletion,
-    blocksValidation: Boolean(reason)
+    requiresMappingDeletion: true,
+    shouldRepair: true,
+    shouldProvisionLocation: true,
+    blocksValidation: true
   };
 }
 
@@ -110,18 +151,18 @@ function buildRoleFailure(params: {
   tenantId: string;
   warehouseId: string;
   role: LocationRole;
-  invalidReason: WarehouseDefaultInvalidReason;
+  failure: WarehouseDefaultsRoleInvariantFailure;
   defaultLocationId: string | null;
   mappingId: string | null;
   existingDefault: WarehouseDefaultLocationState | null | undefined;
 }): WarehouseDefaultsInvariantFailure {
-  const { tenantId, warehouseId, role, invalidReason, defaultLocationId, mappingId, existingDefault } = params;
+  const { tenantId, warehouseId, role, failure, defaultLocationId, mappingId, existingDefault } = params;
   return {
-    invariant: mapInvalidReasonToInvariant(invalidReason),
+    invariant: failure.invariant,
     errorCode: 'WAREHOUSE_DEFAULT_INVALID',
-    repairBehavior: buildRepairBehavior(role, invalidReason),
+    repairBehavior: buildRepairBehaviorFromFailure(role, failure),
     role,
-    reason: invalidReason,
+    reason: failure.reason,
     defaultLocationId,
     mappingId,
     expected: buildWarehouseDefaultExpected(role, warehouseId),
@@ -136,20 +177,42 @@ function buildRoleEvaluation(
   context?: WarehouseDefaultsRoleContext
 ): WarehouseDefaultsRoleEvaluation {
   const existingDefault = context?.existingDefault ?? null;
-  const invalidReason = warehouseDefaultsPolicy.defaults.detectInvalidReason({
+  const stateOutcome = warehouseDefaultsInvariants.default_location_state_valid.evaluate({
     tenantId,
     warehouseId,
     role,
     existingDefault
   });
+  const typeOutcome = warehouseDefaultsInvariants.default_location_type_valid.evaluate({
+    role,
+    existingDefault
+  });
+  const sellableOutcome = warehouseDefaultsInvariants.default_location_sellable_flag_valid.evaluate({
+    role,
+    existingDefault
+  });
+  const failures: WarehouseDefaultsRoleInvariantFailure[] = [];
+  const pushOutcome = <TReason extends WarehouseDefaultInvalidReason>(
+    invariant: Exclude<WarehouseDefaultsRoleEvaluation['invariant'], null>,
+    outcome: WarehouseDefaultsInvariantOutcome<TReason>
+  ) => {
+    if (!outcome.valid && outcome.reason) {
+      failures.push({ invariant, reason: outcome.reason });
+    }
+  };
+  pushOutcome('default_location_state_valid', stateOutcome);
+  pushOutcome('default_location_type_valid', typeOutcome);
+  pushOutcome('default_location_sellable_flag_valid', sellableOutcome);
+  const primaryFailure = getPrimaryFailure(failures);
   return {
     role,
     defaultLocationId: context?.defaultLocationId ?? null,
     mappingId: context?.mappingId ?? null,
     existingDefault,
-    invalidReason,
-    invariant: invalidReason ? mapInvalidReasonToInvariant(invalidReason) : null,
-    repairBehavior: buildRepairBehavior(role, invalidReason)
+    failures,
+    invalidReason: primaryFailure?.reason ?? null,
+    invariant: primaryFailure?.invariant ?? null,
+    repairBehavior: buildRepairBehaviorFromFailure(role, primaryFailure)
   };
 }
 
@@ -170,7 +233,7 @@ export const warehouseDefaultsInvariantEngine = {
     const resolvedScope = normalizeScope(scope);
     const failures: WarehouseDefaultsInvariantFailure[] = [];
     const roleEvaluations = Object.fromEntries(
-      warehouseDefaultsPolicy.roles.all.map((role) => [
+      warehouseDefaultsPolicyContract.roles.all.map((role) => [
         role,
         buildRoleEvaluation(context.tenantId, context.warehouseId, role, context.defaultsByRole?.[role])
       ])
@@ -182,13 +245,8 @@ export const warehouseDefaultsInvariantEngine = {
         failures.push({
           invariant: 'warehouse_has_valid_root',
           errorCode: 'WAREHOUSE_ROOT_INVALID',
-          repairBehavior: {
-            requiresMappingDeletion: false,
-            shouldRepair: false,
-            shouldProvisionLocation: false,
-            blocksValidation: true
-          },
-          invalidMessage: warehouseDefaultsPolicy.topology.formatWarehouseRootInvalidMessage(context.warehouseRoot)
+          repairBehavior: { ...buildNeutralRepairBehavior(), blocksValidation: true },
+          invalidMessage: warehouseDefaultsPolicyContract.topology.formatWarehouseRootInvalidMessage(context.warehouseRoot)
         });
       }
     }
@@ -215,22 +273,31 @@ export const warehouseDefaultsInvariantEngine = {
     }
 
     if (resolvedScope.includeRoleStates) {
-      for (const role of warehouseDefaultsPolicy.roles.all) {
+      for (const role of warehouseDefaultsPolicyContract.roles.all) {
         const evaluation = roleEvaluations[role];
-        if (!evaluation.invalidReason) continue;
-        failures.push(
-          buildRoleFailure({
-            tenantId: context.tenantId,
-            warehouseId: context.warehouseId,
-            role,
-            invalidReason: evaluation.invalidReason,
-            defaultLocationId: evaluation.defaultLocationId,
-            mappingId: evaluation.mappingId,
-            existingDefault: evaluation.existingDefault
-          })
-        );
+        for (const failure of evaluation.failures) {
+          failures.push(
+            buildRoleFailure({
+              tenantId: context.tenantId,
+              warehouseId: context.warehouseId,
+              role,
+              failure,
+              defaultLocationId: evaluation.defaultLocationId,
+              mappingId: evaluation.mappingId,
+              existingDefault: evaluation.existingDefault
+            })
+          );
+        }
       }
     }
+
+    failures.sort((left, right) => {
+      const invariantCompare = left.invariant.localeCompare(right.invariant);
+      if (invariantCompare !== 0) return invariantCompare;
+      const roleCompare = (left.role ?? '').localeCompare(right.role ?? '');
+      if (roleCompare !== 0) return roleCompare;
+      return (left.reason ?? '').localeCompare(right.reason ?? '');
+    });
 
     return {
       valid: failures.length === 0,

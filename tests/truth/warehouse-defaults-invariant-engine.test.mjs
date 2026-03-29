@@ -53,13 +53,13 @@ test('warehouse defaults invariant engine reports deterministic failures and rep
 
   assert.equal(result.valid, false);
   assert.deepEqual(
-    result.failures.map((failure) => [failure.invariant, failure.reason ?? null]),
+    result.failures.map((failure) => [failure.invariant, failure.role ?? null, failure.reason ?? null]),
     [
-      ['default_roles_present', 'missing_required_roles'],
-      ['default_location_sellable_flag_valid', 'sellable_flag'],
-      ['default_location_state_valid', 'missing_location'],
-      ['default_location_state_valid', 'missing_location'],
-      ['default_location_state_valid', 'missing_location']
+      ['default_location_sellable_flag_valid', 'SELLABLE', 'sellable_flag'],
+      ['default_location_state_valid', 'HOLD', 'missing_location'],
+      ['default_location_state_valid', 'REJECT', 'missing_location'],
+      ['default_location_state_valid', 'SCRAP', 'missing_location'],
+      ['default_roles_present', null, 'missing_required_roles']
     ]
   );
   assert.deepEqual(result.missingRoles, ['HOLD', 'REJECT']);
@@ -76,4 +76,7 @@ test('warehouse defaults invariant engine reports deterministic failures and rep
     blocksValidation: true
   });
   assert.equal(result.roleEvaluations.SCRAP.repairBehavior.blocksValidation, false);
+  assert.deepEqual(result.roleEvaluations.SELLABLE.failures, [
+    { invariant: 'default_location_sellable_flag_valid', reason: 'sellable_flag' }
+  ]);
 });

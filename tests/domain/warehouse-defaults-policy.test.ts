@@ -147,7 +147,7 @@ test('topology validity rules remain explicit and stable', () => {
   );
 });
 
-test('invariant registry evaluates the policy rules directly', () => {
+test('invariant registry evaluates explicit warehouse-default rules', () => {
   assert.deepEqual(
     warehouseDefaultsInvariantRegistry.map((invariant) => invariant.name),
     [
@@ -174,28 +174,28 @@ test('invariant registry evaluates the policy rules directly', () => {
     }),
     { valid: false, missingRoles: ['HOLD', 'REJECT'] }
   );
-  assert.equal(
+  assert.deepEqual(
     warehouseDefaultsInvariants.default_location_state_valid.evaluate({
       tenantId: 'tenant-1',
       warehouseId: 'warehouse-1',
       role: 'SELLABLE',
       existingDefault: buildDefault()
     }),
-    true
+    { valid: true, reason: null }
   );
-  assert.equal(
+  assert.deepEqual(
     warehouseDefaultsInvariants.default_location_type_valid.evaluate({
       role: 'SCRAP',
-      type: 'bin'
+      existingDefault: buildDefault({ role: 'SCRAP', type: 'bin', is_sellable: false })
     }),
-    false
+    { valid: false, reason: 'type_mismatch' }
   );
-  assert.equal(
+  assert.deepEqual(
     warehouseDefaultsInvariants.default_location_sellable_flag_valid.evaluate({
       role: 'SELLABLE',
       existingDefault: buildDefault({ is_sellable: false })
     }),
-    false
+    { valid: false, reason: 'sellable_flag' }
   );
   assert.equal(
     warehouseDefaultsInvariants.recovered_warehouse_root_eligible.evaluate({
@@ -210,5 +210,26 @@ test('invariant registry evaluates the policy rules directly', () => {
       conflictCount: 1
     }),
     'local_code_conflict'
+  );
+});
+
+test('role invariants stay independent when multiple rule failures are present', () => {
+  const existingDefault = buildDefault({ tenant_id: 'tenant-2', is_sellable: false });
+
+  assert.deepEqual(
+    warehouseDefaultsInvariants.default_location_state_valid.evaluate({
+      tenantId: 'tenant-1',
+      warehouseId: 'warehouse-1',
+      role: 'SELLABLE',
+      existingDefault
+    }),
+    { valid: false, reason: 'tenant_mismatch' }
+  );
+  assert.deepEqual(
+    warehouseDefaultsInvariants.default_location_sellable_flag_valid.evaluate({
+      role: 'SELLABLE',
+      existingDefault
+    }),
+    { valid: false, reason: 'sellable_flag' }
   );
 });

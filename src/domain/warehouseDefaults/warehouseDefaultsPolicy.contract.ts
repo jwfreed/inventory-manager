@@ -64,7 +64,7 @@ const WAREHOUSE_DEFAULTS_INVARIANT_DEFINITIONS = {
   },
   default_location_state_valid: {
     name: 'default_location_state_valid',
-    description: 'A mapped default location must satisfy the expected tenant, role, warehouse, parent, type, and sellable semantics for its role.'
+    description: 'A mapped default location must exist and satisfy the expected tenant, role, warehouse, and parent semantics for its role.'
   },
   default_location_type_valid: {
     name: 'default_location_type_valid',
