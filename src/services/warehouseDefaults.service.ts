@@ -46,6 +46,16 @@ type OrphanWarehouseRootIssue = {
   derived_parent_warehouse_id: string | null;
 };
 
+type OrphanWarehouseRelinkConflict = {
+  tenantId: string;
+  warehouseId: string;
+  locationId: string;
+  conflictingLocationId: string;
+  localCode: string;
+  currentWarehouseId: string | null;
+  reason: 'local_code_conflict';
+};
+
 type OrphanIssueDetector = (tenantId?: string) => Promise<OrphanWarehouseRootIssue[]>;
 type QueryExecutor = (
   text: string,
@@ -142,6 +152,26 @@ function warehouseDefaultInternalDerivedIdWithoutMappingError(details: {
   };
   error.code = 'WAREHOUSE_DEFAULT_INTERNAL_DERIVED_ID_WITHOUT_MAPPING';
   error.details = details;
+  return error;
+}
+
+function warehouseOrphanRootsUnresolvedError(details: {
+  tenantId: string | null;
+  remainingCount: number;
+  skippedRelinkLocalCodeConflictCount: number;
+  remainingSampleWarehouseIds: string[];
+  remainingSampleTenantIds: string[];
+  conflicts: OrphanWarehouseRelinkConflict[];
+}) {
+  const error = new Error('WAREHOUSE_DEFAULT_ORPHAN_ROOTS_UNRESOLVED') as Error & {
+    code?: string;
+    details?: Record<string, unknown>;
+  };
+  error.code = 'WAREHOUSE_DEFAULT_ORPHAN_ROOTS_UNRESOLVED';
+  error.details = {
+    ...details,
+    reason: details.conflicts.length > 0 ? 'local_code_conflict' : 'remaining_orphan_roots'
+  };
   return error;
 }
 
@@ -255,6 +285,56 @@ async function findOrphanWarehouseRootIssuesBestEffort(
     );
     return [];
   }
+}
+
+async function listOrphanWarehouseRelinkConflicts(tenantId?: string): Promise<OrphanWarehouseRelinkConflict[]> {
+  const conflictsRes = await query<{
+    tenant_id: string;
+    warehouse_id: string;
+    location_id: string;
+    conflicting_location_id: string;
+    local_code: string;
+    current_warehouse_id: string | null;
+  }>(
+    `WITH candidate AS (
+       SELECT l.id AS location_id,
+              l.tenant_id,
+              l.local_code,
+              l.warehouse_id AS current_warehouse_id,
+              resolve_warehouse_for_location(l.tenant_id, l.parent_location_id) AS expected_warehouse_id
+         FROM locations l
+        WHERE ($1::uuid IS NULL OR l.tenant_id = $1)
+          AND l.type <> 'warehouse'
+          AND l.parent_location_id IS NOT NULL
+     )
+     SELECT c.tenant_id,
+            c.expected_warehouse_id AS warehouse_id,
+            c.location_id,
+            dup.id AS conflicting_location_id,
+            c.local_code,
+            c.current_warehouse_id
+       FROM candidate c
+       JOIN locations dup
+         ON dup.tenant_id = c.tenant_id
+        AND dup.warehouse_id = c.expected_warehouse_id
+        AND dup.local_code = c.local_code
+        AND dup.id <> c.location_id
+      WHERE c.expected_warehouse_id IS NOT NULL
+        AND c.current_warehouse_id IS DISTINCT FROM c.expected_warehouse_id
+        AND c.local_code IS NOT NULL
+      ORDER BY c.location_id ASC, dup.id ASC
+      LIMIT 10`,
+    [tenantId ?? null]
+  );
+  return conflictsRes.rows.map((row) => ({
+    tenantId: row.tenant_id,
+    warehouseId: row.warehouse_id,
+    locationId: row.location_id,
+    conflictingLocationId: row.conflicting_location_id,
+    localCode: row.local_code,
+    currentWarehouseId: row.current_warehouse_id,
+    reason: 'local_code_conflict'
+  }));
 }
 
 async function ensureOrphanWarehouseRoots(tenantId?: string, options?: WarehouseDefaultRepairOptions): Promise<void> {
@@ -389,6 +469,17 @@ async function ensureOrphanWarehouseRoots(tenantId?: string, options?: Warehouse
 
   const remaining = await findOrphanWarehouseRootIssuesBestEffort(tenantId, options);
   const remainingSummary = summarizeOrphanWarehouseRootIssues(remaining, tenantId);
+  if (remainingSummary.orphanCount > 0) {
+    throw warehouseOrphanRootsUnresolvedError({
+      tenantId: tenantId ?? null,
+      remainingCount: remainingSummary.orphanCount,
+      skippedRelinkLocalCodeConflictCount: Number(relinkConflictRes.rows[0]?.count ?? 0),
+      remainingSampleWarehouseIds: remainingSummary.sampleWarehouseIds,
+      remainingSampleTenantIds: remainingSummary.sampleTenantIds,
+      conflicts: await listOrphanWarehouseRelinkConflicts(tenantId)
+    });
+  }
+
   emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRED, {
     ...summary,
     createdWarehouseRootsCount,

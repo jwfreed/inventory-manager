@@ -644,7 +644,7 @@ test('orphan warehouse root drift warning is tenant-scoped and repair mode relin
   }
 });
 
-test('orphan repair mode skips conflicting relink instead of failing startup', async () => {
+test('orphan repair mode fails fast on conflicting relink instead of looping non-convergently', async () => {
   const tenantId = await createTenant('orphan-conflict');
   const warehouseId = await createWarehouseRoot(tenantId, 'ORPHAN-CONFLICT');
   await ensureWarehouseDefaultsForWarehouse(tenantId, warehouseId, { repair: true });
@@ -669,19 +669,44 @@ test('orphan repair mode skips conflicting relink instead of failing startup', a
     await ensureWarehouseDefaults(tenantId, { repair: false });
 
     process.env.WAREHOUSE_DEFAULTS_REPAIR = 'true';
-    await ensureWarehouseDefaults(tenantId, { repair: true });
+    await assert.rejects(
+      ensureWarehouseDefaults(tenantId, { repair: true }),
+      (error) => {
+        assert.equal(error?.code, 'WAREHOUSE_DEFAULT_ORPHAN_ROOTS_UNRESOLVED');
+        assert.equal(error?.details?.tenantId, tenantId);
+        assert.equal(error?.details?.reason, 'local_code_conflict');
+        assert.equal(error?.details?.remainingCount, 1);
+        assert.ok(Number(error?.details?.skippedRelinkLocalCodeConflictCount ?? 0) >= 1);
+        assert.ok(Array.isArray(error?.details?.conflicts));
+        assert.ok(
+          error.details.conflicts.some(
+            (conflict) =>
+              conflict?.warehouseId === warehouseId
+              && conflict?.locationId === conflictingHoldLocationId
+              && conflict?.conflictingLocationId
+              && conflict?.localCode === 'HOLD'
+              && conflict?.reason === 'local_code_conflict'
+          )
+        );
+        return true;
+      }
+    );
 
     const afterRepairLocation = await fetchLocation(tenantId, conflictingHoldLocationId);
-    assert.equal(afterRepairLocation?.warehouse_id, qaLocationId, 'conflicting relink should be skipped safely');
+    assert.equal(afterRepairLocation?.warehouse_id, qaLocationId, 'conflicting relink should remain untouched on failure');
     assert.ok(
       repairLogs.some(
         (args) =>
-          String(args?.[0] ?? '') === WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRED
+          String(args?.[0] ?? '') === WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRING
           && String(args?.[1]?.tenantId ?? '') === tenantId
-          && Number(args?.[1]?.skippedRelinkLocalCodeConflictCount ?? 0) >= 1
-          && isWarehouseDefaultsEventPayload(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRED, args?.[1])
+          && isWarehouseDefaultsEventPayload(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRING, args?.[1])
       ),
-      'expected repair summary to report skipped local-code conflict relinks'
+      'expected repair start log before conflict failure'
+    );
+    assert.equal(
+      repairLogs.some((args) => String(args?.[0] ?? '') === WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRED),
+      false,
+      'repair completion log must not be emitted when orphan repair remains unresolved'
     );
   } finally {
     console.warn = originalWarn;
