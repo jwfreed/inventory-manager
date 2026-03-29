@@ -1,6 +1,5 @@
 import { query } from '../../db';
-import { WAREHOUSE_DEFAULTS_REPAIR_HINT } from '../../config/warehouseDefaultsStartup';
-import { warehouseDefaultsPolicy } from './warehouseDefaultsPolicy';
+import { warehouseDefaultsInvariantEngine } from './warehouseDefaultsInvariantEngine';
 
 export async function validateWarehouseDefaultsState(
   tenantId: string | undefined,
@@ -26,19 +25,16 @@ export async function validateWarehouseDefaultsState(
         WHERE tenant_id = $1 AND warehouse_id = $2`,
       [warehouse.tenant_id, warehouse.id]
     );
-    const missing = warehouseDefaultsPolicy.roles.getMissingRequiredRoles(rolesRes.rows.map((row) => row.role));
-    if (missing.length > 0) {
-      const error = new Error('WAREHOUSE_DEFAULT_LOCATIONS_REQUIRED') as Error & { code?: string; details?: any };
-      error.code = 'WAREHOUSE_DEFAULT_LOCATIONS_REQUIRED';
-      error.details = repairEnabled
-        ? { warehouseId: warehouse.id, tenantId: warehouse.tenant_id, missingRoles: missing }
-        : {
-            warehouseId: warehouse.id,
-            tenantId: warehouse.tenant_id,
-            missingRoles: missing,
-            hint: WAREHOUSE_DEFAULTS_REPAIR_HINT
-          };
-      throw error;
-    }
+    warehouseDefaultsInvariantEngine.assertValid(
+      {
+        tenantId: warehouse.tenant_id,
+        warehouseId: warehouse.id,
+        mappedRoles: rolesRes.rows.map((row) => row.role)
+      },
+      {
+        repairEnabled,
+        scope: { includeRoot: false, includeRequiredRoles: true, includeRoleStates: false }
+      }
+    );
   }
 }

@@ -19,6 +19,7 @@ import {
   warehouseDefaultsPolicy,
   type LocationRole
 } from './warehouseDefaultsPolicy';
+import { warehouseDefaultsInvariantEngine } from './warehouseDefaultsInvariantEngine';
 
 export type DefaultLocationRepairCallbacks = {
   onRepairing?: (payload: WarehouseDefaultRepairStartPayload) => void;
@@ -79,9 +80,17 @@ export async function ensureDefaultsForWarehouse(
     }, { repairEnabled: repairInvalidDefaults });
   }
   const warehouse = warehouseRes.rows[0];
-  if (!warehouseDefaultsPolicy.topology.isWarehouseRootValid(warehouse)) {
-    throw new Error(warehouseDefaultsPolicy.topology.formatWarehouseRootInvalidMessage(warehouse));
-  }
+  warehouseDefaultsInvariantEngine.assertValid(
+    {
+      tenantId,
+      warehouseId,
+      warehouseRoot: warehouse
+    },
+    {
+      repairEnabled: repairInvalidDefaults,
+      scope: { includeRoot: true, includeRequiredRoles: false, includeRoleStates: false }
+    }
+  );
   const defaultsRes = await executor<{ role: LocationRole; location_id: string; mapping_id: string | null }>(
     `SELECT role,
             location_id,
@@ -126,6 +135,7 @@ export async function ensureDefaultsForWarehouse(
       defaultLocationById.set(row.id, row);
     }
   }
+  const roleContexts: Partial<Record<LocationRole, import('./warehouseDefaultsInvariantEngine').WarehouseDefaultsRoleContext>> = {};
   for (const role of DEFAULT_ROLES) {
     const existingDefaultMapping = defaults.get(role) ?? null;
     const derivedDefaultIdWithoutMapping =
@@ -150,12 +160,28 @@ export async function ensureDefaultsForWarehouse(
       });
     }
     const existingDefault = existingDefaultId ? defaultLocationById.get(existingDefaultId) : null;
-    const invalidReason = warehouseDefaultsPolicy.defaults.detectInvalidReason({
+    roleContexts[role] = {
+      defaultLocationId: existingDefaultId,
+      mappingId: existingDefaultMapping?.mappingId ?? null,
+      existingDefault
+    };
+  }
+
+  const roleEvaluation = warehouseDefaultsInvariantEngine.evaluate(
+    {
       tenantId,
       warehouseId,
-      role,
-      existingDefault
-    });
+      defaultsByRole: roleContexts
+    },
+    { includeRoot: false, includeRequiredRoles: false, includeRoleStates: true }
+  );
+
+  for (const role of DEFAULT_ROLES) {
+    const existingDefaultMapping = defaults.get(role) ?? null;
+    const existingDefaultId = existingDefaultMapping?.locationId ?? null;
+    const existingDefault = existingDefaultId ? defaultLocationById.get(existingDefaultId) : null;
+    const evaluation = roleEvaluation.roleEvaluations[role];
+    const invalidReason = evaluation.invalidReason;
     const invalidDetails = invalidReason
       ? {
           tenantId,
@@ -168,7 +194,7 @@ export async function ensureDefaultsForWarehouse(
           actual: buildWarehouseDefaultActual(role, existingDefault)
         }
       : null;
-    const repairDecision = warehouseDefaultsPolicy.repair.getRepairDecision(invalidReason);
+    const repairDecision = evaluation.repairBehavior;
 
     if (defaults.has(role)) {
       if (repairDecision.requiresMappingDeletion) {
