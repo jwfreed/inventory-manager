@@ -148,7 +148,6 @@ export async function ensureWarehouseDefaults(tenantId?: string, options?: Wareh
   );
   for (const warehouse of warehousesRes.rows) {
     await withTransaction(async (client) => {
-      await ensureDefaultsForWarehouse(warehouse.tenant_id, warehouse.id, repairMode, client, options);
       await ensureDefaultsForWarehouse(
         warehouse.tenant_id,
         warehouse.id,

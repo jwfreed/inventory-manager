@@ -466,6 +466,67 @@ test('missing SELLABLE mapping with only QA bin repairs by creating SELLABLE loc
   }
 });
 
+test('bulk ensureWarehouseDefaults repairs defaults in a single callback-bearing pass', async () => {
+  const tenantId = await createTenant('bulk-single-pass');
+  const warehouseId = await createWarehouseRoot(tenantId, 'BULK-SINGLE-PASS');
+  const brokenDefaultLocationId = await createChildLocation(tenantId, warehouseId, 'SELLABLE', true, 'SELLABLE_BULK');
+  await setDefault(tenantId, warehouseId, 'SELLABLE', brokenDefaultLocationId);
+  const nonDefaultParentId = await createChildLocation(tenantId, warehouseId, 'QA', false, 'QA_BULK_PARENT');
+  await reparentLocation(tenantId, brokenDefaultLocationId, nonDefaultParentId);
+
+  const previousRepair = process.env.WAREHOUSE_DEFAULTS_REPAIR;
+  const repairLogs = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    if (
+      String(args?.[0] ?? '') === WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING
+      || String(args?.[0] ?? '') === WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRED
+    ) {
+      repairLogs.push(args);
+    }
+    originalWarn(...args);
+  };
+
+  try {
+    process.env.WAREHOUSE_DEFAULTS_REPAIR = 'true';
+    await ensureWarehouseDefaults(tenantId, { repair: true });
+
+    const repairedDefault = await fetchDefaultWithLocation(tenantId, warehouseId, 'SELLABLE');
+    assert.equal(repairedDefault?.parent_location_id, warehouseId);
+    assert.notEqual(repairedDefault?.location_id, brokenDefaultLocationId);
+
+    const repairingLogs = repairLogs.filter(
+      (args) =>
+        String(args?.[0] ?? '') === WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING
+        && String(args?.[1]?.warehouseId ?? '') === warehouseId
+    );
+    const repairedLogs = repairLogs.filter(
+      (args) =>
+        String(args?.[0] ?? '') === WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRED
+        && String(args?.[1]?.warehouseId ?? '') === warehouseId
+    );
+
+    assert.equal(repairingLogs.length, 1, 'expected exactly one bulk repair-start event');
+    assert.equal(repairedLogs.length, 1, 'expected exactly one bulk repair-complete event');
+    assert.ok(
+      isWarehouseDefaultsEventPayload(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING, repairingLogs[0]?.[1]),
+      'bulk repair-start event payload must match contract'
+    );
+    assert.ok(
+      isWarehouseDefaultsEventPayload(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRED, repairedLogs[0]?.[1]),
+      'bulk repair-complete event payload must match contract'
+    );
+  } finally {
+    console.warn = originalWarn;
+    if (previousRepair === undefined) {
+      delete process.env.WAREHOUSE_DEFAULTS_REPAIR;
+    } else {
+      process.env.WAREHOUSE_DEFAULTS_REPAIR = previousRepair;
+    }
+    await cleanupTenant(tenantId);
+  }
+});
+
 test('internal guard throws when derived default id exists without mapping row', async () => {
   const tenantId = await createTenant('derived-id-no-mapping');
   const warehouseId = await createWarehouseRoot(tenantId, 'DERIVED-ID-NO-MAPPING');
