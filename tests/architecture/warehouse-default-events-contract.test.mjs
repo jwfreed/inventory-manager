@@ -40,7 +40,10 @@ test('warehouse defaults service uses event constants (no free-typed event names
 });
 
 test('orphan detection query uses CASE guard before resolve_warehouse_for_location', async () => {
-  const source = await readFile(path.resolve(process.cwd(), 'src/services/warehouseDefaults.service.ts'), 'utf8');
+  const source = await readFile(
+    path.resolve(process.cwd(), 'src/domain/warehouseDefaults/warehouseDefaultsDetection.ts'),
+    'utf8'
+  );
   assert.match(
     source,
     /CASE\s+WHEN l\.parent_location_id IS NULL THEN NULL\s+ELSE resolve_warehouse_for_location\(l\.tenant_id, l\.parent_location_id\)\s+END AS derived_parent_warehouse_id/s
