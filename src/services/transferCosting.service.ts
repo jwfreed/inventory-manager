@@ -265,7 +265,7 @@ export async function reverseTransferCostLayersInTx(params: {
         AND cost_layer_id = ANY($2::uuid[])`,
     [params.tenantId, destLayerIds]
   );
-  if (consumedDest.rowCount > 0) {
+  if ((consumedDest.rowCount ?? 0) > 0) {
     throw new Error('TRANSFER_REVERSAL_NOT_POSSIBLE_CONSUMED');
   }
 

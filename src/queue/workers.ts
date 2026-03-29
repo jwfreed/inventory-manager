@@ -20,19 +20,19 @@ export function registerRepeatableJobs() {
   criticalQueue.add(
     'inventory-health-check',
     {},
-    { repeat: { cron: inventoryHealthCron }, removeOnComplete: true, removeOnFail: 100, ...jobOptions }
+    { repeat: { pattern: inventoryHealthCron }, removeOnComplete: true, removeOnFail: 100, ...jobOptions }
   );
 
   heavyQueue.add(
     'metrics-recalculation',
     {},
-    { repeat: { cron: metricsCron }, removeOnComplete: true, removeOnFail: 100, ...jobOptions }
+    { repeat: { pattern: metricsCron }, removeOnComplete: true, removeOnFail: 100, ...jobOptions }
   );
 
   heavyQueue.add(
     'exchange-rate-sync',
     {},
-    { repeat: { cron: exchangeRateCron }, removeOnComplete: true, removeOnFail: 100, ...jobOptions }
+    { repeat: { pattern: exchangeRateCron }, removeOnComplete: true, removeOnFail: 100, ...jobOptions }
   );
 
   outboxQueue.add(

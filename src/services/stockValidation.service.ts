@@ -2,8 +2,10 @@ import { getInventoryNegativePolicy } from '../config/inventoryPolicy';
 import type { PoolClient } from 'pg';
 import { toNumber } from '../lib/numbers';
 import { getAvailableQuantity } from '../modules/availability/application/queries/getAvailableQuantity.query';
+import { getInventorySnapshotSummary } from './inventorySnapshot.service';
 import { getLocation, getItem, convertQuantity } from './masterData.service';
 import { convertToCanonical } from './uomCanonical.service';
+import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 
 export type StockValidationLine = {
   warehouseId: string;

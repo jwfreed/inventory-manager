@@ -253,7 +253,13 @@ export async function validateImportJob(params: {
   mapping: Record<string, string>;
   countedAt?: string | null;
 }) {
-  const jobRes = await query(
+  const jobRes = await query<{
+    id: string;
+    tenant_id: string;
+    type: ImportType;
+    source_csv: string | null;
+    status: string;
+  }>(
     `SELECT id, tenant_id, type, source_csv, status
        FROM import_jobs
       WHERE id = $1 AND tenant_id = $2`,

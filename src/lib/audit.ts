@@ -7,7 +7,16 @@ type AuditInput = {
   tenantId: string;
   actorType: 'user' | 'system';
   actorId?: string | null;
-  action: 'create' | 'update' | 'delete' | 'post' | 'unpost' | 'negative_override' | 'cancel';
+  action:
+    | 'create'
+    | 'update'
+    | 'delete'
+    | 'post'
+    | 'unpost'
+    | 'negative_override'
+    | 'cancel'
+    | 'import'
+    | 'work_order_close';
   entityType: string;
   entityId: string;
   occurredAt?: Date;

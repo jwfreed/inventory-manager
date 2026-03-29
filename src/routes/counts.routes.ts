@@ -185,7 +185,7 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
       throw new Error('Failed to retrieve count after posting');
     }
 
-    const itemIds = Array.from(new Set(count.lines.map((line) => line.itemId)));
+    const itemIds = Array.from(new Set(count.lines.map((line: { itemId: string }) => line.itemId)));
     emitEvent(tenantId, 'inventory.count.posted', {
       countId: count.id,
       adjustmentId: count.inventoryAdjustmentId,

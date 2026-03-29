@@ -158,7 +158,7 @@ export async function getInventoryChanges(
         LIMIT 1`,
       [tenantId]
     );
-    if (minRes.rowCount > 0) {
+    if ((minRes.rowCount ?? 0) > 0) {
       const minSeq = BigInt(minRes.rows[0].event_seq);
       const sinceSeq = BigInt(since);
       if (minSeq > sinceSeq) {

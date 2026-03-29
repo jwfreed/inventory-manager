@@ -115,15 +115,15 @@ export const INVENTORY_EVENT_REGISTRY = Object.freeze({
 export type InventoryEventRegistryName = keyof typeof INVENTORY_EVENT_REGISTRY;
 
 function resolveRegistryDefinition(name: InventoryEventRegistryName) {
-  return INVENTORY_EVENT_REGISTRY[name];
+  return INVENTORY_EVENT_REGISTRY[name] as InventoryEventRegistryDefinition;
 }
 
 function findRegistryDefinition(input: {
   aggregateType: string;
   eventType: string;
   eventVersion: number;
-}) {
-  return Object.values(INVENTORY_EVENT_REGISTRY).find(
+}): InventoryEventRegistryDefinition | undefined {
+  return (Object.values(INVENTORY_EVENT_REGISTRY) as InventoryEventRegistryDefinition[]).find(
     (candidate) =>
       candidate.aggregateType === input.aggregateType
       && candidate.eventType === input.eventType

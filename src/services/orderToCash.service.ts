@@ -327,7 +327,7 @@ async function lockReservationForUpdate(
 }
 
 async function insertReservationEvent(
-  client: any,
+  client: PoolClient,
   tenantId: string,
   reservationId: string,
   eventType: 'RESERVED' | 'ALLOCATED' | 'CANCELLED' | 'EXPIRED' | 'FULFILLED',
@@ -404,7 +404,7 @@ async function resolveReservationDerivedWarehouseScope(
       LIMIT 1`,
     [tenantId, reservation.demandId]
   );
-  if (res.rowCount > 0) {
+  if ((res.rowCount ?? 0) > 0) {
     salesOrderWarehouseId = res.rows[0]?.warehouse_id ?? null;
     if (!salesOrderWarehouseId) {
       throw new Error('WAREHOUSE_SCOPE_REQUIRED');
@@ -765,7 +765,7 @@ export async function createReservations(
             if (demandId !== 0) return demandId;
             const item = left.itemId.localeCompare(right.itemId);
             if (item !== 0) return item;
-            const warehouse = left.warehouseId.localeCompare(right.warehouseId);
+            const warehouse = (left.warehouseId ?? '').localeCompare(right.warehouseId ?? '');
             if (warehouse !== 0) return warehouse;
             const location = left.locationId.localeCompare(right.locationId);
             if (location !== 0) return location;
@@ -845,7 +845,7 @@ export async function createReservations(
                 WHERE client_id = $1 AND idempotency_key = $2`,
               [tenantId, idempotencyKey]
             );
-            if (existing.rowCount > 0) {
+            if ((existing.rowCount ?? 0) > 0) {
               rows.push(existing.rows[0]);
               continue;
             }
@@ -960,7 +960,7 @@ export async function createReservations(
                   WHERE client_id = $1 AND idempotency_key = $2`,
                 [tenantId, idempotencyKey]
               );
-              if (existing.rowCount > 0) {
+              if ((existing.rowCount ?? 0) > 0) {
                 rows.push(existing.rows[0]);
                 continue;
               }
@@ -982,7 +982,7 @@ export async function createReservations(
                 canonicalUom
               ]
             );
-            if (existing.rowCount > 0) {
+            if ((existing.rowCount ?? 0) > 0) {
               rows.push(existing.rows[0]);
               continue;
             }
@@ -1145,8 +1145,8 @@ export async function allocateReservation(
         );
 
         return {
-          responseBody: updated.rowCount ? mapReservation(updated.rows[0]) : null,
-          events: updated.rowCount > 0
+          responseBody: (updated.rowCount ?? 0) > 0 ? mapReservation(updated.rows[0]) : null,
+          events: (updated.rowCount ?? 0) > 0
             ? [buildReservationChangedEvent(updated.rows[0], eventVersion, transactionalIdempotencyKey)]
             : [],
           projectionOps: [
@@ -1280,8 +1280,8 @@ export async function cancelReservation(
         );
 
         return {
-          responseBody: updated.rowCount ? mapReservation(updated.rows[0]) : null,
-          events: updated.rowCount > 0
+          responseBody: (updated.rowCount ?? 0) > 0 ? mapReservation(updated.rows[0]) : null,
+          events: (updated.rowCount ?? 0) > 0
             ? [buildReservationChangedEvent(updated.rows[0], eventVersion, transactionalIdempotencyKey)]
             : [],
           projectionOps: remaining > 0
@@ -1430,8 +1430,8 @@ export async function fulfillReservation(
         );
 
         return {
-          responseBody: updated.rowCount ? mapReservation(updated.rows[0]) : null,
-          events: updated.rowCount > 0
+          responseBody: (updated.rowCount ?? 0) > 0 ? mapReservation(updated.rows[0]) : null,
+          events: (updated.rowCount ?? 0) > 0
             ? [buildReservationChangedEvent(updated.rows[0], eventVersion, transactionalIdempotencyKey)]
             : [],
           projectionOps: fulfillQty > 0
@@ -2287,7 +2287,7 @@ export async function postShipment(
           lineContext.reservation = reservation;
           lineContext.reserveConsume = reserveConsume;
           stockValidationLines.push({
-            warehouseId: shipFromWarehouseId,
+            warehouseId: shipFromWarehouseId!,
             itemId: lineContext.line.item_id,
             locationId: shipment.ship_from_location_id,
             uom: lineContext.canonicalOut.canonicalUom,
@@ -2411,11 +2411,11 @@ export async function postShipment(
           notes: shipment.notes ?? null,
           metadata: validation.overrideMetadata ?? null,
           createdAt: now,
-          updatedAt: now,
-          lines: plannedShipmentLines.map((lineContext) => ({
-            sourceLineId: lineContext.line.id,
-            warehouseId: shipFromWarehouseId,
-            itemId: lineContext.line.item_id,
+        updatedAt: now,
+        lines: plannedShipmentLines.map((lineContext) => ({
+          sourceLineId: lineContext.line.id,
+          warehouseId: shipFromWarehouseId!,
+          itemId: lineContext.line.item_id,
             locationId: shipment.ship_from_location_id,
             quantityDelta: lineContext.canonicalOut.quantityDeltaCanonical,
             uom: lineContext.canonicalOut.canonicalUom,

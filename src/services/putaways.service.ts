@@ -372,7 +372,7 @@ export async function createPutaway(
         `SELECT id FROM putaways WHERE tenant_id = $1 AND idempotency_key = $2`,
         [tenantId, idempotencyKey]
       );
-      if (existing.rowCount > 0) {
+      if ((existing.rowCount ?? 0) > 0) {
         return;
       }
     }

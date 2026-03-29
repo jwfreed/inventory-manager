@@ -224,7 +224,7 @@ export async function createReceiptCostLayerOnce(params: CreateLayerParams): Pro
     ]
   );
 
-  if (insertResult.rowCount > 0) {
+  if ((insertResult.rowCount ?? 0) > 0) {
     return insertResult.rows[0];
   }
 
@@ -287,7 +287,7 @@ export async function createOpeningBalanceCostLayerOnce(
     ]
   );
 
-  if (insertResult.rowCount > 0) {
+  if ((insertResult.rowCount ?? 0) > 0) {
     return insertResult.rows[0];
   }
 

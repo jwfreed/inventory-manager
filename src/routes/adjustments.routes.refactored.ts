@@ -163,8 +163,8 @@ router.post(
       throw new Error('Failed to retrieve adjustment after posting');
     }
 
-    const itemIds = Array.from(new Set(adjustment.lines.map((line) => line.itemId)));
-    const locationIds = Array.from(new Set(adjustment.lines.map((line) => line.locationId)));
+    const itemIds = Array.from(new Set(adjustment.lines.map((line: { itemId: string }) => line.itemId)));
+    const locationIds = Array.from(new Set(adjustment.lines.map((line: { locationId: string }) => line.locationId)));
     
     emitEvent(tenantId, 'inventory.adjustment.posted', {
       adjustmentId: adjustment.id,

@@ -90,12 +90,12 @@ async function hasCostLayerActivity(client: PoolClient, tenantId: string, moveme
     `SELECT 1 FROM inventory_cost_layers WHERE tenant_id = $1 AND movement_id = $2 LIMIT 1`,
     [tenantId, movementId]
   );
-  if (layers.rowCount > 0) return true;
+  if ((layers.rowCount ?? 0) > 0) return true;
   const consumptions = await client.query(
     `SELECT 1 FROM cost_layer_consumptions WHERE tenant_id = $1 AND movement_id = $2 LIMIT 1`,
     [tenantId, movementId]
   );
-  return consumptions.rowCount > 0;
+  return (consumptions.rowCount ?? 0) > 0;
 }
 
 async function ensureUnitCost(

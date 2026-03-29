@@ -133,14 +133,16 @@ export function isWarehouseDefaultRepairStartPayload(payload: unknown): payload 
 }
 
 export function isWarehouseDefaultRepairEndPayload(payload: unknown): payload is WarehouseDefaultRepairEndPayload {
-  if (!isWarehouseDefaultRepairStartPayload(payload) || !isObject(payload.repaired)) return false;
+  if (!isWarehouseDefaultRepairStartPayload(payload)) return false;
+  const candidate = payload as WarehouseDefaultRepairEndPayload;
+  if (!isObject(candidate.repaired)) return false;
   return (
-    hasString(payload.repaired, 'tenantId')
-    && hasString(payload.repaired, 'warehouseId')
-    && hasString(payload.repaired, 'role')
-    && hasNullableString(payload.repaired, 'locationId')
-    && hasNullableString(payload.repaired, 'defaultLocationId')
-    && hasNullableString(payload.repaired, 'mappingId')
+    hasString(candidate.repaired, 'tenantId')
+    && hasString(candidate.repaired, 'warehouseId')
+    && hasString(candidate.repaired, 'role')
+    && hasNullableString(candidate.repaired, 'locationId')
+    && hasNullableString(candidate.repaired, 'defaultLocationId')
+    && hasNullableString(candidate.repaired, 'mappingId')
   );
 }
 

@@ -47,6 +47,10 @@ type OrphanWarehouseRootIssue = {
 };
 
 type OrphanIssueDetector = (tenantId?: string) => Promise<OrphanWarehouseRootIssue[]>;
+type QueryExecutor = (
+  text: string,
+  values?: unknown[]
+) => Promise<{ rowCount: number | null; rows: Array<Record<string, unknown>> }>;
 
 const orphanWarehouseRootsWarningLoggedByScope = new Set<string>();
 
@@ -296,7 +300,7 @@ async function ensureOrphanWarehouseRoots(tenantId?: string, options?: Warehouse
        RETURNING id`,
       [root.warehouseId, root.tenantId, code, `Recovered Warehouse ${root.warehouseId.slice(0, 8)}`, now]
     );
-    if (insertRes.rowCount > 0) {
+    if ((insertRes.rowCount ?? 0) > 0) {
       createdWarehouseRootsCount += 1;
       createdWarehouseRootIds.push(insertRes.rows[0].id);
     }
@@ -399,7 +403,7 @@ async function ensureOrphanWarehouseRoots(tenantId?: string, options?: Warehouse
 }
 
 async function insertWarehouseDefaultConfigIssue(params: {
-  executor: PoolClient['query'] | typeof query;
+  executor: QueryExecutor;
   tenantId: string;
   warehouseId: string;
   role: LocationRole;
@@ -694,7 +698,9 @@ async function ensureDefaultsForWarehouse(
         if (!repairInvalidDefaults) {
           throw invalidError;
         }
-        emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING, invalidDetails);
+        if (invalidDetails) {
+          emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING, invalidDetails);
+        }
         await executor(
           `DELETE FROM warehouse_default_location
             WHERE tenant_id = $1
@@ -709,7 +715,9 @@ async function ensureDefaultsForWarehouse(
       if (!repairInvalidDefaults) {
         throw warehouseDefaultInvalidError(invalidDetails!, { repairEnabled: repairInvalidDefaults });
       }
-      emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING, invalidDetails);
+      if (invalidDetails) {
+        emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING, invalidDetails);
+      }
     }
 
     const expectedType = role === 'SCRAP' ? 'scrap' : 'bin';
@@ -762,7 +770,7 @@ async function ensureDefaultsForWarehouse(
            RETURNING id`,
           [id, tenantId, code, localCode, name, expectedType, role, isSellable, warehouseId, warehouseId, now]
         );
-        if (insertRes.rowCount && insertRes.rows[0]?.id) {
+        if ((insertRes.rowCount ?? 0) > 0 && insertRes.rows[0]?.id) {
           locationId = insertRes.rows[0].id;
           await insertWarehouseDefaultConfigIssue({
             executor,
@@ -779,7 +787,7 @@ async function ensureDefaultsForWarehouse(
           `SELECT id FROM locations WHERE tenant_id = $1 AND code = $2`,
           [tenantId, code]
         );
-        if (existingLoc.rowCount > 0) {
+        if ((existingLoc.rowCount ?? 0) > 0) {
           locationId = existingLoc.rows[0].id;
           break;
         }
@@ -795,7 +803,7 @@ async function ensureDefaultsForWarehouse(
        DO NOTHING`,
       [tenantId, warehouseId, role, locationId]
     );
-    if (repairInvalidDefaults && shouldRepairInvalidDefault) {
+    if (repairInvalidDefaults && shouldRepairInvalidDefault && invalidDetails) {
       const ensuredMappingRes = await executor<{ location_id: string; mapping_id: string | null }>(
         `SELECT location_id,
                 to_jsonb(warehouse_default_location)->>'id' AS mapping_id

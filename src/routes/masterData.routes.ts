@@ -364,7 +364,7 @@ router.patch('/items/:id/uom', async (req: Request, res: Response) => {
   if (!isAdminOrManager(req.auth?.role)) {
     return res.status(403).json({ error: 'Only admin or manager can update item UOM policy.' });
   }
-  return patchItemUomHandler(req, res);
+  return patchItemUomHandler(req, res, () => undefined);
 });
 
 router.get('/items/:itemId/uom-conversions', async (req: Request, res: Response) => {

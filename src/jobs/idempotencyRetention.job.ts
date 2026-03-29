@@ -23,8 +23,9 @@ export async function pruneIdempotencyKeys(): Promise<{ deleted: number; retenti
         RETURNING 1`,
       [retentionDays, batchSize]
     );
-    deletedTotal += result.rowCount;
-    if (result.rowCount === 0) {
+    const deletedRows = result.rowCount ?? 0;
+    deletedTotal += deletedRows;
+    if (deletedRows === 0) {
       break;
     }
   }

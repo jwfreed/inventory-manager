@@ -115,10 +115,13 @@ router.post('/putaways/:id/post', async (req: Request, res: Response) => {
       throw new Error('Failed to retrieve putaway after posting');
     }
 
-    const itemIds = Array.from(new Set(putaway.lines.map((line) => line.itemId)));
+    const itemIds = Array.from(new Set(putaway.lines.map((line: { itemId: string }) => line.itemId)));
     const locationIds = Array.from(
       new Set(
-        putaway.lines.flatMap((line) => [line.fromLocationId, line.toLocationId])
+        putaway.lines.flatMap((line: { fromLocationId: string; toLocationId: string }) => [
+          line.fromLocationId,
+          line.toLocationId
+        ])
       )
     );
     emitEvent(tenantId, 'inventory.putaway.posted', {

@@ -293,7 +293,7 @@ export async function postInventoryAdjustment(
               LIMIT 1`,
             [tenantId, movement.movementId]
           );
-          if (lineCheck.rowCount > 0) {
+          if ((lineCheck.rowCount ?? 0) > 0) {
             await client.query(
               `UPDATE inventory_adjustments
                   SET status = 'posted',

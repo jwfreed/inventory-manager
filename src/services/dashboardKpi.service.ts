@@ -243,7 +243,7 @@ async function computeDashboardSnapshots(tenantId: string, warehouseId: string, 
       computeReplenishmentRecommendations(tenantId, 5000, 0),
       listReplenishmentPolicies(tenantId, 5000, 0),
       listPurchaseOrders(tenantId, 5000, 0),
-      listWorkOrders(tenantId, { limit: 5000, offset: 0 }),
+      listWorkOrders(tenantId, { limit: '5000', offset: '0' }),
       query<{ id: string }>(
         `SELECT id
            FROM items
@@ -412,7 +412,7 @@ export async function computeDashboardKpis(
       [tenantId, noteFingerprintLike],
     );
 
-    if (existing.rowCount > 0) {
+    if ((existing.rowCount ?? 0) > 0) {
       const snapshotsCount = await client.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count
            FROM kpi_snapshots

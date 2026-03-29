@@ -880,7 +880,7 @@ function buildLegacyDashboardSignals(params: {
   exceptions: ResolutionQueueRow[];
   fillRate: Awaited<ReturnType<typeof computeFulfillmentFillRate>>;
   asOfLabel: string;
-}) {
+}): DashboardSignal[] {
   const countByType = new Map<DashboardExceptionType, number>();
   const severityByType = new Map<DashboardExceptionType, SignalSeverity>();
   params.exceptions.forEach((exception) => {
@@ -1492,7 +1492,7 @@ async function computeFlowReliabilitySection(params: {
     rows: lateShipments.slice(0, 10).map((row) => ({
       id: row.salesOrderId,
       label: row.soNumber,
-      secondaryLabel: row.customerName,
+      secondaryLabel: row.customerName ?? undefined,
       value: row.requestedDate ?? 'Late',
       severity: 'action',
       drilldownTo: '/reports/sales-order-fill?onlyLate=true'

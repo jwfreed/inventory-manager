@@ -365,6 +365,7 @@ export async function postReturnReceipt(
       if (!receiptWarehouseId) {
         throw new Error('WAREHOUSE_SCOPE_REQUIRED')
       }
+      const currentReceiptWarehouseId = receiptWarehouseId;
 
       const returnAuthResult = await client.query<{ status: string }>(
         `SELECT status
@@ -470,6 +471,7 @@ export async function postReturnReceipt(
       if (!receiptWarehouseId) {
         throw new Error('WAREHOUSE_SCOPE_REQUIRED')
       }
+      const currentReceiptWarehouseId = receiptWarehouseId;
 
       if (receipt.status === 'posted') {
         if (!receipt.inventory_movement_id) {
@@ -477,21 +479,22 @@ export async function postReturnReceipt(
             reason: 'return_receipt_posted_without_movement'
           })
         }
-        return (
-          await buildReturnReceiptPostReplayResult({
-            tenantId,
-            returnReceiptId: id,
-            movementId: receipt.inventory_movement_id,
-            expectedLineCount: receiptLines.length,
-            client
-          })
-        ).responseBody
+        return await buildReturnReceiptPostReplayResult({
+          tenantId,
+          returnReceiptId: id,
+          movementId: receipt.inventory_movement_id,
+          expectedLineCount: receiptLines.length,
+          client
+        })
       }
 
       const now = new Date()
       const occurredAt = receipt.received_at ? new Date(receipt.received_at) : now
       const projectionOps: InventoryCommandProjectionOp[] = []
       const itemsToRefresh = new Set<string>()
+      if (!receipt.received_to_location_id) {
+        throw new Error('RETURN_RECEIPT_LOCATION_REQUIRED')
+      }
       const preparedLines: Array<{
         line: any
         canonicalFields: Awaited<ReturnType<typeof getCanonicalMovementFields>>
@@ -530,14 +533,16 @@ export async function postReturnReceipt(
         idempotencyKey: normalizedIdempotencyKey,
         occurredAt,
         postedAt: now,
-        notes: receipt.notes ?? null,
+        notes: currentReceipt.notes ?? null,
         createdAt: now,
         updatedAt: now,
         lines: preparedLines.map((preparedLine) => ({
-          warehouseId: receiptWarehouseId ?? '',
+          warehouseId: receiptWarehouseId ?? (() => {
+            throw new Error('WAREHOUSE_SCOPE_REQUIRED')
+          })(),
           sourceLineId: preparedLine.line.id,
           itemId: preparedLine.line.item_id,
-          locationId: receipt.received_to_location_id,
+          locationId: currentReceipt.received_to_location_id,
           quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
           uom: preparedLine.canonicalFields.canonicalUom,
           quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
@@ -562,7 +567,7 @@ export async function postReturnReceipt(
             LIMIT 1`,
           [tenantId, movement.movementId]
         )
-        if (lineCheck.rowCount > 0) {
+        if ((lineCheck.rowCount ?? 0) > 0) {
           await client.query(
             `UPDATE return_receipts
                 SET status = 'posted',
@@ -571,15 +576,13 @@ export async function postReturnReceipt(
                 AND tenant_id = $3`,
             [movement.movementId, id, tenantId]
           )
-          return (
-            await buildReturnReceiptPostReplayResult({
-              tenantId,
-              returnReceiptId: id,
-              movementId: movement.movementId,
-              expectedLineCount: preparedLines.length,
-              client
-            })
-          ).responseBody
+          return await buildReturnReceiptPostReplayResult({
+            tenantId,
+            returnReceiptId: id,
+            movementId: movement.movementId,
+            expectedLineCount: preparedLines.length,
+            client
+          })
         }
         throw returnReceiptPostIncompleteError(id, {
           movementId: movement.movementId,

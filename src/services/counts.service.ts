@@ -441,7 +441,7 @@ export async function createInventoryCount(
         `SELECT id FROM cycle_counts WHERE tenant_id = $1 AND idempotency_key = $2`,
         [tenantId, idempotencyKey]
       );
-      if (existing.rowCount > 0) {
+      if ((existing.rowCount ?? 0) > 0) {
         return;
       }
     }
@@ -748,7 +748,7 @@ export async function postInventoryCount(
         });
       }
       execution = executionResult.rows[0];
-      const executionCreated = executionInsert.rowCount > 0;
+      const executionCreated = (executionInsert.rowCount ?? 0) > 0;
       if (execution.cycle_count_id !== id || execution.request_hash !== requestHash) {
         const error = new Error('INV_COUNT_POST_IDEMPOTENCY_CONFLICT') as Error & {
           code?: string;
@@ -801,7 +801,7 @@ export async function postInventoryCount(
 
       return countLines.map((line) => ({
         tenantId,
-        warehouseId: cycleCount.warehouse_id,
+        warehouseId: cycleCount!.warehouse_id,
         itemId: line.item_id
       }));
     },
@@ -814,6 +814,7 @@ export async function postInventoryCount(
           reason: 'execution_row_missing'
         });
       }
+      const currentCycleCount = cycleCount;
 
       if (replayMovementId) {
         return buildInventoryCountReplayResult({
@@ -864,7 +865,7 @@ export async function postInventoryCount(
       const negativeLines = deltas
         .filter((delta) => delta.variance < 0)
         .map((delta) => ({
-          warehouseId: cycleCount.warehouse_id,
+          warehouseId: currentCycleCount.warehouse_id,
           itemId: delta.line.item_id,
           locationId: delta.line.location_id,
           uom: delta.line.uom,
@@ -923,7 +924,7 @@ export async function postInventoryCount(
         preparedDeltas,
         (entry) => ({
           tenantId,
-          warehouseId: cycleCount.warehouse_id,
+          warehouseId: currentCycleCount.warehouse_id,
           locationId: entry.delta.line.location_id,
           itemId: entry.delta.line.item_id,
           canonicalUom: entry.canonicalFields.canonicalUom,
@@ -984,12 +985,12 @@ export async function postInventoryCount(
         idempotencyKey: `cycle-count-post:${id}:${idempotencyKey}`,
         occurredAt: now,
         postedAt: now,
-        notes: cycleCount.notes ?? null,
+        notes: currentCycleCount.notes ?? null,
         metadata: validation.overrideMetadata ?? null,
         createdAt: now,
         updatedAt: now,
         lines: plannedMovementLines.map((plannedLine) => ({
-          warehouseId: cycleCount.warehouse_id,
+          warehouseId: currentCycleCount.warehouse_id,
           sourceLineId: plannedLine.delta.line.id,
           itemId: plannedLine.delta.line.item_id,
           locationId: plannedLine.delta.line.location_id,

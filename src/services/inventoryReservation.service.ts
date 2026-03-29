@@ -406,7 +406,7 @@ async function hasVoidReservationRestoreMarker(
       LIMIT 1`,
     [tenantId, executionId]
   );
-  return result.rowCount > 0;
+  return (result.rowCount ?? 0) > 0;
 }
 
 function applyReservationState(row: ReservationRow, updated: ReservationStateRow) {

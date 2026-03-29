@@ -637,7 +637,7 @@ export async function createStandardWarehouseTemplate(
         LIMIT 1`,
       [tenantId]
     );
-    if (existingWarehouseRes.rowCount > 0) {
+    if ((existingWarehouseRes.rowCount ?? 0) > 0) {
       const existingWarehouse = existingWarehouseRes.rows[0];
       if (
         existingWarehouse.role !== null ||
@@ -659,7 +659,7 @@ export async function createStandardWarehouseTemplate(
          RETURNING *`,
         [warehouseIdNew, tenantId, warehouseCode, 'Main Warehouse', 'warehouse', warehouseIdNew, now]
       );
-      if (warehouseRes.rowCount > 0) {
+      if ((warehouseRes.rowCount ?? 0) > 0) {
         created.push(mapLocation(warehouseRes.rows[0]));
       }
       warehouseId = warehouseIdNew;

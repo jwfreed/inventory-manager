@@ -70,7 +70,12 @@ function mapQcEvent(row: any) {
 async function resolveWarehouseRootIdByRef(
   tenantId: string,
   warehouseRef: string,
-  client: { query: (sql: string, params: unknown[]) => Promise<{ rowCount: number; rows: Array<{ id: string }> }> }
+  client: {
+    query: (
+      sql: string,
+      params: unknown[]
+    ) => Promise<{ rowCount: number | null; rows: Array<{ id: string }> }>;
+  }
 ): Promise<string | null> {
   const ref = warehouseRef.trim();
   if (!ref) return null;
@@ -84,7 +89,7 @@ async function resolveWarehouseRootIdByRef(
       LIMIT 1`,
     [tenantId, ref]
   );
-  return res.rowCount > 0 ? res.rows[0].id : null;
+  return (res.rowCount ?? 0) > 0 ? res.rows[0].id : null;
 }
 
 export async function createQcEvent(

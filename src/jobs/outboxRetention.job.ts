@@ -25,8 +25,9 @@ export async function pruneOutboxEvents(): Promise<{ deleted: number; retentionD
       [retentionDays, batchSize]
     );
 
-    deleted += res.rowCount;
-    if (res.rowCount < batchSize) {
+    const deletedRows = res.rowCount ?? 0;
+    deleted += deletedRows;
+    if (deletedRows < batchSize) {
       break;
     }
   }

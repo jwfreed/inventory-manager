@@ -351,13 +351,17 @@ export async function createPurchaseOrderReceipt(
         throw new Error('RECEIPT_PO_NOT_FOUND');
       }
       poRow = { ...poResult.rows[0] };
-      if (['received', 'closed', 'canceled'].includes(poRow.status)) {
+      const currentPoRow = poRow;
+      if (!currentPoRow) {
+        throw new Error('RECEIPT_PO_NOT_FOUND');
+      }
+      if (['received', 'closed', 'canceled'].includes(currentPoRow.status)) {
         throw new Error('RECEIPT_PO_CLOSED');
       }
-      if (poRow.status === 'draft') {
+      if (currentPoRow.status === 'draft') {
         throw new Error('RECEIPT_PO_NOT_APPROVED');
       }
-      if (poRow.status === 'submitted') {
+      if (currentPoRow.status === 'submitted') {
         if (process.env.NODE_ENV !== 'production') {
           await client.query(
             `UPDATE purchase_orders
@@ -367,7 +371,7 @@ export async function createPurchaseOrderReceipt(
                 AND tenant_id = $2`,
             [data.purchaseOrderId, tenantId]
           );
-          poRow.status = 'approved';
+          currentPoRow.status = 'approved';
         } else {
           throw new Error('RECEIPT_PO_NOT_APPROVED');
         }
@@ -471,8 +475,8 @@ export async function createPurchaseOrderReceipt(
 
       resolvedReceivedToLocationId = data.receivedToLocationId ?? null;
       if (!resolvedReceivedToLocationId) {
-        const receivingLoc = poRow.receiving_location_id ?? (await findDefaultReceivingLocation(tenantId));
-        resolvedReceivedToLocationId = receivingLoc ?? poRow.ship_to_location_id ?? null;
+        const receivingLoc = currentPoRow.receiving_location_id ?? (await findDefaultReceivingLocation(tenantId));
+        resolvedReceivedToLocationId = receivingLoc ?? currentPoRow.ship_to_location_id ?? null;
       }
       if (!resolvedReceivedToLocationId) {
         throw new Error('RECEIPT_RECEIVING_LOCATION_REQUIRED');
@@ -571,10 +575,10 @@ export async function createPurchaseOrderReceipt(
         createdAt: now,
         updatedAt: now,
         lines: plannedReceiptLines.map((line) => ({
-          warehouseId: qaWarehouseId ?? '',
+          warehouseId: qaWarehouseId!,
           sourceLineId: line.receiptLineId,
           itemId: line.itemId,
-          locationId: qaLocationId,
+          locationId: qaLocationId!,
           quantityDelta: line.canonicalFields.quantityDeltaCanonical,
           uom: line.canonicalFields.canonicalUom,
           quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,

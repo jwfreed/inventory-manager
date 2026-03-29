@@ -1054,7 +1054,7 @@ export async function voidTransferMovement(
           LIMIT 1`,
         [tenantId, movementId]
       );
-      if (existingReversal.rowCount > 0) {
+      if ((existingReversal.rowCount ?? 0) > 0) {
         throw new Error('TRANSFER_ALREADY_REVERSED');
       }
 

@@ -133,7 +133,11 @@ async function getItemUomRow(
   stocking_uom: string | null;
 }> {
   const executor = client ? client.query.bind(client) : query;
-  const res = await executor(
+  const res = await executor<{
+    uom_dimension: string | null;
+    canonical_uom: string | null;
+    stocking_uom: string | null;
+  }>(
     `SELECT uom_dimension, canonical_uom, stocking_uom
        FROM items
       WHERE id = $1 AND tenant_id = $2`,

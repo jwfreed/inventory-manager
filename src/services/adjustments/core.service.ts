@@ -79,7 +79,7 @@ export async function createInventoryAdjustment(
         `SELECT id FROM inventory_adjustments WHERE tenant_id = $1 AND idempotency_key = $2`,
         [tenantId, idempotencyKey]
       );
-      if (existing.rowCount > 0) {
+      if ((existing.rowCount ?? 0) > 0) {
         return;
       }
     }

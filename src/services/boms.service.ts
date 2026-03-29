@@ -480,7 +480,11 @@ export async function activateBomVersion(
   return bom;
 }
 
-export async function resolveEffectiveBom(tenantId: string, itemId: string, asOfIso: string) {
+export async function resolveEffectiveBom(
+  tenantId: string,
+  itemId: string,
+  asOfIso: string
+): Promise<{ itemId: string; asOf: string; bom: Omit<Bom, 'versions'>; version: BomVersion } | null> {
   const { rows } = await query<{ bom_id: string; version_id: string }>(
     `SELECT b.id AS bom_id, v.id AS version_id
        FROM boms b

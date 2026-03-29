@@ -3,7 +3,7 @@ import { query } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { convertToCanonical } from './uomCanonical.service';
 import { deriveDisassemblyProduceLocation, deriveWorkOrderStageRouting } from './stageRouting.service';
-import { fetchBomById, resolveEffectiveBom, type BomVersion } from './boms.service';
+import { fetchBomById, resolveEffectiveBom, type Bom, type BomVersion } from './boms.service';
 
 type WorkOrderRow = {
   id: string;
@@ -112,16 +112,26 @@ async function resolveWorkOrderBomVersion(
   if (!bom) {
     return null;
   }
+  if (!('versions' in bom)) {
+    return {
+      bomId: bom.bom.id,
+      version: bom.version
+    };
+  }
+  const versionedBom: Bom = bom;
   const version =
     (workOrder.bom_version_id
-      ? bom.versions.find((candidate) => candidate.id === workOrder.bom_version_id && candidate.status !== 'retired')
+      ? versionedBom.versions.find(
+        (candidate: BomVersion) =>
+          candidate.id === workOrder.bom_version_id && candidate.status !== 'retired'
+      )
       : null)
-    ?? bom.versions.find((candidate) => candidate.status === 'active')
-    ?? bom.versions[0];
+    ?? versionedBom.versions.find((candidate: BomVersion) => candidate.status === 'active')
+    ?? versionedBom.versions[0];
   if (!version) {
     return null;
   }
-  return { bomId: bom.id, version };
+  return { bomId: versionedBom.id, version };
 }
 
 export async function getDisassemblyPlan(
