@@ -1,12 +1,7 @@
 import { WAREHOUSE_DEFAULTS_REPAIR_HINT } from '../../config/warehouseDefaultsStartup';
 import type { WarehouseDefaultValidationSnapshot } from '../../observability/warehouseDefaults.events';
-import {
-  emitWarehouseDefaultsEvent,
-  WAREHOUSE_DEFAULTS_EVENT
-} from '../../observability/warehouseDefaults.events';
 import type {
   LocationRole,
-  OrphanIssueDetector,
   OrphanWarehouseRelinkConflict,
   OrphanWarehouseRootIssue,
   WarehouseDefaultInvalidReason
@@ -142,19 +137,4 @@ export function buildOrphanDetectionFailurePayload(tenantId: string | undefined,
       routine: normalizeNullableString(candidate.routine, 128)
     }
   };
-}
-
-export async function findOrphanWarehouseRootIssuesBestEffort(
-  detector: OrphanIssueDetector,
-  tenantId?: string
-): Promise<OrphanWarehouseRootIssue[]> {
-  try {
-    return await detector(tenantId);
-  } catch (error) {
-    emitWarehouseDefaultsEvent(
-      WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTION_FAILED,
-      buildOrphanDetectionFailurePayload(tenantId, error)
-    );
-    return [];
-  }
 }

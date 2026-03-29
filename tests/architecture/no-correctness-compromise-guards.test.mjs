@@ -6,8 +6,10 @@ import path from 'node:path';
 const GUARDED_MODULES = [
   'src/services/warehouseDefaults.service.ts',
   'src/domain/warehouseDefaults/warehouseDefaultsDetection.ts',
-  'src/domain/warehouseDefaults/warehouseDefaultsRepair.ts',
   'src/domain/warehouseDefaults/warehouseDefaultsDiagnostics.ts',
+  'src/domain/warehouseDefaults/warehouseTopologyRepair.ts',
+  'src/domain/warehouseDefaults/warehouseDefaultLocationRepair.ts',
+  'src/domain/warehouseDefaults/warehouseDefaultsValidation.ts',
   'src/config/warehouseDefaultsStartup.ts',
   'src/observability/warehouseDefaults.events.ts',
   'tests/api/helpers/testServer.mjs'

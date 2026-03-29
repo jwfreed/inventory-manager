@@ -1,18 +1,22 @@
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
-import { WAREHOUSE_DEFAULTS_REPAIR_HINT } from '../config/warehouseDefaultsStartup';
+import { emitWarehouseDefaultsEvent, WAREHOUSE_DEFAULTS_EVENT } from '../observability/warehouseDefaults.events';
 import {
   findOrphanWarehouseRootIssues,
+  listOrphanWarehouseRelinkConflicts,
   getWarehouseDefaultLocationId,
   resolveDefaultLocationForRole,
   resolveWarehouseIdForLocation,
   type WarehouseDefaultRepairOptions
 } from '../domain/warehouseDefaults/warehouseDefaultsDetection';
 import {
-  ensureDefaultsForWarehouse,
-  ensureOrphanWarehouseRoots,
-  validateWarehouseDefaultsState
-} from '../domain/warehouseDefaults/warehouseDefaultsRepair';
+  buildOrphanDetectionFailurePayload,
+  summarizeOrphanWarehouseRootIssues,
+  warehouseOrphanRootsUnresolvedError
+} from '../domain/warehouseDefaults/warehouseDefaultsDiagnostics';
+import { ensureDefaultsForWarehouse } from '../domain/warehouseDefaults/warehouseDefaultLocationRepair';
+import { repairOrphanWarehouseRoots } from '../domain/warehouseDefaults/warehouseTopologyRepair';
+import { validateWarehouseDefaultsState } from '../domain/warehouseDefaults/warehouseDefaultsValidation';
 
 export {
   findOrphanWarehouseRootIssues,
@@ -37,6 +41,72 @@ function resolveWarehouseDefaultsRepairMode(options?: WarehouseDefaultRepairOpti
 
 function orphanWarehouseScopeKey(tenantId?: string): string {
   return tenantId ?? '__all__';
+}
+
+async function findOrphanWarehouseRootIssuesBestEffort(
+  detector: (tenantId?: string) => Promise<Awaited<ReturnType<typeof findOrphanWarehouseRootIssues>>>,
+  tenantId?: string
+) {
+  try {
+    return await detector(tenantId);
+  } catch (error) {
+    emitWarehouseDefaultsEvent(
+      WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTION_FAILED,
+      buildOrphanDetectionFailurePayload(tenantId, error)
+    );
+    return [];
+  }
+}
+
+async function ensureOrphanWarehouseRoots(params: {
+  tenantId?: string;
+  options?: WarehouseDefaultRepairOptions;
+  repairMode: boolean;
+  scopeKey: string;
+  orphanWarehouseRootsWarningLoggedByScope: Set<string>;
+}): Promise<void> {
+  const {
+    tenantId,
+    options,
+    repairMode,
+    scopeKey,
+    orphanWarehouseRootsWarningLoggedByScope
+  } = params;
+  const detector = options?.orphanIssueDetector ?? findOrphanWarehouseRootIssues;
+  const issues = await findOrphanWarehouseRootIssuesBestEffort(detector, tenantId);
+  if (issues.length === 0) return;
+  const summary = summarizeOrphanWarehouseRootIssues(issues, tenantId);
+
+  if (!repairMode) {
+    if (orphanWarehouseRootsWarningLoggedByScope.has(scopeKey)) return;
+    orphanWarehouseRootsWarningLoggedByScope.add(scopeKey);
+    emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTED, summary);
+    return;
+  }
+
+  emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRING, summary);
+  const repairResult = await repairOrphanWarehouseRoots(tenantId, issues);
+
+  const remaining = await findOrphanWarehouseRootIssuesBestEffort(detector, tenantId);
+  const remainingSummary = summarizeOrphanWarehouseRootIssues(remaining, tenantId);
+  if (remainingSummary.orphanCount > 0) {
+    throw warehouseOrphanRootsUnresolvedError({
+      tenantId: tenantId ?? null,
+      remainingCount: remainingSummary.orphanCount,
+      skippedRelinkLocalCodeConflictCount: repairResult.skippedRelinkLocalCodeConflictCount,
+      remainingSampleWarehouseIds: remainingSummary.sampleWarehouseIds,
+      remainingSampleTenantIds: remainingSummary.sampleTenantIds,
+      conflicts: await listOrphanWarehouseRelinkConflicts(tenantId)
+    });
+  }
+
+  emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRED, {
+    ...summary,
+    ...repairResult,
+    remainingCount: remainingSummary.orphanCount,
+    remainingSampleWarehouseIds: remainingSummary.sampleWarehouseIds,
+    remainingSampleTenantIds: remainingSummary.sampleTenantIds
+  });
 }
 
 export async function validateWarehouseDefaults(tenantId?: string): Promise<void> {
@@ -75,6 +145,16 @@ export async function ensureWarehouseDefaults(tenantId?: string, options?: Wareh
   for (const warehouse of warehousesRes.rows) {
     await withTransaction(async (client) => {
       await ensureDefaultsForWarehouse(warehouse.tenant_id, warehouse.id, repairMode, client, options);
+      await ensureDefaultsForWarehouse(warehouse.tenant_id, warehouse.id, repairMode, client, options, {
+        onRepairing: (payload) => emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING, payload),
+        onRepaired: (payload) => emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRED, payload),
+        onConfigIssueSkippedMissingTenant: (payload) => {
+          console.warn('WAREHOUSE_DEFAULT_CONFIG_ISSUE_SKIPPED_MISSING_TENANT', {
+            ...payload,
+            context: 'auto_create_default_location'
+          });
+        }
+      });
     });
   }
   await validateWarehouseDefaults(tenantId);
@@ -94,10 +174,28 @@ export async function ensureWarehouseDefaultsForWarehouse(
   const resolvedOptions = isPoolClientLike(clientOrOptions) ? options : clientOrOptions;
   const repairMode = resolveWarehouseDefaultsRepairMode(resolvedOptions);
   if (client) {
-    await ensureDefaultsForWarehouse(tenantId, warehouseId, repairMode, client, resolvedOptions);
+    await ensureDefaultsForWarehouse(tenantId, warehouseId, repairMode, client, resolvedOptions, {
+      onRepairing: (payload) => emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING, payload),
+      onRepaired: (payload) => emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRED, payload),
+      onConfigIssueSkippedMissingTenant: (payload) => {
+        console.warn('WAREHOUSE_DEFAULT_CONFIG_ISSUE_SKIPPED_MISSING_TENANT', {
+          ...payload,
+          context: 'auto_create_default_location'
+        });
+      }
+    });
     return;
   }
   await withTransaction(async (tx) => {
-    await ensureDefaultsForWarehouse(tenantId, warehouseId, repairMode, tx, resolvedOptions);
+    await ensureDefaultsForWarehouse(tenantId, warehouseId, repairMode, tx, resolvedOptions, {
+      onRepairing: (payload) => emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING, payload),
+      onRepaired: (payload) => emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRED, payload),
+      onConfigIssueSkippedMissingTenant: (payload) => {
+        console.warn('WAREHOUSE_DEFAULT_CONFIG_ISSUE_SKIPPED_MISSING_TENANT', {
+          ...payload,
+          context: 'auto_create_default_location'
+        });
+      }
+    });
   });
 }

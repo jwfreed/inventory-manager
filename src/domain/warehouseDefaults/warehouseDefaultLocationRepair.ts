@@ -1,15 +1,13 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
-import { query } from '../../db';
-import { WAREHOUSE_DEFAULTS_REPAIR_HINT } from '../../config/warehouseDefaultsStartup';
-import {
-  emitWarehouseDefaultsEvent,
-  WAREHOUSE_DEFAULTS_EVENT
+import type {
+  WarehouseDefaultRepairEndPayload,
+  WarehouseDefaultRepairStartPayload
 } from '../../observability/warehouseDefaults.events';
+import { query } from '../../db';
 import {
   DEFAULT_ROLES,
   detectWarehouseDefaultInvalidReason,
-  listOrphanWarehouseRelinkConflicts,
   REQUIRED_DEFAULT_ROLES,
   type LocationRole,
   type QueryExecutor,
@@ -18,13 +16,21 @@ import {
 import {
   buildWarehouseDefaultActual,
   buildWarehouseDefaultExpected,
-  findOrphanWarehouseRootIssuesBestEffort,
-  summarizeOrphanWarehouseRootIssues,
   warehouseDefaultInternalDerivedIdWithoutMappingError,
-  warehouseDefaultInvalidError,
-  warehouseOrphanRootsUnresolvedError
+  warehouseDefaultInvalidError
 } from './warehouseDefaultsDiagnostics';
-import { findOrphanWarehouseRootIssues } from './warehouseDefaultsDetection';
+
+type DefaultLocationRepairCallbacks = {
+  onRepairing?: (payload: WarehouseDefaultRepairStartPayload) => void;
+  onRepaired?: (payload: WarehouseDefaultRepairEndPayload) => void;
+  onConfigIssueSkippedMissingTenant?: (payload: {
+    tenantId: string;
+    warehouseId: string;
+    role: LocationRole;
+    locationId: string;
+    localCode: string;
+  }) => void;
+};
 
 async function insertWarehouseDefaultConfigIssue(params: {
   executor: QueryExecutor;
@@ -34,8 +40,9 @@ async function insertWarehouseDefaultConfigIssue(params: {
   locationId: string;
   localCode: string;
   now: Date;
+  callbacks?: DefaultLocationRepairCallbacks;
 }) {
-  const { executor, tenantId, warehouseId, role, locationId, localCode, now } = params;
+  const { executor, tenantId, warehouseId, role, locationId, localCode, now, callbacks } = params;
   const configIssueRes = await executor(
     `INSERT INTO config_issues (id, tenant_id, issue_type, entity_type, entity_id, details, created_at)
      SELECT $1, $2, $3, $4, $5, $6::jsonb, $7
@@ -52,221 +59,13 @@ async function insertWarehouseDefaultConfigIssue(params: {
     ]
   );
   if (configIssueRes.rowCount === 0) {
-    console.warn('WAREHOUSE_DEFAULT_CONFIG_ISSUE_SKIPPED_MISSING_TENANT', {
+    callbacks?.onConfigIssueSkippedMissingTenant?.({
       tenantId,
       warehouseId,
       role,
-      context: 'auto_create_default_location',
       locationId,
       localCode
     });
-  }
-}
-
-export async function ensureOrphanWarehouseRoots(params: {
-  tenantId?: string;
-  options?: WarehouseDefaultRepairOptions;
-  repairMode: boolean;
-  scopeKey: string;
-  orphanWarehouseRootsWarningLoggedByScope: Set<string>;
-}): Promise<void> {
-  const {
-    tenantId,
-    options,
-    repairMode,
-    scopeKey,
-    orphanWarehouseRootsWarningLoggedByScope
-  } = params;
-  const detector = options?.orphanIssueDetector ?? findOrphanWarehouseRootIssues;
-  const issues = await findOrphanWarehouseRootIssuesBestEffort(detector, tenantId);
-  if (issues.length === 0) return;
-  const summary = summarizeOrphanWarehouseRootIssues(issues, tenantId);
-
-  if (!repairMode) {
-    if (orphanWarehouseRootsWarningLoggedByScope.has(scopeKey)) return;
-    orphanWarehouseRootsWarningLoggedByScope.add(scopeKey);
-    emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_DETECTED, summary);
-    return;
-  }
-
-  emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRING, summary);
-
-  const now = new Date();
-  let createdWarehouseRootsCount = 0;
-  const createdWarehouseRootIds: string[] = [];
-  const rootsToCreate = new Map<string, { tenantId: string; warehouseId: string }>();
-  for (const issue of issues) {
-    if (!issue.warehouse_id || issue.warehouse_type !== null) continue;
-    if (issue.derived_parent_warehouse_id && issue.derived_parent_warehouse_id !== issue.warehouse_id) continue;
-    rootsToCreate.set(`${issue.tenant_id}:${issue.warehouse_id}`, {
-      tenantId: issue.tenant_id,
-      warehouseId: issue.warehouse_id
-    });
-  }
-
-  for (const root of rootsToCreate.values()) {
-    const code = `WAREHOUSE_RECOVERED_${root.warehouseId.replace(/-/g, '').toUpperCase()}`;
-    const insertRes = await query<{ id: string }>(
-      `INSERT INTO locations (
-          id, tenant_id, code, local_code, name, type, role, is_sellable, active,
-          parent_location_id, warehouse_id, created_at, updated_at
-       )
-       SELECT $1, $2, $3, NULL, $4, 'warehouse', NULL, false, true, NULL, $1, $5, $5
-         FROM tenants t
-        WHERE t.id = $2
-       ON CONFLICT DO NOTHING
-       RETURNING id`,
-      [root.warehouseId, root.tenantId, code, `Recovered Warehouse ${root.warehouseId.slice(0, 8)}`, now]
-    );
-    if ((insertRes.rowCount ?? 0) > 0) {
-      createdWarehouseRootsCount += 1;
-      createdWarehouseRootIds.push(insertRes.rows[0].id);
-    }
-  }
-
-  const reparentRes = await query<{ id: string }>(
-    `UPDATE locations l
-        SET parent_location_id = l.warehouse_id,
-            updated_at = $2
-       FROM locations wh
-      WHERE ($1::uuid IS NULL OR l.tenant_id = $1)
-        AND l.type <> 'warehouse'
-        AND l.parent_location_id IS NULL
-        AND l.warehouse_id IS NOT NULL
-        AND wh.id = l.warehouse_id
-        AND wh.tenant_id = l.tenant_id
-        AND wh.type = 'warehouse'
-      RETURNING l.id`,
-    [tenantId ?? null, now]
-  );
-
-  const relinkRes = await query<{ id: string }>(
-    `WITH candidate AS (
-       SELECT l.id,
-              resolve_warehouse_for_location(l.tenant_id, l.parent_location_id) AS expected_warehouse_id
-         FROM locations l
-        WHERE ($1::uuid IS NULL OR l.tenant_id = $1)
-          AND l.type <> 'warehouse'
-          AND l.parent_location_id IS NOT NULL
-     ),
-     to_fix AS (
-       SELECT c.id,
-              c.expected_warehouse_id
-         FROM candidate c
-         JOIN locations l
-           ON l.id = c.id
-        WHERE c.expected_warehouse_id IS NOT NULL
-          AND l.warehouse_id IS DISTINCT FROM c.expected_warehouse_id
-          AND NOT (
-            l.local_code IS NOT NULL
-            AND EXISTS (
-              SELECT 1
-                FROM locations dup
-               WHERE dup.tenant_id = l.tenant_id
-                 AND dup.warehouse_id = c.expected_warehouse_id
-                 AND dup.local_code = l.local_code
-                 AND dup.id <> l.id
-            )
-          )
-     )
-     UPDATE locations l
-        SET warehouse_id = f.expected_warehouse_id,
-            updated_at = $2
-       FROM to_fix f
-      WHERE l.id = f.id
-     RETURNING l.id`,
-    [tenantId ?? null, now]
-  );
-  const relinkConflictRes = await query<{ count: string }>(
-    `WITH candidate AS (
-       SELECT l.id,
-              l.tenant_id,
-              l.local_code,
-              l.warehouse_id,
-              resolve_warehouse_for_location(l.tenant_id, l.parent_location_id) AS expected_warehouse_id
-         FROM locations l
-        WHERE ($1::uuid IS NULL OR l.tenant_id = $1)
-          AND l.type <> 'warehouse'
-          AND l.parent_location_id IS NOT NULL
-     )
-     SELECT COUNT(*)::text AS count
-       FROM candidate c
-      WHERE c.expected_warehouse_id IS NOT NULL
-        AND c.warehouse_id IS DISTINCT FROM c.expected_warehouse_id
-        AND c.local_code IS NOT NULL
-        AND EXISTS (
-          SELECT 1
-            FROM locations dup
-           WHERE dup.tenant_id = c.tenant_id
-             AND dup.warehouse_id = c.expected_warehouse_id
-             AND dup.local_code = c.local_code
-             AND dup.id <> c.id
-        )`,
-    [tenantId ?? null]
-  );
-
-  const remaining = await findOrphanWarehouseRootIssuesBestEffort(detector, tenantId);
-  const remainingSummary = summarizeOrphanWarehouseRootIssues(remaining, tenantId);
-  if (remainingSummary.orphanCount > 0) {
-    throw warehouseOrphanRootsUnresolvedError({
-      tenantId: tenantId ?? null,
-      remainingCount: remainingSummary.orphanCount,
-      skippedRelinkLocalCodeConflictCount: Number(relinkConflictRes.rows[0]?.count ?? 0),
-      remainingSampleWarehouseIds: remainingSummary.sampleWarehouseIds,
-      remainingSampleTenantIds: remainingSummary.sampleTenantIds,
-      conflicts: await listOrphanWarehouseRelinkConflicts(tenantId)
-    });
-  }
-
-  emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.ORPHAN_ROOTS_REPAIRED, {
-    ...summary,
-    createdWarehouseRootsCount,
-    createdWarehouseRootIds: createdWarehouseRootIds.slice(0, 5),
-    reparentedCount: reparentRes.rowCount ?? 0,
-    relinkedWarehouseCount: relinkRes.rowCount ?? 0,
-    skippedRelinkLocalCodeConflictCount: Number(relinkConflictRes.rows[0]?.count ?? 0),
-    remainingCount: remainingSummary.orphanCount,
-    remainingSampleWarehouseIds: remainingSummary.sampleWarehouseIds,
-    remainingSampleTenantIds: remainingSummary.sampleTenantIds
-  });
-}
-
-export async function validateWarehouseDefaultsState(tenantId: string | undefined, repairEnabled: boolean): Promise<void> {
-  const params: any[] = [];
-  const clauses: string[] = [`l.type = 'warehouse'`];
-  if (tenantId) {
-    clauses.push(`l.tenant_id = $${params.push(tenantId)}`);
-  }
-  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  const warehousesRes = await query<{ id: string; tenant_id: string }>(
-    `SELECT l.id, l.tenant_id
-       FROM locations l
-       JOIN tenants t
-         ON t.id = l.tenant_id
-     ${where}`,
-    params
-  );
-  for (const warehouse of warehousesRes.rows) {
-    const rolesRes = await query<{ role: string }>(
-      `SELECT role FROM warehouse_default_location
-        WHERE tenant_id = $1 AND warehouse_id = $2`,
-      [warehouse.tenant_id, warehouse.id]
-    );
-    const roles = new Set(rolesRes.rows.map((row) => row.role));
-    const missing = REQUIRED_DEFAULT_ROLES.filter((role) => !roles.has(role));
-    if (missing.length > 0) {
-      const error = new Error('WAREHOUSE_DEFAULT_LOCATIONS_REQUIRED') as Error & { code?: string; details?: any };
-      error.code = 'WAREHOUSE_DEFAULT_LOCATIONS_REQUIRED';
-      error.details = repairEnabled
-        ? { warehouseId: warehouse.id, tenantId: warehouse.tenant_id, missingRoles: missing }
-        : {
-            warehouseId: warehouse.id,
-            tenantId: warehouse.tenant_id,
-            missingRoles: missing,
-            hint: WAREHOUSE_DEFAULTS_REPAIR_HINT
-          };
-      throw error;
-    }
   }
 }
 
@@ -275,7 +74,8 @@ export async function ensureDefaultsForWarehouse(
   warehouseId: string,
   repairInvalidDefaults: boolean,
   client?: PoolClient,
-  options?: WarehouseDefaultRepairOptions
+  options?: WarehouseDefaultRepairOptions,
+  callbacks?: DefaultLocationRepairCallbacks
 ): Promise<void> {
   const executor = client ? client.query.bind(client) : query;
   const warehouseRes = await executor<{
@@ -415,7 +215,7 @@ export async function ensureDefaultsForWarehouse(
           throw invalidError;
         }
         if (invalidDetails) {
-          emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING, invalidDetails);
+          callbacks?.onRepairing?.(invalidDetails);
         }
         await executor(
           `DELETE FROM warehouse_default_location
@@ -432,7 +232,7 @@ export async function ensureDefaultsForWarehouse(
         throw warehouseDefaultInvalidError(invalidDetails!, { repairEnabled: repairInvalidDefaults });
       }
       if (invalidDetails) {
-        emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRING, invalidDetails);
+        callbacks?.onRepairing?.(invalidDetails);
       }
     }
 
@@ -495,7 +295,8 @@ export async function ensureDefaultsForWarehouse(
             role,
             locationId,
             localCode,
-            now
+            now,
+            callbacks
           });
           break;
         }
@@ -529,7 +330,7 @@ export async function ensureDefaultsForWarehouse(
             AND role = $3`,
         [tenantId, warehouseId, role]
       );
-      emitWarehouseDefaultsEvent(WAREHOUSE_DEFAULTS_EVENT.DEFAULT_REPAIRED, {
+      callbacks?.onRepaired?.({
         ...invalidDetails,
         repaired: {
           tenantId,
