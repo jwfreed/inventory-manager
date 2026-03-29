@@ -52,6 +52,8 @@ jobs:
           apt-get install -y -qq postgresql-client
       - name: Install deps
         run: npm ci
+      - name: Run core typecheck
+        run: npm run typecheck:core
       - name: Wait for Postgres readiness
         run: |
           for i in {1..60}; do

@@ -533,16 +533,14 @@ export async function postReturnReceipt(
         idempotencyKey: normalizedIdempotencyKey,
         occurredAt,
         postedAt: now,
-        notes: currentReceipt.notes ?? null,
+        notes: receipt.notes ?? null,
         createdAt: now,
         updatedAt: now,
         lines: preparedLines.map((preparedLine) => ({
-          warehouseId: receiptWarehouseId ?? (() => {
-            throw new Error('WAREHOUSE_SCOPE_REQUIRED')
-          })(),
+          warehouseId: currentReceiptWarehouseId,
           sourceLineId: preparedLine.line.id,
           itemId: preparedLine.line.item_id,
-          locationId: currentReceipt.received_to_location_id,
+          locationId: receipt.received_to_location_id,
           quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
           uom: preparedLine.canonicalFields.canonicalUom,
           quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
