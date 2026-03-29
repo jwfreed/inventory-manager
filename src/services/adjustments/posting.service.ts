@@ -54,6 +54,17 @@ function inventoryAdjustmentPostIncompleteError(
   return error;
 }
 
+function requireWarehouseIdForLocation(
+  warehouseIdsByLocation: Map<string, string>,
+  locationId: string
+): string {
+  const warehouseId = warehouseIdsByLocation.get(locationId);
+  if (!warehouseId) {
+    throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+  }
+  return warehouseId;
+}
+
 async function buildInventoryAdjustmentReplayResult(params: {
   tenantId: string;
   adjustmentId: string;
@@ -144,7 +155,7 @@ export async function postInventoryAdjustment(
         }
         return adjustmentLines.map((line) => ({
           tenantId,
-          warehouseId: warehouseIdsByLocation.get(line.location_id) ?? '',
+          warehouseId: requireWarehouseIdForLocation(warehouseIdsByLocation, line.location_id),
           itemId: line.item_id
         }));
       },
@@ -187,7 +198,7 @@ export async function postInventoryAdjustment(
               tenantId,
               new Date(adjustmentRow.occurred_at),
               negativeLines.map((line) => ({
-                warehouseId: warehouseIdsByLocation.get(line.locationId) ?? '',
+                warehouseId: requireWarehouseIdForLocation(warehouseIdsByLocation, line.locationId),
                 ...line
               })),
               {
@@ -224,7 +235,7 @@ export async function postInventoryAdjustment(
           preparedLines.push({
             line,
             qty,
-            warehouseId: warehouseIdsByLocation.get(line.location_id) ?? '',
+            warehouseId: requireWarehouseIdForLocation(warehouseIdsByLocation, line.location_id),
             canonicalFields
           });
         }

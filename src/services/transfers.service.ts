@@ -197,6 +197,13 @@ function compareInventoryLockTarget(
   return left.itemId.localeCompare(right.itemId);
 }
 
+function requireMovementLineWarehouseId(line: MovementLineRow): string {
+  if (typeof line.warehouse_id !== 'string' || !line.warehouse_id.trim()) {
+    throw new Error('TRANSFER_REPLAY_SCOPE_UNRESOLVED');
+  }
+  return line.warehouse_id;
+}
+
 export async function prepareTransferMutation(
   input: TransferInventoryInput,
   client: PoolClient
@@ -530,7 +537,7 @@ function buildTransferReversalPlan(params: {
     params.originalLines.map((line) => ({
       id: uuidv4(),
       sourceLineId: line.id,
-      warehouseId: line.warehouse_id ?? '',
+      warehouseId: requireMovementLineWarehouseId(line),
       itemId: line.item_id,
       locationId: line.location_id,
       effectiveUom: line.canonical_uom ?? line.uom,

@@ -329,8 +329,9 @@ export async function postReturnReceipt(
       if (receiptResult.rowCount === 0) {
         throw new Error('RETURN_RECEIPT_NOT_FOUND')
       }
-      receipt = receiptResult.rows[0]
-      if (receipt.status === 'canceled') {
+      const lockedReceipt = receiptResult.rows[0]
+      receipt = lockedReceipt
+      if (lockedReceipt.status === 'canceled') {
         throw new Error('RETURN_RECEIPT_CANCELED')
       }
 
@@ -348,18 +349,21 @@ export async function postReturnReceipt(
       }
       receiptLines = linesResult.rows
 
-      if (receipt.status === 'posted' && receipt.inventory_movement_id) {
+      if (lockedReceipt.status === 'posted' && lockedReceipt.inventory_movement_id) {
         return []
       }
-      if (receipt.status === 'posted' && !receipt.inventory_movement_id) {
+      if (lockedReceipt.status === 'posted' && !lockedReceipt.inventory_movement_id) {
         throw returnReceiptPostIncompleteError(id, {
           reason: 'return_receipt_posted_without_movement'
         })
       }
+      if (!lockedReceipt.received_to_location_id) {
+        throw new Error('RETURN_RECEIPT_LOCATION_REQUIRED')
+      }
 
       receiptWarehouseId = await resolveWarehouseIdForLocation(
         tenantId,
-        receipt.received_to_location_id,
+        lockedReceipt.received_to_location_id,
         client
       )
       if (!receiptWarehouseId) {
@@ -373,7 +377,7 @@ export async function postReturnReceipt(
           WHERE id = $1
             AND tenant_id = $2
           FOR UPDATE`,
-        [receipt.return_authorization_id, tenantId]
+        [lockedReceipt.return_authorization_id, tenantId]
       )
       if (returnAuthResult.rowCount === 0) {
         throw new Error('RETURN_AUTH_NOT_FOUND')
@@ -404,7 +408,7 @@ export async function postReturnReceipt(
               AND id = ANY($3::uuid[])
             ORDER BY id ASC
             FOR UPDATE`,
-          [tenantId, receipt.return_authorization_id, authLineIds]
+          [tenantId, lockedReceipt.return_authorization_id, authLineIds]
         )
         if (authLineResult.rowCount !== authLineIds.length) {
           throw new Error('RETURN_RECEIPT_LINE_INVALID_REFERENCE')
@@ -423,7 +427,7 @@ export async function postReturnReceipt(
               AND rr.id <> $3
               AND rrl.return_authorization_line_id = ANY($4::uuid[])
             GROUP BY rrl.return_authorization_line_id`,
-          [tenantId, receipt.return_authorization_id, id, authLineIds]
+          [tenantId, lockedReceipt.return_authorization_id, id, authLineIds]
         )
         const authLineMap = new Map(authLineResult.rows.map((row) => [row.id, row]))
         const postedTotals = new Map(
@@ -471,10 +475,11 @@ export async function postReturnReceipt(
       if (!receiptWarehouseId) {
         throw new Error('WAREHOUSE_SCOPE_REQUIRED')
       }
-      const currentReceiptWarehouseId = receiptWarehouseId;
+      const lockedReceipt = receipt;
+      const lockedReceiptWarehouseId = receiptWarehouseId;
 
-      if (receipt.status === 'posted') {
-        if (!receipt.inventory_movement_id) {
+      if (lockedReceipt.status === 'posted') {
+        if (!lockedReceipt.inventory_movement_id) {
           throw returnReceiptPostIncompleteError(id, {
             reason: 'return_receipt_posted_without_movement'
           })
@@ -482,17 +487,17 @@ export async function postReturnReceipt(
         return await buildReturnReceiptPostReplayResult({
           tenantId,
           returnReceiptId: id,
-          movementId: receipt.inventory_movement_id,
+          movementId: lockedReceipt.inventory_movement_id,
           expectedLineCount: receiptLines.length,
           client
         })
       }
 
       const now = new Date()
-      const occurredAt = receipt.received_at ? new Date(receipt.received_at) : now
+      const occurredAt = lockedReceipt.received_at ? new Date(lockedReceipt.received_at) : now
       const projectionOps: InventoryCommandProjectionOp[] = []
       const itemsToRefresh = new Set<string>()
-      if (!receipt.received_to_location_id) {
+      if (!lockedReceipt.received_to_location_id) {
         throw new Error('RETURN_RECEIPT_LOCATION_REQUIRED')
       }
       const preparedLines: Array<{
@@ -533,14 +538,14 @@ export async function postReturnReceipt(
         idempotencyKey: normalizedIdempotencyKey,
         occurredAt,
         postedAt: now,
-        notes: receipt.notes ?? null,
+        notes: lockedReceipt.notes ?? null,
         createdAt: now,
         updatedAt: now,
         lines: preparedLines.map((preparedLine) => ({
-          warehouseId: currentReceiptWarehouseId,
+          warehouseId: lockedReceiptWarehouseId,
           sourceLineId: preparedLine.line.id,
           itemId: preparedLine.line.item_id,
-          locationId: receipt.received_to_location_id,
+          locationId: lockedReceipt.received_to_location_id,
           quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,
           uom: preparedLine.canonicalFields.canonicalUom,
           quantityDeltaEntered: preparedLine.canonicalFields.quantityDeltaEntered,
@@ -592,7 +597,7 @@ export async function postReturnReceipt(
         await createCostLayer({
           tenant_id: tenantId,
           item_id: preparedLine.line.item_id,
-          location_id: receipt.received_to_location_id,
+          location_id: lockedReceipt.received_to_location_id,
           uom: preparedLine.canonicalFields.canonicalUom,
           quantity: preparedLine.canonicalFields.quantityDeltaCanonical,
           unit_cost: preparedLine.costData.unitCost ?? 0,
@@ -608,7 +613,7 @@ export async function postReturnReceipt(
           buildInventoryBalanceProjectionOp({
             tenantId,
             itemId: preparedLine.line.item_id,
-            locationId: receipt.received_to_location_id,
+            locationId: lockedReceipt.received_to_location_id,
             uom: preparedLine.canonicalFields.canonicalUom,
             deltaOnHand: preparedLine.canonicalFields.quantityDeltaCanonical
           })

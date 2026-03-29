@@ -498,9 +498,11 @@ export async function createPurchaseOrderReceipt(
       }));
     },
     execute: async ({ client }) => {
-      if (!poRow || !qaLocationId) {
+      if (!poRow || !qaLocationId || !qaWarehouseId) {
         throw new Error('RECEIPT_RECEIVING_LOCATION_REQUIRED');
       }
+      const receivingQaLocationId = qaLocationId;
+      const receivingQaWarehouseId = qaWarehouseId;
 
       const now = new Date();
       const occurredAt = data.receivedAt ? new Date(data.receivedAt) : now;
@@ -575,10 +577,10 @@ export async function createPurchaseOrderReceipt(
         createdAt: now,
         updatedAt: now,
         lines: plannedReceiptLines.map((line) => ({
-          warehouseId: qaWarehouseId!,
+          warehouseId: receivingQaWarehouseId,
           sourceLineId: line.receiptLineId,
           itemId: line.itemId,
-          locationId: qaLocationId!,
+          locationId: receivingQaLocationId,
           quantityDelta: line.canonicalFields.quantityDeltaCanonical,
           uom: line.canonicalFields.canonicalUom,
           quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,
@@ -617,7 +619,7 @@ export async function createPurchaseOrderReceipt(
           data.purchaseOrderId,
           'posted',
           occurredAt,
-          qaLocationId,
+          receivingQaLocationId,
           movementId,
           data.externalRef ?? null,
           data.notes ?? null,
@@ -1144,6 +1146,7 @@ async function insertReversalLinesAndCollectDeltas(
     source_line_id: string;
     item_id: string;
     location_id: string;
+    warehouse_id: string | null;
     quantity_delta: string | number;
     uom: string;
     quantity_delta_entered: string | number | null;
@@ -1155,9 +1158,10 @@ async function insertReversalLinesAndCollectDeltas(
     extended_cost: string | number | null;
     reason_code: string | null;
   }>(
-    `SELECT id AS source_line_id,
+    `SELECT iml.id AS source_line_id,
             item_id,
             location_id,
+            l.warehouse_id,
             quantity_delta,
             uom,
             quantity_delta_entered,
@@ -1168,9 +1172,12 @@ async function insertReversalLinesAndCollectDeltas(
             unit_cost,
             extended_cost,
             reason_code
-       FROM inventory_movement_lines
-      WHERE tenant_id = $1
-        AND movement_id = $2`,
+       FROM inventory_movement_lines iml
+       JOIN locations l
+         ON l.id = iml.location_id
+        AND l.tenant_id = iml.tenant_id
+      WHERE iml.tenant_id = $1
+        AND iml.movement_id = $2`,
     [tenantId, originalMovementId]
   );
 
@@ -1180,8 +1187,14 @@ async function insertReversalLinesAndCollectDeltas(
 
   const reversalLines = sortDeterministicMovementLines(
     sourceLinesResult.rows.map((row) => ({
+      ...(typeof row.warehouse_id === 'string' && row.warehouse_id.trim()
+        ? {}
+        : (() => {
+            throw new Error('RECEIPT_REPLAY_SCOPE_UNRESOLVED');
+          })()),
       id: uuidv4(),
       sourceLineId: row.source_line_id,
+      warehouseId: row.warehouse_id!,
       itemId: row.item_id,
       locationId: row.location_id,
       quantityDelta: -toNumber(row.quantity_delta),
@@ -1205,7 +1218,7 @@ async function insertReversalLinesAndCollectDeltas(
     })),
     (line) => ({
       tenantId,
-      warehouseId: '',
+      warehouseId: line.warehouseId,
       locationId: line.locationId,
       itemId: line.itemId,
       canonicalUom: line.canonicalUom ?? line.uom,
@@ -1448,7 +1461,7 @@ export async function voidReceipt(
         updatedAt: now,
         lines: reversalPlan.reversalLines.map((line) => ({
           id: line.id,
-          warehouseId: '',
+          warehouseId: line.warehouseId,
           sourceLineId: line.sourceLineId,
           itemId: line.itemId,
           locationId: line.locationId,

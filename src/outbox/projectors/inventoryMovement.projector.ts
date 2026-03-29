@@ -68,7 +68,7 @@ function sourceTypeForMovement(movement: MovementRow): 'receipt' | 'production' 
   if (movement.movement_type === 'receive') {
     return isWorkOrderCompletion(movement.external_ref) ? 'production' : 'receipt';
   }
-  return 'receipt';
+  throw new Error(`OUTBOX_MOVEMENT_TYPE_UNSUPPORTED:${movement.movement_type}`);
 }
 
 function consumptionTypeForMovement(
@@ -82,7 +82,7 @@ function consumptionTypeForMovement(
     if (isShipment(movement.external_ref, line.reason_code)) return 'sale';
     return 'issue';
   }
-  return 'issue';
+  throw new Error(`OUTBOX_MOVEMENT_TYPE_UNSUPPORTED:${movement.movement_type}`);
 }
 
 async function hasCostLayerActivity(client: PoolClient, tenantId: string, movementId: string): Promise<boolean> {
