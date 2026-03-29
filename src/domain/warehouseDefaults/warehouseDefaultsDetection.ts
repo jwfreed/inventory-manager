@@ -1,7 +1,11 @@
 import type { PoolClient } from 'pg';
 import { query } from '../../db';
-
-export type LocationRole = 'SELLABLE' | 'QA' | 'HOLD' | 'REJECT' | 'SCRAP';
+import {
+  detectWarehouseDefaultInvalidReason,
+  type LocationRole,
+  type WarehouseDefaultInvalidReason,
+  type WarehouseDefaultLocationState
+} from './warehouseDefaultsPolicy';
 
 type LocationRow = {
   id: string;
@@ -9,25 +13,12 @@ type LocationRow = {
   parent_location_id: string | null;
 };
 
-export const REQUIRED_DEFAULT_ROLES: LocationRole[] = ['SELLABLE', 'QA', 'HOLD', 'REJECT'];
-export const DEFAULT_ROLES: LocationRole[] = ['SELLABLE', 'QA', 'HOLD', 'REJECT', 'SCRAP'];
-
 export type WarehouseDefaultRepairOptions = {
   repair?: boolean;
   orphanIssueDetector?: OrphanIssueDetector;
   // Test-only hook used to verify guardrails against role-unsafe derived defaults.
   debugDerivedDefaultByRole?: Partial<Record<LocationRole, string | null>>;
 };
-
-export type WarehouseDefaultInvalidReason =
-  | 'missing_warehouse'
-  | 'missing_location'
-  | 'tenant_mismatch'
-  | 'role_mismatch'
-  | 'sellable_flag'
-  | 'warehouse_drift'
-  | 'parent_drift'
-  | 'type_mismatch';
 
 export type OrphanWarehouseRootIssue = {
   location_id: string;
@@ -55,33 +46,8 @@ export type QueryExecutor = (
   values?: unknown[]
 ) => Promise<{ rowCount: number | null; rows: Array<Record<string, unknown>> }>;
 
-export function detectWarehouseDefaultInvalidReason(params: {
-  tenantId: string;
-  warehouseId: string;
-  role: LocationRole;
-  existingDefault:
-    | {
-        tenant_id: string;
-        role: LocationRole;
-        parent_location_id: string | null;
-        warehouse_id: string;
-        type: string;
-        is_sellable: boolean;
-      }
-    | null
-    | undefined;
-}): WarehouseDefaultInvalidReason | null {
-  const { tenantId, warehouseId, role, existingDefault } = params;
-  const expectedType = role === 'SCRAP' ? 'scrap' : 'bin';
-  if (!existingDefault) return 'missing_location';
-  if (existingDefault.tenant_id !== tenantId) return 'tenant_mismatch';
-  if (existingDefault.role !== role) return 'role_mismatch';
-  if (role === 'SELLABLE' && existingDefault.is_sellable !== true) return 'sellable_flag';
-  if (existingDefault.warehouse_id !== warehouseId) return 'warehouse_drift';
-  if (existingDefault.parent_location_id !== warehouseId) return 'parent_drift';
-  if (existingDefault.type !== expectedType) return 'type_mismatch';
-  return null;
-}
+export { detectWarehouseDefaultInvalidReason };
+export type { LocationRole, WarehouseDefaultInvalidReason, WarehouseDefaultLocationState };
 
 export async function findOrphanWarehouseRootIssues(tenantId?: string): Promise<OrphanWarehouseRootIssue[]> {
   const tenantClause = tenantId ? 'AND l.tenant_id = $1' : '';

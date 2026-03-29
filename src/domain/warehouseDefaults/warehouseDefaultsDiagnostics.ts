@@ -1,11 +1,16 @@
 import { WAREHOUSE_DEFAULTS_REPAIR_HINT } from '../../config/warehouseDefaultsStartup';
 import type { WarehouseDefaultValidationSnapshot } from '../../observability/warehouseDefaults.events';
 import type {
-  LocationRole,
   OrphanWarehouseRelinkConflict,
-  OrphanWarehouseRootIssue,
-  WarehouseDefaultInvalidReason
+  OrphanWarehouseRootIssue
 } from './warehouseDefaultsDetection';
+import {
+  buildExpectedWarehouseDefaultState,
+  type LocationRole,
+  type WarehouseDefaultInvalidReason,
+  warehouseDefaultRoleRequiresSellableFlag
+} from './warehouseDefaultsPolicy';
+import { getUnresolvedOrphanWarehouseRootsReason } from './warehouseTopologyPolicy';
 
 export function summarizeOrphanWarehouseRootIssues(issues: OrphanWarehouseRootIssue[], tenantId?: string) {
   const sampleWarehouseIds = Array.from(new Set(issues.map((row) => row.warehouse_id).filter((row): row is string => Boolean(row)))).slice(0, 5);
@@ -19,13 +24,7 @@ export function summarizeOrphanWarehouseRootIssues(issues: OrphanWarehouseRootIs
 }
 
 export function buildWarehouseDefaultExpected(role: LocationRole, warehouseId: string): WarehouseDefaultValidationSnapshot {
-  return {
-    role,
-    warehouse_id: warehouseId,
-    parent_location_id: warehouseId,
-    type: role === 'SCRAP' ? 'scrap' : 'bin',
-    is_sellable: role === 'SELLABLE' ? true : null
-  };
+  return buildExpectedWarehouseDefaultState(role, warehouseId);
 }
 
 export function buildWarehouseDefaultActual(
@@ -43,7 +42,7 @@ export function buildWarehouseDefaultActual(
     warehouse_id: existingDefault?.warehouse_id ?? null,
     parent_location_id: existingDefault?.parent_location_id ?? null,
     type: existingDefault?.type ?? null,
-    is_sellable: role === 'SELLABLE' ? (existingDefault?.is_sellable ?? null) : null
+    is_sellable: warehouseDefaultRoleRequiresSellableFlag(role) ? (existingDefault?.is_sellable ?? null) : null
   };
 }
 
@@ -97,7 +96,7 @@ export function warehouseOrphanRootsUnresolvedError(details: {
   error.code = 'WAREHOUSE_DEFAULT_ORPHAN_ROOTS_UNRESOLVED';
   error.details = {
     ...details,
-    reason: details.conflicts.length > 0 ? 'local_code_conflict' : 'remaining_orphan_roots'
+    reason: getUnresolvedOrphanWarehouseRootsReason(details.conflicts.length)
   };
   return error;
 }

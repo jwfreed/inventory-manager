@@ -1,6 +1,6 @@
 import { query } from '../../db';
 import { WAREHOUSE_DEFAULTS_REPAIR_HINT } from '../../config/warehouseDefaultsStartup';
-import { REQUIRED_DEFAULT_ROLES } from './warehouseDefaultsDetection';
+import { getMissingRequiredWarehouseDefaultRoles } from './warehouseDefaultsPolicy';
 
 export async function validateWarehouseDefaultsState(
   tenantId: string | undefined,
@@ -26,8 +26,7 @@ export async function validateWarehouseDefaultsState(
         WHERE tenant_id = $1 AND warehouse_id = $2`,
       [warehouse.tenant_id, warehouse.id]
     );
-    const roles = new Set(rolesRes.rows.map((row) => row.role));
-    const missing = REQUIRED_DEFAULT_ROLES.filter((role) => !roles.has(role));
+    const missing = getMissingRequiredWarehouseDefaultRoles(rolesRes.rows.map((row) => row.role));
     if (missing.length > 0) {
       const error = new Error('WAREHOUSE_DEFAULT_LOCATIONS_REQUIRED') as Error & { code?: string; details?: any };
       error.code = 'WAREHOUSE_DEFAULT_LOCATIONS_REQUIRED';

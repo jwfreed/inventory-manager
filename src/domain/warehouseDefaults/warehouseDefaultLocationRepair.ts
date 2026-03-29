@@ -1,11 +1,11 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '../../db';
+import type {
+  WarehouseDefaultRepairEndPayload,
+  WarehouseDefaultRepairStartPayload
+} from '../../observability/warehouseDefaults.events';
 import {
-  DEFAULT_ROLES,
-  detectWarehouseDefaultInvalidReason,
-  REQUIRED_DEFAULT_ROLES,
-  type LocationRole,
   type WarehouseDefaultRepairOptions
 } from './warehouseDefaultsDetection';
 import {
@@ -14,22 +14,20 @@ import {
   warehouseDefaultInternalDerivedIdWithoutMappingError,
   warehouseDefaultInvalidError
 } from './warehouseDefaultsDiagnostics';
-
-type DefaultLocationRepairStartPayload = Parameters<typeof warehouseDefaultInvalidError>[0];
-type DefaultLocationRepairEndPayload = DefaultLocationRepairStartPayload & {
-  repaired: {
-    tenantId: string;
-    warehouseId: string;
-    role: LocationRole;
-    locationId: string;
-    defaultLocationId: string;
-    mappingId: string | null;
-  };
-};
+import {
+  DEFAULT_ROLES,
+  detectWarehouseDefaultInvalidReason,
+  getWarehouseDefaultLocationType,
+  isRequiredWarehouseDefaultRole,
+  shouldRepairInvalidWarehouseDefault,
+  warehouseDefaultRoleRequiresSellableFlag,
+  type LocationRole
+} from './warehouseDefaultsPolicy';
+import { formatWarehouseRootInvalidMessage, isWarehouseRootLocationValid } from './warehouseTopologyPolicy';
 
 export type DefaultLocationRepairCallbacks = {
-  onRepairing?: (payload: DefaultLocationRepairStartPayload) => void;
-  onRepaired?: (payload: DefaultLocationRepairEndPayload) => void;
+  onRepairing?: (payload: WarehouseDefaultRepairStartPayload) => void;
+  onRepaired?: (payload: WarehouseDefaultRepairEndPayload) => void;
   onAutoCreatedDefaultLocation?: (payload: {
     tenantId: string;
     warehouseId: string;
@@ -86,10 +84,8 @@ export async function ensureDefaultsForWarehouse(
     }, { repairEnabled: repairInvalidDefaults });
   }
   const warehouse = warehouseRes.rows[0];
-  if (warehouse.role !== null || warehouse.is_sellable || warehouse.parent_location_id !== null) {
-    throw new Error(
-      `WAREHOUSE_ROOT_INVALID role=${warehouse.role ?? 'null'} is_sellable=${warehouse.is_sellable} parent_location_id=${warehouse.parent_location_id ?? 'null'}`
-    );
+  if (!isWarehouseRootLocationValid(warehouse)) {
+    throw new Error(formatWarehouseRootInvalidMessage(warehouse));
   }
   const defaultsRes = await executor<{ role: LocationRole; location_id: string; mapping_id: string | null }>(
     `SELECT role,
@@ -177,7 +173,7 @@ export async function ensureDefaultsForWarehouse(
           actual: buildWarehouseDefaultActual(role, existingDefault)
         }
       : null;
-    const shouldRepairInvalidDefault = Boolean(invalidReason && invalidReason !== 'missing_location');
+    const shouldRepairInvalidDefault = shouldRepairInvalidWarehouseDefault(invalidReason);
 
     if (defaults.has(role)) {
       if (invalidReason) {
@@ -207,7 +203,7 @@ export async function ensureDefaultsForWarehouse(
       }
     }
 
-    const expectedType = role === 'SCRAP' ? 'scrap' : 'bin';
+    const expectedType = getWarehouseDefaultLocationType(role);
     const candidateRes = await executor<{ id: string }>(
       `SELECT id
          FROM locations
@@ -216,7 +212,7 @@ export async function ensureDefaultsForWarehouse(
           AND parent_location_id = $2
           AND role = $3
           AND type = $4
-          ${role === 'SELLABLE' ? 'AND is_sellable = true' : ''}
+          ${warehouseDefaultRoleRequiresSellableFlag(role) ? 'AND is_sellable = true' : ''}
         ORDER BY created_at ASC, id ASC
         LIMIT 1`,
       [tenantId, warehouseId, role, expectedType]
@@ -224,7 +220,7 @@ export async function ensureDefaultsForWarehouse(
     let locationId = candidateRes.rows[0]?.id ?? null;
     if (!locationId) {
       if (!repairInvalidDefaults) {
-        if (REQUIRED_DEFAULT_ROLES.includes(role)) {
+        if (isRequiredWarehouseDefaultRole(role)) {
           throw warehouseDefaultInvalidError(invalidDetails!, { repairEnabled: repairInvalidDefaults });
         }
         continue;
@@ -232,7 +228,7 @@ export async function ensureDefaultsForWarehouse(
       const id = uuidv4();
       const code = `${role}-${warehouseId}`;
       const name = `${role} Default`;
-      const isSellable = role === 'SELLABLE';
+      const isSellable = warehouseDefaultRoleRequiresSellableFlag(role);
       const now = new Date();
       const localCodeCandidates = [role, `${role}_${warehouseId.slice(0, 8)}`];
 
