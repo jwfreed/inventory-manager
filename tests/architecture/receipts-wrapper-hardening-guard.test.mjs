@@ -87,8 +87,8 @@ test('receipt replay and reversal hardening stays on shared helpers', async () =
   );
   assert.match(
     createBody,
-    /\bpersistInventoryMovement\(/,
-    'receipt create must persist a deterministic movement hash through the canonical movement writer'
+    /\b(?:persistInventoryMovement|postReceiptInventoryMovement)\(/,
+    'receipt create must persist a deterministic movement hash through the canonical movement writer or its receipt posting wrapper'
   );
   assert.match(
     voidBody,

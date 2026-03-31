@@ -1,5 +1,9 @@
 import { roundQuantity, toNumber } from '../../lib/numbers';
 import {
+  deriveReceiptLifecycleState,
+  RECEIPT_STATES
+} from '../../domain/receipts/receiptStateModel';
+import {
   calculateAcceptedQuantity,
   calculatePutawayAvailability,
   defaultBreakdown,
@@ -142,20 +146,19 @@ export function buildReceiptStatusSummary(
   const totalAcceptedQty = roundQuantity(totals.totalAcceptedQty);
   const putawayPosted = roundQuantity(totals.putawayPosted);
   const putawayPending = roundQuantity(totals.putawayPending);
-
-  const remainingQc = Math.max(0, totalReceived - (totalAccept + totalHold + totalReject));
+  const receiptState = deriveReceiptLifecycleState({
+    baseStatus,
+    totalReceived,
+    totalAccept,
+    totalHold,
+    totalReject
+  });
   const hasReceived = totalReceived > STATUS_EPSILON;
 
   let qcStatus: ReceiptStatusSummary['qcStatus'];
-  if (baseStatus === 'voided') {
-    qcStatus = 'failed';
-  } else if (!hasReceived) {
+  if (!hasReceived || receiptState === RECEIPT_STATES.QC_PENDING) {
     qcStatus = 'pending';
-  } else if (remainingQc > STATUS_EPSILON) {
-    qcStatus = 'pending';
-  } else if (totalHold > STATUS_EPSILON) {
-    qcStatus = 'failed';
-  } else if (totalAccept > STATUS_EPSILON) {
+  } else if (receiptState === RECEIPT_STATES.AVAILABLE) {
     qcStatus = 'passed';
   } else {
     qcStatus = 'failed';
@@ -180,9 +183,9 @@ export function buildReceiptStatusSummary(
     workflowStatus = 'draft';
   } else if (!hasReceived) {
     workflowStatus = 'posted';
-  } else if (qcStatus === 'pending') {
+  } else if (receiptState === RECEIPT_STATES.QC_PENDING) {
     workflowStatus = 'pending_qc';
-  } else if (qcStatus === 'failed') {
+  } else if (receiptState === RECEIPT_STATES.REJECTED) {
     workflowStatus = 'qc_failed';
   } else if (putawayStatus === 'complete') {
     workflowStatus = 'complete';
@@ -192,10 +195,10 @@ export function buildReceiptStatusSummary(
     workflowStatus = 'qc_passed';
   }
 
-  const qcEligible = baseStatus === 'posted' && remainingQc > STATUS_EPSILON;
+  const qcEligible = baseStatus === 'posted' && receiptState === RECEIPT_STATES.QC_PENDING;
   const putawayEligible =
     baseStatus === 'posted' &&
-    qcStatus === 'passed' &&
+    receiptState === RECEIPT_STATES.AVAILABLE &&
     totalAcceptedQty > STATUS_EPSILON &&
     putawayPosted + putawayPending + STATUS_EPSILON < totalAcceptedQty;
 
