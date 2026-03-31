@@ -20,6 +20,16 @@ import {
   type LocationRole
 } from './warehouseDefaultsPolicy';
 import { warehouseDefaultsInvariantEngine } from './warehouseDefaultsInvariantEngine';
+type InventoryBinProvisioningTx = {
+  query: (...args: any[]) => Promise<any>;
+};
+const { ensureLocationHasAtLeastOneBin } = require('../../../scripts/lib/locationBinProvisioning.js') as {
+  ensureLocationHasAtLeastOneBin: (
+    locationId: string,
+    tenantId: string,
+    tx: InventoryBinProvisioningTx
+  ) => Promise<{ created: boolean; binId: string }>;
+};
 
 export type DefaultLocationRepairCallbacks = {
   onRepairing?: (payload: WarehouseDefaultRepairStartPayload) => void;
@@ -43,6 +53,7 @@ export async function ensureDefaultsForWarehouse(
   callbacks?: DefaultLocationRepairCallbacks
 ): Promise<void> {
   const executor = client ? client.query.bind(client) : query;
+  const binProvisioningTx: InventoryBinProvisioningTx = client ?? { query: executor };
   const warehouseRes = await executor<{
     role: LocationRole | null;
     is_sellable: boolean;
@@ -214,7 +225,12 @@ export async function ensureDefaultsForWarehouse(
         );
         defaults.delete(role);
       }
-      if (!repairDecision.requiresMappingDeletion) continue;
+      if (!repairDecision.requiresMappingDeletion) {
+        if (existingDefaultId) {
+          await ensureLocationHasAtLeastOneBin(existingDefaultId, tenantId, binProvisioningTx);
+        }
+        continue;
+      }
     } else if (repairDecision.shouldRepair) {
       if (!repairInvalidDefaults) {
         throw warehouseDefaultInvalidError(invalidDetails!, { repairEnabled: repairInvalidDefaults });
@@ -299,6 +315,7 @@ export async function ensureDefaultsForWarehouse(
     if (!locationId) {
       throw new Error('WAREHOUSE_DEFAULT_LOCATION_REQUIRED');
     }
+    await ensureLocationHasAtLeastOneBin(locationId, tenantId, binProvisioningTx);
     await executor(
       `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
        VALUES ($1, $2, $3, $4)

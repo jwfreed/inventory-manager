@@ -1,7 +1,10 @@
 import { v5 as uuidv5 } from 'uuid';
+import { createRequire } from 'node:module';
 import { CANONICAL_WAREHOUSE_CODES, loadWarehouseTopology } from './warehouseTopology.mjs';
 
 const DETERMINISTIC_NAMESPACE = '7df33ef4-e5d4-43bc-bb76-8c16418ed953';
+const require = createRequire(import.meta.url);
+const { ensureLocationHasAtLeastOneBin } = require('./locationBinProvisioning.js');
 
 function addIssue(issues, issue) {
   issues.push(issue);
@@ -705,29 +708,31 @@ export async function fix(client, tenantId, options = {}) {
       throw new Error(`TOPOLOGY_WAREHOUSE_LOOKUP_FAILED warehouse=${location.warehouseCode}`);
     }
     const existing = refreshedState.locationByCode.get(location.code);
+    let locationId;
     if (!existing) {
-      const createdId = await createWarehouseLocation(client, tenantId, location, warehouseId, now);
+      locationId = await createWarehouseLocation(client, tenantId, location, warehouseId, now);
       summary.created_locations_count += 1;
-      locationIdByWarehouseAndLocalCode.set(`${location.warehouseCode}:${location.localCode}`, createdId);
-      continue;
+    } else {
+      assertLocationRepairable(existing, location, warehouseId);
+      if (existing.local_code === null) {
+        await client.query(
+          `UPDATE locations
+              SET local_code = $3,
+                  updated_at = $4
+            WHERE id = $1
+              AND tenant_id = $2
+              AND local_code IS NULL`,
+          [existing.id, tenantId, location.localCode, now]
+        );
+      } else if (existing.local_code !== location.localCode) {
+        throw new Error(
+          `TOPOLOGY_NON_REPAIRABLE_LOCATION code=${location.code} reason=local_code_mismatch expected=${location.localCode} actual=${existing.local_code}`
+        );
+      }
+      locationId = existing.id;
     }
-    assertLocationRepairable(existing, location, warehouseId);
-    if (existing.local_code === null) {
-      await client.query(
-        `UPDATE locations
-            SET local_code = $3,
-                updated_at = $4
-          WHERE id = $1
-            AND tenant_id = $2
-            AND local_code IS NULL`,
-        [existing.id, tenantId, location.localCode, now]
-      );
-    } else if (existing.local_code !== location.localCode) {
-      throw new Error(
-        `TOPOLOGY_NON_REPAIRABLE_LOCATION code=${location.code} reason=local_code_mismatch expected=${location.localCode} actual=${existing.local_code}`
-      );
-    }
-    locationIdByWarehouseAndLocalCode.set(`${location.warehouseCode}:${location.localCode}`, existing.id);
+    await ensureLocationHasAtLeastOneBin(locationId, tenantId, client);
+    locationIdByWarehouseAndLocalCode.set(`${location.warehouseCode}:${location.localCode}`, locationId);
   }
 
   const duplicateLocalCodeRes = await client.query(
