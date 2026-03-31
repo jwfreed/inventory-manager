@@ -5,6 +5,8 @@ export const qcEventSchema = z.object({
   purchaseOrderReceiptLineId: z.string().uuid().optional(),
   workOrderId: z.string().uuid().optional(),
   workOrderExecutionLineId: z.string().uuid().optional(),
+  sourceBinId: z.string().uuid().optional(),
+  destinationBinId: z.string().uuid().optional(),
   eventType: z.enum(['hold', 'accept', 'reject']),
   quantity: z.number().positive(),
   uom: uomSchema.max(32),

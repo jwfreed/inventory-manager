@@ -8,6 +8,7 @@ require('tsconfig-paths/register');
 
 const {
   RECEIPT_ALLOCATION_STATUSES,
+  assertReceiptAllocationTraceability,
   assertReceiptAllocationQuantityConservation,
   deriveReceiptAvailabilityFromAllocations,
   buildReceiptPostingIntegrity,
@@ -44,6 +45,27 @@ test('allocation sums must match receipt quantity', () => {
   ];
   const summary = assertReceiptAllocationQuantityConservation({ receiptQuantity: 10, allocations });
   assert.equal(summary.totalQty, 10);
+});
+
+test('allocation traceability requires an explicit bin distinct from location context', () => {
+  assert.throws(
+    () =>
+      assertReceiptAllocationTraceability([
+        {
+          receiptId: 'r1',
+          receiptLineId: 'l1',
+          warehouseId: 'w1',
+          locationId: 'qa-location',
+          binId: null,
+          inventoryMovementId: 'm1',
+          inventoryMovementLineId: 'ml1',
+          costLayerId: 'cl1',
+          quantity: 1,
+          status: RECEIPT_ALLOCATION_STATUSES.QA
+        }
+      ]),
+    /RECEIPT_ALLOCATION_TRACEABILITY_VIOLATION/
+  );
 });
 
 test('availability derives only from available allocations', () => {

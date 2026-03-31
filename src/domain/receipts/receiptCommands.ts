@@ -1,12 +1,12 @@
 import type { PoolClient } from 'pg';
 import { roundQuantity, toNumber } from '../../lib/numbers';
-import { RECEIPT_STATUS_EPSILON } from '../../domain/receipts/receiptPolicy';
+import { RECEIPT_STATUS_EPSILON } from './receiptPolicy';
 import {
   RECEIPT_EVENTS,
   RECEIPT_STATES,
   applyReceiptStateTransition,
   type ReceiptState
-} from '../../domain/receipts/receiptStateModel';
+} from './receiptStateModel';
 
 type ReceiptLifecycleFacts = {
   state: ReceiptState;
@@ -77,99 +77,147 @@ async function loadReceiptLifecycleFacts(
   };
 }
 
-export async function synchronizeReceiptLifecycleState(
-  client: PoolClient,
-  tenantId: string,
-  receiptId: string,
-  occurredAt: Date
-) {
-  let facts = await loadReceiptLifecycleFacts(client, tenantId, receiptId);
-  let currentState = facts.state;
-  const transitions: string[] = [];
+export async function validateReceiptCommand(params: {
+  client: PoolClient;
+  tenantId: string;
+  receiptId: string;
+  occurredAt: Date;
+}) {
+  return applyReceiptStateTransition({
+    client: params.client,
+    tenantId: params.tenantId,
+    receiptId: params.receiptId,
+    currentState: RECEIPT_STATES.RECEIVED,
+    event: RECEIPT_EVENTS.VALIDATE,
+    occurredAt: params.occurredAt
+  });
+}
 
+export async function postInventoryCommand(params: {
+  client: PoolClient;
+  tenantId: string;
+  receiptId: string;
+  occurredAt: Date;
+  currentState?: ReceiptState;
+}) {
+  return applyReceiptStateTransition({
+    client: params.client,
+    tenantId: params.tenantId,
+    receiptId: params.receiptId,
+    currentState: params.currentState ?? RECEIPT_STATES.VALIDATED,
+    event: RECEIPT_EVENTS.START_QC,
+    occurredAt: params.occurredAt
+  });
+}
+
+export async function evaluateQcCommand(params: {
+  client: PoolClient;
+  tenantId: string;
+  receiptId: string;
+  occurredAt: Date;
+}) {
+  const facts = await loadReceiptLifecycleFacts(params.client, params.tenantId, params.receiptId);
+  if (facts.state !== RECEIPT_STATES.QC_PENDING) {
+    return facts.state;
+  }
   const qcComplete =
     facts.totalReceived > RECEIPT_STATUS_EPSILON &&
     facts.totalReceived - (facts.totalAccept + facts.totalHold + facts.totalReject) <= RECEIPT_STATUS_EPSILON;
-
-  if (currentState === RECEIPT_STATES.QC_PENDING && qcComplete) {
-    currentState = await applyReceiptStateTransition({
-      client,
-      tenantId,
-      receiptId,
-      currentState,
+  if (!qcComplete) {
+    return facts.state;
+  }
+  if (facts.totalAccept <= RECEIPT_STATUS_EPSILON) {
+    return applyReceiptStateTransition({
+      client: params.client,
+      tenantId: params.tenantId,
+      receiptId: params.receiptId,
+      currentState: facts.state,
       event: RECEIPT_EVENTS.COMPLETE_QC,
-      occurredAt,
+      occurredAt: params.occurredAt,
       metadata: {
         totalReceived: facts.totalReceived,
         totalAccept: facts.totalAccept,
         totalHold: facts.totalHold,
         totalReject: facts.totalReject
       }
-    });
-    transitions.push(currentState);
-    facts = await loadReceiptLifecycleFacts(client, tenantId, receiptId);
+    }).then((state) =>
+      applyReceiptStateTransition({
+        client: params.client,
+        tenantId: params.tenantId,
+        receiptId: params.receiptId,
+        currentState: state,
+        event: RECEIPT_EVENTS.REJECT,
+        occurredAt: params.occurredAt,
+        metadata: {
+          reason: 'qc_no_accepted_quantity'
+        }
+      })
+    );
+  }
+  return applyReceiptStateTransition({
+    client: params.client,
+    tenantId: params.tenantId,
+    receiptId: params.receiptId,
+    currentState: facts.state,
+    event: RECEIPT_EVENTS.COMPLETE_QC,
+    occurredAt: params.occurredAt,
+    metadata: {
+      totalReceived: facts.totalReceived,
+      totalAccept: facts.totalAccept,
+      totalHold: facts.totalHold,
+      totalReject: facts.totalReject
+    }
+  });
+}
+
+export async function completePutawayCommand(params: {
+  client: PoolClient;
+  tenantId: string;
+  receiptId: string;
+  occurredAt: Date;
+}) {
+  const facts = await loadReceiptLifecycleFacts(params.client, params.tenantId, params.receiptId);
+  if (facts.state === RECEIPT_STATES.REJECTED || facts.state === RECEIPT_STATES.AVAILABLE) {
+    return facts.state;
   }
 
-  if (
-    currentState === RECEIPT_STATES.QC_COMPLETED &&
-    facts.totalAccept <= RECEIPT_STATUS_EPSILON
-  ) {
-    currentState = await applyReceiptStateTransition({
-      client,
-      tenantId,
-      receiptId,
-      currentState,
-      event: RECEIPT_EVENTS.REJECT,
-      occurredAt,
-      metadata: {
-        totalAccept: facts.totalAccept,
-        totalHold: facts.totalHold,
-        totalReject: facts.totalReject
-      }
-    });
-    transitions.push(currentState);
-    return { state: currentState, transitions };
-  }
-
+  let currentState: ReceiptState = facts.state;
   if (
     currentState === RECEIPT_STATES.QC_COMPLETED &&
     facts.totalAvailable > RECEIPT_STATUS_EPSILON
   ) {
     currentState = await applyReceiptStateTransition({
-      client,
-      tenantId,
-      receiptId,
+      client: params.client,
+      tenantId: params.tenantId,
+      receiptId: params.receiptId,
       currentState,
       event: RECEIPT_EVENTS.START_PUTAWAY,
-      occurredAt,
+      occurredAt: params.occurredAt,
       metadata: {
         totalAvailable: facts.totalAvailable,
         totalAccept: facts.totalAccept
       }
     });
-    transitions.push(currentState);
-    facts = await loadReceiptLifecycleFacts(client, tenantId, receiptId);
   }
 
   if (
     currentState === RECEIPT_STATES.PUTAWAY_PENDING &&
-    facts.totalAvailable + RECEIPT_STATUS_EPSILON >= facts.totalAccept &&
-    facts.totalAccept > RECEIPT_STATUS_EPSILON
+    facts.totalAccept > RECEIPT_STATUS_EPSILON &&
+    facts.totalAvailable + RECEIPT_STATUS_EPSILON >= facts.totalAccept
   ) {
     currentState = await applyReceiptStateTransition({
-      client,
-      tenantId,
-      receiptId,
+      client: params.client,
+      tenantId: params.tenantId,
+      receiptId: params.receiptId,
       currentState,
       event: RECEIPT_EVENTS.COMPLETE_PUTAWAY,
-      occurredAt,
+      occurredAt: params.occurredAt,
       metadata: {
         totalAvailable: facts.totalAvailable,
         totalAccept: facts.totalAccept
       }
     });
-    transitions.push(currentState);
   }
 
-  return { state: currentState, transitions };
+  return currentState;
 }

@@ -26,7 +26,6 @@ import {
   assertReceiptInventoryUnavailable,
   RECEIPT_EVENTS,
   RECEIPT_STATES,
-  applyReceiptStateTransition,
   transitionReceiptState,
   type ReceiptLifecycleState
 } from '../domain/receipts/receiptStateModel';
@@ -38,6 +37,7 @@ import {
   insertReceiptAllocations,
   loadReceiptAllocationsByLine
 } from '../domain/receipts/receiptAllocationModel';
+import { resolveInventoryBin } from '../domain/receipts/receiptBinModel';
 import {
   assertReceiptLineLocationsResolved,
   assertReceiptLocationResolution
@@ -89,7 +89,10 @@ import {
   buildMovementPostedEvent,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
-import { synchronizeReceiptLifecycleState } from './helpers/receiptLifecycleSync';
+import {
+  postInventoryCommand,
+  validateReceiptCommand
+} from '../domain/receipts/receiptCommands';
 
 async function generateReceiptNumber() {
   const { rows } = await query(`SELECT nextval('receipt_number_seq') AS seq`);
@@ -298,6 +301,7 @@ export async function createPurchaseOrderReceipt(
   let resolvedReceivedToLocationId: string | null = null;
   let qaLocationId: string | null = null;
   let qaWarehouseId: string | null = null;
+  let qaBinId: string | null = null;
   let receiptState: ReceiptLifecycleState = RECEIPT_STATES.RECEIVED;
 
   return runInventoryCommand<{ receipt: any; replayed: boolean; responseStatus: number }>({
@@ -453,6 +457,14 @@ export async function createPurchaseOrderReceipt(
         qaLocationId
       });
       qaWarehouseId = await resolveWarehouseIdForLocation(tenantId, qaLocationId!, client);
+      qaBinId = (
+        await resolveInventoryBin({
+          client,
+          tenantId,
+          warehouseId: qaWarehouseId,
+          locationId: qaLocationId!
+        })
+      ).id;
       const resolvedLocationContext = assertReceiptLocationResolution({
         receivingLocationId: resolvedReceivedToLocationId,
         qaLocationId,
@@ -468,11 +480,12 @@ export async function createPurchaseOrderReceipt(
       }));
     },
     execute: async ({ client }) => {
-      if (!poRow || !qaLocationId || !qaWarehouseId) {
+      if (!poRow || !qaLocationId || !qaWarehouseId || !qaBinId) {
         throw new Error('RECEIPT_RECEIVING_LOCATION_REQUIRED');
       }
       const receivingQaLocationId = qaLocationId;
       const receivingQaWarehouseId = qaWarehouseId;
+      const receivingQaBinId = qaBinId;
 
       const now = new Date();
       const occurredAt = new Date(data.receivedAt);
@@ -573,20 +586,17 @@ export async function createPurchaseOrderReceipt(
         receiptNumber,
         lifecycleState: RECEIPT_STATES.RECEIVED
       });
-      receiptState = await applyReceiptStateTransition({
+      receiptState = await validateReceiptCommand({
         client,
         tenantId,
         receiptId,
-        currentState: RECEIPT_STATES.RECEIVED,
-        event: RECEIPT_EVENTS.VALIDATE,
         occurredAt: now
       });
-      receiptState = await applyReceiptStateTransition({
+      receiptState = await postInventoryCommand({
         client,
         tenantId,
         receiptId,
         currentState: receiptState,
-        event: RECEIPT_EVENTS.START_QC,
         occurredAt: now
       });
 
@@ -637,7 +647,7 @@ export async function createPurchaseOrderReceipt(
         receiptLineId: line.receiptLineId,
         warehouseId: receivingQaWarehouseId,
         locationId: receivingQaLocationId,
-        binId: receivingQaLocationId,
+        binId: receivingQaBinId,
         inventoryMovementId: movementId,
         inventoryMovementLineId: movementResult.lineIds[index] ?? null,
         costLayerId: receiptTraceCostLayerIds.get(line.receiptLineId) ?? null,
@@ -694,8 +704,7 @@ export async function createPurchaseOrderReceipt(
       if (!receiptView) {
         throw new Error('RECEIPT_NOT_FOUND_AFTER_CREATE');
       }
-      const syncedState = await synchronizeReceiptLifecycleState(client, tenantId, receiptId, now);
-      if (syncedState.state !== RECEIPT_STATES.QC_PENDING || receiptState !== RECEIPT_STATES.QC_PENDING) {
+      if (receiptState !== RECEIPT_STATES.QC_PENDING) {
         throw new Error(`RECEIPT_STATE_TRANSITION_INVALID:${receiptState}`);
       }
 

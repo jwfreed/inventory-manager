@@ -20,7 +20,7 @@ export type ReceiptAllocation = {
   receiptLineId: string;
   warehouseId: string;
   locationId: string;
-  binId: string | null;
+  binId: string;
   inventoryMovementId: string | null;
   inventoryMovementLineId: string | null;
   costLayerId: string | null;
@@ -76,7 +76,14 @@ export function assertReceiptAllocationQuantityConservation(params: {
 
 export function assertReceiptAllocationTraceability(allocations: ReceiptAllocation[]) {
   for (const allocation of allocations) {
-    if (!allocation.receiptLineId || !allocation.inventoryMovementId || !allocation.inventoryMovementLineId) {
+    if (
+      !allocation.receiptLineId
+      || !allocation.inventoryMovementId
+      || !allocation.inventoryMovementLineId
+      || !allocation.warehouseId
+      || !allocation.locationId
+      || !allocation.binId
+    ) {
       throw new Error('RECEIPT_ALLOCATION_TRACEABILITY_VIOLATION');
     }
     if (allocation.quantity <= RECEIPT_STATUS_EPSILON) {
@@ -229,7 +236,7 @@ export async function loadReceiptAllocationsByLine(
       receiptLineId: row.purchase_order_receipt_line_id,
       warehouseId: row.warehouse_id,
       locationId: row.location_id,
-      binId: row.bin_id ?? null,
+      binId: row.bin_id,
       inventoryMovementId: row.inventory_movement_id ?? null,
       inventoryMovementLineId: row.inventory_movement_line_id ?? null,
       costLayerId: row.cost_layer_id ?? null,

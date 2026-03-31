@@ -4,10 +4,12 @@ import { uomSchema } from './shared/uom.schema';
 const putawayLineInputSchema = z.object({
   purchaseOrderReceiptLineId: z.string().uuid(),
   toLocationId: z.string().uuid(),
+  toBinId: z.string().uuid().optional(),
   uom: uomSchema.max(32),
   quantity: z.number().positive(),
   lineNumber: z.number().int().positive().optional(),
   fromLocationId: z.string().uuid().optional(),
+  fromBinId: z.string().uuid().optional(),
   notes: z.string().max(1000).optional()
 });
 

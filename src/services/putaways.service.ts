@@ -36,7 +36,8 @@ import {
   insertReceiptAllocations,
   loadReceiptAllocationsByLine
 } from '../domain/receipts/receiptAllocationModel';
-import { synchronizeReceiptLifecycleState } from './helpers/receiptLifecycleSync';
+import { resolveInventoryBin } from '../domain/receipts/receiptBinModel';
+import { completePutawayCommand } from '../domain/receipts/receiptCommands';
 
 type PutawayInput = z.infer<typeof putawaySchema>;
 
@@ -52,9 +53,11 @@ type PutawayLineRow = {
   quantity_planned: string | number | null;
   quantity_moved: string | number | null;
   from_location_id: string;
+  from_bin_id: string;
   from_location_code?: string | null;
   from_location_name?: string | null;
   to_location_id: string;
+  to_bin_id: string;
   to_location_code?: string | null;
   to_location_name?: string | null;
   inventory_movement_id: string | null;
@@ -127,9 +130,11 @@ function mapPutawayLine(
     quantityPlanned: plannedQty,
     quantityMoved: movedQty,
     fromLocationId: line.from_location_id,
+    fromBinId: line.from_bin_id,
     fromLocationCode: (line as any).from_location_code ?? null,
     fromLocationName: (line as any).from_location_name ?? null,
     toLocationId: line.to_location_id,
+    toBinId: line.to_bin_id,
     toLocationCode: (line as any).to_location_code ?? null,
     toLocationName: (line as any).to_location_name ?? null,
     inventoryMovementId: line.inventory_movement_id,
@@ -292,14 +297,18 @@ async function moveReceiptAllocationsToAvailable(params: {
   for (const line of params.pendingLines) {
     let remaining = roundQuantity(toNumber(line.quantity_planned ?? 0));
     const qaAllocations = (allocationsByLine.get(line.purchase_order_receipt_line_id) ?? [])
-      .filter((allocation) => allocation.status === RECEIPT_ALLOCATION_STATUSES.QA)
+      .filter(
+        (allocation) =>
+          allocation.status === RECEIPT_ALLOCATION_STATUSES.QA
+          && allocation.binId === line.from_bin_id
+      )
       .sort((left, right) => String(left.id ?? '').localeCompare(String(right.id ?? '')));
     const inserts: Array<{
       receiptId: string;
       receiptLineId: string;
       warehouseId: string;
       locationId: string;
-      binId: string | null;
+      binId: string;
       inventoryMovementId: string;
       inventoryMovementLineId: string;
       costLayerId: string | null;
@@ -336,7 +345,7 @@ async function moveReceiptAllocationsToAvailable(params: {
         receiptLineId: allocation.receiptLineId,
         warehouseId: allocation.warehouseId,
         locationId: line.to_location_id,
-        binId: line.to_location_id,
+        binId: line.to_bin_id,
         inventoryMovementId: params.movementId,
         inventoryMovementLineId: params.destinationMovementLineIdByPutawayLineId.get(line.id) ?? '',
         costLayerId: allocation.costLayerId,
@@ -387,7 +396,9 @@ export async function createPutaway(
       lineNumber: line.lineNumber ?? index + 1,
       receiptLineId: line.purchaseOrderReceiptLineId,
       toLocationId: line.toLocationId,
+      toBinId: line.toBinId ?? null,
       fromLocationId,
+      fromBinId: line.fromBinId ?? null,
       itemId: context.itemId,
       uom: line.uom,
       quantity: qty,
@@ -477,12 +488,32 @@ export async function createPutaway(
     );
 
     for (const line of normalizedLines) {
+      const fromWarehouseId = await resolveWarehouseIdForLocation(tenantId, line.fromLocationId, client);
+      const toWarehouseId = await resolveWarehouseIdForLocation(tenantId, line.toLocationId, client);
+      const fromBinId = (
+        await resolveInventoryBin({
+          client,
+          tenantId,
+          warehouseId: fromWarehouseId,
+          locationId: line.fromLocationId,
+          binId: line.fromBinId
+        })
+      ).id;
+      const toBinId = (
+        await resolveInventoryBin({
+          client,
+          tenantId,
+          warehouseId: toWarehouseId,
+          locationId: line.toLocationId,
+          binId: line.toBinId
+        })
+      ).id;
       await client.query(
         `INSERT INTO putaway_lines (
             id, tenant_id, putaway_id, purchase_order_receipt_line_id, line_number,
-            item_id, uom, quantity_planned, from_location_id, to_location_id,
+            item_id, uom, quantity_planned, from_location_id, from_bin_id, to_location_id, to_bin_id,
             status, notes, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11, $12, $12)`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13, $14, $14)`,
         [
           uuidv4(),
           tenantId,
@@ -493,7 +524,9 @@ export async function createPutaway(
           line.uom,
           line.quantity,
           line.fromLocationId,
+          fromBinId,
           line.toLocationId,
+          toBinId,
           line.notes,
           now
         ]
@@ -944,7 +977,12 @@ export async function postPutaway(
         }
       }
       for (const receiptId of receiptIds) {
-        await synchronizeReceiptLifecycleState(client, tenantId, receiptId, now);
+        await completePutawayCommand({
+          client,
+          tenantId,
+          receiptId,
+          occurredAt: now
+        });
       }
 
       return {

@@ -3,14 +3,19 @@ import type { PoolClient } from 'pg';
 import type { z } from 'zod';
 import { pool, withTransaction } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
+import { getCanonicalMovementFields } from './uomCanonical.service';
+import { persistInventoryMovement } from '../domains/inventory';
 import {
-  calculateAcceptedQuantity,
-  defaultBreakdown,
   loadPutawayTotals,
   loadQcBreakdown
 } from './inbound/receivingAggregations';
 import { receiptCloseSchema, poCloseSchema } from '../schemas/closeout.schema';
 import { mapPurchaseOrder } from './purchaseOrders.service';
+import {
+  loadReceiptAllocationsByLine,
+  summarizeReceiptAllocations,
+  type ReceiptAllocation
+} from '../domain/receipts/receiptAllocationModel';
 
 type ReceiptCloseInput = z.infer<typeof receiptCloseSchema>;
 type PurchaseOrderCloseInput = z.infer<typeof poCloseSchema>;
@@ -24,13 +29,50 @@ type CloseoutRow = {
   notes: string | null;
 };
 
+type ReconciliationDiscrepancyRow = {
+  id: string;
+  purchase_order_receipt_line_id: string | null;
+  discrepancy_type: 'POSTING_INTEGRITY' | 'PHYSICAL_COUNT';
+  status: 'OPEN' | 'APPROVED' | 'ADJUSTED';
+  location_id: string | null;
+  bin_id: string | null;
+  allocation_status: 'QA' | 'AVAILABLE' | 'HOLD' | null;
+  expected_qty: string | number;
+  actual_qty: string | number;
+  discrepancy_qty: string | number;
+  tolerance_qty: string | number;
+  notes: string | null;
+  metadata: Record<string, unknown> | null;
+  detected_at: string;
+  resolved_at: string | null;
+};
+
 export type ReceiptLineReconciliation = {
   purchaseOrderReceiptLineId: string;
   quantityReceived: number;
   qcBreakdown: { hold: number; accept: number; reject: number };
+  allocationSummary: { qa: number; available: number; hold: number; total: number };
   quantityPutawayPosted: number;
   remainingToPutaway: number;
   blockedReasons: string[];
+};
+
+export type ReceiptReconciliationDiscrepancy = {
+  id: string;
+  purchaseOrderReceiptLineId: string | null;
+  discrepancyType: 'POSTING_INTEGRITY' | 'PHYSICAL_COUNT';
+  status: 'OPEN' | 'APPROVED' | 'ADJUSTED';
+  locationId: string | null;
+  binId: string | null;
+  allocationStatus: 'QA' | 'AVAILABLE' | 'HOLD' | null;
+  expectedQty: number;
+  actualQty: number;
+  discrepancyQty: number;
+  toleranceQty: number;
+  notes: string | null;
+  metadata: Record<string, unknown> | null;
+  detectedAt: string;
+  resolvedAt: string | null;
 };
 
 export type ReceiptReconciliation = {
@@ -47,7 +89,328 @@ export type ReceiptReconciliation = {
     } | null;
   };
   lines: ReceiptLineReconciliation[];
+  discrepancies: ReceiptReconciliationDiscrepancy[];
 };
+
+function mapDiscrepancy(row: ReconciliationDiscrepancyRow): ReceiptReconciliationDiscrepancy {
+  return {
+    id: row.id,
+    purchaseOrderReceiptLineId: row.purchase_order_receipt_line_id ?? null,
+    discrepancyType: row.discrepancy_type,
+    status: row.status,
+    locationId: row.location_id ?? null,
+    binId: row.bin_id ?? null,
+    allocationStatus: row.allocation_status ?? null,
+    expectedQty: roundQuantity(toNumber(row.expected_qty ?? 0)),
+    actualQty: roundQuantity(toNumber(row.actual_qty ?? 0)),
+    discrepancyQty: roundQuantity(toNumber(row.discrepancy_qty ?? 0)),
+    toleranceQty: roundQuantity(toNumber(row.tolerance_qty ?? 0)),
+    notes: row.notes ?? null,
+    metadata: row.metadata ?? null,
+    detectedAt: row.detected_at,
+    resolvedAt: row.resolved_at ?? null
+  };
+}
+
+async function loadPersistedDiscrepancies(
+  tenantId: string,
+  receiptId: string,
+  client?: PoolClient
+): Promise<ReceiptReconciliationDiscrepancy[]> {
+  const executor = client ?? pool;
+  const { rows } = await executor.query<ReconciliationDiscrepancyRow>(
+    `SELECT *
+       FROM receipt_reconciliation_discrepancies
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_id = $2
+      ORDER BY detected_at ASC, id ASC`,
+    [tenantId, receiptId]
+  );
+  return rows.map(mapDiscrepancy);
+}
+
+async function upsertReconciliationDiscrepancy(params: {
+  client: PoolClient;
+  tenantId: string;
+  receiptId: string;
+  receiptLineId: string | null;
+  discrepancyType: 'POSTING_INTEGRITY' | 'PHYSICAL_COUNT';
+  locationId?: string | null;
+  binId?: string | null;
+  allocationStatus?: 'QA' | 'AVAILABLE' | 'HOLD' | null;
+  expectedQty: number;
+  actualQty: number;
+  toleranceQty?: number;
+  notes?: string | null;
+  metadata?: Record<string, unknown>;
+  occurredAt: Date;
+}) {
+  const discrepancyQty = roundQuantity(params.actualQty - params.expectedQty);
+  const existing = await params.client.query<{ id: string }>(
+    `SELECT id
+       FROM receipt_reconciliation_discrepancies
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_id = $2
+        AND purchase_order_receipt_line_id IS NOT DISTINCT FROM $3
+        AND discrepancy_type = $4
+        AND location_id IS NOT DISTINCT FROM $5
+        AND bin_id IS NOT DISTINCT FROM $6
+        AND allocation_status IS NOT DISTINCT FROM $7
+        AND status = 'OPEN'
+      LIMIT 1`,
+    [
+      params.tenantId,
+      params.receiptId,
+      params.receiptLineId,
+      params.discrepancyType,
+      params.locationId ?? null,
+      params.binId ?? null,
+      params.allocationStatus ?? null
+    ]
+  );
+  if ((existing.rowCount ?? 0) > 0) {
+    await params.client.query(
+      `UPDATE receipt_reconciliation_discrepancies
+          SET expected_qty = $2,
+              actual_qty = $3,
+              discrepancy_qty = $4,
+              tolerance_qty = $5,
+              notes = $6,
+              metadata = $7,
+              updated_at = $8
+        WHERE id = $1
+          AND tenant_id = $9`,
+      [
+        existing.rows[0].id,
+        params.expectedQty,
+        params.actualQty,
+        discrepancyQty,
+        params.toleranceQty ?? 0,
+        params.notes ?? null,
+        params.metadata ?? {},
+        params.occurredAt,
+        params.tenantId
+      ]
+    );
+    return existing.rows[0].id;
+  }
+
+  const id = uuidv4();
+  await params.client.query(
+    `INSERT INTO receipt_reconciliation_discrepancies (
+        id, tenant_id, purchase_order_receipt_id, purchase_order_receipt_line_id, discrepancy_type, status,
+        location_id, bin_id, allocation_status, expected_qty, actual_qty, discrepancy_qty, tolerance_qty,
+        notes, metadata, detected_at, created_at, updated_at
+     ) VALUES ($1,$2,$3,$4,$5,'OPEN',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$15)`,
+    [
+      id,
+      params.tenantId,
+      params.receiptId,
+      params.receiptLineId,
+      params.discrepancyType,
+      params.locationId ?? null,
+      params.binId ?? null,
+      params.allocationStatus ?? null,
+      params.expectedQty,
+      params.actualQty,
+      discrepancyQty,
+      params.toleranceQty ?? 0,
+      params.notes ?? null,
+      params.metadata ?? {},
+      params.occurredAt
+    ]
+  );
+  return id;
+}
+
+async function recordResolution(params: {
+  client: PoolClient;
+  tenantId: string;
+  discrepancyId: string;
+  mode: 'approval' | 'adjustment';
+  actorType?: 'user' | 'system';
+  actorId?: string | null;
+  movementId?: string | null;
+  notes?: string | null;
+  occurredAt: Date;
+}) {
+  const status = params.mode === 'approval' ? 'APPROVED' : 'ADJUSTED';
+  await params.client.query(
+    `UPDATE receipt_reconciliation_discrepancies
+        SET status = $2,
+            notes = COALESCE($3, notes),
+            resolved_at = $4,
+            updated_at = $4
+      WHERE id = $1
+        AND tenant_id = $5`,
+    [params.discrepancyId, status, params.notes ?? null, params.occurredAt, params.tenantId]
+  );
+  await params.client.query(
+    `INSERT INTO receipt_reconciliation_resolutions (
+        id, tenant_id, discrepancy_id, resolution_type, actor_type, actor_id, notes, metadata, created_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [
+      uuidv4(),
+      params.tenantId,
+      params.discrepancyId,
+      params.mode === 'approval' ? 'APPROVAL' : 'ADJUSTMENT',
+      params.actorType ?? null,
+      params.actorId ?? null,
+      params.notes ?? null,
+      { inventoryMovementId: params.movementId ?? null },
+      params.occurredAt
+    ]
+  );
+}
+
+function sumMatchingAllocations(
+  allocations: ReceiptAllocation[],
+  filter: { locationId?: string; binId?: string; allocationStatus?: 'QA' | 'AVAILABLE' | 'HOLD' | null }
+) {
+  return roundQuantity(
+    allocations
+      .filter(
+        (allocation) =>
+          (!filter.locationId || allocation.locationId === filter.locationId)
+          && (!filter.binId || allocation.binId === filter.binId)
+          && (!filter.allocationStatus || allocation.status === filter.allocationStatus)
+      )
+      .reduce((total, allocation) => total + allocation.quantity, 0)
+  );
+}
+
+async function applyAdjustmentResolution(params: {
+  client: PoolClient;
+  tenantId: string;
+  receiptId: string;
+  discrepancy: ReconciliationDiscrepancyRow;
+  line: { id: string; item_id: string; uom: string };
+  allocations: ReceiptAllocation[];
+  actorType?: 'user' | 'system';
+  actorId?: string | null;
+  notes?: string | null;
+  occurredAt: Date;
+}) {
+  const allocationStatus = params.discrepancy.allocation_status ?? 'AVAILABLE';
+  const locationId = params.discrepancy.location_id;
+  const binId = params.discrepancy.bin_id;
+  if (!locationId || !binId) {
+    throw new Error('RECEIPT_RECONCILIATION_ADJUSTMENT_CONTEXT_REQUIRED');
+  }
+  const delta = roundQuantity(toNumber(params.discrepancy.discrepancy_qty ?? 0));
+  if (Math.abs(delta) <= 1e-6) {
+    return null;
+  }
+
+  const matchingAllocations = params.allocations
+    .filter(
+      (allocation) =>
+        allocation.locationId === locationId
+        && allocation.binId === binId
+        && allocation.status === allocationStatus
+    )
+    .sort((left, right) => String(left.id ?? '').localeCompare(String(right.id ?? '')));
+  const warehouseId =
+    matchingAllocations[0]?.warehouseId
+    ?? params.allocations[0]?.warehouseId
+    ?? params.discrepancy.metadata?.warehouseId;
+  if (!warehouseId || typeof warehouseId !== 'string') {
+    throw new Error('RECEIPT_RECONCILIATION_ADJUSTMENT_WAREHOUSE_REQUIRED');
+  }
+
+  const canonical = await getCanonicalMovementFields(
+    params.tenantId,
+    params.line.item_id,
+    delta,
+    params.line.uom,
+    params.client
+  );
+  const movement = await persistInventoryMovement(params.client, {
+    tenantId: params.tenantId,
+    movementType: 'adjustment',
+    status: 'posted',
+    externalRef: `receipt_reconciliation:${params.discrepancy.id}`,
+    sourceType: 'receipt_reconciliation',
+    sourceId: params.discrepancy.id,
+    occurredAt: params.occurredAt,
+    postedAt: params.occurredAt,
+    notes: params.notes ?? 'Receipt reconciliation adjustment',
+    lines: [
+      {
+        warehouseId,
+        sourceLineId: params.discrepancy.id,
+        itemId: params.line.item_id,
+        locationId,
+        quantityDelta: canonical.quantityDeltaCanonical,
+        uom: canonical.canonicalUom,
+        quantityDeltaEntered: delta,
+        uomEntered: params.line.uom,
+        quantityDeltaCanonical: canonical.quantityDeltaCanonical,
+        canonicalUom: canonical.canonicalUom,
+        uomDimension: canonical.uomDimension,
+        reasonCode: 'receipt_reconciliation',
+        lineNotes: params.notes ?? 'Receipt reconciliation adjustment'
+      }
+    ]
+  });
+  const movementLineId = movement.lineIds[0] ?? null;
+  if (!movementLineId) {
+    throw new Error('RECEIPT_RECONCILIATION_ADJUSTMENT_MOVEMENT_LINE_REQUIRED');
+  }
+
+  if (delta > 0) {
+    await params.client.query(
+      `INSERT INTO receipt_allocations (
+          id, tenant_id, purchase_order_receipt_id, purchase_order_receipt_line_id,
+          warehouse_id, location_id, bin_id, inventory_movement_id, inventory_movement_line_id,
+          cost_layer_id, quantity, status, created_at, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,
+      [
+        uuidv4(),
+        params.tenantId,
+        params.receiptId,
+        params.line.id,
+        warehouseId,
+        locationId,
+        binId,
+        movement.movementId,
+        movementLineId,
+        null,
+        delta,
+        allocationStatus,
+        params.occurredAt
+      ]
+    );
+  } else {
+    let remaining = roundQuantity(Math.abs(delta));
+    for (const allocation of matchingAllocations) {
+      if (remaining <= 1e-6) break;
+      const consumed = Math.min(remaining, allocation.quantity);
+      remaining = roundQuantity(remaining - consumed);
+      const updatedQty = roundQuantity(allocation.quantity - consumed);
+      if (updatedQty <= 1e-6) {
+        await params.client.query(
+          `DELETE FROM receipt_allocations WHERE id = $1 AND tenant_id = $2`,
+          [allocation.id, params.tenantId]
+        );
+      } else {
+        await params.client.query(
+          `UPDATE receipt_allocations
+              SET quantity = $3,
+                  updated_at = $4
+            WHERE id = $1
+              AND tenant_id = $2`,
+          [allocation.id, params.tenantId, updatedQty, params.occurredAt]
+        );
+      }
+    }
+    if (remaining > 1e-6) {
+      throw new Error('RECEIPT_RECONCILIATION_ADJUSTMENT_INSUFFICIENT_ALLOCATION');
+    }
+  }
+
+  return movement.movementId;
+}
 
 export async function fetchReceiptReconciliation(
   tenantId: string,
@@ -71,6 +434,10 @@ export async function fetchReceiptReconciliation(
   const lineIds = linesResult.rows.map((line: any) => line.id);
   const qcMap = await loadQcBreakdown(tenantId, lineIds, client);
   const totalsMap = await loadPutawayTotals(tenantId, lineIds, client);
+  const allocationsByLine = client
+    ? await loadReceiptAllocationsByLine(client, tenantId, lineIds)
+    : await withTransaction((tx) => loadReceiptAllocationsByLine(tx, tenantId, lineIds));
+  const discrepancies = await loadPersistedDiscrepancies(tenantId, receiverId, client);
 
   const closeoutResult = await executor.query<CloseoutRow>(
     'SELECT * FROM inbound_closeouts WHERE purchase_order_receipt_id = $1 AND tenant_id = $2',
@@ -79,18 +446,20 @@ export async function fetchReceiptReconciliation(
   const closeout = closeoutResult.rows[0] ?? null;
 
   const lineSummaries: ReceiptLineReconciliation[] = linesResult.rows.map((line: any) => {
-    const qc = qcMap.get(line.id) ?? defaultBreakdown();
+    const qc = qcMap.get(line.id) ?? { hold: 0, accept: 0, reject: 0 };
     const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0, qa: 0, hold: 0 };
     const quantityReceived = roundQuantity(toNumber(line.quantity_received));
-    const acceptedQty = calculateAcceptedQuantity(quantityReceived, qc);
-    const postedQty = roundQuantity(totals.posted ?? 0);
-    const remaining = Math.max(0, roundQuantity(acceptedQty - postedQty));
+    const allocationSummary = summarizeReceiptAllocations(allocationsByLine.get(line.id) ?? []);
+    const remaining = Math.max(0, roundQuantity(allocationSummary.qaQty));
     const blockedReasons: string[] = [];
-    if (roundQuantity(qc.hold ?? 0) > 0 && roundQuantity(qc.accept ?? 0) === 0) {
-      blockedReasons.push('QC hold unresolved');
+    if (Math.abs(allocationSummary.totalQty - quantityReceived) > 1e-6) {
+      blockedReasons.push('Receipt allocation total does not match received quantity');
     }
     if (remaining > 0) {
-      blockedReasons.push('Accepted quantity not fully put away');
+      blockedReasons.push('Accepted quantity remains outside available bins');
+    }
+    if (roundQuantity(qc.hold ?? 0) > 0) {
+      blockedReasons.push('QC hold unresolved');
     }
     return {
       purchaseOrderReceiptLineId: line.id,
@@ -100,7 +469,13 @@ export async function fetchReceiptReconciliation(
         accept: roundQuantity(qc.accept ?? 0),
         reject: roundQuantity(qc.reject ?? 0)
       },
-      quantityPutawayPosted: postedQty,
+      allocationSummary: {
+        qa: allocationSummary.qaQty,
+        available: allocationSummary.availableQty,
+        hold: allocationSummary.holdQty,
+        total: allocationSummary.totalQty
+      },
+      quantityPutawayPosted: roundQuantity(totals.posted ?? 0),
       remainingToPutaway: remaining,
       blockedReasons
     };
@@ -121,7 +496,8 @@ export async function fetchReceiptReconciliation(
           }
         : null
     },
-    lines: lineSummaries
+    lines: lineSummaries,
+    discrepancies
   };
 }
 
@@ -131,9 +507,126 @@ export async function closePurchaseOrderReceipt(
   data: ReceiptCloseInput
 ) {
   return withTransaction(async (client) => {
-    const receiptRecon = await fetchReceiptReconciliation(tenantId, receiptId, client);
-    if (!receiptRecon) {
+    const receiptResult = await client.query(
+      'SELECT * FROM purchase_order_receipts WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+      [receiptId, tenantId]
+    );
+    if (receiptResult.rowCount === 0) {
       throw new Error('RECEIPT_NOT_FOUND');
+    }
+
+    const linesResult = await client.query(
+      `SELECT prl.*,
+              pol.item_id
+         FROM purchase_order_receipt_lines prl
+         JOIN purchase_order_lines pol
+           ON pol.id = prl.purchase_order_line_id
+          AND pol.tenant_id = prl.tenant_id
+        WHERE prl.purchase_order_receipt_id = $1
+          AND prl.tenant_id = $2
+        ORDER BY prl.created_at ASC`,
+      [receiptId, tenantId]
+    );
+    const lineIds = linesResult.rows.map((line: any) => line.id);
+    const allocationsByLine = await loadReceiptAllocationsByLine(client, tenantId, lineIds);
+    const now = new Date();
+
+    for (const line of linesResult.rows) {
+      const receivedQty = roundQuantity(toNumber(line.quantity_received ?? 0));
+      const allocationSummary = summarizeReceiptAllocations(allocationsByLine.get(line.id) ?? []);
+      if (Math.abs(allocationSummary.totalQty - receivedQty) > 1e-6) {
+        await upsertReconciliationDiscrepancy({
+          client,
+          tenantId,
+          receiptId,
+          receiptLineId: line.id,
+          discrepancyType: 'POSTING_INTEGRITY',
+          expectedQty: receivedQty,
+          actualQty: allocationSummary.totalQty,
+          notes: 'Receipt quantity does not match persisted allocations.',
+          occurredAt: now
+        });
+      }
+    }
+
+    for (const count of data.physicalCounts ?? []) {
+      const allocations = allocationsByLine.get(count.purchaseOrderReceiptLineId) ?? [];
+      const expectedQty = sumMatchingAllocations(allocations, {
+        locationId: count.locationId,
+        binId: count.binId,
+        allocationStatus: count.allocationStatus ?? null
+      });
+      const countedQty = roundQuantity(toNumber(count.countedQty));
+      const toleranceQty = roundQuantity(toNumber(count.toleranceQty ?? 0));
+      if (Math.abs(countedQty - expectedQty) > toleranceQty + 1e-6) {
+        await upsertReconciliationDiscrepancy({
+          client,
+          tenantId,
+          receiptId,
+          receiptLineId: count.purchaseOrderReceiptLineId,
+          discrepancyType: 'PHYSICAL_COUNT',
+          locationId: count.locationId,
+          binId: count.binId,
+          allocationStatus: count.allocationStatus ?? null,
+          expectedQty,
+          actualQty: countedQty,
+          toleranceQty,
+          notes: 'Physical count differs from persisted receipt allocations.',
+          metadata: { countedQty },
+          occurredAt: now
+        });
+      }
+    }
+
+    const openDiscrepancies = await client.query<ReconciliationDiscrepancyRow>(
+      `SELECT *
+         FROM receipt_reconciliation_discrepancies
+        WHERE tenant_id = $1
+          AND purchase_order_receipt_id = $2
+          AND status = 'OPEN'
+        ORDER BY detected_at ASC, id ASC
+        FOR UPDATE`,
+      [tenantId, receiptId]
+    );
+
+    if ((openDiscrepancies.rowCount ?? 0) > 0) {
+      if (!data.resolution) {
+        const error: any = new Error('RECEIPT_NOT_ELIGIBLE');
+        error.reasons = ['Receipt reconciliation required before closeout.'];
+        throw error;
+      }
+      for (const discrepancy of openDiscrepancies.rows) {
+        const line = linesResult.rows.find((candidate: any) => candidate.id === discrepancy.purchase_order_receipt_line_id);
+        let movementId: string | null = null;
+        if (data.resolution.mode === 'adjustment') {
+          if (!line) {
+            throw new Error('RECEIPT_RECONCILIATION_LINE_REQUIRED');
+          }
+          movementId = await applyAdjustmentResolution({
+            client,
+            tenantId,
+            receiptId,
+            discrepancy,
+            line,
+            allocations: allocationsByLine.get(line.id) ?? [],
+            actorType: data.actorType,
+            actorId: data.actorId ?? null,
+            notes: data.resolution.notes ?? data.notes ?? null,
+            occurredAt: now
+          });
+        }
+        await recordResolution({
+          client,
+          tenantId,
+          discrepancyId: discrepancy.id,
+          mode: data.resolution.mode,
+          actorType: data.actorType,
+          actorId: data.actorId ?? null,
+          movementId,
+          notes: data.resolution.notes ?? data.notes ?? null,
+          occurredAt: now
+        });
+      }
     }
 
     const closeoutResult = await client.query<CloseoutRow>(
@@ -145,15 +638,6 @@ export async function closePurchaseOrderReceipt(
       throw new Error('RECEIPT_ALREADY_CLOSED');
     }
 
-    const blockingLines = receiptRecon.lines.filter((line) => line.blockedReasons.length > 0);
-    if (blockingLines.length > 0) {
-      const reasons = Array.from(new Set(blockingLines.flatMap((line) => line.blockedReasons)));
-      const error: any = new Error('RECEIPT_NOT_ELIGIBLE');
-      error.reasons = reasons;
-      throw error;
-    }
-
-    const now = new Date();
     if (existingCloseout) {
       await client.query(
         `UPDATE inbound_closeouts

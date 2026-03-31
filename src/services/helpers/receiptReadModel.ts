@@ -4,9 +4,9 @@ import {
 } from '../../domain/receipts/receiptStateModel';
 import {
   calculateReceiptPutawayStatus,
+  deriveReceiptAvailability,
   assertReceiptQcOutcomeIntegrity
 } from '../../domain/receipts/receiptAvailabilityModel';
-import { deriveReceiptAvailabilityFromAllocations } from '../../domain/receipts/receiptAllocationModel';
 import {
   calculatePutawayAvailability,
   defaultBreakdown,
@@ -205,47 +205,16 @@ export function buildReceiptStatusSummary(
   }
 
   const qcEligible = baseStatus === 'posted' && receiptState === RECEIPT_STATES.QC_PENDING;
-  const availability = deriveReceiptAvailabilityFromAllocations({
+  const availability = deriveReceiptAvailability({
     baseStatus,
     lifecycleState: receiptState,
-    allocations: [
-      {
-        receiptId: 'summary',
-        receiptLineId: 'summary',
-        warehouseId: 'summary',
-        locationId: 'summary',
-        binId: null,
-        inventoryMovementId: null,
-        inventoryMovementLineId: null,
-        costLayerId: null,
-        quantity: putawayPosted,
-        status: 'AVAILABLE'
-      },
-      {
-        receiptId: 'summary',
-        receiptLineId: 'summary',
-        warehouseId: 'summary',
-        locationId: 'summary',
-        binId: null,
-        inventoryMovementId: null,
-        inventoryMovementLineId: null,
-        costLayerId: null,
-        quantity: Math.max(0, totalAcceptedQty - putawayPosted),
-        status: 'QA'
-      },
-      {
-        receiptId: 'summary',
-        receiptLineId: 'summary',
-        warehouseId: 'summary',
-        locationId: 'summary',
-        binId: null,
-        inventoryMovementId: null,
-        inventoryMovementLineId: null,
-        costLayerId: null,
-        quantity: totalHold,
-        status: 'HOLD'
-      }
-    ]
+    acceptedQty: totalAcceptedQty,
+    heldQty: totalHold,
+    allocationSummary: {
+      qaQty: Math.max(0, roundQuantity(totalAcceptedQty - putawayPosted)),
+      availableQty: putawayPosted,
+      holdQty: totalHold
+    }
   });
   const putawayEligible =
     baseStatus === 'posted' &&

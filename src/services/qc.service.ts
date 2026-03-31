@@ -7,7 +7,7 @@ import { recordAuditLog } from '../lib/audit';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import { hashTransactionalIdempotencyRequest } from '../lib/transactionalIdempotency';
 import { createNcr } from './ncr.service';
-import { resolveDefaultLocationForRole } from './warehouseDefaults.service';
+import { resolveDefaultLocationForRole, resolveWarehouseIdForLocation } from './warehouseDefaults.service';
 import {
   buildTransferLockTargets,
   buildTransferReplayResult,
@@ -24,7 +24,8 @@ import {
   insertReceiptAllocations,
   loadReceiptAllocationsByLine
 } from '../domain/receipts/receiptAllocationModel';
-import { synchronizeReceiptLifecycleState } from './helpers/receiptLifecycleSync';
+import { resolveInventoryBin } from '../domain/receipts/receiptBinModel';
+import { evaluateQcCommand } from '../domain/receipts/receiptCommands';
 
 export type QcEventInput = z.infer<typeof qcEventSchema>;
 export type QcWarehouseDispositionInput = z.infer<typeof qcWarehouseDispositionSchema>;
@@ -78,7 +79,9 @@ async function moveReceiptAllocationsToHold(params: {
   tenantId: string;
   receiptLineId: string;
   quantity: number;
+  sourceBinId?: string | null;
   destinationLocationId: string;
+  destinationBinId: string;
   movementId: string;
   movementLineId: string;
   occurredAt: Date;
@@ -86,7 +89,11 @@ async function moveReceiptAllocationsToHold(params: {
   const allocationsByLine = await loadReceiptAllocationsByLine(params.client, params.tenantId, [params.receiptLineId]);
   let remaining = roundQuantity(params.quantity);
   const qaAllocations = (allocationsByLine.get(params.receiptLineId) ?? [])
-    .filter((allocation) => allocation.status === RECEIPT_ALLOCATION_STATUSES.QA)
+    .filter(
+      (allocation) =>
+        allocation.status === RECEIPT_ALLOCATION_STATUSES.QA
+        && (!params.sourceBinId || allocation.binId === params.sourceBinId)
+    )
     .sort((left, right) => String(left.id ?? '').localeCompare(String(right.id ?? '')));
   const inserts: any[] = [];
   for (const allocation of qaAllocations) {
@@ -114,7 +121,7 @@ async function moveReceiptAllocationsToHold(params: {
       receiptLineId: allocation.receiptLineId,
       warehouseId: allocation.warehouseId,
       locationId: params.destinationLocationId,
-      binId: params.destinationLocationId,
+      binId: params.destinationBinId,
       inventoryMovementId: params.movementId,
       inventoryMovementLineId: params.movementLineId,
       costLayerId: allocation.costLayerId,
@@ -189,6 +196,8 @@ export async function createQcEvent(
   let sourceType: QcEventSourceType = 'receipt';
   let sourceLocationId: string | null = null;
   let destinationLocationId: string | null = null;
+  let sourceBinId: string | null = null;
+  let destinationBinId: string | null = null;
   let transferReasonCode: string | null = null;
   let transferNotes: string | null = null;
   let preparedTransfer: PreparedTransferMutation | null = null;
@@ -263,6 +272,8 @@ export async function createQcEvent(
       sourceType = 'receipt';
       sourceLocationId = null;
       destinationLocationId = null;
+      sourceBinId = null;
+      destinationBinId = null;
       transferReasonCode = null;
       transferNotes = null;
       preparedTransfer = null;
@@ -402,6 +413,27 @@ export async function createQcEvent(
         throw error;
       }
 
+      const sourceWarehouseId = await resolveWarehouseIdForLocation(tenantId, sourceLocationId, client);
+      sourceBinId = (
+        await resolveInventoryBin({
+          client,
+          tenantId,
+          warehouseId: sourceWarehouseId,
+          locationId: sourceLocationId,
+          binId: data.sourceBinId ?? null
+        })
+      ).id;
+      const destinationWarehouseId = await resolveWarehouseIdForLocation(tenantId, destinationLocationId, client);
+      destinationBinId = (
+        await resolveInventoryBin({
+          client,
+          tenantId,
+          warehouseId: destinationWarehouseId,
+          locationId: destinationLocationId,
+          binId: data.destinationBinId ?? null
+        })
+      ).id;
+
       if (receiptAcceptWithoutTransfer) {
         preparedTransfer = null;
         return [];
@@ -440,7 +472,8 @@ export async function createQcEvent(
         `INSERT INTO qc_events (
             id, tenant_id, purchase_order_receipt_line_id, work_order_id, work_order_execution_line_id,
             event_type, quantity, uom, reason_code, notes, actor_type, actor_id, occurred_at, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
+            , source_bin_id, destination_bin_id
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15)
          RETURNING *`,
         [
           qcEventId,
@@ -455,7 +488,9 @@ export async function createQcEvent(
           data.notes ?? null,
           data.actorType,
           data.actorId ?? null,
-          occurredAt
+          occurredAt,
+          sourceBinId,
+          destinationBinId
         ]
       );
       const created = rows[0];
@@ -559,13 +594,20 @@ export async function createQcEvent(
             tenantId,
             receiptLineId: data.purchaseOrderReceiptLineId,
             quantity: enteredQty,
+            sourceBinId,
             destinationLocationId,
+            destinationBinId: destinationBinId ?? (() => { throw new Error('QC_DESTINATION_BIN_REQUIRED'); })(),
             movementId: transferExecution.result.movementId,
             movementLineId,
             occurredAt
           });
         }
-        await synchronizeReceiptLifecycleState(client, tenantId, receiptId, occurredAt);
+        await evaluateQcCommand({
+          client,
+          tenantId,
+          receiptId,
+          occurredAt
+        });
       }
 
         return {
