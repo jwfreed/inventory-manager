@@ -28,6 +28,16 @@ import {
   transitionReceiptState,
   type ReceiptLifecycleState
 } from '../domain/receipts/receiptStateModel';
+import { assertReceiptQcOutcomeIntegrity } from '../domain/receipts/receiptAvailabilityModel';
+import {
+  assertReceiptLineLocationsResolved,
+  assertReceiptLocationResolution
+} from '../domain/receipts/receiptLocationModel';
+import {
+  assertReceiptPostingTraceability,
+  assertReceiptReconciliationIntegrity,
+  buildReceiptPostingTrace
+} from '../domain/receipts/receiptReconciliation';
 import {
   postReceiptInventoryMovement,
   insertPostedReceipt,
@@ -433,11 +443,17 @@ export async function createPurchaseOrderReceipt(
         qaLocationId
       });
       qaWarehouseId = await resolveWarehouseIdForLocation(tenantId, qaLocationId!, client);
+      const resolvedLocationContext = assertReceiptLocationResolution({
+        receivingLocationId: resolvedReceivedToLocationId,
+        qaLocationId,
+        warehouseId: qaWarehouseId
+      });
+      assertReceiptLineLocationsResolved(data.lines, resolvedLocationContext);
       receiptState = transitionReceiptState(receiptState, RECEIPT_STATES.VALIDATED);
 
       return Array.from(new Set(data.lines.map((line) => poLineMap.get(line.purchaseOrderLineId)?.item_id).filter(Boolean))).map((itemId) => ({
         tenantId,
-        warehouseId: qaWarehouseId!,
+        warehouseId: resolvedLocationContext.warehouseId,
         itemId: String(itemId)
       }));
     },
@@ -456,8 +472,15 @@ export async function createPurchaseOrderReceipt(
       const projectionOps: InventoryCommandProjectionOp[] = [];
       const refreshedItemIds = new Set<string>();
       const plannedReceiptLines: PlannedReceiptPostingLine[] = [];
+      const receiptTraceCostLayerIds = new Map<string, string | null>();
 
       for (const line of data.lines) {
+        assertReceiptQcOutcomeIntegrity({
+          quantityReceived: line.quantityReceived,
+          acceptedQty: 0,
+          heldQty: 0,
+          rejectedQty: 0
+        });
         const receiptLineId = uuidv4();
         const receivedQty = line.quantityReceived;
         const poLine = poLineMap.get(line.purchaseOrderLineId);
@@ -556,7 +579,7 @@ export async function createPurchaseOrderReceipt(
             deltaOnHand: line.canonicalFields.quantityDeltaCanonical
           })
         );
-        await insertReceiptCostLayer({
+        const costLayer = await insertReceiptCostLayer({
           client,
           tenantId,
           movementId,
@@ -564,11 +587,29 @@ export async function createPurchaseOrderReceipt(
           occurredAt,
           line
         });
+        receiptTraceCostLayerIds.set(line.receiptLineId, costLayer?.id ?? null);
         if (!refreshedItemIds.has(line.itemId)) {
           refreshedItemIds.add(line.itemId);
           projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, line.itemId));
         }
       }
+
+      const traceLines = buildReceiptPostingTrace(
+        plannedReceiptLines.map((line) => ({
+          receiptLineId: line.receiptLineId,
+          purchaseOrderLineId: line.purchaseOrderLineId,
+          itemId: line.itemId,
+          quantity: line.canonicalFields.quantityDeltaCanonical,
+          costLayerId: receiptTraceCostLayerIds.get(line.receiptLineId) ?? null
+        }))
+      );
+      assertReceiptPostingTraceability(traceLines);
+      assertReceiptReconciliationIntegrity({
+        expectedQtyByReceiptLineId: new Map(
+          plannedReceiptLines.map((line) => [line.receiptLineId, line.canonicalFields.quantityDeltaCanonical])
+        ),
+        traceLines
+      });
 
       await updatePoStatusFromReceipts(tenantId, data.purchaseOrderId, client);
 

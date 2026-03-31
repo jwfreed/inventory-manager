@@ -5,6 +5,8 @@ export const RECEIPT_STATES = {
   RECEIVED: 'RECEIVED',
   VALIDATED: 'VALIDATED',
   QC_PENDING: 'QC_PENDING',
+  QC_COMPLETED: 'QC_COMPLETED',
+  PUTAWAY_PENDING: 'PUTAWAY_PENDING',
   AVAILABLE: 'AVAILABLE',
   REJECTED: 'REJECTED'
 } as const;
@@ -15,7 +17,9 @@ export type ReceiptLifecycleState =
 const ALLOWED_TRANSITIONS: Record<ReceiptLifecycleState, ReceiptLifecycleState[]> = {
   [RECEIPT_STATES.RECEIVED]: [RECEIPT_STATES.VALIDATED],
   [RECEIPT_STATES.VALIDATED]: [RECEIPT_STATES.QC_PENDING],
-  [RECEIPT_STATES.QC_PENDING]: [RECEIPT_STATES.AVAILABLE, RECEIPT_STATES.REJECTED],
+  [RECEIPT_STATES.QC_PENDING]: [RECEIPT_STATES.QC_COMPLETED],
+  [RECEIPT_STATES.QC_COMPLETED]: [RECEIPT_STATES.PUTAWAY_PENDING, RECEIPT_STATES.REJECTED],
+  [RECEIPT_STATES.PUTAWAY_PENDING]: [RECEIPT_STATES.AVAILABLE, RECEIPT_STATES.REJECTED],
   [RECEIPT_STATES.AVAILABLE]: [],
   [RECEIPT_STATES.REJECTED]: []
 };
@@ -54,6 +58,7 @@ export function deriveReceiptLifecycleState(params: {
   totalAccept: number;
   totalHold: number;
   totalReject: number;
+  putawayCompleted?: number;
 }): ReceiptLifecycleState {
   if (params.baseStatus === 'voided') {
     return RECEIPT_STATES.REJECTED;
@@ -63,6 +68,7 @@ export function deriveReceiptLifecycleState(params: {
   const totalAccept = roundQuantity(params.totalAccept);
   const totalHold = roundQuantity(params.totalHold);
   const totalReject = roundQuantity(params.totalReject);
+  const putawayCompleted = roundQuantity(params.putawayCompleted ?? 0);
 
   if (totalReceived <= RECEIPT_STATUS_EPSILON) {
     return RECEIPT_STATES.RECEIVED;
@@ -72,13 +78,16 @@ export function deriveReceiptLifecycleState(params: {
   if (remainingQc > RECEIPT_STATUS_EPSILON) {
     return RECEIPT_STATES.QC_PENDING;
   }
-  if (totalHold > RECEIPT_STATUS_EPSILON) {
+  if (totalAccept <= RECEIPT_STATUS_EPSILON) {
     return RECEIPT_STATES.REJECTED;
   }
-  if (totalAccept > RECEIPT_STATUS_EPSILON) {
-    return RECEIPT_STATES.AVAILABLE;
+  if (putawayCompleted <= RECEIPT_STATUS_EPSILON) {
+    return RECEIPT_STATES.QC_COMPLETED;
   }
-  return RECEIPT_STATES.REJECTED;
+  if (putawayCompleted + RECEIPT_STATUS_EPSILON < totalAccept) {
+    return RECEIPT_STATES.PUTAWAY_PENDING;
+  }
+  return RECEIPT_STATES.AVAILABLE;
 }
 
 export function deriveReceiptState(params: {
@@ -88,6 +97,7 @@ export function deriveReceiptState(params: {
     totalAccept: number;
     totalHold: number;
     totalReject: number;
+    putawayCompleted?: number;
   };
 }): ReceiptLifecycleState {
   return deriveReceiptLifecycleState({
@@ -95,6 +105,7 @@ export function deriveReceiptState(params: {
     totalReceived: params.totals.totalReceived,
     totalAccept: params.totals.totalAccept,
     totalHold: params.totals.totalHold,
-    totalReject: params.totals.totalReject
+    totalReject: params.totals.totalReject,
+    putawayCompleted: params.totals.putawayCompleted
   });
 }

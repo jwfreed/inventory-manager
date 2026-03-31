@@ -105,7 +105,7 @@ function mapPutawayLine(
   line: PutawayLineRow,
   context: ReceiptLineContext,
   qc: ReturnType<typeof defaultBreakdown>,
-  totals: { posted: number; pending: number }
+  totals: { posted: number; pending: number; postedToAvailable: number; pendingToAvailable: number }
 ) {
   const plannedQty = roundQuantity(toNumber(line.quantity_planned ?? line.quantity_moved ?? 0));
   const movedQty = line.quantity_moved ? roundQuantity(toNumber(line.quantity_moved)) : null;
@@ -138,7 +138,7 @@ function mapPutawayLine(
   };
 }
 
-function mapPutaway(row: PutawayRow, lines: PutawayLineRow[], contexts: Map<string, ReceiptLineContext>, qcMap: Map<string, ReturnType<typeof defaultBreakdown>>, totalsMap: Map<string, { posted: number; pending: number }>) {
+function mapPutaway(row: PutawayRow, lines: PutawayLineRow[], contexts: Map<string, ReceiptLineContext>, qcMap: Map<string, ReturnType<typeof defaultBreakdown>>, totalsMap: Map<string, { posted: number; pending: number; postedToAvailable: number; pendingToAvailable: number }>) {
   return {
     id: row.id,
     putawayNumber: row.putaway_number ?? null,
@@ -158,7 +158,7 @@ function mapPutaway(row: PutawayRow, lines: PutawayLineRow[], contexts: Map<stri
     lines: lines.map((line) => {
       const context = contexts.get(line.purchase_order_receipt_line_id);
       const qc = qcMap.get(line.purchase_order_receipt_line_id) ?? defaultBreakdown();
-      const totals = totalsMap.get(line.purchase_order_receipt_line_id) ?? { posted: 0, pending: 0 };
+      const totals = totalsMap.get(line.purchase_order_receipt_line_id) ?? { posted: 0, pending: 0, postedToAvailable: 0, pendingToAvailable: 0 };
       if (!context) {
         throw new Error('Missing receipt line context for putaway line');
       }
@@ -323,7 +323,7 @@ export async function createPutaway(
   for (const [lineId, qty] of requestedByLine.entries()) {
     const context = contexts.get(lineId)!;
     const qc = qcBreakdown.get(lineId) ?? defaultBreakdown();
-    const total = totals.get(lineId) ?? { posted: 0, pending: 0 };
+    const total = totals.get(lineId) ?? { posted: 0, pending: 0, postedToAvailable: 0, pendingToAvailable: 0 };
     const availability = calculatePutawayAvailability(context, qc, total);
     if (availability.blockedReason && availability.availableForPlanning <= 0) {
       throw new Error('PUTAWAY_BLOCKED');
@@ -565,7 +565,7 @@ export async function postPutaway(
           throw new Error('PUTAWAY_INVALID_QUANTITY');
         }
         const qc = qcBreakdown.get(line.purchase_order_receipt_line_id) ?? defaultBreakdown();
-        const total = totals.get(line.purchase_order_receipt_line_id) ?? { posted: 0, pending: 0 };
+        const total = totals.get(line.purchase_order_receipt_line_id) ?? { posted: 0, pending: 0, postedToAvailable: 0, pendingToAvailable: 0 };
         const availability = calculatePutawayAvailability(
           receiptContext,
           qc,

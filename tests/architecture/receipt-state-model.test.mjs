@@ -66,7 +66,7 @@ test('receipt state becomes rejected on QC hold or zero accepted quantity after 
   );
 });
 
-test('receipt state becomes available only after QC acceptance', () => {
+test('receipt state becomes qc completed after inspection but before putaway', () => {
   assert.equal(
     deriveReceiptState({
       baseStatus: 'posted',
@@ -74,7 +74,40 @@ test('receipt state becomes available only after QC acceptance', () => {
         totalReceived: 10,
         totalAccept: 10,
         totalHold: 0,
-        totalReject: 0
+        totalReject: 0,
+        putawayCompleted: 0
+      }
+    }),
+    RECEIPT_STATES.QC_COMPLETED
+  );
+});
+
+test('receipt state becomes putaway pending when accepted quantity is only partially moved', () => {
+  assert.equal(
+    deriveReceiptState({
+      baseStatus: 'posted',
+      totals: {
+        totalReceived: 10,
+        totalAccept: 10,
+        totalHold: 0,
+        totalReject: 0,
+        putawayCompleted: 4
+      }
+    }),
+    RECEIPT_STATES.PUTAWAY_PENDING
+  );
+});
+
+test('receipt state becomes available only after accepted quantity is fully moved', () => {
+  assert.equal(
+    deriveReceiptState({
+      baseStatus: 'posted',
+      totals: {
+        totalReceived: 10,
+        totalAccept: 10,
+        totalHold: 0,
+        totalReject: 0,
+        putawayCompleted: 10
       }
     }),
     RECEIPT_STATES.AVAILABLE
