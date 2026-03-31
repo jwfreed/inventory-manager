@@ -8,6 +8,7 @@ const execFileAsync = promisify(execFile);
 const GO_LIVE_TIMEOUT_MS = Number(process.env.GO_LIVE_GATES_TIMEOUT_MS ?? '900000');
 const GO_LIVE_OUTPUT_TAIL_LINES = Number(process.env.GO_LIVE_GATES_OUTPUT_TAIL_LINES ?? '120');
 const GO_LIVE_INVARIANT_LIMIT = Number(process.env.GO_LIVE_GATES_INVARIANT_LIMIT ?? '25');
+const GO_LIVE_TEST_SUMMARY_JSON = String(process.env.GO_LIVE_GATES_TEST_SUMMARY_JSON ?? '').trim();
 const GO_LIVE_TEST_BASE_URL = process.env.GO_LIVE_TEST_BASE_URL
   ?? process.env.TEST_BASE_URL
   ?? 'http://127.0.0.1:3105';
@@ -91,6 +92,19 @@ function normalizeGateResults(gates) {
   });
 }
 
+function parseInjectedTestSummary() {
+  if (!GO_LIVE_TEST_SUMMARY_JSON) return null;
+  try {
+    const parsed = JSON.parse(GO_LIVE_TEST_SUMMARY_JSON);
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('GO_LIVE_GATES_TEST_SUMMARY_JSON must decode to an object');
+    }
+    return parsed;
+  } catch (error) {
+    throw new Error(`GO_LIVE_GATES_TEST_SUMMARY_JSON_INVALID ${error?.message ?? 'invalid JSON'}`);
+  }
+}
+
 function printFailureTails(gate) {
   console.error(`[${gate.code}] failed`);
   if (gate.stdoutTail) {
@@ -160,31 +174,53 @@ async function runGateCommand(code, args) {
 }
 
 const runStartedAt = Date.now();
+let parsedTestSummary = null;
+let fallbackTenantId = null;
 
-const goLiveTestGate = await runGateCommand('GO_LIVE_TEST_SUITE', [
-  '--test',
-  '--test-reporter=spec',
-  'tests/ops/go-live-gates.test.mjs'
-]);
-
-if (!goLiveTestGate.passed) {
-  printFailureTails(goLiveTestGate);
-  printSummaryAndExit({
-    passed: false,
-    tenantId: null,
-    invariantsTenantId: null,
-    gates: [],
-    elapsedMs: Date.now() - runStartedAt,
-    invariants: {
+if (GO_LIVE_TEST_SUMMARY_JSON) {
+  try {
+    parsedTestSummary = parseInjectedTestSummary();
+    fallbackTenantId = typeof parsedTestSummary?.tenantId === 'string' ? parsedTestSummary.tenantId : null;
+  } catch (error) {
+    console.error(error?.message ?? 'GO_LIVE_GATES_TEST_SUMMARY_JSON_INVALID');
+    printSummaryAndExit({
       passed: false,
-      elapsedMs: 0
-    }
-  }, 1);
-}
+      tenantId: null,
+      invariantsTenantId: null,
+      gates: [],
+      elapsedMs: Date.now() - runStartedAt,
+      invariants: {
+        passed: false,
+        elapsedMs: 0
+      }
+    }, 1);
+  }
+} else {
+  const goLiveTestGate = await runGateCommand('GO_LIVE_TEST_SUITE', [
+    '--test',
+    '--test-reporter=spec',
+    'tests/ops/go-live-gates.test.mjs'
+  ]);
 
-const goLiveTestOutput = `${goLiveTestGate.stdout}\n${goLiveTestGate.stderr}`;
-const parsedTestSummary = parseSummaryFromOutput(goLiveTestOutput, 'GO_LIVE_GATES_TEST_SUMMARY');
-const fallbackTenantId = getTenantIdFromOutput(goLiveTestOutput);
+  if (!goLiveTestGate.passed) {
+    printFailureTails(goLiveTestGate);
+    printSummaryAndExit({
+      passed: false,
+      tenantId: null,
+      invariantsTenantId: null,
+      gates: [],
+      elapsedMs: Date.now() - runStartedAt,
+      invariants: {
+        passed: false,
+        elapsedMs: 0
+      }
+    }, 1);
+  }
+
+  const goLiveTestOutput = `${goLiveTestGate.stdout}\n${goLiveTestGate.stderr}`;
+  parsedTestSummary = parseSummaryFromOutput(goLiveTestOutput, 'GO_LIVE_GATES_TEST_SUMMARY');
+  fallbackTenantId = getTenantIdFromOutput(goLiveTestOutput);
+}
 
 if (!parsedTestSummary) {
   console.error('GO_LIVE_GATES_TEST_SUMMARY_PARSE_FAILED unable to parse GO_LIVE_GATES_TEST_SUMMARY from test output');

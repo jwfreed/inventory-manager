@@ -147,7 +147,8 @@ test(
       label: 'go-live runner subprocess',
       args: ['scripts/go_live_gates.mjs'],
       env: createChildEnv(gateRunnerBaseUrl, {
-        GO_LIVE_TEST_BASE_URL: gateRunnerBaseUrl
+        GO_LIVE_TEST_BASE_URL: gateRunnerBaseUrl,
+        GO_LIVE_GATES_TEST_SUMMARY_JSON: JSON.stringify(testSummary)
       })
     });
 
