@@ -462,7 +462,8 @@ export async function createPurchaseOrderReceipt(
           client,
           tenantId,
           warehouseId: qaWarehouseId,
-          locationId: qaLocationId!
+          locationId: qaLocationId!,
+          allowDefaultBinResolution: true
         })
       ).id;
       const resolvedLocationContext = assertReceiptLocationResolution({

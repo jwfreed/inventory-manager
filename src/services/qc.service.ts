@@ -420,7 +420,8 @@ export async function createQcEvent(
           tenantId,
           warehouseId: sourceWarehouseId,
           locationId: sourceLocationId,
-          binId: data.sourceBinId ?? null
+          binId: data.sourceBinId ?? null,
+          allowDefaultBinResolution: true
         })
       ).id;
       const destinationWarehouseId = await resolveWarehouseIdForLocation(tenantId, destinationLocationId, client);
@@ -430,7 +431,8 @@ export async function createQcEvent(
           tenantId,
           warehouseId: destinationWarehouseId,
           locationId: destinationLocationId,
-          binId: data.destinationBinId ?? null
+          binId: data.destinationBinId ?? null,
+          allowDefaultBinResolution: true
         })
       ).id;
 
@@ -602,11 +604,52 @@ export async function createQcEvent(
             occurredAt
           });
         }
+        const lifecycleGuard = await client.query(
+          `WITH receipt_qc AS (
+              SELECT prl.purchase_order_receipt_id AS receipt_id,
+                     COALESCE(SUM(CASE WHEN qe.event_type = 'accept' THEN qe.quantity ELSE 0 END), 0)::numeric AS accept_qty,
+                     COALESCE(SUM(CASE WHEN qe.event_type = 'hold' THEN qe.quantity ELSE 0 END), 0)::numeric AS hold_qty,
+                     COALESCE(SUM(CASE WHEN qe.event_type = 'reject' THEN qe.quantity ELSE 0 END), 0)::numeric AS reject_qty,
+                     COALESCE(SUM(prl.quantity_received), 0)::numeric AS received_qty
+                FROM purchase_order_receipt_lines prl
+                LEFT JOIN qc_events qe
+                  ON qe.purchase_order_receipt_line_id = prl.id
+                 AND qe.tenant_id = prl.tenant_id
+               WHERE prl.purchase_order_receipt_id = $1
+                 AND prl.tenant_id = $2
+               GROUP BY prl.purchase_order_receipt_id
+            )
+            SELECT por.lifecycle_state,
+                   rq.received_qty,
+                   rq.accept_qty,
+                   rq.hold_qty,
+                   rq.reject_qty
+              FROM purchase_order_receipts por
+              JOIN receipt_qc rq
+                ON rq.receipt_id = por.id
+             WHERE por.id = $1
+               AND por.tenant_id = $2`,
+          [receiptId, tenantId]
+        );
+        const guardRow = lifecycleGuard.rows[0];
+        if (!guardRow) {
+          throw new Error('RECEIPT_NOT_FOUND');
+        }
+        const totalReceived = roundQuantity(toNumber(guardRow.received_qty ?? 0));
+        const totalAccept = roundQuantity(toNumber(guardRow.accept_qty ?? 0));
+        const totalHold = roundQuantity(toNumber(guardRow.hold_qty ?? 0));
+        const totalReject = roundQuantity(toNumber(guardRow.reject_qty ?? 0));
         await evaluateQcCommand({
           client,
           tenantId,
           receiptId,
-          occurredAt
+          occurredAt,
+          currentState: guardRow.lifecycle_state,
+          qcComplete: totalReceived > 0 && totalReceived - (totalAccept + totalHold + totalReject) <= 1e-6,
+          acceptedQty: totalAccept,
+          heldQty: totalHold,
+          rejectedQty: totalReject,
+          receivedQty: totalReceived
         });
       }
 

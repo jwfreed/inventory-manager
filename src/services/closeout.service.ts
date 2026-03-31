@@ -16,6 +16,7 @@ import {
   summarizeReceiptAllocations,
   type ReceiptAllocation
 } from '../domain/receipts/receiptAllocationModel';
+import { assertReceiptCloseoutAllowed } from '../domain/receipts/receiptCloseoutPolicy';
 
 type ReceiptCloseInput = z.infer<typeof receiptCloseSchema>;
 type PurchaseOrderCloseInput = z.infer<typeof poCloseSchema>;
@@ -445,7 +446,7 @@ export async function fetchReceiptReconciliation(
   );
   const closeout = closeoutResult.rows[0] ?? null;
 
-  const lineSummaries: ReceiptLineReconciliation[] = linesResult.rows.map((line: any) => {
+    const lineSummaries: ReceiptLineReconciliation[] = linesResult.rows.map((line: any) => {
     const qc = qcMap.get(line.id) ?? { hold: 0, accept: 0, reject: 0 };
     const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0, qa: 0, hold: 0 };
     const quantityReceived = roundQuantity(toNumber(line.quantity_received));
@@ -591,14 +592,16 @@ export async function closePurchaseOrderReceipt(
 
     if ((openDiscrepancies.rowCount ?? 0) > 0) {
       if (!data.resolution) {
-        const error: any = new Error('RECEIPT_NOT_ELIGIBLE');
-        error.reasons = ['Receipt reconciliation required before closeout.'];
-        throw error;
+        assertReceiptCloseoutAllowed({
+          lineFacts: [],
+          openDiscrepancyCount: openDiscrepancies.rowCount ?? 0
+        });
       }
+      const resolution = data.resolution!;
       for (const discrepancy of openDiscrepancies.rows) {
         const line = linesResult.rows.find((candidate: any) => candidate.id === discrepancy.purchase_order_receipt_line_id);
         let movementId: string | null = null;
-        if (data.resolution.mode === 'adjustment') {
+        if (resolution.mode === 'adjustment') {
           if (!line) {
             throw new Error('RECEIPT_RECONCILIATION_LINE_REQUIRED');
           }
@@ -611,7 +614,7 @@ export async function closePurchaseOrderReceipt(
             allocations: allocationsByLine.get(line.id) ?? [],
             actorType: data.actorType,
             actorId: data.actorId ?? null,
-            notes: data.resolution.notes ?? data.notes ?? null,
+            notes: resolution.notes ?? data.notes ?? null,
             occurredAt: now
           });
         }
@@ -619,15 +622,28 @@ export async function closePurchaseOrderReceipt(
           client,
           tenantId,
           discrepancyId: discrepancy.id,
-          mode: data.resolution.mode,
+          mode: resolution.mode,
           actorType: data.actorType,
           actorId: data.actorId ?? null,
           movementId,
-          notes: data.resolution.notes ?? data.notes ?? null,
+          notes: resolution.notes ?? data.notes ?? null,
           occurredAt: now
         });
       }
     }
+
+    const refreshedReconciliation = await fetchReceiptReconciliation(tenantId, receiptId, client);
+    if (!refreshedReconciliation) {
+      throw new Error('RECEIPT_NOT_FOUND');
+    }
+    assertReceiptCloseoutAllowed({
+      lineFacts: refreshedReconciliation.lines.map((line) => ({
+        remainingToPutaway: line.remainingToPutaway,
+        holdQty: line.qcBreakdown.hold,
+        allocationQuantityMatchesReceipt: line.allocationSummary.total === line.quantityReceived
+      })),
+      openDiscrepancyCount: refreshedReconciliation.discrepancies.filter((item) => item.status === 'OPEN').length
+    });
 
     const closeoutResult = await client.query<CloseoutRow>(
       'SELECT * FROM inbound_closeouts WHERE purchase_order_receipt_id = $1 AND tenant_id = $2 FOR UPDATE',

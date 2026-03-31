@@ -496,7 +496,8 @@ export async function createPutaway(
           tenantId,
           warehouseId: fromWarehouseId,
           locationId: line.fromLocationId,
-          binId: line.fromBinId
+          binId: line.fromBinId,
+          allowDefaultBinResolution: true
         })
       ).id;
       const toBinId = (
@@ -505,7 +506,8 @@ export async function createPutaway(
           tenantId,
           warehouseId: toWarehouseId,
           locationId: line.toLocationId,
-          binId: line.toBinId
+          binId: line.toBinId,
+          allowDefaultBinResolution: true
         })
       ).id;
       await client.query(
@@ -977,11 +979,54 @@ export async function postPutaway(
         }
       }
       for (const receiptId of receiptIds) {
+        const lifecycleGuard = await client.query(
+          `WITH receipt_qc AS (
+              SELECT prl.purchase_order_receipt_id AS receipt_id,
+                     COALESCE(SUM(CASE WHEN qe.event_type = 'accept' THEN qe.quantity ELSE 0 END), 0)::numeric AS accept_qty
+                FROM purchase_order_receipt_lines prl
+                LEFT JOIN qc_events qe
+                  ON qe.purchase_order_receipt_line_id = prl.id
+                 AND qe.tenant_id = prl.tenant_id
+               WHERE prl.purchase_order_receipt_id = $1
+                 AND prl.tenant_id = $2
+               GROUP BY prl.purchase_order_receipt_id
+            ),
+            receipt_alloc AS (
+              SELECT purchase_order_receipt_id AS receipt_id,
+                     COALESCE(SUM(CASE WHEN status = 'AVAILABLE' THEN quantity ELSE 0 END), 0)::numeric AS available_qty
+                FROM receipt_allocations
+               WHERE purchase_order_receipt_id = $1
+                 AND tenant_id = $2
+               GROUP BY purchase_order_receipt_id
+            )
+            SELECT por.lifecycle_state,
+                   COALESCE(rq.accept_qty, 0)::numeric AS accept_qty,
+                   COALESCE(ra.available_qty, 0)::numeric AS available_qty
+              FROM purchase_order_receipts por
+              LEFT JOIN receipt_qc rq
+                ON rq.receipt_id = por.id
+              LEFT JOIN receipt_alloc ra
+                ON ra.receipt_id = por.id
+             WHERE por.id = $1
+               AND por.tenant_id = $2`,
+          [receiptId, tenantId]
+        );
+        const guardRow = lifecycleGuard.rows[0];
+        if (!guardRow) {
+          throw new Error('RECEIPT_NOT_FOUND');
+        }
+        const acceptedQty = roundQuantity(toNumber(guardRow.accept_qty ?? 0));
+        const availableQty = roundQuantity(toNumber(guardRow.available_qty ?? 0));
         await completePutawayCommand({
           client,
           tenantId,
           receiptId,
-          occurredAt: now
+          occurredAt: now,
+          currentState: guardRow.lifecycle_state,
+          putawayStarted: availableQty > 1e-6,
+          putawayComplete: acceptedQty > 0 && availableQty + 1e-6 >= acceptedQty,
+          acceptedQty,
+          availableQty
         });
       }
 
