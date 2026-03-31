@@ -80,7 +80,7 @@ export async function fetchReceiptReconciliation(
 
   const lineSummaries: ReceiptLineReconciliation[] = linesResult.rows.map((line: any) => {
     const qc = qcMap.get(line.id) ?? defaultBreakdown();
-    const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0 };
+    const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0, qa: 0, hold: 0 };
     const quantityReceived = roundQuantity(toNumber(line.quantity_received));
     const acceptedQty = calculateAcceptedQuantity(quantityReceived, qc);
     const postedQty = roundQuantity(totals.posted ?? 0);

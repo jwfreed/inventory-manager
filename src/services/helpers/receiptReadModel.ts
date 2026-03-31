@@ -1,13 +1,12 @@
 import { roundQuantity, toNumber } from '../../lib/numbers';
 import {
-  deriveReceiptLifecycleState,
   RECEIPT_STATES
 } from '../../domain/receipts/receiptStateModel';
 import {
   calculateReceiptPutawayStatus,
-  deriveReceiptAvailability,
   assertReceiptQcOutcomeIntegrity
 } from '../../domain/receipts/receiptAvailabilityModel';
+import { deriveReceiptAvailabilityFromAllocations } from '../../domain/receipts/receiptAllocationModel';
 import {
   calculatePutawayAvailability,
   defaultBreakdown,
@@ -52,7 +51,7 @@ export function mapReceiptLine(
 ) {
   const quantityReceived = roundQuantity(toNumber(line.quantity_received));
   const qc = qcBreakdown.get(line.id) ?? defaultBreakdown();
-  const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0, postedToAvailable: 0, pendingToAvailable: 0 };
+  const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0, qa: 0, hold: 0 };
   const qcOutcome = assertReceiptQcOutcomeIntegrity({
     quantityReceived,
     acceptedQty: qc.accept ?? 0,
@@ -105,7 +104,7 @@ export function mapReceiptLine(
     putawayAcceptedQuantity: roundQuantity(acceptedQuantity),
     putawayPostedQuantity: postedQuantity,
     putawayStatus,
-    availableQuantity: roundQuantity(totals.postedToAvailable ?? 0),
+    availableQuantity: roundQuantity(totals.posted ?? 0),
     remainingQuantityToPutaway: availability.remainingAfterPosted,
     availableForNewPutaway: availability.availableForPlanning,
     putawayBlockedReason: availability.blockedReason ?? null
@@ -127,6 +126,7 @@ export function mapReceipt(
     vendorName: row.vendor_name ?? null,
     vendorCode: row.vendor_code ?? null,
     status: row.status ?? 'posted',
+    lifecycleState: row.lifecycle_state ?? RECEIPT_STATES.RECEIVED,
     receivedAt: row.received_at,
     receivedToLocationId: row.received_to_location_id,
     receivedToLocationName: row.received_to_location_name ?? null,
@@ -143,7 +143,8 @@ export function mapReceipt(
 
 export function buildReceiptStatusSummary(
   baseStatus: string | null | undefined,
-  totals: ReceiptTotals
+  totals: ReceiptTotals,
+  lifecycleState?: string | null | undefined
 ): ReceiptStatusSummary {
   const totalReceived = roundQuantity(totals.totalReceived);
   const totalAccept = roundQuantity(totals.totalAccept);
@@ -158,14 +159,9 @@ export function buildReceiptStatusSummary(
     heldQty: totalHold,
     rejectedQty: totalReject
   });
-  const receiptState = deriveReceiptLifecycleState({
-    baseStatus,
-    totalReceived,
-    totalAccept,
-    totalHold,
-    totalReject,
-    putawayCompleted: putawayPosted
-  });
+  const receiptState = (lifecycleState as keyof typeof RECEIPT_STATES | null | undefined)
+    ? RECEIPT_STATES[lifecycleState as keyof typeof RECEIPT_STATES]
+    : RECEIPT_STATES.RECEIVED;
   const hasReceived = totalReceived > STATUS_EPSILON;
 
   let qcStatus: ReceiptStatusSummary['qcStatus'];
@@ -209,12 +205,47 @@ export function buildReceiptStatusSummary(
   }
 
   const qcEligible = baseStatus === 'posted' && receiptState === RECEIPT_STATES.QC_PENDING;
-  const availability = deriveReceiptAvailability({
+  const availability = deriveReceiptAvailabilityFromAllocations({
     baseStatus,
     lifecycleState: receiptState,
-    acceptedQty: qcOutcome.acceptedQty,
-    heldQty: qcOutcome.heldQty,
-    postedToAvailableQty: putawayPosted
+    allocations: [
+      {
+        receiptId: 'summary',
+        receiptLineId: 'summary',
+        warehouseId: 'summary',
+        locationId: 'summary',
+        binId: null,
+        inventoryMovementId: null,
+        inventoryMovementLineId: null,
+        costLayerId: null,
+        quantity: putawayPosted,
+        status: 'AVAILABLE'
+      },
+      {
+        receiptId: 'summary',
+        receiptLineId: 'summary',
+        warehouseId: 'summary',
+        locationId: 'summary',
+        binId: null,
+        inventoryMovementId: null,
+        inventoryMovementLineId: null,
+        costLayerId: null,
+        quantity: Math.max(0, totalAcceptedQty - putawayPosted),
+        status: 'QA'
+      },
+      {
+        receiptId: 'summary',
+        receiptLineId: 'summary',
+        warehouseId: 'summary',
+        locationId: 'summary',
+        binId: null,
+        inventoryMovementId: null,
+        inventoryMovementLineId: null,
+        costLayerId: null,
+        quantity: totalHold,
+        status: 'HOLD'
+      }
+    ]
   });
   const putawayEligible =
     baseStatus === 'posted' &&

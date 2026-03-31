@@ -59,3 +59,34 @@ export function assertReceiptReconciliationIntegrity(params: {
     }
   }
 }
+
+export function assertPostingTraceIntegrity(params: {
+  expectedQtyByReceiptLineId: Map<string, number>;
+  traceLines: ReceiptPostingTraceLine[];
+}) {
+  return assertReceiptReconciliationIntegrity(params);
+}
+
+export type PhysicalCount = {
+  receiptLineId: string;
+  countedQty: number;
+  toleranceQty?: number;
+};
+
+export function reconcileReceiptPhysicalCount(params: {
+  expectedQty: number;
+  count: PhysicalCount;
+}) {
+  const expectedQty = roundQuantity(params.expectedQty);
+  const countedQty = roundQuantity(params.count.countedQty);
+  const discrepancyQty = roundQuantity(countedQty - expectedQty);
+  const toleranceQty = roundQuantity(params.count.toleranceQty ?? 0);
+  return {
+    receiptLineId: params.count.receiptLineId,
+    expectedQty,
+    countedQty,
+    discrepancyQty,
+    toleranceQty,
+    withinTolerance: Math.abs(discrepancyQty) <= toleranceQty + RECEIPT_STATUS_EPSILON
+  };
+}

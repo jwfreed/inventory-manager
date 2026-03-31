@@ -98,12 +98,13 @@ export async function insertPostedReceipt(params: {
   notes: string | null;
   idempotencyKey: string | null;
   receiptNumber: string;
+  lifecycleState: string;
 }) {
   await params.client.query(
     `INSERT INTO purchase_order_receipts (
         id, tenant_id, purchase_order_id, status, received_at, received_to_location_id,
-        inventory_movement_id, external_ref, notes, idempotency_key, receipt_number
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        inventory_movement_id, external_ref, notes, idempotency_key, receipt_number, lifecycle_state
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [
       params.receiptId,
       params.tenantId,
@@ -115,37 +116,10 @@ export async function insertPostedReceipt(params: {
       params.externalRef,
       params.notes,
       params.idempotencyKey,
-      params.receiptNumber
+      params.receiptNumber,
+      params.lifecycleState
     ]
   );
-}
-
-export async function insertPurchaseOrderReceipt(params: {
-  client: PoolClient;
-  receiptId: string;
-  tenantId: string;
-  purchaseOrderId: string;
-  occurredAt: Date;
-  receivedToLocationId: string;
-  inventoryMovementId: string;
-  externalRef: string | null;
-  notes: string | null;
-  idempotencyKey: string | null;
-  receiptNumber: string;
-}) {
-  return insertPostedReceipt({
-    client: params.client,
-    tenantId: params.tenantId,
-    receiptId: params.receiptId,
-    purchaseOrderId: params.purchaseOrderId,
-    occurredAt: params.occurredAt,
-    receivedToLocationId: params.receivedToLocationId,
-    movementId: params.inventoryMovementId,
-    externalRef: params.externalRef,
-    notes: params.notes,
-    idempotencyKey: params.idempotencyKey,
-    receiptNumber: params.receiptNumber
-  });
 }
 
 export async function insertPostedReceiptLine(params: {
@@ -176,22 +150,6 @@ export async function insertPostedReceiptLine(params: {
       params.line.overReceiptApproved
     ]
   );
-}
-
-export async function insertPurchaseOrderReceiptLines(params: {
-  client: PoolClient;
-  tenantId: string;
-  receiptId: string;
-  plannedReceiptLines: PlannedReceiptPostingLine[];
-}) {
-  for (const line of params.plannedReceiptLines) {
-    await insertPostedReceiptLine({
-      client: params.client,
-      tenantId: params.tenantId,
-      receiptId: params.receiptId,
-      line
-    });
-  }
 }
 
 export async function insertReceiptCostLayer(params: {

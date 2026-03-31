@@ -29,7 +29,7 @@ test('availability stays blocked while accepted stock remains outside available 
     lifecycleState: RECEIPT_STATES.PUTAWAY_PENDING,
     acceptedQty: 10,
     heldQty: 0,
-    postedToAvailableQty: 4
+    allocationSummary: { qaQty: 6, availableQty: 4, holdQty: 0 }
   });
   assert.equal(availability.state, 'UNAVAILABLE');
   assert.equal(availability.availableQty, 0);
@@ -41,7 +41,7 @@ test('held quantity never leaks into available quantity', () => {
     lifecycleState: RECEIPT_STATES.AVAILABLE,
     acceptedQty: 8,
     heldQty: 2,
-    postedToAvailableQty: 8
+    allocationSummary: { qaQty: 0, availableQty: 8, holdQty: 2 }
   });
   assert.equal(availability.state, 'AVAILABLE');
   assert.equal(availability.availableQty, 8);

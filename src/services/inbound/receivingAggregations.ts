@@ -17,8 +17,8 @@ export type ReceiptLineContext = {
 export type PutawayTotals = {
   posted: number;
   pending: number;
-  postedToAvailable: number;
-  pendingToAvailable: number;
+  qa: number;
+  hold: number;
 };
 
 export function defaultBreakdown(): QcBreakdown {
@@ -77,36 +77,43 @@ export async function loadPutawayTotals(
   }
   const executor = client ? client.query.bind(client) : query;
   const { rows } = await executor(
-    `SELECT
-        pl.purchase_order_receipt_line_id AS line_id,
-        SUM(CASE WHEN pl.status = 'completed' THEN COALESCE(pl.quantity_moved, 0) ELSE 0 END) AS posted_qty,
-        SUM(CASE WHEN pl.status = 'pending' THEN COALESCE(pl.quantity_planned, 0) ELSE 0 END) AS pending_qty,
-        SUM(
-          CASE
-            WHEN pl.status = 'completed' AND COALESCE(lt.is_sellable, false) THEN COALESCE(pl.quantity_moved, 0)
-            ELSE 0
-          END
-        ) AS posted_to_available_qty,
-        SUM(
-          CASE
-            WHEN pl.status = 'pending' AND COALESCE(lt.is_sellable, false) THEN COALESCE(pl.quantity_planned, 0)
-            ELSE 0
-          END
-        ) AS pending_to_available_qty
-     FROM putaway_lines pl
-     LEFT JOIN locations lt ON lt.id = pl.to_location_id AND lt.tenant_id = pl.tenant_id
-     WHERE pl.purchase_order_receipt_line_id = ANY($1::uuid[])
-       AND pl.tenant_id = $2
-       AND pl.status <> 'canceled'
-     GROUP BY pl.purchase_order_receipt_line_id`,
+    `WITH pending_putaway AS (
+        SELECT purchase_order_receipt_line_id AS line_id,
+               COALESCE(SUM(CASE WHEN status = 'pending' THEN COALESCE(quantity_planned, 0) ELSE 0 END), 0)::numeric AS pending_qty
+          FROM putaway_lines
+         WHERE purchase_order_receipt_line_id = ANY($1::uuid[])
+           AND tenant_id = $2
+           AND status <> 'canceled'
+         GROUP BY purchase_order_receipt_line_id
+      ),
+      allocations AS (
+        SELECT purchase_order_receipt_line_id AS line_id,
+               COALESCE(SUM(CASE WHEN status = 'AVAILABLE' THEN quantity ELSE 0 END), 0)::numeric AS posted_qty,
+               COALESCE(SUM(CASE WHEN status = 'QA' THEN quantity ELSE 0 END), 0)::numeric AS qa_qty,
+               COALESCE(SUM(CASE WHEN status = 'HOLD' THEN quantity ELSE 0 END), 0)::numeric AS hold_qty
+          FROM receipt_allocations
+         WHERE purchase_order_receipt_line_id = ANY($1::uuid[])
+           AND tenant_id = $2
+         GROUP BY purchase_order_receipt_line_id
+      )
+      SELECT prl.id AS line_id,
+             COALESCE(a.posted_qty, 0) AS posted_qty,
+             COALESCE(pp.pending_qty, 0) AS pending_qty,
+             COALESCE(a.qa_qty, 0) AS qa_qty,
+             COALESCE(a.hold_qty, 0) AS hold_qty
+        FROM purchase_order_receipt_lines prl
+        LEFT JOIN pending_putaway pp ON pp.line_id = prl.id
+        LEFT JOIN allocations a ON a.line_id = prl.id
+       WHERE prl.id = ANY($1::uuid[])
+         AND prl.tenant_id = $2`,
     [lineIds, tenantId]
   );
   for (const row of rows) {
     map.set(row.line_id, {
       posted: roundQuantity(toNumber(row.posted_qty)),
       pending: roundQuantity(toNumber(row.pending_qty)),
-      postedToAvailable: roundQuantity(toNumber(row.posted_to_available_qty)),
-      pendingToAvailable: roundQuantity(toNumber(row.pending_to_available_qty))
+      qa: roundQuantity(toNumber(row.qa_qty)),
+      hold: roundQuantity(toNumber(row.hold_qty))
     });
   }
   return map;

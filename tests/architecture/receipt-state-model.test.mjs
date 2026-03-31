@@ -7,9 +7,9 @@ require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 
 const {
+  RECEIPT_EVENTS,
   RECEIPT_STATES,
   buildReceiptCreationState,
-  deriveReceiptState,
   transitionReceiptState
 } = require('../../src/domain/receipts/receiptStateModel.ts');
 
@@ -19,97 +19,49 @@ test('receipt creation state always stops at QC pending', () => {
 
 test('receipt state cannot jump directly from received to available', () => {
   assert.throws(
-    () => transitionReceiptState(RECEIPT_STATES.RECEIVED, RECEIPT_STATES.AVAILABLE),
+    () => transitionReceiptState(RECEIPT_STATES.RECEIVED, RECEIPT_EVENTS.COMPLETE_PUTAWAY),
     (error) => String(error?.message ?? '') === 'RECEIPT_INVALID_STATE_TRANSITION'
   );
 });
 
-test('receipt state remains unavailable until QC is complete', () => {
+test('receipt state machine enforces the required creation path', () => {
   assert.equal(
-    deriveReceiptState({
-      baseStatus: 'posted',
-      totals: {
-        totalReceived: 10,
-        totalAccept: 0,
-        totalHold: 0,
-        totalReject: 0
-      }
-    }),
+    transitionReceiptState(RECEIPT_STATES.RECEIVED, RECEIPT_EVENTS.VALIDATE),
+    RECEIPT_STATES.VALIDATED
+  );
+  assert.equal(
+    transitionReceiptState(RECEIPT_STATES.VALIDATED, RECEIPT_EVENTS.START_QC),
     RECEIPT_STATES.QC_PENDING
   );
 });
 
-test('receipt state becomes rejected on QC hold or zero accepted quantity after inspection', () => {
+test('receipt state requires qc completion before rejection', () => {
   assert.equal(
-    deriveReceiptState({
-      baseStatus: 'posted',
-      totals: {
-        totalReceived: 10,
-        totalAccept: 0,
-        totalHold: 10,
-        totalReject: 0
-      }
-    }),
-    RECEIPT_STATES.REJECTED
-  );
-  assert.equal(
-    deriveReceiptState({
-      baseStatus: 'posted',
-      totals: {
-        totalReceived: 10,
-        totalAccept: 0,
-        totalHold: 0,
-        totalReject: 10
-      }
-    }),
+    transitionReceiptState(
+      transitionReceiptState(RECEIPT_STATES.QC_PENDING, RECEIPT_EVENTS.COMPLETE_QC),
+      RECEIPT_EVENTS.REJECT
+    ),
     RECEIPT_STATES.REJECTED
   );
 });
 
-test('receipt state becomes qc completed after inspection but before putaway', () => {
+test('receipt state becomes qc completed after explicit qc completion', () => {
   assert.equal(
-    deriveReceiptState({
-      baseStatus: 'posted',
-      totals: {
-        totalReceived: 10,
-        totalAccept: 10,
-        totalHold: 0,
-        totalReject: 0,
-        putawayCompleted: 0
-      }
-    }),
+    transitionReceiptState(RECEIPT_STATES.QC_PENDING, RECEIPT_EVENTS.COMPLETE_QC),
     RECEIPT_STATES.QC_COMPLETED
   );
 });
 
-test('receipt state becomes putaway pending when accepted quantity is only partially moved', () => {
+test('receipt state becomes putaway pending only after explicit putaway start', () => {
   assert.equal(
-    deriveReceiptState({
-      baseStatus: 'posted',
-      totals: {
-        totalReceived: 10,
-        totalAccept: 10,
-        totalHold: 0,
-        totalReject: 0,
-        putawayCompleted: 4
-      }
-    }),
+    transitionReceiptState(RECEIPT_STATES.QC_COMPLETED, RECEIPT_EVENTS.START_PUTAWAY),
     RECEIPT_STATES.PUTAWAY_PENDING
   );
 });
 
-test('receipt state becomes available only after accepted quantity is fully moved', () => {
+test('receipt state becomes available only after explicit putaway completion', () => {
   assert.equal(
-    deriveReceiptState({
-      baseStatus: 'posted',
-      totals: {
-        totalReceived: 10,
-        totalAccept: 10,
-        totalHold: 0,
-        totalReject: 0,
-        putawayCompleted: 10
-      }
-    }),
+    transitionReceiptState(RECEIPT_STATES.PUTAWAY_PENDING, RECEIPT_EVENTS.COMPLETE_PUTAWAY),
     RECEIPT_STATES.AVAILABLE
   );
 });

@@ -14,13 +14,6 @@ export function buildReceiptPostedEvents(
   return [buildMovementPostedEvent(movementId, idempotencyKey ?? null)];
 }
 
-export function buildReceiptPostedEvent(
-  movementId: string,
-  idempotencyKey?: string | null
-) {
-  return buildMovementPostedEvent(movementId, idempotencyKey ?? null);
-}
-
 export function buildReceiptCostRefreshProjectionOps(
   tenantId: string,
   itemIds: Iterable<string>
@@ -57,16 +50,4 @@ export async function recordReceiptCreatedAuditEffect(params: {
     },
     params.client
   );
-}
-
-export async function recordReceiptCreateAuditLog(params: {
-  client: PoolClient;
-  tenantId: string;
-  actor?: ReceiptActor;
-  receiptId: string;
-  purchaseOrderId: string;
-  lineCount: number;
-  occurredAt: Date;
-}) {
-  return recordReceiptCreatedAuditEffect(params);
 }

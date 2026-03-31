@@ -57,12 +57,18 @@ export function deriveReceiptAvailability(params: {
   lifecycleState: ReceiptLifecycleState;
   acceptedQty: number;
   heldQty: number;
-  postedToAvailableQty: number;
+  allocationSummary?: {
+    qaQty?: number;
+    availableQty?: number;
+    holdQty?: number;
+  };
   blockedQty?: number;
 }): ReceiptAvailabilityDecision {
   const acceptedQty = roundQuantity(params.acceptedQty);
   const heldQty = roundQuantity(params.heldQty);
-  const postedToAvailableQty = roundQuantity(params.postedToAvailableQty);
+  const availableQtyFromAllocations = roundQuantity(params.allocationSummary?.availableQty ?? 0);
+  const qaQty = roundQuantity(params.allocationSummary?.qaQty ?? Math.max(0, acceptedQty - availableQtyFromAllocations));
+  const holdQty = roundQuantity(params.allocationSummary?.holdQty ?? heldQty);
   const blockedQty = roundQuantity(params.blockedQty ?? 0);
   const blockedReasons: string[] = [];
 
@@ -72,16 +78,19 @@ export function deriveReceiptAvailability(params: {
   if (params.lifecycleState !== RECEIPT_STATES.AVAILABLE) {
     blockedReasons.push('Receipt lifecycle is not available.');
   }
-  if (heldQty > RECEIPT_STATUS_EPSILON) {
+  if (holdQty > RECEIPT_STATUS_EPSILON) {
     blockedReasons.push('Held quantity must not contribute to availability.');
+  }
+  if (qaQty > RECEIPT_STATUS_EPSILON) {
+    blockedReasons.push('QA quantity must not contribute to availability.');
   }
   if (blockedQty > RECEIPT_STATUS_EPSILON) {
     blockedReasons.push('Blocked quantity must not contribute to availability.');
   }
 
-  const availableQty = Math.max(0, roundQuantity(Math.min(acceptedQty, postedToAvailableQty) - blockedQty));
+  const availableQty = Math.max(0, roundQuantity(Math.min(acceptedQty, availableQtyFromAllocations) - blockedQty));
   const unavailableAcceptedQty = Math.max(0, roundQuantity(acceptedQty - availableQty));
-  const unavailableQty = roundQuantity(unavailableAcceptedQty + heldQty + blockedQty);
+  const unavailableQty = roundQuantity(unavailableAcceptedQty + holdQty + qaQty + blockedQty);
 
   if (params.lifecycleState !== RECEIPT_STATES.AVAILABLE || availableQty <= RECEIPT_STATUS_EPSILON) {
     return {

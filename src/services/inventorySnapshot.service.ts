@@ -304,7 +304,7 @@ async function loadInTransitCanonical(
     const context = contexts.get(lineId);
     if (!context) continue;
     const qc = qcBreakdown.get(lineId) ?? { hold: 0, accept: 0, reject: 0 };
-    const totals = putawayTotals.get(lineId) ?? { posted: 0, pending: 0 };
+    const totals = putawayTotals.get(lineId) ?? { posted: 0, pending: 0, qa: 0, hold: 0 };
 
     const accepted = normalizeQuantity(calculateAcceptedQuantity(context.quantityReceived, qc));
     const posted = normalizeQuantity(totals.posted ?? 0);

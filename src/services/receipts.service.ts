@@ -24,11 +24,20 @@ import {
 } from '../domain/receipts/receiptPolicy';
 import {
   assertReceiptInventoryUnavailable,
+  RECEIPT_EVENTS,
   RECEIPT_STATES,
+  applyReceiptStateTransition,
   transitionReceiptState,
   type ReceiptLifecycleState
 } from '../domain/receipts/receiptStateModel';
 import { assertReceiptQcOutcomeIntegrity } from '../domain/receipts/receiptAvailabilityModel';
+import {
+  RECEIPT_ALLOCATION_STATUSES,
+  assertReceiptAllocationTraceability,
+  buildReceiptPostingIntegrity,
+  insertReceiptAllocations,
+  loadReceiptAllocationsByLine
+} from '../domain/receipts/receiptAllocationModel';
 import {
   assertReceiptLineLocationsResolved,
   assertReceiptLocationResolution
@@ -80,6 +89,7 @@ import {
   buildMovementPostedEvent,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
+import { synchronizeReceiptLifecycleState } from './helpers/receiptLifecycleSync';
 
 async function generateReceiptNumber() {
   const { rows } = await query(`SELECT nextval('receipt_number_seq') AS seq`);
@@ -166,7 +176,7 @@ export async function fetchReceiptById(tenantId: string, id: string, client?: Po
   for (const line of linesResult.rows) {
     const quantityReceived = roundQuantity(toNumber(line.quantity_received));
     const qc = breakdown.get(line.id) ?? defaultBreakdown();
-    const lineTotals = totals.get(line.id) ?? { posted: 0, pending: 0 };
+    const lineTotals = totals.get(line.id) ?? { posted: 0, pending: 0, qa: 0, hold: 0 };
     totalsSummary.totalReceived += quantityReceived;
     totalsSummary.totalAccept += roundQuantity(qc.accept ?? 0);
     totalsSummary.totalHold += roundQuantity(qc.hold ?? 0);
@@ -176,7 +186,7 @@ export async function fetchReceiptById(tenantId: string, id: string, client?: Po
     totalsSummary.putawayPending += roundQuantity(lineTotals.pending ?? 0);
   }
 
-  const statusSummary = buildReceiptStatusSummary(receipt.status, totalsSummary);
+  const statusSummary = buildReceiptStatusSummary(receipt.status, totalsSummary, receipt.lifecycleState);
   return { ...receipt, ...statusSummary };
 }
 
@@ -449,7 +459,7 @@ export async function createPurchaseOrderReceipt(
         warehouseId: qaWarehouseId
       });
       assertReceiptLineLocationsResolved(data.lines, resolvedLocationContext);
-      receiptState = transitionReceiptState(receiptState, RECEIPT_STATES.VALIDATED);
+      receiptState = transitionReceiptState(receiptState, RECEIPT_EVENTS.VALIDATE);
 
       return Array.from(new Set(data.lines.map((line) => poLineMap.get(line.purchaseOrderLineId)?.item_id).filter(Boolean))).map((itemId) => ({
         tenantId,
@@ -467,7 +477,7 @@ export async function createPurchaseOrderReceipt(
       const now = new Date();
       const occurredAt = new Date(data.receivedAt);
       const receiptNumber = await generateReceiptNumber();
-      receiptState = transitionReceiptState(receiptState, RECEIPT_STATES.QC_PENDING);
+      receiptState = transitionReceiptState(receiptState, RECEIPT_EVENTS.START_QC);
       assertReceiptInventoryUnavailable(receiptState);
       const projectionOps: InventoryCommandProjectionOp[] = [];
       const refreshedItemIds = new Set<string>();
@@ -560,7 +570,24 @@ export async function createPurchaseOrderReceipt(
         externalRef: data.externalRef,
         notes: data.notes,
         idempotencyKey: data.idempotencyKey,
-        receiptNumber
+        receiptNumber,
+        lifecycleState: RECEIPT_STATES.RECEIVED
+      });
+      receiptState = await applyReceiptStateTransition({
+        client,
+        tenantId,
+        receiptId,
+        currentState: RECEIPT_STATES.RECEIVED,
+        event: RECEIPT_EVENTS.VALIDATE,
+        occurredAt: now
+      });
+      receiptState = await applyReceiptStateTransition({
+        client,
+        tenantId,
+        receiptId,
+        currentState: receiptState,
+        event: RECEIPT_EVENTS.START_QC,
+        occurredAt: now
       });
 
       for (const line of plannedReceiptLines) {
@@ -594,6 +621,32 @@ export async function createPurchaseOrderReceipt(
         }
       }
 
+      const sortedReceiptLines = sortDeterministicMovementLines(
+        plannedReceiptLines,
+        (line) => ({
+          tenantId,
+          warehouseId: receivingQaWarehouseId,
+          locationId: receivingQaLocationId,
+          itemId: line.itemId,
+          canonicalUom: line.canonicalFields.canonicalUom,
+          sourceLineId: line.receiptLineId
+        })
+      );
+      const receiptAllocations = sortedReceiptLines.map((line, index) => ({
+        receiptId,
+        receiptLineId: line.receiptLineId,
+        warehouseId: receivingQaWarehouseId,
+        locationId: receivingQaLocationId,
+        binId: receivingQaLocationId,
+        inventoryMovementId: movementId,
+        inventoryMovementLineId: movementResult.lineIds[index] ?? null,
+        costLayerId: receiptTraceCostLayerIds.get(line.receiptLineId) ?? null,
+        quantity: line.canonicalFields.quantityDeltaCanonical,
+        status: RECEIPT_ALLOCATION_STATUSES.QA
+      }));
+      assertReceiptAllocationTraceability(receiptAllocations);
+      await insertReceiptAllocations(client, tenantId, receiptAllocations, now);
+
       const traceLines = buildReceiptPostingTrace(
         plannedReceiptLines.map((line) => ({
           receiptLineId: line.receiptLineId,
@@ -604,11 +657,25 @@ export async function createPurchaseOrderReceipt(
         }))
       );
       assertReceiptPostingTraceability(traceLines);
+      const allocationsByReceiptLineId = await loadReceiptAllocationsByLine(
+        client,
+        tenantId,
+        plannedReceiptLines.map((line) => line.receiptLineId)
+      );
       assertReceiptReconciliationIntegrity({
         expectedQtyByReceiptLineId: new Map(
           plannedReceiptLines.map((line) => [line.receiptLineId, line.canonicalFields.quantityDeltaCanonical])
         ),
         traceLines
+      });
+      buildReceiptPostingIntegrity({
+        expectedQtyByReceiptLineId: new Map(
+          plannedReceiptLines.map((line) => [line.receiptLineId, line.canonicalFields.quantityDeltaCanonical])
+        ),
+        allocationsByReceiptLineId,
+        postedQtyByReceiptLineId: new Map(
+          traceLines.map((line) => [line.receiptLineId, line.quantity])
+        )
       });
 
       await updatePoStatusFromReceipts(tenantId, data.purchaseOrderId, client);
@@ -627,7 +694,8 @@ export async function createPurchaseOrderReceipt(
       if (!receiptView) {
         throw new Error('RECEIPT_NOT_FOUND_AFTER_CREATE');
       }
-      if (receiptState !== RECEIPT_STATES.QC_PENDING) {
+      const syncedState = await synchronizeReceiptLifecycleState(client, tenantId, receiptId, now);
+      if (syncedState.state !== RECEIPT_STATES.QC_PENDING || receiptState !== RECEIPT_STATES.QC_PENDING) {
         throw new Error(`RECEIPT_STATE_TRANSITION_INVALID:${receiptState}`);
       }
 
