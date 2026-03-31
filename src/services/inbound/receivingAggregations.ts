@@ -17,6 +17,8 @@ export type ReceiptLineContext = {
 export type PutawayTotals = {
   posted: number;
   pending: number;
+  postedToAvailable: number;
+  pendingToAvailable: number;
 };
 
 export function defaultBreakdown(): QcBreakdown {
@@ -76,20 +78,35 @@ export async function loadPutawayTotals(
   const executor = client ? client.query.bind(client) : query;
   const { rows } = await executor(
     `SELECT
-        purchase_order_receipt_line_id AS line_id,
-        SUM(CASE WHEN status = 'completed' THEN COALESCE(quantity_moved, 0) ELSE 0 END) AS posted_qty,
-        SUM(CASE WHEN status = 'pending' THEN COALESCE(quantity_planned, 0) ELSE 0 END) AS pending_qty
-     FROM putaway_lines
-     WHERE purchase_order_receipt_line_id = ANY($1::uuid[])
-       AND tenant_id = $2
-       AND status <> 'canceled'
-     GROUP BY purchase_order_receipt_line_id`,
+        pl.purchase_order_receipt_line_id AS line_id,
+        SUM(CASE WHEN pl.status = 'completed' THEN COALESCE(pl.quantity_moved, 0) ELSE 0 END) AS posted_qty,
+        SUM(CASE WHEN pl.status = 'pending' THEN COALESCE(pl.quantity_planned, 0) ELSE 0 END) AS pending_qty,
+        SUM(
+          CASE
+            WHEN pl.status = 'completed' AND COALESCE(lt.is_sellable, false) THEN COALESCE(pl.quantity_moved, 0)
+            ELSE 0
+          END
+        ) AS posted_to_available_qty,
+        SUM(
+          CASE
+            WHEN pl.status = 'pending' AND COALESCE(lt.is_sellable, false) THEN COALESCE(pl.quantity_planned, 0)
+            ELSE 0
+          END
+        ) AS pending_to_available_qty
+     FROM putaway_lines pl
+     LEFT JOIN locations lt ON lt.id = pl.to_location_id AND lt.tenant_id = pl.tenant_id
+     WHERE pl.purchase_order_receipt_line_id = ANY($1::uuid[])
+       AND pl.tenant_id = $2
+       AND pl.status <> 'canceled'
+     GROUP BY pl.purchase_order_receipt_line_id`,
     [lineIds, tenantId]
   );
   for (const row of rows) {
     map.set(row.line_id, {
       posted: roundQuantity(toNumber(row.posted_qty)),
-      pending: roundQuantity(toNumber(row.pending_qty))
+      pending: roundQuantity(toNumber(row.pending_qty)),
+      postedToAvailable: roundQuantity(toNumber(row.posted_to_available_qty)),
+      pendingToAvailable: roundQuantity(toNumber(row.pending_to_available_qty))
     });
   }
   return map;

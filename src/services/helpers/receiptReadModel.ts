@@ -1,6 +1,14 @@
 import { roundQuantity, toNumber } from '../../lib/numbers';
 import {
-  calculateAcceptedQuantity,
+  deriveReceiptLifecycleState,
+  RECEIPT_STATES
+} from '../../domain/receipts/receiptStateModel';
+import {
+  calculateReceiptPutawayStatus,
+  deriveReceiptAvailability,
+  assertReceiptQcOutcomeIntegrity
+} from '../../domain/receipts/receiptAvailabilityModel';
+import {
   calculatePutawayAvailability,
   defaultBreakdown,
   type PutawayTotals,
@@ -44,19 +52,20 @@ export function mapReceiptLine(
 ) {
   const quantityReceived = roundQuantity(toNumber(line.quantity_received));
   const qc = qcBreakdown.get(line.id) ?? defaultBreakdown();
-  const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0 };
-  const acceptedQuantity = calculateAcceptedQuantity(quantityReceived, qc, false);
+  const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0, postedToAvailable: 0, pendingToAvailable: 0 };
+  const qcOutcome = assertReceiptQcOutcomeIntegrity({
+    quantityReceived,
+    acceptedQty: qc.accept ?? 0,
+    heldQty: qc.hold ?? 0,
+    rejectedQty: qc.reject ?? 0
+  });
+  const acceptedQuantity = qcOutcome.acceptedQty;
   const postedQuantity = roundQuantity(totals.posted ?? 0);
-  let putawayStatus = 'not_available';
-  if (acceptedQuantity > 0) {
-    if (postedQuantity <= 0) {
-      putawayStatus = 'not_started';
-    } else if (postedQuantity + 1e-6 < acceptedQuantity) {
-      putawayStatus = 'partial';
-    } else {
-      putawayStatus = 'complete';
-    }
-  }
+  const putawayStatus = calculateReceiptPutawayStatus({
+    acceptedQty: acceptedQuantity,
+    putawayCompletedQty: totals.posted,
+    putawayPendingQty: totals.pending
+  });
   const availability = calculatePutawayAvailability(
     {
       id: line.id,
@@ -96,6 +105,7 @@ export function mapReceiptLine(
     putawayAcceptedQuantity: roundQuantity(acceptedQuantity),
     putawayPostedQuantity: postedQuantity,
     putawayStatus,
+    availableQuantity: roundQuantity(totals.postedToAvailable ?? 0),
     remainingQuantityToPutaway: availability.remainingAfterPosted,
     availableForNewPutaway: availability.availableForPlanning,
     putawayBlockedReason: availability.blockedReason ?? null
@@ -142,36 +152,40 @@ export function buildReceiptStatusSummary(
   const totalAcceptedQty = roundQuantity(totals.totalAcceptedQty);
   const putawayPosted = roundQuantity(totals.putawayPosted);
   const putawayPending = roundQuantity(totals.putawayPending);
-
-  const remainingQc = Math.max(0, totalReceived - (totalAccept + totalHold + totalReject));
+  const qcOutcome = assertReceiptQcOutcomeIntegrity({
+    quantityReceived: totalReceived,
+    acceptedQty: totalAccept,
+    heldQty: totalHold,
+    rejectedQty: totalReject
+  });
+  const receiptState = deriveReceiptLifecycleState({
+    baseStatus,
+    totalReceived,
+    totalAccept,
+    totalHold,
+    totalReject,
+    putawayCompleted: putawayPosted
+  });
   const hasReceived = totalReceived > STATUS_EPSILON;
 
   let qcStatus: ReceiptStatusSummary['qcStatus'];
-  if (baseStatus === 'voided') {
-    qcStatus = 'failed';
-  } else if (!hasReceived) {
+  if (!hasReceived || receiptState === RECEIPT_STATES.QC_PENDING) {
     qcStatus = 'pending';
-  } else if (remainingQc > STATUS_EPSILON) {
-    qcStatus = 'pending';
-  } else if (totalHold > STATUS_EPSILON) {
-    qcStatus = 'failed';
-  } else if (totalAccept > STATUS_EPSILON) {
+  } else if (
+    receiptState === RECEIPT_STATES.QC_COMPLETED
+    || receiptState === RECEIPT_STATES.PUTAWAY_PENDING
+    || receiptState === RECEIPT_STATES.AVAILABLE
+  ) {
     qcStatus = 'passed';
   } else {
     qcStatus = 'failed';
   }
 
-  let putawayStatus: ReceiptStatusSummary['putawayStatus'] = 'not_available';
-  if (qcStatus === 'passed' && totalAcceptedQty > STATUS_EPSILON) {
-    const totalPutaway = putawayPosted + putawayPending;
-    if (totalPutaway <= STATUS_EPSILON) {
-      putawayStatus = 'not_started';
-    } else if (putawayPosted + STATUS_EPSILON >= totalAcceptedQty) {
-      putawayStatus = 'complete';
-    } else {
-      putawayStatus = 'pending';
-    }
-  }
+  const putawayStatus = calculateReceiptPutawayStatus({
+    acceptedQty: totalAcceptedQty,
+    putawayCompletedQty: putawayPosted,
+    putawayPendingQty: putawayPending
+  });
 
   let workflowStatus = 'posted';
   if (baseStatus === 'voided') {
@@ -180,10 +194,12 @@ export function buildReceiptStatusSummary(
     workflowStatus = 'draft';
   } else if (!hasReceived) {
     workflowStatus = 'posted';
-  } else if (qcStatus === 'pending') {
+  } else if (receiptState === RECEIPT_STATES.QC_PENDING) {
     workflowStatus = 'pending_qc';
-  } else if (qcStatus === 'failed') {
+  } else if (receiptState === RECEIPT_STATES.REJECTED) {
     workflowStatus = 'qc_failed';
+  } else if (receiptState === RECEIPT_STATES.QC_COMPLETED) {
+    workflowStatus = 'qc_passed';
   } else if (putawayStatus === 'complete') {
     workflowStatus = 'complete';
   } else if (putawayStatus === 'pending') {
@@ -192,12 +208,23 @@ export function buildReceiptStatusSummary(
     workflowStatus = 'qc_passed';
   }
 
-  const qcEligible = baseStatus === 'posted' && remainingQc > STATUS_EPSILON;
+  const qcEligible = baseStatus === 'posted' && receiptState === RECEIPT_STATES.QC_PENDING;
+  const availability = deriveReceiptAvailability({
+    baseStatus,
+    lifecycleState: receiptState,
+    acceptedQty: qcOutcome.acceptedQty,
+    heldQty: qcOutcome.heldQty,
+    postedToAvailableQty: putawayPosted
+  });
   const putawayEligible =
     baseStatus === 'posted' &&
-    qcStatus === 'passed' &&
+    (receiptState === RECEIPT_STATES.QC_COMPLETED || receiptState === RECEIPT_STATES.PUTAWAY_PENDING) &&
     totalAcceptedQty > STATUS_EPSILON &&
     putawayPosted + putawayPending + STATUS_EPSILON < totalAcceptedQty;
+
+  if (availability.state === 'AVAILABLE' && putawayStatus === 'complete') {
+    workflowStatus = 'complete';
+  }
 
   return { workflowStatus, qcStatus, putawayStatus, qcEligible, putawayEligible };
 }

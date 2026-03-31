@@ -1,8 +1,53 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
-import { purchaseOrderReceiptSchema } from '../schemas/receipts.schema';
-import type { z } from 'zod';
+import {
+  buildReceiptPostedEvents,
+  recordReceiptCreatedAuditEffect,
+  type ReceiptActor
+} from '../domain/receipts/receiptEffects';
+import {
+  normalizeReceiptRequest,
+  normalizeOptionalIdempotencyKey,
+  normalizeReceiptRequestForHash,
+  type ReceiptInput,
+  type ReceiptInput as PurchaseOrderReceiptInput
+} from '../domain/receipts/receiptNormalization';
+import {
+  assertReceiptCanBeCreated,
+  assertReceiptLocationContext,
+  assertReceiptPostingQuantityIntegrity,
+  assertUniqueReceiptPurchaseOrderLines,
+  RECEIPT_STATUS_EPSILON,
+  type ReceiptPurchaseOrderSnapshot,
+  type ReceiptPurchaseOrderLineSnapshot
+} from '../domain/receipts/receiptPolicy';
+import {
+  assertReceiptInventoryUnavailable,
+  RECEIPT_STATES,
+  transitionReceiptState,
+  type ReceiptLifecycleState
+} from '../domain/receipts/receiptStateModel';
+import { assertReceiptQcOutcomeIntegrity } from '../domain/receipts/receiptAvailabilityModel';
+import {
+  assertReceiptLineLocationsResolved,
+  assertReceiptLocationResolution
+} from '../domain/receipts/receiptLocationModel';
+import {
+  assertReceiptPostingTraceability,
+  assertReceiptReconciliationIntegrity,
+  buildReceiptPostingTrace
+} from '../domain/receipts/receiptReconciliation';
+import {
+  postReceiptInventoryMovement,
+  insertPostedReceipt,
+  insertPostedReceiptLine,
+  insertReceiptCostLayer,
+  type PlannedReceiptPostingLine
+} from '../domain/receipts/receiptPosting';
+import {
+  persistInventoryMovement
+} from '../domains/inventory';
 import {
   defaultBreakdown,
   loadPutawayTotals,
@@ -19,12 +64,8 @@ import { query as baseQuery } from '../db';
 import { updatePoStatusFromReceipts } from './status/purchaseOrdersStatus.service';
 import { recordAuditLog } from '../lib/audit';
 import { calculateMovementCostWithUnitCost } from './costing.service';
-import { createReceiptCostLayerOnce } from './costLayers.service';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { resolveDefaultLocationForRole, resolveWarehouseIdForLocation } from './warehouseDefaults.service';
-import {
-  persistInventoryMovement
-} from '../domains/inventory';
 import { hashTransactionalIdempotencyRequest } from '../lib/transactionalIdempotency';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import {
@@ -34,43 +75,11 @@ import {
 import {
   buildPostedDocumentReplayResult,
   buildInventoryBalanceProjectionOp,
+  buildRefreshItemCostSummaryProjectionOp,
   buildReplayCorruptionError,
   buildMovementPostedEvent,
-  buildRefreshItemCostSummaryProjectionOp,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
-
-type PurchaseOrderReceiptInput = z.infer<typeof purchaseOrderReceiptSchema>;
-
-function normalizeOptionalIdempotencyKey(value?: string | null): string | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeReceiptRequestForHash(data: PurchaseOrderReceiptInput): Record<string, unknown> {
-  const lines = [...data.lines]
-    .map((line) => ({
-      purchaseOrderLineId: line.purchaseOrderLineId,
-      uom: line.uom,
-      quantityReceived: roundQuantity(toNumber(line.quantityReceived)),
-      unitCost: line.unitCost ?? null,
-      discrepancyReason: line.discrepancyReason ?? null,
-      discrepancyNotes: line.discrepancyNotes ?? null,
-      lotCode: line.lotCode ?? null,
-      serialNumbers: line.serialNumbers ?? null,
-      overReceiptApproved: line.overReceiptApproved ?? false
-    }))
-    .sort((left, right) => left.purchaseOrderLineId.localeCompare(right.purchaseOrderLineId));
-  return {
-    purchaseOrderId: data.purchaseOrderId,
-    receivedAt: data.receivedAt ?? null,
-    receivedToLocationId: data.receivedToLocationId ?? null,
-    externalRef: data.externalRef ?? null,
-    notes: data.notes ?? null,
-    lines
-  };
-}
 
 async function generateReceiptNumber() {
   const { rows } = await query(`SELECT nextval('receipt_number_seq') AS seq`);
@@ -79,9 +88,8 @@ async function generateReceiptNumber() {
   return `R-${padded}`;
 }
 
-const STATUS_EPSILON = 1e-6;
 const REVERSAL_MOVEMENT_TYPE = 'receipt_reversal';
-
+const STATUS_EPSILON = 1e-6;
 type ReceiptVoidActor = { type: 'user' | 'system'; id?: string | null };
 
 export async function fetchReceiptById(tenantId: string, id: string, client?: PoolClient) {
@@ -259,13 +267,11 @@ async function buildReceiptVoidReplayResult(params: {
 
 export async function createPurchaseOrderReceipt(
   tenantId: string,
-  data: PurchaseOrderReceiptInput,
-  actor?: { type: 'user' | 'system'; id?: string | null }
+  input: PurchaseOrderReceiptInput,
+  actor?: ReceiptActor
 ) {
-  const normalizedIdempotencyKey = normalizeOptionalIdempotencyKey(data.idempotencyKey ?? null);
-  if (normalizedIdempotencyKey) {
-    data.idempotencyKey = normalizedIdempotencyKey;
-  }
+  const data = normalizeReceiptRequest(input as ReceiptInput);
+  const normalizedIdempotencyKey = data.idempotencyKey;
   const idempotencyRequestHash = normalizedIdempotencyKey
     ? hashTransactionalIdempotencyRequest({
       method: 'POST',
@@ -274,31 +280,15 @@ export async function createPurchaseOrderReceipt(
     })
     : null;
   const receiptId = uuidv4();
-  const uniqueSet = new Set(data.lines.map((line) => line.purchaseOrderLineId));
-  const uniqueLineIds = Array.from(uniqueSet);
-  if (uniqueLineIds.length !== data.lines.length) {
-    throw new Error('RECEIPT_DUPLICATE_PO_LINE');
-  }
+  const uniqueLineIds = data.lines.map((line) => line.purchaseOrderLineId);
+  assertUniqueReceiptPurchaseOrderLines(data.lines);
 
-  let poRow: { status: string; ship_to_location_id: string | null; receiving_location_id: string | null } | null = null;
-  const poLineMap = new Map<
-    string,
-    {
-      purchase_order_id: string;
-      item_id: string;
-      uom: string;
-      quantity_ordered: number;
-      unit_price: number | null;
-      line_status: string;
-      over_receipt_tolerance_pct: number;
-      requires_lot: boolean;
-      requires_serial: boolean;
-      requires_qc: boolean;
-    }
-  >();
+  let poRow: ReceiptPurchaseOrderSnapshot | null = null;
+  const poLineMap = new Map<string, ReceiptPurchaseOrderLineSnapshot>();
   let resolvedReceivedToLocationId: string | null = null;
   let qaLocationId: string | null = null;
   let qaWarehouseId: string | null = null;
+  let receiptState: ReceiptLifecycleState = RECEIPT_STATES.RECEIVED;
 
   return runInventoryCommand<{ receipt: any; replayed: boolean; responseStatus: number }>({
     tenantId,
@@ -350,16 +340,14 @@ export async function createPurchaseOrderReceipt(
       if (poResult.rowCount === 0) {
         throw new Error('RECEIPT_PO_NOT_FOUND');
       }
-      poRow = { ...poResult.rows[0] };
+      poRow = {
+        status: poResult.rows[0].status,
+        shipToLocationId: poResult.rows[0].ship_to_location_id,
+        receivingLocationId: poResult.rows[0].receiving_location_id
+      };
       const currentPoRow = poRow;
       if (!currentPoRow) {
         throw new Error('RECEIPT_PO_NOT_FOUND');
-      }
-      if (['received', 'closed', 'canceled'].includes(currentPoRow.status)) {
-        throw new Error('RECEIPT_PO_CLOSED');
-      }
-      if (currentPoRow.status === 'draft') {
-        throw new Error('RECEIPT_PO_NOT_APPROVED');
       }
       if (currentPoRow.status === 'submitted') {
         if (process.env.NODE_ENV !== 'production') {
@@ -427,56 +415,17 @@ export async function createPurchaseOrderReceipt(
         receivedMap.set(String(row.line_id), roundQuantity(toNumber(row.qty ?? 0)));
       }
 
-      for (const line of data.lines) {
-        const poLine = poLineMap.get(line.purchaseOrderLineId);
-        if (!poLine) {
-          throw new Error('RECEIPT_LINE_INVALID_REFERENCE');
-        }
-        if (poLine.purchase_order_id !== data.purchaseOrderId) {
-          throw new Error('RECEIPT_LINES_WRONG_PO');
-        }
-        if (poLine.uom !== line.uom) {
-          throw new Error('RECEIPT_LINE_UOM_MISMATCH');
-        }
-        if (poLine.line_status === 'closed_short' || poLine.line_status === 'cancelled' || poLine.line_status === 'complete') {
-          throw new Error('RECEIPT_PO_LINE_CLOSED');
-        }
-        const receivedQty = toNumber(line.quantityReceived);
-        const expectedQty = roundQuantity(toNumber(poLine.quantity_ordered ?? 0));
-        const alreadyReceivedQty = receivedMap.get(line.purchaseOrderLineId) ?? 0;
-        const projectedTotal = roundQuantity(alreadyReceivedQty + receivedQty);
-        if (poLine.requires_lot && !line.lotCode) {
-          throw new Error('RECEIPT_LOT_REQUIRED');
-        }
-        if (poLine.requires_serial) {
-          if (!line.serialNumbers || line.serialNumbers.length === 0) {
-            throw new Error('RECEIPT_SERIAL_REQUIRED');
-          }
-          if (!Number.isInteger(receivedQty)) {
-            throw new Error('RECEIPT_SERIAL_QTY_MUST_BE_INTEGER');
-          }
-          const uniqueSerials = new Set(line.serialNumbers);
-          if (uniqueSerials.size !== line.serialNumbers.length) {
-            throw new Error('RECEIPT_SERIAL_DUPLICATE');
-          }
-          if (line.serialNumbers.length !== receivedQty) {
-            throw new Error('RECEIPT_SERIAL_COUNT_MISMATCH');
-          }
-        }
-        if (projectedTotal - expectedQty > STATUS_EPSILON) {
-          if (!line.overReceiptApproved) {
-            throw new Error('RECEIPT_OVERRECEIPT_NOT_APPROVED');
-          }
-          if (line.discrepancyReason !== 'over') {
-            throw new Error('RECEIPT_OVERRECEIPT_REASON_REQUIRED');
-          }
-        }
-      }
+      assertReceiptCanBeCreated({
+        receipt: data,
+        purchaseOrder: currentPoRow,
+        poLines: poLineMap,
+        receivedQuantities: receivedMap
+      });
 
       resolvedReceivedToLocationId = data.receivedToLocationId ?? null;
       if (!resolvedReceivedToLocationId) {
-        const receivingLoc = currentPoRow.receiving_location_id ?? (await findDefaultReceivingLocation(tenantId));
-        resolvedReceivedToLocationId = receivingLoc ?? currentPoRow.ship_to_location_id ?? null;
+        const receivingLoc = currentPoRow.receivingLocationId ?? (await findDefaultReceivingLocation(tenantId));
+        resolvedReceivedToLocationId = receivingLoc ?? currentPoRow.shipToLocationId ?? null;
       }
       if (!resolvedReceivedToLocationId) {
         throw new Error('RECEIPT_RECEIVING_LOCATION_REQUIRED');
@@ -489,11 +438,22 @@ export async function createPurchaseOrderReceipt(
         }
         throw error;
       }
-      qaWarehouseId = await resolveWarehouseIdForLocation(tenantId, qaLocationId, client);
+      assertReceiptLocationContext({
+        receivedToLocationId: resolvedReceivedToLocationId,
+        qaLocationId
+      });
+      qaWarehouseId = await resolveWarehouseIdForLocation(tenantId, qaLocationId!, client);
+      const resolvedLocationContext = assertReceiptLocationResolution({
+        receivingLocationId: resolvedReceivedToLocationId,
+        qaLocationId,
+        warehouseId: qaWarehouseId
+      });
+      assertReceiptLineLocationsResolved(data.lines, resolvedLocationContext);
+      receiptState = transitionReceiptState(receiptState, RECEIPT_STATES.VALIDATED);
 
       return Array.from(new Set(data.lines.map((line) => poLineMap.get(line.purchaseOrderLineId)?.item_id).filter(Boolean))).map((itemId) => ({
         tenantId,
-        warehouseId: qaWarehouseId!,
+        warehouseId: resolvedLocationContext.warehouseId,
         itemId: String(itemId)
       }));
     },
@@ -505,32 +465,27 @@ export async function createPurchaseOrderReceipt(
       const receivingQaWarehouseId = qaWarehouseId;
 
       const now = new Date();
-      const occurredAt = data.receivedAt ? new Date(data.receivedAt) : now;
+      const occurredAt = new Date(data.receivedAt);
       const receiptNumber = await generateReceiptNumber();
+      receiptState = transitionReceiptState(receiptState, RECEIPT_STATES.QC_PENDING);
+      assertReceiptInventoryUnavailable(receiptState);
       const projectionOps: InventoryCommandProjectionOp[] = [];
-      const refreshedItems = new Set<string>();
-      const plannedReceiptLines: Array<{
-        receiptLineId: string;
-        purchaseOrderLineId: string;
-        itemId: string;
-        receivedQty: number;
-        expectedQty: number;
-        unitCost: number | null;
-        canonicalFields: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
-        costData: ReturnType<typeof calculateMovementCostWithUnitCost>;
-        discrepancyReason: string | null;
-        discrepancyNotes: string | null;
-        lotCode: string | null;
-        serialNumbers: string[] | null;
-        overReceiptApproved: boolean;
-      }> = [];
+      const refreshedItemIds = new Set<string>();
+      const plannedReceiptLines: PlannedReceiptPostingLine[] = [];
+      const receiptTraceCostLayerIds = new Map<string, string | null>();
 
       for (const line of data.lines) {
+        assertReceiptQcOutcomeIntegrity({
+          quantityReceived: line.quantityReceived,
+          acceptedQty: 0,
+          heldQty: 0,
+          rejectedQty: 0
+        });
         const receiptLineId = uuidv4();
-        const receivedQty = toNumber(line.quantityReceived);
+        const receivedQty = line.quantityReceived;
         const poLine = poLineMap.get(line.purchaseOrderLineId);
         const expectedQty = roundQuantity(toNumber(poLine?.quantity_ordered ?? 0));
-        const unitCost = line.unitCost !== undefined ? line.unitCost : (poLine?.unit_price ?? null);
+        const unitCost = line.unitCost ?? (poLine?.unit_price ?? null);
         if (!poLine?.item_id) {
           throw new Error('RECEIPT_LINE_ITEM_REQUIRED');
         }
@@ -562,38 +517,24 @@ export async function createPurchaseOrderReceipt(
           overReceiptApproved: line.overReceiptApproved ?? false
         });
       }
-
-      const movementResult = await persistInventoryMovement(client, {
-        tenantId,
-        movementType: 'receive',
-        status: 'posted',
-        externalRef: `po_receipt:${receiptId}`,
-        sourceType: 'po_receipt',
-        sourceId: receiptId,
-        idempotencyKey: data.idempotencyKey ?? null,
-        occurredAt,
-        postedAt: occurredAt,
-        notes: `PO receipt ${receiptId}`,
-        createdAt: now,
-        updatedAt: now,
-        lines: plannedReceiptLines.map((line) => ({
-          warehouseId: receivingQaWarehouseId,
-          sourceLineId: line.receiptLineId,
-          itemId: line.itemId,
-          locationId: receivingQaLocationId,
-          quantityDelta: line.canonicalFields.quantityDeltaCanonical,
-          uom: line.canonicalFields.canonicalUom,
-          quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,
-          uomEntered: line.canonicalFields.uomEntered,
-          quantityDeltaCanonical: line.canonicalFields.quantityDeltaCanonical,
-          canonicalUom: line.canonicalFields.canonicalUom,
-          uomDimension: line.canonicalFields.uomDimension,
-          unitCost: line.costData.unitCost,
-          extendedCost: line.costData.extendedCost,
-          reasonCode: 'receipt',
-          lineNotes: `PO receipt line ${line.receiptLineId}`,
-          createdAt: now
+      assertReceiptPostingQuantityIntegrity({
+        receiptLines: data.lines,
+        plannedLines: plannedReceiptLines.map((line) => ({
+          purchaseOrderLineId: line.purchaseOrderLineId,
+          receivedQty: line.receivedQty
         }))
+      });
+
+      const movementResult = await postReceiptInventoryMovement({
+        client,
+        tenantId,
+        receiptId,
+        warehouseId: receivingQaWarehouseId,
+        locationId: receivingQaLocationId,
+        occurredAt,
+        createdAt: now,
+        idempotencyKey: data.idempotencyKey,
+        lines: plannedReceiptLines
       });
       const movementId = movementResult.movementId;
 
@@ -603,55 +544,32 @@ export async function createPurchaseOrderReceipt(
           receiptId,
           movementId,
           expectedLineCount: plannedReceiptLines.length,
-          idempotencyKey: data.idempotencyKey ?? null,
+          idempotencyKey: data.idempotencyKey,
           client
         });
       }
 
-      await client.query(
-        `INSERT INTO purchase_order_receipts (
-            id, tenant_id, purchase_order_id, status, received_at, received_to_location_id,
-            inventory_movement_id, external_ref, notes, idempotency_key, receipt_number
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [
-          receiptId,
-          tenantId,
-          data.purchaseOrderId,
-          'posted',
-          occurredAt,
-          receivingQaLocationId,
-          movementId,
-          data.externalRef ?? null,
-          data.notes ?? null,
-          data.idempotencyKey ?? null,
-          receiptNumber
-        ]
-      );
+      await insertPostedReceipt({
+        client,
+        tenantId,
+        receiptId,
+        purchaseOrderId: data.purchaseOrderId,
+        occurredAt,
+        receivedToLocationId: receivingQaLocationId,
+        movementId,
+        externalRef: data.externalRef,
+        notes: data.notes,
+        idempotencyKey: data.idempotencyKey,
+        receiptNumber
+      });
 
       for (const line of plannedReceiptLines) {
-        await client.query(
-          `INSERT INTO purchase_order_receipt_lines (
-              id, tenant_id, purchase_order_receipt_id, purchase_order_line_id, uom,
-              quantity_received, expected_quantity, unit_cost, discrepancy_reason, discrepancy_notes,
-              lot_code, serial_numbers, over_receipt_approved
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-          [
-            line.receiptLineId,
-            tenantId,
-            receiptId,
-            line.purchaseOrderLineId,
-            line.canonicalFields.uomEntered,
-            line.receivedQty,
-            line.expectedQty,
-            line.unitCost,
-            line.discrepancyReason,
-            line.discrepancyNotes,
-            line.lotCode,
-            line.serialNumbers ?? null,
-            line.overReceiptApproved
-          ]
-        );
-
+        await insertPostedReceiptLine({
+          client,
+          tenantId,
+          receiptId,
+          line
+        });
         projectionOps.push(
           buildInventoryBalanceProjectionOp({
             tenantId,
@@ -661,55 +579,56 @@ export async function createPurchaseOrderReceipt(
             deltaOnHand: line.canonicalFields.quantityDeltaCanonical
           })
         );
-
-        if (line.unitCost !== null && line.unitCost !== undefined) {
-          await createReceiptCostLayerOnce({
-            tenant_id: tenantId,
-            item_id: line.itemId,
-            location_id: qaLocationId,
-            uom: line.canonicalFields.canonicalUom,
-            quantity: line.canonicalFields.quantityDeltaCanonical,
-            unit_cost: line.unitCost,
-            source_type: 'receipt',
-            source_document_id: line.receiptLineId,
-            movement_id: movementId,
-            layer_date: occurredAt,
-            notes: `Receipt from PO line ${line.purchaseOrderLineId}`,
-            client
-          });
-        }
-
-        if (!refreshedItems.has(line.itemId)) {
-          refreshedItems.add(line.itemId);
+        const costLayer = await insertReceiptCostLayer({
+          client,
+          tenantId,
+          movementId,
+          qaLocationId,
+          occurredAt,
+          line
+        });
+        receiptTraceCostLayerIds.set(line.receiptLineId, costLayer?.id ?? null);
+        if (!refreshedItemIds.has(line.itemId)) {
+          refreshedItemIds.add(line.itemId);
           projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, line.itemId));
         }
       }
 
+      const traceLines = buildReceiptPostingTrace(
+        plannedReceiptLines.map((line) => ({
+          receiptLineId: line.receiptLineId,
+          purchaseOrderLineId: line.purchaseOrderLineId,
+          itemId: line.itemId,
+          quantity: line.canonicalFields.quantityDeltaCanonical,
+          costLayerId: receiptTraceCostLayerIds.get(line.receiptLineId) ?? null
+        }))
+      );
+      assertReceiptPostingTraceability(traceLines);
+      assertReceiptReconciliationIntegrity({
+        expectedQtyByReceiptLineId: new Map(
+          plannedReceiptLines.map((line) => [line.receiptLineId, line.canonicalFields.quantityDeltaCanonical])
+        ),
+        traceLines
+      });
+
       await updatePoStatusFromReceipts(tenantId, data.purchaseOrderId, client);
 
-      if (actor) {
-        await recordAuditLog(
-          {
-            tenantId,
-            actorType: actor.type,
-            actorId: actor.id ?? null,
-            action: 'create',
-            entityType: 'purchase_order_receipt',
-            entityId: receiptId,
-            occurredAt: now,
-            metadata: {
-              purchaseOrderId: data.purchaseOrderId,
-              status: 'posted',
-              lineCount: data.lines.length
-            }
-          },
-          client
-        );
-      }
+      await recordReceiptCreatedAuditEffect({
+        client,
+        tenantId,
+        actor,
+        receiptId,
+        purchaseOrderId: data.purchaseOrderId,
+        lineCount: data.lines.length,
+        occurredAt: now
+      });
 
       const receiptView = await fetchReceiptById(tenantId, receiptId, client);
       if (!receiptView) {
         throw new Error('RECEIPT_NOT_FOUND_AFTER_CREATE');
+      }
+      if (receiptState !== RECEIPT_STATES.QC_PENDING) {
+        throw new Error(`RECEIPT_STATE_TRANSITION_INVALID:${receiptState}`);
       }
 
       return {
@@ -719,7 +638,7 @@ export async function createPurchaseOrderReceipt(
           responseStatus: 201
         },
         responseStatus: 201,
-        events: [buildMovementPostedEvent(movementId, normalizedIdempotencyKey)],
+        events: buildReceiptPostedEvents(movementId, normalizedIdempotencyKey),
         projectionOps
       };
     }
