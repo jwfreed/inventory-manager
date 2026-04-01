@@ -74,7 +74,7 @@ function mapQcEvent(row: any) {
   };
 }
 
-async function moveReceiptAllocationsToHold(params: {
+async function moveReceiptAllocationsFromQa(params: {
   client: any;
   tenantId: string;
   receiptLineId: string;
@@ -85,6 +85,7 @@ async function moveReceiptAllocationsToHold(params: {
   movementId: string;
   movementLineId: string;
   occurredAt: Date;
+  destinationStatus: typeof RECEIPT_ALLOCATION_STATUSES[keyof typeof RECEIPT_ALLOCATION_STATUSES];
 }) {
   const allocationsByLine = await loadReceiptAllocationsByLine(params.client, params.tenantId, [params.receiptLineId]);
   let remaining = roundQuantity(params.quantity);
@@ -126,7 +127,7 @@ async function moveReceiptAllocationsToHold(params: {
       inventoryMovementLineId: params.movementLineId,
       costLayerId: allocation.costLayerId,
       quantity: consumed,
-      status: RECEIPT_ALLOCATION_STATUSES.HOLD
+      status: params.destinationStatus
     });
   }
   if (remaining > 1e-6) {
@@ -375,9 +376,8 @@ export async function createQcEvent(
       if (!locationId) throw new Error('QC_LOCATION_REQUIRED');
       if (!itemId) throw new Error('QC_ITEM_ID_REQUIRED');
 
-      const receiptAcceptWithoutTransfer = sourceType === 'receipt' && data.eventType === 'accept';
       const destinationRole =
-        receiptAcceptWithoutTransfer ? 'QA' : data.eventType === 'accept' ? 'SELLABLE' : data.eventType === 'hold' ? 'HOLD' : 'REJECT';
+        data.eventType === 'accept' ? 'SELLABLE' : data.eventType === 'hold' ? 'HOLD' : 'REJECT';
       transferReasonCode =
         data.eventType === 'accept' ? 'qc_release' : data.eventType === 'hold' ? 'qc_hold' : 'qc_reject';
       transferNotes = `QC ${data.eventType} for ${sourceType} ${sourceId}`;
@@ -435,11 +435,6 @@ export async function createQcEvent(
           allowDefaultBinResolution: true
         })
       ).id;
-
-      if (receiptAcceptWithoutTransfer) {
-        preparedTransfer = null;
-        return [];
-      }
 
       preparedTransfer = await prepareTransferMutation(
         {
@@ -576,7 +571,7 @@ export async function createQcEvent(
         if (!receiptId) {
           throw new Error('QC_LINE_NOT_FOUND');
         }
-        if (data.eventType !== 'accept' && transferExecution) {
+        if (transferExecution) {
           const movementLineResult = await client.query(
             `SELECT id
                FROM inventory_movement_lines
@@ -591,7 +586,7 @@ export async function createQcEvent(
           if (!movementLineId) {
             throw new Error('QC_TRANSFER_LINE_MISSING');
           }
-          await moveReceiptAllocationsToHold({
+          await moveReceiptAllocationsFromQa({
             client,
             tenantId,
             receiptLineId: data.purchaseOrderReceiptLineId,
@@ -601,7 +596,11 @@ export async function createQcEvent(
             destinationBinId: destinationBinId ?? (() => { throw new Error('QC_DESTINATION_BIN_REQUIRED'); })(),
             movementId: transferExecution.result.movementId,
             movementLineId,
-            occurredAt
+            occurredAt,
+            destinationStatus:
+              data.eventType === 'accept'
+                ? RECEIPT_ALLOCATION_STATUSES.AVAILABLE
+                : RECEIPT_ALLOCATION_STATUSES.HOLD
           });
         }
         const lifecycleGuard = await client.query(
