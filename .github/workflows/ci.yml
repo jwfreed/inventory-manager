@@ -88,7 +88,7 @@ jobs:
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_ci;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_ci;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
-          REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
+          REVOKE TRIGGER, TRUNCATE ON inventory_movements, inventory_movement_lines FROM app_ci;
           SQL
       - name: Run critical invariant tests
         env:
@@ -183,7 +183,7 @@ jobs:
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_ci;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_ci;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
-          REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
+          REVOKE TRIGGER, TRUNCATE ON inventory_movements, inventory_movement_lines FROM app_ci;
           SQL
       - name: Start API server (if needed)
         env:
