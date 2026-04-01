@@ -1,11 +1,11 @@
-import 'ts-node/register/transpile-only';
-import 'tsconfig-paths/register';
 import { v5 as uuidv5 } from 'uuid';
 import { createRequire } from 'node:module';
 import { CANONICAL_WAREHOUSE_CODES, loadWarehouseTopology } from './warehouseTopology.mjs';
 
 const DETERMINISTIC_NAMESPACE = '7df33ef4-e5d4-43bc-bb76-8c16418ed953';
 const require = createRequire(import.meta.url);
+require('ts-node/register/transpile-only');
+require('tsconfig-paths/register');
 const { ensureLocationInventoryReady } = require('../../src/domain/inventory/binProvisioning.ts');
 
 function addIssue(issues, issue) {

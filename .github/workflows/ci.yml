@@ -94,7 +94,7 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
           TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
-        run: node --test tests/truth/*.test.mjs tests/unit/inventorySignalsSections.test.mjs
+        run: npm run test:truth
 
   test:
     runs-on: ubuntu-latest

@@ -38,6 +38,7 @@ import {
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
 import {
+  buildPostedDocumentReplayResult,
   buildInventoryBalanceProjectionOp
 } from '../modules/platform/application/inventoryMutationSupport';
 import {
@@ -128,6 +129,174 @@ function workOrderRoutingContext(workOrder: WorkOrderRow) {
     defaultProduceLocationId: workOrder.default_produce_location_id,
     produceToLocationIdSnapshot: workOrder.produce_to_location_id_snapshot
   };
+}
+
+async function buildWorkOrderIssueReplayResult(params: {
+  tenantId: string;
+  workOrderId: string;
+  issueId: string;
+  movementId: string;
+  expectedLineCount?: number;
+  expectedDeterministicHash?: string | null;
+  client: PoolClient;
+  idempotencyKey?: string | null;
+  preFetchIntegrityCheck?: () => Promise<void>;
+  fetchAggregateView: () => Promise<WorkOrderIssueRecord | null>;
+}) {
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovements: [
+      {
+        movementId: params.movementId,
+        expectedLineCount: params.expectedLineCount,
+        expectedDeterministicHash: params.expectedDeterministicHash ?? null
+      }
+    ],
+    client: params.client,
+    preFetchIntegrityCheck: params.preFetchIntegrityCheck,
+    fetchAggregateView: params.fetchAggregateView,
+    aggregateNotFoundError: new Error('WO_ISSUE_NOT_FOUND'),
+    authoritativeEvents: [
+      eventFactory.buildInventoryMovementPostedEvent(params.movementId, params.idempotencyKey ?? null),
+      eventFactory.buildWorkOrderIssuePostedEvent({
+        issueId: params.issueId,
+        workOrderId: params.workOrderId,
+        movementId: params.movementId,
+        producerIdempotencyKey: params.idempotencyKey ?? null
+      })
+    ]
+  });
+}
+
+async function buildWorkOrderCompletionReplayResult(params: {
+  tenantId: string;
+  workOrderId: string;
+  completionId: string;
+  movementId: string;
+  expectedLineCount?: number;
+  expectedDeterministicHash?: string | null;
+  client: PoolClient;
+  idempotencyKey?: string | null;
+  preFetchIntegrityCheck: () => Promise<void>;
+  fetchAggregateView: () => Promise<WorkOrderCompletionRecord | null>;
+}) {
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovements: [
+      {
+        movementId: params.movementId,
+        expectedLineCount: params.expectedLineCount,
+        expectedDeterministicHash: params.expectedDeterministicHash ?? null
+      }
+    ],
+    client: params.client,
+    preFetchIntegrityCheck: params.preFetchIntegrityCheck,
+    fetchAggregateView: params.fetchAggregateView,
+    aggregateNotFoundError: new Error('WO_COMPLETION_NOT_FOUND'),
+    authoritativeEvents: [
+      eventFactory.buildInventoryMovementPostedEvent(params.movementId, params.idempotencyKey ?? null),
+      eventFactory.buildWorkOrderCompletionPostedEvent({
+        executionId: params.completionId,
+        workOrderId: params.workOrderId,
+        movementId: params.movementId,
+        producerIdempotencyKey: params.idempotencyKey ?? null
+      })
+    ]
+  });
+}
+
+async function buildWorkOrderBatchReplayResult(params: {
+  tenantId: string;
+  workOrderId: string;
+  executionId: string;
+  issueMovementId: string;
+  receiveMovementId: string;
+  expectedIssueLineCount?: number;
+  expectedReceiveLineCount?: number;
+  expectedIssueDeterministicHash?: string | null;
+  expectedReceiveDeterministicHash?: string | null;
+  client: PoolClient;
+  idempotencyKey?: string | null;
+  preFetchIntegrityCheck: () => Promise<void>;
+  fetchAggregateView: () => Promise<WorkOrderBatchResult | null>;
+}) {
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovements: [
+      {
+        movementId: params.issueMovementId,
+        expectedLineCount: params.expectedIssueLineCount,
+        expectedDeterministicHash: params.expectedIssueDeterministicHash ?? null
+      },
+      {
+        movementId: params.receiveMovementId,
+        expectedLineCount: params.expectedReceiveLineCount,
+        expectedDeterministicHash: params.expectedReceiveDeterministicHash ?? null
+      }
+    ],
+    client: params.client,
+    preFetchIntegrityCheck: params.preFetchIntegrityCheck,
+    fetchAggregateView: params.fetchAggregateView,
+    aggregateNotFoundError: new Error('WO_EXECUTION_NOT_FOUND'),
+    authoritativeEvents: [
+      eventFactory.buildInventoryMovementPostedEvent(params.issueMovementId, params.idempotencyKey ?? null),
+      eventFactory.buildInventoryMovementPostedEvent(params.receiveMovementId, params.idempotencyKey ?? null),
+      eventFactory.buildWorkOrderProductionReportedEvent({
+        executionId: params.executionId,
+        workOrderId: params.workOrderId,
+        issueMovementId: params.issueMovementId,
+        receiveMovementId: params.receiveMovementId,
+        producerIdempotencyKey: params.idempotencyKey ?? null
+      })
+    ]
+  });
+}
+
+async function buildWorkOrderVoidReplayResult(params: {
+  tenantId: string;
+  workOrderId: string;
+  executionId: string;
+  componentReturnMovementId: string;
+  outputReversalMovementId: string;
+  expectedComponentLineCount?: number;
+  expectedOutputLineCount?: number;
+  expectedComponentDeterministicHash?: string | null;
+  expectedOutputDeterministicHash?: string | null;
+  client: PoolClient;
+  idempotencyKey?: string | null;
+  preFetchIntegrityCheck: () => Promise<void>;
+  fetchAggregateView: () => Promise<WorkOrderVoidReportResult | null>;
+}) {
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovements: [
+      {
+        movementId: params.componentReturnMovementId,
+        expectedLineCount: params.expectedComponentLineCount,
+        expectedDeterministicHash: params.expectedComponentDeterministicHash ?? null
+      },
+      {
+        movementId: params.outputReversalMovementId,
+        expectedLineCount: params.expectedOutputLineCount,
+        expectedDeterministicHash: params.expectedOutputDeterministicHash ?? null
+      }
+    ],
+    client: params.client,
+    preFetchIntegrityCheck: params.preFetchIntegrityCheck,
+    fetchAggregateView: params.fetchAggregateView,
+    aggregateNotFoundError: new Error('WO_VOID_EXECUTION_NOT_FOUND'),
+    authoritativeEvents: [
+      eventFactory.buildInventoryMovementPostedEvent(params.componentReturnMovementId, params.idempotencyKey ?? null),
+      eventFactory.buildInventoryMovementPostedEvent(params.outputReversalMovementId, params.idempotencyKey ?? null),
+      eventFactory.buildWorkOrderProductionReversedEvent({
+        executionId: params.executionId,
+        workOrderId: params.workOrderId,
+        componentReturnMovementId: params.componentReturnMovementId,
+        outputReversalMovementId: params.outputReversalMovementId,
+        producerIdempotencyKey: params.idempotencyKey ?? null
+      })
+    ]
+  });
 }
 
 type ManufacturingMutationState =
