@@ -232,7 +232,7 @@ async function insertBalancedTransferLineCorruption(params) {
   }
 }
 
-test('inventory transfer idempotency: replay and payload conflict stay deterministic without HTTP', async () => {
+test('inventory transfer idempotency defaults omitted occurredAt once and replays deterministically', async () => {
   const { harness, factory, store, itemId } = await createTransferFixture('transfer-idempotency');
   const { pool: db, tenantId } = harness;
 
@@ -257,7 +257,7 @@ test('inventory transfer idempotency: replay and payload conflict stay determini
   assert.equal(first.replayed, false);
 
   const movementHashRes = await db.query(
-    `SELECT movement_deterministic_hash
+    `SELECT movement_deterministic_hash, occurred_at
        FROM inventory_movements
       WHERE tenant_id = $1
         AND id = $2`,
@@ -265,6 +265,7 @@ test('inventory transfer idempotency: replay and payload conflict stay determini
   );
   assert.equal(movementHashRes.rowCount, 1);
   assert.ok(movementHashRes.rows[0]?.movement_deterministic_hash, 'transfer movement hash must persist');
+  assert.ok(movementHashRes.rows[0]?.occurred_at, 'transfer movement occurred_at must be defaulted before execution');
 
   const transferEventRes = await db.query(
     `SELECT aggregate_type, aggregate_id, event_type, event_version
@@ -345,6 +346,36 @@ test('inventory transfer idempotency: replay and payload conflict stay determini
         idempotencyKey
       }),
     'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD'
+  );
+});
+
+test('inventory transfer preserves explicit occurredAt exactly', async () => {
+  const { harness, factory, store, itemId } = await createTransferFixture('transfer-explicit-occurred-at');
+  const explicitOccurredAt = new Date('2026-03-02T03:04:05.000Z');
+
+  const transfer = await harness.postTransfer({
+    sourceLocationId: factory.defaults.SELLABLE.id,
+    destinationLocationId: store.sellable.id,
+    itemId,
+    quantity: 2,
+    uom: 'each',
+    reasonCode: 'distribution',
+    notes: 'Explicit occurredAt preservation',
+    occurredAt: explicitOccurredAt,
+    idempotencyKey: `transfer-explicit-${randomUUID()}`
+  });
+
+  const movementRes = await harness.pool.query(
+    `SELECT occurred_at
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [harness.tenantId, transfer.movementId]
+  );
+  assert.equal(movementRes.rowCount, 1);
+  assert.equal(
+    new Date(movementRes.rows[0].occurred_at).toISOString(),
+    explicitOccurredAt.toISOString()
   );
 });
 

@@ -291,6 +291,33 @@ test('transfer policy enforces QC accept, hold, and reject paths', async () => {
   );
 });
 
+test('transfer policy applies the only occurredAt default and preserves explicit values', async () => {
+  const baseInput = {
+    tenantId: 'tenant-a',
+    sourceLocationId: 'source-location',
+    destinationLocationId: 'destination-location',
+    itemId: 'item-a',
+    quantity: 2,
+    uom: 'each',
+    sourceType: 'inventory_transfer',
+    sourceId: 'transfer-source',
+    movementType: 'transfer'
+  };
+
+  const preparedDefaulted = await prepareTransferMutation(baseInput, buildPolicyTx());
+  assert.ok(preparedDefaulted.occurredAt instanceof Date);
+
+  const explicitOccurredAt = new Date('2026-04-01T00:00:00.000Z');
+  const preparedExplicit = await prepareTransferMutation(
+    {
+      ...baseInput,
+      occurredAt: explicitOccurredAt
+    },
+    buildPolicyTx()
+  );
+  assert.equal(preparedExplicit.occurredAt.toISOString(), explicitOccurredAt.toISOString());
+});
+
 test('transfer execution preserves created and replayed behavior with deterministic replay integrity', async () => {
   const { harness, factory, store, itemId } = await createTransferFixture('transfer-created-replayed');
   const idempotencyKey = `transfer-replay-${randomUUID()}`;

@@ -88,6 +88,12 @@ function domainError(code: string, details?: Record<string, unknown>): DomainErr
   return error;
 }
 
+function resolveTransferOccurredAt(occurredAt?: Date): Date {
+  // Canonical defaulting boundary: wrappers may omit occurredAt, but prepared
+  // transfer mutations must always carry a concrete timestamp downstream.
+  return occurredAt ?? new Date();
+}
+
 async function loadLocationPolicyRow(
   client: PoolClient,
   tenantId: string,
@@ -232,7 +238,7 @@ export async function prepareTransferMutation(
     qcAction: input.qcAction,
     reasonCode: input.reasonCode ?? 'transfer',
     notes: input.notes ?? 'Inventory transfer',
-    occurredAt: input.occurredAt ?? new Date(),
+    occurredAt: resolveTransferOccurredAt(input.occurredAt),
     actorId: input.actorId ?? null,
     overrideNegative: input.overrideNegative ?? false,
     overrideReason: input.overrideReason ?? null,
