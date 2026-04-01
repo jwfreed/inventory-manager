@@ -603,6 +603,18 @@ export async function transferInventory(
       if (!movementId) {
         throw new Error('TRANSFER_REPLAY_MOVEMENT_ID_REQUIRED');
       }
+      const replayPlan = input.occurredAt
+        ? await (async () => {
+            const replayPrepared = await prepareTransferMutation(
+              {
+                ...input,
+                idempotencyKey: normalizedIdempotencyKey
+              },
+              txClient
+            );
+            return buildTransferMovementPlan(replayPrepared, txClient);
+          })()
+        : null;
       return (
         await buildTransferReplayResult({
           tenantId: input.tenantId,
@@ -617,7 +629,8 @@ export async function transferInventory(
           uom: input.uom,
           sourceWarehouseId: responseBody.sourceWarehouseId,
           destinationWarehouseId: responseBody.destinationWarehouseId,
-          expectedLineCount: 2
+          expectedLineCount: replayPlan?.expectedLineCount ?? 2,
+          expectedDeterministicHash: replayPlan?.expectedDeterministicHash ?? null
         })
       ).responseBody;
     },

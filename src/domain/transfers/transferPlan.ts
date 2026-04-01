@@ -9,7 +9,11 @@ import {
 } from '../../modules/platform/application/inventoryMutationSupport';
 import { roundQuantity } from '../../lib/numbers';
 import { getCanonicalMovementFields, type CanonicalMovementFields } from '../../services/uomCanonical.service';
-import type { PreparedTransferMutation } from './transferPolicy';
+import {
+  TRANSFER_ADDRESSING_MODEL,
+  TRANSFER_CROSS_WAREHOUSE_POLICY,
+  type PreparedTransferMutation
+} from './transferPolicy';
 
 export type PlannedTransferMovementLine = Readonly<{
   direction: 'out' | 'in';
@@ -48,24 +52,6 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-function assertTransferPlanSymmetry(
-  outbound: CanonicalMovementFields,
-  inbound: CanonicalMovementFields
-) {
-  const outboundQty = roundQuantity(Math.abs(outbound.quantityDeltaCanonical));
-  const inboundQty = roundQuantity(inbound.quantityDeltaCanonical);
-
-  if (outbound.quantityDeltaCanonical >= 0 || inbound.quantityDeltaCanonical <= 0) {
-    throw new Error('TRANSFER_PLAN_DIRECTION_INVALID');
-  }
-  if (outbound.canonicalUom !== inbound.canonicalUom) {
-    throw new Error('TRANSFER_CANONICAL_MISMATCH');
-  }
-  if (Math.abs(outboundQty - inboundQty) > 1e-6) {
-    throw new Error('TRANSFER_QUANTITY_IMBALANCE');
-  }
-}
-
 function mapPersistMovementLine(
   line: PlannedTransferMovementLine
 ): PersistInventoryMovementLineInput {
@@ -85,6 +71,58 @@ function mapPersistMovementLine(
     extendedCost: null,
     reasonCode: line.reasonCode,
     lineNotes: line.lineNotes
+  };
+}
+
+export function assertTransferMovementPlanInvariants(
+  prepared: PreparedTransferMutation,
+  lines: ReadonlyArray<PlannedTransferMovementLine>
+) {
+  if (TRANSFER_ADDRESSING_MODEL !== 'location-level') {
+    throw new Error('TRANSFER_ADDRESSING_MODEL_UNSUPPORTED');
+  }
+  if (lines.length !== 2) {
+    throw new Error('TRANSFER_PLAN_LINE_COUNT_INVALID');
+  }
+
+  const outbound = lines.find((line) => line.direction === 'out');
+  const inbound = lines.find((line) => line.direction === 'in');
+  if (!outbound || !inbound) {
+    throw new Error('TRANSFER_LINE_DIRECTIONS_MISSING');
+  }
+
+  if (outbound.locationId !== prepared.sourceLocationId || inbound.locationId !== prepared.destinationLocationId) {
+    throw new Error('TRANSFER_LOCATION_SCOPE_INVALID');
+  }
+  if (outbound.warehouseId !== prepared.sourceWarehouseId || inbound.warehouseId !== prepared.destinationWarehouseId) {
+    throw new Error('TRANSFER_WAREHOUSE_SCOPE_INVALID');
+  }
+  if (
+    prepared.sourceWarehouseId !== prepared.destinationWarehouseId
+    && TRANSFER_CROSS_WAREHOUSE_POLICY !== 'explicitly_allowed'
+  ) {
+    throw new Error('TRANSFER_CROSS_WAREHOUSE_NOT_ALLOWED');
+  }
+
+  const outboundQty = roundQuantity(Math.abs(outbound.canonicalFields.quantityDeltaCanonical));
+  const inboundQty = roundQuantity(inbound.canonicalFields.quantityDeltaCanonical);
+
+  if (outbound.canonicalFields.quantityDeltaCanonical >= 0 || inbound.canonicalFields.quantityDeltaCanonical <= 0) {
+    throw new Error('TRANSFER_PLAN_DIRECTION_INVALID');
+  }
+  if (outbound.canonicalFields.canonicalUom !== inbound.canonicalFields.canonicalUom) {
+    throw new Error('TRANSFER_CANONICAL_MISMATCH');
+  }
+  if (Math.abs(outboundQty - inboundQty) > 1e-6) {
+    throw new Error('TRANSFER_QUANTITY_IMBALANCE');
+  }
+
+  return {
+    outbound,
+    inbound,
+    outboundQty,
+    inboundQty,
+    canonicalUom: inbound.canonicalFields.canonicalUom
   };
 }
 
@@ -108,8 +146,6 @@ export async function buildTransferMovementPlan(
       client
     )
   ]);
-
-  assertTransferPlanSymmetry(canonicalOut, canonicalIn);
 
   const lines = sortDeterministicMovementLines(
     [
@@ -144,14 +180,11 @@ export async function buildTransferMovementPlan(
     })
   );
 
+  const invariantState = assertTransferMovementPlanInvariants(prepared, lines);
   const outLineIndex = lines.findIndex((line) => line.direction === 'out');
   const inLineIndex = lines.findIndex((line) => line.direction === 'in');
-  if (outLineIndex < 0 || inLineIndex < 0) {
-    throw new Error('TRANSFER_LINE_DIRECTIONS_MISSING');
-  }
 
-  const canonicalQuantity = roundQuantity(lines[inLineIndex]!.canonicalFields.quantityDeltaCanonical);
-  const canonicalUom = lines[inLineIndex]!.canonicalFields.canonicalUom;
+  // Location-level transfers intentionally exclude bins from movement identity.
   const expectedDeterministicHash = buildMovementDeterministicHash({
     tenantId: prepared.tenantId,
     movementType: prepared.movementType,
@@ -174,8 +207,8 @@ export async function buildTransferMovementPlan(
     inLineIndex,
     expectedLineCount: lines.length,
     expectedDeterministicHash,
-    canonicalQuantity,
-    canonicalUom,
+    canonicalQuantity: invariantState.inboundQty,
+    canonicalUom: invariantState.canonicalUom,
     persistInput: {
       tenantId: prepared.tenantId,
       movementType: prepared.movementType,

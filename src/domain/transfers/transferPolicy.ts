@@ -3,6 +3,17 @@ import { roundQuantity, toNumber } from '../../lib/numbers';
 import { resolveWarehouseIdForLocation } from '../../services/warehouseDefaults.service';
 import { assertLocationInventoryReady } from '../inventory/binProvisioning';
 
+/**
+ * Transfer truth model decision: location-level.
+ *
+ * Transfers mutate inventory at the location boundary only. Bins are required
+ * so every inventory-capable location is addressable, but bins are not part of
+ * transfer identity, deterministic hashing, or cost relocation inputs.
+ */
+export const TRANSFER_ADDRESSING_MODEL = 'location-level' as const;
+export const TRANSFER_BIN_POLICY = 'readiness-only' as const;
+export const TRANSFER_CROSS_WAREHOUSE_POLICY = 'explicitly_allowed' as const;
+
 type DomainError = Error & {
   code?: string;
   details?: Record<string, unknown>;
@@ -66,8 +77,6 @@ export type PreparedTransferMutation = Readonly<{
   inventoryCommandRequestBody: Record<string, unknown> | null;
   sourceWarehouseId: string;
   destinationWarehouseId: string;
-  sourceDefaultBinId: string;
-  destinationDefaultBinId: string;
 }>;
 
 function domainError(code: string, details?: Record<string, unknown>): DomainError {
@@ -147,6 +156,36 @@ async function assertQcTransferPolicy(
   }
 }
 
+function assertWarehouseScopeIntegrity(params: {
+  requestedWarehouseId: string | null;
+  sourceWarehouseId: string;
+  destinationWarehouseId: string;
+}) {
+  if (
+    params.sourceWarehouseId !== params.destinationWarehouseId
+    && TRANSFER_CROSS_WAREHOUSE_POLICY !== 'explicitly_allowed'
+  ) {
+    throw domainError('TRANSFER_CROSS_WAREHOUSE_NOT_ALLOWED', {
+      sourceWarehouseId: params.sourceWarehouseId,
+      destinationWarehouseId: params.destinationWarehouseId
+    });
+  }
+
+  if (
+    params.requestedWarehouseId
+    && (
+      params.sourceWarehouseId !== params.destinationWarehouseId
+      || params.requestedWarehouseId !== params.sourceWarehouseId
+    )
+  ) {
+    throw domainError('WAREHOUSE_SCOPE_MISMATCH', {
+      providedWarehouseId: params.requestedWarehouseId,
+      sourceWarehouseId: params.sourceWarehouseId,
+      destinationWarehouseId: params.destinationWarehouseId
+    });
+  }
+}
+
 export async function prepareTransferMutation(
   input: TransferPolicyInput,
   client: PoolClient
@@ -162,9 +201,7 @@ export async function prepareTransferMutation(
 
   const [
     sourceWarehouseId,
-    destinationWarehouseId,
-    sourceInventoryReady,
-    destinationInventoryReady
+    destinationWarehouseId
   ] = await Promise.all([
     resolveWarehouseIdForLocation(input.tenantId, input.sourceLocationId, client),
     resolveWarehouseIdForLocation(input.tenantId, input.destinationLocationId, client),
@@ -172,16 +209,11 @@ export async function prepareTransferMutation(
     assertLocationInventoryReady(input.destinationLocationId, input.tenantId, client)
   ]);
 
-  if (
-    requestedWarehouseId
-    && (sourceWarehouseId !== destinationWarehouseId || requestedWarehouseId !== sourceWarehouseId)
-  ) {
-    throw domainError('WAREHOUSE_SCOPE_MISMATCH', {
-      providedWarehouseId: requestedWarehouseId,
-      sourceWarehouseId,
-      destinationWarehouseId
-    });
-  }
+  assertWarehouseScopeIntegrity({
+    requestedWarehouseId,
+    sourceWarehouseId,
+    destinationWarehouseId
+  });
 
   await assertQcTransferPolicy(input, client);
 
@@ -211,8 +243,6 @@ export async function prepareTransferMutation(
     inventoryCommandOperation: input.inventoryCommandOperation ?? null,
     inventoryCommandRequestBody: input.inventoryCommandRequestBody ?? null,
     sourceWarehouseId,
-    destinationWarehouseId,
-    sourceDefaultBinId: sourceInventoryReady.defaultBinId,
-    destinationDefaultBinId: destinationInventoryReady.defaultBinId
+    destinationWarehouseId
   });
 }
