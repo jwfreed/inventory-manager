@@ -1,10 +1,12 @@
+import 'ts-node/register/transpile-only';
+import 'tsconfig-paths/register';
 import { v5 as uuidv5 } from 'uuid';
 import { createRequire } from 'node:module';
 import { CANONICAL_WAREHOUSE_CODES, loadWarehouseTopology } from './warehouseTopology.mjs';
 
 const DETERMINISTIC_NAMESPACE = '7df33ef4-e5d4-43bc-bb76-8c16418ed953';
 const require = createRequire(import.meta.url);
-const { ensureLocationHasAtLeastOneBin } = require('./locationBinProvisioning.js');
+const { ensureLocationInventoryReady } = require('../../src/domain/inventory/binProvisioning.ts');
 
 function addIssue(issues, issue) {
   issues.push(issue);
@@ -731,7 +733,7 @@ export async function fix(client, tenantId, options = {}) {
       }
       locationId = existing.id;
     }
-    await ensureLocationHasAtLeastOneBin(locationId, tenantId, client);
+    await ensureLocationInventoryReady(locationId, tenantId, client);
     locationIdByWarehouseAndLocalCode.set(`${location.warehouseCode}:${location.localCode}`, locationId);
   }
 

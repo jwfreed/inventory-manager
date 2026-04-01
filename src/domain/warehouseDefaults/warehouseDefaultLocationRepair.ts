@@ -20,16 +20,10 @@ import {
   type LocationRole
 } from './warehouseDefaultsPolicy';
 import { warehouseDefaultsInvariantEngine } from './warehouseDefaultsInvariantEngine';
-type InventoryBinProvisioningTx = {
-  query: (...args: any[]) => Promise<any>;
-};
-const { ensureLocationHasAtLeastOneBin } = require('../../../scripts/lib/locationBinProvisioning.js') as {
-  ensureLocationHasAtLeastOneBin: (
-    locationId: string,
-    tenantId: string,
-    tx: InventoryBinProvisioningTx
-  ) => Promise<{ created: boolean; binId: string }>;
-};
+import {
+  ensureLocationInventoryReady,
+  type InventoryBinProvisioningTx
+} from '../inventory/binProvisioning';
 
 export type DefaultLocationRepairCallbacks = {
   onRepairing?: (payload: WarehouseDefaultRepairStartPayload) => void;
@@ -227,7 +221,7 @@ export async function ensureDefaultsForWarehouse(
       }
       if (!repairDecision.requiresMappingDeletion) {
         if (existingDefaultId) {
-          await ensureLocationHasAtLeastOneBin(existingDefaultId, tenantId, binProvisioningTx);
+          await ensureLocationInventoryReady(existingDefaultId, tenantId, binProvisioningTx);
         }
         continue;
       }
@@ -315,7 +309,7 @@ export async function ensureDefaultsForWarehouse(
     if (!locationId) {
       throw new Error('WAREHOUSE_DEFAULT_LOCATION_REQUIRED');
     }
-    await ensureLocationHasAtLeastOneBin(locationId, tenantId, binProvisioningTx);
+    await ensureLocationInventoryReady(locationId, tenantId, binProvisioningTx);
     await executor(
       `INSERT INTO warehouse_default_location (tenant_id, warehouse_id, role, location_id)
        VALUES ($1, $2, $3, $4)
