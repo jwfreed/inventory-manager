@@ -186,6 +186,25 @@ async function inventoryStateCounts(tenantId) {
 }
 
 async function cleanupTenant(tenantId) {
+  const tenantScopedTables = [
+    'warehouse_default_location',
+    'inventory_bins',
+    'inventory_balance',
+    'inventory_movement_lines',
+    'inventory_movements',
+    'config_issues',
+    'locations'
+  ];
+
+  for (const table of tenantScopedTables) {
+    const existsRes = await db.query(
+      `SELECT to_regclass($1)::text AS table_name`,
+      [`public.${table}`]
+    );
+    if (!existsRes.rows[0]?.table_name) continue;
+    await db.query(`DELETE FROM ${table} WHERE tenant_id = $1`, [tenantId]);
+  }
+
   await db.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
 }
 
