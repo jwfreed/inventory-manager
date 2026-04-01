@@ -65,6 +65,7 @@ import { runReservationExpiry } from './jobs/reservationExpiry.job';
 import inventoryHealthRouter from './routes/inventoryHealth.routes';
 import outboxAdminRouter from './routes/outboxAdmin.routes';
 import { startEventBridge } from './lib/events';
+import { shutdownEventBus } from './lib/eventBus';
 import { shutdownCache } from './lib/redis';
 import {
   logStructuredStartupFailure,
@@ -321,6 +322,7 @@ async function shutdown(signal: 'SIGTERM' | 'SIGINT'): Promise<void> {
       httpServer = null;
     }
     await pool.end().catch(() => undefined);
+    await shutdownEventBus().catch(() => undefined);
     await shutdownCache().catch(() => undefined);
   } finally {
     process.exit(0);

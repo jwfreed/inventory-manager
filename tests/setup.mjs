@@ -97,4 +97,26 @@ after(async () => {
   } catch {
     // No-op when the service-layer db pool was never loaded during this test run.
   }
+  try {
+    require('ts-node/register/transpile-only');
+    require('tsconfig-paths/register');
+    const redisModulePath = require.resolve('../src/lib/redis.ts');
+    const cachedRedisModule = require.cache?.[redisModulePath];
+    if (cachedRedisModule?.exports?.shutdownCache) {
+      await cachedRedisModule.exports.shutdownCache();
+    }
+  } catch {
+    // No-op when the cache adapter was never loaded during this test run.
+  }
+  try {
+    require('ts-node/register/transpile-only');
+    require('tsconfig-paths/register');
+    const eventBusModulePath = require.resolve('../src/lib/eventBus.ts');
+    const cachedEventBusModule = require.cache?.[eventBusModulePath];
+    if (cachedEventBusModule?.exports?.shutdownEventBus) {
+      await cachedEventBusModule.exports.shutdownEventBus();
+    }
+  } catch {
+    // No-op when the event bus was never loaded during this test run.
+  }
 });

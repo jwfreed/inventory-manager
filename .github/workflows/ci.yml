@@ -92,8 +92,8 @@ jobs:
           SQL
       - name: Run critical invariant tests
         env:
-          DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
-          TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/inventory_test
+          DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
+          TEST_DATABASE_URL: postgres://app_ci:app_ci_pass@postgres:5432/inventory_test
         run: npm run test:truth
 
   test:

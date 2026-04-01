@@ -87,3 +87,33 @@ export function startEventSubscriber(
     }
   });
 }
+
+export async function shutdownEventBus(): Promise<void> {
+  const activePublisher = publisher;
+  const activeSubscriber = subscriber;
+  publisher = null;
+  subscriber = null;
+  hasLoggedPublisherFailure = false;
+  hasLoggedSubscriberFailure = false;
+
+  if (activeSubscriber) {
+    try {
+      activeSubscriber.removeAllListeners('message');
+      if (activeSubscriber.status !== 'end') {
+        await activeSubscriber.quit();
+      }
+    } catch {
+      activeSubscriber.disconnect(false);
+    }
+  }
+
+  if (activePublisher) {
+    try {
+      if (activePublisher.status !== 'end') {
+        await activePublisher.quit();
+      }
+    } catch {
+      activePublisher.disconnect(false);
+    }
+  }
+}
