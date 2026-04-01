@@ -163,7 +163,7 @@ export async function assertLocationInventoryReady(
   const readyRes = await executor<{ bin_count: string; default_count: string; default_bin_id: string | null }>(
     `SELECT COUNT(*)::text AS bin_count,
             COUNT(*) FILTER (WHERE is_default = true)::text AS default_count,
-            MIN(id) FILTER (WHERE is_default = true)::text AS default_bin_id
+            MIN(id::text) FILTER (WHERE is_default = true) AS default_bin_id
        FROM inventory_bins
       WHERE tenant_id = $1
         AND location_id = $2`,

@@ -1,14 +1,8 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { roundQuantity, toNumber } from '../lib/numbers';
-import { validateSufficientStock } from './stockValidation.service';
-import { getCanonicalMovementFields } from './uomCanonical.service';
-import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
-import {
-  applyInventoryBalanceDelta,
-  persistInventoryMovement
-} from '../domains/inventory';
-import { relocateTransferCostLayersInTx, reverseTransferCostLayersInTx } from './transferCosting.service';
+import { applyInventoryBalanceDelta, persistInventoryMovement } from '../domains/inventory';
+import { reverseTransferCostLayersInTx } from './transferCosting.service';
 import { hashTransactionalIdempotencyRequest } from '../lib/transactionalIdempotency';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import {
@@ -17,13 +11,17 @@ import {
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
 import {
-  buildInventoryBalanceProjectionOp,
-  buildMovementDeterministicHash,
   buildMovementPostedEvent,
   buildPostedDocumentReplayResult,
   sortDeterministicMovementLines
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
+import {
+  prepareTransferMutation as prepareTransferPolicy,
+  type PreparedTransferMutation
+} from '../domain/transfers/transferPolicy';
+import { buildTransferMovementPlan as buildTransferMovementPlanDomain } from '../domain/transfers/transferPlan';
+import { executeTransferMovementPlan } from '../domain/transfers/transferExecution';
 
 const TRANSFER_REVERSAL_MOVEMENT_TYPE = 'transfer_reversal';
 
@@ -98,19 +96,7 @@ export type TransferVoidActor = {
   id?: string | null;
 };
 
-type DomainError = Error & {
-  code?: string;
-  details?: Record<string, unknown>;
-};
-
-function domainError(code: string, details?: Record<string, unknown>): DomainError {
-  const error = new Error(code) as DomainError;
-  error.code = code;
-  if (details !== undefined) {
-    error.details = details;
-  }
-  return error;
-}
+export type { PreparedTransferMutation } from '../domain/transfers/transferPolicy';
 
 function negateNullable(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -143,28 +129,10 @@ type MovementLineRow = {
   line_notes: string | null;
 };
 
-export type PreparedTransferMutation = TransferInventoryInput & {
-  enteredQty: number;
-  sourceWarehouseId: string;
-  destinationWarehouseId: string;
-};
-
 export type TransferMutationExecution = {
   result: TransferInventoryResult;
   events: InventoryCommandEvent[];
   projectionOps: InventoryCommandProjectionOp[];
-};
-
-type PlannedTransferMovementLine = {
-  id: string;
-  direction: 'out' | 'in';
-  warehouseId: string;
-  itemId: string;
-  locationId: string;
-  sourceLineId: string;
-  reasonCode: string;
-  lineNotes: string;
-  canonicalFields: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
 };
 
 type PlannedTransferReversalLine = {
@@ -208,84 +176,7 @@ export async function prepareTransferMutation(
   input: TransferInventoryInput,
   client: PoolClient
 ): Promise<PreparedTransferMutation> {
-  const sourceWarehouseId = await resolveWarehouseIdForLocation(input.tenantId, input.sourceLocationId, client);
-  const destinationWarehouseId = await resolveWarehouseIdForLocation(input.tenantId, input.destinationLocationId, client);
-  const requestedWarehouseId = input.warehouseId?.trim() ? input.warehouseId.trim() : null;
-  if (requestedWarehouseId) {
-    if (sourceWarehouseId !== destinationWarehouseId || requestedWarehouseId !== sourceWarehouseId) {
-      throw domainError('WAREHOUSE_SCOPE_MISMATCH', {
-        providedWarehouseId: requestedWarehouseId,
-        sourceWarehouseId,
-        destinationWarehouseId
-      });
-    }
-  }
-
-  const enteredQty = roundQuantity(toNumber(input.quantity));
-  if (enteredQty <= 0) {
-    throw new Error('TRANSFER_INVALID_QUANTITY');
-  }
-  if (input.sourceLocationId === input.destinationLocationId) {
-    throw new Error('TRANSFER_SAME_LOCATION');
-  }
-
-  const destCheck = await client.query(
-    `SELECT role, is_sellable FROM locations WHERE id = $1 AND tenant_id = $2`,
-    [input.destinationLocationId, input.tenantId]
-  );
-  if (destCheck.rowCount === 0) {
-    throw new Error('TRANSFER_DESTINATION_NOT_FOUND');
-  }
-  const destLocation = destCheck.rows[0];
-
-  if (input.sourceType === 'qc_event') {
-    if (!input.qcAction) {
-      throw new Error('QC_ACTION_REQUIRED');
-    }
-    const sourceCheck = await client.query(
-      `SELECT role, is_sellable FROM locations WHERE id = $1 AND tenant_id = $2`,
-      [input.sourceLocationId, input.tenantId]
-    );
-    if (sourceCheck.rowCount === 0) {
-      throw new Error('TRANSFER_SOURCE_NOT_FOUND');
-    }
-    const sourceLocation = sourceCheck.rows[0];
-    if (sourceLocation.role !== 'QA' || sourceLocation.is_sellable) {
-      throw new Error('QC_SOURCE_MUST_BE_QA');
-    }
-
-    if (input.qcAction === 'accept') {
-      if (destLocation.role !== 'SELLABLE') {
-        throw new Error('QC_ACCEPT_REQUIRES_SELLABLE_ROLE');
-      }
-      if (!destLocation.is_sellable) {
-        throw new Error('QC_ACCEPT_REQUIRES_SELLABLE_FLAG');
-      }
-    } else if (input.qcAction === 'hold') {
-      if (destLocation.role !== 'HOLD') {
-        throw new Error('QC_HOLD_REQUIRES_HOLD_ROLE');
-      }
-      if (destLocation.is_sellable) {
-        throw new Error('QC_HOLD_MUST_NOT_BE_SELLABLE');
-      }
-    } else if (input.qcAction === 'reject') {
-      if (destLocation.role !== 'REJECT') {
-        throw new Error('QC_REJECT_REQUIRES_REJECT_ROLE');
-      }
-      if (destLocation.is_sellable) {
-        throw new Error('QC_REJECT_MUST_NOT_BE_SELLABLE');
-      }
-    }
-  }
-
-  return {
-    ...input,
-    idempotencyKey: input.idempotencyKey?.trim() ? input.idempotencyKey.trim() : null,
-    warehouseId: requestedWarehouseId,
-    enteredQty,
-    sourceWarehouseId,
-    destinationWarehouseId
-  };
+  return prepareTransferPolicy(input, client);
 }
 
 export function buildTransferLockTargets(prepared: PreparedTransferMutation) {
@@ -451,82 +342,9 @@ async function buildTransferMovementPlan(
   prepared: PreparedTransferMutation,
   client: PoolClient
 ) {
-  const canonicalOut = await getCanonicalMovementFields(
-    prepared.tenantId,
-    prepared.itemId,
-    -prepared.enteredQty,
-    prepared.uom,
-    client
-  );
-  const canonicalIn = await getCanonicalMovementFields(
-    prepared.tenantId,
-    prepared.itemId,
-    prepared.enteredQty,
-    prepared.uom,
-    client
-  );
-  if (
-    canonicalOut.canonicalUom !== canonicalIn.canonicalUom
-    || Math.abs(Math.abs(canonicalOut.quantityDeltaCanonical) - canonicalIn.quantityDeltaCanonical) > 1e-6
-  ) {
-    throw new Error('TRANSFER_CANONICAL_MISMATCH');
-  }
-
-  const lines = sortDeterministicMovementLines(
-    [
-      {
-        id: uuidv4(),
-        direction: 'out' as const,
-        warehouseId: prepared.sourceWarehouseId,
-        itemId: prepared.itemId,
-        locationId: prepared.sourceLocationId,
-        sourceLineId: `${prepared.sourceType}:${prepared.sourceId}:out`,
-        reasonCode: `${prepared.reasonCode ?? 'transfer'}_out`,
-        lineNotes: `${prepared.notes ?? 'Inventory transfer'} (outbound)`,
-        canonicalFields: canonicalOut
-      },
-      {
-        id: uuidv4(),
-        direction: 'in' as const,
-        warehouseId: prepared.destinationWarehouseId,
-        itemId: prepared.itemId,
-        locationId: prepared.destinationLocationId,
-        sourceLineId: `${prepared.sourceType}:${prepared.sourceId}:in`,
-        reasonCode: `${prepared.reasonCode ?? 'transfer'}_in`,
-        lineNotes: `${prepared.notes ?? 'Inventory transfer'} (inbound)`,
-        canonicalFields: canonicalIn
-      }
-    ],
-    (line) => ({
-      tenantId: prepared.tenantId,
-      warehouseId: line.warehouseId,
-      locationId: line.locationId,
-      itemId: line.itemId,
-      canonicalUom: line.canonicalFields.canonicalUom,
-      sourceLineId: line.sourceLineId
-    })
-  );
-
-  return {
-    lines,
-    outLineId: lines.find((line) => line.direction === 'out')?.id ?? null,
-    inLineId: lines.find((line) => line.direction === 'in')?.id ?? null,
-    movementDeterministicHash: buildMovementDeterministicHash({
-      tenantId: prepared.tenantId,
-      movementType: prepared.movementType ?? 'transfer',
-      occurredAt: prepared.occurredAt ?? new Date(),
-      sourceType: prepared.sourceType,
-      sourceId: prepared.sourceId,
-      lines: lines.map((line) => ({
-        itemId: line.itemId,
-        locationId: line.locationId,
-        quantityDelta: line.canonicalFields.quantityDeltaCanonical,
-        canonicalUom: line.canonicalFields.canonicalUom,
-        unitCost: null,
-        reasonCode: line.reasonCode
-      }))
-    })
-  };
+  // Deterministic planning remains delegated to the domain planner:
+  // sortDeterministicMovementLines(...) and buildMovementDeterministicHash(...).
+  return buildTransferMovementPlanDomain(prepared, client);
 }
 
 function buildTransferReversalPlan(params: {
@@ -658,80 +476,14 @@ export async function executeTransferInventoryMutation(
   prepared: PreparedTransferMutation,
   client: PoolClient
 ): Promise<TransferMutationExecution> {
-  const validation = await validateSufficientStock(
-    prepared.tenantId,
-    prepared.occurredAt ?? new Date(),
-    [
-      {
-        warehouseId: prepared.sourceWarehouseId,
-        itemId: prepared.itemId,
-        locationId: prepared.sourceLocationId,
-        uom: prepared.uom,
-        quantityToConsume: prepared.enteredQty
-      }
-    ],
-    {
-      actorId: prepared.actorId ?? null,
-      overrideRequested: prepared.overrideNegative,
-      overrideReason: prepared.overrideReason,
-      overrideReference: `${prepared.sourceType}:${prepared.sourceId}`
-    },
-    { client }
-  );
-
-  const movementId = uuidv4();
   const movementPlan = await buildTransferMovementPlan(prepared, client);
-  if (!movementPlan.outLineId || !movementPlan.inLineId) {
-    throw new Error('TRANSFER_LINE_DIRECTIONS_MISSING');
-  }
-  const externalRef = `${prepared.sourceType}:${prepared.sourceId}`;
-  const movementResult = await persistInventoryMovement(client, {
-    id: movementId,
-    tenantId: prepared.tenantId,
-    movementType: prepared.movementType ?? 'transfer',
-    status: 'posted',
-    externalRef,
-    sourceType: prepared.sourceType,
-    sourceId: prepared.sourceId,
-    idempotencyKey: prepared.idempotencyKey,
-    occurredAt: prepared.occurredAt ?? new Date(),
-    postedAt: prepared.occurredAt ?? new Date(),
-    notes: prepared.notes ?? 'Inventory transfer',
-    metadata: validation.overrideMetadata ?? null,
-    createdAt: prepared.occurredAt ?? new Date(),
-    updatedAt: prepared.occurredAt ?? new Date(),
-    lines: movementPlan.lines.map((line) => ({
-      id: line.id,
-      warehouseId: line.warehouseId,
-      sourceLineId: line.sourceLineId,
-      itemId: line.itemId,
-      locationId: line.locationId,
-      quantityDelta: line.canonicalFields.quantityDeltaCanonical,
-      uom: line.canonicalFields.canonicalUom,
-      quantityDeltaEntered: line.canonicalFields.quantityDeltaEntered,
-      uomEntered: line.canonicalFields.uomEntered,
-      quantityDeltaCanonical: line.canonicalFields.quantityDeltaCanonical,
-      canonicalUom: line.canonicalFields.canonicalUom,
-      uomDimension: line.canonicalFields.uomDimension,
-      reasonCode: line.reasonCode,
-      lineNotes: line.lineNotes,
-      createdAt: prepared.occurredAt ?? new Date()
-    }))
-  });
+  const execution = await executeTransferMovementPlan(prepared, movementPlan, client);
 
-  const baseResult: TransferInventoryResult = {
-    movementId: movementResult.movementId,
-    created: movementResult.created,
-    replayed: false,
-    idempotencyKey: prepared.idempotencyKey ?? null,
-    sourceWarehouseId: prepared.sourceWarehouseId,
-    destinationWarehouseId: prepared.destinationWarehouseId
-  };
-  if (!movementResult.created) {
+  if (!execution.result.created) {
     const replay = await buildTransferReplayResult({
       tenantId: prepared.tenantId,
-      movementId: movementResult.movementId,
-      normalizedIdempotencyKey: prepared.idempotencyKey ?? null,
+      movementId: execution.result.movementId,
+      normalizedIdempotencyKey: prepared.idempotencyKey,
       replayed: false,
       client,
       sourceLocationId: prepared.sourceLocationId,
@@ -741,7 +493,8 @@ export async function executeTransferInventoryMutation(
       uom: prepared.uom,
       sourceWarehouseId: prepared.sourceWarehouseId,
       destinationWarehouseId: prepared.destinationWarehouseId,
-      expectedLineCount: movementPlan.lines.length
+      expectedLineCount: movementPlan.expectedLineCount,
+      expectedDeterministicHash: movementPlan.expectedDeterministicHash
     });
     return {
       result: {
@@ -753,30 +506,11 @@ export async function executeTransferInventoryMutation(
     };
   }
 
-  await relocateTransferCostLayersInTx({
-    client,
-    tenantId: prepared.tenantId,
-    transferMovementId: movementResult.movementId,
-    occurredAt: prepared.occurredAt ?? new Date(),
-    notes: prepared.notes ?? 'Inventory transfer',
-    pairs: [
-      {
-        itemId: prepared.itemId,
-        sourceLocationId: prepared.sourceLocationId,
-        destinationLocationId: prepared.destinationLocationId,
-        outLineId: movementPlan.outLineId,
-        inLineId: movementPlan.inLineId,
-        quantity: movementPlan.lines.find((line) => line.direction === 'in')!.canonicalFields.quantityDeltaCanonical,
-        uom: movementPlan.lines.find((line) => line.direction === 'in')!.canonicalFields.canonicalUom
-      }
-    ]
-  });
-
   return {
-    result: baseResult,
+    result: execution.result,
     events: buildTransferEvents({
-      transferId: movementResult.movementId,
-      movementId: movementResult.movementId,
+      transferId: execution.result.movementId,
+      movementId: execution.result.movementId,
       sourceLocationId: prepared.sourceLocationId,
       destinationLocationId: prepared.destinationLocationId,
       itemId: prepared.itemId,
@@ -784,24 +518,9 @@ export async function executeTransferInventoryMutation(
       uom: prepared.uom,
       sourceWarehouseId: prepared.sourceWarehouseId,
       destinationWarehouseId: prepared.destinationWarehouseId,
-      producerIdempotencyKey: prepared.idempotencyKey ?? null
+      producerIdempotencyKey: prepared.idempotencyKey
     }),
-    projectionOps: [
-      buildInventoryBalanceProjectionOp({
-        tenantId: prepared.tenantId,
-        itemId: prepared.itemId,
-        locationId: prepared.sourceLocationId,
-        uom: movementPlan.lines.find((line) => line.direction === 'out')!.canonicalFields.canonicalUom,
-        deltaOnHand: movementPlan.lines.find((line) => line.direction === 'out')!.canonicalFields.quantityDeltaCanonical
-      }),
-      buildInventoryBalanceProjectionOp({
-        tenantId: prepared.tenantId,
-        itemId: prepared.itemId,
-        locationId: prepared.destinationLocationId,
-        uom: movementPlan.lines.find((line) => line.direction === 'in')!.canonicalFields.canonicalUom,
-        deltaOnHand: movementPlan.lines.find((line) => line.direction === 'in')!.canonicalFields.quantityDeltaCanonical
-      })
-    ]
+    projectionOps: [...execution.projectionOps]
   };
 }
 
