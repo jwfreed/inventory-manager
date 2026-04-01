@@ -1,12 +1,15 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
-import { persistInventoryMovement } from '../../domains/inventory';
+import {
+  ensureInventoryBalanceRowAndLock,
+  persistInventoryMovement
+} from '../../domains/inventory';
 import { roundQuantity } from '../../lib/numbers';
 import {
   buildInventoryBalanceProjectionOp
 } from '../../modules/platform/application/inventoryMutationSupport';
 import type { InventoryCommandProjectionOp } from '../../modules/platform/application/runInventoryCommand';
-import { validateSufficientStock } from '../../services/stockValidation.service';
+import { validateResolvedStockLevels } from '../../services/stockValidation.service';
 import { relocateTransferCostLayersInTx } from '../../services/transferCosting.service';
 import type { PreparedTransferMutation } from './transferPolicy';
 import { assertTransferMovementPlanInvariants, type TransferMovementPlan } from './transferPlan';
@@ -32,6 +35,61 @@ function requirePersistedLineId(
     throw new Error('TRANSFER_PERSISTED_LINE_ID_MISSING');
   }
   return lineId;
+}
+
+function compareLockedTransferTarget(
+  left: { locationId: string; itemId: string; uom: string },
+  right: { locationId: string; itemId: string; uom: string }
+) {
+  const locationCompare = left.locationId.localeCompare(right.locationId);
+  if (locationCompare !== 0) return locationCompare;
+  const itemCompare = left.itemId.localeCompare(right.itemId);
+  if (itemCompare !== 0) return itemCompare;
+  return left.uom.localeCompare(right.uom);
+}
+
+async function lockTransferInventoryState(
+  prepared: PreparedTransferMutation,
+  invariantState: ReturnType<typeof assertTransferMovementPlanInvariants>,
+  client: PoolClient
+) {
+  const lockTargets = [
+    {
+      locationId: prepared.sourceLocationId,
+      itemId: prepared.itemId,
+      uom: invariantState.canonicalUom
+    },
+    {
+      locationId: prepared.destinationLocationId,
+      itemId: prepared.itemId,
+      uom: invariantState.canonicalUom
+    }
+  ].sort(compareLockedTransferTarget);
+
+  const lockedRows = new Map<string, Awaited<ReturnType<typeof ensureInventoryBalanceRowAndLock>>>();
+  for (const target of lockTargets) {
+    const row = await ensureInventoryBalanceRowAndLock(
+      client,
+      prepared.tenantId,
+      target.itemId,
+      target.locationId,
+      target.uom
+    );
+    lockedRows.set(`${target.itemId}:${target.locationId}:${target.uom}`, row);
+  }
+
+  const sourceKey = `${prepared.itemId}:${prepared.sourceLocationId}:${invariantState.canonicalUom}`;
+  const destinationKey = `${prepared.itemId}:${prepared.destinationLocationId}:${invariantState.canonicalUom}`;
+  const sourceBalance = lockedRows.get(sourceKey);
+  const destinationBalance = lockedRows.get(destinationKey);
+  if (!sourceBalance || !destinationBalance) {
+    throw new Error('TRANSFER_BALANCE_LOCK_FAILED');
+  }
+
+  return {
+    sourceBalance,
+    destinationBalance
+  };
 }
 
 async function assertTransferCostIntegrity(params: {
@@ -121,16 +179,18 @@ export async function executeTransferMovementPlan(
 ): Promise<ExecutedTransferMutation> {
   const invariantState = assertTransferMovementPlanInvariants(prepared, movementPlan.lines);
 
-  const validation = await validateSufficientStock(
-    prepared.tenantId,
+  // Transfer execution is location-level; lock the exact projected balance rows
+  // that will be decremented/incremented before validating or persisting.
+  const lockedState = await lockTransferInventoryState(prepared, invariantState, client);
+  const validation = validateResolvedStockLevels(
     prepared.occurredAt,
     [
       {
-        warehouseId: prepared.sourceWarehouseId,
         itemId: prepared.itemId,
         locationId: prepared.sourceLocationId,
-        uom: prepared.uom,
-        quantityToConsume: prepared.enteredQty
+        uom: invariantState.canonicalUom,
+        requested: invariantState.outboundQty,
+        available: Number(lockedState.sourceBalance.available ?? 0)
       }
     ],
     {
@@ -138,8 +198,7 @@ export async function executeTransferMovementPlan(
       overrideRequested: prepared.overrideNegative,
       overrideReason: prepared.overrideReason,
       overrideReference: `${prepared.sourceType}:${prepared.sourceId}`
-    },
-    { client }
+    }
   );
 
   const movementResult = await persistInventoryMovement(client, {

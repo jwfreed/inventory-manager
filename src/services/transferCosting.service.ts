@@ -78,6 +78,82 @@ async function updateLayerRemaining(
   );
 }
 
+async function assertNoDuplicateTransferConsumption(params: {
+  client: PoolClient;
+  tenantId: string;
+  transferMovementId: string;
+  outLineId: string;
+  sourceCostLayerId: string;
+}) {
+  const duplicateCheck = await params.client.query<{ duplicate_consumptions: string }>(
+    `SELECT EXISTS (
+        SELECT 1
+          FROM cost_layer_consumptions
+         WHERE tenant_id = $1
+           AND movement_id = $2
+           AND consumption_document_id = $3
+           AND cost_layer_id = $4
+      )::text AS duplicate_consumptions`,
+    [
+      params.tenantId,
+      params.transferMovementId,
+      params.outLineId,
+      params.sourceCostLayerId
+    ]
+  );
+  const row = duplicateCheck.rows[0];
+  if (row?.duplicate_consumptions === 'true') {
+    throw new Error('TRANSFER_COST_CONSUMPTION_DUPLICATE');
+  }
+}
+
+async function assertNoDuplicateTransferLink(params: {
+  client: PoolClient;
+  tenantId: string;
+  transferMovementId: string;
+  outLineId: string;
+  inLineId: string;
+  sourceCostLayerId: string;
+  destCostLayerId: string;
+}) {
+  const duplicateCheck = await params.client.query<{
+    duplicate_links: string;
+    duplicate_dest_links: string;
+  }>(
+    `SELECT
+        EXISTS (
+          SELECT 1
+            FROM cost_layer_transfer_links
+           WHERE tenant_id = $1
+             AND transfer_movement_id = $2
+             AND transfer_out_line_id = $3
+             AND transfer_in_line_id = $4
+             AND source_cost_layer_id = $5
+        )::text AS duplicate_links,
+        EXISTS (
+          SELECT 1
+            FROM cost_layer_transfer_links
+           WHERE tenant_id = $1
+             AND dest_cost_layer_id = $6
+        )::text AS duplicate_dest_links`,
+    [
+      params.tenantId,
+      params.transferMovementId,
+      params.outLineId,
+      params.inLineId,
+      params.sourceCostLayerId,
+      params.destCostLayerId
+    ]
+  );
+  const row = duplicateCheck.rows[0];
+  if (row?.duplicate_links === 'true') {
+    throw new Error('TRANSFER_COST_LINK_DUPLICATE');
+  }
+  if (row?.duplicate_dest_links === 'true') {
+    throw new Error('TRANSFER_COST_DEST_LAYER_DUPLICATE');
+  }
+}
+
 export async function relocateTransferCostLayersInTx(params: {
   client: PoolClient;
   tenantId: string;
@@ -121,6 +197,14 @@ export async function relocateTransferCostLayersInTx(params: {
       const layerUnitCost = roundQuantity(toNumber(layer.unit_cost));
       const consumeCost = roundQuantity(consumeQty * layerUnitCost);
 
+      await assertNoDuplicateTransferConsumption({
+        client: params.client,
+        tenantId: params.tenantId,
+        transferMovementId: params.transferMovementId,
+        outLineId: pair.outLineId,
+        sourceCostLayerId: layer.id
+      });
+
       await params.client.query(
         `INSERT INTO cost_layer_consumptions (
             id, tenant_id, cost_layer_id,
@@ -158,6 +242,16 @@ export async function relocateTransferCostLayersInTx(params: {
         layer_date: params.occurredAt,
         notes: params.notes ?? undefined,
         client: params.client
+      });
+
+      await assertNoDuplicateTransferLink({
+        client: params.client,
+        tenantId: params.tenantId,
+        transferMovementId: params.transferMovementId,
+        outLineId: pair.outLineId,
+        inLineId: pair.inLineId,
+        sourceCostLayerId: layer.id,
+        destCostLayerId: destLayer.id
       });
 
       await params.client.query(

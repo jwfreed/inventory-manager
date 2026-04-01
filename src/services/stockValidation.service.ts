@@ -41,6 +41,14 @@ export type StockShortageDetail = {
   shortage: number;
 };
 
+export type ResolvedStockValidationLine = {
+  itemId: string;
+  locationId: string;
+  uom: string;
+  requested: number;
+  available: number;
+};
+
 export class StockValidationError extends Error {
   code: string;
   status: number;
@@ -54,51 +62,20 @@ export class StockValidationError extends Error {
   }
 }
 
-export async function validateSufficientStock(
-  tenantId: string,
+export function validateResolvedStockLevels(
   occurredAt: Date,
-  lines: StockValidationLine[],
-  context: StockValidationContext = {},
-  options?: { client?: PoolClient }
-): Promise<StockValidationResult> {
+  lines: ResolvedStockValidationLine[],
+  context: StockValidationContext = {}
+): StockValidationResult {
   const policy = getInventoryNegativePolicy();
-  const grouped = new Map<string, StockValidationLine>();
-
-  for (const line of lines) {
-    const qty = toNumber(line.quantityToConsume);
-    if (qty <= 0) continue;
-    const canonical = await convertToCanonical(tenantId, line.itemId, qty, line.uom);
-    const key = `${line.warehouseId}:${line.itemId}:${line.locationId}:${canonical.canonicalUom}`;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.quantityToConsume = existing.quantityToConsume + canonical.quantity;
-    } else {
-      grouped.set(key, {
-        warehouseId: line.warehouseId,
-        itemId: line.itemId,
-        locationId: line.locationId,
-        uom: canonical.canonicalUom,
-        quantityToConsume: canonical.quantity
-      });
-    }
-  }
-
-  if (grouped.size === 0) {
-    return {};
-  }
-
   const shortages: StockShortageDetail[] = [];
 
-  for (const line of grouped.values()) {
-    const available = await getAvailableQuantity({
-      tenantId,
-      warehouseId: line.warehouseId,
-      itemId: line.itemId,
-      locationId: line.locationId,
-      uom: line.uom,
-      client: options?.client
-    });
-    const requested = line.quantityToConsume;
+  for (const line of lines) {
+    const requested = toNumber(line.requested);
+    const available = toNumber(line.available);
+    if (requested <= 0) {
+      continue;
+    }
     if (requested - available > 1e-6) {
       shortages.push({
         itemId: line.itemId,
@@ -193,6 +170,61 @@ export async function validateSufficientStock(
       overrideRequiresRole: policy.overrideRequiresRole
     }
   );
+}
+
+export async function validateSufficientStock(
+  tenantId: string,
+  occurredAt: Date,
+  lines: StockValidationLine[],
+  context: StockValidationContext = {},
+  options?: { client?: PoolClient }
+): Promise<StockValidationResult> {
+  const grouped = new Map<string, StockValidationLine>();
+
+  for (const line of lines) {
+    const qty = toNumber(line.quantityToConsume);
+    if (qty <= 0) continue;
+    const canonical = await convertToCanonical(tenantId, line.itemId, qty, line.uom);
+    const key = `${line.warehouseId}:${line.itemId}:${line.locationId}:${canonical.canonicalUom}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.quantityToConsume = existing.quantityToConsume + canonical.quantity;
+    } else {
+      grouped.set(key, {
+        warehouseId: line.warehouseId,
+        itemId: line.itemId,
+        locationId: line.locationId,
+        uom: canonical.canonicalUom,
+        quantityToConsume: canonical.quantity
+      });
+    }
+  }
+
+  if (grouped.size === 0) {
+    return {};
+  }
+
+  const resolvedLines: ResolvedStockValidationLine[] = [];
+
+  for (const line of grouped.values()) {
+    const available = await getAvailableQuantity({
+      tenantId,
+      warehouseId: line.warehouseId,
+      itemId: line.itemId,
+      locationId: line.locationId,
+      uom: line.uom,
+      client: options?.client
+    });
+    resolvedLines.push({
+      itemId: line.itemId,
+      locationId: line.locationId,
+      uom: line.uom,
+      requested: line.quantityToConsume,
+      available
+    });
+  }
+
+  return validateResolvedStockLevels(occurredAt, resolvedLines, context);
 }
 
 export async function validateLocationCapacity(

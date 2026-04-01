@@ -538,7 +538,7 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
     movementType: 'transfer',
     reasonCode: input.reasonCode ?? 'transfer',
     notes: input.notes ?? 'Inventory transfer',
-    occurredAt: input.occurredAt ?? new Date(),
+    occurredAt: input.occurredAt,
     actorId: input.actorId ?? null,
     overrideNegative: input.overrideNegative ?? false,
     overrideReason: input.overrideReason ?? null,
