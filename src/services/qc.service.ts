@@ -698,8 +698,8 @@ export async function postQcWarehouseDisposition(
   if (!(quantity > 0)) {
     throw new Error('QC_INVALID_QUANTITY');
   }
-  const occurredAt = data.occurredAt ? new Date(data.occurredAt) : new Date();
-  if (Number.isNaN(occurredAt.getTime())) {
+  const occurredAt = data.occurredAt ? new Date(data.occurredAt) : null;
+  if (occurredAt && Number.isNaN(occurredAt.getTime())) {
     throw new Error('QC_INVALID_OCCURRED_AT');
   }
   const idempotencyKey = options?.idempotencyKey?.trim() || data.idempotencyKey?.trim() || null;
@@ -738,7 +738,7 @@ export async function postQcWarehouseDisposition(
     qcAction: action === 'accept' ? 'accept' : 'hold',
     reasonCode: action === 'accept' ? 'QC_ACCEPT' : 'QC_REJECT',
     notes: data.notes?.trim() || `QC ${action} warehouse disposition`,
-    occurredAt,
+    occurredAt: occurredAt ?? undefined,
     actorId: actor.id ?? null,
     overrideNegative: data.overrideNegative,
     overrideReason: data.overrideReason ?? null,
@@ -755,7 +755,7 @@ export async function postQcWarehouseDisposition(
       notes: data.notes?.trim() || null,
       overrideNegative: data.overrideNegative ?? false,
       overrideReason: data.overrideReason ?? null,
-      occurredAt: data.occurredAt ? new Date(data.occurredAt) : undefined
+      occurredAt: occurredAt ?? undefined
     }
   });
 
