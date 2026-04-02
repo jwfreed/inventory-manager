@@ -555,14 +555,14 @@ export async function createPurchaseOrderReceipt(
       });
       const receiptProjectionDeltas = plannedReceiptLines.map((line) => ({
         itemId: line.itemId,
-        locationId: qaLocationId,
+        locationId: receivingQaLocationId,
         uom: line.canonicalFields.canonicalUom,
         deltaOnHand: line.canonicalFields.quantityDeltaCanonical
       }));
       assertProjectionDeltaContract({
         movementDeltas: plannedReceiptLines.map((line) => ({
           itemId: line.itemId,
-          locationId: qaLocationId,
+          locationId: receivingQaLocationId,
           uom: line.canonicalFields.canonicalUom,
           deltaOnHand: line.canonicalFields.quantityDeltaCanonical
         })),
