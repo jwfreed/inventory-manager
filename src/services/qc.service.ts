@@ -766,7 +766,7 @@ export async function postQcWarehouseDisposition(
     action: 'create',
     entityType: action === 'accept' ? 'qc_accept' : 'qc_reject',
     entityId: transfer.movementId,
-    occurredAt,
+    occurredAt: occurredAt ?? undefined,
     metadata: {
       warehouseId,
       sourceLocationId,
