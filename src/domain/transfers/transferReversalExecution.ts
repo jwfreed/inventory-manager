@@ -10,6 +10,7 @@ import {
 } from '../../modules/platform/application/inventoryMutationSupport';
 import type { InventoryCommandProjectionOp } from '../../modules/platform/application/runInventoryCommand';
 import { reverseTransferCostLayersInTx } from '../../services/transferCosting.service';
+import { assertProjectionDeltaContract } from '../inventory/mutationInvariants';
 import type { PreparedTransferReversal } from './transferReversalPolicy';
 import {
   assertTransferReversalPlanInvariants,
@@ -319,15 +320,33 @@ export async function executeTransferReversalPlan(
     expectedQuantity: movementPlan.expectedQuantity
   });
 
-  const projectionOps = movementPlan.lines
+  const projectionDeltas = movementPlan.lines
     .filter((line) => line.effectiveQty > EPSILON)
-    .map((line) =>
+    .map((line) => ({
+      itemId: line.itemId,
+      locationId: line.locationId,
+      uom: line.canonicalUom ?? line.effectiveUom,
+      deltaOnHand: roundQuantity(line.quantityDeltaCanonical ?? line.quantityDelta)
+    }));
+  assertProjectionDeltaContract({
+    movementDeltas: movementPlan.lines.map((line) => ({
+      itemId: line.itemId,
+      locationId: line.locationId,
+      uom: line.canonicalUom ?? line.effectiveUom,
+      deltaOnHand: roundQuantity(line.quantityDeltaCanonical ?? line.quantityDelta)
+    })),
+    projectionDeltas,
+    errorCode: 'TRANSFER_REVERSAL_PROJECTION_CONTRACT_INVALID',
+    epsilon: EPSILON
+  });
+
+  const projectionOps = projectionDeltas.map((delta) =>
       buildTransferReversalBalanceProjectionOp({
         tenantId: prepared.tenantId,
-        itemId: line.itemId,
-        locationId: line.locationId,
-        uom: line.canonicalUom ?? line.effectiveUom,
-        deltaOnHand: roundQuantity(line.quantityDeltaCanonical ?? line.quantityDelta)
+        itemId: delta.itemId,
+        locationId: delta.locationId,
+        uom: delta.uom,
+        deltaOnHand: delta.deltaOnHand
       })
     );
 

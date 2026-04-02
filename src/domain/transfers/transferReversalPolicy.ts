@@ -1,5 +1,10 @@
 import type { PoolClient } from 'pg';
 import { roundQuantity, toNumber } from '../../lib/numbers';
+import {
+  assertCanonicalUomConsistency,
+  assertDirectionalQuantityConservation,
+  assertExpectedLineCount
+} from '../inventory/mutationInvariants';
 
 const EPSILON = 1e-6;
 
@@ -139,9 +144,11 @@ function assertOriginalTransferStructure(
   originalMovementId: string,
   lines: ReadonlyArray<TransferReversalOriginalLine>
 ) {
-  if (lines.length !== 2) {
-    throw new Error('TRANSFER_REVERSAL_ORIGINAL_LINE_COUNT_INVALID');
-  }
+  assertExpectedLineCount({
+    actualLineCount: lines.length,
+    expectedLineCount: 2,
+    errorCode: 'TRANSFER_REVERSAL_ORIGINAL_LINE_COUNT_INVALID'
+  });
 
   const sourceLine = lines.find((line) => line.originalDirection === 'out');
   const destinationLine = lines.find((line) => line.originalDirection === 'in');
@@ -155,16 +162,27 @@ function assertOriginalTransferStructure(
   if (sourceLine.locationId === destinationLine.locationId) {
     throw new Error('TRANSFER_REVERSAL_LOCATION_SCOPE_INVALID');
   }
-  if (sourceLine.effectiveUom !== destinationLine.effectiveUom) {
-    throw new Error('TRANSFER_REVERSAL_UOM_MISMATCH');
-  }
-  if (Math.abs(sourceLine.effectiveQuantity - destinationLine.effectiveQuantity) > EPSILON) {
-    throw new Error('TRANSFER_REVERSAL_QUANTITY_IMBALANCE');
-  }
+  assertCanonicalUomConsistency({
+    canonicalUoms: [sourceLine.effectiveUom, destinationLine.effectiveUom],
+    errorCode: 'TRANSFER_REVERSAL_UOM_MISMATCH'
+  });
+  assertDirectionalQuantityConservation({
+    outboundQuantity: sourceLine.effectiveQuantity,
+    inboundQuantity: destinationLine.effectiveQuantity,
+    errorCode: 'TRANSFER_REVERSAL_QUANTITY_IMBALANCE',
+    epsilon: EPSILON
+  });
 
   const originalOutbound = roundQuantity(Math.abs(sourceLine.quantityDeltaCanonical ?? sourceLine.quantityDelta));
   const originalInbound = roundQuantity(destinationLine.quantityDeltaCanonical ?? destinationLine.quantityDelta);
-  if (Math.abs(originalOutbound - originalInbound) > EPSILON) {
+  try {
+    assertDirectionalQuantityConservation({
+      outboundQuantity: originalOutbound,
+      inboundQuantity: originalInbound,
+      errorCode: 'TRANSFER_REVERSAL_QUANTITY_IMBALANCE',
+      epsilon: EPSILON
+    });
+  } catch {
     throw domainError('TRANSFER_REVERSAL_QUANTITY_IMBALANCE', {
       originalMovementId,
       originalOutbound,

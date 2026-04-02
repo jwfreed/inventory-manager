@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import { roundQuantity } from '../../lib/numbers';
+import { assertQuantityEquality } from '../inventory/mutationInvariants';
 import { RECEIPT_STATUS_EPSILON } from './receiptPolicy';
 import { RECEIPT_AVAILABILITY_STATES, type ReceiptAvailabilityDecision } from './receiptAvailabilityModel';
 import { RECEIPT_STATES, type ReceiptState } from './receiptStateModel';
@@ -68,9 +69,12 @@ export function assertReceiptAllocationQuantityConservation(params: {
 }) {
   const receiptQuantity = roundQuantity(params.receiptQuantity);
   const summary = summarizeReceiptAllocations(params.allocations);
-  if (Math.abs(summary.totalQty - receiptQuantity) > RECEIPT_STATUS_EPSILON) {
-    throw new Error('RECEIPT_ALLOCATION_QUANTITY_MISMATCH');
-  }
+  assertQuantityEquality({
+    expectedQuantity: receiptQuantity,
+    actualQuantity: summary.totalQty,
+    errorCode: 'RECEIPT_ALLOCATION_QUANTITY_MISMATCH',
+    epsilon: RECEIPT_STATUS_EPSILON
+  });
   return summary;
 }
 

@@ -11,6 +11,7 @@ import {
 import type { InventoryCommandProjectionOp } from '../../modules/platform/application/runInventoryCommand';
 import { validateResolvedStockLevels } from '../../services/stockValidation.service';
 import { relocateTransferCostLayersInTx } from '../../services/transferCosting.service';
+import { assertProjectionDeltaContract } from '../inventory/mutationInvariants';
 import type { PreparedTransferMutation } from './transferPolicy';
 import { assertTransferMovementPlanInvariants, type TransferMovementPlan } from './transferPlan';
 
@@ -257,23 +258,41 @@ export async function executeTransferMovementPlan(
     expectedQuantity: invariantState.inboundQty
   });
 
+  const projectionDeltas = [
+    {
+      itemId: prepared.itemId,
+      locationId: prepared.sourceLocationId,
+      uom: outbound.canonicalFields.canonicalUom,
+      deltaOnHand: outbound.canonicalFields.quantityDeltaCanonical
+    },
+    {
+      itemId: prepared.itemId,
+      locationId: prepared.destinationLocationId,
+      uom: inbound.canonicalFields.canonicalUom,
+      deltaOnHand: inbound.canonicalFields.quantityDeltaCanonical
+    }
+  ] as const;
+  assertProjectionDeltaContract({
+    movementDeltas: movementPlan.lines.map((line) => ({
+      itemId: line.itemId,
+      locationId: line.locationId,
+      uom: line.canonicalFields.canonicalUom,
+      deltaOnHand: line.canonicalFields.quantityDeltaCanonical
+    })),
+    projectionDeltas,
+    errorCode: 'TRANSFER_PROJECTION_CONTRACT_INVALID'
+  });
+
   return {
     result,
-    projectionOps: [
+    projectionOps: projectionDeltas.map((delta) =>
       buildInventoryBalanceProjectionOp({
         tenantId: prepared.tenantId,
-        itemId: prepared.itemId,
-        locationId: prepared.sourceLocationId,
-        uom: outbound.canonicalFields.canonicalUom,
-        deltaOnHand: outbound.canonicalFields.quantityDeltaCanonical
-      }),
-      buildInventoryBalanceProjectionOp({
-        tenantId: prepared.tenantId,
-        itemId: prepared.itemId,
-        locationId: prepared.destinationLocationId,
-        uom: inbound.canonicalFields.canonicalUom,
-        deltaOnHand: inbound.canonicalFields.quantityDeltaCanonical
+        itemId: delta.itemId,
+        locationId: delta.locationId,
+        uom: delta.uom,
+        deltaOnHand: delta.deltaOnHand
       })
-    ]
+    )
   };
 }

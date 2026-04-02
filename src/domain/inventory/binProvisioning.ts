@@ -1,5 +1,6 @@
 import { query } from '../../db';
 import { v5 as uuidv5 } from 'uuid';
+import { assertLocationInventoryReadyInvariant } from './mutationInvariants';
 
 const DEFAULT_BIN_NAMESPACE = 'ff6e4f7d-5c46-4f35-9f0d-8fcfefb44311';
 
@@ -172,15 +173,11 @@ export async function assertLocationInventoryReady(
   const row = readyRes.rows[0];
   const binCount = Number(row?.bin_count ?? 0);
   const defaultCount = Number(row?.default_count ?? 0);
-
-  if (binCount < 1 || defaultCount !== 1 || !row?.default_bin_id) {
-    throw new Error('LOCATION_INVENTORY_NOT_READY');
-  }
-
-  return {
-    binId: row.default_bin_id,
-    defaultBinId: row.default_bin_id
-  };
+  return assertLocationInventoryReadyInvariant({
+    binCount,
+    defaultCount,
+    defaultBinId: row?.default_bin_id ?? null
+  });
 }
 
 export const ensureLocationHasAtLeastOneBin = ensureLocationInventoryReady;

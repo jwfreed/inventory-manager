@@ -14,6 +14,11 @@ import {
   TRANSFER_CROSS_WAREHOUSE_POLICY,
   type PreparedTransferMutation
 } from './transferPolicy';
+import {
+  assertCanonicalUomConsistency,
+  assertDirectionalQuantityConservation,
+  assertExpectedLineCount
+} from '../inventory/mutationInvariants';
 
 export type PlannedTransferMovementLine = Readonly<{
   direction: 'out' | 'in';
@@ -81,9 +86,11 @@ export function assertTransferMovementPlanInvariants(
   if (TRANSFER_ADDRESSING_MODEL !== 'location-level') {
     throw new Error('TRANSFER_ADDRESSING_MODEL_UNSUPPORTED');
   }
-  if (lines.length !== 2) {
-    throw new Error('TRANSFER_PLAN_LINE_COUNT_INVALID');
-  }
+  assertExpectedLineCount({
+    actualLineCount: lines.length,
+    expectedLineCount: 2,
+    errorCode: 'TRANSFER_PLAN_LINE_COUNT_INVALID'
+  });
 
   const outbound = lines.find((line) => line.direction === 'out');
   const inbound = lines.find((line) => line.direction === 'in');
@@ -110,12 +117,18 @@ export function assertTransferMovementPlanInvariants(
   if (outbound.canonicalFields.quantityDeltaCanonical >= 0 || inbound.canonicalFields.quantityDeltaCanonical <= 0) {
     throw new Error('TRANSFER_PLAN_DIRECTION_INVALID');
   }
-  if (outbound.canonicalFields.canonicalUom !== inbound.canonicalFields.canonicalUom) {
-    throw new Error('TRANSFER_CANONICAL_MISMATCH');
-  }
-  if (Math.abs(outboundQty - inboundQty) > 1e-6) {
-    throw new Error('TRANSFER_QUANTITY_IMBALANCE');
-  }
+  assertCanonicalUomConsistency({
+    canonicalUoms: [
+      outbound.canonicalFields.canonicalUom,
+      inbound.canonicalFields.canonicalUom
+    ],
+    errorCode: 'TRANSFER_CANONICAL_MISMATCH'
+  });
+  assertDirectionalQuantityConservation({
+    outboundQuantity: outboundQty,
+    inboundQuantity: inboundQty,
+    errorCode: 'TRANSFER_QUANTITY_IMBALANCE'
+  });
 
   return {
     outbound,

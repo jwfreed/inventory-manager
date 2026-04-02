@@ -58,6 +58,11 @@ import {
   persistInventoryMovement
 } from '../domains/inventory';
 import {
+  assertProjectionDeltaContract,
+  buildReplayDeterminismExpectation,
+  invertMovementQuantityFields
+} from '../domain/inventory/mutationInvariants';
+import {
   defaultBreakdown,
   loadPutawayTotals,
   loadQcBreakdown
@@ -204,10 +209,10 @@ async function buildReceiptCreateReplayResult(params: {
   const replay = await buildPostedDocumentReplayResult({
     tenantId: params.tenantId,
     authoritativeMovements: [
-      {
+      buildReplayDeterminismExpectation({
         movementId: params.movementId,
         expectedLineCount: params.expectedLineCount
-      }
+      })
     ],
     client: params.client,
     fetchAggregateView: () => fetchReceiptById(params.tenantId, params.receiptId, params.client),
@@ -240,10 +245,10 @@ async function buildReceiptVoidReplayResult(params: {
   const replay = await buildPostedDocumentReplayResult({
     tenantId: params.tenantId,
     authoritativeMovements: [
-      {
+      buildReplayDeterminismExpectation({
         movementId: params.reversalMovementId,
         expectedLineCount: params.expectedLineCount
-      }
+      })
     ],
     client: params.client,
     fetchAggregateView: async () => {
@@ -547,6 +552,22 @@ export async function createPurchaseOrderReceipt(
           purchaseOrderLineId: line.purchaseOrderLineId,
           receivedQty: line.receivedQty
         }))
+      });
+      const receiptProjectionDeltas = plannedReceiptLines.map((line) => ({
+        itemId: line.itemId,
+        locationId: qaLocationId,
+        uom: line.canonicalFields.canonicalUom,
+        deltaOnHand: line.canonicalFields.quantityDeltaCanonical
+      }));
+      assertProjectionDeltaContract({
+        movementDeltas: plannedReceiptLines.map((line) => ({
+          itemId: line.itemId,
+          locationId: qaLocationId,
+          uom: line.canonicalFields.canonicalUom,
+          deltaOnHand: line.canonicalFields.quantityDeltaCanonical
+        })),
+        projectionDeltas: receiptProjectionDeltas,
+        errorCode: 'RECEIPT_PROJECTION_CONTRACT_INVALID'
       });
 
       const movementResult = await postReceiptInventoryMovement({
@@ -1183,7 +1204,14 @@ async function insertReversalLinesAndCollectDeltas(
   }
 
   const reversalLines = sortDeterministicMovementLines(
-    sourceLinesResult.rows.map((row) => ({
+    sourceLinesResult.rows.map((row) => {
+      const inverted = invertMovementQuantityFields({
+        quantityDelta: toNumber(row.quantity_delta),
+        quantityDeltaEntered: row.quantity_delta_entered === null ? null : toNumber(row.quantity_delta_entered),
+        quantityDeltaCanonical: row.quantity_delta_canonical === null ? null : toNumber(row.quantity_delta_canonical),
+        extendedCost: row.extended_cost === null ? null : Number(row.extended_cost)
+      });
+      return ({
       ...(typeof row.warehouse_id === 'string' && row.warehouse_id.trim()
         ? {}
         : (() => {
@@ -1194,25 +1222,21 @@ async function insertReversalLinesAndCollectDeltas(
       warehouseId: row.warehouse_id!,
       itemId: row.item_id,
       locationId: row.location_id,
-      quantityDelta: -toNumber(row.quantity_delta),
+      quantityDelta: inverted.quantityDelta,
       uom: row.uom,
-      quantityDeltaEntered:
-        row.quantity_delta_entered === null ? null : -toNumber(row.quantity_delta_entered),
+      quantityDeltaEntered: inverted.quantityDeltaEntered,
       uomEntered: row.uom_entered,
-      quantityDeltaCanonical:
-        row.quantity_delta_canonical === null ? null : -toNumber(row.quantity_delta_canonical),
+      quantityDeltaCanonical: inverted.quantityDeltaCanonical,
       canonicalUom: row.canonical_uom,
       uomDimension: row.uom_dimension,
       unitCost: row.unit_cost === null ? null : Number(row.unit_cost),
-      extendedCost: row.extended_cost === null ? null : -Number(row.extended_cost),
+      extendedCost: inverted.extendedCost,
       reasonCode: row.reason_code ?? 'receipt_void_reversal',
       lineNotes: `Reversal of movement line ${row.source_line_id} (${reason})`,
       balanceUom: row.canonical_uom ?? row.uom,
-      balanceQuantityDelta:
-        row.quantity_delta_canonical === null
-          ? -toNumber(row.quantity_delta)
-          : -toNumber(row.quantity_delta_canonical)
-    })),
+      balanceQuantityDelta: inverted.balanceQuantityDelta
+    });
+    }),
     (line) => ({
       tenantId,
       warehouseId: line.warehouseId,
@@ -1521,6 +1545,18 @@ export async function voidReceipt(
         balanceDeltaByKey.set(key, current);
         itemIdsToRefresh.add(row.item_id);
       }
+      const reversalMovementDeltas = reversalPlan.balanceDeltas.map((row) => ({
+        itemId: row.item_id,
+        locationId: row.location_id,
+        uom: row.balance_uom,
+        deltaOnHand: roundQuantity(toNumber(row.quantity_delta_effective))
+      }));
+      assertProjectionDeltaContract({
+        movementDeltas: reversalMovementDeltas,
+        projectionDeltas: [...balanceDeltaByKey.values()],
+        errorCode: 'RECEIPT_REVERSAL_PROJECTION_CONTRACT_INVALID',
+        epsilon: STATUS_EPSILON
+      });
 
       if (reversibleLayerIds.length > 0) {
         await client.query(

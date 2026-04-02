@@ -17,6 +17,7 @@ import {
   prepareTransferMutation as prepareTransferPolicy,
   type PreparedTransferMutation
 } from '../domain/transfers/transferPolicy';
+import { buildReplayDeterminismExpectation } from '../domain/inventory/mutationInvariants';
 import { buildTransferMovementPlan as buildTransferMovementPlanDomain } from '../domain/transfers/transferPlan';
 import { executeTransferMovementPlan } from '../domain/transfers/transferExecution';
 import {
@@ -335,11 +336,11 @@ export async function buildTransferReplayResult(params: {
   return buildPostedDocumentReplayResult({
     tenantId: params.tenantId,
     authoritativeMovements: [
-      {
+      buildReplayDeterminismExpectation({
         movementId: params.movementId,
         expectedLineCount: params.expectedLineCount ?? 2,
         expectedDeterministicHash: params.expectedDeterministicHash ?? null
-      }
+      })
     ],
     client: params.client,
     fetchAggregateView: () =>
@@ -465,11 +466,11 @@ async function buildTransferReversalReplayResult(params: {
   return buildPostedDocumentReplayResult({
     tenantId: params.tenantId,
     authoritativeMovements: [
-      {
+      buildReplayDeterminismExpectation({
         movementId: params.reversalMovementId,
         expectedLineCount: reversalPlan.expectedLineCount,
         expectedDeterministicHash: reversalPlan.expectedDeterministicHash
-      }
+      })
     ],
     client: params.client,
     fetchAggregateView: async () => ({

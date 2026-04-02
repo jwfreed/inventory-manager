@@ -7,11 +7,18 @@ import {
   buildMovementDeterministicHash,
   sortDeterministicMovementLines
 } from '../../modules/platform/application/inventoryMutationSupport';
-import { roundQuantity, toNumber } from '../../lib/numbers';
+import { roundQuantity } from '../../lib/numbers';
 import type {
   PreparedTransferReversal,
   TransferReversalOriginalLine
 } from './transferReversalPolicy';
+import {
+  assertCanonicalUomConsistency,
+  assertDirectionalQuantityConservation,
+  assertExpectedLineCount,
+  assertMovementSymmetry,
+  invertMovementQuantityFields
+} from '../inventory/mutationInvariants';
 
 const EPSILON = 1e-6;
 
@@ -63,14 +70,15 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-function negateNullable(value: number | null): number | null {
-  if (value === null) return null;
-  return roundQuantity(-value);
-}
-
 function mapReversalLine(
   line: TransferReversalOriginalLine
 ): PlannedTransferReversalLine {
+  const inverted = invertMovementQuantityFields({
+    quantityDelta: line.quantityDelta,
+    quantityDeltaEntered: line.quantityDeltaEntered,
+    quantityDeltaCanonical: line.quantityDeltaCanonical,
+    extendedCost: line.extendedCost
+  });
   return {
     id: uuidv4(),
     sourceLineId: line.id,
@@ -82,14 +90,14 @@ function mapReversalLine(
     locationId: line.locationId,
     effectiveUom: line.effectiveUom,
     effectiveQty: line.effectiveQuantity,
-    quantityDelta: roundQuantity(-line.quantityDelta),
-    quantityDeltaEntered: negateNullable(line.quantityDeltaEntered),
+    quantityDelta: inverted.quantityDelta,
+    quantityDeltaEntered: inverted.quantityDeltaEntered,
     uomEntered: line.uomEntered,
-    quantityDeltaCanonical: negateNullable(line.quantityDeltaCanonical),
+    quantityDeltaCanonical: inverted.quantityDeltaCanonical,
     canonicalUom: line.canonicalUom,
     uomDimension: line.uomDimension,
     unitCost: line.unitCost,
-    extendedCost: negateNullable(line.extendedCost),
+    extendedCost: inverted.extendedCost,
     reasonCode: line.reasonCode ? `${line.reasonCode}_reversal` : 'transfer_reversal',
     lineNotes: line.lineNotes ? `Reversal of ${line.id}: ${line.lineNotes}` : `Reversal of ${line.id}`
   };
@@ -122,9 +130,11 @@ export function assertTransferReversalPlanInvariants(
   prepared: PreparedTransferReversal,
   lines: ReadonlyArray<PlannedTransferReversalLine>
 ) {
-  if (lines.length !== prepared.originalLines.length) {
-    throw new Error('TRANSFER_REVERSAL_PLAN_LINE_COUNT_INVALID');
-  }
+  assertExpectedLineCount({
+    actualLineCount: lines.length,
+    expectedLineCount: prepared.originalLines.length,
+    errorCode: 'TRANSFER_REVERSAL_PLAN_LINE_COUNT_INVALID'
+  });
 
   const originalLineIds = new Set(prepared.originalLines.map((line) => line.id));
   const reversalLineIds = new Set<string>();
@@ -153,16 +163,23 @@ export function assertTransferReversalPlanInvariants(
     if (line.itemId !== originalLine.itemId) {
       throw new Error('TRANSFER_REVERSAL_ITEM_MISMATCH');
     }
-    if ((line.canonicalUom ?? line.effectiveUom) !== originalLine.effectiveUom) {
-      throw new Error('TRANSFER_REVERSAL_UOM_MISMATCH');
-    }
-    if (Math.abs(roundQuantity(line.quantityDelta + originalLine.quantityDelta)) > EPSILON) {
-      throw new Error('TRANSFER_REVERSAL_QUANTITY_SYMMETRY_INVALID');
-    }
+    assertCanonicalUomConsistency({
+      canonicalUoms: [line.canonicalUom ?? line.effectiveUom, originalLine.effectiveUom],
+      errorCode: 'TRANSFER_REVERSAL_UOM_MISMATCH'
+    });
+    assertMovementSymmetry({
+      originalQuantity: originalLine.quantityDelta,
+      reversalQuantity: line.quantityDelta,
+      errorCode: 'TRANSFER_REVERSAL_QUANTITY_SYMMETRY_INVALID',
+      epsilon: EPSILON
+    });
     if (line.quantityDeltaCanonical !== null && originalLine.quantityDeltaCanonical !== null) {
-      if (Math.abs(roundQuantity(line.quantityDeltaCanonical + originalLine.quantityDeltaCanonical)) > EPSILON) {
-        throw new Error('TRANSFER_REVERSAL_CANONICAL_QUANTITY_SYMMETRY_INVALID');
-      }
+      assertMovementSymmetry({
+        originalQuantity: originalLine.quantityDeltaCanonical,
+        reversalQuantity: line.quantityDeltaCanonical,
+        errorCode: 'TRANSFER_REVERSAL_CANONICAL_QUANTITY_SYMMETRY_INVALID',
+        epsilon: EPSILON
+      });
     }
     if (line.originalDirection === line.reversalDirection) {
       throw new Error('TRANSFER_REVERSAL_DIRECTION_INVALID');
@@ -184,18 +201,30 @@ export function assertTransferReversalPlanInvariants(
   if (reversalLineIds.size !== prepared.originalLines.length) {
     throw new Error('TRANSFER_REVERSAL_LINE_MAPPING_INCOMPLETE');
   }
-  if (Math.abs(originalOutbound - originalInbound) > EPSILON) {
-    throw new Error('TRANSFER_REVERSAL_ORIGINAL_QUANTITY_IMBALANCE');
-  }
-  if (Math.abs(reversalOutbound - reversalInbound) > EPSILON) {
-    throw new Error('TRANSFER_REVERSAL_PLAN_QUANTITY_IMBALANCE');
-  }
-  if (Math.abs(originalOutbound - reversalInbound) > EPSILON) {
-    throw new Error('TRANSFER_REVERSAL_INBOUND_SYMMETRY_INVALID');
-  }
-  if (Math.abs(originalInbound - reversalOutbound) > EPSILON) {
-    throw new Error('TRANSFER_REVERSAL_OUTBOUND_SYMMETRY_INVALID');
-  }
+  assertDirectionalQuantityConservation({
+    outboundQuantity: originalOutbound,
+    inboundQuantity: originalInbound,
+    errorCode: 'TRANSFER_REVERSAL_ORIGINAL_QUANTITY_IMBALANCE',
+    epsilon: EPSILON
+  });
+  assertDirectionalQuantityConservation({
+    outboundQuantity: reversalOutbound,
+    inboundQuantity: reversalInbound,
+    errorCode: 'TRANSFER_REVERSAL_PLAN_QUANTITY_IMBALANCE',
+    epsilon: EPSILON
+  });
+  assertDirectionalQuantityConservation({
+    outboundQuantity: originalOutbound,
+    inboundQuantity: reversalInbound,
+    errorCode: 'TRANSFER_REVERSAL_INBOUND_SYMMETRY_INVALID',
+    epsilon: EPSILON
+  });
+  assertDirectionalQuantityConservation({
+    outboundQuantity: originalInbound,
+    inboundQuantity: reversalOutbound,
+    errorCode: 'TRANSFER_REVERSAL_OUTBOUND_SYMMETRY_INVALID',
+    epsilon: EPSILON
+  });
 
   return {
     expectedQuantity: reversalOutbound,
