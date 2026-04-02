@@ -26,6 +26,7 @@ let child;
 let logStream;
 let processHooksInstalled = false;
 const LOCAL_DB_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+const TEST_SERVER_STARTUP_TIMEOUT_MS = Number(process.env.TEST_SERVER_STARTUP_TIMEOUT_MS || 120000);
 
 function resolveSpawnDatabaseUrl() {
   const databaseUrl = (process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '').trim();
@@ -222,7 +223,7 @@ async function ensureTestServer() {
     child.stdout?.pipe(logStream);
     child.stderr?.pipe(logStream);
 
-    const ready = await waitForHealthy(30000);
+    const ready = await waitForHealthy(TEST_SERVER_STARTUP_TIMEOUT_MS);
     if (!ready) {
       await stopTestServer();
       throw new Error(`SERVER_STARTUP_TIMEOUT baseUrl=${baseUrl} log=${logPath}`);

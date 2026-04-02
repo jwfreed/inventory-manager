@@ -132,6 +132,8 @@ async function createTransferFixture(harness, { quantity = 7 } = {}) {
     item.id,
     topology.defaults.SELLABLE.id
   );
+  const sourceInitialOnHand = await harness.readOnHand(item.id, topology.defaults.SELLABLE.id);
+  const destinationInitialOnHand = await harness.readOnHand(item.id, store.sellable.id);
 
   const transfer = await harness.postTransfer({
     sourceLocationId: topology.defaults.SELLABLE.id,
@@ -150,9 +152,48 @@ async function createTransferFixture(harness, { quantity = 7 } = {}) {
     transfer,
     sourceLocationId: topology.defaults.SELLABLE.id,
     destinationLocationId: store.sellable.id,
+    sourceInitialOnHand,
+    destinationInitialOnHand,
     sourceBucketsBeforeTransfer
   };
 }
+
+test('transfer reversal restores projection balances to the exact pre-transfer state', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'transfer-reversal-balance',
+    tenantName: 'Transfer Reversal Balance'
+  });
+  const fixture = await createTransferFixture(harness, { quantity: 4 });
+
+  assert.equal(fixture.sourceInitialOnHand, 10);
+  assert.equal(fixture.destinationInitialOnHand, 0);
+
+  const sourceAfterTransfer = await harness.readOnHand(fixture.item.id, fixture.sourceLocationId);
+  const destAfterTransfer = await harness.readOnHand(fixture.item.id, fixture.destinationLocationId);
+
+  assert.equal(sourceAfterTransfer, 6);
+  assert.equal(destAfterTransfer, 4);
+
+  await harness.voidTransfer(fixture.transfer.movementId, {
+    reason: 'projection_balance_regression',
+    actor: { type: 'system', id: null },
+    idempotencyKey: `void-transfer-balance-${randomUUID()}`
+  });
+
+  const sourceAfterReversal = await harness.readOnHand(fixture.item.id, fixture.sourceLocationId);
+  const destAfterReversal = await harness.readOnHand(fixture.item.id, fixture.destinationLocationId);
+
+  // If sign is wrong:
+  //   source = 2
+  //   destination = 8
+  // If projection skipped:
+  //   source = 6
+  //   destination = 4
+  assert.equal(sourceAfterReversal, 10);
+  assert.equal(destAfterReversal, 0);
+  assert.equal(sourceAfterReversal, fixture.sourceInitialOnHand);
+  assert.equal(destAfterReversal, fixture.destinationInitialOnHand);
+});
 
 test('transfer reversal posts the exact inverse, restores cost exactly, and stays deterministic on replay', async () => {
   const harness = await createServiceHarness({
