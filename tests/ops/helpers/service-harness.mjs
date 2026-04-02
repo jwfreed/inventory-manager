@@ -41,7 +41,10 @@ const {
   voidWorkOrderProductionReport
 } = require('../../../src/services/workOrderExecution.service.ts');
 const { createQcEvent, postQcWarehouseDisposition } = require('../../../src/services/qc.service.ts');
-const { postInventoryTransfer } = require('../../../src/services/transfers.service.ts');
+const {
+  postInventoryTransfer,
+  voidTransferMovement
+} = require('../../../src/services/transfers.service.ts');
 const { createInventoryCount, getInventoryCount, postInventoryCount } = require('../../../src/services/counts.service.ts');
 const {
   compareBalances,
@@ -701,6 +704,7 @@ export async function createServiceHarness(options = {}) {
     qcWarehouseDisposition: (action, data, actor, options) =>
       postQcWarehouseDisposition(tenantId, action, data, actor, options),
     postTransfer: (data) => postInventoryTransfer({ tenantId, ...data }),
+    voidTransfer: (movementId, params) => voidTransferMovement(tenantId, movementId, params),
     createStartBarrier,
     runConcurrently,
     countInventoryMovementsBySourceType: async (sourceType) => {

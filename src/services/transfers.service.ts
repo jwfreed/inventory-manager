@@ -1,8 +1,6 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { roundQuantity, toNumber } from '../lib/numbers';
-import { applyInventoryBalanceDelta, persistInventoryMovement } from '../domains/inventory';
-import { reverseTransferCostLayersInTx } from './transferCosting.service';
 import { hashTransactionalIdempotencyRequest } from '../lib/transactionalIdempotency';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import {
@@ -12,8 +10,7 @@ import {
 } from '../modules/platform/application/runInventoryCommand';
 import {
   buildMovementPostedEvent,
-  buildPostedDocumentReplayResult,
-  sortDeterministicMovementLines
+  buildPostedDocumentReplayResult
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
 import {
@@ -22,8 +19,12 @@ import {
 } from '../domain/transfers/transferPolicy';
 import { buildTransferMovementPlan as buildTransferMovementPlanDomain } from '../domain/transfers/transferPlan';
 import { executeTransferMovementPlan } from '../domain/transfers/transferExecution';
-
-const TRANSFER_REVERSAL_MOVEMENT_TYPE = 'transfer_reversal';
+import {
+  buildTransferReversalLockTargets,
+  prepareTransferReversalPolicy
+} from '../domain/transfers/transferReversalPolicy';
+import { buildTransferReversalPlan } from '../domain/transfers/transferReversalPlan';
+import { executeTransferReversalPlan } from '../domain/transfers/transferReversalExecution';
 
 /**
  * Canonical transfer primitive for inventory movements.
@@ -98,11 +99,6 @@ export type TransferVoidActor = {
 
 export type { PreparedTransferMutation } from '../domain/transfers/transferPolicy';
 
-function negateNullable(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  return roundQuantity(-toNumber(value));
-}
-
 function assertReason(reason: string): string {
   const trimmed = reason.trim();
   if (!trimmed) {
@@ -111,49 +107,10 @@ function assertReason(reason: string): string {
   return trimmed;
 }
 
-type MovementLineRow = {
-  id: string;
-  item_id: string;
-  location_id: string;
-  warehouse_id?: string | null;
-  quantity_delta: string | number;
-  uom: string;
-  quantity_delta_entered: string | number | null;
-  uom_entered: string | null;
-  quantity_delta_canonical: string | number | null;
-  canonical_uom: string | null;
-  uom_dimension: string | null;
-  unit_cost: string | number | null;
-  extended_cost: string | number | null;
-  reason_code: string | null;
-  line_notes: string | null;
-};
-
 export type TransferMutationExecution = {
   result: TransferInventoryResult;
   events: InventoryCommandEvent[];
   projectionOps: InventoryCommandProjectionOp[];
-};
-
-type PlannedTransferReversalLine = {
-  id: string;
-  sourceLineId: string;
-  warehouseId: string;
-  itemId: string;
-  locationId: string;
-  effectiveUom: string;
-  effectiveQty: number;
-  quantityDelta: number;
-  quantityDeltaEntered: number | null;
-  uomEntered: string | null;
-  quantityDeltaCanonical: number | null;
-  canonicalUom: string | null;
-  uomDimension: string | null;
-  unitCost: number | null;
-  extendedCost: number | null;
-  reasonCode: string;
-  lineNotes: string;
-  originalLineId: string;
 };
 
 function compareInventoryLockTarget(
@@ -163,13 +120,6 @@ function compareInventoryLockTarget(
   const warehouseCompare = left.warehouseId.localeCompare(right.warehouseId);
   if (warehouseCompare !== 0) return warehouseCompare;
   return left.itemId.localeCompare(right.itemId);
-}
-
-function requireMovementLineWarehouseId(line: MovementLineRow): string {
-  if (typeof line.warehouse_id !== 'string' || !line.warehouse_id.trim()) {
-    throw new Error('TRANSFER_REPLAY_SCOPE_UNRESOLVED');
-  }
-  return line.warehouse_id;
 }
 
 export async function prepareTransferMutation(
@@ -319,25 +269,6 @@ function buildTransferEvents(params: {
   ];
 }
 
-function buildTransferReversalBalanceProjectionOp(params: {
-  tenantId: string;
-  itemId: string;
-  locationId: string;
-  uom: string;
-  deltaOnHand: number;
-}): InventoryCommandProjectionOp {
-  return async (client) => {
-    try {
-      await applyInventoryBalanceDelta(client, params);
-    } catch (error: any) {
-      if (error?.code === '23514' && error?.constraint === 'chk_inventory_balance_nonneg') {
-        throw new Error('TRANSFER_REVERSAL_NOT_POSSIBLE_CONSUMED');
-      }
-      throw error;
-    }
-  };
-}
-
 async function buildTransferMovementPlan(
   prepared: PreparedTransferMutation,
   client: PoolClient
@@ -345,43 +276,6 @@ async function buildTransferMovementPlan(
   // Deterministic planning remains delegated to the domain planner:
   // sortDeterministicMovementLines(...) and buildMovementDeterministicHash(...).
   return buildTransferMovementPlanDomain(prepared, client);
-}
-
-function buildTransferReversalPlan(params: {
-  tenantId: string;
-  originalLines: MovementLineRow[];
-}) {
-  const lines = sortDeterministicMovementLines(
-    params.originalLines.map((line) => ({
-      id: uuidv4(),
-      sourceLineId: line.id,
-      warehouseId: requireMovementLineWarehouseId(line),
-      itemId: line.item_id,
-      locationId: line.location_id,
-      effectiveUom: line.canonical_uom ?? line.uom,
-      effectiveQty: roundQuantity(toNumber(line.quantity_delta_canonical ?? line.quantity_delta)),
-      quantityDelta: roundQuantity(-toNumber(line.quantity_delta)),
-      quantityDeltaEntered: negateNullable(line.quantity_delta_entered),
-      uomEntered: line.uom_entered,
-      quantityDeltaCanonical: negateNullable(line.quantity_delta_canonical),
-      canonicalUom: line.canonical_uom,
-      uomDimension: line.uom_dimension,
-      unitCost: line.unit_cost != null ? roundQuantity(toNumber(line.unit_cost)) : null,
-      extendedCost: negateNullable(line.extended_cost),
-      reasonCode: line.reason_code ? `${line.reason_code}_reversal` : 'transfer_reversal',
-      lineNotes: line.line_notes ? `Reversal of ${line.id}: ${line.line_notes}` : `Reversal of ${line.id}`,
-      originalLineId: line.id
-    })),
-    (line) => ({
-      tenantId: params.tenantId,
-      warehouseId: line.warehouseId,
-      locationId: line.locationId,
-      itemId: line.itemId,
-      canonicalUom: line.canonicalUom ?? line.effectiveUom,
-      sourceLineId: line.sourceLineId
-    })
-  );
-  return { lines };
 }
 
 async function fetchTransferReplayView(
@@ -522,6 +416,77 @@ export async function executeTransferInventoryMutation(
     }),
     projectionOps: [...execution.projectionOps]
   };
+}
+
+async function loadTransferReversalOccurredAt(
+  client: PoolClient,
+  tenantId: string,
+  reversalMovementId: string
+) {
+  const result = await client.query<{ occurred_at: Date | string }>(
+    `SELECT occurred_at
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, reversalMovementId]
+  );
+  if ((result.rowCount ?? 0) === 0) {
+    throw new Error('TRANSFER_VOID_CONFLICT');
+  }
+  return new Date(result.rows[0]!.occurred_at);
+}
+
+async function buildTransferReversalReplayResult(params: {
+  tenantId: string;
+  originalMovementId: string;
+  reversalMovementId: string;
+  reason: string;
+  normalizedIdempotencyKey: string | null;
+  client: PoolClient;
+}) {
+  const preparedReversal = await prepareTransferReversalPolicy(
+    {
+      tenantId: params.tenantId,
+      originalMovementId: params.originalMovementId
+    },
+    params.client
+  );
+  const occurredAt = await loadTransferReversalOccurredAt(
+    params.client,
+    params.tenantId,
+    params.reversalMovementId
+  );
+  const reversalPlan = buildTransferReversalPlan(preparedReversal, {
+    occurredAt,
+    idempotencyKey: params.normalizedIdempotencyKey,
+    reason: params.reason
+  });
+
+  return buildPostedDocumentReplayResult({
+    tenantId: params.tenantId,
+    authoritativeMovements: [
+      {
+        movementId: params.reversalMovementId,
+        expectedLineCount: reversalPlan.expectedLineCount,
+        expectedDeterministicHash: reversalPlan.expectedDeterministicHash
+      }
+    ],
+    client: params.client,
+    fetchAggregateView: async () => ({
+      reversalMovementId: params.reversalMovementId,
+      reversalOfMovementId: params.originalMovementId
+    }),
+    aggregateNotFoundError: new Error('TRANSFER_VOID_CONFLICT'),
+    authoritativeEvents: [
+      buildMovementPostedEvent(params.reversalMovementId, params.normalizedIdempotencyKey),
+      buildTransferVoidedEvent({
+        transferId: params.originalMovementId,
+        reversalMovementId: params.reversalMovementId,
+        reason: params.reason,
+        producerIdempotencyKey: params.normalizedIdempotencyKey
+      })
+    ]
+  });
 }
 
 export async function postInventoryTransfer(input: TransferPostInput): Promise<TransferPostResult> {
@@ -676,16 +641,9 @@ export async function voidTransferMovement(
         }
       })
     : null;
-
-  let originalMovement:
-    | {
-        id: string;
-        status: string;
-        movement_type: string;
-        reversal_of_movement_id: string | null;
-      }
+  let reversalLockPreview:
+    | Awaited<ReturnType<typeof prepareTransferReversalPolicy>>
     | null = null;
-  let originalLines: MovementLineRow[] = [];
 
   return runInventoryCommand<{
     reversalMovementId: string;
@@ -698,262 +656,94 @@ export async function voidTransferMovement(
     requestHash,
     retryOptions: { isolationLevel: 'SERIALIZABLE', retries: 6 },
     onReplay: async ({ client, responseBody }) => {
-      const originalLinesResult = await client.query<MovementLineRow & { warehouse_id: string | null }>(
-        `SELECT iml.id,
-                iml.item_id,
-                iml.location_id,
-                iml.quantity_delta,
-                iml.uom,
-                iml.quantity_delta_entered,
-                iml.uom_entered,
-                iml.quantity_delta_canonical,
-                iml.canonical_uom,
-                iml.uom_dimension,
-                iml.unit_cost,
-                iml.extended_cost,
-                iml.reason_code,
-                iml.line_notes,
-                l.warehouse_id
-           FROM inventory_movement_lines iml
-           JOIN locations l
-             ON l.id = iml.location_id
-            AND l.tenant_id = iml.tenant_id
-          WHERE iml.tenant_id = $1
-            AND iml.movement_id = $2
-          ORDER BY iml.created_at ASC, iml.id ASC`,
-        [tenantId, movementId]
-      );
-      const reversalPlan = buildTransferReversalPlan({
-        tenantId,
-        originalLines: originalLinesResult.rows
-      });
       return (
-        await buildPostedDocumentReplayResult({
+        await buildTransferReversalReplayResult({
           tenantId,
-          authoritativeMovements: [
-            {
-              movementId: responseBody.reversalMovementId,
-              expectedLineCount: reversalPlan.lines.length
-            }
-          ],
-          client,
-          fetchAggregateView: async () => ({
-            reversalMovementId: responseBody.reversalMovementId,
-            reversalOfMovementId: movementId
-          }),
-          aggregateNotFoundError: new Error('TRANSFER_VOID_CONFLICT'),
-          authoritativeEvents: [
-            buildMovementPostedEvent(responseBody.reversalMovementId, normalizedIdempotencyKey),
-            buildTransferVoidedEvent({
-              transferId: movementId,
-              reversalMovementId: responseBody.reversalMovementId,
-              reason,
-              producerIdempotencyKey: normalizedIdempotencyKey
-            })
-          ]
+          originalMovementId: movementId,
+          reversalMovementId: responseBody.reversalMovementId,
+          reason,
+          normalizedIdempotencyKey,
+          client
         })
       ).responseBody;
     },
     lockTargets: async (client) => {
-      const originalMovementResult = await client.query<{
-        id: string;
-        status: string;
-        movement_type: string;
-        reversal_of_movement_id: string | null;
-      }>(
-        `SELECT id, status, movement_type, reversal_of_movement_id
-           FROM inventory_movements
-          WHERE id = $1
-            AND tenant_id = $2
-          FOR UPDATE`,
-        [movementId, tenantId]
-      );
-      if (originalMovementResult.rowCount === 0) {
-        throw new Error('TRANSFER_NOT_FOUND');
-      }
-      originalMovement = originalMovementResult.rows[0];
-      if (originalMovement.status !== 'posted') {
-        throw new Error('TRANSFER_NOT_POSTED');
-      }
-      if (
-        originalMovement.movement_type === TRANSFER_REVERSAL_MOVEMENT_TYPE
-        || originalMovement.reversal_of_movement_id !== null
-      ) {
-        throw new Error('TRANSFER_REVERSAL_INVALID_TARGET');
-      }
-      if (originalMovement.movement_type !== 'transfer') {
-        throw new Error('TRANSFER_NOT_TRANSFER');
-      }
-
-      const existingReversal = await client.query<{ id: string }>(
-        `SELECT id
-           FROM inventory_movements
-          WHERE tenant_id = $1
-            AND reversal_of_movement_id = $2
-          LIMIT 1`,
-        [tenantId, movementId]
-      );
-      if ((existingReversal.rowCount ?? 0) > 0) {
-        throw new Error('TRANSFER_ALREADY_REVERSED');
-      }
-
-      const originalLinesResult = await client.query<
-        MovementLineRow & { warehouse_id: string | null }
-      >(
-        `SELECT iml.id,
-                iml.item_id,
-                iml.location_id,
-                iml.quantity_delta,
-                iml.uom,
-                iml.quantity_delta_entered,
-                iml.uom_entered,
-                iml.quantity_delta_canonical,
-                iml.canonical_uom,
-                iml.uom_dimension,
-                iml.unit_cost,
-                iml.extended_cost,
-                iml.reason_code,
-                iml.line_notes,
-                l.warehouse_id
-           FROM inventory_movement_lines iml
-           JOIN locations l
-             ON l.id = iml.location_id
-            AND l.tenant_id = iml.tenant_id
-          WHERE iml.tenant_id = $1
-            AND iml.movement_id = $2
-          ORDER BY iml.created_at ASC, iml.id ASC
-          FOR UPDATE`,
-        [tenantId, movementId]
-      );
-      if (originalLinesResult.rowCount === 0) {
-        throw new Error('TRANSFER_NOT_POSTED');
-      }
-      originalLines = originalLinesResult.rows;
-      return originalLinesResult.rows
-        .filter((line) => typeof line.warehouse_id === 'string' && line.warehouse_id.length > 0)
-        .map((line) => ({
+      reversalLockPreview = await prepareTransferReversalPolicy(
+        {
           tenantId,
-          warehouseId: line.warehouse_id!,
-          itemId: line.item_id
-        }));
+          originalMovementId: movementId
+        },
+        client
+      );
+      return buildTransferReversalLockTargets(reversalLockPreview);
     },
     execute: async ({ client }) => {
-      if (!originalMovement) {
-        throw new Error('TRANSFER_NOT_FOUND');
+      const preparedReversal = await prepareTransferReversalPolicy(
+        {
+          tenantId,
+          originalMovementId: movementId
+        },
+        client
+      );
+      if (preparedReversal.existingReversal) {
+        const replay = await buildTransferReversalReplayResult({
+          tenantId,
+          originalMovementId: movementId,
+          reversalMovementId: preparedReversal.existingReversal.movementId,
+          reason,
+          normalizedIdempotencyKey,
+          client
+        });
+        return {
+          responseBody: replay.responseBody,
+          responseStatus: replay.responseStatus,
+          events: replay.events ?? [],
+          projectionOps: []
+        };
       }
-      const now = new Date();
-      const reversalPlan = buildTransferReversalPlan({
-        tenantId,
-        originalLines
-      });
-      const reversalMovementId = uuidv4();
-      const reversalMovement = await persistInventoryMovement(client, {
-        id: reversalMovementId,
-        tenantId,
-        movementType: TRANSFER_REVERSAL_MOVEMENT_TYPE,
-        status: 'posted',
-        externalRef: `transfer_void:${movementId}`,
-        sourceType: 'transfer_void',
-        sourceId: movementId,
+      const reversalPlan = buildTransferReversalPlan(preparedReversal, {
+        occurredAt: new Date(),
         idempotencyKey: normalizedIdempotencyKey,
-        occurredAt: now,
-        postedAt: now,
-        notes: `Transfer void reversal ${movementId}: ${reason}`,
-        reversalOfMovementId: movementId,
-        reversalReason: reason,
-        createdAt: now,
-        updatedAt: now,
-        lines: reversalPlan.lines.map((line) => ({
-          id: line.id,
-          warehouseId: line.warehouseId,
-          sourceLineId: line.sourceLineId,
-          itemId: line.itemId,
-          locationId: line.locationId,
-          quantityDelta: line.quantityDelta,
-          uom: line.canonicalUom ?? line.effectiveUom,
-          quantityDeltaEntered: line.quantityDeltaEntered,
-          uomEntered: line.uomEntered,
-          quantityDeltaCanonical: line.quantityDeltaCanonical,
-          canonicalUom: line.canonicalUom,
-          uomDimension: line.uomDimension,
-          unitCost: line.unitCost,
-          extendedCost: line.extendedCost,
-          reasonCode: line.reasonCode,
-          lineNotes: line.lineNotes,
-          createdAt: now
-        }))
+        reason
       });
-
-      if (!reversalMovement.created) {
-        const existingMovementResult = await client.query<{
-          id: string;
-          movement_type: string;
-          reversal_of_movement_id: string | null;
-        }>(
-          `SELECT id, movement_type, reversal_of_movement_id
-             FROM inventory_movements
-            WHERE id = $1
-              AND tenant_id = $2
-            FOR UPDATE`,
-          [reversalMovement.movementId, tenantId]
-        );
-        const existingMovement = existingMovementResult.rows[0];
-        if (
-          existingMovement
-          && existingMovement.movement_type === TRANSFER_REVERSAL_MOVEMENT_TYPE
-          && existingMovement.reversal_of_movement_id === movementId
-        ) {
-          throw new Error('TRANSFER_ALREADY_REVERSED');
-        }
-        throw new Error('TRANSFER_VOID_CONFLICT');
+      const execution = await executeTransferReversalPlan(
+        preparedReversal,
+        reversalPlan,
+        client
+      );
+      if (!execution.result.created) {
+        const replay = await buildTransferReversalReplayResult({
+          tenantId,
+          originalMovementId: movementId,
+          reversalMovementId: execution.result.reversalMovementId,
+          reason,
+          normalizedIdempotencyKey,
+          client
+        });
+        return {
+          responseBody: replay.responseBody,
+          responseStatus: replay.responseStatus,
+          events: replay.events ?? [],
+          projectionOps: []
+        };
       }
-
-      const reversalLineByOriginalLineId = new Map<string, string>();
-      const projectionOps: InventoryCommandProjectionOp[] = [];
-
-      for (const line of reversalPlan.lines) {
-        reversalLineByOriginalLineId.set(line.originalLineId, line.id);
-
-        if (Math.abs(line.effectiveQty) <= 1e-6) {
-          continue;
-        }
-        projectionOps.push(
-          buildTransferReversalBalanceProjectionOp({
-            tenantId,
-            itemId: line.itemId,
-            locationId: line.locationId,
-            uom: line.effectiveUom,
-            deltaOnHand: roundQuantity(-line.effectiveQty)
-          })
-        );
-      }
-
-      await reverseTransferCostLayersInTx({
-        client,
-        tenantId,
-        originalTransferMovementId: movementId,
-        reversalMovementId: reversalMovement.movementId,
-        occurredAt: now,
-        notes: `Transfer reversal ${movementId}`,
-        reversalLineByOriginalLineId
-      });
 
       return {
         responseBody: {
-          reversalMovementId: reversalMovement.movementId,
+          reversalMovementId: execution.result.reversalMovementId,
           reversalOfMovementId: movementId
         },
         responseStatus: 201,
         events: [
-          buildMovementPostedEvent(reversalMovement.movementId, normalizedIdempotencyKey),
+          buildMovementPostedEvent(execution.result.reversalMovementId, normalizedIdempotencyKey),
           buildTransferVoidedEvent({
             transferId: movementId,
-            reversalMovementId: reversalMovement.movementId,
+            reversalMovementId: execution.result.reversalMovementId,
             reason,
             producerIdempotencyKey: normalizedIdempotencyKey
           })
         ],
-        projectionOps
+        projectionOps: [...execution.projectionOps]
       };
     }
   });

@@ -15,6 +15,7 @@
     "tests/ops/purchase-order-lifecycle-close.test.mjs",
     "tests/ops/qc-accept-reject.test.mjs",
     "tests/ops/receipt-void-reversal.test.mjs",
+    "tests/ops/transfer-void-reversal.test.mjs",
     "tests/ops/reservations-lifecycle.test.mjs",
     "tests/ops/transactional-idempotency-receipts.test.mjs",
     "tests/ops/transfer-idempotency.test.mjs",
