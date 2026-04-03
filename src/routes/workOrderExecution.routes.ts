@@ -750,6 +750,18 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
       });
     }
     if (
+      error?.code === 'WO_EXECUTION_RECOVERY_IRRECOVERABLE'
+      || error?.message === 'WO_EXECUTION_RECOVERY_IRRECOVERABLE'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'WO_EXECUTION_RECOVERY_IRRECOVERABLE',
+          message: 'Work-order batch replay state is irrecoverable for this idempotency key.',
+          details: error?.details
+        }
+      });
+    }
+    if (
       error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
       error?.message === 'WO_POSTING_IDEMPOTENCY_CONFLICT' ||
       error?.message === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE' ||
@@ -987,6 +999,18 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
         error: {
           code: 'REPLAY_CORRUPTION_DETECTED',
           message: 'Replay repair detected corrupted authoritative work-order movement state.',
+          details: error?.details
+        }
+      });
+    }
+    if (
+      error?.code === 'WO_EXECUTION_RECOVERY_IRRECOVERABLE'
+      || error?.message === 'WO_EXECUTION_RECOVERY_IRRECOVERABLE'
+    ) {
+      return res.status(409).json({
+        error: {
+          code: 'WO_EXECUTION_RECOVERY_IRRECOVERABLE',
+          message: 'Work-order production replay state is irrecoverable for this idempotency key.',
           details: error?.details
         }
       });

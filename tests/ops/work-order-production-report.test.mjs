@@ -170,6 +170,27 @@ async function qcAcceptReceiptLine(token, receiptLineId, quantity) {
   }
 }
 
+async function retargetReportProductionReplayMovement(db, tenantId, idempotencyKey, movementId) {
+  await db.query(
+    `UPDATE idempotency_keys
+        SET response_body = jsonb_set(
+              jsonb_set(
+                response_body,
+                '{issueMovementId}',
+                to_jsonb($3::text),
+                true
+              ),
+              '{componentIssueMovementId}',
+              to_jsonb($3::text),
+              true
+            ),
+            updated_at = now()
+      WHERE tenant_id = $1
+        AND key = $2`,
+    [tenantId, idempotencyKey, movementId]
+  );
+}
+
 async function runStrictInvariantsForTenant(tenantId) {
   await execFileAsync(
     process.execPath,
@@ -522,7 +543,7 @@ test('report-production same-key replay bypasses fresh batch validation drift af
   await runStrictInvariantsForTenant(tenantId);
 });
 
-test('replay tolerates execution linkage drift without duplicate movements', { timeout: 240000 }, async () => {
+test('report-production retry repairs recoverable partial execution linkage without duplicate movements', { timeout: 240000 }, async () => {
   const tenantSlug = `wo-report-true-partial-${randomUUID().slice(0, 8)}`;
   const session = await ensureDbSession({
     apiRequest,
@@ -652,7 +673,15 @@ test('replay tolerates execution linkage drift without duplicate movements', { t
     [tenantId, workOrder.id, idempotencyKey]
   );
   assert.equal(Number(executionCountRes.rows[0]?.count ?? 0), 1);
-
+  const repairedExecutionRes = await db.query(
+    `SELECT consumption_movement_id, production_movement_id
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, executionId]
+  );
+  assert.equal(repairedExecutionRes.rows[0]?.consumption_movement_id, componentIssueMovementId);
+  assert.equal(repairedExecutionRes.rows[0]?.production_movement_id, productionReceiptMovementId);
   const componentCostAfterRes = await db.query(
     `SELECT COALESCE(SUM(extended_cost), 0)::numeric AS total_component_cost
        FROM cost_layer_consumptions
@@ -673,17 +702,190 @@ test('replay tolerates execution linkage drift without duplicate movements', { t
   const fgCostAfter = Number(fgCostAfterRes.rows[0]?.total_fg_cost ?? 0);
   assert.ok(Math.abs(componentCostAfter - componentCostBefore) < 0.0001);
   assert.ok(Math.abs(fgCostAfter - fgCostBefore) < 0.0001);
-  await assert.rejects(runStrictInvariantsForTenant(tenantId), (error) => {
-    const combinedOutput = `${error?.stdout ?? ''}\n${error?.stderr ?? ''}\n${error?.message ?? ''}`;
-    assert.match(
-      combinedOutput,
-      /work[-_ ]order production link integrity|consumption_movement_id|production_movement_id/i
-    );
-    return true;
-  });
+  await runStrictInvariantsForTenant(tenantId);
 });
 
-test('report-production retry with same idempotency key completes lot-linking without duplicate posting', { timeout: 240000 }, async () => {
+test('report-production replay tolerates conflicting execution linkage drift without repair or duplicate movements', { timeout: 240000 }, async () => {
+  const tenantSlug = `wo-report-tolerated-drift-${randomUUID().slice(0, 8)}`;
+  const session = await ensureDbSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName: 'WO Report Production Tolerated Drift Tenant'
+  });
+  const token = session.accessToken;
+  const tenantId = session.tenant.id;
+  const db = session.pool;
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:tolerated-drift` });
+  const vendorId = await createVendor(token);
+  const component = await createItem(token, defaults.SELLABLE.id, 'RAW-TOLERATED', 'raw');
+  const outputItem = await createItem(token, defaults.QA.id, 'FG-TOLERATED', 'finished');
+
+  const receiptLineId = await createReceipt({
+    token,
+    vendorId,
+    itemId: component,
+    locationId: defaults.SELLABLE.id,
+    quantity: 30,
+    unitCost: 5,
+    keySuffix: tenantSlug
+  });
+  await qcAcceptReceiptLine(token, receiptLineId, 30);
+
+  const bomId = await createBom(token, outputItem, [
+    { componentItemId: component, quantityPer: 1 }
+  ], tenantSlug);
+  const workOrderA = await createWorkOrder(token, {
+    kind: 'production',
+    outputItemId: outputItem,
+    outputUom: 'each',
+    quantityPlanned: 5,
+    bomId,
+    defaultConsumeLocationId: defaults.SELLABLE.id,
+    defaultProduceLocationId: defaults.QA.id
+  });
+  const workOrderB = await createWorkOrder(token, {
+    kind: 'production',
+    outputItemId: outputItem,
+    outputUom: 'each',
+    quantityPlanned: 5,
+    bomId,
+    defaultConsumeLocationId: defaults.SELLABLE.id,
+    defaultProduceLocationId: defaults.QA.id
+  });
+
+  const keyA = `wo-report-tolerated-drift:${tenantSlug}:A`;
+  const keyB = `wo-report-tolerated-drift:${tenantSlug}:B`;
+  const bodyA = {
+    warehouseId: warehouse.id,
+    outputQty: 5,
+    outputUom: 'each',
+    occurredAt: '2026-02-22T00:00:00.000Z',
+    idempotencyKey: keyA
+  };
+  const bodyB = {
+    warehouseId: warehouse.id,
+    outputQty: 5,
+    outputUom: 'each',
+    occurredAt: '2026-02-23T00:00:00.000Z',
+    idempotencyKey: keyB
+  };
+
+  const first = await apiRequest('POST', `/work-orders/${workOrderA.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': keyA },
+    body: bodyA
+  });
+  assert.equal(first.res.status, 201, JSON.stringify(first.payload));
+
+  const second = await apiRequest('POST', `/work-orders/${workOrderB.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': keyB },
+    body: bodyB
+  });
+  assert.equal(second.res.status, 201, JSON.stringify(second.payload));
+
+  const firstExecutionRes = await db.query(
+    `SELECT id, consumption_movement_id
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND work_order_id = $2
+        AND idempotency_key = $3`,
+    [tenantId, workOrderA.id, keyA]
+  );
+  assert.equal(firstExecutionRes.rowCount, 1);
+  const firstExecutionId = firstExecutionRes.rows[0].id;
+  const originalIssueMovementId = firstExecutionRes.rows[0].consumption_movement_id;
+
+  await db.query(
+    `UPDATE work_order_executions
+        SET consumption_movement_id = $1
+      WHERE tenant_id = $2
+        AND id = $3`,
+    [first.payload.productionReceiptMovementId, tenantId, firstExecutionId]
+  );
+
+  const movementCountBefore = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')`,
+    [tenantId]
+  );
+  assert.equal(Number(movementCountBefore.rows[0]?.count ?? 0), 4);
+
+  const replay = await apiRequest('POST', `/work-orders/${workOrderA.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': keyA },
+    body: bodyA
+  });
+  assert.equal(replay.res.status, 200, JSON.stringify(replay.payload));
+  assert.equal(replay.payload.replayed, true);
+  assert.equal(replay.payload.componentIssueMovementId, originalIssueMovementId);
+  assert.equal(replay.payload.productionReceiptMovementId, first.payload.productionReceiptMovementId);
+
+  const movementCountAfter = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')`,
+    [tenantId]
+  );
+  assert.equal(Number(movementCountAfter.rows[0]?.count ?? 0), 4);
+
+  const driftedExecutionRes = await db.query(
+    `SELECT consumption_movement_id
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, firstExecutionId]
+  );
+  assert.equal(driftedExecutionRes.rows[0]?.consumption_movement_id, first.payload.productionReceiptMovementId);
+
+  const invariantRes = await db.query(
+    `WITH posted AS (
+       SELECT e.id AS work_order_execution_id,
+              e.consumption_movement_id,
+              e.production_movement_id
+         FROM work_order_executions e
+        WHERE e.tenant_id = $1
+          AND e.status = 'posted'
+     ),
+     linked AS (
+       SELECT p.work_order_execution_id,
+              issue.movement_type AS issue_type,
+              issue.source_type AS issue_source_type,
+              issue.source_id AS issue_source_id,
+              prod.movement_type AS production_type,
+              prod.source_type AS production_source_type,
+              prod.source_id AS production_source_id
+         FROM posted p
+         LEFT JOIN inventory_movements issue
+           ON issue.id = p.consumption_movement_id
+          AND issue.tenant_id = $1
+         LEFT JOIN inventory_movements prod
+           ON prod.id = p.production_movement_id
+          AND prod.tenant_id = $1
+      )
+      SELECT COUNT(*)::int AS count
+        FROM linked
+       WHERE work_order_execution_id = $2
+         AND (
+           issue_type <> 'issue'
+           OR issue_source_type <> 'work_order_batch_post_issue'
+           OR issue_source_id IS DISTINCT FROM work_order_execution_id::text
+           OR production_type <> 'receive'
+           OR production_source_type <> 'work_order_batch_post_completion'
+           OR production_source_id IS DISTINCT FROM work_order_execution_id::text
+         )`,
+    [tenantId, firstExecutionId]
+  );
+  assert.equal(Number(invariantRes.rows[0]?.count ?? 0), 1, 'tolerated drift should remain visible to the link-integrity invariant');
+});
+
+test('report-production retry repairs recoverable partial lot-link state without duplicate posting', { timeout: 240000 }, async () => {
   const tenantSlug = `wo-report-lot-repair-${randomUUID().slice(0, 8)}`;
   const session = await ensureDbSession({
     apiRequest,
@@ -800,6 +1002,159 @@ test('report-production retry with same idempotency key completes lot-linking wi
     [tenantId, executionRes.rows[0].id, outputLotId]
   );
   assert.equal(Number(lotLinkRes.rows[0].count), 1, 'produce lot link must be recorded exactly once');
+
+  const replayAgain = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: payload
+  });
+  assert.equal(replayAgain.res.status, 200, JSON.stringify(replayAgain.payload));
+  assert.equal(replayAgain.payload?.replayed, true);
+
+  const movementResAfterRepair = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_id = $2
+        AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')`,
+    [tenantId, executionRes.rows[0].id]
+  );
+  assert.equal(Number(movementResAfterRepair.rows[0].count), 2, 'repair retries must keep movement count stable');
+
+  await runStrictInvariantsForTenant(tenantId);
+});
+
+test('report-production replay fails closed on irrecoverable partial state with no mutation', { timeout: 240000 }, async () => {
+  const tenantSlug = `wo-report-irrecoverable-${randomUUID().slice(0, 8)}`;
+  const session = await ensureDbSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName: 'WO Report Production Irrecoverable Tenant'
+  });
+  const token = session.accessToken;
+  const tenantId = session.tenant.id;
+  const db = session.pool;
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:irrecoverable` });
+  const vendorId = await createVendor(token);
+  const component = await createItem(token, defaults.SELLABLE.id, 'RAW-IRREC', 'raw');
+  const outputItem = await createItem(token, defaults.QA.id, 'FG-IRREC', 'finished');
+
+  const receiptLineId = await createReceipt({
+    token,
+    vendorId,
+    itemId: component,
+    locationId: defaults.SELLABLE.id,
+    quantity: 20,
+    unitCost: 7,
+    keySuffix: tenantSlug
+  });
+  await qcAcceptReceiptLine(token, receiptLineId, 20);
+
+  const bomId = await createBom(token, outputItem, [
+    { componentItemId: component, quantityPer: 1 }
+  ], tenantSlug);
+  const workOrder = await createWorkOrder(token, {
+    kind: 'production',
+    outputItemId: outputItem,
+    outputUom: 'each',
+    quantityPlanned: 5,
+    bomId,
+    defaultConsumeLocationId: defaults.SELLABLE.id,
+    defaultProduceLocationId: defaults.QA.id
+  });
+
+  const idempotencyKey = `wo-report-irrecoverable:${tenantSlug}:1`;
+  const requestBody = {
+    warehouseId: warehouse.id,
+    outputQty: 5,
+    outputUom: 'each',
+    occurredAt: '2026-02-22T00:00:00.000Z',
+    idempotencyKey
+  };
+
+  const first = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: requestBody
+  });
+  assert.equal(first.res.status, 201, JSON.stringify(first.payload));
+
+  const executionRes = await db.query(
+    `SELECT id
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND work_order_id = $2
+        AND idempotency_key = $3`,
+    [tenantId, workOrder.id, idempotencyKey]
+  );
+  assert.equal(executionRes.rowCount, 1);
+  const executionId = executionRes.rows[0].id;
+
+  const countsBefore = await db.query(
+    `SELECT
+        (SELECT COUNT(*)::int
+           FROM inventory_movements
+          WHERE tenant_id = $1
+            AND source_id = $2::text
+            AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')) AS movement_count,
+        (SELECT COUNT(*)::int
+           FROM work_order_executions
+          WHERE tenant_id = $1
+            AND work_order_id = $3
+            AND idempotency_key = $4) AS execution_count,
+        (SELECT COUNT(*)::int
+           FROM work_order_lot_links
+          WHERE tenant_id = $1
+            AND work_order_execution_id = $5) AS lot_link_count,
+        (SELECT COUNT(*)::int
+           FROM inventory_movement_lots imlot
+           JOIN inventory_movement_lines iml
+             ON iml.id = imlot.inventory_movement_line_id
+            AND iml.tenant_id = imlot.tenant_id
+          WHERE imlot.tenant_id = $1
+            AND iml.movement_id = $6) AS movement_lot_count`,
+    [tenantId, executionId, workOrder.id, idempotencyKey, executionId, first.payload.productionReceiptMovementId]
+  );
+
+  await retargetReportProductionReplayMovement(db, tenantId, idempotencyKey, randomUUID());
+
+  const replay = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: requestBody
+  });
+  assert.equal(replay.res.status, 409, JSON.stringify(replay.payload));
+  assert.equal(replay.payload?.error?.code, 'WO_EXECUTION_RECOVERY_IRRECOVERABLE');
+
+  const countsAfter = await db.query(
+    `SELECT
+        (SELECT COUNT(*)::int
+           FROM inventory_movements
+          WHERE tenant_id = $1
+            AND source_id = $2::text
+            AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')) AS movement_count,
+        (SELECT COUNT(*)::int
+           FROM work_order_executions
+          WHERE tenant_id = $1
+            AND work_order_id = $3
+            AND idempotency_key = $4) AS execution_count,
+        (SELECT COUNT(*)::int
+           FROM work_order_lot_links
+          WHERE tenant_id = $1
+            AND work_order_execution_id = $5) AS lot_link_count,
+        (SELECT COUNT(*)::int
+           FROM inventory_movement_lots imlot
+           JOIN inventory_movement_lines iml
+             ON iml.id = imlot.inventory_movement_line_id
+            AND iml.tenant_id = imlot.tenant_id
+          WHERE imlot.tenant_id = $1
+            AND iml.movement_id = $6) AS movement_lot_count`,
+    [tenantId, executionId, workOrder.id, idempotencyKey, executionId, first.payload.productionReceiptMovementId]
+  );
+  assert.deepEqual(countsAfter.rows[0], countsBefore.rows[0], 'irrecoverable replay must not mutate persisted counts');
 });
 
 test('report-production backflush depletes FIFO layers in order when consumption crosses layers', { timeout: 240000 }, async () => {

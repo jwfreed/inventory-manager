@@ -4,6 +4,10 @@ import {
   buildPostedDocumentReplayResult,
   buildReplayCorruptionError
 } from '../modules/platform/application/inventoryMutationSupport';
+import {
+  classifyExecutionState,
+  type ExecutionStateClassification
+} from '../domain/workOrders/executionStateClassifier';
 import { buildTransferReplayResult } from './transfers.service';
 import { getWarehouseDefaultLocationId } from './warehouseDefaults.service';
 import {
@@ -22,6 +26,96 @@ function domainError(code: string, details?: Record<string, unknown>) {
   error.code = code;
   error.details = details;
   return error;
+}
+
+function buildIrrecoverableExecutionStateError(params: {
+  tenantId: string;
+  workOrderId: string;
+  executionId: string;
+  classification: ExecutionStateClassification;
+}) {
+  return domainError('WO_EXECUTION_RECOVERY_IRRECOVERABLE', {
+    tenantId: params.tenantId,
+    workOrderId: params.workOrderId,
+    executionId: params.executionId,
+    executionState: params.classification.state,
+    reason: params.classification.reason ?? 'execution_state_irrecoverable',
+    ...params.classification.details
+  });
+}
+
+async function applyExecutionLinkRepair(params: {
+  client: PoolClient;
+  tenantId: string;
+  executionId: string;
+  repairPatch: NonNullable<ExecutionStateClassification['repairPatch']>;
+}) {
+  await params.client.query(
+    `UPDATE work_order_executions
+        SET consumption_movement_id = COALESCE(consumption_movement_id, $1),
+            production_movement_id = COALESCE(production_movement_id, $2)
+      WHERE tenant_id = $3
+        AND id = $4`,
+    [
+      params.repairPatch.consumptionMovementId ?? null,
+      params.repairPatch.productionMovementId ?? null,
+      params.tenantId,
+      params.executionId
+    ]
+  );
+}
+
+async function resolveBatchExecutionReplayState(params: {
+  tenantId: string;
+  workOrderId: string;
+  executionId: string;
+  issueMovementId?: string | null;
+  receiveMovementId?: string | null;
+  client: PoolClient;
+}) {
+  const classification = await classifyExecutionState({
+    client: params.client,
+    tenantId: params.tenantId,
+    workOrderId: params.workOrderId,
+    executionId: params.executionId,
+    expectedIssueMovementId: params.issueMovementId ?? null,
+    expectedReceiveMovementId: params.receiveMovementId ?? null
+  });
+  if (!classification.isReplayable || !classification.issueMovementId || !classification.receiveMovementId) {
+    throw buildIrrecoverableExecutionStateError({
+      tenantId: params.tenantId,
+      workOrderId: params.workOrderId,
+      executionId: params.executionId,
+      classification
+    });
+  }
+  if (classification.isRecoverable && classification.repairPatch) {
+    await applyExecutionLinkRepair({
+      client: params.client,
+      tenantId: params.tenantId,
+      executionId: params.executionId,
+      repairPatch: classification.repairPatch
+    });
+  }
+  return classification;
+}
+
+export async function classifyBatchExecutionReplayState(params: {
+  tenantId: string;
+  workOrderId: string;
+  executionId: string;
+  issueMovementId?: string | null;
+  receiveMovementId?: string | null;
+  client: PoolClient;
+}) {
+  return classifyExecutionState({
+    client: params.client,
+    tenantId: params.tenantId,
+    workOrderId: params.workOrderId,
+    executionId: params.executionId,
+    expectedIssueMovementId: params.issueMovementId ?? null,
+    expectedReceiveMovementId: params.receiveMovementId ?? null
+  });
 }
 
 export async function ensurePostedMovementReady(
@@ -105,41 +199,21 @@ export async function findPostedBatchByIdempotencyKey(
       executionId: row.id
     });
   }
-  if (row.status !== 'posted') {
-    throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-      reason: 'execution_not_posted',
-      missingExecutionIds: [row.id],
-      hint: 'Retry with the same Idempotency-Key or contact admin'
-    });
-  }
-  if (!row.consumption_movement_id || !row.production_movement_id) {
-    throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-      reason: 'missing_execution_movements',
-      missingExecutionIds: [row.id],
-      hint: 'Retry with the same Idempotency-Key or contact admin'
-    });
-  }
-  try {
-    await ensurePostedMovementReady(client, tenantId, row.consumption_movement_id);
-    await ensurePostedMovementReady(client, tenantId, row.production_movement_id);
-  } catch (error: any) {
-    if (
-      error?.message === 'WO_POSTING_MOVEMENT_MISSING' ||
-      error?.message === 'WO_POSTING_IDEMPOTENCY_INCOMPLETE'
-    ) {
-      throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
-        reason: 'movement_not_ready',
-        missingExecutionIds: [row.id],
-        hint: 'Retry with the same Idempotency-Key or contact admin'
-      });
-    }
-    throw error;
-  }
+  const classification = await resolveBatchExecutionReplayState({
+    tenantId,
+    workOrderId: row.work_order_id,
+    executionId: row.id,
+    issueMovementId: row.consumption_movement_id,
+    receiveMovementId: row.production_movement_id,
+    client
+  });
+  const resolvedIssueMovementId = classification.issueMovementId!;
+  const resolvedReceiveMovementId = classification.receiveMovementId!;
   return {
     executionId: row.id,
     workOrderId: row.work_order_id,
-    issueMovementId: row.consumption_movement_id,
-    receiveMovementId: row.production_movement_id,
+    issueMovementId: resolvedIssueMovementId,
+    receiveMovementId: resolvedReceiveMovementId,
     quantityCompleted: roundQuantity(toNumber(row.quantity_completed ?? 0)),
     workOrderStatus: row.work_order_status
   };
@@ -234,16 +308,26 @@ export async function replayBatch(params: {
   preFetchIntegrityCheck: () => Promise<void>;
   fetchAggregateView: () => Promise<unknown | null>;
 }) {
-  return buildPostedDocumentReplayResult({
+  const classification = await resolveBatchExecutionReplayState({
+    tenantId: params.tenantId,
+    workOrderId: params.workOrderId,
+    executionId: params.executionId,
+    issueMovementId: params.issueMovementId,
+    receiveMovementId: params.receiveMovementId,
+    client: params.client
+  });
+  const resolvedIssueMovementId = classification.issueMovementId!;
+  const resolvedReceiveMovementId = classification.receiveMovementId!;
+  const replay = await buildPostedDocumentReplayResult({
     tenantId: params.tenantId,
     authoritativeMovements: [
       {
-        movementId: params.issueMovementId,
+        movementId: resolvedIssueMovementId,
         expectedLineCount: params.expectedIssueLineCount,
         expectedDeterministicHash: params.expectedIssueDeterministicHash ?? null
       },
       {
-        movementId: params.receiveMovementId,
+        movementId: resolvedReceiveMovementId,
         expectedLineCount: params.expectedReceiveLineCount,
         expectedDeterministicHash: params.expectedReceiveDeterministicHash ?? null
       }
@@ -253,17 +337,29 @@ export async function replayBatch(params: {
     fetchAggregateView: params.fetchAggregateView,
     aggregateNotFoundError: new Error('WO_EXECUTION_NOT_FOUND'),
     authoritativeEvents: [
-      buildInventoryMovementPostedEvent(params.issueMovementId, params.idempotencyKey ?? null),
-      buildInventoryMovementPostedEvent(params.receiveMovementId, params.idempotencyKey ?? null),
+      buildInventoryMovementPostedEvent(resolvedIssueMovementId, params.idempotencyKey ?? null),
+      buildInventoryMovementPostedEvent(resolvedReceiveMovementId, params.idempotencyKey ?? null),
       buildWorkOrderProductionReportedEvent({
         executionId: params.executionId,
         workOrderId: params.workOrderId,
-        issueMovementId: params.issueMovementId,
-        receiveMovementId: params.receiveMovementId,
+        issueMovementId: resolvedIssueMovementId,
+        receiveMovementId: resolvedReceiveMovementId,
         producerIdempotencyKey: params.idempotencyKey ?? null
       })
     ]
   });
+  if (replay.responseBody && typeof replay.responseBody === 'object') {
+    const body = replay.responseBody as Record<string, unknown>;
+    return {
+      ...replay,
+      responseBody: {
+        ...body,
+        issueMovementId: resolvedIssueMovementId,
+        receiveMovementId: resolvedReceiveMovementId
+      }
+    };
+  }
+  return replay;
 }
 
 export async function replayVoid(params: {

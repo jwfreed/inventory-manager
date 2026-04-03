@@ -38,7 +38,8 @@ import {
 } from '../modules/platform/application/runInventoryCommand';
 import {
   buildPostedDocumentReplayResult,
-  buildInventoryBalanceProjectionOp
+  buildInventoryBalanceProjectionOp,
+  buildReplayCorruptionError
 } from '../modules/platform/application/inventoryMutationSupport';
 import {
   isTerminalWorkOrderStatus
@@ -1795,6 +1796,141 @@ export async function fetchWorkOrderVoidReportResult(
   };
 }
 
+type ReportProductionTraceabilitySnapshot = {
+  complete: boolean;
+  repairable: boolean;
+  outputLotId: string | null;
+  outputLotCode: string | null;
+  inputLotCount: number;
+};
+
+async function resolveReportProductionOutputLot(params: {
+  tenantId: string;
+  outputItemId: string;
+  outputLotId?: string | null;
+  outputLotCode?: string | null;
+}) {
+  if (params.outputLotId) {
+    const byId = await query<{ id: string; lot_code: string }>(
+      `SELECT id, lot_code
+         FROM lots
+        WHERE tenant_id = $1
+          AND id = $2
+          AND item_id = $3
+        LIMIT 1`,
+      [params.tenantId, params.outputLotId, params.outputItemId]
+    );
+    if (byId.rows[0]) {
+      return byId.rows[0];
+    }
+  }
+  if (!params.outputLotCode) {
+    return null;
+  }
+  const byCode = await query<{ id: string; lot_code: string }>(
+    `SELECT id, lot_code
+       FROM lots
+      WHERE tenant_id = $1
+        AND item_id = $2
+        AND lot_code = $3
+      LIMIT 1`,
+    [params.tenantId, params.outputItemId, params.outputLotCode]
+  );
+  return byCode.rows[0] ?? null;
+}
+
+async function loadReportProductionTraceabilitySnapshot(params: {
+  tenantId: string;
+  executionId: string;
+  productionMovementId: string;
+  outputItemId: string;
+  expectedOutputLotId?: string | null;
+  expectedOutputLotCode?: string | null;
+}) {
+  const executionResult = await query<{ output_lot_id: string | null }>(
+    `SELECT output_lot_id
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND id = $2
+      LIMIT 1`,
+    [params.tenantId, params.executionId]
+  );
+  const persistedOutputLotId = executionResult.rows[0]?.output_lot_id ?? null;
+  const resolvedOutputLot = await resolveReportProductionOutputLot({
+    tenantId: params.tenantId,
+    outputItemId: params.outputItemId,
+    outputLotId: persistedOutputLotId ?? params.expectedOutputLotId ?? null,
+    outputLotCode: params.expectedOutputLotCode ?? null
+  });
+  const outputLotId = resolvedOutputLot?.id ?? persistedOutputLotId ?? null;
+  const outputLotCode = resolvedOutputLot?.lot_code ?? params.expectedOutputLotCode ?? null;
+
+  const [inputLotCountResult, producedLineCountResult] = await Promise.all([
+    query<{ count: string | number }>(
+      `SELECT COUNT(*)::int AS count
+         FROM work_order_lot_links
+        WHERE tenant_id = $1
+          AND work_order_execution_id = $2
+          AND role = 'consume'`,
+      [params.tenantId, params.executionId]
+    ),
+    query<{ count: string | number }>(
+      `SELECT COUNT(*)::int AS count
+         FROM inventory_movement_lines
+        WHERE tenant_id = $1
+          AND movement_id = $2
+          AND item_id = $3
+          AND quantity_delta > 0`,
+      [params.tenantId, params.productionMovementId, params.outputItemId]
+    )
+  ]);
+  const inputLotCount = Number(inputLotCountResult.rows[0]?.count ?? 0);
+  const producedLineCount = Number(producedLineCountResult.rows[0]?.count ?? 0);
+
+  let produceLinkCount = 0;
+  let movementLotCount = 0;
+  if (outputLotId) {
+    const [produceLinkResult, movementLotResult] = await Promise.all([
+      query<{ count: string | number }>(
+        `SELECT COUNT(*)::int AS count
+           FROM work_order_lot_links
+          WHERE tenant_id = $1
+            AND work_order_execution_id = $2
+            AND role = 'produce'
+            AND item_id = $3
+            AND lot_id = $4`,
+        [params.tenantId, params.executionId, params.outputItemId, outputLotId]
+      ),
+      query<{ count: string | number }>(
+        `SELECT COUNT(DISTINCT iml.id)::int AS count
+           FROM inventory_movement_lots imlot
+           JOIN inventory_movement_lines iml
+             ON iml.id = imlot.inventory_movement_line_id
+            AND iml.tenant_id = imlot.tenant_id
+          WHERE imlot.tenant_id = $1
+            AND iml.movement_id = $2
+            AND iml.item_id = $3
+            AND iml.quantity_delta > 0
+            AND imlot.lot_id = $4`,
+        [params.tenantId, params.productionMovementId, params.outputItemId, outputLotId]
+      )
+    ]);
+    produceLinkCount = Number(produceLinkResult.rows[0]?.count ?? 0);
+    movementLotCount = Number(movementLotResult.rows[0]?.count ?? 0);
+  }
+
+  return {
+    outputLotId,
+    outputLotCode,
+    inputLotCount,
+    repairable: !!outputLotId && producedLineCount > 0,
+    complete: !!outputLotId
+      && produceLinkCount > 0
+      && producedLineCount > 0
+      && movementLotCount === producedLineCount
+  } satisfies ReportProductionTraceabilitySnapshot;
+}
+
 export async function reportWorkOrderProduction(
   tenantId: string,
   workOrderId: string,
@@ -1850,6 +1986,58 @@ export async function reportWorkOrderProduction(
   }
 
   let lotTracking: Awaited<ReturnType<typeof lotTraceability.appendTraceabilityLinks>>;
+  if (batchResult.replayed) {
+    const traceabilitySnapshot = await loadReportProductionTraceabilitySnapshot({
+      tenantId,
+      executionId: batchResult.executionId,
+      productionMovementId: batchResult.receiveMovementId,
+      outputItemId: plan.traceability.outputItemId,
+      expectedOutputLotId: plan.traceability.outputLotId ?? null,
+      expectedOutputLotCode: plan.traceability.outputLotCode ?? null
+    });
+    const replayState = await withTransaction((client) => replayEngine.classifyBatchExecutionReplayState({
+      tenantId,
+      workOrderId,
+      executionId: batchResult.executionId,
+      client,
+      issueMovementId: batchResult.issueMovementId,
+      receiveMovementId: batchResult.receiveMovementId
+    }));
+    if (replayState.state === 'IRRECOVERABLE') {
+      throw domainError('WO_EXECUTION_RECOVERY_IRRECOVERABLE', {
+        tenantId,
+        workOrderId,
+        executionId: batchResult.executionId,
+        executionState: replayState.state,
+        reason: replayState.reason ?? 'report_production_replay_irrecoverable',
+        ...replayState.details
+      });
+    }
+    if (traceabilitySnapshot.complete) {
+      if (!traceabilitySnapshot.outputLotId || !traceabilitySnapshot.outputLotCode) {
+        throw buildReplayCorruptionError({
+          tenantId,
+          workOrderId,
+          executionId: batchResult.executionId,
+          reason: 'report_production_traceability_snapshot_missing'
+        });
+      }
+      lotTracking = {
+        outputLotId: traceabilitySnapshot.outputLotId,
+        outputLotCode: traceabilitySnapshot.outputLotCode,
+        inputLotCount: traceabilitySnapshot.inputLotCount
+      };
+      return {
+        workOrderId,
+        productionReportId: batchResult.executionId,
+        componentIssueMovementId: batchResult.issueMovementId,
+        productionReceiptMovementId: batchResult.receiveMovementId,
+        idempotencyKey: batchResult.idempotencyKey ?? policy.reportIdempotencyKey,
+        replayed: batchResult.replayed,
+        lotTracking
+      };
+    }
+  }
   try {
     lotTracking = await lotTraceability.appendTraceabilityLinks(tenantId, {
       executionId: batchResult.executionId,
