@@ -1894,7 +1894,7 @@ async function hasExistingReportProductionIdempotencyClaim(tenantId: string, ide
       LIMIT 1`,
     [tenantId, idempotencyKey]
   );
-  return existing.rowCount > 0;
+  return (existing.rowCount ?? 0) > 0;
 }
 
 export async function voidWorkOrderProductionReport(
