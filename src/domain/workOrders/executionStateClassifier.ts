@@ -1,5 +1,11 @@
 import type { PoolClient } from 'pg';
 import { roundQuantity, toNumber } from '../../lib/numbers';
+import {
+  decideExecutionTraceability,
+  type RequiredAction,
+  type TraceabilityMetadata,
+  type TraceabilityStatus
+} from './executionTraceabilityDecision';
 
 export type ExecutionReplayState =
   | 'VALID_COMPLETE'
@@ -30,18 +36,7 @@ type SourceBackedMovementRow = {
   line_count: string | number;
 };
 
-export type TraceabilityStatus =
-  | 'NOT_APPLICABLE'
-  | 'COMPLETE'
-  | 'INCOMPLETE_REPAIRABLE'
-  | 'CONFLICTING'
-  | 'UNRESOLVABLE';
-
-export type ExecutionRequiredAction =
-  | { type: 'REPAIR_EXECUTION_LINKS' }
-  | { type: 'APPEND_TRACEABILITY' }
-  | { type: 'NONE' }
-  | { type: 'FAIL'; reason: string };
+export type ExecutionRequiredAction = RequiredAction;
 
 export type ExecutionStateClassification = {
   state: ExecutionReplayState;
@@ -59,11 +54,7 @@ export type ExecutionStateClassification = {
   workOrderStatus: string | null;
   traceabilityStatus: TraceabilityStatus;
   requiredActions: ExecutionRequiredAction[];
-  metadata: {
-    outputLotId?: string;
-    outputLotCode?: string;
-    inputLotCount?: number;
-  };
+  metadata: TraceabilityMetadata;
   reason: string | null;
   details: Record<string, unknown>;
 };
@@ -211,235 +202,6 @@ function movementReadyDetails(
   return { ready: true, reason: null, details: {} };
 }
 
-async function detectTraceabilityStatus(params: {
-  client: PoolClient;
-  tenantId: string;
-  executionId: string;
-  outputItemId: string;
-  receiveMovementId: string;
-  executionOutputLotId: string | null;
-  receiveMovementLotId: string | null;
-}) {
-  const authoritativeOutputLotId = trimmedId(params.executionOutputLotId) ?? trimmedId(params.receiveMovementLotId);
-  const [inputLotCountResult, producedLinesResult] = await Promise.all([
-    params.client.query<{ count: string | number }>(
-      `SELECT COUNT(*)::int AS count
-         FROM work_order_lot_links
-        WHERE tenant_id = $1
-          AND work_order_execution_id = $2
-          AND role = 'consume'`,
-      [params.tenantId, params.executionId]
-    ),
-    params.client.query<{ count: string | number }>(
-      `SELECT COUNT(*)::int AS count
-         FROM inventory_movement_lines
-        WHERE tenant_id = $1
-          AND movement_id = $2
-          AND item_id = $3
-          AND COALESCE(quantity_delta_canonical, quantity_delta) > 0`,
-      [params.tenantId, params.receiveMovementId, params.outputItemId]
-    )
-  ]);
-  const inputLotCount = Number(inputLotCountResult.rows[0]?.count ?? 0);
-  const producedLineCount = Number(producedLinesResult.rows[0]?.count ?? 0);
-
-  if (
-    trimmedId(params.executionOutputLotId)
-    && trimmedId(params.receiveMovementLotId)
-    && params.executionOutputLotId !== params.receiveMovementLotId
-  ) {
-    return {
-      status: 'CONFLICTING' as const,
-      metadata: {
-        ...(trimmedId(params.executionOutputLotId) ? { outputLotId: trimmedId(params.executionOutputLotId)! } : {}),
-        inputLotCount
-      },
-      reason: 'traceability_authoritative_lot_mismatch',
-      details: {
-        executionOutputLotId: params.executionOutputLotId,
-        receiveMovementLotId: params.receiveMovementLotId
-      }
-    };
-  }
-
-  if (!authoritativeOutputLotId) {
-    const [produceLinkAnyResult, movementLotAnyResult] = await Promise.all([
-      params.client.query<{ count: string | number }>(
-        `SELECT COUNT(*)::int AS count
-           FROM work_order_lot_links
-          WHERE tenant_id = $1
-            AND work_order_execution_id = $2
-            AND role = 'produce'
-            AND item_id = $3`,
-        [params.tenantId, params.executionId, params.outputItemId]
-      ),
-      params.client.query<{ count: string | number }>(
-        `SELECT COUNT(DISTINCT lot.inventory_movement_line_id)::int AS count
-           FROM inventory_movement_lots lot
-           JOIN inventory_movement_lines iml
-             ON iml.id = lot.inventory_movement_line_id
-            AND iml.tenant_id = lot.tenant_id
-          WHERE lot.tenant_id = $1
-            AND iml.movement_id = $2
-            AND iml.item_id = $3
-            AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0`,
-        [params.tenantId, params.receiveMovementId, params.outputItemId]
-      )
-    ]);
-    const produceLinkAnyCount = Number(produceLinkAnyResult.rows[0]?.count ?? 0);
-    const movementLotAnyCount = Number(movementLotAnyResult.rows[0]?.count ?? 0);
-    if (produceLinkAnyCount > 0 || movementLotAnyCount > 0) {
-      return {
-        status: 'UNRESOLVABLE' as const,
-        metadata: {
-          inputLotCount
-        },
-        reason: 'traceability_missing_authoritative_output_lot',
-        details: {
-          produceLinkAnyCount,
-          movementLotAnyCount
-        }
-      };
-    }
-    return {
-      status: 'NOT_APPLICABLE' as const,
-      metadata: {
-        inputLotCount
-      },
-      reason: null,
-      details: {}
-    };
-  }
-
-  const lotResult = await params.client.query<{ lot_code: string }>(
-    `SELECT lot_code
-       FROM lots
-      WHERE tenant_id = $1
-        AND id = $2
-        AND item_id = $3
-      LIMIT 1`,
-    [params.tenantId, authoritativeOutputLotId, params.outputItemId]
-  );
-  if (!lotResult.rows[0]) {
-    return {
-      status: 'UNRESOLVABLE' as const,
-      metadata: {
-        ...(authoritativeOutputLotId ? { outputLotId: authoritativeOutputLotId } : {}),
-        inputLotCount
-      },
-      reason: 'traceability_output_lot_missing',
-      details: {
-        outputLotId: authoritativeOutputLotId
-      }
-    };
-  }
-
-  const [produceLinkResult, produceLinkConflictResult, movementLotsResult, movementLotConflictResult] = await Promise.all([
-    params.client.query<{ count: string | number }>(
-      `SELECT COUNT(*)::int AS count
-         FROM work_order_lot_links
-        WHERE tenant_id = $1
-          AND work_order_execution_id = $2
-          AND role = 'produce'
-          AND item_id = $3
-          AND lot_id = $4`,
-      [params.tenantId, params.executionId, params.outputItemId, authoritativeOutputLotId]
-    ),
-    params.client.query<{ count: string | number }>(
-      `SELECT COUNT(*)::int AS count
-         FROM work_order_lot_links
-        WHERE tenant_id = $1
-          AND work_order_execution_id = $2
-          AND role = 'produce'
-          AND item_id = $3
-          AND lot_id <> $4`,
-      [params.tenantId, params.executionId, params.outputItemId, authoritativeOutputLotId]
-    ),
-    params.client.query<{ count: string | number }>(
-      `SELECT COUNT(DISTINCT iml.id)::int AS count
-         FROM inventory_movement_lots lot
-         JOIN inventory_movement_lines iml
-           ON iml.id = lot.inventory_movement_line_id
-          AND iml.tenant_id = lot.tenant_id
-        WHERE lot.tenant_id = $1
-          AND iml.movement_id = $2
-          AND iml.item_id = $3
-          AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
-          AND lot.lot_id = $4`,
-      [params.tenantId, params.receiveMovementId, params.outputItemId, authoritativeOutputLotId]
-    ),
-    params.client.query<{ count: string | number }>(
-      `SELECT COUNT(DISTINCT iml.id)::int AS count
-         FROM inventory_movement_lots lot
-         JOIN inventory_movement_lines iml
-           ON iml.id = lot.inventory_movement_line_id
-          AND iml.tenant_id = lot.tenant_id
-        WHERE lot.tenant_id = $1
-          AND iml.movement_id = $2
-          AND iml.item_id = $3
-          AND COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) > 0
-          AND lot.lot_id <> $4`,
-      [params.tenantId, params.receiveMovementId, params.outputItemId, authoritativeOutputLotId]
-    )
-  ]);
-
-  const produceLinkCount = Number(produceLinkResult.rows[0]?.count ?? 0);
-  const produceLinkConflictCount = Number(produceLinkConflictResult.rows[0]?.count ?? 0);
-  const movementLotCount = Number(movementLotsResult.rows[0]?.count ?? 0);
-  const movementLotConflictCount = Number(movementLotConflictResult.rows[0]?.count ?? 0);
-  const metadata = {
-    outputLotId: authoritativeOutputLotId,
-    outputLotCode: lotResult.rows[0].lot_code,
-    inputLotCount
-  };
-
-  if (produceLinkConflictCount > 0 || movementLotConflictCount > 0) {
-    return {
-      status: 'CONFLICTING' as const,
-      metadata,
-      reason: 'traceability_conflicting_linkage',
-      details: {
-        produceLinkConflictCount,
-        movementLotConflictCount,
-        outputLotId: authoritativeOutputLotId
-      }
-    };
-  }
-
-  if (producedLineCount <= 0) {
-    return {
-      status: 'UNRESOLVABLE' as const,
-      metadata,
-      reason: 'traceability_produced_lines_missing',
-      details: {
-        receiveMovementId: params.receiveMovementId,
-        outputItemId: params.outputItemId
-      }
-    };
-  }
-
-  if (produceLinkCount > 0 && movementLotCount === producedLineCount) {
-    return {
-      status: 'COMPLETE' as const,
-      metadata,
-      reason: null,
-      details: {}
-    };
-  }
-
-  return {
-    status: 'INCOMPLETE_REPAIRABLE' as const,
-    metadata,
-    reason: 'traceability_side_effects_incomplete',
-    details: {
-      outputLotId: authoritativeOutputLotId,
-      producedLineCount,
-      produceLinkCount,
-      movementLotCount
-    }
-  };
-}
-
 function trimmedId(value?: string | null) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
@@ -584,7 +346,7 @@ export async function classifyExecutionState(params: {
     executionDrift.push('execution_receive_movement_mismatch');
   }
 
-  const traceability = await detectTraceabilityStatus({
+  const traceability = await decideExecutionTraceability({
     client: params.client,
     tenantId: params.tenantId,
     executionId: execution.id,
@@ -616,7 +378,9 @@ export async function classifyExecutionState(params: {
   }
 
   if (executionDrift.length > 0) {
-    const requiredActions: ExecutionRequiredAction[] = traceability.status === 'INCOMPLETE_REPAIRABLE'
+    const requiredActions: ExecutionRequiredAction[] = traceability.requiredActions.some(
+      (action) => action.type === 'APPEND_TRACEABILITY'
+    )
       ? [{ type: 'APPEND_TRACEABILITY' }]
       : [{ type: 'NONE' }];
     return buildClassification({
@@ -639,7 +403,7 @@ export async function classifyExecutionState(params: {
   if (missingExecutionLinkage) {
     requiredActions.push({ type: 'REPAIR_EXECUTION_LINKS' });
   }
-  if (traceability.status === 'INCOMPLETE_REPAIRABLE') {
+  if (traceability.requiredActions.some((action) => action.type === 'APPEND_TRACEABILITY')) {
     requiredActions.push({ type: 'APPEND_TRACEABILITY' });
   }
 
