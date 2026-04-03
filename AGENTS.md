@@ -6,7 +6,22 @@ This repository expects Codex to operate as a domain-aware inventory maintainer,
 
 - Before any non-trivial work, inspect `AGENTS.md`, then inspect `.skills/`.
 - Identify every repo-local skill relevant to the task and use all of them together where their scopes apply.
-- Do not begin implementation until the relevant skills have shaped the task.
+- Do not begin implementation until the relevant skills have been executed and their schemas are complete.
+
+## Mandatory Pre-Execution Step
+
+For any non-trivial task:
+
+1. Identify applicable skills from `.skills/`.
+2. Execute each skill and produce its OUTPUT SCHEMA.
+3. Do not begin implementation until all schemas are complete.
+
+## Skill Execution Contract
+
+- Skills are required, not optional.
+- If a skill applies, it must be used.
+- Multiple applicable skills must all be executed.
+- Implementation without completed schemas is invalid.
 
 ## Inventory Non-Negotiables
 
@@ -22,11 +37,12 @@ This repository expects Codex to operate as a domain-aware inventory maintainer,
 
 1. Inspect repository context and the relevant inventory workflow.
 2. Read the matching repo-local skills under `.skills/`.
-3. Classify the task and list touched states, workflows, entities, and layers.
-4. Keep the change tightly scoped to the requested behavior.
-5. Preserve approved write boundaries, movement auditability, and state explicitness.
-6. Add or update tests that prove workflow integrity and failure handling.
-7. Report what was changed, what was verified, and any remaining risk.
+3. Execute every relevant skill and complete each OUTPUT SCHEMA.
+4. Use the completed schemas to classify the task and constrain the implementation.
+5. Keep the change tightly scoped to the requested behavior.
+6. Preserve approved write boundaries, movement auditability, and state explicitness.
+7. Add or update tests that prove workflow integrity and failure handling.
+8. Report what was changed, what was verified, and any remaining risk.
 
 ## Skill Routing
 
@@ -44,5 +60,16 @@ This repository expects Codex to operate as a domain-aware inventory maintainer,
 
 ## Completion Rule
 
-- Inventory work is not complete until the relevant skills were applied, the change stayed within scope, and verification covered the affected workflow and failure modes.
+- Inventory work is not complete until the relevant skills were executed, their OUTPUT SCHEMAS were completed, the change stayed within scope, and verification covered the affected workflow and failure modes.
 - Missing failure-path checks, missing audit protections, or misleading UI state handling count as incomplete work.
+
+## Verification Loop
+
+Before completing any task:
+
+- Were all relevant skills executed?
+- Are all OUTPUT SCHEMAS complete?
+- Are domain invariants preserved?
+- Are failure modes addressed?
+
+If any answer is `no`, the task is incomplete.

@@ -4,6 +4,17 @@
 
 Inventory systems fail quietly. This project prioritizes **auditability first**: ledger authority, invariant enforcement, and deterministic warehouse scoping over convenience.
 
+## Codex Workflow
+
+This repository uses a skill-based execution system.
+
+Before any non-trivial task:
+1. Read `AGENTS.md`
+2. Inspect `.skills/`
+3. Execute all relevant skills
+
+Do not implement changes without completing required skill outputs.
+
 ## Quick dev loop
 
 ```bash
