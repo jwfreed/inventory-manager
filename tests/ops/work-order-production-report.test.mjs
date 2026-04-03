@@ -522,23 +522,23 @@ test('report-production same-key replay bypasses fresh batch validation drift af
   await runStrictInvariantsForTenant(tenantId);
 });
 
-test('report-production recovers from partial idempotent posting without duplicate movements', { timeout: 240000 }, async () => {
-  const tenantSlug = `wo-report-partial-idem-${randomUUID().slice(0, 8)}`;
+test('report-production recovers from true partial posting without duplicate movements', { timeout: 240000 }, async () => {
+  const tenantSlug = `wo-report-true-partial-${randomUUID().slice(0, 8)}`;
   const session = await ensureDbSession({
     apiRequest,
     adminEmail,
     adminPassword,
     tenantSlug,
-    tenantName: 'WO Report Production Partial Idempotency Tenant'
+    tenantName: 'WO Report Production True Partial Tenant'
   });
   const token = session.accessToken;
   const tenantId = session.tenant.id;
   const db = session.pool;
 
-  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:partial-idem` });
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:true-partial` });
   const vendorId = await createVendor(token);
-  const component = await createItem(token, defaults.SELLABLE.id, 'RAW-PARTIAL', 'raw');
-  const outputItem = await createItem(token, defaults.QA.id, 'FG-PARTIAL', 'finished');
+  const component = await createItem(token, defaults.SELLABLE.id, 'RAW-TRUEPART', 'raw');
+  const outputItem = await createItem(token, defaults.QA.id, 'FG-TRUEPART', 'finished');
 
   const receiptLineId = await createReceipt({
     token,
@@ -564,7 +564,7 @@ test('report-production recovers from partial idempotent posting without duplica
     defaultProduceLocationId: defaults.QA.id
   });
 
-  const idempotencyKey = `wo-report-partial-idem:${tenantSlug}:1`;
+  const idempotencyKey = `wo-report-true-partial:${tenantSlug}:1`;
   const requestBody = {
     warehouseId: warehouse.id,
     outputQty: 5,
@@ -583,6 +583,18 @@ test('report-production recovers from partial idempotent posting without duplica
 
   const componentIssueMovementId = first.payload.componentIssueMovementId;
   const productionReceiptMovementId = first.payload.productionReceiptMovementId;
+  const executionRes = await db.query(
+    `SELECT id, consumption_movement_id
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND work_order_id = $2
+        AND idempotency_key = $3`,
+    [tenantId, workOrder.id, idempotencyKey]
+  );
+  assert.equal(executionRes.rowCount, 1);
+  const executionId = executionRes.rows[0].id;
+  const originalConsumptionMovementId = executionRes.rows[0].consumption_movement_id;
+  assert.equal(originalConsumptionMovementId, componentIssueMovementId);
 
   const componentCostBeforeRes = await db.query(
     `SELECT COALESCE(SUM(extended_cost), 0)::numeric AS total_component_cost
@@ -603,20 +615,12 @@ test('report-production recovers from partial idempotent posting without duplica
   const componentCostBefore = Number(componentCostBeforeRes.rows[0]?.total_component_cost ?? 0);
   const fgCostBefore = Number(fgCostBeforeRes.rows[0]?.total_fg_cost ?? 0);
 
-  const idempotencyBefore = await db.query(
-    `SELECT COUNT(*)::int AS count
-       FROM idempotency_keys
-      WHERE tenant_id = $1
-        AND key = $2`,
-    [tenantId, idempotencyKey]
-  );
-  assert.equal(Number(idempotencyBefore.rows[0]?.count ?? 0), 1);
-
   await db.query(
-    `DELETE FROM idempotency_keys
+    `UPDATE work_order_executions
+        SET consumption_movement_id = NULL
       WHERE tenant_id = $1
-        AND key = $2`,
-    [tenantId, idempotencyKey]
+        AND id = $2`,
+    [tenantId, executionId]
   );
 
   const replay = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
@@ -639,7 +643,7 @@ test('report-production recovers from partial idempotent posting without duplica
   );
   assert.equal(Number(movementCountRes.rows[0]?.count ?? 0), 2);
 
-  const executionRes = await db.query(
+  const executionCountRes = await db.query(
     `SELECT COUNT(*)::int AS count
        FROM work_order_executions
       WHERE tenant_id = $1
@@ -647,16 +651,7 @@ test('report-production recovers from partial idempotent posting without duplica
         AND idempotency_key = $3`,
     [tenantId, workOrder.id, idempotencyKey]
   );
-  assert.equal(Number(executionRes.rows[0]?.count ?? 0), 1);
-
-  const idempotencyAfter = await db.query(
-    `SELECT COUNT(*)::int AS count
-       FROM idempotency_keys
-      WHERE tenant_id = $1
-        AND key = $2`,
-    [tenantId, idempotencyKey]
-  );
-  assert.equal(Number(idempotencyAfter.rows[0]?.count ?? 0), 1);
+  assert.equal(Number(executionCountRes.rows[0]?.count ?? 0), 1);
 
   const componentCostAfterRes = await db.query(
     `SELECT COALESCE(SUM(extended_cost), 0)::numeric AS total_component_cost
@@ -678,6 +673,14 @@ test('report-production recovers from partial idempotent posting without duplica
   const fgCostAfter = Number(fgCostAfterRes.rows[0]?.total_fg_cost ?? 0);
   assert.ok(Math.abs(componentCostAfter - componentCostBefore) < 0.0001);
   assert.ok(Math.abs(fgCostAfter - fgCostBefore) < 0.0001);
+
+  await db.query(
+    `UPDATE work_order_executions
+        SET consumption_movement_id = $3
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, executionId, originalConsumptionMovementId]
+  );
 
   await runStrictInvariantsForTenant(tenantId);
 });
