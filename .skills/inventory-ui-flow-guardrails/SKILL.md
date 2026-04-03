@@ -34,6 +34,18 @@ Keep inventory UI flows aligned with backend truth so the interface does not mis
 - UI must not imply completion for partially completed workflows.
 - UI must show blocking reasons for disabled actions.
 - UI must not allow submission of actions that backend will reject due to state constraints.
+- Critical inventory states must be visually dominant (position, size, contrast)
+- Related states must be grouped and chunked visually
+- UI must be scannable within 5 seconds by an operator
+- Do not present more than 4-5 primary states simultaneously without grouping
+- Primary actions must be visually distinct from secondary actions
+- Use spacing and grouping to communicate relationships, not labels alone
+- Avoid dense layouts that require sequential reading to understand state
+- All valid actions must have clear visual signifiers (buttons, affordances, or controls)
+- Users must be able to identify available actions without reading detailed instructions
+- Disabled actions must indicate:
+  - why they are blocked
+  - what condition is required to enable them
 
 ## OUTPUT EXPECTATIONS
 - State the UI states and invalid actions clearly.
@@ -43,6 +55,10 @@ Keep inventory UI flows aligned with backend truth so the interface does not mis
 - Explicitly state how UI prevents invalid actions.
 - Explicitly state how partial completion is communicated.
 - Explicitly state how state meaning is preserved in labels.
+- Explicitly state how visual hierarchy prioritizes critical states.
+- Explicitly state how the UI supports rapid scanning (<=5 seconds).
+- Explicitly state how cognitive load is controlled through grouping, limits, and chunking.
+- Explicitly state how users discover valid actions without confusion.
 
 ## FAILURE MODES TO PREVENT
 - One badge hides multiple inventory states.
