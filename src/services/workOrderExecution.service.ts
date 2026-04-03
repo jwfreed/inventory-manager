@@ -62,6 +62,7 @@ import {
   buildReportProductionPlan
 } from '../domain/workOrders/reportProductionPlan';
 import {
+  assertReportProductionWarehouseSellableDefault,
   evaluateReportProductionPolicy
 } from '../domain/workOrders/reportProductionPolicy';
 import {
@@ -1812,6 +1813,16 @@ export async function reportWorkOrderProduction(
     workOrderId,
     policy
   });
+  const shouldBypassWarehouseSellableGuard = policy.reportIdempotencyKey
+    ? await hasExistingReportProductionIdempotencyClaim(tenantId, policy.reportIdempotencyKey)
+    : false;
+  if (!shouldBypassWarehouseSellableGuard) {
+    await assertReportProductionWarehouseSellableDefault({
+      tenantId,
+      workOrderId,
+      warehouseId: data.warehouseId ?? null
+    });
+  }
 
   const batchResult = await recordWorkOrderBatch(
     tenantId,
@@ -1872,6 +1883,18 @@ export async function reportWorkOrderProduction(
     replayed: batchResult.replayed,
     lotTracking
   };
+}
+
+async function hasExistingReportProductionIdempotencyClaim(tenantId: string, idempotencyKey: string) {
+  const existing = await query<{ key: string }>(
+    `SELECT key
+       FROM idempotency_keys
+      WHERE tenant_id = $1
+        AND key = $2
+      LIMIT 1`,
+    [tenantId, idempotencyKey]
+  );
+  return existing.rowCount > 0;
 }
 
 export async function voidWorkOrderProductionReport(

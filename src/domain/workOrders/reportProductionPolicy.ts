@@ -82,6 +82,35 @@ function domainError(code: string, details?: Record<string, unknown>): DomainErr
   return error;
 }
 
+export async function assertReportProductionWarehouseSellableDefault(params: {
+  tenantId: string;
+  workOrderId: string;
+  warehouseId?: string | null;
+}) {
+  if (!params.warehouseId) {
+    return;
+  }
+  const sellableDefaultRes = await query<{ location_id: string; is_sellable: boolean }>(
+    `SELECT wdl.location_id, l.is_sellable
+       FROM warehouse_default_location wdl
+       JOIN locations l
+         ON l.id = wdl.location_id
+        AND l.tenant_id = wdl.tenant_id
+      WHERE wdl.tenant_id = $1
+        AND wdl.warehouse_id = $2
+        AND wdl.role = 'SELLABLE'
+      LIMIT 1`,
+    [params.tenantId, params.warehouseId]
+  );
+  if (!sellableDefaultRes.rows[0]?.is_sellable) {
+    throw domainError('MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE', {
+      workOrderId: params.workOrderId,
+      warehouseId: params.warehouseId,
+      locationId: sellableDefaultRes.rows[0]?.location_id ?? null
+    });
+  }
+}
+
 export async function evaluateReportProductionPolicy(params: {
   tenantId: string;
   workOrderId: string;
@@ -117,28 +146,6 @@ export async function evaluateReportProductionPolicy(params: {
   const occurredAt = params.data.occurredAt ? new Date(params.data.occurredAt) : new Date();
   if (Number.isNaN(occurredAt.getTime())) {
     throw new Error('WO_REPORT_INVALID_OCCURRED_AT');
-  }
-
-  if (params.data.warehouseId) {
-    const sellableDefaultRes = await query<{ location_id: string; is_sellable: boolean }>(
-      `SELECT wdl.location_id, l.is_sellable
-         FROM warehouse_default_location wdl
-         JOIN locations l
-           ON l.id = wdl.location_id
-          AND l.tenant_id = wdl.tenant_id
-        WHERE wdl.tenant_id = $1
-          AND wdl.warehouse_id = $2
-          AND wdl.role = 'SELLABLE'
-        LIMIT 1`,
-      [params.tenantId, params.data.warehouseId]
-    );
-    if (!sellableDefaultRes.rows[0]?.is_sellable) {
-      throw domainError('MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE', {
-        workOrderId: params.workOrderId,
-        warehouseId: params.data.warehouseId,
-        locationId: sellableDefaultRes.rows[0]?.location_id ?? null
-      });
-    }
   }
 
   const routing = await deriveWorkOrderStageRouting(params.tenantId, {

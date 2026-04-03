@@ -492,7 +492,8 @@ test('report-production same-key replay bypasses fresh batch validation drift af
 
   await db.query(
     `UPDATE locations
-        SET warehouse_id = NULL,
+        SET role = 'QA',
+            is_sellable = FALSE,
             updated_at = now()
       WHERE tenant_id = $1
         AND id = $2`,
