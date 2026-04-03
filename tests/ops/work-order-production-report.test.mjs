@@ -422,6 +422,105 @@ test('report-production blocks new posting once the work order is fully complete
   await runStrictInvariantsForTenant(tenantId);
 });
 
+test('report-production same-key replay bypasses fresh batch validation drift after terminal completion', { timeout: 240000 }, async () => {
+  const tenantSlug = `wo-report-replay-drift-${randomUUID().slice(0, 8)}`;
+  const session = await ensureDbSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName: 'WO Report Production Replay Drift Tenant'
+  });
+  const token = session.accessToken;
+  const tenantId = session.tenant.id;
+  const db = session.pool;
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:replay-drift` });
+  const vendorId = await createVendor(token);
+  const component = await createItem(token, defaults.SELLABLE.id, 'RAW-REPLAY', 'raw');
+  const outputItem = await createItem(token, defaults.QA.id, 'FG-REPLAY', 'finished');
+
+  const receiptLineId = await createReceipt({
+    token,
+    vendorId,
+    itemId: component,
+    locationId: defaults.SELLABLE.id,
+    quantity: 20,
+    unitCost: 5,
+    keySuffix: tenantSlug
+  });
+  await qcAcceptReceiptLine(token, receiptLineId, 20);
+
+  const bomId = await createBom(token, outputItem, [
+    { componentItemId: component, quantityPer: 1 }
+  ], tenantSlug);
+  const workOrder = await createWorkOrder(token, {
+    kind: 'production',
+    outputItemId: outputItem,
+    outputUom: 'each',
+    quantityPlanned: 5,
+    bomId,
+    defaultConsumeLocationId: defaults.SELLABLE.id,
+    defaultProduceLocationId: defaults.QA.id
+  });
+
+  const idempotencyKey = `wo-report-replay-drift:${tenantSlug}:1`;
+  const requestBody = {
+    warehouseId: warehouse.id,
+    outputQty: 5,
+    outputUom: 'each',
+    occurredAt: '2026-02-20T00:00:00.000Z',
+    idempotencyKey
+  };
+
+  const first = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: requestBody
+  });
+  assert.equal(first.res.status, 201, JSON.stringify(first.payload));
+  assert.equal(first.payload.replayed, false);
+
+  const movementCountBefore = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')`,
+    [tenantId]
+  );
+  assert.equal(Number(movementCountBefore.rows[0]?.count ?? 0), 2);
+
+  await db.query(
+    `UPDATE locations
+        SET warehouse_id = NULL,
+            updated_at = now()
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, defaults.SELLABLE.id]
+  );
+
+  const replay = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: requestBody
+  });
+  assert.equal(replay.res.status, 200, JSON.stringify(replay.payload));
+  assert.equal(replay.payload.replayed, true);
+  assert.equal(replay.payload.componentIssueMovementId, first.payload.componentIssueMovementId);
+  assert.equal(replay.payload.productionReceiptMovementId, first.payload.productionReceiptMovementId);
+
+  const movementCountAfter = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')`,
+    [tenantId]
+  );
+  assert.equal(Number(movementCountAfter.rows[0]?.count ?? 0), 2);
+
+  await runStrictInvariantsForTenant(tenantId);
+});
+
 test('report-production retry with same idempotency key completes lot-linking without duplicate posting', { timeout: 240000 }, async () => {
   const tenantSlug = `wo-report-lot-repair-${randomUUID().slice(0, 8)}`;
   const session = await ensureDbSession({

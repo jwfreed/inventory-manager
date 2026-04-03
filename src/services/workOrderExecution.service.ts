@@ -2855,12 +2855,6 @@ export async function recordWorkOrderBatch(
       if (!batchPolicy) {
         throw new Error('WO_NOT_FOUND');
       }
-      const batchPlan = await planWorkOrderBatch({
-        tenantId,
-        workOrderId,
-        policy: batchPolicy,
-        client
-      });
       if (batchPolicy.existingBatchReplay) {
         const replay = await replayEngine.replayBatch({
           tenantId,
@@ -2868,8 +2862,8 @@ export async function recordWorkOrderBatch(
           executionId: batchPolicy.existingBatchReplay.executionId,
           issueMovementId: batchPolicy.existingBatchReplay.issueMovementId,
           receiveMovementId: batchPolicy.existingBatchReplay.receiveMovementId,
-          expectedIssueLineCount: batchPlan.sortedConsumes.length,
-          expectedReceiveLineCount: batchPlan.sortedProduces.length,
+          expectedIssueLineCount: normalizedConsumes.length,
+          expectedReceiveLineCount: normalizedProduces.length,
           client,
           idempotencyKey: batchIdempotencyKey,
           preFetchIntegrityCheck: async () => {
@@ -2891,6 +2885,12 @@ export async function recordWorkOrderBatch(
           responseBody: replay.responseBody as WorkOrderBatchResult
         };
       }
+      const batchPlan = await planWorkOrderBatch({
+        tenantId,
+        workOrderId,
+        policy: batchPolicy,
+        client
+      });
       return executeWorkOrderBatchPosting({
         tenantId,
         workOrderId,

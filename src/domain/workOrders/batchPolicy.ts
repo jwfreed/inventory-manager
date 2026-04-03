@@ -137,6 +137,19 @@ export async function evaluateWorkOrderBatchPolicy(params: {
   const produceLinesOrdered = freezeArray(
     [...params.normalizedProduces].sort(compareBatchProduceKey)
   );
+  if (existingBatchReplay) {
+    const reservationSnapshot: Awaited<ReturnType<typeof ensureWorkOrderReservationsReady>> = [];
+    return Object.freeze({
+      workOrder,
+      isDisassembly: workOrder.kind === 'disassembly',
+      existingBatchReplay,
+      consumeLinesOrdered,
+      produceLinesOrdered,
+      reservationSnapshot,
+      warehouseByLocationId: new Map<string, string>(),
+      lockTargets: Object.freeze([] as AtpLockTarget[])
+    });
+  }
   const isDisassembly = workOrder.kind === 'disassembly';
 
   if (!isDisassembly) {
