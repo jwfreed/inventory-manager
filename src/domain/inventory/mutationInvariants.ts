@@ -1,5 +1,7 @@
 import { roundQuantity } from '../../lib/numbers';
 
+// assertions only
+
 export const INVENTORY_MUTATION_EPSILON = 1e-6;
 
 export type ReplayDeterminismExpectation = Readonly<{
@@ -102,31 +104,6 @@ export function assertLocationInventoryReadyInvariant(params: {
   return {
     binId: params.defaultBinId,
     defaultBinId: params.defaultBinId
-  };
-}
-
-export function negateNullableQuantity(value: number | null): number | null {
-  if (value === null) return null;
-  return roundQuantity(-value);
-}
-
-export function invertMovementQuantityFields(params: {
-  quantityDelta: number;
-  quantityDeltaEntered: number | null;
-  quantityDeltaCanonical: number | null;
-  extendedCost: number | null;
-}) {
-  const quantityDelta = roundQuantity(-params.quantityDelta);
-  const quantityDeltaEntered = negateNullableQuantity(params.quantityDeltaEntered);
-  const quantityDeltaCanonical = negateNullableQuantity(params.quantityDeltaCanonical);
-  const extendedCost = negateNullableQuantity(params.extendedCost);
-
-  return {
-    quantityDelta,
-    quantityDeltaEntered,
-    quantityDeltaCanonical,
-    extendedCost,
-    balanceQuantityDelta: quantityDeltaCanonical ?? quantityDelta
   };
 }
 

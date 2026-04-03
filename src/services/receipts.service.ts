@@ -59,9 +59,9 @@ import {
 } from '../domains/inventory';
 import {
   assertProjectionDeltaContract,
-  buildReplayDeterminismExpectation,
-  invertMovementQuantityFields
+  buildReplayDeterminismExpectation
 } from '../domain/inventory/mutationInvariants';
+import { invertMovementQuantityFields } from '../domain/inventory/mutationTransforms';
 import {
   defaultBreakdown,
   loadPutawayTotals,

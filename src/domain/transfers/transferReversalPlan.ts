@@ -16,9 +16,9 @@ import {
   assertCanonicalUomConsistency,
   assertDirectionalQuantityConservation,
   assertExpectedLineCount,
-  assertMovementSymmetry,
-  invertMovementQuantityFields
+  assertMovementSymmetry
 } from '../inventory/mutationInvariants';
+import { invertMovementQuantityFields } from '../inventory/mutationTransforms';
 
 const EPSILON = 1e-6;
 
