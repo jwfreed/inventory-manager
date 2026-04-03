@@ -41,6 +41,14 @@ Reject if any item fails.
 - UI and backend state behavior diverge without blocking merge.
 - Review output drifts into planning or test-design work instead of merge safety.
 
+## REQUIRED INVENTORY CHECKS
+
+- No hidden balance mutation
+- No unavailable stock treated as usable
+- No implicit state transitions
+- No missing audit reason on quantity changes
+- No UI/backend state mismatch
+
 ## OUTPUT SCHEMA (REQUIRED)
 - Decision: (accept / accept with conditions / reject)
 - Domain risks:

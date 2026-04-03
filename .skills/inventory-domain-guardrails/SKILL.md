@@ -22,6 +22,11 @@ Determine whether a task preserves inventory meaning, explicit state semantics, 
 - Do not allow direct balance overwrites to replace movement-based truth.
 - Do not allow missing or inferred UOM, location, or audit reason on quantity-affecting behavior.
 - Do not reinterpret historical stock meaning for convenience.
+- Do not allow direct balance overwrites; all quantity changes must be movement-based.
+- Do not treat network-wide stock as equivalent to location-specific usable stock.
+- Do not allow unavailable, quarantined, in-transit, or unaccepted stock to be treated as available.
+- Do not bypass discrepancy workflows (detect -> isolate -> investigate -> adjust).
+- Do not allow inventory state transitions without explicit intermediate states.
 
 ## OUTPUT EXPECTATIONS
 - State the invariants at risk.
@@ -35,6 +40,11 @@ Determine whether a task preserves inventory meaning, explicit state semantics, 
 - Received, accepted, stored, staged, shipped, quarantined, and counted states are collapsed together.
 - Physical and recorded stock divergence is hidden instead of investigated.
 - Unavailable, quarantined, or in-transit stock is treated as immediately usable.
+- Aggregate balances diverge from underlying movement history.
+- Location-level stock is incorrect while global totals appear correct.
+- Discrepancies are silently absorbed instead of investigated.
+- Inventory becomes usable before validation or acceptance.
+- Movement history cannot reconstruct current stock state.
 
 ## OUTPUT SCHEMA (REQUIRED)
 - Invariants impacted:

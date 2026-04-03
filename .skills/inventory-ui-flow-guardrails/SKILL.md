@@ -25,12 +25,24 @@ Keep inventory UI flows aligned with backend truth so the interface does not mis
 - Do not use silent defaults for location, UOM, lot or serial, or adjustment reason.
 - Do not use this skill to replace backend review, planning, or broad test strategy.
 - Do not leave operator-facing ambiguity unresolved.
+- UI must display distinct labels for:
+  - on-hand
+  - available
+  - allocated
+  - quarantined
+  - in-transit
+- UI must not imply completion for partially completed workflows.
+- UI must show blocking reasons for disabled actions.
+- UI must not allow submission of actions that backend will reject due to state constraints.
 
 ## OUTPUT EXPECTATIONS
 - State the UI states and invalid actions clearly.
 - State the constraints the UI must enforce.
 - State any semantic mismatch that must be fixed before implementation is accepted.
 - Keep the result focused on UI/domain alignment only.
+- Explicitly state how UI prevents invalid actions.
+- Explicitly state how partial completion is communicated.
+- Explicitly state how state meaning is preserved in labels.
 
 ## FAILURE MODES TO PREVENT
 - One badge hides multiple inventory states.
