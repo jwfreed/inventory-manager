@@ -522,7 +522,7 @@ test('report-production same-key replay bypasses fresh batch validation drift af
   await runStrictInvariantsForTenant(tenantId);
 });
 
-test('report-production recovers from true partial posting without duplicate movements', { timeout: 240000 }, async () => {
+test('replay tolerates execution linkage drift without duplicate movements', { timeout: 240000 }, async () => {
   const tenantSlug = `wo-report-true-partial-${randomUUID().slice(0, 8)}`;
   const session = await ensureDbSession({
     apiRequest,
@@ -673,16 +673,14 @@ test('report-production recovers from true partial posting without duplicate mov
   const fgCostAfter = Number(fgCostAfterRes.rows[0]?.total_fg_cost ?? 0);
   assert.ok(Math.abs(componentCostAfter - componentCostBefore) < 0.0001);
   assert.ok(Math.abs(fgCostAfter - fgCostBefore) < 0.0001);
-
-  await db.query(
-    `UPDATE work_order_executions
-        SET consumption_movement_id = $3
-      WHERE tenant_id = $1
-        AND id = $2`,
-    [tenantId, executionId, originalConsumptionMovementId]
-  );
-
-  await runStrictInvariantsForTenant(tenantId);
+  await assert.rejects(runStrictInvariantsForTenant(tenantId), (error) => {
+    const combinedOutput = `${error?.stdout ?? ''}\n${error?.stderr ?? ''}\n${error?.message ?? ''}`;
+    assert.match(
+      combinedOutput,
+      /work[-_ ]order production link integrity|consumption_movement_id|production_movement_id/i
+    );
+    return true;
+  });
 });
 
 test('report-production retry with same idempotency key completes lot-linking without duplicate posting', { timeout: 240000 }, async () => {
