@@ -522,6 +522,166 @@ test('report-production same-key replay bypasses fresh batch validation drift af
   await runStrictInvariantsForTenant(tenantId);
 });
 
+test('report-production recovers from partial idempotent posting without duplicate movements', { timeout: 240000 }, async () => {
+  const tenantSlug = `wo-report-partial-idem-${randomUUID().slice(0, 8)}`;
+  const session = await ensureDbSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName: 'WO Report Production Partial Idempotency Tenant'
+  });
+  const token = session.accessToken;
+  const tenantId = session.tenant.id;
+  const db = session.pool;
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:partial-idem` });
+  const vendorId = await createVendor(token);
+  const component = await createItem(token, defaults.SELLABLE.id, 'RAW-PARTIAL', 'raw');
+  const outputItem = await createItem(token, defaults.QA.id, 'FG-PARTIAL', 'finished');
+
+  const receiptLineId = await createReceipt({
+    token,
+    vendorId,
+    itemId: component,
+    locationId: defaults.SELLABLE.id,
+    quantity: 20,
+    unitCost: 5,
+    keySuffix: tenantSlug
+  });
+  await qcAcceptReceiptLine(token, receiptLineId, 20);
+
+  const bomId = await createBom(token, outputItem, [
+    { componentItemId: component, quantityPer: 1 }
+  ], tenantSlug);
+  const workOrder = await createWorkOrder(token, {
+    kind: 'production',
+    outputItemId: outputItem,
+    outputUom: 'each',
+    quantityPlanned: 5,
+    bomId,
+    defaultConsumeLocationId: defaults.SELLABLE.id,
+    defaultProduceLocationId: defaults.QA.id
+  });
+
+  const idempotencyKey = `wo-report-partial-idem:${tenantSlug}:1`;
+  const requestBody = {
+    warehouseId: warehouse.id,
+    outputQty: 5,
+    outputUom: 'each',
+    occurredAt: '2026-02-21T00:00:00.000Z',
+    idempotencyKey
+  };
+
+  const first = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: requestBody
+  });
+  assert.equal(first.res.status, 201, JSON.stringify(first.payload));
+  assert.equal(first.payload.replayed, false);
+
+  const componentIssueMovementId = first.payload.componentIssueMovementId;
+  const productionReceiptMovementId = first.payload.productionReceiptMovementId;
+
+  const componentCostBeforeRes = await db.query(
+    `SELECT COALESCE(SUM(extended_cost), 0)::numeric AS total_component_cost
+       FROM cost_layer_consumptions
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND consumption_type = 'production_input'`,
+    [tenantId, componentIssueMovementId]
+  );
+  const fgCostBeforeRes = await db.query(
+    `SELECT COALESCE(SUM(COALESCE(extended_cost, 0)), 0)::numeric AS total_fg_cost
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND COALESCE(quantity_delta_canonical, quantity_delta) > 0`,
+    [tenantId, productionReceiptMovementId]
+  );
+  const componentCostBefore = Number(componentCostBeforeRes.rows[0]?.total_component_cost ?? 0);
+  const fgCostBefore = Number(fgCostBeforeRes.rows[0]?.total_fg_cost ?? 0);
+
+  const idempotencyBefore = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM idempotency_keys
+      WHERE tenant_id = $1
+        AND key = $2`,
+    [tenantId, idempotencyKey]
+  );
+  assert.equal(Number(idempotencyBefore.rows[0]?.count ?? 0), 1);
+
+  await db.query(
+    `DELETE FROM idempotency_keys
+      WHERE tenant_id = $1
+        AND key = $2`,
+    [tenantId, idempotencyKey]
+  );
+
+  const replay = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: requestBody
+  });
+  assert.equal(replay.res.status, 200, JSON.stringify(replay.payload));
+  assert.equal(replay.payload.replayed, true);
+  assert.equal(replay.payload.componentIssueMovementId, componentIssueMovementId);
+  assert.equal(replay.payload.productionReceiptMovementId, productionReceiptMovementId);
+  assert.notEqual(replay.payload?.error?.code, 'WO_POSTING_IDEMPOTENCY_INCOMPLETE');
+
+  const movementCountRes = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')`,
+    [tenantId]
+  );
+  assert.equal(Number(movementCountRes.rows[0]?.count ?? 0), 2);
+
+  const executionRes = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND work_order_id = $2
+        AND idempotency_key = $3`,
+    [tenantId, workOrder.id, idempotencyKey]
+  );
+  assert.equal(Number(executionRes.rows[0]?.count ?? 0), 1);
+
+  const idempotencyAfter = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM idempotency_keys
+      WHERE tenant_id = $1
+        AND key = $2`,
+    [tenantId, idempotencyKey]
+  );
+  assert.equal(Number(idempotencyAfter.rows[0]?.count ?? 0), 1);
+
+  const componentCostAfterRes = await db.query(
+    `SELECT COALESCE(SUM(extended_cost), 0)::numeric AS total_component_cost
+       FROM cost_layer_consumptions
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND consumption_type = 'production_input'`,
+    [tenantId, componentIssueMovementId]
+  );
+  const fgCostAfterRes = await db.query(
+    `SELECT COALESCE(SUM(COALESCE(extended_cost, 0)), 0)::numeric AS total_fg_cost
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND COALESCE(quantity_delta_canonical, quantity_delta) > 0`,
+    [tenantId, productionReceiptMovementId]
+  );
+  const componentCostAfter = Number(componentCostAfterRes.rows[0]?.total_component_cost ?? 0);
+  const fgCostAfter = Number(fgCostAfterRes.rows[0]?.total_fg_cost ?? 0);
+  assert.ok(Math.abs(componentCostAfter - componentCostBefore) < 0.0001);
+  assert.ok(Math.abs(fgCostAfter - fgCostBefore) < 0.0001);
+
+  await runStrictInvariantsForTenant(tenantId);
+});
+
 test('report-production retry with same idempotency key completes lot-linking without duplicate posting', { timeout: 240000 }, async () => {
   const tenantSlug = `wo-report-lot-repair-${randomUUID().slice(0, 8)}`;
   const session = await ensureDbSession({
