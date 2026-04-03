@@ -102,6 +102,20 @@ async function canonicalizeMovementLines(
   }));
 }
 
+export async function planMovementLines(params: {
+  tenantId: string;
+  lines: ReadonlyArray<RawMovementLineDescriptor>;
+  client: PoolClient;
+}): Promise<ReadonlyArray<PlannedWorkOrderMovementLine>> {
+  return deepFreeze(
+    await canonicalizeMovementLines(
+      params.tenantId,
+      params.lines,
+      params.client
+    )
+  );
+}
+
 function mapPersistMovementLine(line: PlannedWorkOrderMovementLine): PersistInventoryMovementLineInput {
   return {
     warehouseId: line.warehouseId,
@@ -134,16 +148,11 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-async function buildPlannedMovement(params: {
-  client: PoolClient;
+export function buildPlannedMovementFromLines(params: {
   header: PlannedMovementHeader;
-  lines: ReadonlyArray<RawMovementLineDescriptor>;
-}): Promise<PlannedWorkOrderMovement> {
-  const sortedLines = await canonicalizeMovementLines(
-    params.header.tenantId,
-    params.lines,
-    params.client
-  );
+  lines: ReadonlyArray<PlannedWorkOrderMovementLine>;
+}): PlannedWorkOrderMovement {
+  const sortedLines = deepFreeze([...params.lines]);
   const expectedDeterministicHash = buildMovementDeterministicHash({
     tenantId: params.header.tenantId,
     movementType: params.header.movementType,
@@ -183,6 +192,21 @@ async function buildPlannedMovement(params: {
       productionBatchId: params.header.productionBatchId ?? null,
       lines: sortedLines.map(mapPersistMovementLine)
     }
+  });
+}
+
+async function buildPlannedMovement(params: {
+  client: PoolClient;
+  header: PlannedMovementHeader;
+  lines: ReadonlyArray<RawMovementLineDescriptor>;
+}): Promise<PlannedWorkOrderMovement> {
+  return buildPlannedMovementFromLines({
+    header: params.header,
+    lines: await planMovementLines({
+      tenantId: params.header.tenantId,
+      lines: params.lines,
+      client: params.client
+    })
   });
 }
 

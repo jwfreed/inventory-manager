@@ -330,6 +330,98 @@ test('report-production posts component issue + QA receipt with FIFO cost conser
   await runStrictInvariantsForTenant(tenantId);
 });
 
+test('report-production blocks new posting once the work order is fully completed and does not create extra movements', { timeout: 240000 }, async () => {
+  const tenantSlug = `wo-report-terminal-${randomUUID().slice(0, 8)}`;
+  const session = await ensureDbSession({
+    apiRequest,
+    adminEmail,
+    adminPassword,
+    tenantSlug,
+    tenantName: 'WO Report Production Terminal-State Tenant'
+  });
+  const token = session.accessToken;
+  const tenantId = session.tenant.id;
+  const db = session.pool;
+
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url });
+  const vendorId = await createVendor(token);
+  const component = await createItem(token, defaults.SELLABLE.id, 'RAW-TERM', 'raw');
+  const outputItem = await createItem(token, defaults.QA.id, 'FG-TERM', 'finished');
+
+  const receiptLineId = await createReceipt({
+    token,
+    vendorId,
+    itemId: component,
+    locationId: defaults.SELLABLE.id,
+    quantity: 20,
+    unitCost: 5,
+    keySuffix: tenantSlug
+  });
+  await qcAcceptReceiptLine(token, receiptLineId, 20);
+
+  const bomId = await createBom(token, outputItem, [
+    { componentItemId: component, quantityPer: 1 }
+  ], tenantSlug);
+  const workOrder = await createWorkOrder(token, {
+    kind: 'production',
+    outputItemId: outputItem,
+    outputUom: 'each',
+    quantityPlanned: 5,
+    bomId,
+    defaultConsumeLocationId: defaults.SELLABLE.id,
+    defaultProduceLocationId: defaults.QA.id
+  });
+
+  const firstKey = `wo-report-terminal:${tenantSlug}:1`;
+  const first = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': firstKey },
+    body: {
+      warehouseId: warehouse.id,
+      outputQty: 5,
+      outputUom: 'each',
+      occurredAt: '2026-02-18T00:00:00.000Z',
+      idempotencyKey: firstKey
+    }
+  });
+  assert.equal(first.res.status, 201, JSON.stringify(first.payload));
+
+  const movementCountBefore = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')`,
+    [tenantId]
+  );
+  assert.equal(Number(movementCountBefore.rows[0]?.count ?? 0), 2);
+
+  const secondKey = `wo-report-terminal:${tenantSlug}:2`;
+  const second = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
+    token,
+    headers: { 'Idempotency-Key': secondKey },
+    body: {
+      warehouseId: warehouse.id,
+      outputQty: 1,
+      outputUom: 'each',
+      occurredAt: '2026-02-19T00:00:00.000Z',
+      idempotencyKey: secondKey
+    }
+  });
+  assert.equal(second.res.status, 400, JSON.stringify(second.payload));
+  assert.equal(second.payload?.error, 'Work order not in a state that allows production reporting.');
+
+  const movementCountAfter = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_type IN ('work_order_batch_post_issue', 'work_order_batch_post_completion')`,
+    [tenantId]
+  );
+  assert.equal(Number(movementCountAfter.rows[0]?.count ?? 0), 2);
+
+  await runStrictInvariantsForTenant(tenantId);
+});
+
 test('report-production retry with same idempotency key completes lot-linking without duplicate posting', { timeout: 240000 }, async () => {
   const tenantSlug = `wo-report-lot-repair-${randomUUID().slice(0, 8)}`;
   const session = await ensureDbSession({

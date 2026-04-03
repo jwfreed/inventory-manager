@@ -294,6 +294,10 @@ export function buildBatchProjectionOps(params: {
       `UPDATE work_orders
           SET quantity_completed = $2,
               status = $3,
+              released_at = CASE
+                WHEN $11 IN ('draft', 'ready') THEN COALESCE(released_at, $8)
+                ELSE released_at
+              END,
               completed_at = COALESCE(completed_at, $4),
               wip_total_cost = COALESCE(wip_total_cost, 0) + $5,
               wip_quantity_canonical = COALESCE(wip_quantity_canonical, 0) + $6,
@@ -307,19 +311,20 @@ export function buildBatchProjectionOps(params: {
               updated_at = $9
         WHERE id = $1
           AND tenant_id = $10`,
-      [
-        params.workOrderId,
-        params.newCompleted,
-        params.newStatus,
-        params.completedAt,
-        params.totalIssueCost,
-        params.producedCanonicalTotal,
-        WIP_COST_METHOD,
-        params.now,
-        params.now,
-        params.tenantId
-      ]
-    );
+        [
+          params.workOrderId,
+          params.newCompleted,
+          params.newStatus,
+          params.completedAt,
+          params.totalIssueCost,
+          params.producedCanonicalTotal,
+          WIP_COST_METHOD,
+          params.now,
+          params.now,
+          params.tenantId,
+          normalizeWorkOrderStatus(params.workOrder.status)
+        ]
+      );
 
     if (params.validationOverrideMetadata && params.context.actor) {
       await recordAuditLog(
