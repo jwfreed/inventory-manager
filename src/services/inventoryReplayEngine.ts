@@ -10,6 +10,7 @@ import {
 } from '../domain/workOrders/executionStateClassifier';
 import { buildTransferReplayResult } from './transfers.service';
 import { getWarehouseDefaultLocationId } from './warehouseDefaults.service';
+import * as lotTraceability from './lotTraceabilityEngine';
 import {
   buildInventoryMovementPostedEvent,
   buildWorkOrderCompletionPostedEvent,
@@ -48,7 +49,8 @@ async function applyExecutionLinkRepair(params: {
   client: PoolClient;
   tenantId: string;
   executionId: string;
-  repairPatch: NonNullable<ExecutionStateClassification['repairPatch']>;
+  issueMovementId: string;
+  receiveMovementId: string;
 }) {
   await params.client.query(
     `UPDATE work_order_executions
@@ -57,12 +59,32 @@ async function applyExecutionLinkRepair(params: {
       WHERE tenant_id = $3
         AND id = $4`,
     [
-      params.repairPatch.consumptionMovementId ?? null,
-      params.repairPatch.productionMovementId ?? null,
+      params.issueMovementId,
+      params.receiveMovementId,
       params.tenantId,
       params.executionId
     ]
   );
+}
+
+function hasRequiredAction(
+  classification: ExecutionStateClassification,
+  actionType: ExecutionStateClassification['requiredActions'][number]['type']
+) {
+  return classification.requiredActions.some((action) => action.type === actionType);
+}
+
+function buildLotTrackingMetadata(
+  classification: ExecutionStateClassification
+): { outputLotId: string; outputLotCode: string; inputLotCount: number } | undefined {
+  if (!classification.metadata.outputLotId || !classification.metadata.outputLotCode) {
+    return undefined;
+  }
+  return {
+    outputLotId: classification.metadata.outputLotId,
+    outputLotCode: classification.metadata.outputLotCode,
+    inputLotCount: classification.metadata.inputLotCount ?? 0
+  };
 }
 
 async function resolveBatchExecutionReplayState(params: {
@@ -89,12 +111,13 @@ async function resolveBatchExecutionReplayState(params: {
       classification
     });
   }
-  if (classification.isRecoverable && classification.repairPatch) {
+  if (hasRequiredAction(classification, 'REPAIR_EXECUTION_LINKS')) {
     await applyExecutionLinkRepair({
       client: params.client,
       tenantId: params.tenantId,
       executionId: params.executionId,
-      repairPatch: classification.repairPatch
+      issueMovementId: classification.issueMovementId,
+      receiveMovementId: classification.receiveMovementId
     });
   }
   return classification;
@@ -116,6 +139,125 @@ export async function classifyBatchExecutionReplayState(params: {
     expectedIssueMovementId: params.issueMovementId ?? null,
     expectedReceiveMovementId: params.receiveMovementId ?? null
   });
+}
+
+export async function finalizeBatchExecutionTraceability(params: {
+  tenantId: string;
+  workOrderId: string;
+  executionId: string;
+  issueMovementId?: string | null;
+  receiveMovementId?: string | null;
+  client: PoolClient;
+  traceability: {
+    outputItemId: string;
+    outputQty: number;
+    outputUom: string;
+    outputLotId?: string | null;
+    outputLotCode?: string | null;
+    inputLots?: ReadonlyArray<lotTraceability.WorkOrderInputLotLink>;
+  };
+}) {
+  const initialClassification = await classifyExecutionState({
+    client: params.client,
+    tenantId: params.tenantId,
+    workOrderId: params.workOrderId,
+    executionId: params.executionId,
+    expectedIssueMovementId: params.issueMovementId ?? null,
+    expectedReceiveMovementId: params.receiveMovementId ?? null
+  });
+
+  if (!initialClassification.issueMovementId || !initialClassification.receiveMovementId) {
+    throw buildIrrecoverableExecutionStateError({
+      tenantId: params.tenantId,
+      workOrderId: params.workOrderId,
+      executionId: params.executionId,
+      classification: initialClassification
+    });
+  }
+  if (hasRequiredAction(initialClassification, 'FAIL')) {
+    throw buildIrrecoverableExecutionStateError({
+      tenantId: params.tenantId,
+      workOrderId: params.workOrderId,
+      executionId: params.executionId,
+      classification: initialClassification
+    });
+  }
+
+  if (hasRequiredAction(initialClassification, 'REPAIR_EXECUTION_LINKS')) {
+    await applyExecutionLinkRepair({
+      client: params.client,
+      tenantId: params.tenantId,
+      executionId: params.executionId,
+      issueMovementId: initialClassification.issueMovementId,
+      receiveMovementId: initialClassification.receiveMovementId
+    });
+  }
+
+  if (hasRequiredAction(initialClassification, 'APPEND_TRACEABILITY')) {
+    try {
+      await lotTraceability.appendTraceabilityLinksInTx(params.client, params.tenantId, {
+        executionId: params.executionId,
+        outputItemId: params.traceability.outputItemId,
+        outputQty: params.traceability.outputQty,
+        outputUom: params.traceability.outputUom,
+        outputLotId: params.traceability.outputLotId ?? null,
+        outputLotCode: params.traceability.outputLotCode ?? null,
+        inputLots: params.traceability.inputLots ? [...params.traceability.inputLots] : []
+      });
+    } catch (error: unknown) {
+      if (!lotTraceability.isNonRetryableLotLinkError(error)) {
+        const retryableError = error as { retrySqlState?: string; code?: string };
+        throw domainError('WO_POSTING_IDEMPOTENCY_INCOMPLETE', {
+          reason: 'lot_linking_incomplete_after_post',
+          workOrderId: params.workOrderId,
+          executionId: params.executionId,
+          sqlState: retryableError.retrySqlState ?? retryableError.code ?? null,
+          hint: 'Retry with the same Idempotency-Key to finalize lot linking.'
+        });
+      }
+      throw error;
+    }
+  }
+
+  const finalClassification = await classifyExecutionState({
+    client: params.client,
+    tenantId: params.tenantId,
+    workOrderId: params.workOrderId,
+    executionId: params.executionId,
+    expectedIssueMovementId: initialClassification.issueMovementId,
+    expectedReceiveMovementId: initialClassification.receiveMovementId
+  });
+
+  if (hasRequiredAction(finalClassification, 'FAIL')) {
+    throw buildIrrecoverableExecutionStateError({
+      tenantId: params.tenantId,
+      workOrderId: params.workOrderId,
+      executionId: params.executionId,
+      classification: finalClassification
+    });
+  }
+  if (
+    finalClassification.state !== 'VALID_COMPLETE'
+    && finalClassification.state !== 'REPLAYABLE_COMPLETE'
+    && finalClassification.state !== 'TOLERATED_DRIFT'
+  ) {
+    throw buildReplayCorruptionError({
+      tenantId: params.tenantId,
+      workOrderId: params.workOrderId,
+      executionId: params.executionId,
+      reason: 'execution_recovery_not_terminal',
+      details: {
+        state: finalClassification.state,
+        requiredActions: finalClassification.requiredActions,
+        traceabilityStatus: finalClassification.traceabilityStatus
+      }
+    });
+  }
+
+  return {
+    classification: finalClassification,
+    lotTracking: buildLotTrackingMetadata(finalClassification)
+  };
 }
 
 export async function ensurePostedMovementReady(
