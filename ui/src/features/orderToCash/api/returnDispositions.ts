@@ -1,5 +1,6 @@
 import { apiGet, apiPost } from '../../../api/http'
 import type { ReturnDisposition, ReturnDispositionLine } from '../../../api/types'
+import { buildIdempotencyHeaders } from '../../../lib/idempotency'
 import { ORDER_TO_CASH_ENDPOINTS } from './config'
 
 type ListResponse = { data: ReturnDisposition[]; paging?: { limit: number; offset: number } }
@@ -11,12 +12,10 @@ export type ReturnDispositionListParams = {
 
 export type ReturnDispositionPayload = {
   returnReceiptId: string
-  status?: 'draft' | 'posted' | 'canceled'
   occurredAt: string
   dispositionType: 'restock' | 'scrap' | 'quarantine_hold'
   fromLocationId: string
   toLocationId?: string | null
-  inventoryMovementId?: string | null
   notes?: string
   lines?: Array<{
     lineNumber?: number
@@ -111,6 +110,18 @@ export async function createReturnDisposition(
   const disposition = await apiPost<ReturnDispositionApiRow>(
     ORDER_TO_CASH_ENDPOINTS.returnDispositions,
     payload,
+  )
+  return mapReturnDisposition(disposition)
+}
+
+export async function postReturnDisposition(
+  returnDispositionId: string,
+  idempotencyKey: string,
+): Promise<ReturnDisposition> {
+  const disposition = await apiPost<ReturnDispositionApiRow>(
+    `${ORDER_TO_CASH_ENDPOINTS.returnDispositions}/${returnDispositionId}/post`,
+    {},
+    { headers: buildIdempotencyHeaders(idempotencyKey) },
   )
   return mapReturnDisposition(disposition)
 }

@@ -100,5 +100,6 @@ describe('ReturnDetailPage', () => {
         }),
       ),
     )
+    expect(mockedCreateReturnReceipt.mock.calls[0]?.[0]).not.toHaveProperty('inventoryMovementId')
   })
 })

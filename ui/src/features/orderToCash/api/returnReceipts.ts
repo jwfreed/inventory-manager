@@ -1,5 +1,6 @@
 import { apiGet, apiPost } from '../../../api/http'
 import type { ReturnReceipt, ReturnReceiptLine } from '../../../api/types'
+import { buildIdempotencyHeaders } from '../../../lib/idempotency'
 import { ORDER_TO_CASH_ENDPOINTS } from './config'
 
 type ListResponse = { data: ReturnReceipt[]; paging?: { limit: number; offset: number } }
@@ -11,10 +12,8 @@ export type ReturnReceiptListParams = {
 
 export type ReturnReceiptPayload = {
   returnAuthorizationId: string
-  status?: 'draft' | 'posted' | 'canceled'
   receivedAt: string
   receivedToLocationId: string
-  inventoryMovementId?: string | null
   externalRef?: string
   notes?: string
   lines?: Array<{
@@ -102,6 +101,18 @@ export async function getReturnReceipt(id: string): Promise<ReturnReceipt> {
 
 export async function createReturnReceipt(payload: ReturnReceiptPayload): Promise<ReturnReceipt> {
   const receipt = await apiPost<ReturnReceiptApiRow>(ORDER_TO_CASH_ENDPOINTS.returnReceipts, payload)
+  return mapReturnReceipt(receipt)
+}
+
+export async function postReturnReceipt(
+  returnReceiptId: string,
+  idempotencyKey: string,
+): Promise<ReturnReceipt> {
+  const receipt = await apiPost<ReturnReceiptApiRow>(
+    `${ORDER_TO_CASH_ENDPOINTS.returnReceipts}/${returnReceiptId}/post`,
+    {},
+    { headers: buildIdempotencyHeaders(idempotencyKey) },
+  )
   return mapReturnReceipt(receipt)
 }
 

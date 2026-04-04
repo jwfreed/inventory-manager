@@ -37,7 +37,6 @@ export default function ReturnDetailPage() {
   const [receivedToLocationId, setReceivedToLocationId] = useState('')
   const [externalRef, setExternalRef] = useState('')
   const [notes, setNotes] = useState('')
-  const [inventoryMovementId, setInventoryMovementId] = useState('')
   const [lineQuantities, setLineQuantities] = useState<Record<string, string>>({})
   const [receiptError, setReceiptError] = useState<string | null>(null)
 
@@ -87,7 +86,6 @@ export default function ReturnDetailPage() {
         receivedAt: new Date(receivedAt).toISOString(),
         receivedToLocationId: receivedToLocationId.trim(),
         externalRef: externalRef.trim() || undefined,
-        inventoryMovementId: inventoryMovementId.trim() || undefined,
         notes: notes.trim() || undefined,
         lines: lines.map(({ line, quantityReceived }) => ({
           returnAuthorizationLineId: line.id,
@@ -125,7 +123,7 @@ export default function ReturnDetailPage() {
     <div className="space-y-6">
       <PageHeader
         title="Return authorization"
-        subtitle="Authorize the return, then create receipt documents for the quantities physically received back into the warehouse."
+        subtitle="Authorize the return, then create a draft receipt for the quantities physically received back into the warehouse."
         action={
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => navigate('/returns')}>
@@ -147,7 +145,7 @@ export default function ReturnDetailPage() {
         <>
           <Panel
             title="Authorization state"
-            description="Return authorizations document intent only. Receipt and disposition records link to movements only when the backend record carries an inventory movement id."
+            description="Return authorizations document intent only. Inventory moves only after receipt and disposition drafts are explicitly posted."
           >
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -173,7 +171,7 @@ export default function ReturnDetailPage() {
 
           <Panel
             title="Create return receipt"
-            description="Record what physically arrived back at the warehouse. This creates the receipt document; movement links appear only if the backend record already has a movement id."
+            description="Record what physically arrived back at the warehouse. This creates a draft receipt document first; posting happens explicitly on the receipt detail page."
           >
             {receiptError ? <Alert variant="error" title="Return receipt failed" message={receiptError} /> : null}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -200,15 +198,6 @@ export default function ReturnDetailPage() {
                   value={externalRef}
                   onChange={(event) => setExternalRef(event.target.value)}
                   placeholder="Optional"
-                  disabled={createReceiptMutation.isPending}
-                />
-              </label>
-              <label className="block space-y-1">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Linked movement ID</span>
-                <Input
-                  value={inventoryMovementId}
-                  onChange={(event) => setInventoryMovementId(event.target.value)}
-                  placeholder="Optional existing movement"
                   disabled={createReceiptMutation.isPending}
                 />
               </label>
