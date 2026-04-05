@@ -37,7 +37,7 @@ export default function ReturnsListPage() {
     <div className="space-y-6">
       <PageHeader
         title={hideTitle ? '' : 'Returns'}
-        subtitle="Create and manage return authorizations, receipts, and dispositions without inventing non-existent posting APIs."
+        subtitle="Create return authorizations, receive returned stock into draft receipts, and post receipt and disposition steps explicitly."
         action={
           <div className="flex gap-2">
             <Button size="sm" onClick={() => navigate('/returns/new')}>

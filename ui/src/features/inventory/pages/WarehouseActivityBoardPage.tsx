@@ -70,7 +70,7 @@ function toReturnActivityItems(receipts: ReturnReceipt[], dispositions: ReturnDi
     statusLabel: formatStatusLabel(receipt.status),
     occurredAt: receipt.receivedAt,
     linkTo: `/return-receipts/${receipt.id}`,
-    metadata: receipt.inventoryMovementId ? [`Movement ${receipt.inventoryMovementId}`] : ['No linked movement'],
+    metadata: receipt.inventoryMovementId ? [`Movement ${receipt.inventoryMovementId}`] : ['Pending post'],
   }))
 
   const dispositionItems = dispositions.map<OperationTimelineItem>((disposition) => ({
@@ -85,7 +85,7 @@ function toReturnActivityItems(receipts: ReturnReceipt[], dispositions: ReturnDi
     linkTo: disposition.returnReceiptId ? `/return-receipts/${disposition.returnReceiptId}` : undefined,
     metadata: disposition.inventoryMovementId
       ? [`Movement ${disposition.inventoryMovementId}`]
-      : ['No linked movement'],
+      : ['Pending post'],
   }))
 
   return sortReturnActivityItems([...receiptItems, ...dispositionItems]).slice(0, 6)
