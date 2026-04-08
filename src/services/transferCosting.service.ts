@@ -107,7 +107,7 @@ async function assertNoDuplicateTransferConsumption(params: {
   }
 }
 
-async function assertNoDuplicateTransferLink(params: {
+export async function assertNoDuplicateTransferLink(params: {
   client: PoolClient;
   tenantId: string;
   transferMovementId: string;

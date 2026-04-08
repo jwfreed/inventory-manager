@@ -5,7 +5,11 @@ import { buildPlannedMovementFromLines, planMovementLines } from '../../services
 import type { PlannedWorkOrderMovement } from '../../services/inventoryMovementPlanner';
 import { ensureInventoryBalanceRowAndLock, persistInventoryMovement } from '../../domains/inventory';
 import { validateResolvedStockLevels } from '../../services/stockValidation.service';
-import { relocateTransferCostLayersInTx } from '../../services/transferCosting.service';
+import { createCostLayer } from '../../services/costLayers.service';
+import {
+  assertNoDuplicateTransferLink,
+  relocateTransferCostLayersInTx
+} from '../../services/transferCosting.service';
 import {
   buildInventoryBalanceProjectionOp
 } from '../../modules/platform/application/inventoryMutationSupport';
