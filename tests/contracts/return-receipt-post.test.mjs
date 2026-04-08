@@ -54,8 +54,9 @@ async function createPostedReturnReceiptFixture(harness, options = {}) {
     }]
   });
 
+  const postIdempotencyKey = options.postIdempotencyKey ?? `return-receipt-post:${randomUUID()}`;
   const postedReceipt = await postReturnReceipt(harness.tenantId, receipt.id, {
-    idempotencyKey: `return-receipt-post:${randomUUID()}`
+    idempotencyKey: postIdempotencyKey
   });
 
   return {
@@ -63,7 +64,8 @@ async function createPostedReturnReceiptFixture(harness, options = {}) {
     customer,
     item,
     authorization,
-    receipt: postedReceipt
+    receipt: postedReceipt,
+    postIdempotencyKey
   };
 }
 
@@ -478,4 +480,157 @@ test('return receipt posting preserves tenant scope', async () => {
   const stillDraft = await getReturnReceipt(sourceHarness.tenantId, receipt.id);
   assert.equal(stillDraft?.status, 'draft');
   assert.equal(stillDraft?.inventoryMovementId, null);
+});
+
+test('same-key replay does not resurrect a canceled return receipt', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-return-receipt-canceled',
+    tenantName: 'Return Receipt Canceled Replay Tenant'
+  });
+  const { receipt, postIdempotencyKey } = await createPostedReturnReceiptFixture(harness, {
+    customerPrefix: 'RET-CANCEL',
+    skuPrefix: 'RET-CANCEL'
+  });
+
+  await harness.pool.query(
+    `UPDATE return_receipts
+        SET status = 'canceled'
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [harness.tenantId, receipt.id]
+  );
+
+  await assert.rejects(
+    () => postReturnReceipt(harness.tenantId, receipt.id, { idempotencyKey: postIdempotencyKey }),
+    (error) => error?.message === 'RETURN_RECEIPT_CANCELED'
+  );
+
+  const persisted = await getReturnReceipt(harness.tenantId, receipt.id);
+  assert.equal(persisted?.status, 'canceled');
+  assert.equal(persisted?.inventoryMovementId, receipt.inventoryMovementId);
+});
+
+test('return receipt cap enforcement counts authoritative drifted sibling receipts', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-return-receipt-drift-cap',
+    tenantName: 'Return Receipt Drift Cap Tenant'
+  });
+  const { topology } = harness;
+  const customer = await harness.createCustomer('RET-CAP');
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.HOLD.id,
+    skuPrefix: 'RET-CAP',
+    type: 'raw'
+  });
+
+  const authorization = await createReturnAuthorization(harness.tenantId, {
+    rmaNumber: `RMA-${randomUUID().slice(0, 8)}`,
+    customerId: customer.id,
+    status: 'authorized',
+    authorizedAt: '2026-03-10T00:00:00.000Z',
+    lines: [{
+      itemId: item.id,
+      uom: 'each',
+      quantityAuthorized: 2
+    }]
+  });
+
+  const firstReceipt = await createReturnReceipt(harness.tenantId, {
+    returnAuthorizationId: authorization.id,
+    receivedAt: '2026-03-11T00:00:00.000Z',
+    receivedToLocationId: topology.defaults.HOLD.id,
+    lines: [{
+      returnAuthorizationLineId: authorization.lines[0].id,
+      itemId: item.id,
+      uom: 'each',
+      quantityReceived: 1
+    }]
+  });
+  const postedFirst = await postReturnReceipt(harness.tenantId, firstReceipt.id, {
+    idempotencyKey: `return-receipt-post:${randomUUID()}`
+  });
+
+  await harness.pool.query(
+    `UPDATE return_receipts
+        SET status = 'draft',
+            inventory_movement_id = NULL
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [harness.tenantId, postedFirst.id]
+  );
+
+  const secondReceipt = await createReturnReceipt(harness.tenantId, {
+    returnAuthorizationId: authorization.id,
+    receivedAt: '2026-03-12T00:00:00.000Z',
+    receivedToLocationId: topology.defaults.HOLD.id,
+    lines: [{
+      returnAuthorizationLineId: authorization.lines[0].id,
+      itemId: item.id,
+      uom: 'each',
+      quantityReceived: 2
+    }]
+  });
+
+  await assert.rejects(
+    () => postReturnReceipt(harness.tenantId, secondReceipt.id, {
+      idempotencyKey: `return-receipt-post:${randomUUID()}`
+    }),
+    (error) => error?.message === 'RETURN_RECEIPT_QTY_EXCEEDS_AUTHORIZED'
+  );
+});
+
+test('same-key replay repairs missing receipt cost layers and movement events before returning success', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-return-receipt-repair',
+    tenantName: 'Return Receipt Replay Repair Tenant'
+  });
+  const { receipt, postIdempotencyKey } = await createPostedReturnReceiptFixture(harness, {
+    customerPrefix: 'RET-REPAIR',
+    skuPrefix: 'RET-REPAIR'
+  });
+
+  await harness.pool.query(
+    `DELETE FROM inventory_events
+      WHERE tenant_id = $1
+        AND aggregate_type = 'inventory_movement'
+        AND aggregate_id = $2
+        AND event_type = 'inventory.movement.posted'`,
+    [harness.tenantId, receipt.inventoryMovementId]
+  );
+  await harness.pool.query(
+    `DELETE FROM inventory_cost_layers
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND source_type = 'receipt'`,
+    [harness.tenantId, receipt.inventoryMovementId]
+  );
+
+  const replayed = await postReturnReceipt(harness.tenantId, receipt.id, {
+    idempotencyKey: postIdempotencyKey
+  });
+  assert.equal(replayed.inventoryMovementId, receipt.inventoryMovementId);
+
+  const repairedLayers = await harness.pool.query(
+    `SELECT COUNT(*)::int AS count,
+            COALESCE(SUM(original_quantity), 0)::numeric AS qty
+       FROM inventory_cost_layers
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND source_type = 'receipt'
+        AND voided_at IS NULL`,
+    [harness.tenantId, receipt.inventoryMovementId]
+  );
+  assert.equal(Number(repairedLayers.rows[0]?.count ?? 0), receipt.lines.length);
+  assert.equal(Number(repairedLayers.rows[0]?.qty ?? 0), receipt.lines.reduce((sum, line) => sum + line.quantityReceived, 0));
+
+  const repairedEvents = await harness.pool.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_events
+      WHERE tenant_id = $1
+        AND aggregate_type = 'inventory_movement'
+        AND aggregate_id = $2
+        AND event_type = 'inventory.movement.posted'`,
+    [harness.tenantId, receipt.inventoryMovementId]
+  );
+  assert.ok(Number(repairedEvents.rows[0]?.count ?? 0) >= 1);
 });

@@ -53,6 +53,17 @@ type DispositionReasonCodes = Readonly<{
   inbound: string;
 }>;
 
+type PersistedReturnDispositionMovementLineRow = {
+  id: string;
+  item_id: string;
+  location_id: string;
+  uom: string;
+  canonical_uom: string | null;
+  quantity_delta: string | number;
+  quantity_delta_canonical: string | number | null;
+  reason_code: string | null;
+};
+
 export type ReturnDispositionPostPolicy = Readonly<{
   warehouseId: string;
   destinationLocationId: string;
@@ -75,6 +86,13 @@ export type ReturnDispositionMovementPlan = Readonly<{
   movement: PlannedWorkOrderMovement;
   pairs: ReadonlyArray<ReturnDispositionPlanPair>;
   projectionOps: ReadonlyArray<InventoryCommandProjectionOp>;
+}>;
+
+export type ReturnDispositionCostArtifactAssessment = Readonly<{
+  ready: boolean;
+  repairable: boolean;
+  reason: string | null;
+  details: Record<string, unknown>;
 }>;
 
 async function loadLocationPolicyRow(params: {
@@ -116,6 +134,353 @@ function buildDispositionReasonCodes(
     outbound: 'return_quarantine_out',
     inbound: 'return_quarantine_in'
   });
+}
+
+function buildDispositionMovementLineKey(params: {
+  itemId: string;
+  locationId: string;
+  uom: string;
+  quantity: number;
+  reasonCode: string;
+}) {
+  return `${params.itemId}:${params.locationId}:${params.uom}:${roundQuantity(params.quantity).toFixed(6)}:${params.reasonCode}`;
+}
+
+async function buildReturnDispositionRepairPlan(params: {
+  client: PoolClient;
+  tenantId: string;
+  disposition: LockedReturnDispositionRow;
+  dispositionLines: ReadonlyArray<LockedReturnDispositionLineRow>;
+}) {
+  const warehouseId = await resolveWarehouseIdForLocation(
+    params.tenantId,
+    params.disposition.from_location_id,
+    params.client
+  );
+  if (!warehouseId) {
+    throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+  }
+  if (!params.disposition.to_location_id) {
+    throw new Error('RETURN_DISPOSITION_DESTINATION_REQUIRED');
+  }
+
+  const reasonCodes = buildDispositionReasonCodes(params.disposition.disposition_type);
+  const plannedLines = await planMovementLines({
+    tenantId: params.tenantId,
+    lines: params.dispositionLines.flatMap((line) => {
+      const quantity = roundQuantity(toNumber(line.quantity));
+      return [
+        {
+          sourceLineId: `${params.disposition.id}:${line.id}:out`,
+          warehouseId,
+          itemId: line.item_id,
+          locationId: params.disposition.from_location_id,
+          quantity: -quantity,
+          uom: line.uom,
+          defaultReasonCode: reasonCodes.outbound,
+          lineNotes: line.notes ?? `Return disposition ${params.disposition.id} line ${line.id} outbound`
+        },
+        {
+          sourceLineId: `${params.disposition.id}:${line.id}:in`,
+          warehouseId,
+          itemId: line.item_id,
+          locationId: params.disposition.to_location_id!,
+          quantity,
+          uom: line.uom,
+          defaultReasonCode: reasonCodes.inbound,
+          lineNotes: line.notes ?? `Return disposition ${params.disposition.id} line ${line.id} inbound`
+        }
+      ];
+    }),
+    client: params.client
+  });
+
+  const actualLineBySource = new Map(plannedLines.map((line) => [line.sourceLineId, line]));
+  const pairs = params.dispositionLines.map((line) => {
+    const outSourceLineId = `${params.disposition.id}:${line.id}:out`;
+    const inSourceLineId = `${params.disposition.id}:${line.id}:in`;
+    const outbound = actualLineBySource.get(outSourceLineId);
+    const inbound = actualLineBySource.get(inSourceLineId);
+    if (!outbound || !inbound) {
+      throw new Error('RETURN_DISPOSITION_PLAN_PAIR_MISSING');
+    }
+    return {
+      itemId: line.item_id,
+      sourceLocationId: params.disposition.from_location_id,
+      destinationLocationId: params.disposition.to_location_id!,
+      canonicalUom: outbound.canonicalFields.canonicalUom,
+      quantity: inbound.canonicalFields.quantityDeltaCanonical,
+      outSourceLineId,
+      inSourceLineId
+    };
+  });
+
+  return {
+    occurredAt: params.disposition.occurred_at ? new Date(params.disposition.occurred_at) : new Date(),
+    plannedLines,
+    pairs
+  };
+}
+
+async function mapReturnDispositionPersistedLineIds(params: {
+  client: PoolClient;
+  tenantId: string;
+  movementId: string;
+  plannedLines: ReadonlyArray<{
+    sourceLineId: string;
+    itemId: string;
+    locationId: string;
+    canonicalFields: { canonicalUom: string; quantityDeltaCanonical: number };
+    reasonCode: string;
+  }>;
+}) {
+  const persistedLineResult = await params.client.query<PersistedReturnDispositionMovementLineRow>(
+    `SELECT id,
+            item_id,
+            location_id,
+            uom,
+            canonical_uom,
+            quantity_delta,
+            quantity_delta_canonical,
+            reason_code
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+      ORDER BY item_id ASC,
+               location_id ASC,
+               COALESCE(canonical_uom, uom) ASC,
+               COALESCE(quantity_delta_canonical, quantity_delta) ASC,
+               COALESCE(reason_code, '') ASC,
+               id ASC`,
+    [params.tenantId, params.movementId]
+  );
+
+  const queueByKey = new Map<string, PersistedReturnDispositionMovementLineRow[]>();
+  for (const row of persistedLineResult.rows) {
+    const key = buildDispositionMovementLineKey({
+      itemId: row.item_id,
+      locationId: row.location_id,
+      uom: row.canonical_uom ?? row.uom,
+      quantity: toNumber(row.quantity_delta_canonical ?? row.quantity_delta),
+      reasonCode: row.reason_code ?? ''
+    });
+    const queue = queueByKey.get(key) ?? [];
+    queue.push(row);
+    queueByKey.set(key, queue);
+  }
+
+  const lineIdBySource = new Map<string, string>();
+  for (const line of params.plannedLines) {
+    const key = buildDispositionMovementLineKey({
+      itemId: line.itemId,
+      locationId: line.locationId,
+      uom: line.canonicalFields.canonicalUom,
+      quantity: line.canonicalFields.quantityDeltaCanonical,
+      reasonCode: line.reasonCode
+    });
+    const queue = queueByKey.get(key);
+    const row = queue?.shift();
+    if (!row) {
+      throw new Error('RETURN_DISPOSITION_PERSISTED_LINE_MISSING');
+    }
+    lineIdBySource.set(line.sourceLineId, row.id);
+  }
+
+  return lineIdBySource;
+}
+
+async function assertReturnDispositionTransferCostIntegrity(params: {
+  client: PoolClient;
+  tenantId: string;
+  movementId: string;
+  outLineId: string;
+  inLineId: string;
+  expectedQuantity: number;
+}) {
+  const linkResult = await params.client.query<{
+    quantity: string;
+    extended_cost: string;
+    link_count: string;
+    distinct_source_layers: string;
+    distinct_dest_layers: string;
+  }>(
+    `SELECT COALESCE(SUM(quantity), 0)::text AS quantity,
+            COALESCE(SUM(extended_cost), 0)::text AS extended_cost,
+            COUNT(*)::text AS link_count,
+            COUNT(DISTINCT source_cost_layer_id)::text AS distinct_source_layers,
+            COUNT(DISTINCT dest_cost_layer_id)::text AS distinct_dest_layers
+       FROM cost_layer_transfer_links
+      WHERE tenant_id = $1
+        AND transfer_movement_id = $2
+        AND transfer_out_line_id = $3
+        AND transfer_in_line_id = $4`,
+    [params.tenantId, params.movementId, params.outLineId, params.inLineId]
+  );
+  const linkRow = linkResult.rows[0];
+  const linkedQuantity = roundQuantity(Number(linkRow?.quantity ?? 0));
+  const linkedCost = roundQuantity(Number(linkRow?.extended_cost ?? 0));
+  const linkCount = Number(linkRow?.link_count ?? 0);
+  const distinctSourceLayers = Number(linkRow?.distinct_source_layers ?? 0);
+  const distinctDestLayers = Number(linkRow?.distinct_dest_layers ?? 0);
+
+  if (linkCount < 1) {
+    throw new Error('TRANSFER_COST_LINKS_MISSING');
+  }
+  if (Math.abs(linkedQuantity - params.expectedQuantity) > 1e-6) {
+    throw new Error('TRANSFER_COST_QUANTITY_IMBALANCE');
+  }
+  if (distinctSourceLayers !== linkCount || distinctDestLayers !== linkCount) {
+    throw new Error('TRANSFER_COST_LAYER_DUPLICATION');
+  }
+
+  const [consumptionResult, destLayerResult] = await Promise.all([
+    params.client.query<{ quantity: string; extended_cost: string }>(
+      `SELECT COALESCE(SUM(consumed_quantity), 0)::text AS quantity,
+              COALESCE(SUM(extended_cost), 0)::text AS extended_cost
+         FROM cost_layer_consumptions
+        WHERE tenant_id = $1
+          AND movement_id = $2
+          AND consumption_document_id = $3`,
+      [params.tenantId, params.movementId, params.outLineId]
+    ),
+    params.client.query<{ quantity: string; extended_cost: string }>(
+      `SELECT COALESCE(SUM(original_quantity), 0)::text AS quantity,
+              COALESCE(SUM(extended_cost), 0)::text AS extended_cost
+         FROM inventory_cost_layers
+        WHERE tenant_id = $1
+          AND movement_id = $2
+          AND source_type = 'transfer_in'
+          AND source_document_id = $3
+          AND voided_at IS NULL`,
+      [params.tenantId, params.movementId, params.inLineId]
+    )
+  ]);
+
+  const consumedQuantity = roundQuantity(Number(consumptionResult.rows[0]?.quantity ?? 0));
+  const consumedCost = roundQuantity(Number(consumptionResult.rows[0]?.extended_cost ?? 0));
+  const receivedQuantity = roundQuantity(Number(destLayerResult.rows[0]?.quantity ?? 0));
+  const receivedCost = roundQuantity(Number(destLayerResult.rows[0]?.extended_cost ?? 0));
+
+  if (Math.abs(consumedQuantity - params.expectedQuantity) > 1e-6 || Math.abs(receivedQuantity - params.expectedQuantity) > 1e-6) {
+    throw new Error('TRANSFER_COST_QUANTITY_IMBALANCE');
+  }
+  if (Math.abs(consumedCost - linkedCost) > 1e-6 || Math.abs(receivedCost - linkedCost) > 1e-6) {
+    throw new Error('TRANSFER_COST_IMBALANCE');
+  }
+}
+
+async function rebuildReturnDispositionLinksFromConsumptions(params: {
+  client: PoolClient;
+  tenantId: string;
+  movementId: string;
+  occurredAt: Date;
+  note: string;
+  lineIdBySource: Map<string, string>;
+  pairs: ReadonlyArray<ReturnDispositionPlanPair>;
+}) {
+  const outLineIds = params.pairs
+    .map((pair) => params.lineIdBySource.get(pair.outSourceLineId))
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const consumptionResult = await params.client.query<{
+    cost_layer_id: string;
+    consumption_document_id: string;
+    consumed_quantity: string | number;
+    unit_cost: string | number;
+    extended_cost: string | number;
+  }>(
+    `SELECT cost_layer_id,
+            consumption_document_id,
+            consumed_quantity,
+            unit_cost,
+            extended_cost
+       FROM cost_layer_consumptions
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND consumption_type = 'transfer_out'
+        AND consumption_document_id = ANY($3::uuid[])
+      ORDER BY consumption_document_id ASC, id ASC`,
+    [params.tenantId, params.movementId, outLineIds]
+  );
+
+  const rowsByOutLineId = new Map<string, typeof consumptionResult.rows>();
+  for (const row of consumptionResult.rows) {
+    const bucket = rowsByOutLineId.get(row.consumption_document_id) ?? [];
+    bucket.push(row);
+    rowsByOutLineId.set(row.consumption_document_id, bucket);
+  }
+
+  for (const pair of params.pairs) {
+    const outLineId = params.lineIdBySource.get(pair.outSourceLineId);
+    const inLineId = params.lineIdBySource.get(pair.inSourceLineId);
+    if (!outLineId || !inLineId) {
+      throw new Error('RETURN_DISPOSITION_PERSISTED_LINE_ID_MISSING');
+    }
+
+    const rows = rowsByOutLineId.get(outLineId) ?? [];
+    const consumedQuantity = roundQuantity(rows.reduce((sum, row) => sum + toNumber(row.consumed_quantity), 0));
+    if (Math.abs(consumedQuantity - pair.quantity) > 1e-6) {
+      throw new Error('RETURN_DISPOSITION_COST_REPAIR_CONSUMPTION_MISMATCH');
+    }
+
+    for (const row of rows) {
+      const quantity = roundQuantity(toNumber(row.consumed_quantity));
+      const unitCost = roundQuantity(toNumber(row.unit_cost));
+      const extendedCost = roundQuantity(toNumber(row.extended_cost));
+      const destLayer = await createCostLayer({
+        tenant_id: params.tenantId,
+        item_id: pair.itemId,
+        location_id: pair.destinationLocationId,
+        uom: pair.canonicalUom,
+        quantity,
+        unit_cost: unitCost,
+        source_type: 'transfer_in',
+        source_document_id: inLineId,
+        movement_id: params.movementId,
+        layer_date: params.occurredAt,
+        notes: params.note,
+        client: params.client
+      });
+
+      await assertNoDuplicateTransferLink({
+        client: params.client,
+        tenantId: params.tenantId,
+        transferMovementId: params.movementId,
+        outLineId,
+        inLineId,
+        sourceCostLayerId: row.cost_layer_id,
+        destCostLayerId: destLayer.id
+      });
+
+      await params.client.query(
+        `INSERT INTO cost_layer_transfer_links (
+            id,
+            tenant_id,
+            transfer_movement_id,
+            transfer_out_line_id,
+            transfer_in_line_id,
+            source_cost_layer_id,
+            dest_cost_layer_id,
+            quantity,
+            unit_cost,
+            extended_cost,
+            created_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          uuidv4(),
+          params.tenantId,
+          params.movementId,
+          outLineId,
+          inLineId,
+          row.cost_layer_id,
+          destLayer.id,
+          quantity,
+          unitCost,
+          extendedCost,
+          params.occurredAt
+        ]
+      );
+    }
+  }
 }
 
 export async function evaluateReturnDispositionPostPolicy(params: {
@@ -201,7 +566,24 @@ export async function evaluateReturnDispositionPostPolicy(params: {
         AND rd.tenant_id = rdl.tenant_id
       WHERE rd.tenant_id = $1
         AND rd.return_receipt_id = $2
-        AND rd.status = 'posted'
+        AND (
+          rd.status = 'posted'
+          OR 1 = (
+            SELECT COUNT(*)::int
+             FROM inventory_movements im
+             WHERE im.tenant_id = rd.tenant_id
+               AND im.source_type = 'return_disposition_post'
+               AND im.source_id = rd.id::text
+               AND im.movement_type = 'transfer'
+               AND im.status = 'posted'
+               AND EXISTS (
+                 SELECT 1
+                   FROM inventory_movement_lines iml
+                  WHERE iml.tenant_id = im.tenant_id
+                    AND iml.movement_id = im.id
+               )
+          )
+        )
         AND rd.id <> $3
       GROUP BY rdl.item_id, rdl.uom`,
     [params.tenantId, params.disposition.return_receipt_id, params.disposition.id]
@@ -362,6 +744,251 @@ export async function buildReturnDispositionMovementPlan(params: {
       })
     )
   }) satisfies ReturnDispositionMovementPlan;
+}
+
+export async function assessReturnDispositionCostArtifacts(params: {
+  client: PoolClient;
+  tenantId: string;
+  dispositionId: string;
+  movementId: string;
+}): Promise<ReturnDispositionCostArtifactAssessment> {
+  const [dispositionResult, linesResult, summaryResult] = await Promise.all([
+    params.client.query<LockedReturnDispositionRow>(
+      `SELECT id,
+              return_receipt_id,
+              disposition_type,
+              occurred_at,
+              from_location_id,
+              to_location_id,
+              notes
+         FROM return_dispositions
+        WHERE tenant_id = $1
+          AND id = $2
+        LIMIT 1`,
+      [params.tenantId, params.dispositionId]
+    ),
+    params.client.query<LockedReturnDispositionLineRow>(
+      `SELECT id, line_number, item_id, uom, quantity, notes
+         FROM return_disposition_lines
+        WHERE tenant_id = $1
+          AND return_disposition_id = $2
+        ORDER BY line_number ASC NULLS LAST, created_at ASC, id ASC`,
+      [params.tenantId, params.dispositionId]
+    ),
+    params.client.query<{
+      link_count: string;
+      consumption_count: string;
+      transfer_in_layer_count: string;
+    }>(
+      `SELECT
+          (SELECT COUNT(*)::text
+             FROM cost_layer_transfer_links
+            WHERE tenant_id = $1
+              AND transfer_movement_id = $2) AS link_count,
+          (SELECT COUNT(*)::text
+             FROM cost_layer_consumptions
+            WHERE tenant_id = $1
+              AND movement_id = $2
+              AND consumption_type = 'transfer_out') AS consumption_count,
+          (SELECT COUNT(*)::text
+             FROM inventory_cost_layers
+            WHERE tenant_id = $1
+              AND movement_id = $2
+              AND source_type = 'transfer_in'
+              AND voided_at IS NULL) AS transfer_in_layer_count`,
+      [params.tenantId, params.movementId]
+    )
+  ]);
+
+  const disposition = dispositionResult.rows[0] ?? null;
+  if (!disposition) {
+    return Object.freeze({
+      ready: false,
+      repairable: false,
+      reason: 'return_disposition_missing',
+      details: { dispositionId: params.dispositionId }
+    });
+  }
+
+  const repairPlan = await buildReturnDispositionRepairPlan({
+    client: params.client,
+    tenantId: params.tenantId,
+    disposition,
+    dispositionLines: linesResult.rows
+  });
+  const lineIdBySource = await mapReturnDispositionPersistedLineIds({
+    client: params.client,
+    tenantId: params.tenantId,
+    movementId: params.movementId,
+    plannedLines: repairPlan.plannedLines
+  });
+
+  try {
+    for (const pair of repairPlan.pairs) {
+      const outLineId = lineIdBySource.get(pair.outSourceLineId);
+      const inLineId = lineIdBySource.get(pair.inSourceLineId);
+      if (!outLineId || !inLineId) {
+        throw new Error('RETURN_DISPOSITION_PERSISTED_LINE_ID_MISSING');
+      }
+      await assertReturnDispositionTransferCostIntegrity({
+        client: params.client,
+        tenantId: params.tenantId,
+        movementId: params.movementId,
+        outLineId,
+        inLineId,
+        expectedQuantity: pair.quantity
+      });
+    }
+    return Object.freeze({
+      ready: true,
+      repairable: false,
+      reason: null,
+      details: {
+        dispositionId: params.dispositionId,
+        movementId: params.movementId
+      }
+    });
+  } catch (error) {
+    const summary = summaryResult.rows[0] ?? {
+      link_count: '0',
+      consumption_count: '0',
+      transfer_in_layer_count: '0'
+    };
+    return Object.freeze({
+      ready: false,
+      repairable: true,
+      reason: 'return_disposition_cost_artifacts_missing_or_inconsistent',
+      details: {
+        dispositionId: params.dispositionId,
+        movementId: params.movementId,
+        validationError: (error as Error)?.message ?? 'RETURN_DISPOSITION_COST_VALIDATION_FAILED',
+        linkCount: Number(summary.link_count ?? 0),
+        consumptionCount: Number(summary.consumption_count ?? 0),
+        transferInLayerCount: Number(summary.transfer_in_layer_count ?? 0)
+      }
+    });
+  }
+}
+
+export async function repairReturnDispositionCostArtifacts(params: {
+  client: PoolClient;
+  tenantId: string;
+  dispositionId: string;
+  movementId: string;
+}) {
+  const dispositionResult = await params.client.query<LockedReturnDispositionRow>(
+    `SELECT id,
+            return_receipt_id,
+            disposition_type,
+            occurred_at,
+            from_location_id,
+            to_location_id,
+            notes
+       FROM return_dispositions
+      WHERE tenant_id = $1
+        AND id = $2
+      LIMIT 1`,
+    [params.tenantId, params.dispositionId]
+  );
+  const disposition = dispositionResult.rows[0] ?? null;
+  if (!disposition) {
+    throw new Error('RETURN_DISPOSITION_NOT_FOUND');
+  }
+  const linesResult = await params.client.query<LockedReturnDispositionLineRow>(
+    `SELECT id, line_number, item_id, uom, quantity, notes
+       FROM return_disposition_lines
+      WHERE tenant_id = $1
+        AND return_disposition_id = $2
+      ORDER BY line_number ASC NULLS LAST, created_at ASC, id ASC`,
+    [params.tenantId, params.dispositionId]
+  );
+  if ((linesResult.rowCount ?? 0) === 0) {
+    throw new Error('RETURN_DISPOSITION_NO_LINES');
+  }
+
+  const repairPlan = await buildReturnDispositionRepairPlan({
+    client: params.client,
+    tenantId: params.tenantId,
+    disposition,
+    dispositionLines: linesResult.rows
+  });
+  const lineIdBySource = await mapReturnDispositionPersistedLineIds({
+    client: params.client,
+    tenantId: params.tenantId,
+    movementId: params.movementId,
+    plannedLines: repairPlan.plannedLines
+  });
+
+  const artifactCounts = await params.client.query<{
+    link_count: string;
+    consumption_count: string;
+    transfer_in_layer_count: string;
+  }>(
+    `SELECT
+        (SELECT COUNT(*)::text
+           FROM cost_layer_transfer_links
+          WHERE tenant_id = $1
+            AND transfer_movement_id = $2) AS link_count,
+        (SELECT COUNT(*)::text
+           FROM cost_layer_consumptions
+          WHERE tenant_id = $1
+            AND movement_id = $2
+            AND consumption_type = 'transfer_out') AS consumption_count,
+        (SELECT COUNT(*)::text
+           FROM inventory_cost_layers
+          WHERE tenant_id = $1
+            AND movement_id = $2
+            AND source_type = 'transfer_in'
+            AND voided_at IS NULL) AS transfer_in_layer_count`,
+    [params.tenantId, params.movementId]
+  );
+  const counts = artifactCounts.rows[0] ?? {
+    link_count: '0',
+    consumption_count: '0',
+    transfer_in_layer_count: '0'
+  };
+  const linkCount = Number(counts.link_count ?? 0);
+  const consumptionCount = Number(counts.consumption_count ?? 0);
+  const transferInLayerCount = Number(counts.transfer_in_layer_count ?? 0);
+  if (linkCount === 0 && transferInLayerCount === 0 && consumptionCount > 0) {
+    await rebuildReturnDispositionLinksFromConsumptions({
+      client: params.client,
+      tenantId: params.tenantId,
+      movementId: params.movementId,
+      occurredAt: repairPlan.occurredAt,
+      note: `Return disposition ${params.dispositionId}`,
+      lineIdBySource,
+      pairs: repairPlan.pairs
+    });
+    return;
+  }
+  if (linkCount > 0 || transferInLayerCount > 0 || consumptionCount > 0) {
+    throw new Error('RETURN_DISPOSITION_COST_REPAIR_UNSAFE');
+  }
+
+  await relocateTransferCostLayersInTx({
+    client: params.client,
+    tenantId: params.tenantId,
+    transferMovementId: params.movementId,
+    occurredAt: repairPlan.occurredAt,
+    notes: `Return disposition ${params.dispositionId}`,
+    pairs: repairPlan.pairs.map((pair) => {
+      const outLineId = lineIdBySource.get(pair.outSourceLineId);
+      const inLineId = lineIdBySource.get(pair.inSourceLineId);
+      if (!outLineId || !inLineId) {
+        throw new Error('RETURN_DISPOSITION_PERSISTED_LINE_ID_MISSING');
+      }
+      return {
+        itemId: pair.itemId,
+        sourceLocationId: pair.sourceLocationId,
+        destinationLocationId: pair.destinationLocationId,
+        outLineId,
+        inLineId,
+        quantity: pair.quantity,
+        uom: pair.canonicalUom
+      };
+    })
+  });
 }
 
 function compareLockTarget(

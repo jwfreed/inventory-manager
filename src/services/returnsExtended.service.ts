@@ -31,6 +31,7 @@ import {
 } from '../domain/returns/dispositionPosting';
 import {
   classifyReturnPostingState,
+  repairReturnPostingRecoveryState,
   repairReturnPostingAggregateState
 } from '../domain/returns/returnPostingState';
 
@@ -196,13 +197,27 @@ async function buildReturnReceiptPostReplayResult(params: {
     ],
     client: params.client,
     preFetchIntegrityCheck: async () => {
-      await repairReturnPostingAggregateState({
+      const repaired = await repairReturnPostingRecoveryState({
         client: params.client,
         tenantId: params.tenantId,
         documentId: params.returnReceiptId,
         kind: 'receipt',
         movementId: params.movementId
       });
+      if (repaired.state === 'TERMINAL_CANCELED') {
+        throw new Error('RETURN_RECEIPT_CANCELED');
+      }
+      if (!isReturnReplayableState(repaired.state) || repaired.authoritativeMovementId !== params.movementId) {
+        throw buildReplayCorruptionError({
+          tenantId: params.tenantId,
+          returnReceiptId: params.returnReceiptId,
+          movementId: params.movementId,
+          reason: 'return_receipt_replay_repair_failed_closed',
+          state: repaired.state,
+          repairActions: repaired.repairActions,
+          details: repaired.details
+        });
+      }
     },
     fetchAggregateView: () => getReturnReceipt(params.tenantId, params.returnReceiptId, params.client),
     aggregateNotFoundError: new Error('RETURN_RECEIPT_NOT_FOUND'),
@@ -232,13 +247,27 @@ async function buildReturnDispositionPostReplayResult(params: {
     ],
     client: params.client,
     preFetchIntegrityCheck: async () => {
-      await repairReturnPostingAggregateState({
+      const repaired = await repairReturnPostingRecoveryState({
         client: params.client,
         tenantId: params.tenantId,
         documentId: params.returnDispositionId,
         kind: 'disposition',
         movementId: params.movementId
       });
+      if (repaired.state === 'TERMINAL_CANCELED') {
+        throw new Error('RETURN_DISPOSITION_CANCELED');
+      }
+      if (!isReturnReplayableState(repaired.state) || repaired.authoritativeMovementId !== params.movementId) {
+        throw buildReplayCorruptionError({
+          tenantId: params.tenantId,
+          returnDispositionId: params.returnDispositionId,
+          movementId: params.movementId,
+          reason: 'return_disposition_replay_repair_failed_closed',
+          state: repaired.state,
+          repairActions: repaired.repairActions,
+          details: repaired.details
+        });
+      }
     },
     fetchAggregateView: () => getReturnDisposition(params.tenantId, params.returnDispositionId, params.client),
     aggregateNotFoundError: new Error('RETURN_DISPOSITION_NOT_FOUND'),
@@ -414,6 +443,9 @@ export async function postReturnReceipt(
         kind: 'receipt',
         expectedMovementId: replayMovementId
       });
+      if (replayClassification.state === 'TERMINAL_CANCELED') {
+        throw new Error('RETURN_RECEIPT_CANCELED');
+      }
       if (!isReturnReplayableState(replayClassification.state) || !replayClassification.authoritativeMovementId) {
         throw buildReturnRecoveryIrrecoverableError({
           code: 'RETURN_RECEIPT_RECOVERY_IRRECOVERABLE',
@@ -421,15 +453,13 @@ export async function postReturnReceipt(
           classification: replayClassification
         });
       }
-      return (
-        await buildReturnReceiptPostReplayResult({
-          tenantId,
-          returnReceiptId: responseBody?.id ?? id,
-          movementId: replayClassification.authoritativeMovementId,
-          expectedLineCount: Array.isArray(responseBody?.lines) ? responseBody.lines.length : 0,
-          client
-        })
-      ).responseBody;
+      return await buildReturnReceiptPostReplayResult({
+        tenantId,
+        returnReceiptId: responseBody?.id ?? id,
+        movementId: replayClassification.authoritativeMovementId,
+        expectedLineCount: Array.isArray(responseBody?.lines) ? responseBody.lines.length : 0,
+        client
+      });
     },
     lockTargets: async (client) => {
       const receiptResult = await client.query(
@@ -474,6 +504,9 @@ export async function postReturnReceipt(
           documentId: id,
           classification: receiptClassification
         });
+      }
+      if (receiptClassification.state === 'TERMINAL_CANCELED') {
+        throw new Error('RETURN_RECEIPT_CANCELED');
       }
       if (isReturnReplayableState(receiptClassification.state)) {
         return [];
@@ -729,6 +762,9 @@ export async function postReturnDisposition(
         kind: 'disposition',
         expectedMovementId: replayMovementId
       });
+      if (replayClassification.state === 'TERMINAL_CANCELED') {
+        throw new Error('RETURN_DISPOSITION_CANCELED');
+      }
       if (!isReturnReplayableState(replayClassification.state) || !replayClassification.authoritativeMovementId) {
         throw buildReturnRecoveryIrrecoverableError({
           code: 'RETURN_DISPOSITION_RECOVERY_IRRECOVERABLE',
@@ -736,15 +772,13 @@ export async function postReturnDisposition(
           classification: replayClassification
         });
       }
-      return (
-        await buildReturnDispositionPostReplayResult({
-          tenantId,
-          returnDispositionId: responseBody?.id ?? id,
-          movementId: replayClassification.authoritativeMovementId,
-          expectedLineCount: Array.isArray(responseBody?.lines) ? responseBody.lines.length * 2 : 0,
-          client
-        })
-      ).responseBody;
+      return await buildReturnDispositionPostReplayResult({
+        tenantId,
+        returnDispositionId: responseBody?.id ?? id,
+        movementId: replayClassification.authoritativeMovementId,
+        expectedLineCount: Array.isArray(responseBody?.lines) ? responseBody.lines.length * 2 : 0,
+        client
+      });
     },
     lockTargets: async (client) => {
       const dispositionResult = await client.query(
@@ -789,6 +823,9 @@ export async function postReturnDisposition(
           documentId: id,
           classification: dispositionClassification
         });
+      }
+      if (dispositionClassification.state === 'TERMINAL_CANCELED') {
+        throw new Error('RETURN_DISPOSITION_CANCELED');
       }
       if (isReturnReplayableState(dispositionClassification.state)) {
         return [];

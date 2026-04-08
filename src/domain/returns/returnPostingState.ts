@@ -1,4 +1,12 @@
 import type { PoolClient } from 'pg';
+import {
+  assessReturnReceiptCostArtifacts,
+  repairReturnReceiptCostArtifacts
+} from './receiptPosting';
+import {
+  assessReturnDispositionCostArtifacts,
+  repairReturnDispositionCostArtifacts
+} from './dispositionPosting';
 
 export type ReturnPostingDocumentKind = 'receipt' | 'disposition';
 
@@ -7,7 +15,13 @@ export type ReturnPostingReplayState =
   | 'VALID_COMPLETE'
   | 'RECOVERABLE_PARTIAL'
   | 'TOLERATED_DRIFT'
+  | 'TERMINAL_CANCELED'
   | 'IRRECOVERABLE';
+
+export type ReturnPostingRepairAction =
+  | 'repair_aggregate_state'
+  | 'repair_receipt_cost_layers'
+  | 'repair_disposition_costing';
 
 type ReturnDocumentRow = {
   id: string;
@@ -32,6 +46,7 @@ export type ReturnPostingStateClassification = Readonly<{
   authoritativeMovementId: string | null;
   reason: string | null;
   details: Record<string, unknown>;
+  repairActions: ReadonlyArray<ReturnPostingRepairAction>;
 }>;
 
 type ReturnPostingDocumentConfig = Readonly<{
@@ -61,6 +76,7 @@ function buildClassification(params: {
   authoritativeMovementId?: string | null;
   reason?: string | null;
   details?: Record<string, unknown>;
+  repairActions?: ReadonlyArray<ReturnPostingRepairAction>;
 }): ReturnPostingStateClassification {
   return Object.freeze({
     state: params.state,
@@ -69,7 +85,8 @@ function buildClassification(params: {
     inventoryMovementId: params.inventoryMovementId ?? null,
     authoritativeMovementId: params.authoritativeMovementId ?? null,
     reason: params.reason ?? null,
-    details: params.details ?? {}
+    details: params.details ?? {},
+    repairActions: params.repairActions ?? []
   });
 }
 
@@ -206,6 +223,15 @@ export async function classifyReturnPostingState(params: {
 
   const authoritativeMovement = sourceBackedMovements[0] ?? null;
   if (!authoritativeMovement) {
+    if (documentRow.status === 'canceled') {
+      return buildClassification({
+        state: 'TERMINAL_CANCELED',
+        documentId: documentRow.id,
+        documentStatus: documentRow.status,
+        inventoryMovementId: documentRow.inventory_movement_id,
+        reason: 'return_document_canceled'
+      });
+    }
     if (documentRow.status === 'posted' || documentRow.inventory_movement_id) {
       return buildClassification({
         state: 'IRRECOVERABLE',
@@ -236,6 +262,17 @@ export async function classifyReturnPostingState(params: {
     });
   }
 
+  if (documentRow.status === 'canceled') {
+    return buildClassification({
+      state: 'TERMINAL_CANCELED',
+      documentId: documentRow.id,
+      documentStatus: documentRow.status,
+      inventoryMovementId: documentRow.inventory_movement_id,
+      authoritativeMovementId: authoritativeMovement.id,
+      reason: 'return_document_canceled'
+    });
+  }
+
   if (
     params.expectedMovementId
     && params.expectedMovementId !== authoritativeMovement.id
@@ -254,9 +291,40 @@ export async function classifyReturnPostingState(params: {
     });
   }
 
+  const repairActions: ReturnPostingRepairAction[] = [];
+  if (
+    documentRow.status !== 'posted'
+    || documentRow.inventory_movement_id !== authoritativeMovement.id
+  ) {
+    repairActions.push('repair_aggregate_state');
+  }
+
+  const costAssessment = params.kind === 'receipt'
+    ? await assessReturnReceiptCostArtifacts({
+      client: params.client,
+      tenantId: params.tenantId,
+      receiptId: documentRow.id,
+      movementId: authoritativeMovement.id
+    })
+    : await assessReturnDispositionCostArtifacts({
+      client: params.client,
+      tenantId: params.tenantId,
+      dispositionId: documentRow.id,
+      movementId: authoritativeMovement.id
+    });
+  if (!costAssessment.ready) {
+    repairActions.push(
+      params.kind === 'receipt'
+        ? 'repair_receipt_cost_layers'
+        : 'repair_disposition_costing'
+    );
+  }
+
   if (
     documentRow.inventory_movement_id
     && documentRow.inventory_movement_id !== authoritativeMovement.id
+    && repairActions.length === 1
+    && repairActions[0] === 'repair_aggregate_state'
   ) {
     return buildClassification({
       state: 'TOLERATED_DRIFT',
@@ -264,11 +332,12 @@ export async function classifyReturnPostingState(params: {
       documentStatus: documentRow.status,
       inventoryMovementId: documentRow.inventory_movement_id,
       authoritativeMovementId: authoritativeMovement.id,
-      reason: 'linked_movement_mismatch'
+      reason: 'linked_movement_mismatch',
+      repairActions
     });
   }
 
-  if (documentRow.status === 'posted' && documentRow.inventory_movement_id === authoritativeMovement.id) {
+  if (repairActions.length === 0) {
     return buildClassification({
       state: 'VALID_COMPLETE',
       documentId: documentRow.id,
@@ -284,7 +353,70 @@ export async function classifyReturnPostingState(params: {
     documentStatus: documentRow.status,
     inventoryMovementId: documentRow.inventory_movement_id,
     authoritativeMovementId: authoritativeMovement.id,
-    reason: 'aggregate_link_missing_or_stale'
+    reason: costAssessment.ready ? 'aggregate_link_missing_or_stale' : costAssessment.reason,
+    details: costAssessment.ready ? {} : costAssessment.details,
+    repairActions
+  });
+}
+
+export async function repairReturnPostingRecoveryState(params: {
+  client: PoolClient;
+  tenantId: string;
+  documentId: string;
+  kind: ReturnPostingDocumentKind;
+  movementId: string;
+}) {
+  const initial = await classifyReturnPostingState({
+    client: params.client,
+    tenantId: params.tenantId,
+    documentId: params.documentId,
+    kind: params.kind,
+    expectedMovementId: params.movementId
+  });
+  if (
+    initial.state === 'IRRECOVERABLE'
+    || initial.state === 'VALID_COMPLETE'
+    || initial.state === 'TERMINAL_CANCELED'
+  ) {
+    return initial;
+  }
+
+  for (const action of initial.repairActions) {
+    if (action === 'repair_receipt_cost_layers') {
+      await repairReturnReceiptCostArtifacts({
+        client: params.client,
+        tenantId: params.tenantId,
+        receiptId: params.documentId,
+        movementId: params.movementId
+      });
+      continue;
+    }
+    if (action === 'repair_disposition_costing') {
+      await repairReturnDispositionCostArtifacts({
+        client: params.client,
+        tenantId: params.tenantId,
+        dispositionId: params.documentId,
+        movementId: params.movementId
+      });
+      continue;
+    }
+    if (action === 'repair_aggregate_state') {
+      await repairReturnPostingAggregateState({
+        client: params.client,
+        tenantId: params.tenantId,
+        documentId: params.documentId,
+        kind: params.kind,
+        movementId: params.movementId
+      });
+    }
+  }
+
+  return classifyReturnPostingState({
+    client: params.client,
+    tenantId: params.tenantId,
+    documentId: params.documentId,
+    kind: params.kind,
+    expectedMovementId: params.movementId
   });
 }
 
@@ -301,7 +433,8 @@ export async function repairReturnPostingAggregateState(params: {
         SET status = 'posted',
             inventory_movement_id = $1
       WHERE tenant_id = $2
-        AND id = $3`,
+        AND id = $3
+        AND status <> 'canceled'`,
     [params.movementId, params.tenantId, params.documentId]
   );
 }

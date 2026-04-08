@@ -75,6 +75,9 @@ router.post('/return-receipts/:id/post', async (req: Request, res: Response) => 
     const receipt = await postReturnReceipt(req.auth!.tenantId, id, { idempotencyKey });
     return res.json(receipt);
   } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
     if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS' || error?.message === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
       return res.status(409).json({
         error: {

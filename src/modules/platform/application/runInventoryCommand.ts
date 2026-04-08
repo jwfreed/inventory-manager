@@ -29,7 +29,7 @@ export type InventoryCommandEvent = {
 
 export type InventoryCommandProjectionOp = (client: PoolClient) => Promise<void>;
 
-type InventoryCommandExecutionResult<T> = {
+export type InventoryCommandExecutionResult<T> = {
   responseBody: T;
   responseStatus?: number;
   events?: InventoryCommandEvent[];
@@ -51,6 +51,19 @@ function compareInventoryCommandLockTarget(
   return left.tenantId.localeCompare(right.tenantId);
 }
 
+function isInventoryCommandExecutionResult<T>(
+  value: unknown
+): value is InventoryCommandExecutionResult<T> {
+  return !!value
+    && typeof value === 'object'
+    && 'responseBody' in value
+    && (
+      'events' in value
+      || 'projectionOps' in value
+      || 'responseStatus' in value
+    );
+}
+
 export async function runInventoryCommand<T>(params: {
   tenantId: string;
   endpoint: string;
@@ -62,7 +75,7 @@ export async function runInventoryCommand<T>(params: {
   onReplay?: (context: {
     client: PoolClient;
     responseBody: T;
-  }) => Promise<T> | T;
+  }) => Promise<InventoryCommandExecutionResult<T> | T> | InventoryCommandExecutionResult<T> | T;
   execute: (context: {
     client: PoolClient;
     lockContext: AtpLockContext;
@@ -97,9 +110,30 @@ export async function runInventoryCommand<T>(params: {
         requestHash
       });
       if (claim.replayed) {
-        return params.onReplay
+        const replayed = params.onReplay
           ? await params.onReplay({ client, responseBody: claim.responseBody })
           : claim.responseBody;
+        if (isInventoryCommandExecutionResult<T>(replayed)) {
+          await appendInventoryEventsWithDispatch(
+            client,
+            (replayed.events ?? []).map((event) => ({
+              tenantId: event.tenantId ?? params.tenantId,
+              aggregateType: event.aggregateType,
+              aggregateId: event.aggregateId,
+              aggregateIdSource: event.aggregateIdSource,
+              eventType: event.eventType,
+              eventVersion: event.eventVersion,
+              payload: event.payload,
+              producerIdempotencyKey: event.producerIdempotencyKey ?? idempotencyKey,
+              dispatch: event.dispatch
+            }))
+          );
+          for (const projectionOp of replayed.projectionOps ?? []) {
+            await projectionOp(client);
+          }
+          return replayed.responseBody;
+        }
+        return replayed;
       }
     }
 

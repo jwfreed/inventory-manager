@@ -4,7 +4,7 @@ import { roundQuantity, toNumber } from '../../lib/numbers';
 import { calculateMovementCost } from '../../services/costing.service';
 import { buildPlannedMovementFromLines, planMovementLines } from '../../services/inventoryMovementPlanner';
 import type { PlannedWorkOrderMovement } from '../../services/inventoryMovementPlanner';
-import { createCostLayer } from '../../services/costLayers.service';
+import { createCostLayer, createReceiptCostLayerOnce } from '../../services/costLayers.service';
 import {
   buildInventoryBalanceProjectionOp
 } from '../../modules/platform/application/inventoryMutationSupport';
@@ -43,6 +43,26 @@ type ReturnAuthorizationLineRow = {
   quantity_authorized: string | number;
 };
 
+type PersistedReturnReceiptMovementLineRow = {
+  id: string;
+  item_id: string;
+  location_id: string;
+  uom: string;
+  canonical_uom: string | null;
+  quantity_delta: string | number;
+  quantity_delta_canonical: string | number | null;
+  unit_cost: string | number | null;
+  reason_code: string | null;
+};
+
+type PersistedReturnReceiptCostLayerRow = {
+  source_document_id: string | null;
+  item_id: string;
+  location_id: string;
+  uom: string;
+  original_quantity: string | number;
+};
+
 export type ReturnReceiptPostPolicy = Readonly<{
   warehouseId: string;
   occurredAt: Date;
@@ -64,6 +84,284 @@ export type ReturnReceiptMovementPlan = Readonly<{
   plannedLines: ReadonlyArray<ReturnReceiptPlannedLine>;
   projectionOps: ReadonlyArray<InventoryCommandProjectionOp>;
 }>;
+
+export type ReturnReceiptCostArtifactAssessment = Readonly<{
+  ready: boolean;
+  repairable: boolean;
+  reason: string | null;
+  details: Record<string, unknown>;
+}>;
+
+function buildReceiptArtifactQuantityKey(params: {
+  itemId: string;
+  locationId: string;
+  uom: string;
+  quantity: number;
+}) {
+  return `${params.itemId}:${params.locationId}:${params.uom}:${roundQuantity(params.quantity).toFixed(6)}`;
+}
+
+function buildReceiptArtifactGroupKey(params: {
+  itemId: string;
+  locationId: string;
+  uom: string;
+}) {
+  return `${params.itemId}:${params.locationId}:${params.uom}`;
+}
+
+function compareReceiptArtifactMovementLine(
+  left: PersistedReturnReceiptMovementLineRow,
+  right: PersistedReturnReceiptMovementLineRow
+) {
+  const leftUom = left.canonical_uom ?? left.uom;
+  const rightUom = right.canonical_uom ?? right.uom;
+  return (
+    left.item_id.localeCompare(right.item_id)
+    || left.location_id.localeCompare(right.location_id)
+    || leftUom.localeCompare(rightUom)
+    || roundQuantity(toNumber(left.quantity_delta_canonical ?? left.quantity_delta))
+      .toFixed(6)
+      .localeCompare(roundQuantity(toNumber(right.quantity_delta_canonical ?? right.quantity_delta)).toFixed(6))
+    || roundQuantity(toNumber(left.unit_cost ?? 0)).toFixed(6)
+      .localeCompare(roundQuantity(toNumber(right.unit_cost ?? 0)).toFixed(6))
+    || (left.reason_code ?? '').localeCompare(right.reason_code ?? '')
+    || left.id.localeCompare(right.id)
+  );
+}
+
+async function loadReturnReceiptCostRepairContext(params: {
+  client: PoolClient;
+  tenantId: string;
+  receiptId: string;
+  movementId: string;
+}) {
+  const [receiptResult, receiptLinesResult, movementLinesResult, costLayersResult] = await Promise.all([
+    params.client.query<LockedReturnReceiptRow>(
+      `SELECT id, tenant_id, return_authorization_id, received_at, received_to_location_id, notes
+         FROM return_receipts
+        WHERE tenant_id = $1
+          AND id = $2
+        LIMIT 1`,
+      [params.tenantId, params.receiptId]
+    ),
+    params.client.query<LockedReturnReceiptLineRow>(
+      `SELECT id, item_id, uom, quantity_received, notes, return_authorization_line_id
+         FROM return_receipt_lines
+        WHERE tenant_id = $1
+          AND return_receipt_id = $2
+        ORDER BY created_at ASC, id ASC`,
+      [params.tenantId, params.receiptId]
+    ),
+    params.client.query<PersistedReturnReceiptMovementLineRow>(
+      `SELECT id,
+              item_id,
+              location_id,
+              uom,
+              canonical_uom,
+              quantity_delta,
+              quantity_delta_canonical,
+              unit_cost,
+              reason_code
+         FROM inventory_movement_lines
+        WHERE tenant_id = $1
+          AND movement_id = $2
+        ORDER BY item_id ASC,
+                 location_id ASC,
+                 COALESCE(canonical_uom, uom) ASC,
+                 COALESCE(quantity_delta_canonical, quantity_delta) ASC,
+                 COALESCE(unit_cost, 0) ASC,
+                 COALESCE(reason_code, '') ASC,
+                 id ASC`,
+      [params.tenantId, params.movementId]
+    ),
+    params.client.query<PersistedReturnReceiptCostLayerRow>(
+      `SELECT source_document_id, item_id, location_id, uom, original_quantity
+         FROM inventory_cost_layers
+        WHERE tenant_id = $1
+          AND movement_id = $2
+          AND source_type = 'receipt'
+          AND voided_at IS NULL`,
+      [params.tenantId, params.movementId]
+    )
+  ]);
+
+  return {
+    receipt: receiptResult.rows[0] ?? null,
+    receiptLines: receiptLinesResult.rows,
+    movementLines: movementLinesResult.rows.filter(
+      (line) => roundQuantity(toNumber(line.quantity_delta_canonical ?? line.quantity_delta)) > 0
+    ),
+    costLayers: costLayersResult.rows
+  };
+}
+
+export async function assessReturnReceiptCostArtifacts(params: {
+  client: PoolClient;
+  tenantId: string;
+  receiptId: string;
+  movementId: string;
+}): Promise<ReturnReceiptCostArtifactAssessment> {
+  const context = await loadReturnReceiptCostRepairContext(params);
+  if (!context.receipt) {
+    return Object.freeze({
+      ready: false,
+      repairable: false,
+      reason: 'return_receipt_missing',
+      details: { receiptId: params.receiptId }
+    });
+  }
+
+  const expectedLineCount = context.receiptLines.length;
+  const actualLayerCount = context.costLayers.length;
+  const distinctSourceDocumentCount = new Set(
+    context.costLayers
+      .map((row) => row.source_document_id)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+  ).size;
+  const expectedMovementQuantity = roundQuantity(
+    context.movementLines.reduce(
+      (sum, row) => sum + toNumber(row.quantity_delta_canonical ?? row.quantity_delta),
+      0
+    )
+  );
+  const actualLayerQuantity = roundQuantity(
+    context.costLayers.reduce((sum, row) => sum + toNumber(row.original_quantity), 0)
+  );
+
+  const expectedGroups = new Map<string, number>();
+  for (const line of context.movementLines) {
+    const key = buildReceiptArtifactGroupKey({
+      itemId: line.item_id,
+      locationId: line.location_id,
+      uom: line.canonical_uom ?? line.uom
+    });
+    expectedGroups.set(
+      key,
+      roundQuantity((expectedGroups.get(key) ?? 0) + toNumber(line.quantity_delta_canonical ?? line.quantity_delta))
+    );
+  }
+
+  const actualGroups = new Map<string, number>();
+  for (const layer of context.costLayers) {
+    const key = buildReceiptArtifactGroupKey({
+      itemId: layer.item_id,
+      locationId: layer.location_id,
+      uom: layer.uom
+    });
+    actualGroups.set(
+      key,
+      roundQuantity((actualGroups.get(key) ?? 0) + toNumber(layer.original_quantity))
+    );
+  }
+
+  const groupMismatch = expectedGroups.size !== actualGroups.size
+    || [...expectedGroups.entries()].some(([key, quantity]) =>
+      Math.abs(quantity - (actualGroups.get(key) ?? Number.NaN)) > 1e-6
+    );
+
+  const ready = expectedLineCount > 0
+    && actualLayerCount === expectedLineCount
+    && distinctSourceDocumentCount === actualLayerCount
+    && Math.abs(expectedMovementQuantity - actualLayerQuantity) <= 1e-6
+    && !groupMismatch;
+
+  return Object.freeze({
+    ready,
+    repairable: !ready,
+    reason: ready ? null : 'return_receipt_cost_layers_missing_or_inconsistent',
+    details: {
+      receiptId: params.receiptId,
+      movementId: params.movementId,
+      expectedLineCount,
+      actualLayerCount,
+      distinctSourceDocumentCount,
+      expectedMovementQuantity,
+      actualLayerQuantity,
+      expectedGroups: Object.fromEntries(expectedGroups),
+      actualGroups: Object.fromEntries(actualGroups)
+    }
+  });
+}
+
+export async function repairReturnReceiptCostArtifacts(params: {
+  client: PoolClient;
+  tenantId: string;
+  receiptId: string;
+  movementId: string;
+}) {
+  const context = await loadReturnReceiptCostRepairContext(params);
+  if (!context.receipt) {
+    throw new Error('RETURN_RECEIPT_NOT_FOUND');
+  }
+  if (context.receiptLines.length === 0) {
+    throw new Error('RETURN_RECEIPT_NO_LINES');
+  }
+
+  const warehouseId = await resolveWarehouseIdForLocation(
+    params.tenantId,
+    context.receipt.received_to_location_id,
+    params.client
+  );
+  if (!warehouseId) {
+    throw new Error('WAREHOUSE_SCOPE_REQUIRED');
+  }
+
+  const plannedLines = await planMovementLines({
+    tenantId: params.tenantId,
+    lines: context.receiptLines.map((line) => ({
+      sourceLineId: line.id,
+      warehouseId,
+      itemId: line.item_id,
+      locationId: context.receipt!.received_to_location_id,
+      quantity: roundQuantity(toNumber(line.quantity_received)),
+      uom: line.uom,
+      defaultReasonCode: 'return_receipt',
+      lineNotes: line.notes ?? `Return receipt ${context.receipt!.id} line ${line.id}`
+    })),
+    client: params.client
+  });
+
+  const movementLineQueues = new Map<string, PersistedReturnReceiptMovementLineRow[]>();
+  for (const row of [...context.movementLines].sort(compareReceiptArtifactMovementLine)) {
+    const key = buildReceiptArtifactQuantityKey({
+      itemId: row.item_id,
+      locationId: row.location_id,
+      uom: row.canonical_uom ?? row.uom,
+      quantity: toNumber(row.quantity_delta_canonical ?? row.quantity_delta)
+    });
+    const queue = movementLineQueues.get(key) ?? [];
+    queue.push(row);
+    movementLineQueues.set(key, queue);
+  }
+
+  for (const line of plannedLines) {
+    const key = buildReceiptArtifactQuantityKey({
+      itemId: line.itemId,
+      locationId: line.locationId,
+      uom: line.canonicalFields.canonicalUom,
+      quantity: line.canonicalFields.quantityDeltaCanonical
+    });
+    const queue = movementLineQueues.get(key);
+    const movementLine = queue?.shift();
+    if (!movementLine) {
+      throw new Error('RETURN_RECEIPT_COST_REPAIR_MAPPING_MISSING');
+    }
+    await createReceiptCostLayerOnce({
+      tenant_id: params.tenantId,
+      item_id: line.itemId,
+      location_id: line.locationId,
+      uom: line.canonicalFields.canonicalUom,
+      quantity: line.canonicalFields.quantityDeltaCanonical,
+      unit_cost: toNumber(movementLine.unit_cost ?? 0),
+      source_type: 'receipt',
+      source_document_id: line.sourceLineId,
+      movement_id: params.movementId,
+      layer_date: context.receipt.received_at ? new Date(context.receipt.received_at) : new Date(),
+      notes: line.lineNotes ?? `Return receipt ${context.receipt.id} line ${line.sourceLineId}`,
+      client: params.client
+    });
+  }
+}
 
 async function assertReturnReceiptLocationPolicy(params: {
   client: PoolClient;
@@ -156,7 +454,24 @@ export async function evaluateReturnReceiptPostPolicy(params: {
           AND rr.tenant_id = rrl.tenant_id
         WHERE rr.tenant_id = $1
           AND rr.return_authorization_id = $2
-          AND rr.status = 'posted'
+          AND (
+            rr.status = 'posted'
+            OR 1 = (
+              SELECT COUNT(*)::int
+               FROM inventory_movements im
+               WHERE im.tenant_id = rr.tenant_id
+                 AND im.source_type = 'return_receipt_post'
+                 AND im.source_id = rr.id::text
+                 AND im.movement_type = 'receive'
+                 AND im.status = 'posted'
+                 AND EXISTS (
+                   SELECT 1
+                     FROM inventory_movement_lines iml
+                    WHERE iml.tenant_id = im.tenant_id
+                      AND iml.movement_id = im.id
+                 )
+            )
+          )
           AND rr.id <> $3
           AND rrl.return_authorization_line_id = ANY($4::uuid[])
         GROUP BY rrl.return_authorization_line_id`,
