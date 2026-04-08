@@ -10,6 +10,7 @@ import type {
 } from '../schemas/masterData.schema';
 import { ItemLifecycleStatus } from '../types/item';
 import { ensureWarehouseDefaultsForWarehouse } from './warehouseDefaults.service';
+import { ensureLocationInventoryReady } from '../domain/inventory/binProvisioning';
 import {
   assertCanonicalFieldsPresent,
   getCanonicalUomForDimension,
@@ -456,6 +457,11 @@ export async function createLocation(tenantId: string, data: LocationInput) {
     const created = mapLocation(res.rows[0]);
     if (data.type === 'warehouse') {
       await ensureWarehouseDefaultsForWarehouse(tenantId, created.id, client);
+    } else {
+      const raw = res.rows[0];
+      if (raw.warehouse_id && raw.role) {
+        await ensureLocationInventoryReady(created.id, tenantId, client);
+      }
     }
     return created;
   });
@@ -542,7 +548,11 @@ export async function updateLocation(tenantId: string, id: string, data: Locatio
       ]
     );
     if (res.rowCount === 0) return null;
-    return mapLocation(res.rows[0]);
+    const raw = res.rows[0];
+    if (raw.warehouse_id && raw.role) {
+      await ensureLocationInventoryReady(id, tenantId, client);
+    }
+    return mapLocation(raw);
   });
 }
 

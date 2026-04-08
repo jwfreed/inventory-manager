@@ -734,3 +734,174 @@ test('disposition cost recovery repairs missing transfer cost artifacts before c
   assert.equal(Number(repairedArtifacts.rows[0]?.consumption_count ?? 0), 1);
   assert.equal(Number(repairedArtifacts.rows[0]?.transfer_in_layer_count ?? 0), 1);
 });
+
+test('disposition cost recovery succeeds for duplicate logical lines when persisted notes encode identity', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-return-disposition-duplicate-safe',
+    tenantName: 'Return Disposition Duplicate Safe Repair Tenant'
+  });
+  const { topology, item, receipt } = await createPostedReturnReceiptFixture(harness, {
+    quantityAuthorized: 2,
+    quantityReceived: 2
+  });
+
+  const disposition = await createReturnDisposition(harness.tenantId, {
+    returnReceiptId: receipt.id,
+    occurredAt: '2026-03-24T00:00:00.000Z',
+    dispositionType: 'restock',
+    fromLocationId: topology.defaults.HOLD.id,
+    toLocationId: topology.defaults.SELLABLE.id,
+    lines: [
+      {
+        lineNumber: 1,
+        itemId: item.id,
+        uom: 'each',
+        quantity: 1
+      },
+      {
+        lineNumber: 2,
+        itemId: item.id,
+        uom: 'each',
+        quantity: 1
+      }
+    ]
+  });
+  const postedDisposition = await postReturnDisposition(harness.tenantId, disposition.id, {
+    idempotencyKey: `return-disposition-post:${randomUUID()}`
+  });
+
+  const client = await harness.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `DELETE FROM cost_layer_transfer_links
+        WHERE tenant_id = $1
+          AND transfer_movement_id = $2`,
+      [harness.tenantId, postedDisposition.inventoryMovementId]
+    );
+    await client.query(
+      `DELETE FROM inventory_cost_layers
+        WHERE tenant_id = $1
+          AND movement_id = $2
+          AND source_type = 'transfer_in'`,
+      [harness.tenantId, postedDisposition.inventoryMovementId]
+    );
+
+    await repairReturnDispositionCostArtifacts({
+      client,
+      tenantId: harness.tenantId,
+      dispositionId: disposition.id,
+      movementId: postedDisposition.inventoryMovementId
+    });
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const repairedArtifacts = await harness.pool.query(
+    `SELECT
+        (SELECT COUNT(*)::int
+           FROM cost_layer_transfer_links
+          WHERE tenant_id = $1
+            AND transfer_movement_id = $2) AS link_count,
+        (SELECT COUNT(*)::int
+           FROM cost_layer_consumptions
+          WHERE tenant_id = $1
+            AND movement_id = $2
+            AND consumption_type = 'transfer_out') AS consumption_count,
+        (SELECT COUNT(*)::int
+           FROM inventory_cost_layers
+          WHERE tenant_id = $1
+            AND movement_id = $2
+            AND source_type = 'transfer_in'
+            AND voided_at IS NULL) AS transfer_in_layer_count`,
+    [harness.tenantId, postedDisposition.inventoryMovementId]
+  );
+  assert.equal(Number(repairedArtifacts.rows[0]?.link_count ?? 0), 2);
+  assert.equal(Number(repairedArtifacts.rows[0]?.consumption_count ?? 0), 2);
+  assert.equal(Number(repairedArtifacts.rows[0]?.transfer_in_layer_count ?? 0), 2);
+});
+
+test('disposition cost recovery fails closed for duplicate logical lines without durable identity', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-return-disposition-duplicate-ambiguous',
+    tenantName: 'Return Disposition Duplicate Ambiguous Repair Tenant'
+  });
+  const { topology, item, receipt } = await createPostedReturnReceiptFixture(harness, {
+    quantityAuthorized: 2,
+    quantityReceived: 2
+  });
+
+  const disposition = await createReturnDisposition(harness.tenantId, {
+    returnReceiptId: receipt.id,
+    occurredAt: '2026-03-25T00:00:00.000Z',
+    dispositionType: 'restock',
+    fromLocationId: topology.defaults.HOLD.id,
+    toLocationId: topology.defaults.SELLABLE.id,
+    lines: [
+      {
+        lineNumber: 1,
+        itemId: item.id,
+        uom: 'each',
+        quantity: 1,
+        notes: 'duplicate-line'
+      },
+      {
+        lineNumber: 2,
+        itemId: item.id,
+        uom: 'each',
+        quantity: 1,
+        notes: 'duplicate-line'
+      }
+    ]
+  });
+  const postedDisposition = await postReturnDisposition(harness.tenantId, disposition.id, {
+    idempotencyKey: `return-disposition-post:${randomUUID()}`
+  });
+
+  const client = await harness.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `DELETE FROM cost_layer_transfer_links
+        WHERE tenant_id = $1
+          AND transfer_movement_id = $2`,
+      [harness.tenantId, postedDisposition.inventoryMovementId]
+    );
+    await client.query(
+      `DELETE FROM inventory_cost_layers
+        WHERE tenant_id = $1
+          AND movement_id = $2
+          AND source_type = 'transfer_in'`,
+      [harness.tenantId, postedDisposition.inventoryMovementId]
+    );
+
+    const assessment = await assessReturnDispositionCostArtifacts({
+      client,
+      tenantId: harness.tenantId,
+      dispositionId: disposition.id,
+      movementId: postedDisposition.inventoryMovementId
+    });
+    assert.equal(assessment.ready, false);
+    assert.equal(assessment.repairable, false);
+    assert.equal(assessment.details?.validationError, 'RETURN_DISPOSITION_COST_REPAIR_AMBIGUOUS_MAPPING');
+
+    await assert.rejects(
+      () => repairReturnDispositionCostArtifacts({
+        client,
+        tenantId: harness.tenantId,
+        dispositionId: disposition.id,
+        movementId: postedDisposition.inventoryMovementId
+      }),
+      (error) => error?.message === 'RETURN_DISPOSITION_COST_REPAIR_AMBIGUOUS_MAPPING'
+    );
+
+    await client.query('ROLLBACK');
+  } finally {
+    client.release();
+  }
+});

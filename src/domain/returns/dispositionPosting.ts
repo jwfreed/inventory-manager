@@ -66,6 +66,7 @@ type PersistedReturnDispositionMovementLineRow = {
   quantity_delta: string | number;
   quantity_delta_canonical: string | number | null;
   reason_code: string | null;
+  line_notes: string | null;
 };
 
 export type ReturnDispositionPostPolicy = Readonly<{
@@ -148,6 +149,17 @@ function buildDispositionMovementLineKey(params: {
   reasonCode: string;
 }) {
   return `${params.itemId}:${params.locationId}:${params.uom}:${roundQuantity(params.quantity).toFixed(6)}:${params.reasonCode}`;
+}
+
+function parseDispositionSourceLineIdFromLineNotes(lineNotes: string | null): string | null {
+  if (typeof lineNotes !== 'string') {
+    return null;
+  }
+  const match = /^Return disposition ([0-9a-f-]{36}) line ([0-9a-f-]{36}) (outbound|inbound)$/i.exec(lineNotes.trim());
+  if (!match) {
+    return null;
+  }
+  return `${match[1]}:${match[2]}:${match[3].toLowerCase() === 'outbound' ? 'out' : 'in'}`;
 }
 
 async function buildReturnDispositionRepairPlan(params: {
@@ -239,17 +251,18 @@ async function mapReturnDispositionPersistedLineIds(params: {
   }>;
 }) {
   const persistedLineResult = await params.client.query<PersistedReturnDispositionMovementLineRow>(
-    `SELECT id,
-            item_id,
-            location_id,
-            uom,
-            canonical_uom,
-            quantity_delta,
-            quantity_delta_canonical,
-            reason_code
-       FROM inventory_movement_lines
-      WHERE tenant_id = $1
-        AND movement_id = $2
+      `SELECT id,
+              item_id,
+              location_id,
+              uom,
+              canonical_uom,
+              quantity_delta,
+              quantity_delta_canonical,
+              reason_code,
+              line_notes
+         FROM inventory_movement_lines
+        WHERE tenant_id = $1
+          AND movement_id = $2
       ORDER BY item_id ASC,
                location_id ASC,
                COALESCE(canonical_uom, uom) ASC,
@@ -259,8 +272,44 @@ async function mapReturnDispositionPersistedLineIds(params: {
     [params.tenantId, params.movementId]
   );
 
-  const queueByKey = new Map<string, PersistedReturnDispositionMovementLineRow[]>();
+  const plannedSourceIds = new Set(params.plannedLines.map((line) => line.sourceLineId));
+  const lineIdBySource = new Map<string, string>();
+  const unmatchedPersistedRows: PersistedReturnDispositionMovementLineRow[] = [];
+
   for (const row of persistedLineResult.rows) {
+    const sourceLineId = parseDispositionSourceLineIdFromLineNotes(row.line_notes);
+    if (sourceLineId && plannedSourceIds.has(sourceLineId)) {
+      if (lineIdBySource.has(sourceLineId)) {
+        throw new Error('RETURN_DISPOSITION_COST_REPAIR_AMBIGUOUS_MAPPING');
+      }
+      lineIdBySource.set(sourceLineId, row.id);
+      continue;
+    }
+    unmatchedPersistedRows.push(row);
+  }
+
+  const unmatchedPlannedLines = params.plannedLines.filter(
+    (line) => !lineIdBySource.has(line.sourceLineId)
+  );
+  const remainingShapeCounts = new Map<string, number>();
+  for (const line of unmatchedPlannedLines) {
+    const key = buildDispositionMovementLineKey({
+      itemId: line.itemId,
+      locationId: line.locationId,
+      uom: line.canonicalFields.canonicalUom,
+      quantity: line.canonicalFields.quantityDeltaCanonical,
+      reasonCode: line.reasonCode
+    });
+    remainingShapeCounts.set(key, (remainingShapeCounts.get(key) ?? 0) + 1);
+  }
+  for (const count of remainingShapeCounts.values()) {
+    if (count > 1) {
+      throw new Error('RETURN_DISPOSITION_COST_REPAIR_AMBIGUOUS_MAPPING');
+    }
+  }
+
+  const queueByKey = new Map<string, PersistedReturnDispositionMovementLineRow[]>();
+  for (const row of unmatchedPersistedRows) {
     const key = buildDispositionMovementLineKey({
       itemId: row.item_id,
       locationId: row.location_id,
@@ -273,8 +322,7 @@ async function mapReturnDispositionPersistedLineIds(params: {
     queueByKey.set(key, queue);
   }
 
-  const lineIdBySource = new Map<string, string>();
-  for (const line of params.plannedLines) {
+  for (const line of unmatchedPlannedLines) {
     const key = buildDispositionMovementLineKey({
       itemId: line.itemId,
       locationId: line.locationId,
@@ -820,14 +868,14 @@ export async function assessReturnDispositionCostArtifacts(params: {
     disposition,
     dispositionLines: linesResult.rows
   });
-  const lineIdBySource = await mapReturnDispositionPersistedLineIds({
-    client: params.client,
-    tenantId: params.tenantId,
-    movementId: params.movementId,
-    plannedLines: repairPlan.plannedLines
-  });
 
   try {
+    const lineIdBySource = await mapReturnDispositionPersistedLineIds({
+      client: params.client,
+      tenantId: params.tenantId,
+      movementId: params.movementId,
+      plannedLines: repairPlan.plannedLines
+    });
     for (const pair of repairPlan.pairs) {
       const outLineId = lineIdBySource.get(pair.outSourceLineId);
       const inLineId = lineIdBySource.get(pair.inSourceLineId);
@@ -860,8 +908,10 @@ export async function assessReturnDispositionCostArtifacts(params: {
     };
     return Object.freeze({
       ready: false,
-      repairable: true,
-      reason: 'return_disposition_cost_artifacts_missing_or_inconsistent',
+      repairable: (error as Error)?.message !== 'RETURN_DISPOSITION_COST_REPAIR_AMBIGUOUS_MAPPING',
+      reason: (error as Error)?.message === 'RETURN_DISPOSITION_COST_REPAIR_AMBIGUOUS_MAPPING'
+        ? 'return_disposition_cost_repair_ambiguous_mapping'
+        : 'return_disposition_cost_artifacts_missing_or_inconsistent',
       details: {
         dispositionId: params.dispositionId,
         movementId: params.movementId,
