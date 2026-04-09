@@ -1,182 +1,150 @@
 # Refactoring Master Plan — Inventory Manager
 
 ## Purpose
-Provide a **single source of truth** for refactoring progress, decisions, and next steps.  
-This document is designed to be shared across chats and updated incrementally.
+Single source of truth for refactoring progress, decisions, and safety constraints.
 
 ---
 
 # 1. Current Status Dashboard
 
-## Overall Progress
 - Phase: Sprint-Based Refactor
-- Current Sprint: Sprint 0
+- Current Sprint: Sprint 0.5 (Correctness Boundary Definition)
 - Status: In Progress
 
-## Targets
+---
+
+# 2. Targets
+
 | Target | Status | Notes |
 |--------|--------|------|
-| WorkOrderExecution | Not Started | Highest priority |
-| Transfers | Not Started | |
-| QC | Not Started | |
+| WorkOrderExecution | Sprint 0 mapped | High risk, multi-workflow |
+| Transfers | Sprint 0 mapped | Strongest seam, start here |
+| QC | Sprint 0 mapped | Workflow mixing |
 
 ---
 
-# 2. Sprint Plan
+# 3. Sprint 0 Findings
 
-## Sprint 0 — Safety + Mapping
-**Goal:** Establish safety and understanding
+## Key Risks
 
-### Tasks
-- [ ] Add/verify architecture tests
-- [ ] Create boundary maps for target files
-- [ ] Define “done” criteria
+### Projection Leakage
+- Derived state used in correctness decisions
+- Violates source-of-truth principles
 
-### Deliverables
-- Boundary maps completed
-- Test coverage verified
+### Replay Fragility
+- Multiple replay paths
+- Inconsistent idempotency mechanisms
+
+### Workflow Mixing
+- Multiple workflows in single services
+- Implicit domain boundaries
+
+### Transaction Splitting
+- Non-atomic operations
+- Partial state risk
 
 ---
 
-## Sprint 1 — WorkOrder: Scrap + Void
-**Goal:** Extract first workflows safely
+# 4. Sprint 0.5 — Correctness Boundary Definition
+
+## Goal
+Make correctness explicit before refactoring
 
 ### Tasks
-- [ ] Extract Scrap workflow
-- [ ] Extract Void workflow
-- [ ] Add targeted tests
+- [ ] Identify authoritative writes per workflow
+- [ ] Identify projection dependencies
+- [ ] Define replay contract per workflow
+- [ ] Identify invariant enforcement points
+- [ ] Flag cross-transaction risks
 
 ### Exit Criteria
-- Workflows isolated
-- No behavior change
-- Tests pass
+- All workflows have explicit:
+  - source of truth
+  - invariants
+  - replay definition
 
 ---
 
-## Sprint 2 — WorkOrder: Issue + Completion
-**Goal:** Extract core mutation workflows
+# 5. Sprint Plan (Revised)
+
+## Sprint 1 — Transfers Boundary Hardening + Decomposition
+
+### Goal
+Make the transfer correctness boundary explicit and non-bypassable, then begin safe decomposition.
 
 ### Tasks
-- [ ] Extract Issue workflow
-- [ ] Extract Completion workflow
+
+#### Boundary Hardening (MUST COME FIRST)
+- [ ] Define and enforce single execution path (runInventoryCommand)
+- [ ] Identify and restrict unsafe entry points (e.g., direct execution primitives)
+- [ ] Make replay verification deterministic (remove conditional paths)
+- [ ] Document projection dependency (inventory_balance)
+
+#### Decomposition (AFTER HARDENING)
+- [ ] Extract transfer events
+- [ ] Extract replay logic
+- [ ] Separate orchestration from domain logic
+
+### Exit Criteria
+- All transfer mutations go through one enforced path
+- Replay is deterministic and consistent
+- Projection dependency is explicit and documented
+- Orchestration layer is thinner
+- No behavioral change
 
 ---
 
-## Sprint 3 — WorkOrder: Batch + Shared Modules
-**Goal:** Remove monolith
+## Sprint 2 — QC Separation
+
+### Goal
+Separate domain concerns
 
 ### Tasks
-- [ ] Extract Batch/Reporting
-- [ ] Create shared modules:
-  - Replay
-  - WIP
-  - Projection
+- [ ] Split QC workflows:
+  - receipt
+  - work order
+  - execution
+- [ ] Isolate disposition logic
 
 ---
 
-## Sprint 4 — Transfers Refactor
-**Goal:** Thin orchestration
+## Sprint 3+ — WorkOrder Decomposition
 
-### Tasks
-- [ ] Extract request layer
-- [ ] Extract events
-- [ ] Extract replay
-- [ ] Extract reversal logic
+### Goal
+Safely decompose largest monolith
 
----
-
-## Sprint 5 — QC Refactor
-**Goal:** Separate decision vs movement
-
-### Tasks
-- [ ] Extract QC policy
-- [ ] Extract QC event logic
-- [ ] Extract QC disposition
+### Preconditions
+- Transfers + QC patterns proven
+- Correctness boundaries defined
 
 ---
 
-## Sprint 6 — Consolidation
-**Goal:** Cleanup + clarity
-
-### Tasks
-- [ ] Remove dead code
-- [ ] Improve naming
-- [ ] Add module docs
-
----
-
-# 3. Work Tracking
-
-## Active Work
-| Task | Owner | Status | Notes |
-|------|------|--------|------|
-|  |  |  |  |
-
-## Completed Work
-| Task | Completed Date | Notes |
-|------|----------------|------|
-|  |  |  |
-
----
-
-# 4. Refactor Rules (Non-Negotiable)
+# 6. Refactor Rules
 
 - No behavioral changes
-- Preserve authoritative state
+- No projection-based correctness
 - Replay must remain deterministic
 - One workflow per module
-- No shallow modules (helpers/utils dumps)
+- Preserve invariants
 
 ---
 
-# 5. Task Template
-
-Use this for each refactor:
-
----
-**Title:**  
-**Workflow:**  
-
-**Invariants:**  
--  
-
-**Definition of Done:**  
--  
--  
-
-**Risks:**  
--  
-
-**Validation:**  
--  
----
-
----
-
-# 6. Metrics
+# 7. Metrics
 
 ## Structural
-- Workflows extracted:
-- Files reduced:
+- Workflows isolated
+- File size reduction
 
 ## Risk
-- Replay failures: 0
-- Invariant violations: 0
-
-## Cognitive
-- Can a new dev understand module in <10 min?
+- Replay failures = 0
+- Invariant violations = 0
 
 ---
 
-# 7. Next Actions
-
-- Define boundary map for WorkOrderExecution
-- Start Sprint 1 after validation
-
----
-
-# 8. Notes / Decisions Log
+# 8. Decisions Log
 
 | Date | Decision | Rationale |
 |------|----------|----------|
-|  |  |  |
+| 2026-04-09 | Start with Transfers | Lowest risk, strongest boundary |
+| 2026-04-09 | Add Sprint 0.5 | Correctness must precede refactor |
+| 2026-04-09 | Add boundary hardening to Sprint 1 | Prevent correctness regressions |
