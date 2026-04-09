@@ -185,23 +185,33 @@ test('transfer replay hardening requires deterministic line plans, post-cutoff h
   );
   assert.match(
     executeTransferBody,
-    /\bexecuteTransferMovementPlan\([\s\S]*lockContext\)/,
+    /\bexecuteTransferMovementPlan\([\s\S]*lockContext[\s\S]*\)/,
     'transfer execution helper must pass the command lock context into movement execution'
   );
-  assert.doesNotMatch(
-    transferInventoryBody,
-    /\binput\.occurredAt\b[\s\S]*\?/,
-    'transfer replay must not branch on optional occurredAt inputs'
+  assert.match(
+    executeTransferBody,
+    /\bbuildTransferMovementPlan\(/,
+    'transfer execution must use the canonical transfer plan builder'
   );
   assert.match(
     transferInventoryBody,
-    /\bbuildTransferReplayPlan\(/,
-    'forward transfer replay must rebuild the canonical transfer plan before validating replay'
+    /\bbuildTransferMovementPlan\(/,
+    'forward transfer replay must use the canonical transfer plan builder before validating replay'
   );
   assert.match(
     transferInventoryBody,
-    /\bexpectedDeterministicHash:\s*replayPlan\.expectedDeterministicHash/,
+    /\bloadTransferOccurredAt\(/,
+    'forward transfer replay must resolve replay-effective occurredAt before canonical plan construction'
+  );
+  assert.match(
+    transferInventoryBody,
+    /\bexpectedDeterministicHash:\s*replayPlan\.movementPlan\.expectedDeterministicHash/,
     'forward transfer replay must validate the canonical deterministic hash'
+  );
+  assert.doesNotMatch(
+    transfersSource,
+    /\basync function buildTransferReplayPlan\b/,
+    'transfer replay must not keep a separate replay-specific plan builder'
   );
 
   for (const functionName of ['executeTransferInventoryMutation', 'voidTransferMovement']) {

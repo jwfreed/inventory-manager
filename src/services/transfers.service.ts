@@ -20,7 +20,10 @@ import {
   type PreparedTransferMutation
 } from '../domain/transfers/transferPolicy';
 import { buildReplayDeterminismExpectation } from '../domain/inventory/mutationInvariants';
-import { buildTransferMovementPlan as buildTransferMovementPlanDomain } from '../domain/transfers/transferPlan';
+import {
+  buildTransferMovementPlan as buildTransferMovementPlanDomain,
+  type TransferMovementPlan
+} from '../domain/transfers/transferPlan';
 import { executeTransferMovementPlan } from '../domain/transfers/transferExecution';
 import {
   buildTransferReversalLockTargets,
@@ -273,12 +276,32 @@ function buildTransferEvents(params: {
 }
 
 async function buildTransferMovementPlan(
-  prepared: PreparedTransferMutation,
-  client: PoolClient
+  params:
+    | {
+        prepared: PreparedTransferMutation;
+        client: PoolClient;
+      }
+    | {
+        input: TransferInventoryInput;
+        normalizedIdempotencyKey: string | null;
+        client: PoolClient;
+      }
 ) {
+  const prepared = 'prepared' in params
+    ? params.prepared
+    : await prepareTransferMutation(
+        {
+          ...params.input,
+          idempotencyKey: params.normalizedIdempotencyKey
+        },
+        params.client
+      );
   // Deterministic planning remains delegated to the domain planner:
   // sortDeterministicMovementLines(...) and buildMovementDeterministicHash(...).
-  return buildTransferMovementPlanDomain(prepared, client);
+  return {
+    prepared,
+    movementPlan: await buildTransferMovementPlanDomain(prepared, params.client)
+  };
 }
 
 async function loadTransferOccurredAt(
@@ -301,26 +324,6 @@ async function loadTransferOccurredAt(
     });
   }
   return new Date(result.rows[0]!.occurred_at);
-}
-
-async function buildTransferReplayPlan(params: {
-  input: TransferInventoryInput;
-  tenantId: string;
-  movementId: string;
-  normalizedIdempotencyKey: string | null;
-  client: PoolClient;
-}) {
-  const replayOccurredAt = params.input.occurredAt
-    ?? await loadTransferOccurredAt(params.client, params.tenantId, params.movementId);
-  const replayPrepared = await prepareTransferMutation(
-    {
-      ...params.input,
-      occurredAt: replayOccurredAt,
-      idempotencyKey: params.normalizedIdempotencyKey
-    },
-    params.client
-  );
-  return buildTransferMovementPlan(replayPrepared, params.client);
 }
 
 async function fetchTransferReplayView(
@@ -414,9 +417,14 @@ export async function buildTransferReplayResult(params: {
 export async function executeTransferInventoryMutation(
   prepared: PreparedTransferMutation,
   client: PoolClient,
-  lockContext: AtpLockContext
+  lockContext: AtpLockContext,
+  prebuiltMovementPlan?: TransferMovementPlan
 ): Promise<TransferMutationExecution> {
-  const movementPlan = await buildTransferMovementPlan(prepared, client);
+  const movementPlan = prebuiltMovementPlan
+    ?? (await buildTransferMovementPlan({
+      prepared,
+      client
+    })).movementPlan;
   const execution = await executeTransferMovementPlan(prepared, movementPlan, client, lockContext);
 
   if (!execution.result.created) {
@@ -600,7 +608,7 @@ export async function transferInventory(
         body: input.inventoryCommandRequestBody ?? buildTransferInventoryRequestBody(input)
       })
     : null;
-  let prepared: PreparedTransferMutation | null = null;
+  let plannedTransfer: Awaited<ReturnType<typeof buildTransferMovementPlan>> | null = null;
 
   return runInventoryCommand<TransferInventoryResult>({
     tenantId: input.tenantId,
@@ -614,10 +622,13 @@ export async function transferInventory(
       if (!movementId) {
         throw new Error('TRANSFER_REPLAY_MOVEMENT_ID_REQUIRED');
       }
-      const replayPlan = await buildTransferReplayPlan({
-        input,
-        tenantId: input.tenantId,
-        movementId,
+      const replayOccurredAt = input.occurredAt
+        ?? await loadTransferOccurredAt(txClient, input.tenantId, movementId);
+      const replayPlan = await buildTransferMovementPlan({
+        input: {
+          ...input,
+          occurredAt: replayOccurredAt
+        },
         normalizedIdempotencyKey,
         client: txClient
       });
@@ -635,26 +646,32 @@ export async function transferInventory(
           uom: input.uom,
           sourceWarehouseId: responseBody.sourceWarehouseId,
           destinationWarehouseId: responseBody.destinationWarehouseId,
-          expectedLineCount: replayPlan.expectedLineCount,
-          expectedDeterministicHash: replayPlan.expectedDeterministicHash
+          expectedLineCount: replayPlan.movementPlan.expectedLineCount,
+          expectedDeterministicHash: replayPlan.movementPlan.expectedDeterministicHash
         })
       ).responseBody;
     },
     lockTargets: async (tx) => {
-      prepared = await prepareTransferMutation(
-        {
+      plannedTransfer = await buildTransferMovementPlan({
+        input: {
           ...input,
           idempotencyKey: normalizedIdempotencyKey
         },
-        tx
-      );
-      return buildTransferLockTargets(prepared);
+        normalizedIdempotencyKey,
+        client: tx
+      });
+      return buildTransferLockTargets(plannedTransfer.prepared);
     },
     execute: async ({ client: txClient, lockContext }) => {
-      if (!prepared) {
+      if (!plannedTransfer) {
         throw new Error('TRANSFER_PREPARE_REQUIRED');
       }
-      const execution = await executeTransferInventoryMutation(prepared, txClient, lockContext);
+      const execution = await executeTransferInventoryMutation(
+        plannedTransfer.prepared,
+        txClient,
+        lockContext,
+        plannedTransfer.movementPlan
+      );
       return {
         responseBody: execution.result,
         responseStatus: execution.result.created ? 201 : 200,
