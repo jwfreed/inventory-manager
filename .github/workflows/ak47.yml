@@ -1,4 +1,4 @@
-name: Nightly Scenarios
+name: Nightly System Integrity
 
 on:
   workflow_dispatch:
@@ -8,6 +8,7 @@ on:
 jobs:
   scenarios:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -24,17 +25,18 @@ jobs:
           --health-cmd="pg_isready -U postgres -d inventory_test"
           --health-interval=5s
           --health-timeout=5s
-          --health-retries=12
+          --health-retries=20
       redis:
         image: redis:7
         options: >-
           --health-cmd="redis-cli ping"
           --health-interval=5s
           --health-timeout=5s
-          --health-retries=12
+          --health-retries=20
     env:
       CI: 'true'
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ci_dummy_secret
       PGPASSWORD: postgres
@@ -42,27 +44,44 @@ jobs:
       API_BASE_URL: http://127.0.0.1:3000
       TEST_BASE_URL: http://127.0.0.1:3000
       NODE_ENV: test
+      SEED_ADMIN_EMAIL: ci-admin@test.local
+      SEED_ADMIN_PASSWORD: ci-admin-password
+      INVENTORY_TX_MAX_ATTEMPTS: '5'
+      ENABLE_SCHEDULER: 'false'
+      WAREHOUSE_DEFAULTS_REPAIR: 'true'
     steps:
+      # ── Phase 1: Infrastructure ─────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Install PostgreSQL client
         run: |
           apt-get update -qq
           apt-get install -y -qq postgresql-client
+
       - name: Install deps
         run: npm ci
+
       - name: Wait for Postgres readiness
         run: |
-          for i in {1..60}; do
+          echo "::group::Postgres readiness"
+          for i in {1..90}; do
             if pg_isready -h postgres -p 5432 -U postgres -d inventory_test >/dev/null 2>&1; then
+              echo "Postgres ready after ${i}s"
+              echo "::endgroup::"
               exit 0
             fi
             sleep 1
           done
-          echo "Postgres failed to become ready"
+          echo "::endgroup::"
+          echo "::error::Postgres failed to become ready within 90s"
           exit 1
+
+      # ── Phase 2: Schema ─────────────────────────────────
       - name: Run migrations
         run: npm run migrate:up
+
+      # ── Phase 3: Security ───────────────────────────────
       - name: Create app_ci role and grants
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
@@ -83,72 +102,108 @@ jobs:
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_ci;
           REVOKE TRIGGER, TRUNCATE, DELETE ON inventory_movements, inventory_movement_lines FROM app_ci;
           SQL
-      - name: Start API server (if needed)
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
-          TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
+
+      # ── Phase 4: Server startup (deterministic) ─────────
+      - name: Start API server
         run: |
           set -euo pipefail
-          if command -v nc >/dev/null 2>&1; then
-            if nc -z 127.0.0.1 3000 2>/dev/null; then
-              echo "API already listening on 127.0.0.1:3000; skipping startup."
-              exit 0
-            fi
-          elif (echo > /dev/tcp/127.0.0.1/3000) >/dev/null 2>&1; then
-            echo "API already listening on 127.0.0.1:3000; skipping startup."
-            exit 0
-          fi
-          nohup npm run dev -- --repair-defaults > server.log 2>&1 &
+          echo "::group::Server startup"
+          # Invoke node directly — no npm wrapper, no PID hierarchy ambiguity.
+          nohup node \
+            -r ts-node/register/transpile-only \
+            -r tsconfig-paths/register \
+            -r dotenv/config \
+            src/server.ts --repair-defaults \
+            > server.log 2>&1 &
           SERVER_PID=$!
           echo "$SERVER_PID" > server.pid
           echo "SERVER_PID=$SERVER_PID" >> "$GITHUB_ENV"
-          sleep 1
-          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-            echo "API process exited immediately after startup"
-            cat server.log || true
-            ps -p "$SERVER_PID" -o pid,ppid,stat,etime,cmd || true
-            exit 1
-          fi
+          echo "Server PID: $SERVER_PID"
+          echo "::endgroup::"
+
       - name: Wait for API readiness
         run: |
           set -euo pipefail
-          SERVER_PID=""
-          if [ -f server.pid ]; then
-            SERVER_PID="$(cat server.pid)"
-          fi
-          for i in {1..60}; do
-            if [ -n "$SERVER_PID" ] && ! kill -0 "$SERVER_PID" 2>/dev/null; then
-              echo "API process exited before readiness"
-              cat server.log || true
-              ps -p "$SERVER_PID" -o pid,ppid,stat,etime,cmd || true
+          echo "::group::API readiness"
+          SERVER_PID="$(cat server.pid)"
+          STARTED_AT=$(date +%s)
+          for i in {1..90}; do
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "::endgroup::"
+              echo "::error::API process (PID $SERVER_PID) exited before becoming ready"
+              echo "--- server.log (last 100 lines) ---"
+              tail -100 server.log || true
               exit 1
             fi
-            if curl -fsS "http://127.0.0.1:3000/healthz" >/dev/null; then
+            if curl -fsS --max-time 2 "http://127.0.0.1:3000/healthz" >/dev/null 2>&1; then
+              ELAPSED=$(( $(date +%s) - STARTED_AT ))
+              echo "API ready after ${ELAPSED}s (PID $SERVER_PID)"
+              echo "::endgroup::"
               exit 0
             fi
             sleep 1
           done
-          echo "Server failed to become ready"
-          cat server.log || true
-          if [ -n "$SERVER_PID" ]; then
-            ps -p "$SERVER_PID" -o pid,ppid,stat,etime,cmd || true
-          fi
+          echo "::endgroup::"
+          echo "::error::API failed to become ready within 90s"
+          echo "--- server.log (last 100 lines) ---"
+          tail -100 server.log || true
           exit 1
+
+      # ── Phase 5: Scenario tests ─────────────────────────
       - name: Run scenarios suite
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
-          TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/inventory_test
         run: npm run test:scenarios
+
+      # ── Phase 6: Post-scenario integrity validation ─────
+      - name: Validate inventory invariants
+        if: "!cancelled()"
+        run: |
+          echo "::group::Inventory invariant validation"
+          node scripts/ci-post-scenario-integrity.mjs
+          RESULT=$?
+          echo "::endgroup::"
+          if [ "$RESULT" -eq 2 ]; then
+            echo "::error::Inventory invariant violations detected after scenario execution"
+            exit 1
+          elif [ "$RESULT" -ne 0 ]; then
+            echo "::error::Integrity check script error (exit $RESULT)"
+            exit 1
+          fi
+
+      # ── Phase 7: Cleanup & artifacts ────────────────────
       - name: Stop API server
         if: always()
         run: |
           if [ -f server.pid ]; then
-            kill "$(cat server.pid)" || true
+            SERVER_PID="$(cat server.pid)"
+            echo "Stopping server PID $SERVER_PID"
+            kill "$SERVER_PID" 2>/dev/null || true
+            # Wait for graceful shutdown (up to 5s)
+            for i in {1..10}; do
+              if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+                echo "Server stopped gracefully"
+                break
+              fi
+              sleep 0.5
+            done
+            # Force kill if still running
+            if kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "Force killing server"
+              kill -9 "$SERVER_PID" 2>/dev/null || true
+            fi
           fi
-          tail -200 server.log || true
-      - name: Upload server log on failure
-        if: failure()
+
+      - name: Capture server log summary
+        if: always()
+        run: |
+          echo "::group::Server log (last 200 lines)"
+          tail -200 server.log 2>/dev/null || echo "(no server.log)"
+          echo "::endgroup::"
+
+      - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: server-log-scenarios
-          path: server.log
+          name: nightly-scenarios-artifacts
+          path: |
+            server.log
+          retention-days: 14
