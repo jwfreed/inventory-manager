@@ -10,6 +10,7 @@ import {
   type InventoryCommandProjectionOp
 } from '../modules/platform/application/runInventoryCommand';
 import {
+  buildReplayCorruptionError,
   buildMovementPostedEvent,
   buildPostedDocumentReplayResult
 } from '../modules/platform/application/inventoryMutationSupport';
@@ -278,6 +279,48 @@ async function buildTransferMovementPlan(
   // Deterministic planning remains delegated to the domain planner:
   // sortDeterministicMovementLines(...) and buildMovementDeterministicHash(...).
   return buildTransferMovementPlanDomain(prepared, client);
+}
+
+async function loadTransferOccurredAt(
+  client: PoolClient,
+  tenantId: string,
+  movementId: string
+) {
+  const result = await client.query<{ occurred_at: Date | string }>(
+    `SELECT occurred_at
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, movementId]
+  );
+  if ((result.rowCount ?? 0) === 0) {
+    throw buildReplayCorruptionError({
+      tenantId,
+      movementId,
+      reason: 'authoritative_movement_missing'
+    });
+  }
+  return new Date(result.rows[0]!.occurred_at);
+}
+
+async function buildTransferReplayPlan(params: {
+  input: TransferInventoryInput;
+  tenantId: string;
+  movementId: string;
+  normalizedIdempotencyKey: string | null;
+  client: PoolClient;
+}) {
+  const replayOccurredAt = params.input.occurredAt
+    ?? await loadTransferOccurredAt(params.client, params.tenantId, params.movementId);
+  const replayPrepared = await prepareTransferMutation(
+    {
+      ...params.input,
+      occurredAt: replayOccurredAt,
+      idempotencyKey: params.normalizedIdempotencyKey
+    },
+    params.client
+  );
+  return buildTransferMovementPlan(replayPrepared, params.client);
 }
 
 async function fetchTransferReplayView(
@@ -571,6 +614,13 @@ export async function transferInventory(
       if (!movementId) {
         throw new Error('TRANSFER_REPLAY_MOVEMENT_ID_REQUIRED');
       }
+      const replayPlan = await buildTransferReplayPlan({
+        input,
+        tenantId: input.tenantId,
+        movementId,
+        normalizedIdempotencyKey,
+        client: txClient
+      });
       return (
         await buildTransferReplayResult({
           tenantId: input.tenantId,
@@ -585,7 +635,8 @@ export async function transferInventory(
           uom: input.uom,
           sourceWarehouseId: responseBody.sourceWarehouseId,
           destinationWarehouseId: responseBody.destinationWarehouseId,
-          expectedLineCount: 2
+          expectedLineCount: replayPlan.expectedLineCount,
+          expectedDeterministicHash: replayPlan.expectedDeterministicHash
         })
       ).responseBody;
     },

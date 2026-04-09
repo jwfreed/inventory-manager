@@ -379,6 +379,45 @@ test('inventory transfer preserves explicit occurredAt exactly', async () => {
   );
 });
 
+test('inventory transfer replay with omitted occurredAt rejects an alternate internally consistent movement', async () => {
+  const { harness, factory, store, itemId } = await createTransferFixture('transfer-omitted-replay-hash');
+  const { pool: db, tenantId } = harness;
+  const payload = {
+    sourceLocationId: factory.defaults.SELLABLE.id,
+    destinationLocationId: store.sellable.id,
+    itemId,
+    quantity: 2,
+    uom: 'each',
+    reasonCode: 'distribution',
+    notes: 'Transfer replay omitted occurredAt hash enforcement'
+  };
+  const firstKey = `transfer-omitted-a-${randomUUID()}`;
+  const secondKey = `transfer-omitted-b-${randomUUID()}`;
+
+  const first = await harness.postTransfer({
+    ...payload,
+    idempotencyKey: firstKey
+  });
+  const second = await harness.postTransfer({
+    ...payload,
+    idempotencyKey: secondKey
+  });
+
+  assert.notEqual(first.movementId, second.movementId);
+
+  await retargetTransferReplayMovement(db, tenantId, firstKey, second.movementId);
+
+  await expectServiceError(
+    () =>
+      harness.postTransfer({
+        ...payload,
+        idempotencyKey: firstKey
+      }),
+    'REPLAY_CORRUPTION_DETECTED',
+    'expected_movement_hash_mismatch'
+  );
+});
+
 test('inventory transfer replay fails closed when the idempotent response points to a missing movement', async () => {
   const { harness, factory, store, itemId } = await createTransferFixture('transfer-missing');
   const { pool: db, tenantId } = harness;

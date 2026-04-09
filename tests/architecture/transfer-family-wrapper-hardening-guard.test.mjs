@@ -193,6 +193,16 @@ test('transfer replay hardening requires deterministic line plans, post-cutoff h
     /\binput\.occurredAt\b[\s\S]*\?/,
     'transfer replay must not branch on optional occurredAt inputs'
   );
+  assert.match(
+    transferInventoryBody,
+    /\bbuildTransferReplayPlan\(/,
+    'forward transfer replay must rebuild the canonical transfer plan before validating replay'
+  );
+  assert.match(
+    transferInventoryBody,
+    /\bexpectedDeterministicHash:\s*replayPlan\.expectedDeterministicHash/,
+    'forward transfer replay must validate the canonical deterministic hash'
+  );
 
   for (const functionName of ['executeTransferInventoryMutation', 'voidTransferMovement']) {
     const body = extractFunctionBody(
