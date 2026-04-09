@@ -155,7 +155,7 @@ jobs:
 
       # ── Phase 6: Post-scenario integrity validation ─────
       - name: Validate inventory invariants
-        if: "!cancelled()"
+        if: success() || failure()
         run: |
           echo "::group::Inventory invariant validation"
           node scripts/ci-post-scenario-integrity.mjs
