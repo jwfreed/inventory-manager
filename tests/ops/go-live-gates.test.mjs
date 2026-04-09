@@ -62,7 +62,7 @@ const CHECKLIST_GATE_DEFINITIONS = Object.freeze([
   {
     gateCode: GATE_CODES.TRANSFER_API,
     testFile: 'tests/ops/transfer-idempotency.test.mjs',
-    expectedStdoutPattern: /inventory transfer idempotency: replay and payload conflict stay deterministic without HTTP/
+    expectedStdoutPattern: /inventory transfer idempotency defaults omitted occurredAt once and replays deterministically/
   },
   {
     gateCode: GATE_CODES.COST_LAYER_RELOCATION,
