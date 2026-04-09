@@ -48,13 +48,15 @@ function report(name, count, rows) {
 
 try {
   // ────────────────────────────────────────────────────────
-  // 0. Discover tenants — bail if database is empty
+  // 0. Discover tenants — fail if database is empty
+  //    Scenarios are expected to create data. Zero tenants
+  //    means the CI setup or scenario execution is broken.
   // ────────────────────────────────────────────────────────
   const tenantsRes = await pool.query('SELECT id FROM tenants');
   const tenantIds = tenantsRes.rows.map((r) => r.id);
   if (tenantIds.length === 0) {
-    console.log('[integrity] No tenants found — skipping post-scenario integrity check.');
-    process.exit(0);
+    console.error('[integrity] FAIL: No tenants found. Scenarios should have created data — this indicates a broken CI setup or failed scenario execution.');
+    process.exit(2);
   }
   console.log(`[integrity] Found ${tenantIds.length} tenant(s). Running invariant checks...\n`);
 
@@ -159,8 +161,8 @@ try {
 
   // ────────────────────────────────────────────────────────
   // 3. STATE RELATIONSHIPS
-  //    allocated <= on_hand AND reserved <= on_hand
-  //    (available = on_hand - reserved - allocated >= 0)
+  //    reserved + allocated must not exceed on_hand.
+  //    Equivalently: available (on_hand - reserved - allocated) >= 0.
   // ────────────────────────────────────────────────────────
   const stateRelationRes = await pool.query(`
     SELECT tenant_id, item_id, location_id, uom,
@@ -171,7 +173,7 @@ try {
      LIMIT 50
   `);
   report(
-    'state_relationship_allocated_lte_available_lte_on_hand',
+    'state_relationship_reserved_plus_allocated_lte_on_hand',
     stateRelationRes.rowCount ?? 0,
     stateRelationRes.rows
   );
@@ -217,18 +219,20 @@ try {
 
   // ────────────────────────────────────────────────────────
   // 6. TRANSACTION TRACEABILITY
-  //    Every movement has a non-null movement_type
-  //    and external_ref for auditability
+  //    Every movement must have a non-null, non-empty
+  //    movement_type AND external_ref for auditability.
   // ────────────────────────────────────────────────────────
   const traceabilityRes = await pool.query(`
     SELECT id, tenant_id, movement_type, external_ref, created_at
       FROM inventory_movements
      WHERE movement_type IS NULL
         OR movement_type = ''
+        OR external_ref IS NULL
+        OR external_ref = ''
      LIMIT 50
   `);
   report(
-    'transaction_traceability_movement_type',
+    'transaction_traceability_movement_type_and_external_ref',
     traceabilityRes.rowCount ?? 0,
     traceabilityRes.rows
   );
@@ -278,23 +282,28 @@ try {
       reservationBoundsRes.rows
     );
 
-    // Check orphaned reservations — active reservations for items/locations
-    // that don't exist in inventory_balance
+    // Check orphaned reservations — FULFILLED reservations that committed
+    // against an item/location/uom with no inventory_balance row.
+    // RESERVED and ALLOCATED may temporarily exist before balance is
+    // projected, so only FULFILLED (which implies stock was consumed)
+    // is a hard invariant violation here.
     const orphanedReservationRes = await pool.query(`
       SELECT r.id, r.tenant_id, r.item_id, r.location_id, r.uom,
-             r.status, r.quantity_reserved
+             r.status, r.quantity_reserved,
+             COALESCE(r.quantity_fulfilled, 0) AS quantity_fulfilled
         FROM inventory_reservations r
         LEFT JOIN inventory_balance b
           ON b.tenant_id = r.tenant_id
          AND b.item_id = r.item_id
          AND b.location_id = r.location_id
          AND b.uom = r.uom
-       WHERE r.status IN ('RESERVED', 'ALLOCATED')
+       WHERE r.status = 'FULFILLED'
+         AND COALESCE(r.quantity_fulfilled, 0) > 0
          AND b.tenant_id IS NULL
        LIMIT 50
     `);
     report(
-      'no_orphaned_reservations',
+      'no_orphaned_fulfilled_reservations',
       orphanedReservationRes.rowCount ?? 0,
       orphanedReservationRes.rows
     );
