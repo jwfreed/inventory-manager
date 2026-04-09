@@ -1,8 +1,10 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import {
+  assertAtpLockHeldOrThrow,
   ensureInventoryBalanceRowAndLock,
-  persistInventoryMovement
+  persistInventoryMovement,
+  type AtpLockContext
 } from '../../domains/inventory';
 import { roundQuantity } from '../../lib/numbers';
 import {
@@ -247,8 +249,14 @@ async function assertTransferReversalCostIntegrity(params: {
 export async function executeTransferReversalPlan(
   prepared: PreparedTransferReversal,
   movementPlan: TransferReversalPlan,
-  client: PoolClient
+  client: PoolClient,
+  lockContext: AtpLockContext
 ): Promise<ExecutedTransferReversal> {
+  assertAtpLockHeldOrThrow(lockContext, {
+    tenantId: prepared.tenantId,
+    flow: 'transfer_void_execute',
+    originalMovementId: prepared.originalMovementId
+  });
   assertTransferReversalPlanInvariants(prepared, movementPlan.lines);
 
   const lockedRows = await lockTransferReversalInventoryState(prepared, movementPlan, client);

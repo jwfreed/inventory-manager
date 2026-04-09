@@ -460,7 +460,7 @@ export async function createQcEvent(
       );
       return buildTransferLockTargets(preparedTransfer);
       },
-      execute: async ({ client }) => {
+      execute: async ({ client, lockContext }) => {
       if (!sourceId || !sourceLocationId || !destinationLocationId || !itemId) {
         throw new Error('QC_PREPARE_REQUIRED');
       }
@@ -519,7 +519,7 @@ export async function createQcEvent(
 
       let transferExecution: Awaited<ReturnType<typeof executeTransferInventoryMutation>> | null = null;
       if (preparedTransfer) {
-        transferExecution = await executeTransferInventoryMutation(preparedTransfer, client);
+        transferExecution = await executeTransferInventoryMutation(preparedTransfer, client, lockContext);
         await client.query(
           `INSERT INTO qc_inventory_links (
               id, tenant_id, qc_event_id, inventory_movement_id, created_at

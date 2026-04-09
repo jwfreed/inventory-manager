@@ -143,14 +143,31 @@ test('movement events must preserve stable aggregate identity', async () => {
 });
 
 test('transfer replay hardening requires deterministic line plans, post-cutoff hashes, and transfer registry events', async () => {
-  const [transfersSource, helperSource, registrySource, appendSource] = await Promise.all([
+  const [transfersSource, helperSource, registrySource, appendSource, qcSource, workOrderSource] = await Promise.all([
     readFile(TRANSFERS_SERVICE, 'utf8'),
     readFile(MUTATION_SUPPORT, 'utf8'),
     readFile(EVENT_REGISTRY, 'utf8'),
-    readFile(EVENT_APPEND_SOURCE, 'utf8')
+    readFile(EVENT_APPEND_SOURCE, 'utf8'),
+    readFile(QC_SERVICE, 'utf8'),
+    readFile(WORK_ORDER_EXECUTION_SERVICE, 'utf8')
   ]);
 
   const buildPlanBody = extractFunctionBody(transfersSource, 'async function', 'buildTransferMovementPlan');
+  const executeTransferBody = extractFunctionBody(
+    transfersSource,
+    'export async function',
+    'executeTransferInventoryMutation'
+  );
+  const scrapBody = extractFunctionBody(
+    workOrderSource,
+    'export async function',
+    'reportWorkOrderScrap'
+  );
+  const transferInventoryBody = extractFunctionBody(
+    transfersSource,
+    'export async function',
+    'transferInventory'
+  );
   assert.match(
     buildPlanBody,
     /\bsortDeterministicMovementLines\(/,
@@ -161,6 +178,21 @@ test('transfer replay hardening requires deterministic line plans, post-cutoff h
     /\bbuildMovementDeterministicHash\(/,
     'transfer movement planning must compute deterministic movement hashes'
   );
+  assert.match(
+    executeTransferBody,
+    /\blockContext\b/,
+    'transfer execution helper must require a command lock context'
+  );
+  assert.match(
+    executeTransferBody,
+    /\bexecuteTransferMovementPlan\([\s\S]*lockContext\)/,
+    'transfer execution helper must pass the command lock context into movement execution'
+  );
+  assert.doesNotMatch(
+    transferInventoryBody,
+    /\binput\.occurredAt\b[\s\S]*\?/,
+    'transfer replay must not branch on optional occurredAt inputs'
+  );
 
   for (const functionName of ['executeTransferInventoryMutation', 'voidTransferMovement']) {
     const body = extractFunctionBody(
@@ -170,7 +202,7 @@ test('transfer replay hardening requires deterministic line plans, post-cutoff h
     );
     assert.match(
       body,
-      /\bbuildPostedDocumentReplayResult\(|\bbuildTransferReplayResult\(/,
+      /\bbuildPostedDocumentReplayResult\(|\bbuildTransferReplayResult\(|\bbuildTransferReversalReplayResult\(/,
       `${functionName} must delegate replay repair to the shared corruption-aware helper`
     );
   }
@@ -191,9 +223,14 @@ test('transfer replay hardening requires deterministic line plans, post-cutoff h
     'replay helper must reject missing hashes universally'
   );
   assert.match(
-    transfersSource,
-    /\bpersistInventoryMovement\(/,
-    'transfer-family mutations must persist deterministic hashes through the canonical movement writer'
+    qcSource,
+    /\bexecuteTransferInventoryMutation\([\s\S]*lockContext[\s\S]*\)/,
+    'QC transfer execution must pass the active command lock context'
+  );
+  assert.match(
+    scrapBody,
+    /\bexecuteTransferInventoryMutation\([\s\S]*lockContext[\s\S]*\)/,
+    'work-order transfer execution must pass the active command lock context'
   );
   assert.match(
     appendSource,

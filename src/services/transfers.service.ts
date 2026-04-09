@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import type { AtpLockContext } from '../domains/inventory';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { hashTransactionalIdempotencyRequest } from '../lib/transactionalIdempotency';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
@@ -369,10 +370,11 @@ export async function buildTransferReplayResult(params: {
 
 export async function executeTransferInventoryMutation(
   prepared: PreparedTransferMutation,
-  client: PoolClient
+  client: PoolClient,
+  lockContext: AtpLockContext
 ): Promise<TransferMutationExecution> {
   const movementPlan = await buildTransferMovementPlan(prepared, client);
-  const execution = await executeTransferMovementPlan(prepared, movementPlan, client);
+  const execution = await executeTransferMovementPlan(prepared, movementPlan, client, lockContext);
 
   if (!execution.result.created) {
     const replay = await buildTransferReplayResult({
@@ -569,18 +571,6 @@ export async function transferInventory(
       if (!movementId) {
         throw new Error('TRANSFER_REPLAY_MOVEMENT_ID_REQUIRED');
       }
-      const replayPlan = input.occurredAt
-        ? await (async () => {
-            const replayPrepared = await prepareTransferMutation(
-              {
-                ...input,
-                idempotencyKey: normalizedIdempotencyKey
-              },
-              txClient
-            );
-            return buildTransferMovementPlan(replayPrepared, txClient);
-          })()
-        : null;
       return (
         await buildTransferReplayResult({
           tenantId: input.tenantId,
@@ -595,8 +585,7 @@ export async function transferInventory(
           uom: input.uom,
           sourceWarehouseId: responseBody.sourceWarehouseId,
           destinationWarehouseId: responseBody.destinationWarehouseId,
-          expectedLineCount: replayPlan?.expectedLineCount ?? 2,
-          expectedDeterministicHash: replayPlan?.expectedDeterministicHash ?? null
+          expectedLineCount: 2
         })
       ).responseBody;
     },
@@ -610,11 +599,11 @@ export async function transferInventory(
       );
       return buildTransferLockTargets(prepared);
     },
-    execute: async ({ client: txClient }) => {
+    execute: async ({ client: txClient, lockContext }) => {
       if (!prepared) {
         throw new Error('TRANSFER_PREPARE_REQUIRED');
       }
-      const execution = await executeTransferInventoryMutation(prepared, txClient);
+      const execution = await executeTransferInventoryMutation(prepared, txClient, lockContext);
       return {
         responseBody: execution.result,
         responseStatus: execution.result.created ? 201 : 200,
@@ -678,7 +667,7 @@ export async function voidTransferMovement(
       );
       return buildTransferReversalLockTargets(reversalLockPreview);
     },
-    execute: async ({ client }) => {
+    execute: async ({ client, lockContext }) => {
       const preparedReversal = await prepareTransferReversalPolicy(
         {
           tenantId,
@@ -710,7 +699,8 @@ export async function voidTransferMovement(
       const execution = await executeTransferReversalPlan(
         preparedReversal,
         reversalPlan,
-        client
+        client,
+        lockContext
       );
       if (!execution.result.created) {
         const replay = await buildTransferReversalReplayResult({

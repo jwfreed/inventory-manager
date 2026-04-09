@@ -679,7 +679,7 @@ export async function postWorkOrderIssue(
         itemId: line.component_item_id
       }));
     },
-    execute: async ({ client }) => {
+    execute: async ({ client, lockContext }) => {
       if (!workOrder || !issue || !issueState) {
         throw new Error('WO_ISSUE_NOT_FOUND');
       }
@@ -1171,7 +1171,7 @@ export async function postWorkOrderCompletion(
         itemId: line.item_id
       }));
     },
-    execute: async ({ client }) => {
+    execute: async ({ client, lockContext }) => {
       if (!workOrder || !execution || !completionState) {
         throw new Error('WO_COMPLETION_NOT_FOUND');
       }
@@ -2680,7 +2680,7 @@ export async function reportWorkOrderScrap(
       );
       return buildTransferLockTargets(preparedTransfer);
     },
-    execute: async ({ client }) => {
+    execute: async ({ client, lockContext }) => {
       if (!execution || !preparedTransfer || !itemId || !sourceLocationId || !scrapLocationId || !warehouseId) {
         throw new Error('WO_SCRAP_PREPARE_REQUIRED');
       }
@@ -2689,7 +2689,8 @@ export async function reportWorkOrderScrap(
       });
       const transferExecution = await executeTransferInventoryMutation(
         plannedScrapMovement.preparedTransfer,
-        client
+        client,
+        lockContext
       );
       const now = new Date();
       const projectionOps = [

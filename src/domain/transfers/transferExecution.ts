@@ -1,8 +1,10 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import {
+  assertAtpLockHeldOrThrow,
   ensureInventoryBalanceRowAndLock,
-  persistInventoryMovement
+  persistInventoryMovement,
+  type AtpLockContext
 } from '../../domains/inventory';
 import { roundQuantity } from '../../lib/numbers';
 import {
@@ -176,8 +178,15 @@ async function assertTransferCostIntegrity(params: {
 export async function executeTransferMovementPlan(
   prepared: PreparedTransferMutation,
   movementPlan: TransferMovementPlan,
-  client: PoolClient
+  client: PoolClient,
+  lockContext: AtpLockContext
 ): Promise<ExecutedTransferMutation> {
+  assertAtpLockHeldOrThrow(lockContext, {
+    tenantId: prepared.tenantId,
+    flow: 'transfer_execute',
+    sourceType: prepared.sourceType,
+    sourceId: prepared.sourceId
+  });
   const invariantState = assertTransferMovementPlanInvariants(prepared, movementPlan.lines);
 
   // Transfer execution is location-level; lock the exact projected balance rows
