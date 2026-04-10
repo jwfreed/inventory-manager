@@ -37,14 +37,17 @@ This section establishes the authoritative system model that all refactoring wor
 
 ## 3.1 State Model
 
-- **Authoritative state** is stored exclusively in ledger tables (`inventory_movements`, `inventory_movement_lines`). These are append-only.
-- **Derived state** (e.g., `inventory_balance`) is a projection. It must never be used as the source of truth for correctness decisions.
-- No workflow may read a projection to validate a mutation. Validation must use authoritative ledger state or explicit domain invariants.
-- State transitions are represented as movement records, not as in-place updates.
+> **Current-State Assumption** = observed or schema-enforced behavior, not guaranteed to be universally applied across all workflows. **Target-State Invariant** = required outcome; the refactor must achieve and preserve this.
+
+- **Target-State Invariant:** Authoritative inventory state is stored exclusively in ledger tables (`inventory_movements`, `inventory_movement_lines`). No other table is the source of truth for inventory correctness.
+- **Current-State Assumption:** Ledger tables are append-only (enforced by schema). This constraint must not be weakened.
+- **Target-State Invariant:** Derived state (e.g., `inventory_balance`) is a projection only. It must never be used as the source of truth for correctness decisions.
+- **Target-State Invariant:** No workflow may read a projection to validate a mutation. Validation must use authoritative ledger state or explicit domain invariants.
+- **Current-State Assumption:** State transitions are represented as movement records, not as in-place updates.
 
 ## 3.2 Execution Model
 
-The execution path for every inventory command follows this sequence:
+The intended execution path for every inventory command follows this sequence:
 
 ```
 Command input
@@ -54,38 +57,40 @@ Command input
   → Projection update (derived, not authoritative)
 ```
 
-- All steps within a single command execute inside a single `withTransaction` / `withTransactionRetry` boundary.
-- No step may be skipped. No step may be reordered.
-- The entry point for all inventory commands is `runInventoryCommand` in `src/modules/platform/application/runInventoryCommand.ts`. No parallel entry points are permitted.
+- **Target-State Invariant:** All steps within a single command execute inside a single `withTransaction` / `withTransactionRetry` boundary. No step may be skipped or reordered.
+- **Current-State Assumption (Transfers only):** All transfer commands are routed through `runInventoryCommand` in `src/modules/platform/application/runInventoryCommand.ts`. No parallel entry points exist for transfers as of Sprint 1.
+- **Target-State Invariant:** `runInventoryCommand` is the single enforced entry point for all inventory commands. No parallel execution paths are permitted in the post-refactor state.
+- **Current-State Assumption:** QC and WorkOrder workflows may retain additional or alternate entry points. These must be identified and closed as part of Sprint 2 and Sprint 3+ respectively.
 
 ## 3.3 Replay Model
 
-- **Replay is system-wide**, not local to a single workflow. A replay over the full ledger must reproduce the same derived state as the original execution.
-- Replay ordering is determined by `buildMovementDeterministicHash` and `sortDeterministicMovementLines` in `src/modules/platform/application/inventoryMovementDeterminism.ts`. This ordering must not be altered.
-- Replay must be idempotent: replaying the same set of movements any number of times must produce the same result.
-- Replay and execution share the same logic path. No parallel replay implementation is permitted.
-- Cross-workflow replay safety: movements from different workflows (e.g., Transfer and QC) must not interfere with each other during replay. Each workflow's movements are logically isolated and must produce correct state independently.
+- **Target-State Invariant:** Replay is system-wide, not local to a single workflow. A full-system replay over the complete ledger must reproduce the same derived state as the original execution.
+- **Current-State Assumption:** Replay ordering uses `buildMovementDeterministicHash` and `sortDeterministicMovementLines` in `src/modules/platform/application/inventoryMovementDeterminism.ts`. This ordering must not be altered.
+- **Target-State Invariant:** Replay must be idempotent: replaying the same set of movements any number of times must produce the same result.
+- **Target-State Invariant:** Replay and execution share the same logic path. No parallel replay implementation is permitted.
+- **Target-State Invariant:** Movements from different workflows must not interfere with full-system replay. Workflow logic must not depend on hidden control flow of other workflows.
 
 ### Global Replay Assumptions
 
-- The ledger is the sole input to replay. No external state, projections, or ambient context may be consulted.
-- Hash computation is deterministic: same inputs always produce the same hash.
-- Line ordering within a movement is deterministic: `sortDeterministicMovementLines` is the sole ordering function.
-- Idempotency is enforced via `claimTransactionalIdempotency` on every ledger-affecting mutation path.
+- **Target-State Invariant:** The ledger is the sole input to replay. No external state, projections, or ambient context may be consulted.
+- **Current-State Assumption:** Hash computation uses `buildMovementDeterministicHash`. Same inputs must always produce the same hash; this function must not be modified or duplicated.
+- **Current-State Assumption:** Line ordering within a movement uses `sortDeterministicMovementLines`. This is the sole ordering function; it must not be modified or duplicated.
+- **Target-State Invariant:** Idempotency is enforced via `claimTransactionalIdempotency` on every ledger-affecting mutation path. Coverage must be verified per workflow; do not assume universal enforcement.
 
 ### Cross-Workflow Replay Safety Constraints
 
-- A workflow's movements must be self-contained. A replay of workflow A must not require reading movements from workflow B.
-- No movement may encode a dependency on another workflow's uncommitted or in-flight state.
-- If two workflows share a projection (e.g., `inventory_balance`), each workflow's replay must produce a correct projection contribution in isolation; the combined projection is derived by union.
+- **Target-State Invariant:** A full-system replay consumes the union of all ledger movements. Replay logic must produce the same derived state from the complete ledger as produced by the original execution sequence.
+- **Target-State Invariant:** Workflow logic must not depend on hidden control flow of other workflows. A workflow's execution path must be understandable and verifiable without tracing another workflow's implementation.
+- **Target-State Invariant:** No movement may encode a dependency on another workflow's uncommitted or in-flight state.
+- **Target-State Invariant:** If two workflows share a projection (e.g., `inventory_balance`), the projection must be derivable from the full ledger. No workflow requires private or isolated replay to produce a correct projection contribution.
 
 ## 3.4 Transaction Model
 
-- Each inventory command executes within exactly one transaction boundary (`withTransaction` or `withTransactionRetry`).
-- Lock acquisition occurs inside the transaction, before any write.
-- Ledger writes are atomic: a movement and all its lines commit together or not at all.
-- No cross-workflow transaction is permitted. Workflows must not mutate shared state within a single transaction boundary unless that shared state is the ledger itself.
-- Partial state (a movement without its lines, or a lock without a write) must never be committed.
+- **Target-State Invariant:** Each inventory command executes within exactly one transaction boundary (`withTransaction` or `withTransactionRetry`).
+- **Target-State Invariant:** Lock acquisition occurs inside the transaction, before any write.
+- **Current-State Assumption:** Ledger writes are atomic at the DB level: a movement and all its lines commit together or not at all (enforced by transaction semantics).
+- **Target-State Invariant:** No cross-workflow transaction is permitted. Workflows must not mutate shared state within a single transaction boundary unless that shared state is the ledger itself.
+- **Target-State Invariant:** Partial state (a movement without its lines, or a lock without a write) must never be committed.
 
 ---
 
@@ -113,7 +118,10 @@ Workflows identified in this codebase:
 - **Execution/Disposition QC** — QC disposition decisions affecting inventory state
 - **Work Order Execution** — material issue, backflush, WIP tracking
 
-Each workflow must be contained within a single module. No module may contain more than one workflow.
+Each workflow must have a single, explicit ownership boundary:
+- One authoritative code location owns the execution path for each workflow.
+- Unrelated workflows must not be co-located in the same module.
+- Shared infrastructure (e.g., the ledger writer, the transaction shell) is permitted only if it is workflow-agnostic and contains no workflow-specific logic.
 
 ---
 
@@ -154,7 +162,9 @@ Make correctness explicit before refactoring.
 - [x] Flag cross-transaction risks
 
 ### Exit Criteria — Met
-- All workflows have explicit source of truth, invariants, and replay definition.
+- Core correctness boundaries identified; detailed QC workflow definition deferred to Sprint 2 Phase A.
+- Transfer workflow boundary fully explicit (source of truth, invariants, replay contract).
+- QC and WorkOrder workflows identified as containing mixed boundaries and partial correctness; detailed definition is Sprint 2 Phase A work.
 
 ---
 
@@ -331,7 +341,7 @@ These rules apply to all sprints without exception.
 1. **No behavioral changes.** Refactoring must not alter observable outcomes for any workflow.
 2. **No projection-based correctness.** Projections are never the source of truth. Validation uses authoritative ledger state only.
 3. **Replay must remain deterministic.** Ordering and idempotency guarantees defined in §3.3 must be preserved.
-4. **One workflow per module.** No module may contain logic for more than one workflow.
+4. **Single ownership boundary per workflow.** Each workflow must have one authoritative code location. Unrelated workflows must not be co-located. Shared infrastructure is permitted only if workflow-agnostic.
 5. **Preserve invariants.** All domain invariants defined in `docs/domain-invariants.md` must hold before and after every change.
 6. **Boundary-first.** No separation work begins until the correctness boundary is explicitly defined and documented.
 7. **No alternate write paths.** All ledger writes go through `createInventoryMovement` / `createInventoryMovementLine`.
@@ -351,9 +361,14 @@ These rules apply to all sprints without exception.
 - Projection-based correctness decisions remaining: 0
 
 ## Verification
-- `npm run test:truth` passes: required at every sprint boundary
-- `npm run test:contracts` passes: required at every sprint boundary
-- `npm run lint:inventory-writes` passes: required at every sprint boundary
+
+| Check | Existence | Required at |
+|-------|-----------|-------------|
+| `npm run test:truth` | Existing enforced check | Every sprint boundary |
+| `npm run test:contracts` | Existing enforced check | Every sprint boundary |
+| `npm run lint:inventory-writes` | Existing enforced check | Every sprint boundary |
+
+> If a check cannot be run at a sprint boundary, this must be stated explicitly. Do not assume passage.
 
 ---
 
@@ -368,3 +383,7 @@ These rules apply to all sprints without exception.
 | 2026-04-10 | Add Workflow Definition (§4) | "Workflow" was used without a formal definition; first-class status required for Sprint 2+ |
 | 2026-04-10 | Rewrite Sprint 2 as two-phase (boundary-first, then separation) | Phase A prevents correctness regressions during QC separation |
 | 2026-04-10 | Define global replay assumptions and cross-workflow safety constraints | Local replay definition was insufficient for multi-workflow system |
+| 2026-04-10 | Introduce classification labels (Current-State Assumption / Target-State Invariant) in §3 and §4 | Absolute claims were unverified; labeling separates current state from required outcomes |
+| 2026-04-10 | Relax cross-workflow replay constraint | Requiring per-workflow independent replay was too strong; full-system replay consuming union of all movements is the correct model |
+| 2026-04-10 | Replace single-module rule with ownership boundary rule in §4 and §10 | Structural rigidity of "one workflow per module" would have forbidden shared infrastructure; ownership boundary preserves intent |
+| 2026-04-10 | Correct Sprint 0.5 exit criteria | Overstated completeness; QC workflow definition is deferred to Sprint 2 Phase A |
