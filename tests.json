@@ -1,0 +1,62 @@
+{
+  "updatedAt": "2026-04-10",
+  "scope": "Sprint 2 Phase B",
+  "items": {
+    "receipt_qc_behavior": {
+      "status": "verified",
+      "notes": [
+        "Covered by tests/contracts/qc-workflow-boundaries.test.mjs for cap, voided status, UOM, receipt_allocations mutation, lifecycle transitions, reject->NCR, and replay.",
+        "Verified after the createQcEvent workflow split; receipt_allocations mutation and evaluateQcCommand behavior remain on the receipt-specific path."
+      ]
+    },
+    "work_order_qc_behavior": {
+      "status": "verified",
+      "notes": [
+        "Covered by tests/contracts/qc-workflow-boundaries.test.mjs for existence, UOM, capped quantity when quantity_completed is non-null, null bypass, and replay.",
+        "Verified after refactor that quantity_completed = null still bypasses the quantity cap."
+      ]
+    },
+    "execution_line_qc_behavior": {
+      "status": "verified",
+      "notes": [
+        "Covered by tests/contracts/qc-workflow-boundaries.test.mjs for existence, UOM, quantity cap, and replay.",
+        "Verified after refactor that execution-line quantity cap enforcement still holds."
+      ]
+    },
+    "warehouse_disposition_behavior": {
+      "status": "verified",
+      "notes": [
+        "Covered by tests/contracts/qc-workflow-boundaries.test.mjs for warehouse existence, QA source, SELLABLE/HOLD destination, transfer execution, audit behavior, keyed replay, and current unkeyed behavior.",
+        "Verified that audit logging now runs inside the transfer transaction and keyed replay no longer duplicates qc_accept audit rows."
+      ]
+    },
+    "replay_behavior": {
+      "status": "verified",
+      "notes": [
+        "Verified for receipt, work order, execution line, and warehouse disposition via tests/contracts/qc-workflow-boundaries.test.mjs.",
+        "Workflow-specific replay handlers remain explicit even where they currently share the same replay helper."
+      ]
+    },
+    "idempotency_behavior": {
+      "status": "verified",
+      "notes": [
+        "Keyed replay confirmed for all QC workflow families covered by the QC workflow contract file; unkeyed warehouse disposition remains non-idempotent.",
+        "Warehouse disposition transactional audit callback only executes for newly created movements, preserving replay/idempotency semantics."
+      ]
+    },
+    "transaction_boundary_behavior": {
+      "status": "verified",
+      "notes": [
+        "Guard failures in warehouse disposition remain zero-partial-write failures.",
+        "Warehouse disposition audit now executes within the transfer transaction boundary instead of after transferInventory() returns."
+      ]
+    },
+    "audit_behavior": {
+      "status": "verified",
+      "notes": [
+        "qc_event audit behavior remains covered by the QC workflow contract file.",
+        "Warehouse disposition keyed replay now leaves qc_accept audit row count at one for the authoritative movement."
+      ]
+    }
+  }
+}

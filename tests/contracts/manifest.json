@@ -7,6 +7,7 @@
   "files": [
     "tests/contracts/adjustment.test.mjs",
     "tests/contracts/license-plate-move.test.mjs",
+    "tests/contracts/qc-workflow-boundaries.test.mjs",
     "tests/contracts/return-receipt-post.test.mjs",
     "tests/contracts/shipment.test.mjs",
     "tests/api/warehouse-root-create.test.mjs",

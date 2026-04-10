@@ -60,6 +60,10 @@ export type TransferInventoryInput = {
   inventoryCommandEndpoint?: string | null;
   inventoryCommandOperation?: string | null;
   inventoryCommandRequestBody?: Record<string, unknown> | null;
+  transactionalSideEffect?: ((params: {
+    client: PoolClient;
+    result: TransferInventoryResult;
+  }) => Promise<void>) | null;
 };
 
 export type TransferInventoryResult = {
@@ -635,6 +639,12 @@ export async function transferInventory(
         lockContext,
         plannedTransfer.movementPlan
       );
+      if (execution.result.created && input.transactionalSideEffect) {
+        await input.transactionalSideEffect({
+          client: txClient,
+          result: execution.result
+        });
+      }
       return {
         responseBody: execution.result,
         responseStatus: execution.result.created ? 201 : 200,

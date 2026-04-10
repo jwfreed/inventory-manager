@@ -1,0 +1,39 @@
+Sprint 2 Phase B Progress Tracker
+=================================
+
+Date: 2026-04-10
+Scope: QC separation with behavior-preserving characterization, workflow extraction, transfer-boundary clarification, and warehouse-disposition audit fix.
+
+Constraints
+- Preserve correctness before coupling reduction.
+- Preserve replay semantics.
+- Preserve existing transaction boundaries unless a targeted correctness fix is required.
+- Do not redesign receipt_allocations ownership in this phase.
+
+Workstream Status
+- [completed] Step 1: Create scaffold files and inspect existing QC code/tests.
+- [completed] Step 2: Add or confirm characterization coverage for receipt QC behavior.
+- [completed] Step 2: Add or confirm characterization coverage for work order QC behavior.
+- [completed] Step 2: Add or confirm characterization coverage for execution line QC behavior.
+- [completed] Step 2: Add or confirm characterization coverage for warehouse disposition behavior.
+- [completed] Step 3: Split createQcEvent into explicit workflow functions.
+- [completed] Step 4: Standardize QC to transfer integration boundary.
+- [completed] Step 5: Preserve receipt QC side-effect ordering exactly.
+- [completed] Step 6: Fix warehouse disposition audit transaction gap.
+- [completed] Step 7: Verify replay and idempotency semantics.
+- [completed] Step 8: Run affected suites and finalize review.
+
+Current Notes
+- Phase A report treated as canonical source of truth.
+- Receipt QC remains the highest-risk path because it mutates receipt_allocations and receipt lifecycle state in addition to the ledger-linked transfer.
+- `createQcEvent()` now dispatches to explicit receipt, work-order, and execution-line workflow functions with separate prepare/execute/replay paths.
+- QC-triggered transfers now run through a single explicit internal transfer boundary in the QC service helpers.
+- Receipt QC still preserves `moveReceiptAllocationsFromQa()`, `evaluateQcCommand()`, NCR creation, and existing side-effect ordering.
+- Warehouse disposition audit now records inside the transfer transaction and keyed replay no longer writes a duplicate `qc_accept` audit row.
+- Verification results:
+  - Targeted QC workflow contract file passed.
+  - `npm run test:truth` passed.
+  - `npm run test:contracts` passed.
+  - `npm run lint:inventory-writes` failed on pre-existing ownership violations in migrations, `inventoryBalance.projector.ts`, and `inventoryLedgerReconcile.service.ts`.
+  - `npm run test:scenarios` surfaced `multi-warehouse load: no oversell, warehouse isolation, bounded retries, strict invariants clean` as a failing existing scenario outside the QC files changed here.
+- receipt_allocations ownership remains unresolved and must stay unchanged in this phase.
