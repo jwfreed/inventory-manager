@@ -143,16 +143,31 @@ test('movement events must preserve stable aggregate identity', async () => {
 });
 
 test('transfer replay hardening requires deterministic line plans, post-cutoff hashes, and transfer registry events', async () => {
-  const [transfersSource, helperSource, registrySource, appendSource, qcSource, workOrderSource] = await Promise.all([
+  const [transfersSource, helperSource, registrySource, appendSource, qcSource, workOrderSource, planSource] = await Promise.all([
     readFile(TRANSFERS_SERVICE, 'utf8'),
     readFile(MUTATION_SUPPORT, 'utf8'),
     readFile(EVENT_REGISTRY, 'utf8'),
     readFile(EVENT_APPEND_SOURCE, 'utf8'),
     readFile(QC_SERVICE, 'utf8'),
-    readFile(WORK_ORDER_EXECUTION_SERVICE, 'utf8')
+    readFile(WORK_ORDER_EXECUTION_SERVICE, 'utf8'),
+    readFile(PLAN, 'utf8')
   ]);
 
-  const buildPlanBody = extractFunctionBody(transfersSource, 'async function', 'buildTransferMovementPlan');
+  assert.match(
+    planSource,
+    /\bsortDeterministicMovementLines\(/,
+    'transfer movement planning must sort authoritative movement lines deterministically'
+  );
+  assert.match(
+    planSource,
+    /\bbuildMovementDeterministicHash\(/,
+    'transfer movement planning must compute deterministic movement hashes'
+  );
+  assert.doesNotMatch(
+    transfersSource,
+    /\basync function buildTransferMovementPlan\b/,
+    'transfers service must not define its own planning wrapper — callers must use the domain planner directly'
+  );
   const executeTransferBody = extractFunctionBody(
     transfersSource,
     'export async function',
@@ -167,16 +182,6 @@ test('transfer replay hardening requires deterministic line plans, post-cutoff h
     transfersSource,
     'export async function',
     'transferInventory'
-  );
-  assert.match(
-    buildPlanBody,
-    /\bsortDeterministicMovementLines\(/,
-    'transfer movement planning must sort authoritative movement lines deterministically'
-  );
-  assert.match(
-    buildPlanBody,
-    /\bbuildMovementDeterministicHash\(/,
-    'transfer movement planning must compute deterministic movement hashes'
   );
   assert.match(
     executeTransferBody,
@@ -205,7 +210,7 @@ test('transfer replay hardening requires deterministic line plans, post-cutoff h
   );
   assert.match(
     transferInventoryBody,
-    /\bexpectedDeterministicHash:\s*replayPlan\.movementPlan\.expectedDeterministicHash/,
+    /\bexpectedDeterministicHash:\s*replayPlan\.expectedDeterministicHash/,
     'forward transfer replay must validate the canonical deterministic hash'
   );
   assert.doesNotMatch(
