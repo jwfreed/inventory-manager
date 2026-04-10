@@ -1,25 +1,14 @@
 # Copilot Instructions
 
-This repository is ledger-first. Optimize for safety, determinism, and auditable behavior.
+> **Source of truth: `AGENTS.md`**
+> This file is a thin overlay for GitHub Copilot. All invariants, architecture rules, and domain constraints live in `AGENTS.md`.
 
-## Must Preserve
+## Ledger Safety
 
-- `inventory_movements` and `inventory_movement_lines` are the source of truth for stock movement history.
-- Ledger tables are append-only.
-- Hashing and replay behavior must remain deterministic.
-- Projection rebuilds must derive from ledger rows, not ad hoc repair logic.
-
-## Current Write Boundaries
-
-The architecture contract refers to `runInventoryCommand()` and `persistInventoryMovement()`. Those names are not present in this codebase today.
-
-Use the current concrete equivalents instead:
-
-- mutation shell: `withTransaction(...)` / `withTransactionRetry(...)` in `src/db.ts`
-- ledger insert boundary: `createInventoryMovement(...)` and `createInventoryMovementLine(...)` in `src/domains/inventory/internal/ledgerWriter.ts`
-
-Do not bypass those boundaries.
-Do not introduce alternate direct writes to `inventory_movements` or `inventory_movement_lines`.
+- `inventory_movements` and `inventory_movement_lines` are append-only.
+- All writes go through `createInventoryMovement(...)` and `createInventoryMovementLine(...)` in `src/domains/inventory/internal/ledgerWriter.ts`.
+- Mutation shell: `withTransaction(...)` / `withTransactionRetry(...)` in `src/db.ts`.
+- Do not bypass these boundaries or introduce alternate direct writes.
 
 ## Test and CI Rules
 
@@ -28,7 +17,7 @@ Do not introduce alternate direct writes to `inventory_movements` or `inventory_
 - Keep `test:scenarios` for heavy operational workflows.
 - Do not change CI to call ad hoc file lists when an npm script exists.
 
-## Schema and Migration Rules
+## Schema Rules
 
 - Never modify migrations or schema unless the user explicitly requests it.
 - If a migration would weaken ledger immutability, update the corresponding truth guards in the same change and document the reason.
