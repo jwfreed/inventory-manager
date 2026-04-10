@@ -364,11 +364,11 @@ These rules apply to all sprints without exception.
 
 | Check | Existence | Required at |
 |-------|-----------|-------------|
-| `npm run test:truth` | Existing enforced check | Every sprint boundary |
-| `npm run test:contracts` | Existing enforced check | Every sprint boundary |
-| `npm run lint:inventory-writes` | Existing enforced check | Every sprint boundary |
+| `npm run test:truth` | Must verify existence | Every sprint boundary |
+| `npm run test:contracts` | Must verify existence | Every sprint boundary |
+| `npm run lint:inventory-writes` | Must verify existence | Every sprint boundary |
 
-> If a check cannot be run at a sprint boundary, this must be stated explicitly. Do not assume passage.
+> These checks are required at each sprint boundary. Their existence and enforcement must be verified in the codebase. Do not assume availability or passing status without explicit confirmation.
 
 ---
 
