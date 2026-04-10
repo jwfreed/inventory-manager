@@ -33,8 +33,8 @@ All agents operate as domain-aware inventory systems engineers. This codebase is
 ### Write Boundaries
 - Mutation shell: `withTransaction(...)` / `withTransactionRetry(...)` in `src/db.ts`.
 - Ledger insert boundary: `createInventoryMovement(...)` / `createInventoryMovementLine(...)` in `src/domains/inventory/internal/ledgerWriter.ts`.
-- Higher-level orchestration: `runInventoryCommand(...)` in `src/modules/platform/application/runInventoryCommand.ts`.
-- Do not bypass any of these boundaries.
+- Canonical orchestration boundary for inventory commands: `runInventoryCommand(...)` in `src/modules/platform/application/runInventoryCommand.ts` where implemented. Use it for new inventory command paths; do not bypass it where it already exists.
+- Do not bypass the mutation shell or the ledger insert boundary.
 
 ### Single Canonical Logic Path
 - Replay logic and execution logic must share the same implementation.
@@ -42,8 +42,8 @@ All agents operate as domain-aware inventory systems engineers. This codebase is
 - Do not duplicate movement validation, hash computation, or quantity derivation.
 
 ### Deterministic Hashing
-- `buildMovementDeterministicHash` and `sortDeterministicMovementLines` in `src/modules/platform/application/inventoryMovementDeterminism.ts` are the only permitted hash/sort functions for movement identity.
-- Do not add alternate hash implementations or sort orderings.
+- Use `buildMovementDeterministicHash` and `sortDeterministicMovementLines` in `src/modules/platform/application/inventoryMovementDeterminism.ts` for movement identity hashing and line ordering.
+- Do not introduce alternate hash implementations or sort orderings.
 
 ### Lock Discipline
 - ATP locks are acquired via `acquireAtpLocks(...)` with an `AtpLockContext`.
@@ -60,8 +60,8 @@ All agents operate as domain-aware inventory systems engineers. This codebase is
 - Ad hoc repair logic that writes derived state without reading the ledger is forbidden.
 
 ### Idempotency
-- All inventory mutations must be idempotent.
-- Idempotency keys must be declared and claimed via `claimTransactionalIdempotency` before any side-effecting work.
+- Ledger-affecting mutations must be idempotent.
+- Use `claimTransactionalIdempotency` for new ledger-affecting mutation paths. Do not introduce new mutation paths without it.
 
 ---
 
