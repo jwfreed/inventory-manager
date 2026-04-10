@@ -699,7 +699,7 @@ export async function voidTransferMovement(
         }
       })
     : null;
-  let reversalLockPreview:
+  let preparedReversal:
     | Awaited<ReturnType<typeof prepareTransferReversalPolicy>>
     | null = null;
 
@@ -726,23 +726,19 @@ export async function voidTransferMovement(
       ).responseBody;
     },
     lockTargets: async (client) => {
-      reversalLockPreview = await prepareTransferReversalPolicy(
+      preparedReversal = await prepareTransferReversalPolicy(
         {
           tenantId,
           originalMovementId: movementId
         },
         client
       );
-      return buildTransferReversalLockTargets(reversalLockPreview);
+      return buildTransferReversalLockTargets(preparedReversal);
     },
     execute: async ({ client, lockContext }) => {
-      const preparedReversal = await prepareTransferReversalPolicy(
-        {
-          tenantId,
-          originalMovementId: movementId
-        },
-        client
-      );
+      if (!preparedReversal) {
+        throw new Error('TRANSFER_REVERSAL_PREPARE_REQUIRED');
+      }
       if (preparedReversal.existingReversal) {
         const replay = await buildTransferReversalReplayResult({
           tenantId,
