@@ -48,7 +48,10 @@
       "status": "verified",
       "notes": [
         "Guard failures in warehouse disposition remain zero-partial-write failures.",
-        "Warehouse disposition audit now executes within the transfer transaction boundary instead of after transferInventory() returns."
+        "Warehouse disposition now uses withInventoryTransaction to own an explicit transaction boundary.",
+        "transferInventory + recordAuditLog are both within the same withInventoryTransaction call, ensuring atomicity.",
+        "Explicit transaction model replaces transactionalSideEffect callback; no behavioral drift from prior Sprint 2 Phase B verification.",
+        "New contract test: 'warehouse disposition transfer and audit log are co-committed within the same explicit transaction boundary' added to tests/contracts/qc-workflow-boundaries.test.mjs."
       ]
     },
     "audit_behavior": {

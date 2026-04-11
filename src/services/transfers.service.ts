@@ -1,8 +1,16 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
-import type { AtpLockContext } from '../domains/inventory';
+import {
+  acquireAtpLocks,
+  createAtpLockContext,
+  type AtpLockContext
+} from '../domains/inventory';
 import { roundQuantity, toNumber } from '../lib/numbers';
-import { hashTransactionalIdempotencyRequest } from '../lib/transactionalIdempotency';
+import {
+  claimTransactionalIdempotency,
+  finalizeTransactionalIdempotency,
+  hashTransactionalIdempotencyRequest
+} from '../lib/transactionalIdempotency';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import {
   runInventoryCommand,
@@ -15,6 +23,7 @@ import {
   buildPostedDocumentReplayResult
 } from '../modules/platform/application/inventoryMutationSupport';
 import { buildInventoryRegistryEvent } from '../modules/platform/application/inventoryEventRegistry';
+import { appendInventoryEventsWithDispatch } from '../modules/platform/infrastructure/inventoryEvents';
 import {
   prepareTransferMutation as prepareTransferPolicy,
   type PreparedTransferMutation
@@ -60,10 +69,16 @@ export type TransferInventoryInput = {
   inventoryCommandEndpoint?: string | null;
   inventoryCommandOperation?: string | null;
   inventoryCommandRequestBody?: Record<string, unknown> | null;
-  transactionalSideEffect?: ((params: {
-    client: PoolClient;
-    result: TransferInventoryResult;
-  }) => Promise<void>) | null;
+};
+
+/**
+ * Options for executing a transfer within an externally-owned transaction.
+ * When provided, transferInventory executes the transfer logic directly using
+ * the supplied client rather than opening its own runInventoryCommand boundary.
+ * The caller is responsible for transaction lifecycle, commit, and rollback.
+ */
+export type TransferInventoryOptions = {
+  client: PoolClient;
 };
 
 export type TransferInventoryResult = {
@@ -567,8 +582,128 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
   };
 }
 
+function compareTransferLockTargetForExternalClient(
+  left: { warehouseId: string; itemId: string; tenantId: string },
+  right: { warehouseId: string; itemId: string; tenantId: string }
+) {
+  const warehouseCompare = left.warehouseId.localeCompare(right.warehouseId);
+  if (warehouseCompare !== 0) return warehouseCompare;
+  const itemCompare = left.itemId.localeCompare(right.itemId);
+  if (itemCompare !== 0) return itemCompare;
+  return left.tenantId.localeCompare(right.tenantId);
+}
+
+/**
+ * Execute transfer logic using a caller-owned transaction client.
+ * Handles idempotency claim/finalize, lock acquisition, execution, events,
+ * and projection ops — all within the provided transaction boundary.
+ * Replay is handled identically to the runInventoryCommand path.
+ */
+async function executeTransferWithExternalClient(
+  input: TransferInventoryInput,
+  txClient: PoolClient,
+  endpoint: string,
+  operation: string,
+  normalizedIdempotencyKey: string | null,
+  requestHash: string | null
+): Promise<TransferInventoryResult> {
+  if (normalizedIdempotencyKey && requestHash) {
+    const claim = await claimTransactionalIdempotency<TransferInventoryResult>(
+      txClient,
+      {
+        tenantId: input.tenantId,
+        key: normalizedIdempotencyKey,
+        endpoint,
+        requestHash
+      }
+    );
+    if (claim.replayed) {
+      const responseBody = claim.responseBody;
+      const movementId = responseBody.movementId;
+      if (!movementId) {
+        throw new Error('TRANSFER_REPLAY_MOVEMENT_ID_REQUIRED');
+      }
+      const replayOccurredAt = input.occurredAt
+        ?? await loadTransferOccurredAt(txClient, input.tenantId, movementId);
+      const replayPrepared = await prepareTransferMutation(
+        { ...input, occurredAt: replayOccurredAt, idempotencyKey: normalizedIdempotencyKey },
+        txClient
+      );
+      const replayPlan = await buildTransferMovementPlan(replayPrepared, txClient);
+      return (
+        await buildTransferReplayResult({
+          tenantId: input.tenantId,
+          movementId,
+          normalizedIdempotencyKey,
+          replayed: true,
+          client: txClient,
+          sourceLocationId: input.sourceLocationId,
+          destinationLocationId: input.destinationLocationId,
+          itemId: input.itemId,
+          quantity: roundQuantity(toNumber(input.quantity)),
+          uom: input.uom,
+          sourceWarehouseId: responseBody.sourceWarehouseId,
+          destinationWarehouseId: responseBody.destinationWarehouseId,
+          expectedLineCount: replayPlan.expectedLineCount,
+          expectedDeterministicHash: replayPlan.expectedDeterministicHash
+        })
+      ).responseBody;
+    }
+  }
+
+  const prepared = await prepareTransferMutation(
+    { ...input, idempotencyKey: normalizedIdempotencyKey },
+    txClient
+  );
+  const movementPlan = await buildTransferMovementPlan(prepared, txClient);
+  const lockTargets = buildTransferLockTargets(prepared)
+    .sort(compareTransferLockTargetForExternalClient);
+  const lockContext = createAtpLockContext({ operation, tenantId: input.tenantId });
+  await acquireAtpLocks(txClient, lockTargets, { lockContext });
+
+  const execution = await executeTransferInventoryMutation(
+    prepared,
+    txClient,
+    lockContext,
+    movementPlan
+  );
+
+  await appendInventoryEventsWithDispatch(
+    txClient,
+    execution.events.map((event) => ({
+      tenantId: event.tenantId ?? input.tenantId,
+      aggregateType: event.aggregateType,
+      aggregateId: event.aggregateId,
+      aggregateIdSource: event.aggregateIdSource,
+      eventType: event.eventType,
+      eventVersion: event.eventVersion,
+      payload: event.payload,
+      producerIdempotencyKey: event.producerIdempotencyKey ?? normalizedIdempotencyKey,
+      dispatch: event.dispatch
+    }))
+  );
+  for (const projectionOp of execution.projectionOps) {
+    await projectionOp(txClient);
+  }
+
+  if (normalizedIdempotencyKey) {
+    await finalizeTransactionalIdempotency(
+      txClient,
+      {
+        tenantId: input.tenantId,
+        key: normalizedIdempotencyKey,
+        responseStatus: execution.result.created ? 201 : 200,
+        responseBody: execution.result
+      }
+    );
+  }
+
+  return execution.result;
+}
+
 export async function transferInventory(
-  input: TransferInventoryInput
+  input: TransferInventoryInput,
+  options?: TransferInventoryOptions
 ): Promise<TransferInventoryResult> {
   const endpoint = input.inventoryCommandEndpoint ?? IDEMPOTENCY_ENDPOINTS.INVENTORY_TRANSFERS_CREATE;
   const operation = input.inventoryCommandOperation ?? 'inventory_transfer';
@@ -580,6 +715,19 @@ export async function transferInventory(
         body: input.inventoryCommandRequestBody ?? buildTransferInventoryRequestBody(input)
       })
     : null;
+
+  const txClient = options?.client;
+  if (txClient) {
+    return executeTransferWithExternalClient(
+      input,
+      txClient,
+      endpoint,
+      operation,
+      normalizedIdempotencyKey,
+      requestHash
+    );
+  }
+
   let plannedTransfer: { prepared: PreparedTransferMutation; movementPlan: TransferMovementPlan } | null = null;
 
   return runInventoryCommand<TransferInventoryResult>({
@@ -639,12 +787,6 @@ export async function transferInventory(
         lockContext,
         plannedTransfer.movementPlan
       );
-      if (execution.result.created && input.transactionalSideEffect) {
-        await input.transactionalSideEffect({
-          client: txClient,
-          result: execution.result
-        });
-      }
       return {
         responseBody: execution.result,
         responseStatus: execution.result.created ? 201 : 200,

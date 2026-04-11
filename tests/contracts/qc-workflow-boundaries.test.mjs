@@ -733,3 +733,71 @@ test('warehouse disposition QC characterization preserves guards, transfer execu
   assert.equal(movementCountAfterFailure, movementCountBeforeFailure);
   assert.equal(Number(auditCountAfterFailure), Number(auditCountBeforeFailure));
 });
+
+test('warehouse disposition transfer and audit log are co-committed within the same explicit transaction boundary', { timeout: 120000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-atomic',
+    tenantName: 'Contract QC Atomicity'
+  });
+  const { tenantId, pool: db, topology } = harness;
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: `QC-ATOM-${randomUUID().slice(0, 6)}`,
+    type: 'finished'
+  });
+  await harness.seedStockViaCount({
+    warehouseId: topology.warehouse.id,
+    itemId: item.id,
+    locationId: topology.defaults.QA.id,
+    quantity: 4,
+    unitCost: 8
+  });
+
+  const atomKey = `qc-atom:${randomUUID()}`;
+  const first = await harness.qcWarehouseDisposition(
+    'accept',
+    {
+      warehouseId: topology.warehouse.id,
+      itemId: item.id,
+      quantity: 2,
+      uom: 'each',
+      idempotencyKey: atomKey
+    },
+    { type: 'system', id: null },
+    { idempotencyKey: atomKey }
+  );
+  assert.equal(first.replayed, false);
+
+  // Both movement and audit row must exist after the first commit — proves
+  // they were written within the same withInventoryTransaction boundary.
+  const movementRow = await db.query(
+    `SELECT id FROM inventory_movements WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, first.movementId]
+  );
+  assert.equal(movementRow.rowCount, 1, 'movement must exist after committed disposition');
+
+  const auditRow = await db.query(
+    `SELECT id FROM audit_log WHERE tenant_id = $1 AND entity_type = 'qc_accept' AND entity_id = $2`,
+    [tenantId, first.movementId]
+  );
+  assert.equal(auditRow.rowCount, 1, 'audit row must co-exist with movement in same committed transaction');
+
+  // Replay must not create a second audit row — proves the !t.replayed guard works.
+  const replay = await harness.qcWarehouseDisposition(
+    'accept',
+    {
+      warehouseId: topology.warehouse.id,
+      itemId: item.id,
+      quantity: 2,
+      uom: 'each',
+      idempotencyKey: atomKey
+    },
+    { type: 'system', id: null },
+    { idempotencyKey: atomKey }
+  );
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.movementId, first.movementId);
+
+  const auditCountAfterReplay = await countAuditRows(db, tenantId, 'qc_accept', first.movementId);
+  assert.equal(auditCountAfterReplay, 1, 'replay must not insert a second audit row');
+});

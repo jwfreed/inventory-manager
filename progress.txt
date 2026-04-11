@@ -37,3 +37,32 @@ Current Notes
   - `npm run lint:inventory-writes` failed on pre-existing ownership violations in migrations, `inventoryBalance.projector.ts`, and `inventoryLedgerReconcile.service.ts`.
   - `npm run test:scenarios` surfaced `multi-warehouse load: no oversell, warehouse isolation, bounded retries, strict invariants clean` as a failing existing scenario outside the QC files changed here.
 - receipt_allocations ownership remains unresolved and must stay unchanged in this phase.
+
+Sprint 2 Phase C Progress Tracker (Explicit Transaction Boundary Refactor)
+==========================================================================
+
+Date: 2026-04-10
+Scope: Replace callback-based `transactionalSideEffect` in `transferInventory` with an explicit transaction boundary model.
+
+Migration to explicit transaction model:
+- Introduced `withInventoryTransaction<T>` in `src/modules/platform/application/withInventoryTransaction.ts`.
+  Uses `withTransactionRetry` with SERIALIZABLE isolation and retry=2, matching `runInventoryCommand` semantics.
+- Removed `transactionalSideEffect` callback from `TransferInventoryInput` type.
+- Added `TransferInventoryOptions = { client: PoolClient }` to `transfers.service.ts`.
+- Added `executeTransferWithExternalClient` private helper that handles idempotency claim/finalize, lock acquisition, transfer execution, event appending, and projection ops using a caller-provided client.
+- `transferInventory(input, options?)` now accepts an explicit client via `options.client`; with-client path uses `executeTransferWithExternalClient`. Without-client path is unchanged (`runInventoryCommand`).
+- `postQcWarehouseDisposition` now wraps both `transferInventory` and `recordAuditLog` inside `withInventoryTransaction`, making transfer + audit atomic.
+- Audit write skipped on replay via `if (!t.replayed)` guard.
+
+Invariants preserved:
+- receipt_allocations logic unchanged; createQcEvent workflows unchanged.
+- Work Order QC null bypass intact.
+- Execution Line quantity cap intact.
+- Replay semantics preserved: onReplay in both with-client and runInventoryCommand paths reconstruct using same deterministic hash logic.
+- Idempotency preserved: claimTransactionalIdempotency and finalizeTransactionalIdempotency called identically in with-client path.
+- No ledger writes outside ledgerWriter.ts.
+- Existing architecture tests continue to pass.
+
+New test:
+- `warehouse disposition transfer and audit log are co-committed within the same explicit transaction boundary` in `tests/contracts/qc-workflow-boundaries.test.mjs`.
+  Proves: movement and audit row co-exist after single committed call; replay does not insert a second audit row.

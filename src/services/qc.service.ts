@@ -19,6 +19,7 @@ import {
 import { getDefaultSellableLocation, getHoldLocation, getQaLocation } from './locationResolvers.service';
 import { runInventoryCommand } from '../modules/platform/application/runInventoryCommand';
 import { buildReplayCorruptionError } from '../modules/platform/application/inventoryMutationSupport';
+import { withInventoryTransaction } from '../modules/platform/application/withInventoryTransaction';
 import {
   RECEIPT_ALLOCATION_STATUSES,
   insertReceiptAllocations,
@@ -1300,40 +1301,42 @@ export async function postQcWarehouseDisposition(
   const sourceId = idempotencyKey
     ? `qc_wrapper:${action}:${idempotencyKey}`
     : `qc_wrapper:${action}:${uuidv4()}`;
-  const transfer = await transferInventory({
-    tenantId,
-    warehouseId,
-    sourceLocationId,
-    destinationLocationId,
-    itemId: data.itemId,
-    quantity,
-    uom: data.uom,
-    sourceType: 'qc_event',
-    sourceId,
-    movementType: 'transfer',
-    qcAction: action === 'accept' ? 'accept' : 'hold',
-    reasonCode: action === 'accept' ? 'QC_ACCEPT' : 'QC_REJECT',
-    notes: data.notes?.trim() || `QC ${action} warehouse disposition`,
-    occurredAt: occurredAt ?? undefined,
-    actorId: actor.id ?? null,
-    overrideNegative: data.overrideNegative,
-    overrideReason: data.overrideReason ?? null,
-    idempotencyKey,
-    inventoryCommandEndpoint:
-      action === 'accept' ? IDEMPOTENCY_ENDPOINTS.QC_WAREHOUSE_ACCEPT : IDEMPOTENCY_ENDPOINTS.QC_WAREHOUSE_REJECT,
-    inventoryCommandOperation: action === 'accept' ? 'qc_accept_disposition' : 'qc_reject_disposition',
-    inventoryCommandRequestBody: {
-      action,
-      warehouseId: data.warehouseId,
+  const transfer = await withInventoryTransaction(async (client) => {
+    const t = await transferInventory({
+      tenantId,
+      warehouseId,
+      sourceLocationId,
+      destinationLocationId,
       itemId: data.itemId,
-      quantity: roundQuantity(quantity),
+      quantity,
       uom: data.uom,
-      notes: data.notes?.trim() || null,
-      overrideNegative: data.overrideNegative ?? false,
+      sourceType: 'qc_event',
+      sourceId,
+      movementType: 'transfer',
+      qcAction: action === 'accept' ? 'accept' : 'hold',
+      reasonCode: action === 'accept' ? 'QC_ACCEPT' : 'QC_REJECT',
+      notes: data.notes?.trim() || `QC ${action} warehouse disposition`,
+      occurredAt: occurredAt ?? undefined,
+      actorId: actor.id ?? null,
+      overrideNegative: data.overrideNegative,
       overrideReason: data.overrideReason ?? null,
-      occurredAt: occurredAt ?? undefined
-    },
-    transactionalSideEffect: async ({ client, result }) => {
+      idempotencyKey,
+      inventoryCommandEndpoint:
+        action === 'accept' ? IDEMPOTENCY_ENDPOINTS.QC_WAREHOUSE_ACCEPT : IDEMPOTENCY_ENDPOINTS.QC_WAREHOUSE_REJECT,
+      inventoryCommandOperation: action === 'accept' ? 'qc_accept_disposition' : 'qc_reject_disposition',
+      inventoryCommandRequestBody: {
+        action,
+        warehouseId: data.warehouseId,
+        itemId: data.itemId,
+        quantity: roundQuantity(quantity),
+        uom: data.uom,
+        notes: data.notes?.trim() || null,
+        overrideNegative: data.overrideNegative ?? false,
+        overrideReason: data.overrideReason ?? null,
+        occurredAt: occurredAt ?? undefined
+      }
+    }, { client });
+    if (!t.replayed) {
       await recordAuditLog(
         {
           tenantId,
@@ -1341,7 +1344,7 @@ export async function postQcWarehouseDisposition(
           actorId: actor.id ?? null,
           action: 'create',
           entityType: action === 'accept' ? 'qc_accept' : 'qc_reject',
-          entityId: result.movementId,
+          entityId: t.movementId,
           occurredAt: occurredAt ?? undefined,
           metadata: {
             warehouseId,
@@ -1355,6 +1358,7 @@ export async function postQcWarehouseDisposition(
         client
       );
     }
+    return t;
   });
 
   return {
