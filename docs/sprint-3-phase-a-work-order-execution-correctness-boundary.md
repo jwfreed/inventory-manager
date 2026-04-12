@@ -356,6 +356,16 @@ Structural risk:
 - Treating operational anchor rows as projections.
 - Making WF-6 appear atomic when it is not.
 
+## Failure Modes → Primary Invariant Mapping
+
+| Failure Mode | Affected Workflow(s) | Violated Invariant(s) | Detection Surface | Notes |
+|--------------|----------------------|-----------------------|-------------------|-------|
+| WF-5 pair incompleteness | WF-5, WF-6 | Identity Invariants; Replay Invariants | `WO_POSTING_IDEMPOTENCY_INCOMPLETE`; batch replay classification | Issue and receive movements must remain a complete pair. |
+| WF-6 TX-1 / TX-2 split inconsistency | WF-6 | Idempotency Invariants; Replay Invariants | `WO_REPORT_LOT_LINK_INCOMPLETE`; `WO_EXECUTION_RECOVERY_IRRECOVERABLE` | Inventory may be posted while traceability remains incomplete. |
+| WF-7 reversal pair incompleteness | WF-7 | Identity Invariants; Replay Invariants | `WO_VOID_INCOMPLETE`; void replay | Output reversal and component return movements must remain a complete pair. |
+| WF-8 infrastructure-dependent replay drift | WF-8 | Replay Invariants | Scrap replay scope/default-location resolution | Replay depends on QA source and SCRAP default location resolution. |
+| Duplicate mutation due to idempotency failure | WF-2, WF-4, WF-5, WF-6, WF-7, WF-8 | Idempotency Invariants; Identity Invariants | Idempotency claim/replay paths; movement source identity checks | A logical mutation may produce at most one authoritative write set. |
+
 ## Non-Negotiable Constraints For Phase B
 
 Must preserve:
