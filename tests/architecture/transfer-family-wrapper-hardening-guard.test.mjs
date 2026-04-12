@@ -10,6 +10,7 @@ const WORK_ORDER_EXECUTION_SERVICE = path.resolve(process.cwd(), 'src/services/w
 const INVENTORY_COMMAND_WRAPPER = path.resolve(process.cwd(), 'src/modules/platform/application/runInventoryCommand.ts');
 const MUTATION_SUPPORT = path.resolve(process.cwd(), 'src/modules/platform/application/inventoryMutationSupport.ts');
 const EVENT_REGISTRY = path.resolve(process.cwd(), 'src/modules/platform/application/inventoryEventRegistry.ts');
+const PLAN = path.resolve(process.cwd(), 'src/domain/transfers/transferPlan.ts');
 const EVENT_APPEND_SOURCE = path.resolve(
   process.cwd(),
   'src/modules/platform/infrastructure/inventoryEvents.ts'
@@ -71,17 +72,37 @@ test('transfer-family orchestration must use the canonical mutation shell', asyn
   assert.doesNotMatch(postTransferBody, /\bwithTransactionRetry\(/, 'postInventoryTransfer must not own a manual retry shell');
 
   const transferInventoryBody = extractFunctionBody(transfersSource, 'export async function', 'transferInventory');
-  assert.match(transferInventoryBody, /\brunInventoryCommand(?:<[^>]+>)?\(/, 'transferInventory must use runInventoryCommand() when it owns orchestration');
-  assert.doesNotMatch(transfersSource, /client\?:\s*PoolClient/, 'transferInventory must not expose a client-owned fallback signature');
+  assert.match(
+    transferInventoryBody,
+    /\brunTransferCommandWithClient\(/,
+    'transferInventory must use the transfer-scoped transaction runner when it owns orchestration'
+  );
+  assert.doesNotMatch(
+    transferInventoryBody,
+    /\brunInventoryCommand(?:<[^>]+>)?\(/,
+    'transferInventory must not use the generic inventory command wrapper bypass'
+  );
+  assert.doesNotMatch(
+    transfersSource,
+    /\bexport\s+(?:async\s+)?function\s+runTransferCommandWithClient\b/,
+    'transfer-scoped transaction runner must remain private to transfers.service'
+  );
+  assert.doesNotMatch(
+    await readFile(INVENTORY_COMMAND_WRAPPER, 'utf8'),
+    /\bexecuteWithClient\b/,
+    'runInventoryCommand must not expose generic caller-client execution hooks'
+  );
   assert.doesNotMatch(transferInventoryBody, /\bif\s*\(!client\)/, 'transferInventory must not branch on client-owned orchestration');
 
   const voidTransferBody = extractFunctionBody(transfersSource, 'export async function', 'voidTransferMovement');
   assert.match(voidTransferBody, /\brunInventoryCommand(?:<[^>]+>)?\(/, 'voidTransferMovement must use runInventoryCommand()');
   assert.doesNotMatch(voidTransferBody, /\bwithTransactionRetry\(/, 'voidTransferMovement must not own a manual retry shell');
 
-  const qcCreateBody = extractFunctionBody(qcSource, 'export async function', 'createQcEvent');
-  assert.match(qcCreateBody, /\brunInventoryCommand(?:<[^>]+>)?\(/, 'createQcEvent must use runInventoryCommand()');
-  assert.doesNotMatch(qcCreateBody, /\bwithTransaction(?:Retry)?\(/, 'createQcEvent must not own a manual transaction shell');
+  for (const qcFunction of ['createReceiptQcEvent', 'createWorkOrderQcEvent', 'createExecutionLineQcEvent']) {
+    const qcBody = extractFunctionBody(qcSource, 'async function', qcFunction);
+    assert.match(qcBody, /\brunInventoryCommand(?:<[^>]+>)?\(/, `${qcFunction} must use runInventoryCommand()`);
+    assert.doesNotMatch(qcBody, /\bwithTransaction(?:Retry)?\(/, `${qcFunction} must not own a manual transaction shell`);
+  }
 
   const scrapBody = extractFunctionBody(workOrderSource, 'export async function', 'reportWorkOrderScrap');
   assert.match(scrapBody, /\brunInventoryCommand(?:<[^>]+>)?\(/, 'reportWorkOrderScrap must use runInventoryCommand()');
@@ -183,6 +204,11 @@ test('transfer replay hardening requires deterministic line plans, post-cutoff h
     'export async function',
     'transferInventory'
   );
+  const executeTransferWithClientBody = extractFunctionBody(
+    transfersSource,
+    'async function',
+    'executeTransferWithClient'
+  );
   assert.match(
     executeTransferBody,
     /\blockContext\b/,
@@ -199,17 +225,17 @@ test('transfer replay hardening requires deterministic line plans, post-cutoff h
     'transfer execution must use the canonical transfer plan builder'
   );
   assert.match(
-    transferInventoryBody,
+    executeTransferWithClientBody,
     /\bbuildTransferMovementPlan\(/,
     'forward transfer replay must use the canonical transfer plan builder before validating replay'
   );
   assert.match(
-    transferInventoryBody,
+    executeTransferWithClientBody,
     /\bloadTransferOccurredAt\(/,
     'forward transfer replay must resolve replay-effective occurredAt before canonical plan construction'
   );
   assert.match(
-    transferInventoryBody,
+    executeTransferWithClientBody,
     /\bexpectedDeterministicHash:\s*replayPlan\.expectedDeterministicHash/,
     'forward transfer replay must validate the canonical deterministic hash'
   );

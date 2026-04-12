@@ -17,6 +17,10 @@ const { withInventoryTransaction } = require('../../src/modules/platform/applica
 
 const FIXED_OCCURRED_AT = new Date('2026-04-10T12:00:00.000Z');
 const TRANSFERS_SERVICE = path.resolve(process.cwd(), 'src/services/transfers.service.ts');
+const RUN_INVENTORY_COMMAND = path.resolve(
+  process.cwd(),
+  'src/modules/platform/application/runInventoryCommand.ts'
+);
 
 test('transfer contract writes ledger, emits events, updates projections, and replays cleanly', async () => {
   const harness = await createServiceHarness({ tenantPrefix: 'contract-transfer', tenantName: 'Contract Transfer' });
@@ -202,6 +206,45 @@ test('transfer orchestration source and persisted event order stay unified acros
   assert.equal(externalState.projection.inventoryBalance.length, 2);
   assert.equal(standaloneState.idempotency.status, 'SUCCEEDED');
   assert.equal(externalState.idempotency.status, 'SUCCEEDED');
+});
+
+test('transfer idempotency lifecycle has no partial states across standalone external and replay paths', { timeout: 120000 }, async () => {
+  const standaloneWorld = await createTransferWorld('contract-transfer-idem-standalone');
+  const externalWorld = await createTransferWorld('contract-transfer-idem-external');
+  const standaloneInput = buildTransferInput(standaloneWorld, {
+    idempotencyKey: `transfer-idem-standalone:${randomUUID()}`,
+    sourceId: 'transfer-idem-complete'
+  });
+  const externalInput = buildTransferInput(externalWorld, {
+    idempotencyKey: `transfer-idem-external:${randomUUID()}`,
+    sourceId: 'transfer-idem-complete'
+  });
+
+  const standalone = await transferInventory(standaloneInput);
+  const external = await withInventoryTransaction((client) =>
+    transferInventory(externalInput, { client })
+  );
+  await transferInventory(standaloneInput);
+  await withInventoryTransaction((client) => transferInventory(externalInput, { client }));
+
+  assert.deepEqual(await readIdempotencyLifecycle(standaloneWorld, standaloneInput.idempotencyKey), {
+    count: 1,
+    status: 'SUCCEEDED',
+    responseStatus: 201,
+    responseBody: normalizeTransferResponse(standaloneWorld, standalone)
+  });
+  assert.deepEqual(await readIdempotencyLifecycle(externalWorld, externalInput.idempotencyKey), {
+    count: 1,
+    status: 'SUCCEEDED',
+    responseStatus: 201,
+    responseBody: normalizeTransferResponse(externalWorld, external)
+  });
+});
+
+test('transfer-scoped transaction runner is not exported for other modules', async () => {
+  const transferExports = require('../../src/services/transfers.service.ts');
+  assert.equal('runTransferCommandWithClient' in transferExports, false);
+  assert.equal(transferExports.runTransferCommandWithClient, undefined);
 });
 
 async function createTransferWorld(prefix) {
@@ -450,6 +493,26 @@ async function countAuditRows(world, entityType) {
   return Number(result.rows[0].count);
 }
 
+async function readIdempotencyLifecycle(world, idempotencyKey) {
+  const result = await world.harness.pool.query(
+    `SELECT response_status,
+            response_body,
+            status
+       FROM idempotency_keys
+      WHERE tenant_id = $1
+        AND key = $2`,
+    [world.harness.tenantId, idempotencyKey]
+  );
+  return {
+    count: result.rowCount,
+    status: result.rows[0]?.status ?? null,
+    responseStatus: result.rows[0]?.response_status ?? null,
+    responseBody: result.rows[0]?.response_body
+      ? normalizeTransferResponse(world, result.rows[0].response_body)
+      : null
+  };
+}
+
 function normalizeTransferResponse(world, response) {
   return {
     movementId: '<movement>',
@@ -520,9 +583,16 @@ function toNullableNumeric(value) {
 }
 
 async function assertSingleTransferOrchestrationSource() {
-  const source = await readFile(TRANSFERS_SERVICE, 'utf8');
+  const [source, runInventoryCommandSource] = await Promise.all([
+    readFile(TRANSFERS_SERVICE, 'utf8'),
+    readFile(RUN_INVENTORY_COMMAND, 'utf8')
+  ]);
+  assert.equal(runInventoryCommandSource.includes('executeWithClient'), false);
+  assert.equal(runInventoryCommandSource.includes('INVENTORY_COMMAND_EXECUTE_REQUIRED'), false);
   assert.equal((source.match(/\basync function executeTransferWithClient\b/g) ?? []).length, 1);
+  assert.equal((source.match(/\bfunction runTransferCommandWithClient\b/g) ?? []).length, 1);
   assert.equal((source.match(/\bexecuteTransferWithExternalClient\b/g) ?? []).length, 0);
+  assert.doesNotMatch(source, /\bexport\s+(?:async\s+)?function\s+runTransferCommandWithClient\b/);
 
   const executorBody = extractFunctionBody(source, 'executeTransferWithClient');
   const claimIndex = executorBody.indexOf('claimTransactionalIdempotency');
@@ -553,6 +623,8 @@ async function assertSingleTransferOrchestrationSource() {
 
   const transferInventoryBody = extractFunctionBody(source, 'transferInventory');
   assert.match(transferInventoryBody, /\bexecuteTransferWithClient\(/);
+  assert.match(transferInventoryBody, /\brunTransferCommandWithClient\(/);
+  assert.doesNotMatch(transferInventoryBody, /\brunInventoryCommand(?:<[^>]+>)?\(/);
   for (const forbidden of [
     'claimTransactionalIdempotency',
     'finalizeTransactionalIdempotency',

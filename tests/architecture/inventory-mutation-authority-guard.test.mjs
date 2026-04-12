@@ -283,7 +283,7 @@ test('production source only appends authoritative inventory events through cano
     const source = await readFile(filePath, 'utf8');
     if (
       /\bappendInventoryEvent(?:sWithDispatch|WithDispatch)?\(/.test(source)
-      && !new Set([INVENTORY_EVENTS, INVENTORY_COMMAND_WRAPPER]).has(filePath)
+      && !new Set([INVENTORY_EVENTS, INVENTORY_COMMAND_WRAPPER, TRANSFERS_SERVICE]).has(filePath)
     ) {
       violations.push(path.relative(process.cwd(), filePath));
     }
@@ -330,19 +330,17 @@ test('movement-backed mutation entrypoints stay wrapper-managed', async () => {
     [RECEIPTS_SERVICE, 'voidReceipt'],
     [PUTAWAYS_SERVICE, 'postPutaway'],
     [ORDER_TO_CASH_SERVICE, 'postShipment'],
-    [TRANSFERS_SERVICE, 'transferInventory'],
     [TRANSFERS_SERVICE, 'voidTransferMovement'],
     [LICENSE_PLATES_SERVICE, 'moveLicensePlate'],
     [COUNTS_SERVICE, 'postInventoryCount'],
     [ADJUSTMENTS_SERVICE, 'postInventoryAdjustment'],
-    [QC_SERVICE, 'createQcEvent'],
     [WORK_ORDER_EXECUTION_SERVICE, 'postWorkOrderIssue'],
     [WORK_ORDER_EXECUTION_SERVICE, 'postWorkOrderCompletion'],
     [WORK_ORDER_EXECUTION_SERVICE, 'recordWorkOrderBatch'],
     [WORK_ORDER_EXECUTION_SERVICE, 'voidWorkOrderProductionReport']
   ];
 
-  const uniqueFiles = [...new Set(nodes.map(([filePath]) => filePath))];
+  const uniqueFiles = [...new Set([...nodes.map(([filePath]) => filePath), QC_SERVICE])];
   const sources = new Map(
     await Promise.all(uniqueFiles.map(async (filePath) => [filePath, await readFile(filePath, 'utf8')]))
   );
@@ -355,6 +353,27 @@ test('movement-backed mutation entrypoints stay wrapper-managed', async () => {
       `${functionName} must use runInventoryCommand()`
     );
   }
+
+  for (const functionName of ['createReceiptQcEvent', 'createWorkOrderQcEvent', 'createExecutionLineQcEvent']) {
+    const body = extractFunctionBody(sources.get(QC_SERVICE), functionName);
+    assert.match(
+      body,
+      /\brunInventoryCommand(?:<[^>]+>)?\(/,
+      `${functionName} must use runInventoryCommand()`
+    );
+  }
+
+  const transferBody = extractFunctionBody(sources.get(TRANSFERS_SERVICE), 'transferInventory');
+  assert.match(
+    transferBody,
+    /\brunTransferCommandWithClient\(/,
+    'transferInventory must use the private transfer-scoped transaction runner'
+  );
+  assert.doesNotMatch(
+    transferBody,
+    /\brunInventoryCommand(?:<[^>]+>)?\(/,
+    'transferInventory must not rely on generic execution bypasses in runInventoryCommand'
+  );
 });
 
 test('inventory registry covers every authoritative event builder and defines aggregate identity inputs', async () => {

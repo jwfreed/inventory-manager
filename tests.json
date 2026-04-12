@@ -64,6 +64,16 @@
         "No receipt_allocations, Work Order NULL bypass, Execution Line QC cap, or QC workflow behavior changed."
       ]
     },
+    "transfer_boundary_enforcement": {
+      "status": "verified",
+      "notes": [
+        "runInventoryCommand no longer exposes executeWithClient and has one execution lifecycle model again.",
+        "Standalone transferInventory uses private runTransferCommandWithClient inside transfers.service.ts for its transfer-scoped SERIALIZABLE retry boundary.",
+        "runTransferCommandWithClient is not exported and the transfer contract includes a negative boundary test proving other modules cannot access it through service exports.",
+        "Transfer contract coverage now explicitly verifies idempotency lifecycle completion across standalone, external-client, and replay paths.",
+        "Architecture guards permit the private transfer runner only for transferInventory and keep other movement entrypoints on runInventoryCommand."
+      ]
+    },
     "audit_behavior": {
       "status": "verified",
       "notes": [

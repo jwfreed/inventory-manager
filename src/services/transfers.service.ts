@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import { withTransactionRetry } from '../db';
 import {
   acquireAtpLocks,
   createAtpLockContext,
@@ -711,6 +712,19 @@ async function executeTransferWithClient(
   return execution.result;
 }
 
+function runTransferCommandWithClient(params: {
+  input: TransferInventoryInput;
+  endpoint: string;
+  operation: string;
+  normalizedIdempotencyKey: string | null;
+  requestHash: string | null;
+}): Promise<TransferInventoryResult> {
+  return withTransactionRetry(
+    (client) => executeTransferWithClient(client, params),
+    { isolationLevel: 'SERIALIZABLE', retries: 2 }
+  );
+}
+
 export async function transferInventory(
   input: TransferInventoryInput,
   options?: TransferInventoryOptions
@@ -737,21 +751,12 @@ export async function transferInventory(
     });
   }
 
-  return runInventoryCommand<TransferInventoryResult>({
-    tenantId: input.tenantId,
+  return runTransferCommandWithClient({
+    input,
     endpoint,
     operation,
-    idempotencyKey: normalizedIdempotencyKey,
-    requestHash,
-    retryOptions: { isolationLevel: 'SERIALIZABLE', retries: 2 },
-    executeWithClient: async ({ client: txClient }) =>
-      executeTransferWithClient(txClient, {
-        input,
-        endpoint,
-        operation,
-        normalizedIdempotencyKey,
-        requestHash
-      })
+    normalizedIdempotencyKey,
+    requestHash
   });
 }
 

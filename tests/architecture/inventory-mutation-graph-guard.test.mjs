@@ -118,7 +118,9 @@ function extractFunctionBody(source, functionName) {
 const DAG_NODES = [
   { file: TRANSFERS_SERVICE, functionName: 'transferInventory', label: 'transferInventory' },
   { file: TRANSFERS_SERVICE, functionName: 'voidTransferMovement', label: 'voidTransferMovement' },
-  { file: QC_SERVICE, functionName: 'createQcEvent', label: 'createQcEvent' },
+  { file: QC_SERVICE, functionName: 'createReceiptQcEvent', label: 'createReceiptQcEvent' },
+  { file: QC_SERVICE, functionName: 'createWorkOrderQcEvent', label: 'createWorkOrderQcEvent' },
+  { file: QC_SERVICE, functionName: 'createExecutionLineQcEvent', label: 'createExecutionLineQcEvent' },
   { file: LICENSE_PLATES_SERVICE, functionName: 'moveLicensePlate', label: 'moveLicensePlate' },
   { file: COUNTS_SERVICE, functionName: 'postInventoryCount', label: 'postInventoryCount' },
   { file: ADJUSTMENTS_POSTING_SERVICE, functionName: 'postInventoryAdjustment', label: 'postInventoryAdjustment' },
@@ -156,11 +158,24 @@ test('license plate and manufacturing mutation dag entrypoints stay wrapper-mana
     assert.ok(source, `missing source for ${node.label}`);
     const body = extractFunctionBody(source, node.functionName);
 
-    assert.match(
-      body,
-      /\brunInventoryCommand(?:<[^>]+>)?\(/,
-      `${node.label} must route mutation orchestration through runInventoryCommand()`
-    );
+    if (node.functionName === 'transferInventory') {
+      assert.match(
+        body,
+        /\brunTransferCommandWithClient\(/,
+        `${node.label} must route mutation orchestration through the private transfer-scoped runner`
+      );
+      assert.doesNotMatch(
+        body,
+        /\brunInventoryCommand(?:<[^>]+>)?\(/,
+        `${node.label} must not depend on generic runInventoryCommand execution hooks`
+      );
+    } else {
+      assert.match(
+        body,
+        /\brunInventoryCommand(?:<[^>]+>)?\(/,
+        `${node.label} must route mutation orchestration through runInventoryCommand()`
+      );
+    }
 
     for (const [pattern, message] of FORBIDDEN_EDGE_PATTERNS) {
       assert.doesNotMatch(body, pattern, `${node.label} ${message}`);
@@ -180,11 +195,19 @@ test('migrated mutation entrypoints do not bypass the canonical movement writer'
     assert.ok(source, `missing source for ${node.label}`);
     const body = extractFunctionBody(source, node.functionName);
     if (/\bpersistInventoryMovement\(/.test(body)) {
-      assert.match(
-        body,
-        /\brunInventoryCommand(?:<[^>]+>)?\(/,
-        `${node.label} must not persist authoritative movement rows outside runInventoryCommand()`
-      );
+      if (node.functionName === 'transferInventory') {
+        assert.match(
+          body,
+          /\brunTransferCommandWithClient\(/,
+          `${node.label} must not persist authoritative movement rows outside the transfer-scoped runner`
+        );
+      } else {
+        assert.match(
+          body,
+          /\brunInventoryCommand(?:<[^>]+>)?\(/,
+          `${node.label} must not persist authoritative movement rows outside runInventoryCommand()`
+        );
+      }
     }
     assert.doesNotMatch(
       body,
@@ -218,16 +241,46 @@ test('migrated movement writers persist deterministic hashes at insert time', as
         `${functionName} must create movement lines in deterministic order`
       );
     }
-    assert.match(
-      body,
-      /\bpersistInventoryMovement\(/,
-      `${functionName} must persist movement rows through persistInventoryMovement()`
-    );
-    assert.match(
-      body,
-      /\bbuildInventoryBalanceProjectionOp\(|\bbuildTransferReversalBalanceProjectionOp\(/,
-      `${functionName} must express inventory_balance compatibility writes through projection ops`
-    );
+    if (functionName === 'executeTransferInventoryMutation') {
+      assert.match(
+        body,
+        /\bexecuteTransferMovementPlan\(/,
+        `${functionName} must delegate movement persistence to the transfer domain execution plan`
+      );
+      assert.match(
+        body,
+        /\bprojectionOps:\s*\[\.\.\.execution\.projectionOps\]/,
+        `${functionName} must pass through transfer domain projection ops`
+      );
+    } else if (functionName === 'voidTransferMovement') {
+      assert.match(
+        body,
+        /\bexecuteTransferReversalPlan\(/,
+        `${functionName} must delegate movement persistence to the transfer reversal execution plan`
+      );
+      assert.match(
+        body,
+        /\bprojectionOps:\s*\[\.\.\.execution\.projectionOps\]/,
+        `${functionName} must pass through transfer reversal projection ops`
+      );
+    } else if (functionName === 'recordWorkOrderBatch') {
+      assert.match(
+        body,
+        /\bexecuteWorkOrderBatchPosting\(/,
+        `${functionName} must delegate movement persistence to the work-order batch posting executor`
+      );
+    } else {
+      assert.match(
+        body,
+        /\bpersistInventoryMovement\(/,
+        `${functionName} must persist movement rows through persistInventoryMovement()`
+      );
+      assert.match(
+        body,
+        /\bbuildInventoryBalanceProjectionOp\(|\bbuildTransferReversalBalanceProjectionOp\(/,
+        `${functionName} must express inventory_balance compatibility writes through projection ops`
+      );
+    }
   }
 
   assert.match(

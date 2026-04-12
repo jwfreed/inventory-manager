@@ -96,3 +96,25 @@ Invariant status:
 
 Known limitations:
 - Parity tests normalize tenant-specific IDs and deterministic hash values when comparing two independent executions; they still assert persisted row counts, stable semantic values, and hash format.
+
+Sprint 2 Phase E Progress Tracker (Transfer Boundary Enforcement)
+=================================================================
+
+Date: 2026-04-12
+Scope: Remove the generic caller-client execution bypass from `runInventoryCommand` and make the caller-client transfer path structurally transfer-scoped.
+
+Implementation:
+- Removed `executeWithClient` from `runInventoryCommand`; it has one lifecycle model again.
+- Added private `runTransferCommandWithClient(...)` inside `src/services/transfers.service.ts`.
+- Standalone `transferInventory(input)` uses the private transfer-scoped runner for SERIALIZABLE retry=2 transaction ownership.
+- External-client `transferInventory(input, { client })` still calls `executeTransferWithClient(...)` inside the caller-owned transaction.
+- `runTransferCommandWithClient(...)` is not exported from transfer service or shared platform infrastructure.
+
+Invariant enforcement:
+- Both standalone and external-client transfer paths still use exactly one transfer orchestration implementation: `executeTransferWithClient(...)`.
+- Transfer lifecycle order remains: claim/replay, lock, execute, append events, projection ops, finalize.
+- Persisted-state tests cover event persistence, projection consistency, idempotency completion, replay zero-write behavior, rollback behavior, and transfer-scoped boundary access.
+- Architecture guards were updated so transferInventory is the only movement entrypoint allowed to use the private transfer runner instead of the generic `runInventoryCommand` wrapper.
+
+Known limitations:
+- Existing broader-suite failures remain outside this boundary refactor: `lint:inventory-writes` reports pre-existing ownership violations, and `test:scenarios` previously failed on non-transfer load/timeout cases.
