@@ -10,6 +10,7 @@
     "tests/contracts/qc-workflow-boundaries.test.mjs",
     "tests/contracts/return-receipt-post.test.mjs",
     "tests/contracts/shipment.test.mjs",
+    "tests/contracts/transfer.test.mjs",
     "tests/api/warehouse-root-create.test.mjs",
     "tests/ops/cycle-count-idempotency.test.mjs",
     "tests/ops/ledger-reconcile.test.mjs",

@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-04-10",
-  "scope": "Sprint 2 Phase B",
+  "updatedAt": "2026-04-12",
+  "scope": "Sprint 2 transfer orchestration parity",
   "items": {
     "receipt_qc_behavior": {
       "status": "verified",
@@ -52,6 +52,16 @@
         "transferInventory + recordAuditLog are both within the same withInventoryTransaction call, ensuring atomicity.",
         "Explicit transaction model replaces transactionalSideEffect callback; no behavioral drift from prior Sprint 2 Phase B verification.",
         "New contract test: 'warehouse disposition transfer and audit log are co-committed within the same explicit transaction boundary' added to tests/contracts/qc-workflow-boundaries.test.mjs."
+      ]
+    },
+    "transfer_orchestration_unification": {
+      "status": "verified",
+      "notes": [
+        "Standalone transferInventory and transferInventory with an external client both delegate to executeTransferWithClient.",
+        "executeTransferWithExternalClient was removed; the shared executor owns claim, replay, lock, execute, event append, projection ops, and finalize.",
+        "tests/contracts/transfer.test.mjs asserts persisted-state parity for success, replay, rollback, and ordering.",
+        "tests/contracts/manifest.json now includes tests/contracts/transfer.test.mjs so transfer parity runs in the contracts tier.",
+        "No receipt_allocations, Work Order NULL bypass, Execution Line QC cap, or QC workflow behavior changed."
       ]
     },
     "audit_behavior": {

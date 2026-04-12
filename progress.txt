@@ -66,3 +66,33 @@ Invariants preserved:
 New test:
 - `warehouse disposition transfer and audit log are co-committed within the same explicit transaction boundary` in `tests/contracts/qc-workflow-boundaries.test.mjs`.
   Proves: movement and audit row co-exist after single committed call; replay does not insert a second audit row.
+
+Sprint 2 Phase D Progress Tracker (Transfer Orchestration Unification)
+=====================================================================
+
+Date: 2026-04-12
+Scope: Unify standalone and external-client transfer execution into one shared orchestration path with behavior-preserving parity coverage.
+
+Implementation:
+- Added one internal transfer executor: `executeTransferWithClient(client, params)`.
+- Removed `executeTransferWithExternalClient` as a separate orchestration implementation.
+- `transferInventory(input, { client })` now calls `executeTransferWithClient(...)` directly.
+- The standalone `transferInventory(input)` path keeps the `runInventoryCommand` transaction/retry shell but delegates transfer orchestration to `executeTransferWithClient(...)`.
+- The single transfer executor owns the sequence: idempotency claim, replay handling, ATP lock acquisition, transfer execution, inventory event append, projection ops, and idempotency finalize.
+
+Parity guarantees:
+- Contract coverage now compares persisted movement rows, movement lines, inventory events, inventory balance projection rows, idempotency rows, and replay write counts across standalone and external-client paths.
+- Replay parity verifies both paths return replayed responses and create zero additional movement, line, event, or idempotency rows.
+- External-client rollback coverage verifies a failure after transfer execution and transactional audit write commits no movement, no audit, and no idempotency row; retry creates exactly one movement.
+- Ordering coverage verifies the shared executor source order and persisted event/projection/finalize state match across both paths.
+
+Invariant status:
+- No receipt_allocations behavior changed.
+- Work Order QC NULL bypass unchanged.
+- Execution Line QC cap unchanged.
+- QC workflow structure unchanged.
+- No schema or migration changes.
+- No known invariant drift introduced.
+
+Known limitations:
+- Parity tests normalize tenant-specific IDs and deterministic hash values when comparing two independent executions; they still assert persisted row counts, stable semantic values, and hash format.

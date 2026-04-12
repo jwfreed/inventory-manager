@@ -76,7 +76,10 @@ export async function runInventoryCommand<T>(params: {
     client: PoolClient;
     responseBody: T;
   }) => Promise<InventoryCommandExecutionResult<T> | T> | InventoryCommandExecutionResult<T> | T;
-  execute: (context: {
+  executeWithClient?: (context: {
+    client: PoolClient;
+  }) => Promise<T>;
+  execute?: (context: {
     client: PoolClient;
     lockContext: AtpLockContext;
   }) => Promise<InventoryCommandExecutionResult<T>>;
@@ -102,6 +105,10 @@ export async function runInventoryCommand<T>(params: {
   }
 
   return withTransactionRetry(async (client) => {
+    if (params.executeWithClient) {
+      return params.executeWithClient({ client });
+    }
+
     if (idempotencyKey && requestHash) {
       const claim = await claimTransactionalIdempotency<T>(client, {
         tenantId: params.tenantId,
@@ -150,6 +157,9 @@ export async function runInventoryCommand<T>(params: {
     const sortedLockTargets = [...lockTargets].sort(compareInventoryCommandLockTarget);
     await acquireAtpLocks(client, sortedLockTargets, { lockContext });
 
+    if (!params.execute) {
+      throw new Error('INVENTORY_COMMAND_EXECUTE_REQUIRED');
+    }
     const execution = await params.execute({ client, lockContext });
     await appendInventoryEventsWithDispatch(
       client,
