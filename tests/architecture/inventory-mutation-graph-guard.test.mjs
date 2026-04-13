@@ -28,6 +28,10 @@ const WORK_ORDER_EXECUTION_SERVICE = path.resolve(
   process.cwd(),
   'src/services/workOrderExecution.service.ts'
 );
+const WORK_ORDER_ISSUE_POST_WORKFLOW = path.resolve(
+  process.cwd(),
+  'src/services/workOrderIssuePost.workflow.ts'
+);
 
 function extractFunctionBody(source, functionName) {
   const markers = [
@@ -124,7 +128,7 @@ const DAG_NODES = [
   { file: LICENSE_PLATES_SERVICE, functionName: 'moveLicensePlate', label: 'moveLicensePlate' },
   { file: COUNTS_SERVICE, functionName: 'postInventoryCount', label: 'postInventoryCount' },
   { file: ADJUSTMENTS_POSTING_SERVICE, functionName: 'postInventoryAdjustment', label: 'postInventoryAdjustment' },
-  { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'postWorkOrderIssue', label: 'postWorkOrderIssue' },
+  { file: WORK_ORDER_ISSUE_POST_WORKFLOW, functionName: 'postWorkOrderIssue', label: 'postWorkOrderIssue' },
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'postWorkOrderCompletion', label: 'postWorkOrderCompletion' },
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'reportWorkOrderScrap', label: 'reportWorkOrderScrap' },
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'recordWorkOrderBatch', label: 'recordWorkOrderBatch' },
@@ -218,17 +222,18 @@ test('migrated mutation entrypoints do not bypass the canonical movement writer'
 });
 
 test('migrated movement writers persist deterministic hashes at insert time', async () => {
-  const [transferSource, licenseSource, workOrderSource] = await Promise.all([
+  const [transferSource, licenseSource, workOrderSource, workOrderIssuePostSource] = await Promise.all([
     readFile(TRANSFERS_SERVICE, 'utf8'),
     readFile(LICENSE_PLATES_SERVICE, 'utf8'),
-    readFile(WORK_ORDER_EXECUTION_SERVICE, 'utf8')
+    readFile(WORK_ORDER_EXECUTION_SERVICE, 'utf8'),
+    readFile(WORK_ORDER_ISSUE_POST_WORKFLOW, 'utf8')
   ]);
 
   for (const [source, functionName] of [
     [transferSource, 'executeTransferInventoryMutation'],
     [transferSource, 'voidTransferMovement'],
     [licenseSource, 'moveLicensePlate'],
-    [workOrderSource, 'postWorkOrderIssue'],
+    [workOrderIssuePostSource, 'postWorkOrderIssue'],
     [workOrderSource, 'postWorkOrderCompletion'],
     [workOrderSource, 'recordWorkOrderBatch'],
     [workOrderSource, 'voidWorkOrderProductionReport']
@@ -293,13 +298,13 @@ test('migrated movement writers persist deterministic hashes at insert time', as
     /\bbuildTransferReplayResult\(/,
     'transfer replay handling must rebuild from authoritative movement readiness'
   );
-  for (const helperName of [
-    'buildWorkOrderIssueReplayResult',
-    'buildWorkOrderCompletionReplayResult',
-    'buildWorkOrderBatchReplayResult',
-    'buildWorkOrderVoidReplayResult'
+  for (const [source, helperName] of [
+    [workOrderIssuePostSource, 'buildWorkOrderIssueReplayResult'],
+    [workOrderSource, 'buildWorkOrderCompletionReplayResult'],
+    [workOrderSource, 'buildWorkOrderBatchReplayResult'],
+    [workOrderSource, 'buildWorkOrderVoidReplayResult']
   ]) {
-    const body = extractFunctionBody(workOrderSource, helperName);
+    const body = extractFunctionBody(source, helperName);
     assert.match(
       body,
       /\bbuildPostedDocumentReplayResult\(/,
