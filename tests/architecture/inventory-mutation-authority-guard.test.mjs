@@ -49,6 +49,10 @@ const WORK_ORDER_ISSUE_POST_WORKFLOW = path.resolve(
   process.cwd(),
   'src/services/workOrderIssuePost.workflow.ts'
 );
+const WORK_ORDER_COMPLETION_POST_WORKFLOW = path.resolve(
+  process.cwd(),
+  'src/services/workOrderCompletionPost.workflow.ts'
+);
 const { INVENTORY_EVENT_REGISTRY } = require('../../src/modules/platform/application/inventoryEventRegistry.ts');
 
 function extractFunctionBody(source, functionName) {
@@ -339,7 +343,7 @@ test('movement-backed mutation entrypoints stay wrapper-managed', async () => {
     [COUNTS_SERVICE, 'postInventoryCount'],
     [ADJUSTMENTS_SERVICE, 'postInventoryAdjustment'],
     [WORK_ORDER_ISSUE_POST_WORKFLOW, 'postWorkOrderIssue'],
-    [WORK_ORDER_EXECUTION_SERVICE, 'postWorkOrderCompletion'],
+    [WORK_ORDER_COMPLETION_POST_WORKFLOW, 'postWorkOrderCompletion'],
     [WORK_ORDER_EXECUTION_SERVICE, 'recordWorkOrderBatch'],
     [WORK_ORDER_EXECUTION_SERVICE, 'voidWorkOrderProductionReport']
   ];

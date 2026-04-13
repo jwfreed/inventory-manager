@@ -13,7 +13,6 @@ import { getWarehouseDefaultLocationId } from './warehouseDefaults.service';
 import * as lotTraceability from './lotTraceabilityEngine';
 import {
   buildInventoryMovementPostedEvent,
-  buildWorkOrderCompletionPostedEvent,
   buildWorkOrderIssuePostedEvent,
   buildWorkOrderProductionReportedEvent,
   buildWorkOrderProductionReversedEvent
@@ -390,43 +389,6 @@ export async function replayIssue(params: {
       buildInventoryMovementPostedEvent(params.movementId, params.idempotencyKey ?? null),
       buildWorkOrderIssuePostedEvent({
         issueId: params.issueId,
-        workOrderId: params.workOrderId,
-        movementId: params.movementId,
-        producerIdempotencyKey: params.idempotencyKey ?? null
-      })
-    ]
-  });
-}
-
-export async function replayCompletion(params: {
-  tenantId: string;
-  workOrderId: string;
-  completionId: string;
-  movementId: string;
-  expectedLineCount?: number;
-  expectedDeterministicHash?: string | null;
-  client: PoolClient;
-  idempotencyKey?: string | null;
-  preFetchIntegrityCheck: () => Promise<void>;
-  fetchAggregateView: () => Promise<unknown | null>;
-}) {
-  return buildPostedDocumentReplayResult({
-    tenantId: params.tenantId,
-    authoritativeMovements: [
-      {
-        movementId: params.movementId,
-        expectedLineCount: params.expectedLineCount,
-        expectedDeterministicHash: params.expectedDeterministicHash ?? null
-      }
-    ],
-    client: params.client,
-    preFetchIntegrityCheck: params.preFetchIntegrityCheck,
-    fetchAggregateView: params.fetchAggregateView,
-    aggregateNotFoundError: new Error('WO_COMPLETION_NOT_FOUND'),
-    authoritativeEvents: [
-      buildInventoryMovementPostedEvent(params.movementId, params.idempotencyKey ?? null),
-      buildWorkOrderCompletionPostedEvent({
-        executionId: params.completionId,
         workOrderId: params.workOrderId,
         movementId: params.movementId,
         producerIdempotencyKey: params.idempotencyKey ?? null
