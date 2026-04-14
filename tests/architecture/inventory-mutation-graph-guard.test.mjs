@@ -40,6 +40,10 @@ const WORK_ORDER_BATCH_RECORD_WORKFLOW = path.resolve(
   process.cwd(),
   'src/services/workOrderBatchRecord.workflow.ts'
 );
+const WORK_ORDER_VOID_PRODUCTION_WORKFLOW = path.resolve(
+  process.cwd(),
+  'src/services/workOrderVoidProduction.workflow.ts'
+);
 
 function extractFunctionBody(source, functionName) {
   const markers = [
@@ -141,7 +145,7 @@ const DAG_NODES = [
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'reportWorkOrderScrap', label: 'reportWorkOrderScrap' },
   { file: WORK_ORDER_BATCH_RECORD_WORKFLOW, functionName: 'recordWorkOrderBatch', label: 'recordWorkOrderBatch' },
   {
-    file: WORK_ORDER_EXECUTION_SERVICE,
+    file: WORK_ORDER_VOID_PRODUCTION_WORKFLOW,
     functionName: 'voidWorkOrderProductionReport',
     label: 'voidWorkOrderProductionReport'
   }
@@ -236,14 +240,16 @@ test('migrated movement writers persist deterministic hashes at insert time', as
     workOrderSource,
     workOrderIssuePostSource,
     workOrderCompletionPostSource,
-    workOrderBatchRecordSource
+    workOrderBatchRecordSource,
+    workOrderVoidProductionSource
   ] = await Promise.all([
     readFile(TRANSFERS_SERVICE, 'utf8'),
     readFile(LICENSE_PLATES_SERVICE, 'utf8'),
     readFile(WORK_ORDER_EXECUTION_SERVICE, 'utf8'),
     readFile(WORK_ORDER_ISSUE_POST_WORKFLOW, 'utf8'),
     readFile(WORK_ORDER_COMPLETION_POST_WORKFLOW, 'utf8'),
-    readFile(WORK_ORDER_BATCH_RECORD_WORKFLOW, 'utf8')
+    readFile(WORK_ORDER_BATCH_RECORD_WORKFLOW, 'utf8'),
+    readFile(WORK_ORDER_VOID_PRODUCTION_WORKFLOW, 'utf8')
   ]);
 
   for (const [source, functionName] of [
@@ -253,7 +259,7 @@ test('migrated movement writers persist deterministic hashes at insert time', as
     [workOrderIssuePostSource, 'postWorkOrderIssue'],
     [workOrderCompletionPostSource, 'postWorkOrderCompletion'],
     [workOrderBatchRecordSource, 'recordWorkOrderBatch'],
-    [workOrderSource, 'voidWorkOrderProductionReport']
+    [workOrderVoidProductionSource, 'voidWorkOrderProductionReport']
   ]) {
     const body = extractFunctionBody(source, functionName);
     if (/\bsortDeterministicMovementLines\(/.test(body)) {
@@ -319,7 +325,7 @@ test('migrated movement writers persist deterministic hashes at insert time', as
     [workOrderIssuePostSource, 'buildWorkOrderIssueReplayResult'],
     [workOrderCompletionPostSource, 'buildWorkOrderCompletionReplayResult'],
     [workOrderSource, 'buildWorkOrderBatchReplayResult'],
-    [workOrderSource, 'buildWorkOrderVoidReplayResult']
+    [workOrderVoidProductionSource, 'buildWorkOrderVoidReplayResult']
   ]) {
     const body = extractFunctionBody(source, helperName);
     assert.match(

@@ -379,18 +379,20 @@ Canonical boundary definition completed in `docs/sprint-3-phase-a-work-order-exe
 - WF-2 (Post Work Order Issue) — extracted, verified, contract tests passing
 - WF-4 (Post Work Order Completion) — extracted, verified, contract tests passing
 - WF-5 (Record Work Order Batch) — extracted, verified, contract tests passing
+- WF-7 (Void Work Order Production) — extracted, verified, contract tests passing
 
 #### Next
-- WF-7 (Void Work Order Production) — next extraction target
+- WF-6 (Report Work Order Production) — now unblocked; deferred due to two-transaction exception; begin with full Phase A boundary review before extraction
 
 #### Deferred
-- WF-6 (Report Work Order Production) — deferred due to two-transaction exception; do not begin until WF-7 is complete
+- WF-6 (Report Work Order Production) — WF-7 prerequisite now met; two-transaction seam must remain visible; see sprint-3-phase-a document for constraints
 
 #### Progress Summary
-- WF-2, WF-4, WF-5 extracted into explicit workflow paths
+- WF-2, WF-4, WF-5, WF-7 extracted into explicit workflow paths
 - No behavioral changes introduced; all preserved semantics confirmed
 - All domain invariants preserved; no ledger write paths altered
-- Contract tests passing; no known regressions
+- Architecture guard test updated to point voidWorkOrderProductionReport and buildWorkOrderVoidReplayResult to workOrderVoidProduction.workflow.ts
+- test:truth 38/0, test:contracts 81/0; no known regressions
 
 ### Notes
 - WorkOrderExecution is the highest-risk target: multi-workflow, highest write surface
@@ -455,3 +457,4 @@ These rules apply to all sprints without exception.
 | 2026-04-12 | Remove generic caller-client execution bypass from shared command wrapper | `runInventoryCommand` must remain workflow-agnostic with a single lifecycle model; transfer caller-client support is private to the Transfer workflow |
 | 2026-04-14 | Mark Sprint 2 as complete; Sprint 3 as active | Formal Sprint 2 closeout complete; Sprint 3 in progress with Phase A boundary definition done and Phase B decomposition underway |
 | 2026-04-14 | WF-2, WF-4, WF-5 extracted in Sprint 3 Phase B | Workflows verified with no behavioral changes; contract tests passing; WF-7 is next; WF-6 deferred due to two-transaction exception |
+| 2026-04-14 | WF-7 extracted in Sprint 3 Phase B | voidWorkOrderProductionReport and buildWorkOrderVoidReplayResult moved to workOrderVoidProduction.workflow.ts; architecture guard updated; test:truth 38/0, test:contracts 81/0; WF-6 now unblocked |
