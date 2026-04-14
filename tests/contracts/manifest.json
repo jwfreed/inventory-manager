@@ -23,6 +23,7 @@
     "tests/ops/transfer-idempotency.test.mjs",
     "tests/ops/work-order-production-report.test.mjs",
     "tests/contracts/work-order-issue.test.mjs",
+    "tests/contracts/work-order-production-report-invariants.test.mjs",
     "tests/contracts/work-order-reversal.test.mjs"
   ]
 }
