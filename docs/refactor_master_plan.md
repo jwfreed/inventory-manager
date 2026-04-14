@@ -8,16 +8,16 @@ Single source of truth for refactoring progress, decisions, and safety constrain
 # 1. Current Status Dashboard
 
 - Phase: Sprint-Based Refactor
-- Current Sprint: Sprint 2 (QC Separation)
-- Status: Complete; ready for formal closeout
+- Current Sprint: Sprint 3 (WorkOrder Decomposition)
+- Status: In Progress
 
 | Sprint | Description | Status |
 |--------|-------------|--------|
 | Sprint 0 | Risk mapping and findings | Complete |
 | Sprint 0.5 | Correctness boundary definition | Complete |
 | Sprint 1 | Transfers boundary hardening + decomposition | **Complete** |
-| Sprint 2 | QC separation | **Complete / Closeout Ready** |
-| Sprint 3+ | WorkOrder decomposition | Selection / framing next |
+| Sprint 2 | QC separation | **Complete** |
+| Sprint 3 | WorkOrder decomposition | **In Progress** |
 
 ---
 
@@ -27,7 +27,7 @@ Single source of truth for refactoring progress, decisions, and safety constrain
 |--------|--------|-------|
 | Transfers | Complete | Boundary enforced; execution paths unified through one shared orchestration implementation; transfer-scoped transaction runner remains private |
 | QC | Complete / Closeout Ready | Phase A boundary definition complete; Receipt, Work Order, and Execution Line QC paths separated; Warehouse Disposition transfer + audit are atomic |
-| WorkOrderExecution | Not started | High risk, multi-workflow; next candidate for Sprint 3 framing |
+| WorkOrderExecution | In Progress | Phase A boundary definition complete; Phase B workflow decomposition in progress; WF-2, WF-4, WF-5 extracted and verified |
 
 ---
 
@@ -346,27 +346,54 @@ All core Sprint 2 implementation objectives are complete and ready for formal cl
 
 ### Recommended Next Step
 
-- Perform formal Sprint 2 closeout.
-- Select and frame Sprint 3. The default candidate remains WorkOrderExecution decomposition, but Sprint 3 should begin with an explicit correctness-boundary definition before implementation.
+- Continue workflow decomposition in Sprint 3 Phase B.
+- Next target: WF-7 (Void Work Order Production).
+- WF-6 (Report Work Order Production) remains deferred due to two-transaction exception; do not begin until WF-7 is complete.
 
 ---
 
-# 9. Sprint 3+ — WorkOrder Decomposition
+# 9. Sprint 3 — WorkOrder Decomposition
 
-## Status: Not Started
+## Status: **In Progress**
 
 ### Goal
 Safely decompose the WorkOrderExecution monolith.
 
 ### Preconditions
 - Transfers pattern proven (Sprint 1 complete — met)
-- QC separation pattern proven (Sprint 2 complete / closeout ready — met)
+- QC separation pattern proven (Sprint 2 complete — met)
 - Correctness boundaries defined for all QC workflows — met
 - Carry-forward issues from Sprint 2 explicitly acknowledged, especially `receipt_allocations` ownership/classification
 
+### Phase A — Correctness Boundary Definition
+
+**Status: Complete**
+
+Canonical boundary definition completed in `docs/sprint-3-phase-a-work-order-execution-correctness-boundary.md`. All in-scope workflows have documented authoritative write paths, invariants, replay contracts, and transaction boundaries.
+
+### Phase B — Workflow Decomposition
+
+**Status: In Progress**
+
+#### Completed
+- WF-2 (Post Work Order Issue) — extracted, verified, contract tests passing
+- WF-4 (Post Work Order Completion) — extracted, verified, contract tests passing
+- WF-5 (Record Work Order Batch) — extracted, verified, contract tests passing
+
+#### Next
+- WF-7 (Void Work Order Production) — next extraction target
+
+#### Deferred
+- WF-6 (Report Work Order Production) — deferred due to two-transaction exception; do not begin until WF-7 is complete
+
+#### Progress Summary
+- WF-2, WF-4, WF-5 extracted into explicit workflow paths
+- No behavioral changes introduced; all preserved semantics confirmed
+- All domain invariants preserved; no ledger write paths altered
+- Contract tests passing; no known regressions
+
 ### Notes
 - WorkOrderExecution is the highest-risk target: multi-workflow, highest write surface
-- Begin only after formal Sprint 2 closeout and explicit Sprint 3 framing
 
 ---
 
@@ -426,3 +453,5 @@ These rules apply to all sprints without exception.
 | 2026-04-12 | Mark Sprint 2 complete / closeout ready | Phase A definition, QC workflow separation, Warehouse Disposition atomicity, transfer path unification, and transfer-scoped boundary enforcement are complete |
 | 2026-04-12 | Preserve `receipt_allocations` as carry-forward ambiguity | Sprint 2 preserved behavior but did not resolve whether `receipt_allocations` is authoritative operational state or projection state |
 | 2026-04-12 | Remove generic caller-client execution bypass from shared command wrapper | `runInventoryCommand` must remain workflow-agnostic with a single lifecycle model; transfer caller-client support is private to the Transfer workflow |
+| 2026-04-14 | Mark Sprint 2 as complete; Sprint 3 as active | Formal Sprint 2 closeout complete; Sprint 3 in progress with Phase A boundary definition done and Phase B decomposition underway |
+| 2026-04-14 | WF-2, WF-4, WF-5 extracted in Sprint 3 Phase B | Workflows verified with no behavioral changes; contract tests passing; WF-7 is next; WF-6 deferred due to two-transaction exception |
