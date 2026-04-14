@@ -36,6 +36,10 @@ const WORK_ORDER_COMPLETION_POST_WORKFLOW = path.resolve(
   process.cwd(),
   'src/services/workOrderCompletionPost.workflow.ts'
 );
+const WORK_ORDER_BATCH_RECORD_WORKFLOW = path.resolve(
+  process.cwd(),
+  'src/services/workOrderBatchRecord.workflow.ts'
+);
 
 function extractFunctionBody(source, functionName) {
   const markers = [
@@ -135,7 +139,7 @@ const DAG_NODES = [
   { file: WORK_ORDER_ISSUE_POST_WORKFLOW, functionName: 'postWorkOrderIssue', label: 'postWorkOrderIssue' },
   { file: WORK_ORDER_COMPLETION_POST_WORKFLOW, functionName: 'postWorkOrderCompletion', label: 'postWorkOrderCompletion' },
   { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'reportWorkOrderScrap', label: 'reportWorkOrderScrap' },
-  { file: WORK_ORDER_EXECUTION_SERVICE, functionName: 'recordWorkOrderBatch', label: 'recordWorkOrderBatch' },
+  { file: WORK_ORDER_BATCH_RECORD_WORKFLOW, functionName: 'recordWorkOrderBatch', label: 'recordWorkOrderBatch' },
   {
     file: WORK_ORDER_EXECUTION_SERVICE,
     functionName: 'voidWorkOrderProductionReport',
@@ -231,13 +235,15 @@ test('migrated movement writers persist deterministic hashes at insert time', as
     licenseSource,
     workOrderSource,
     workOrderIssuePostSource,
-    workOrderCompletionPostSource
+    workOrderCompletionPostSource,
+    workOrderBatchRecordSource
   ] = await Promise.all([
     readFile(TRANSFERS_SERVICE, 'utf8'),
     readFile(LICENSE_PLATES_SERVICE, 'utf8'),
     readFile(WORK_ORDER_EXECUTION_SERVICE, 'utf8'),
     readFile(WORK_ORDER_ISSUE_POST_WORKFLOW, 'utf8'),
-    readFile(WORK_ORDER_COMPLETION_POST_WORKFLOW, 'utf8')
+    readFile(WORK_ORDER_COMPLETION_POST_WORKFLOW, 'utf8'),
+    readFile(WORK_ORDER_BATCH_RECORD_WORKFLOW, 'utf8')
   ]);
 
   for (const [source, functionName] of [
@@ -246,7 +252,7 @@ test('migrated movement writers persist deterministic hashes at insert time', as
     [licenseSource, 'moveLicensePlate'],
     [workOrderIssuePostSource, 'postWorkOrderIssue'],
     [workOrderCompletionPostSource, 'postWorkOrderCompletion'],
-    [workOrderSource, 'recordWorkOrderBatch'],
+    [workOrderBatchRecordSource, 'recordWorkOrderBatch'],
     [workOrderSource, 'voidWorkOrderProductionReport']
   ]) {
     const body = extractFunctionBody(source, functionName);
