@@ -8,7 +8,6 @@ import { getWarehouseDefaultLocationId } from './warehouseDefaults.service';
 import {
   workOrderCompletionCreateSchema,
   workOrderIssueCreateSchema,
-  workOrderReportProductionSchema,
   workOrderReportScrapSchema
 } from '../schemas/workOrderExecution.schema';
 import {
@@ -36,37 +35,29 @@ import * as wipEngine from './wipAccountingEngine';
 import * as movementPlanner from './inventoryMovementPlanner';
 import * as projectionEngine from './inventoryProjectionEngine';
 import {
-  buildReportProductionPlan
-} from '../domain/workOrders/reportProductionPlan';
-import {
-  assertReportProductionWarehouseSellableDefault,
-  evaluateReportProductionPolicy
-} from '../domain/workOrders/reportProductionPolicy';
-import {
   assertScrapReasonCode,
   normalizedOptionalIdempotencyKey
 } from './workOrderExecution.request';
 import { fetchWorkOrderIssue } from './workOrderIssuePost.workflow';
 import { fetchWorkOrderCompletion } from './workOrderCompletionPost.workflow';
-import { recordWorkOrderBatch } from './workOrderBatchRecord.workflow';
 
 export { fetchWorkOrderIssue, postWorkOrderIssue } from './workOrderIssuePost.workflow';
 export { fetchWorkOrderCompletion, postWorkOrderCompletion } from './workOrderCompletionPost.workflow';
 export { recordWorkOrderBatch } from './workOrderBatchRecord.workflow';
 export { fetchWorkOrderVoidReportResult, voidWorkOrderProductionReport } from './workOrderVoidProduction.workflow';
 export type { WorkOrderVoidReportResult } from './workOrderVoidProduction.workflow';
+export { reportWorkOrderProduction } from './workOrderProductionReport.workflow';
+export type { WorkOrderProductionReportResult } from './workOrderProductionReport.workflow';
 
 // Disassembly/rework is modeled as work_orders.kind = 'disassembly' and posts issue/receive movements
 // (never inventory_adjustments). External refs include work order ids for traceability.
 
 type WorkOrderIssueCreateInput = z.infer<typeof workOrderIssueCreateSchema>;
 type WorkOrderCompletionCreateInput = z.infer<typeof workOrderCompletionCreateSchema>;
-type WorkOrderReportProductionInput = z.infer<typeof workOrderReportProductionSchema>;
 type WorkOrderReportScrapInput = z.infer<typeof workOrderReportScrapSchema>;
 type RetryableSqlStateError = { retrySqlState?: string; code?: string };
 
 const WORK_ORDER_POST_RETRY_OPTIONS = { isolationLevel: 'SERIALIZABLE' as const, retries: 8 };
-const FORCED_LOT_LINK_FAILURE_KEYS = new Set<string>();
 
 type DomainError = Error & {
   code?: string;
@@ -92,12 +83,6 @@ function workOrderRoutingContext(workOrder: WorkOrderRow) {
     produceToLocationIdSnapshot: workOrder.produce_to_location_id_snapshot
   };
 }
-
-type NegativeOverrideContext = {
-  actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
-  overrideRequested?: boolean;
-  overrideReason?: string | null;
-};
 
 type WorkOrderRow = {
   id: string;
@@ -427,20 +412,6 @@ export async function getWorkOrderExecutionSummary(tenantId: string, workOrderId
   };
 }
 
-export type WorkOrderProductionReportResult = {
-  workOrderId: string;
-  productionReportId: string;
-  componentIssueMovementId: string;
-  productionReceiptMovementId: string;
-  idempotencyKey: string | null;
-  replayed: boolean;
-  lotTracking?: {
-    outputLotId: string;
-    outputLotCode: string;
-    inputLotCount: number;
-  };
-};
-
 export type WorkOrderScrapReportResult = {
   workOrderId: string;
   workOrderExecutionId: string;
@@ -463,15 +434,6 @@ type LockedExecutionRow = {
   production_movement_id: string | null;
 };
 
-function shouldSimulateLotLinkFailureOnce(idempotencyKey: string | null, replayed: boolean) {
-  if (replayed || !idempotencyKey) return false;
-  // Guarded by an explicit test-only key marker to avoid env-coupled flakiness.
-  if (!idempotencyKey.includes(':simulate-lot-link-failure')) return false;
-  if (FORCED_LOT_LINK_FAILURE_KEYS.has(idempotencyKey)) return false;
-  FORCED_LOT_LINK_FAILURE_KEYS.add(idempotencyKey);
-  return true;
-}
-
 function assertSameWorkOrderExecution(
   workOrderId: string,
   execution: LockedExecutionRow
@@ -480,100 +442,6 @@ function assertSameWorkOrderExecution(
     throw new Error('WO_VOID_EXECUTION_WORK_ORDER_MISMATCH');
   }
 }
-
-export async function reportWorkOrderProduction(
-  tenantId: string,
-  workOrderId: string,
-  data: WorkOrderReportProductionInput,
-  context: NegativeOverrideContext = {},
-  options?: { idempotencyKey?: string | null }
-): Promise<WorkOrderProductionReportResult> {
-  const policy = await evaluateReportProductionPolicy({
-    tenantId,
-    workOrderId,
-    data,
-    options
-  });
-  const plan = await buildReportProductionPlan({
-    tenantId,
-    workOrderId,
-    policy
-  });
-  const shouldBypassWarehouseSellableGuard = policy.reportIdempotencyKey
-    ? await hasExistingReportProductionIdempotencyClaim(tenantId, policy.reportIdempotencyKey)
-    : false;
-  if (!shouldBypassWarehouseSellableGuard) {
-    await assertReportProductionWarehouseSellableDefault({
-      tenantId,
-      workOrderId,
-      warehouseId: data.warehouseId ?? null
-    });
-  }
-
-  const batchResult = await recordWorkOrderBatch(
-    tenantId,
-    workOrderId,
-    {
-      occurredAt: policy.occurredAt.toISOString(),
-      notes: policy.notes ?? undefined,
-      consumeLines: [...plan.consumeLines],
-      produceLines: [...plan.produceLines]
-    },
-    context,
-    {
-      idempotencyKey: policy.reportIdempotencyKey,
-      idempotencyEndpoint: IDEMPOTENCY_ENDPOINTS.WORK_ORDER_REPORT_PRODUCTION,
-      traceability: plan.traceability
-    }
-  );
-
-  if (shouldSimulateLotLinkFailureOnce(policy.reportIdempotencyKey, batchResult.replayed)) {
-    throw domainError('WO_REPORT_LOT_LINK_INCOMPLETE', {
-      reason: 'simulated_failure_after_post_before_lot_link',
-      workOrderId,
-      productionReportId: batchResult.executionId
-    });
-  }
-  const finalized = await withTransaction((client) => replayEngine.finalizeBatchExecutionTraceability({
-    tenantId,
-    workOrderId,
-    executionId: batchResult.executionId,
-    issueMovementId: batchResult.issueMovementId,
-    receiveMovementId: batchResult.receiveMovementId,
-    client,
-    traceability: {
-      outputItemId: plan.traceability.outputItemId,
-      outputQty: plan.traceability.outputQty,
-      outputUom: plan.traceability.outputUom,
-      outputLotId: plan.traceability.outputLotId ?? null,
-      outputLotCode: plan.traceability.outputLotCode ?? null,
-      inputLots: plan.traceability.inputLots ? [...plan.traceability.inputLots] : []
-    }
-  }));
-
-  return {
-    workOrderId,
-    productionReportId: batchResult.executionId,
-    componentIssueMovementId: finalized.classification.authoritativeMovementIds.issueMovementId ?? batchResult.issueMovementId,
-    productionReceiptMovementId: finalized.classification.authoritativeMovementIds.receiveMovementId ?? batchResult.receiveMovementId,
-    idempotencyKey: batchResult.idempotencyKey ?? policy.reportIdempotencyKey,
-    replayed: batchResult.replayed,
-    lotTracking: finalized.lotTracking
-  };
-}
-
-async function hasExistingReportProductionIdempotencyClaim(tenantId: string, idempotencyKey: string) {
-  const existing = await query<{ key: string }>(
-    `SELECT key
-       FROM idempotency_keys
-      WHERE tenant_id = $1
-        AND key = $2
-      LIMIT 1`,
-    [tenantId, idempotencyKey]
-  );
-  return (existing.rowCount ?? 0) > 0;
-}
-
 
 export async function reportWorkOrderScrap(
   tenantId: string,

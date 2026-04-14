@@ -44,6 +44,10 @@ const WORK_ORDER_VOID_PRODUCTION_WORKFLOW = path.resolve(
   process.cwd(),
   'src/services/workOrderVoidProduction.workflow.ts'
 );
+const WORK_ORDER_PRODUCTION_REPORT_WORKFLOW = path.resolve(
+  process.cwd(),
+  'src/services/workOrderProductionReport.workflow.ts'
+);
 
 function extractFunctionBody(source, functionName) {
   const markers = [
@@ -148,6 +152,11 @@ const DAG_NODES = [
     file: WORK_ORDER_VOID_PRODUCTION_WORKFLOW,
     functionName: 'voidWorkOrderProductionReport',
     label: 'voidWorkOrderProductionReport'
+  },
+  {
+    file: WORK_ORDER_PRODUCTION_REPORT_WORKFLOW,
+    functionName: 'reportWorkOrderProduction',
+    label: 'reportWorkOrderProduction'
   }
 ];
 
@@ -185,6 +194,25 @@ test('license plate and manufacturing mutation dag entrypoints stay wrapper-mana
         /\brunInventoryCommand(?:<[^>]+>)?\(/,
         `${node.label} must not depend on generic runInventoryCommand execution hooks`
       );
+    } else if (node.functionName === 'reportWorkOrderProduction') {
+      // WF-6 is the explicit two-transaction exception.
+      // T1 delegates to recordWorkOrderBatch() which owns runInventoryCommand().
+      // T2 uses withTransaction() directly for traceability finalization.
+      assert.match(
+        body,
+        /\brecordWorkOrderBatch\(/,
+        `${node.label} must delegate T1 batch posting to recordWorkOrderBatch()`
+      );
+      assert.doesNotMatch(
+        body,
+        /\brunInventoryCommand(?:<[^>]+>)?\(/,
+        `${node.label} must not call runInventoryCommand() directly; T1 is owned by recordWorkOrderBatch()`
+      );
+      assert.match(
+        body,
+        /\bwithTransaction\(/,
+        `${node.label} must retain withTransaction() for T2 traceability finalization`
+      );
     } else {
       assert.match(
         body,
@@ -194,6 +222,10 @@ test('license plate and manufacturing mutation dag entrypoints stay wrapper-mana
     }
 
     for (const [pattern, message] of FORBIDDEN_EDGE_PATTERNS) {
+      // WF-6 is the explicit two-transaction exception; withTransaction() in T2 is permitted.
+      if (node.functionName === 'reportWorkOrderProduction' && pattern.source.includes('withTransaction')) {
+        continue;
+      }
       assert.doesNotMatch(body, pattern, `${node.label} ${message}`);
     }
   }
@@ -324,7 +356,7 @@ test('migrated movement writers persist deterministic hashes at insert time', as
   for (const [source, helperName] of [
     [workOrderIssuePostSource, 'buildWorkOrderIssueReplayResult'],
     [workOrderCompletionPostSource, 'buildWorkOrderCompletionReplayResult'],
-    [workOrderSource, 'buildWorkOrderBatchReplayResult'],
+    [workOrderBatchRecordSource, 'buildWorkOrderBatchReplayResult'],
     [workOrderVoidProductionSource, 'buildWorkOrderVoidReplayResult']
   ]) {
     const body = extractFunctionBody(source, helperName);
