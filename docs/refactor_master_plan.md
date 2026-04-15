@@ -9,7 +9,7 @@ Single source of truth for refactoring progress, decisions, and safety constrain
 
 - Phase: Sprint-Based Refactor
 - Current Sprint: Sprint 3 (WorkOrder Decomposition)
-- Status: In Progress
+- Status: Complete
 
 | Sprint | Description | Status |
 |--------|-------------|--------|
@@ -17,7 +17,7 @@ Single source of truth for refactoring progress, decisions, and safety constrain
 | Sprint 0.5 | Correctness boundary definition | Complete |
 | Sprint 1 | Transfers boundary hardening + decomposition | **Complete** |
 | Sprint 2 | QC separation | **Complete** |
-| Sprint 3 | WorkOrder decomposition | **In Progress** |
+| Sprint 3 | WorkOrder decomposition | **Complete** |
 
 ---
 
@@ -27,7 +27,7 @@ Single source of truth for refactoring progress, decisions, and safety constrain
 |--------|--------|-------|
 | Transfers | Complete | Boundary enforced; execution paths unified through one shared orchestration implementation; transfer-scoped transaction runner remains private |
 | QC | Complete / Closeout Ready | Phase A boundary definition complete; Receipt, Work Order, and Execution Line QC paths separated; Warehouse Disposition transfer + audit are atomic |
-| WorkOrderExecution | In Progress | Phase A boundary definition complete; Phase B workflow decomposition in progress; WF-2, WF-4, WF-5 extracted and verified |
+| WorkOrderExecution | Complete | Phase A boundary definition complete; Phase B workflow decomposition complete; WF-2, WF-4, WF-5, WF-6, and WF-7 extracted and verified |
 
 ---
 
@@ -346,15 +346,14 @@ All core Sprint 2 implementation objectives are complete and ready for formal cl
 
 ### Recommended Next Step
 
-- Continue workflow decomposition in Sprint 3 Phase B.
-- Next target: WF-7 (Void Work Order Production).
-- WF-6 (Report Work Order Production) remains deferred due to two-transaction exception; do not begin until WF-7 is complete.
+- Sprint 3 workflow decomposition is complete.
+- WF-6 (Report Work Order Production) remains the deliberate two-transaction exception documented in the Sprint 3 Phase A boundary.
 
 ---
 
 # 9. Sprint 3 — WorkOrder Decomposition
 
-## Status: **In Progress**
+## Status: **Complete**
 
 ### Goal
 Safely decompose the WorkOrderExecution monolith.
@@ -373,26 +372,30 @@ Canonical boundary definition completed in `docs/sprint-3-phase-a-work-order-exe
 
 ### Phase B — Workflow Decomposition
 
-**Status: In Progress**
+**Status: Complete**
 
 #### Completed
 - WF-2 (Post Work Order Issue) — extracted, verified, contract tests passing
 - WF-4 (Post Work Order Completion) — extracted, verified, contract tests passing
 - WF-5 (Record Work Order Batch) — extracted, verified, contract tests passing
+- WF-6 (Report Work Order Production) — extracted, verified, contract tests passing; deliberate two-transaction exception preserved
 - WF-7 (Void Work Order Production) — extracted, verified, contract tests passing
 
 #### Next
-- WF-6 (Report Work Order Production) — now unblocked; deferred due to two-transaction exception; begin with full Phase A boundary review before extraction
+- None for Sprint 3 workflow decomposition.
 
 #### Deferred
-- WF-6 (Report Work Order Production) — WF-7 prerequisite now met; two-transaction seam must remain visible; see sprint-3-phase-a document for constraints
+- None for Sprint 3 workflow decomposition.
 
 #### Progress Summary
-- WF-2, WF-4, WF-5, WF-7 extracted into explicit workflow paths
+- WF-2, WF-4, WF-5, WF-6, and WF-7 extracted into explicit workflow paths
 - No behavioral changes introduced; all preserved semantics confirmed
 - All domain invariants preserved; no ledger write paths altered
 - Architecture guard test updated to point voidWorkOrderProductionReport and buildWorkOrderVoidReplayResult to workOrderVoidProduction.workflow.ts
-- test:truth 38/0, test:contracts 81/0; no known regressions
+- WF-6 remains a deliberate two-transaction exception: TX-1 posts authoritative inventory state and TX-2 finalizes traceability.
+- WF-6 invariant tests validate TX-1 / TX-2 recovery and idempotent replay.
+- WF-6 same-idempotency-key concurrency coverage validates that concurrent calls do not duplicate authoritative state.
+- test:truth 38/0, test:contracts 81/0 at WF-7 closeout; later WF-6 targeted invariant and concurrency coverage added; no known Sprint 3 regressions
 
 ### Notes
 - WorkOrderExecution is the highest-risk target: multi-workflow, highest write surface
