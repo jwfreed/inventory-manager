@@ -254,6 +254,78 @@ test('WF-6 report-production same idempotency key replays stable result and auth
   });
 });
 
+test('WF-6 report-production same idempotency key concurrent calls converge on one authoritative write set', async () => {
+  const { harness, workOrder } = await createProductionFixture(
+    'contract-wf6-concurrent',
+    5
+  );
+  const { tenantId, pool: db, topology } = harness;
+  const idempotencyKey = `contract-wf6-concurrent:${randomUUID()}`;
+  const requestBody = {
+    warehouseId: topology.warehouse.id,
+    outputQty: 5,
+    outputUom: 'each',
+    occurredAt: '2026-03-06T00:00:00.000Z'
+  };
+
+  const outcomes = await harness.runConcurrently([
+    async ({ waitForStart }) => {
+      await waitForStart();
+      return harness.reportProduction(workOrder.id, requestBody, {}, { idempotencyKey });
+    },
+    async ({ waitForStart }) => {
+      await waitForStart();
+      return harness.reportProduction(workOrder.id, requestBody, {}, { idempotencyKey });
+    }
+  ]);
+
+  const rejected = outcomes
+    .filter((outcome) => outcome.status === 'rejected')
+    .map((outcome) => ({
+      code: outcome.reason?.code ?? null,
+      message: outcome.reason?.message ?? null,
+      details: outcome.reason?.details ?? null
+    }));
+  assert.equal(rejected.length, 0, `same-key concurrent calls must converge, got ${JSON.stringify(rejected)}`);
+
+  const [first, second] = outcomes.map((outcome) => outcome.value);
+  assert.deepEqual(semanticResult(second), semanticResult(first));
+  assert.deepEqual(
+    new Set([first.replayed, second.replayed]),
+    new Set([false, true]),
+    'one concurrent call must post and the other must replay'
+  );
+
+  const concurrentState = await snapshotReportState(db, tenantId, workOrder.id, idempotencyKey);
+  assertSingleAuthoritativePosting(concurrentState);
+  assert.equal(concurrentState.lotLinks.length, 1, 'concurrent TX-2 finalization must create one produce lot link');
+  assert.equal(concurrentState.movementLots.length, 1, 'concurrent TX-2 finalization must create one movement lot row');
+
+  const execution = concurrentState.executions[0];
+  const issueMovement = movementBySourceType(concurrentState, 'work_order_batch_post_issue');
+  const receiptMovement = movementBySourceType(concurrentState, 'work_order_batch_post_completion');
+  assert.equal(first.productionReportId, execution.id);
+  assert.equal(first.componentIssueMovementId, issueMovement.id);
+  assert.equal(first.productionReceiptMovementId, receiptMovement.id);
+  assert.equal(execution.issueMovementId, issueMovement.id);
+  assert.equal(execution.receiveMovementId, receiptMovement.id);
+  assert.equal(first.lotTracking.outputLotId, concurrentState.lotLinks[0].lotId);
+  assert.equal(first.lotTracking.outputLotId, concurrentState.movementLots[0].lotId);
+  assert.equal(first.lotTracking.inputLotCount, 0);
+
+  const replay = await harness.reportProduction(
+    workOrder.id,
+    requestBody,
+    {},
+    { idempotencyKey }
+  );
+  assert.equal(replay.replayed, true);
+  assert.deepEqual(semanticResult(replay), semanticResult(first));
+
+  const replayState = await snapshotReportState(db, tenantId, workOrder.id, idempotencyKey);
+  assert.deepEqual(replayState, concurrentState, 'post-concurrency replay must not create new authoritative or traceability rows');
+});
+
 test('WF-6 report-production recovers TX-2 lot-link failure without duplicate authoritative writes', async () => {
   const { harness, workOrder } = await createProductionFixture(
     'contract-wf6-recovery',
