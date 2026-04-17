@@ -4,6 +4,8 @@ import { roundQuantity } from '../../lib/numbers';
 import { RECEIPT_STATUS_EPSILON } from './receiptPolicy';
 import {
   RECEIPT_ALLOCATION_STATUSES,
+  assertReceiptAllocationMappingConsistency,
+  createReceiptAllocationError,
   createRebuildReceiptAllocationWriteContext,
   replaceReceiptAllocationsForReceipt,
   validateReceiptAllocationMutationContext,
@@ -12,6 +14,50 @@ import {
   type ReceiptAllocationValidationRequirement,
   type ValidatedReceiptAllocationMutationContext
 } from './receiptAllocationModel';
+
+/*
+ * Receipt allocation rebuild contract
+ *
+ * Guarantees provided:
+ * - Rebuild consumes authoritative inputs only: receipt lines, inventory movements,
+ *   QC events plus QC movement links, completed putaway lines, and reconciliation resolutions.
+ * - Identical authoritative inputs produce identical allocation ordering and IDs.
+ * - Missing links, ambiguous mappings, conflicting allocation targets, and post-rebuild
+ *   invariant violations fail immediately.
+ * - Replacement is atomic within the caller transaction; a failed rebuild does not leave
+ *   partially replaced receipt_allocations rows behind.
+ *
+ * Guarantees not provided:
+ * - Rebuild does not guess missing metadata, movement links, bins, or destinations.
+ * - Rebuild does not repair authoritative corruption upstream of receipt_allocations.
+ * - Rebuild is invalid when authoritative mappings are incomplete or ambiguous.
+ */
+
+export const RECEIPT_ALLOCATION_REBUILD_CONTRACT = Object.freeze({
+  requiredInputs: [
+    'receipt_lines',
+    'inventory_movements',
+    'inventory_movement_lines',
+    'qc_events',
+    'qc_inventory_links',
+    'putaway_lines',
+    'receipt_reconciliation_resolutions'
+  ],
+  guarantees: [
+    'deterministic_ordering',
+    'idempotent_rebuild_ids',
+    'fail_fast_on_ambiguity',
+    'atomic_replace_within_transaction',
+    'post_rebuild_validation'
+  ],
+  invalidWhen: [
+    'authoritative_link_missing',
+    'authoritative_mapping_ambiguous',
+    'authoritative_metadata_incomplete',
+    'conflicting_allocation_targets',
+    'post_rebuild_validation_fails'
+  ]
+} as const);
 
 type ReceiptLineRebuildRow = {
   id: string;
@@ -34,8 +80,20 @@ type MovementLineMatch = {
   created_at: string;
 };
 
-function failAuthoritativeInconsistency(message: string): never {
-  throw new Error(`RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT:${message}`);
+function failAuthoritativeInconsistency(
+  reason: string,
+  details?: Record<string, unknown>
+): never {
+  const error = new Error(`RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT:${reason}`) as Error & {
+    code?: string;
+    details?: Record<string, unknown>;
+  };
+  error.code = 'RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT';
+  error.details = {
+    reason,
+    ...(details ?? {})
+  };
+  throw error;
 }
 
 function nextSortKey(prefix: string, index: number) {
@@ -162,7 +220,14 @@ async function findMovementLine(params: {
   if (params.noteIncludes) {
     const noteMatches = candidates.filter((row) => row.line_notes?.includes(params.noteIncludes ?? ''));
     if (noteMatches.length !== 1) {
-      failAuthoritativeInconsistency('movement_line_note_unmatched');
+      failAuthoritativeInconsistency('movement_line_note_unmatched', {
+        movementId: params.movementId,
+        itemId: params.itemId,
+        locationId: params.locationId,
+        quantity: params.quantity,
+        noteIncludes: params.noteIncludes,
+        candidateCount: noteMatches.length
+      });
     }
     candidates = noteMatches;
   }
@@ -170,7 +235,15 @@ async function findMovementLine(params: {
     candidates = candidates.filter((row) => row.reason_code === params.reasonCode);
   }
   if (candidates.length !== 1) {
-    failAuthoritativeInconsistency('movement_line_ambiguous');
+    failAuthoritativeInconsistency('movement_line_ambiguous', {
+      movementId: params.movementId,
+      itemId: params.itemId,
+      locationId: params.locationId,
+      quantity: params.quantity,
+      direction: params.direction,
+      reasonCode: params.reasonCode ?? null,
+      candidateCount: candidates.length
+    });
   }
   return candidates[0];
 }
@@ -214,9 +287,31 @@ function consumeWorkingAllocations(params: {
   }
 
   if (remaining > RECEIPT_STATUS_EPSILON) {
-    failAuthoritativeInconsistency('allocation_consumption_underflow');
+    failAuthoritativeInconsistency('allocation_consumption_underflow', {
+      receiptLineId: params.receiptLineId,
+      status: params.status,
+      binId: params.binId ?? null,
+      requestedQuantity: params.quantity,
+      remainingQuantity: remaining
+    });
   }
   return consumed;
+}
+
+function assertRebuildOutputContract(params: {
+  receiptId: string;
+  allocations: ReceiptAllocation[];
+}) {
+  for (const allocation of params.allocations) {
+    if (allocation.receiptId !== params.receiptId) {
+      failAuthoritativeInconsistency('rebuild_receipt_scope_mismatch', {
+        expectedReceiptId: params.receiptId,
+        actualReceiptId: allocation.receiptId,
+        receiptLineId: allocation.receiptLineId
+      });
+    }
+  }
+  assertReceiptAllocationMappingConsistency(params.allocations);
 }
 
 async function rebuildFromAuthoritativeSources(params: {
@@ -502,15 +597,21 @@ async function rebuildFromAuthoritativeSources(params: {
     }
   }
 
+  const orderedAllocations = allocations
+    .sort((left, right) => {
+      const lineCompare = left.receiptLineId.localeCompare(right.receiptLineId);
+      if (lineCompare !== 0) return lineCompare;
+      return left.sortKey.localeCompare(right.sortKey);
+    })
+    .map(({ sortKey: _sortKey, ...allocation }) => allocation);
+  assertRebuildOutputContract({
+    receiptId: params.receiptId,
+    allocations: orderedAllocations
+  });
+
   return {
     expectedQtyByLine,
-    allocations: allocations
-      .sort((left, right) => {
-        const lineCompare = left.receiptLineId.localeCompare(right.receiptLineId);
-        if (lineCompare !== 0) return lineCompare;
-        return left.sortKey.localeCompare(right.sortKey);
-      })
-      .map(({ sortKey: _sortKey, ...allocation }) => allocation)
+    allocations: orderedAllocations
   };
 }
 
@@ -520,29 +621,43 @@ export async function rebuildReceiptAllocations(params: {
   receiptId: string;
   occurredAt: Date;
 }) {
-  const rebuilt = await rebuildFromAuthoritativeSources(params);
-  const context = createRebuildReceiptAllocationWriteContext({
-    tenantId: params.tenantId,
-    expectedQtyByReceiptLineId: rebuilt.expectedQtyByLine,
-    allocations: rebuilt.allocations
-  });
-  await replaceReceiptAllocationsForReceipt({
-    client: params.client,
-    tenantId: params.tenantId,
-    receiptId: params.receiptId,
-    allocations: rebuilt.allocations,
-    occurredAt: params.occurredAt,
-    context
-  });
-  await validateReceiptAllocationMutationContext({
-    client: params.client,
-    tenantId: params.tenantId,
-    requirements: Array.from(rebuilt.expectedQtyByLine.keys()).map((receiptLineId) => ({ receiptLineId }))
-  });
-  return {
-    linesRebuilt: rebuilt.expectedQtyByLine.size,
-    allocationsCreated: rebuilt.allocations.length
-  };
+  try {
+    const rebuilt = await rebuildFromAuthoritativeSources(params);
+    const context = createRebuildReceiptAllocationWriteContext({
+      tenantId: params.tenantId,
+      expectedQtyByReceiptLineId: rebuilt.expectedQtyByLine,
+      allocations: rebuilt.allocations
+    });
+    await replaceReceiptAllocationsForReceipt({
+      client: params.client,
+      tenantId: params.tenantId,
+      receiptId: params.receiptId,
+      allocations: rebuilt.allocations,
+      occurredAt: params.occurredAt,
+      context
+    });
+    await validateReceiptAllocationMutationContext({
+      client: params.client,
+      tenantId: params.tenantId,
+      requirements: Array.from(rebuilt.expectedQtyByLine.keys()).map((receiptLineId) => ({ receiptLineId }))
+    });
+    return {
+      linesRebuilt: rebuilt.expectedQtyByLine.size,
+      allocationsCreated: rebuilt.allocations.length
+    };
+  } catch (error: any) {
+    if (error?.code === '55P03') {
+      throw createReceiptAllocationError(
+        'RECEIPT_ALLOCATION_REBUILD_CONCURRENT_MODIFICATION',
+        {
+          receiptId: params.receiptId,
+          sqlState: error.code
+        },
+        { cause: error }
+      );
+    }
+    throw error;
+  }
 }
 
 export async function validateOrRebuildReceiptAllocationsForMutation(params: {
@@ -555,7 +670,8 @@ export async function validateOrRebuildReceiptAllocationsForMutation(params: {
   try {
     return await validateReceiptAllocationMutationContext(params);
   } catch (validationError) {
-    if ((validationError as Error).message === 'RECEIPT_ALLOCATION_PRECHECK_FAILED') {
+    const validationCode = (validationError as Error & { code?: string }).code ?? (validationError as Error).message;
+    if (validationCode === 'RECEIPT_ALLOCATION_PRECHECK_FAILED') {
       throw validationError;
     }
     try {
@@ -565,8 +681,15 @@ export async function validateOrRebuildReceiptAllocationsForMutation(params: {
     }
     try {
       return await validateReceiptAllocationMutationContext(params);
-    } catch (_error) {
-      throw new Error('RECEIPT_ALLOCATION_DRIFT_UNRECOVERABLE');
+    } catch (error) {
+      throw createReceiptAllocationError(
+        'RECEIPT_ALLOCATION_DRIFT_UNRECOVERABLE',
+        {
+          receiptId: params.receiptId,
+          receiptLineIds: params.requirements.map((requirement) => requirement.receiptLineId)
+        },
+        { cause: error }
+      );
     }
   }
 }

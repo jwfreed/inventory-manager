@@ -9,6 +9,7 @@ require('tsconfig-paths/register');
 const {
   RECEIPT_ALLOCATION_STATUSES,
   ReceiptAllocationAggregate,
+  assertReceiptAllocationMappingConsistency,
   assertReceiptAllocationTraceability,
   assertReceiptAllocationQuantityConservation,
   deriveReceiptAvailabilityFromAllocations,
@@ -67,6 +68,39 @@ test('allocation traceability requires an explicit bin distinct from location co
         }
       ]),
     /RECEIPT_ALLOCATION_TRACEABILITY_VIOLATION/
+  );
+});
+
+test('allocation mappings cannot assign one movement line to conflicting targets', () => {
+  assert.throws(
+    () =>
+      assertReceiptAllocationMappingConsistency([
+        {
+          receiptId: 'r1',
+          receiptLineId: 'l1',
+          warehouseId: 'w1',
+          locationId: 'qa',
+          binId: 'qa-bin',
+          inventoryMovementId: 'm1',
+          inventoryMovementLineId: 'ml1',
+          costLayerId: 'cl1',
+          quantity: 2,
+          status: RECEIPT_ALLOCATION_STATUSES.QA
+        },
+        {
+          receiptId: 'r1',
+          receiptLineId: 'l1',
+          warehouseId: 'w1',
+          locationId: 'sellable',
+          binId: 'sellable-bin',
+          inventoryMovementId: 'm1',
+          inventoryMovementLineId: 'ml1',
+          costLayerId: 'cl1',
+          quantity: 2,
+          status: RECEIPT_ALLOCATION_STATUSES.AVAILABLE
+        }
+      ]),
+    /RECEIPT_ALLOCATION_CONFLICTING_MAPPING/
   );
 });
 

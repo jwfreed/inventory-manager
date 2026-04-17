@@ -26,6 +26,15 @@
 >
 > `receipt_allocations` is required for correct workflow execution. But it is never the source of truth. If allocations and authoritative sources disagree, the authoritative sources win — and the system must detect the disagreement before damage occurs, not after.
 
+### Enforced Rebuild Contract
+
+The rebuild contract is explicit in code and must remain explicit in design review:
+
+- **Required upstream inputs:** receipt lines, inventory movements and movement lines, QC events plus QC inventory links, completed putaway lines, and reconciliation resolutions with movement metadata.
+- **Deterministic mapping rules:** rebuild ordering is fixed by authoritative timestamps plus stable IDs; rebuilt allocation IDs are deterministic for identical authoritative inputs; each rebuild step must resolve to exactly one authoritative movement line.
+- **Failure conditions:** rebuild aborts on missing links, ambiguous movement matching, incomplete reconciliation metadata, conflicting allocation targets for the same authoritative movement line, and any post-rebuild invariant violation.
+- **Not provided:** rebuild does not guess, silently repair, or make upstream corruption valid. If authoritative inputs are incomplete or ambiguous, rebuild is invalid and must fail.
+
 ---
 
 ## 2. Responsibilities (Allowed Uses)

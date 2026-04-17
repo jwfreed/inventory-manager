@@ -10,7 +10,10 @@ require('tsconfig-paths/register');
 
 const { createQcEvent } = require('../../src/services/qc.service.ts');
 const { closePurchaseOrderReceipt } = require('../../src/services/closeout.service.ts');
-const { rebuildReceiptAllocations } = require('../../src/domain/receipts/receiptAllocationRebuilder.ts');
+const {
+  rebuildReceiptAllocations,
+  validateOrRebuildReceiptAllocationsForMutation
+} = require('../../src/domain/receipts/receiptAllocationRebuilder.ts');
 
 async function createReceiptInQa(harness, { quantity, unitCost = 5, uom = 'each' }) {
   const item = await harness.createItem({
@@ -83,14 +86,28 @@ function normalizeAllocationsForRebuildComparison(allocations) {
 }
 
 function normalizeAllocationsForStateComparison(allocations) {
-  return allocations.map((allocation) => ({
-    locationId: allocation.locationId,
-    binId: allocation.binId,
-    movementId: allocation.movementId,
-    movementLineId: allocation.movementLineId,
-    status: allocation.status,
-    quantity: allocation.quantity
-  }));
+  return allocations
+    .map((allocation) => ({
+      locationId: allocation.locationId,
+      binId: allocation.binId,
+      movementId: allocation.movementId,
+      movementLineId: allocation.movementLineId,
+      status: allocation.status,
+      quantity: allocation.quantity
+    }))
+    .sort((left, right) => {
+      const locationCompare = String(left.locationId).localeCompare(String(right.locationId));
+      if (locationCompare !== 0) return locationCompare;
+      const binCompare = String(left.binId).localeCompare(String(right.binId));
+      if (binCompare !== 0) return binCompare;
+      const statusCompare = String(left.status).localeCompare(String(right.status));
+      if (statusCompare !== 0) return statusCompare;
+      const movementCompare = String(left.movementId).localeCompare(String(right.movementId));
+      if (movementCompare !== 0) return movementCompare;
+      const movementLineCompare = String(left.movementLineId).localeCompare(String(right.movementLineId));
+      if (movementLineCompare !== 0) return movementLineCompare;
+      return Number(left.quantity) - Number(right.quantity);
+    });
 }
 
 async function loadDefaultBinId(db, tenantId, locationId) {
@@ -444,6 +461,85 @@ test('receipt allocation rebuild is deterministic and idempotent', { timeout: 24
   assert.deepEqual(second, first);
 });
 
+test('receipt allocation rebuild preserves complex lifecycle state after partial QC and reconciliation adjustment', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-allocation-lifecycle',
+    tenantName: 'Contract QC Allocation Lifecycle'
+  });
+  const { tenantId, pool: db, topology } = harness;
+  const fixture = await createReceiptInQa(harness, { quantity: 6 });
+  const sellableBinId = await loadDefaultBinId(db, tenantId, topology.defaults.SELLABLE.id);
+
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'accept',
+      quantity: 2,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `qc-receipt-lifecycle-accept-1:${randomUUID()}` }
+  );
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'accept',
+      quantity: 4,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `qc-receipt-lifecycle-accept-2:${randomUUID()}` }
+  );
+
+  const closeout = await closePurchaseOrderReceipt(tenantId, fixture.receipt.id, {
+    actorType: 'system',
+    notes: 'partial QC lifecycle equivalence adjustment',
+    physicalCounts: [
+      {
+        purchaseOrderReceiptLineId: fixture.receiptLineId,
+        locationId: topology.defaults.SELLABLE.id,
+        binId: sellableBinId,
+        allocationStatus: 'AVAILABLE',
+        countedQty: 5,
+        toleranceQty: 0
+      }
+    ],
+    resolution: {
+      mode: 'adjustment',
+      notes: 'adjust after partial QC lifecycle'
+    }
+  });
+
+  assert.equal(closeout.receipt.status, 'closed');
+  const beforeRebuild = normalizeAllocationsForStateComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+
+  await runInTransaction(db, (client) =>
+    rebuildReceiptAllocations({
+      client,
+      tenantId,
+      receiptId: fixture.receipt.id,
+      occurredAt: new Date()
+    })
+  );
+
+  const afterRebuild = normalizeAllocationsForStateComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+
+  assert.deepEqual(afterRebuild, beforeRebuild);
+});
+
 test('receipt allocation rebuild fails when authoritative movement link is unmatched', { timeout: 240000 }, async () => {
   const harness = await createServiceHarness({
     tenantPrefix: 'contract-qc-allocation-unmatched',
@@ -510,6 +606,38 @@ test('receipt allocation rebuild fails on authoritative movement ambiguity', { t
       })
     ),
     /RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT:movement_line_note_unmatched/
+  );
+  assert.equal((await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)).length, 0);
+});
+
+test('receipt allocation validation rejects orphaned receipt linkage before mutation', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-allocation-orphan',
+    tenantName: 'Contract QC Allocation Orphan'
+  });
+  const { tenantId, pool: db } = harness;
+  const fixture = await createReceiptInQa(harness, { quantity: 3 });
+  const otherFixture = await createReceiptInQa(harness, { quantity: 1 });
+
+  await db.query(
+    `UPDATE receipt_allocations
+        SET purchase_order_receipt_id = $3
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId, otherFixture.receipt.id]
+  );
+
+  await assert.rejects(
+    runInTransaction(db, (client) =>
+      validateOrRebuildReceiptAllocationsForMutation({
+        client,
+        tenantId,
+        receiptId: fixture.receipt.id,
+        occurredAt: new Date(),
+        requirements: [{ receiptLineId: fixture.receiptLineId }]
+      })
+    ),
+    /RECEIPT_ALLOCATION_ORPHANED/
   );
 });
 
@@ -588,6 +716,75 @@ test('receipt closeout adjustment uses adjustment-aware allocation expectations'
   );
 
   assert.deepEqual(afterRebuild, beforeRebuild);
+});
+
+test('receipt allocation rebuild fails explicitly under concurrent authoritative locks without partial state', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-allocation-concurrency',
+    tenantName: 'Contract QC Allocation Concurrency'
+  });
+  const { tenantId, pool: db } = harness;
+  const fixture = await createReceiptInQa(harness, { quantity: 4 });
+  const before = normalizeAllocationsForRebuildComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+  const beforeState = normalizeAllocationsForStateComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+
+  const lockClient = await db.connect();
+  const rebuildClient = await db.connect();
+  try {
+    await lockClient.query('BEGIN');
+    await lockClient.query(
+      `SELECT id
+         FROM purchase_order_receipt_lines
+        WHERE tenant_id = $1
+          AND id = $2
+        FOR UPDATE`,
+      [tenantId, fixture.receiptLineId]
+    );
+
+    await rebuildClient.query('BEGIN');
+    await rebuildClient.query("SET LOCAL lock_timeout TO '50ms'");
+    await assert.rejects(
+      rebuildReceiptAllocations({
+        client: rebuildClient,
+        tenantId,
+        receiptId: fixture.receipt.id,
+        occurredAt: new Date()
+      }),
+      (error) => {
+        assert.equal(error?.message, 'RECEIPT_ALLOCATION_REBUILD_CONCURRENT_MODIFICATION');
+        assert.equal(error?.code, 'RECEIPT_ALLOCATION_REBUILD_CONCURRENT_MODIFICATION');
+        return true;
+      }
+    );
+    await rebuildClient.query('ROLLBACK');
+  } finally {
+    await lockClient.query('ROLLBACK').catch(() => undefined);
+    lockClient.release();
+    rebuildClient.release();
+  }
+
+  const afterFailure = normalizeAllocationsForRebuildComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+  assert.deepEqual(afterFailure, before);
+
+  await runInTransaction(db, (client) =>
+    rebuildReceiptAllocations({
+      client,
+      tenantId,
+      receiptId: fixture.receipt.id,
+      occurredAt: new Date()
+    })
+  );
+
+  assert.deepEqual(
+    normalizeAllocationsForStateComparison(await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)),
+    beforeState
+  );
 });
 
 test('receipt QC aborts without authoritative side effects when allocation rebuild cannot validate', { timeout: 240000 }, async () => {
