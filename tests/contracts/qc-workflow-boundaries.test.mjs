@@ -265,6 +265,79 @@ test('receipt QC characterization preserves allocation movement, lifecycle trans
   assert.equal(Number(ncrRes.rows[0]?.count ?? 0), 1);
 });
 
+test('receipt QC rebuilds missing allocation state before mutating receipt allocations', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-allocation-rebuild',
+    tenantName: 'Contract QC Allocation Rebuild'
+  });
+  const { tenantId, pool: db, topology } = harness;
+  const fixture = await createReceiptInQa(harness, { quantity: 3 });
+
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+
+  const result = await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'accept',
+      quantity: 2,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `qc-receipt-rebuild:${randomUUID()}` }
+  );
+
+  const allocations = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
+  assert.equal(result.replayed, false);
+  assert.equal(allocations.length, 2);
+  assert.equal(allocations.find((allocation) => allocation.status === 'AVAILABLE')?.locationId, topology.defaults.SELLABLE.id);
+  assert.equal(allocations.reduce((total, allocation) => total + allocation.quantity, 0), 3);
+});
+
+test('receipt QC aborts without authoritative side effects when allocation rebuild cannot validate', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-allocation-unrecoverable',
+    tenantName: 'Contract QC Allocation Unrecoverable'
+  });
+  const { tenantId, pool: db } = harness;
+  const fixture = await createReceiptInQa(harness, { quantity: 3 });
+
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+  await db.query(
+    `UPDATE purchase_order_receipt_lines
+        SET quantity_received = 99
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+
+  await assert.rejects(
+    createQcEvent(
+      tenantId,
+      {
+        purchaseOrderReceiptLineId: fixture.receiptLineId,
+        eventType: 'accept',
+        quantity: 1,
+        uom: 'each',
+        actorType: 'system'
+      },
+      { idempotencyKey: `qc-receipt-unrecoverable:${randomUUID()}` }
+    ),
+    /RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT/
+  );
+  assert.equal(await countQcEventsForSource(db, tenantId, 'purchase_order_receipt_line_id', fixture.receiptLineId), 0);
+});
+
 test('receipt QC characterization preserves receipt status and UOM eligibility guards', { timeout: 180000 }, async () => {
   const harness = await createServiceHarness({
     tenantPrefix: 'contract-qc-receipt-guards',

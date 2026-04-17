@@ -33,9 +33,10 @@ import {
 } from './inbound/receivingAggregations';
 import {
   RECEIPT_ALLOCATION_STATUSES,
-  insertReceiptAllocations,
-  loadReceiptAllocationsByLine
+  consumeReceiptAllocations,
+  type ValidatedReceiptAllocationMutationContext
 } from '../domain/receipts/receiptAllocationModel';
+import { validateOrRebuildReceiptAllocationsForMutation } from '../domain/receipts/receiptAllocationRebuilder';
 import { resolveInventoryBin } from '../domain/receipts/receiptBinModel';
 import { completePutawayCommand } from '../domain/receipts/receiptCommands';
 
@@ -287,77 +288,35 @@ async function moveReceiptAllocationsToAvailable(params: {
   occurredAt: Date;
   pendingLines: PutawayLineRow[];
   destinationMovementLineIdByPutawayLineId: Map<string, string>;
+  allocationContextByReceiptLineId: Map<string, ValidatedReceiptAllocationMutationContext>;
 }) {
-  const allocationsByLine = await loadReceiptAllocationsByLine(
-    params.client,
-    params.tenantId,
-    params.pendingLines.map((line) => line.purchase_order_receipt_line_id)
-  );
-
   for (const line of params.pendingLines) {
-    let remaining = roundQuantity(toNumber(line.quantity_planned ?? 0));
-    const qaAllocations = (allocationsByLine.get(line.purchase_order_receipt_line_id) ?? [])
-      .filter(
-        (allocation) =>
-          allocation.status === RECEIPT_ALLOCATION_STATUSES.QA
-          && allocation.binId === line.from_bin_id
-      )
-      .sort((left, right) => String(left.id ?? '').localeCompare(String(right.id ?? '')));
-    const inserts: Array<{
-      receiptId: string;
-      receiptLineId: string;
-      warehouseId: string;
-      locationId: string;
-      binId: string;
-      inventoryMovementId: string;
-      inventoryMovementLineId: string;
-      costLayerId: string | null;
-      quantity: number;
-      status: 'AVAILABLE';
-    }> = [];
-
-    for (const allocation of qaAllocations) {
-      if (remaining <= 1e-6) {
-        break;
-      }
-      const consumed = Math.min(remaining, allocation.quantity);
-      remaining = roundQuantity(remaining - consumed);
-      const updatedQty = roundQuantity(allocation.quantity - consumed);
-      if (updatedQty <= 1e-6) {
-        await params.client.query(
-          `DELETE FROM receipt_allocations
-            WHERE id = $1
-              AND tenant_id = $2`,
-          [allocation.id, params.tenantId]
-        );
-      } else {
-        await params.client.query(
-          `UPDATE receipt_allocations
-              SET quantity = $3,
-                  updated_at = $4
-            WHERE id = $1
-              AND tenant_id = $2`,
-          [allocation.id, params.tenantId, updatedQty, params.occurredAt]
-        );
-      }
-      inserts.push({
-        receiptId: allocation.receiptId,
-        receiptLineId: allocation.receiptLineId,
-        warehouseId: allocation.warehouseId,
-        locationId: line.to_location_id,
-        binId: line.to_bin_id,
-        inventoryMovementId: params.movementId,
-        inventoryMovementLineId: params.destinationMovementLineIdByPutawayLineId.get(line.id) ?? '',
-        costLayerId: allocation.costLayerId,
-        quantity: consumed,
-        status: RECEIPT_ALLOCATION_STATUSES.AVAILABLE
+    const allocationContext = params.allocationContextByReceiptLineId.get(line.purchase_order_receipt_line_id);
+    if (!allocationContext) {
+      throw new Error('PUTAWAY_ALLOCATION_VALIDATION_REQUIRED');
+    }
+    try {
+      await consumeReceiptAllocations({
+        client: params.client,
+        tenantId: params.tenantId,
+        context: allocationContext,
+        receiptLineId: line.purchase_order_receipt_line_id,
+        quantity: roundQuantity(toNumber(line.quantity_planned ?? 0)),
+        sourceStatus: RECEIPT_ALLOCATION_STATUSES.QA,
+        sourceBinId: line.from_bin_id,
+        destinationLocationId: line.to_location_id,
+        destinationBinId: line.to_bin_id,
+        movementId: params.movementId,
+        movementLineId: params.destinationMovementLineIdByPutawayLineId.get(line.id) ?? null,
+        occurredAt: params.occurredAt,
+        destinationStatus: RECEIPT_ALLOCATION_STATUSES.AVAILABLE
       });
+    } catch (error) {
+      if ((error as Error).message === 'RECEIPT_ALLOCATION_PRECHECK_FAILED') {
+        throw new Error('PUTAWAY_ALLOCATION_INSUFFICIENT_QA');
+      }
+      throw error;
     }
-
-    if (remaining > 1e-6) {
-      throw new Error('PUTAWAY_ALLOCATION_INSUFFICIENT_QA');
-    }
-    await insertReceiptAllocations(params.client, params.tenantId, inserts, params.occurredAt);
   }
 }
 
@@ -670,7 +629,35 @@ export async function postPutaway(
       const now = new Date();
       const receiptLineIds = pendingLines.map((line) => line.purchase_order_receipt_line_id);
       await assertReceiptLinesNotVoided(tenantId, receiptLineIds);
-      const contexts = await loadReceiptLineContexts(tenantId, receiptLineIds);
+      const contexts = await loadReceiptLineContexts(tenantId, receiptLineIds, client);
+      const allocationContextByReceiptLineId = new Map<string, ValidatedReceiptAllocationMutationContext>();
+      const linesByReceiptId = new Map<string, PutawayLineRow[]>();
+      for (const line of pendingLines) {
+        const receiptId = contexts.get(line.purchase_order_receipt_line_id)?.receiptId;
+        if (!receiptId) {
+          throw new Error('PUTAWAY_CONTEXT_MISSING');
+        }
+        const receiptLines = linesByReceiptId.get(receiptId) ?? [];
+        receiptLines.push(line);
+        linesByReceiptId.set(receiptId, receiptLines);
+      }
+      for (const [receiptId, lines] of linesByReceiptId.entries()) {
+        const allocationContext = await validateOrRebuildReceiptAllocationsForMutation({
+          client,
+          tenantId,
+          receiptId,
+          occurredAt: now,
+          requirements: lines.map((line) => ({
+            receiptLineId: line.purchase_order_receipt_line_id,
+            requiredStatus: RECEIPT_ALLOCATION_STATUSES.QA,
+            requiredBinId: line.from_bin_id,
+            requiredQuantity: roundQuantity(toNumber(line.quantity_planned ?? 0))
+          }))
+        });
+        for (const line of lines) {
+          allocationContextByReceiptLineId.set(line.purchase_order_receipt_line_id, allocationContext);
+        }
+      }
       const qcBreakdown = await loadQcBreakdown(tenantId, receiptLineIds);
       const totals = await loadPutawayTotals(tenantId, receiptLineIds);
 
@@ -915,7 +902,8 @@ export async function postPutaway(
         movementId: movement.movementId,
         occurredAt: now,
         pendingLines,
-        destinationMovementLineIdByPutawayLineId
+        destinationMovementLineIdByPutawayLineId,
+        allocationContextByReceiptLineId
       });
 
       await client.query(

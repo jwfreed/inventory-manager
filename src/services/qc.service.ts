@@ -22,9 +22,10 @@ import { buildReplayCorruptionError } from '../modules/platform/application/inve
 import { withInventoryTransaction } from '../modules/platform/application/withInventoryTransaction';
 import {
   RECEIPT_ALLOCATION_STATUSES,
-  insertReceiptAllocations,
-  loadReceiptAllocationsByLine
+  consumeReceiptAllocations,
+  type ValidatedReceiptAllocationMutationContext
 } from '../domain/receipts/receiptAllocationModel';
+import { validateOrRebuildReceiptAllocationsForMutation } from '../domain/receipts/receiptAllocationRebuilder';
 import { resolveInventoryBin } from '../domain/receipts/receiptBinModel';
 import { evaluateQcCommand } from '../domain/receipts/receiptCommands';
 
@@ -69,7 +70,9 @@ type QcPreparedWorkflowState = {
 
 type ReceiptQcWorkflowState = QcPreparedWorkflowState & {
   sourceType: 'receipt';
+  receiptId: string;
   receiptLineId: string;
+  allocationContext: ValidatedReceiptAllocationMutationContext;
 };
 
 type WorkOrderQcWorkflowState = QcPreparedWorkflowState & {
@@ -125,54 +128,30 @@ async function moveReceiptAllocationsFromQa(params: {
   movementLineId: string;
   occurredAt: Date;
   destinationStatus: typeof RECEIPT_ALLOCATION_STATUSES[keyof typeof RECEIPT_ALLOCATION_STATUSES];
+  allocationContext: ValidatedReceiptAllocationMutationContext;
 }) {
-  const allocationsByLine = await loadReceiptAllocationsByLine(params.client, params.tenantId, [params.receiptLineId]);
-  let remaining = roundQuantity(params.quantity);
-  const qaAllocations = (allocationsByLine.get(params.receiptLineId) ?? [])
-    .filter(
-      (allocation) =>
-        allocation.status === RECEIPT_ALLOCATION_STATUSES.QA
-        && (!params.sourceBinId || allocation.binId === params.sourceBinId)
-    )
-    .sort((left, right) => String(left.id ?? '').localeCompare(String(right.id ?? '')));
-  const inserts: any[] = [];
-  for (const allocation of qaAllocations) {
-    if (remaining <= 1e-6) break;
-    const consumed = Math.min(remaining, allocation.quantity);
-    remaining = roundQuantity(remaining - consumed);
-    const updatedQty = roundQuantity(allocation.quantity - consumed);
-    if (updatedQty <= 1e-6) {
-      await params.client.query(`DELETE FROM receipt_allocations WHERE id = $1 AND tenant_id = $2`, [
-        allocation.id,
-        params.tenantId
-      ]);
-    } else {
-      await params.client.query(
-        `UPDATE receipt_allocations
-            SET quantity = $3,
-                updated_at = $4
-          WHERE id = $1
-            AND tenant_id = $2`,
-        [allocation.id, params.tenantId, updatedQty, params.occurredAt]
-      );
-    }
-    inserts.push({
-      receiptId: allocation.receiptId,
-      receiptLineId: allocation.receiptLineId,
-      warehouseId: allocation.warehouseId,
-      locationId: params.destinationLocationId,
-      binId: params.destinationBinId,
-      inventoryMovementId: params.movementId,
-      inventoryMovementLineId: params.movementLineId,
-      costLayerId: allocation.costLayerId,
-      quantity: consumed,
-      status: params.destinationStatus
+  try {
+    await consumeReceiptAllocations({
+      client: params.client,
+      tenantId: params.tenantId,
+      context: params.allocationContext,
+      receiptLineId: params.receiptLineId,
+      quantity: params.quantity,
+      sourceStatus: RECEIPT_ALLOCATION_STATUSES.QA,
+      sourceBinId: params.sourceBinId,
+      destinationLocationId: params.destinationLocationId,
+      destinationBinId: params.destinationBinId,
+      movementId: params.movementId,
+      movementLineId: params.movementLineId,
+      occurredAt: params.occurredAt,
+      destinationStatus: params.destinationStatus
     });
+  } catch (error) {
+    if ((error as Error).message === 'RECEIPT_ALLOCATION_PRECHECK_FAILED') {
+      throw new Error('QC_RECEIPT_ALLOCATION_INSUFFICIENT_QA');
+    }
+    throw error;
   }
-  if (remaining > 1e-6) {
-    throw new Error('QC_RECEIPT_ALLOCATION_INSUFFICIENT_QA');
-  }
-  await insertReceiptAllocations(params.client, params.tenantId, inserts, params.occurredAt);
 }
 
 async function resolveWarehouseRootIdByRef(
@@ -643,6 +622,7 @@ async function prepareReceiptQcWorkflowState(
     `SELECT prl.id,
             prl.uom,
             prl.quantity_received,
+            prl.purchase_order_receipt_id,
             por.received_to_location_id,
             por.status AS receipt_status,
             pol.item_id
@@ -685,12 +665,28 @@ async function prepareReceiptQcWorkflowState(
     itemId: line.item_id,
     locationId: line.received_to_location_id
   });
+  const allocationContext = await validateOrRebuildReceiptAllocationsForMutation({
+    client: params.client,
+    tenantId: params.tenantId,
+    receiptId: line.purchase_order_receipt_id,
+    requirements: [
+      {
+        receiptLineId,
+        requiredStatus: RECEIPT_ALLOCATION_STATUSES.QA,
+        requiredBinId: workflowState.sourceBinId,
+        requiredQuantity: params.enteredQty
+      }
+    ],
+    occurredAt: params.occurredAt
+  });
 
   return {
     ...workflowState,
     sourceType: 'receipt',
     sourceId: receiptLineId,
-    receiptLineId
+    receiptId: line.purchase_order_receipt_id,
+    receiptLineId,
+    allocationContext
   };
 }
 
@@ -852,6 +848,7 @@ async function applyReceiptQcSideEffects(params: {
     movementId: params.transferExecution.result.movementId,
     movementLineId,
     occurredAt: params.occurredAt,
+    allocationContext: params.workflowState.allocationContext,
     destinationStatus:
       params.data.eventType === 'accept'
         ? RECEIPT_ALLOCATION_STATUSES.AVAILABLE

@@ -12,10 +12,15 @@ import {
 import { receiptCloseSchema, poCloseSchema } from '../schemas/closeout.schema';
 import { mapPurchaseOrder } from './purchaseOrders.service';
 import {
+  RECEIPT_ALLOCATION_STATUSES,
+  consumeReceiptAllocations,
+  insertReceiptAllocations,
   loadReceiptAllocationsByLine,
   summarizeReceiptAllocations,
-  type ReceiptAllocation
+  type ReceiptAllocation,
+  type ValidatedReceiptAllocationMutationContext
 } from '../domain/receipts/receiptAllocationModel';
+import { validateOrRebuildReceiptAllocationsForMutation } from '../domain/receipts/receiptAllocationRebuilder';
 import { assertReceiptCloseoutAllowed } from '../domain/receipts/receiptCloseoutPolicy';
 
 type ReceiptCloseInput = z.infer<typeof receiptCloseSchema>;
@@ -287,6 +292,7 @@ async function applyAdjustmentResolution(params: {
   discrepancy: ReconciliationDiscrepancyRow;
   line: { id: string; item_id: string; uom: string };
   allocations: ReceiptAllocation[];
+  allocationContext: ValidatedReceiptAllocationMutationContext;
   actorType?: 'user' | 'system';
   actorId?: string | null;
   notes?: string | null;
@@ -360,53 +366,46 @@ async function applyAdjustmentResolution(params: {
   }
 
   if (delta > 0) {
-    await params.client.query(
-      `INSERT INTO receipt_allocations (
-          id, tenant_id, purchase_order_receipt_id, purchase_order_receipt_line_id,
-          warehouse_id, location_id, bin_id, inventory_movement_id, inventory_movement_line_id,
-          cost_layer_id, quantity, status, created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,
+    await insertReceiptAllocations(
+      params.client,
+      params.tenantId,
       [
-        uuidv4(),
-        params.tenantId,
-        params.receiptId,
-        params.line.id,
-        warehouseId,
-        locationId,
-        binId,
-        movement.movementId,
-        movementLineId,
-        null,
-        delta,
-        allocationStatus,
-        params.occurredAt
-      ]
+        {
+          id: uuidv4(),
+          receiptId: params.receiptId,
+          receiptLineId: params.line.id,
+          warehouseId,
+          locationId,
+          binId,
+          inventoryMovementId: movement.movementId,
+          inventoryMovementLineId: movementLineId,
+          costLayerId: null,
+          quantity: delta,
+          status: allocationStatus
+        }
+      ],
+      params.occurredAt,
+      params.allocationContext
     );
   } else {
-    let remaining = roundQuantity(Math.abs(delta));
-    for (const allocation of matchingAllocations) {
-      if (remaining <= 1e-6) break;
-      const consumed = Math.min(remaining, allocation.quantity);
-      remaining = roundQuantity(remaining - consumed);
-      const updatedQty = roundQuantity(allocation.quantity - consumed);
-      if (updatedQty <= 1e-6) {
-        await params.client.query(
-          `DELETE FROM receipt_allocations WHERE id = $1 AND tenant_id = $2`,
-          [allocation.id, params.tenantId]
-        );
-      } else {
-        await params.client.query(
-          `UPDATE receipt_allocations
-              SET quantity = $3,
-                  updated_at = $4
-            WHERE id = $1
-              AND tenant_id = $2`,
-          [allocation.id, params.tenantId, updatedQty, params.occurredAt]
-        );
+    try {
+      await consumeReceiptAllocations({
+        client: params.client,
+        tenantId: params.tenantId,
+        context: params.allocationContext,
+        receiptLineId: params.line.id,
+        quantity: Math.abs(delta),
+        sourceStatus: allocationStatus,
+        sourceBinId: binId,
+        movementId: movement.movementId,
+        movementLineId,
+        occurredAt: params.occurredAt
+      });
+    } catch (error) {
+      if ((error as Error).message === 'RECEIPT_ALLOCATION_PRECHECK_FAILED') {
+        throw new Error('RECEIPT_RECONCILIATION_ADJUSTMENT_INSUFFICIENT_ALLOCATION');
       }
-    }
-    if (remaining > 1e-6) {
-      throw new Error('RECEIPT_RECONCILIATION_ADJUSTMENT_INSUFFICIENT_ALLOCATION');
+      throw error;
     }
   }
 
@@ -529,8 +528,15 @@ export async function closePurchaseOrderReceipt(
       [receiptId, tenantId]
     );
     const lineIds = linesResult.rows.map((line: any) => line.id);
-    const allocationsByLine = await loadReceiptAllocationsByLine(client, tenantId, lineIds);
     const now = new Date();
+    const allocationContext = await validateOrRebuildReceiptAllocationsForMutation({
+      client,
+      tenantId,
+      receiptId,
+      occurredAt: now,
+      requirements: lineIds.map((receiptLineId: string) => ({ receiptLineId }))
+    });
+    let allocationsByLine = await loadReceiptAllocationsByLine(client, tenantId, lineIds);
 
     for (const line of linesResult.rows) {
       const receivedQty = roundQuantity(toNumber(line.quantity_received ?? 0));
@@ -612,11 +618,13 @@ export async function closePurchaseOrderReceipt(
             discrepancy,
             line,
             allocations: allocationsByLine.get(line.id) ?? [],
+            allocationContext,
             actorType: data.actorType,
             actorId: data.actorId ?? null,
             notes: resolution.notes ?? data.notes ?? null,
             occurredAt: now
           });
+          allocationsByLine = await loadReceiptAllocationsByLine(client, tenantId, lineIds);
         }
         await recordResolution({
           client,

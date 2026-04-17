@@ -14,6 +14,7 @@
     "tests/architecture/ledger-migration-lint.test.mjs",
     "tests/architecture/no-correctness-compromise-guards.test.mjs",
     "tests/architecture/no-src-imports-tests-guard.test.mjs",
+    "tests/architecture/receipt-allocation-authority-guard.test.mjs",
     "tests/architecture/test-tier-contract.test.mjs",
     "tests/db/inventory-invariants-scope-hardening.test.mjs",
     "tests/db/inventory-invariants.test.mjs",

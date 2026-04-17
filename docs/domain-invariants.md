@@ -80,6 +80,14 @@ The system should prefer movement deltas and append-only history over silent bal
 - Discrepancy handling follows a workflow: detect, isolate, investigate, then adjust or restore.
 - Reason codes are required for adjustments, write-offs, overrides, and unblock actions.
 
+## Receipt Allocation Operational State
+
+- `receipt_allocations` is non-authoritative operational support state. It is required for correct receipt workflow execution but must never be used as the source of truth for quantity correctness.
+- Receipt allocation rows are not optional during QC, putaway, reconciliation, or closeout. Workflows must validate allocation conservation, movement traceability, and workflow-specific bin/status sufficiency before mutating allocations or proceeding with a state transition that depends on them.
+- Receipt allocations are not projection state and must not be rebuilt by projection replay. They are maintained transactionally as side effects of receipt, QC, putaway, and reconciliation workflow transactions.
+- If receipt allocations disagree with authoritative receipt lines, ledger movements, QC events, putaway lines, or reconciliation records, the authoritative sources win. The workflow must rebuild and re-validate inside the active transaction, or fail hard with an explicit allocation-drift or authoritative-data error.
+- Background checks may report receipt allocation drift, but they must not automatically rebuild receipt allocations.
+
 ## Location, UOM, And Identity Rules
 
 - SKU and location identity must remain tied to inventory records at all times.

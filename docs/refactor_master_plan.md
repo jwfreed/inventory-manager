@@ -40,6 +40,7 @@ This section establishes the authoritative system model that all refactoring wor
 > **Current-State Assumption** = observed or schema-enforced behavior, not guaranteed to be universally applied across all workflows. **Target-State Invariant** = required outcome; the refactor must achieve and preserve this.
 
 - **Target-State Invariant:** Authoritative inventory state is stored exclusively in ledger tables (`inventory_movements`, `inventory_movement_lines`). No other table is the source of truth for inventory correctness.
+- **Target-State Invariant:** `receipt_allocations` is operational support state: non-authoritative, not optional during receipt workflow execution, not projection-owned, and maintained transactionally by receipt/QC/putaway/reconciliation workflows.
 - **Current-State Assumption:** Ledger tables are append-only (enforced by schema). This constraint must not be weakened.
 - **Target-State Invariant:** Derived state (e.g., `inventory_balance`) is a projection only. It must never be used as the source of truth for correctness decisions.
 - **Target-State Invariant:** No workflow may read a projection to validate a mutation. Validation must use authoritative ledger state or explicit domain invariants.

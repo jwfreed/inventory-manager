@@ -34,6 +34,7 @@ import {
   RECEIPT_ALLOCATION_STATUSES,
   assertReceiptAllocationTraceability,
   buildReceiptPostingIntegrity,
+  createInitialReceiptAllocationWriteContext,
   insertReceiptAllocations,
   loadReceiptAllocationsByLine
 } from '../domain/receipts/receiptAllocationModel';
@@ -677,7 +678,19 @@ export async function createPurchaseOrderReceipt(
         status: RECEIPT_ALLOCATION_STATUSES.QA
       }));
       assertReceiptAllocationTraceability(receiptAllocations);
-      await insertReceiptAllocations(client, tenantId, receiptAllocations, now);
+      await insertReceiptAllocations(
+        client,
+        tenantId,
+        receiptAllocations,
+        now,
+        createInitialReceiptAllocationWriteContext({
+          tenantId,
+          expectedQtyByReceiptLineId: new Map(
+            plannedReceiptLines.map((line) => [line.receiptLineId, line.canonicalFields.quantityDeltaCanonical])
+          ),
+          allocations: receiptAllocations
+        })
+      );
 
       const traceLines = buildReceiptPostingTrace(
         plannedReceiptLines.map((line) => ({
