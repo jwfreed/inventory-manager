@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createServiceHarness } from '../helpers/service-harness.mjs';
+import { buildMovementFixtureHash } from '../helpers/movementFixture.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -10,6 +11,7 @@ require('tsconfig-paths/register');
 
 const { createQcEvent } = require('../../src/services/qc.service.ts');
 const { closePurchaseOrderReceipt } = require('../../src/services/closeout.service.ts');
+const { relocateTransferCostLayersInTx } = require('../../src/services/transferCosting.service.ts');
 const {
   rebuildReceiptAllocations,
   validateOrRebuildReceiptAllocationsForMutation
@@ -55,6 +57,25 @@ async function loadReceiptAllocations(db, tenantId, receiptLineId) {
         AND purchase_order_receipt_line_id = $2
       ORDER BY created_at ASC, id ASC`,
     [tenantId, receiptLineId]
+  );
+  return res.rows.map((row) => ({
+    ...row,
+    quantity: Number(row.quantity)
+  }));
+}
+
+async function loadMovementLines(db, tenantId, movementId) {
+  const res = await db.query(
+    `SELECT id,
+            location_id AS "locationId",
+            COALESCE(quantity_delta_canonical, quantity_delta)::numeric AS quantity,
+            reason_code AS "reasonCode",
+            line_notes AS "lineNotes"
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+      ORDER BY created_at ASC, id ASC`,
+    [tenantId, movementId]
   );
   return res.rows.map((row) => ({
     ...row,
@@ -122,6 +143,251 @@ async function loadDefaultBinId(db, tenantId, locationId) {
   );
   assert.equal(res.rowCount, 1);
   return res.rows[0].id;
+}
+
+async function createPostedDuplicateShapePutawayFixture(harness, options = {}) {
+  const quantityPerLine = options.quantityPerLine ?? 2;
+  const lineNumbers = options.lineNumbers ?? [1, 2];
+  const inputOrder = options.inputOrder ?? [0, 1];
+  const uom = options.uom ?? 'each';
+  const missingNoteLineNumbers = new Set(options.missingNoteLineNumbers ?? []);
+  const fixture = await createReceiptInQa(harness, {
+    quantity: quantityPerLine * lineNumbers.length,
+    uom
+  });
+  const initialAllocationResult = await harness.pool.query(
+    `SELECT warehouse_id AS "warehouseId",
+            cost_layer_id AS "costLayerId"
+       FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2
+      ORDER BY created_at ASC, id ASC
+      LIMIT 1`,
+    [harness.tenantId, fixture.receiptLineId]
+  );
+  assert.equal(initialAllocationResult.rowCount, 1);
+  const destination = await harness.createWarehouseWithSellable(`PUT-${randomUUID().slice(0, 6)}`);
+  const sourceBinId = await loadDefaultBinId(harness.pool, harness.tenantId, harness.topology.defaults.QA.id);
+  const destinationBinId = await loadDefaultBinId(harness.pool, harness.tenantId, destination.sellable.id);
+  const putawayId = randomUUID();
+  const baseTime = new Date('2026-04-17T00:00:00.000Z');
+  const movementLines = [];
+  const positiveLineIdByLineNumber = new Map();
+  const transferPairsByLineNumber = new Map();
+  for (const [offset, lineIndex] of inputOrder.entries()) {
+    const lineNumber = lineNumbers[lineIndex];
+    const lineNotes = missingNoteLineNumbers.has(lineNumber)
+      ? `Putaway ${putawayId} line missing`
+      : `Putaway ${putawayId} line ${lineNumber}`;
+    const createdAt = new Date(baseTime.getTime() + offset);
+    const outLineId = randomUUID();
+    const inLineId = randomUUID();
+    movementLines.push(
+      {
+        id: outLineId,
+        itemId: fixture.item.id,
+        locationId: harness.topology.defaults.QA.id,
+        quantityDelta: -quantityPerLine,
+        uom,
+        quantityDeltaEntered: -quantityPerLine,
+        uomEntered: uom,
+        quantityDeltaCanonical: -quantityPerLine,
+        canonicalUom: uom,
+        uomDimension: 'count',
+        reasonCode: 'putaway',
+        lineNotes,
+        createdAt
+      },
+      {
+        id: inLineId,
+        itemId: fixture.item.id,
+        locationId: destination.sellable.id,
+        quantityDelta: quantityPerLine,
+        uom,
+        quantityDeltaEntered: quantityPerLine,
+        uomEntered: uom,
+        quantityDeltaCanonical: quantityPerLine,
+        canonicalUom: uom,
+        uomDimension: 'count',
+        reasonCode: 'putaway',
+        lineNotes,
+        createdAt
+      }
+    );
+    positiveLineIdByLineNumber.set(lineNumber, inLineId);
+    transferPairsByLineNumber.set(lineNumber, {
+      itemId: fixture.item.id,
+      sourceLocationId: harness.topology.defaults.QA.id,
+      destinationLocationId: destination.sellable.id,
+      outLineId,
+      inLineId,
+      quantity: quantityPerLine,
+      uom
+    });
+  }
+  const movementId = randomUUID();
+  const movementHash = buildMovementFixtureHash({
+    tenantId: harness.tenantId,
+    movementType: 'transfer',
+    occurredAt: baseTime,
+    sourceType: 'putaway',
+    sourceId: putawayId,
+    lines: movementLines
+  });
+  await runInTransaction(harness.pool, async (client) => {
+    await client.query(
+      `INSERT INTO inventory_movements (
+          id, tenant_id, movement_type, status, external_ref, source_type, source_id,
+          idempotency_key, occurred_at, posted_at, notes, metadata,
+          reversal_of_movement_id, reversed_by_movement_id, reversal_reason,
+          movement_deterministic_hash, created_at, updated_at
+       ) VALUES (
+          $1, $2, 'transfer', 'posted', $3, 'putaway', $4,
+          NULL, $5, $5, $6, NULL,
+          NULL, NULL, NULL,
+          $7, $5, $5
+       )`,
+      [
+        movementId,
+        harness.tenantId,
+        `putaway:${putawayId}`,
+        putawayId,
+        baseTime,
+        `Putaway ${putawayId}`,
+        movementHash
+      ]
+    );
+    for (const line of movementLines) {
+      await client.query(
+        `INSERT INTO inventory_movement_lines (
+            id, tenant_id, movement_id, item_id, location_id,
+            quantity_delta, uom, quantity_delta_entered, uom_entered,
+            quantity_delta_canonical, canonical_uom, uom_dimension,
+            unit_cost, extended_cost, reason_code, line_notes, created_at
+         ) VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9,
+            $10, $11, $12,
+            NULL, NULL, $13, $14, $15
+         )`,
+        [
+          line.id,
+          harness.tenantId,
+          movementId,
+          line.itemId,
+          line.locationId,
+          line.quantityDelta,
+          line.uom,
+          line.quantityDeltaEntered,
+          line.uomEntered,
+          line.quantityDeltaCanonical,
+          line.canonicalUom,
+          line.uomDimension,
+          line.reasonCode,
+          line.lineNotes,
+          line.createdAt
+        ]
+      );
+    }
+    await relocateTransferCostLayersInTx({
+      client,
+      tenantId: harness.tenantId,
+      transferMovementId: movementId,
+      occurredAt: baseTime,
+      notes: `Putaway ${putawayId}`,
+      pairs: lineNumbers.map((lineNumber) => transferPairsByLineNumber.get(lineNumber))
+    });
+    await client.query(
+      `INSERT INTO putaways (
+          id, tenant_id, status, source_type, purchase_order_receipt_id,
+          inventory_movement_id, notes, created_at, updated_at, completed_at, putaway_number
+       ) VALUES ($1, $2, 'completed', 'purchase_order_receipt', $3, $4, $5, $6, $6, $6, $7)`,
+      [
+        putawayId,
+        harness.tenantId,
+        fixture.receipt.id,
+        movementId,
+        `Putaway ${putawayId}`,
+        baseTime,
+        `P-FIX-${randomUUID().slice(0, 6)}`
+      ]
+    );
+    for (const [offset, lineIndex] of inputOrder.entries()) {
+      const lineNumber = lineNumbers[lineIndex];
+      const lineTimestamp = new Date(baseTime.getTime() + offset);
+      await client.query(
+        `INSERT INTO putaway_lines (
+            id, tenant_id, putaway_id, purchase_order_receipt_line_id, line_number,
+            item_id, uom, quantity_planned, quantity_moved,
+            from_location_id, from_bin_id, to_location_id, to_bin_id,
+            inventory_movement_id, status, notes, created_at, updated_at
+         ) VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $8,
+            $9, $10, $11, $12,
+            $13, 'completed', $14, $15, $15
+         )`,
+        [
+          randomUUID(),
+          harness.tenantId,
+          putawayId,
+          fixture.receiptLineId,
+          lineNumber,
+          fixture.item.id,
+          uom,
+          quantityPerLine,
+          harness.topology.defaults.QA.id,
+          sourceBinId,
+          destination.sellable.id,
+          destinationBinId,
+          movementId,
+          `Putaway fixture ${putawayId} line ${lineNumber}`,
+          lineTimestamp
+        ]
+      );
+    }
+    await client.query(
+      `DELETE FROM receipt_allocations
+        WHERE tenant_id = $1
+          AND purchase_order_receipt_line_id = $2`,
+      [harness.tenantId, fixture.receiptLineId]
+    );
+    for (const lineNumber of lineNumbers) {
+      await client.query(
+        `INSERT INTO receipt_allocations (
+            id, tenant_id, purchase_order_receipt_id, purchase_order_receipt_line_id,
+            warehouse_id, location_id, bin_id, inventory_movement_id, inventory_movement_line_id,
+            cost_layer_id, quantity, status, created_at, updated_at
+         ) VALUES (
+            $1, $2, $3, $4,
+            $5, $6, $7, $8, $9,
+            $10, $11, 'AVAILABLE', $12, $12
+         )`,
+        [
+          randomUUID(),
+          harness.tenantId,
+          fixture.receipt.id,
+          fixture.receiptLineId,
+          destination.warehouse.id,
+          destination.sellable.id,
+          destinationBinId,
+          movementId,
+          positiveLineIdByLineNumber.get(lineNumber),
+          initialAllocationResult.rows[0].costLayerId,
+          quantityPerLine,
+          new Date(baseTime.getTime() + lineNumber)
+        ]
+      );
+    }
+  });
+  return {
+    ...fixture,
+    destination,
+    putaway: {
+      id: putawayId,
+      inventoryMovementId: movementId
+    }
+  };
 }
 
 async function runInTransaction(db, callback) {
@@ -459,6 +725,159 @@ test('receipt allocation rebuild is deterministic and idempotent', { timeout: 24
   );
 
   assert.deepEqual(second, first);
+});
+
+test('batched putaway with duplicate-shape positive movement lines rebuilds without ambiguity', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-putaway-duplicate-shape',
+    tenantName: 'Contract Putaway Duplicate Shape'
+  });
+  const { tenantId, pool: db } = harness;
+  const fixture = await createPostedDuplicateShapePutawayFixture(harness);
+
+  const movementLines = await loadMovementLines(db, tenantId, fixture.putaway.inventoryMovementId);
+  const positiveLines = movementLines.filter((line) => line.quantity > 0);
+  assert.equal(positiveLines.length, 2);
+  assert.equal(new Set(positiveLines.map((line) => line.locationId)).size, 1);
+  assert.equal(new Set(positiveLines.map((line) => line.quantity)).size, 1);
+
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+
+  await runInTransaction(db, (client) =>
+    rebuildReceiptAllocations({
+      client,
+      tenantId,
+      receiptId: fixture.receipt.id,
+      occurredAt: new Date()
+    })
+  );
+
+  const rebuilt = normalizeAllocationsForStateComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+  assert.equal(rebuilt.length, 2);
+  assert.deepEqual(rebuilt.map((allocation) => allocation.quantity), [2, 2]);
+  assert.ok(rebuilt.every((allocation) => allocation.status === 'AVAILABLE'));
+});
+
+test('receipt allocation rebuild preserves state after duplicate-shape batched putaway', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-putaway-rebuild-equivalence',
+    tenantName: 'Contract Putaway Rebuild Equivalence'
+  });
+  const { tenantId, pool: db } = harness;
+  const fixture = await createPostedDuplicateShapePutawayFixture(harness);
+
+  const before = normalizeAllocationsForStateComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+
+  await runInTransaction(db, (client) =>
+    rebuildReceiptAllocations({
+      client,
+      tenantId,
+      receiptId: fixture.receipt.id,
+      occurredAt: new Date()
+    })
+  );
+
+  const after = normalizeAllocationsForStateComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+  assert.deepEqual(after, before);
+});
+
+test('receipt allocation rebuild remains deterministic for duplicate-shape putaway under varied input ordering', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-putaway-input-order',
+    tenantName: 'Contract Putaway Input Order'
+  });
+  const { tenantId, pool: db } = harness;
+  const fixture = await createPostedDuplicateShapePutawayFixture(harness, {
+    lineNumbers: [2, 1],
+    inputOrder: [0, 1]
+  });
+
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+  await runInTransaction(db, (client) =>
+    rebuildReceiptAllocations({
+      client,
+      tenantId,
+      receiptId: fixture.receipt.id,
+      occurredAt: new Date('2026-04-17T00:00:00.000Z')
+    })
+  );
+  const first = normalizeAllocationsForRebuildComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+  await runInTransaction(db, (client) =>
+    rebuildReceiptAllocations({
+      client,
+      tenantId,
+      receiptId: fixture.receipt.id,
+      occurredAt: new Date('2026-04-17T00:00:00.000Z')
+    })
+  );
+  const second = normalizeAllocationsForRebuildComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+
+  assert.deepEqual(second, first);
+});
+
+test('receipt allocation rebuild fails explicitly when putaway note discriminator is missing', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-putaway-note-contract',
+    tenantName: 'Contract Putaway Note Contract'
+  });
+  const { tenantId, pool: db } = harness;
+  const fixture = await createPostedDuplicateShapePutawayFixture(harness, {
+    missingNoteLineNumbers: [1]
+  });
+
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+
+  await assert.rejects(
+    runInTransaction(db, (client) =>
+      rebuildReceiptAllocations({
+        client,
+        tenantId,
+        receiptId: fixture.receipt.id,
+        occurredAt: new Date()
+      })
+    ),
+    /RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT:movement_line_note_unmatched/
+  );
+  assert.equal((await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)).length, 0);
 });
 
 test('receipt allocation rebuild preserves complex lifecycle state after partial QC and reconciliation adjustment', { timeout: 240000 }, async () => {

@@ -458,6 +458,7 @@ async function rebuildFromAuthoritativeSources(params: {
 
   const putawayResult = await params.client.query(
     `SELECT pl.id,
+            pl.line_number,
             pl.purchase_order_receipt_line_id,
             pl.item_id,
             pl.quantity_planned,
@@ -465,6 +466,7 @@ async function rebuildFromAuthoritativeSources(params: {
             pl.to_location_id,
             pl.to_bin_id,
             pl.inventory_movement_id,
+            p.id AS putaway_id,
             p.inventory_movement_id AS putaway_movement_id
        FROM putaway_lines pl
        JOIN putaways p
@@ -495,7 +497,8 @@ async function rebuildFromAuthoritativeSources(params: {
       itemId: line.item_id,
       locationId: line.to_location_id,
       quantity,
-      direction: 'positive'
+      direction: 'positive',
+      noteIncludes: `Putaway ${line.putaway_id} line ${line.line_number}`
     });
     for (const [consumedIndex, item] of consumed.entries()) {
       const sortKey = nextSortKey(`putaway:${index}`, consumedIndex);
