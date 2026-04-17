@@ -62,8 +62,32 @@ test('background code cannot rebuild receipt allocations', () => {
     return fs.statSync(full).isDirectory() ? walk(full) : [full];
   });
   const violations = files
-    .filter((file) => read(file).includes('rebuildReceiptAllocations'))
+    .filter((file) => /rebuildReceiptAllocations|validateOrRebuildReceiptAllocationsForMutation/.test(read(file)))
     .map((file) => path.relative(ROOT, file));
+
+  assert.deepEqual(violations, []);
+});
+
+test('services cannot import low-level receipt allocation mutators or context factories', () => {
+  const allowed = new Set([
+    path.join(ROOT, 'src/domain/receipts/receiptAllocationModel.ts'),
+    path.join(ROOT, 'src/domain/receipts/receiptAllocationRebuilder.ts')
+  ]);
+  const forbidden = [
+    'createInitialReceiptAllocationWriteContext',
+    'createRebuildReceiptAllocationWriteContext',
+    'insertReceiptAllocations',
+    'consumeReceiptAllocations',
+    'replaceReceiptAllocationsForReceipt'
+  ];
+  const violations = walk(path.join(ROOT, 'src'))
+    .filter((file) => !allowed.has(file))
+    .flatMap((file) => {
+      const contents = read(file);
+      return forbidden
+        .filter((symbol) => new RegExp(`\\b${symbol}\\b`).test(contents))
+        .map((symbol) => `${path.relative(ROOT, file)}:${symbol}`);
+    });
 
   assert.deepEqual(violations, []);
 });

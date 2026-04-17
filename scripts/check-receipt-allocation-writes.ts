@@ -14,6 +14,24 @@ const WRITE_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   }
 ];
 
+const LOW_LEVEL_ALLOWED = new Set([
+  path.join(SRC, 'domain', 'receipts', 'receiptAllocationModel.ts'),
+  path.join(SRC, 'domain', 'receipts', 'receiptAllocationRebuilder.ts')
+]);
+
+const LOW_LEVEL_SYMBOLS = [
+  'createInitialReceiptAllocationWriteContext',
+  'createRebuildReceiptAllocationWriteContext',
+  'insertReceiptAllocations',
+  'consumeReceiptAllocations',
+  'replaceReceiptAllocationsForReceipt'
+];
+
+const BACKGROUND_REBUILD_SYMBOLS = [
+  'rebuildReceiptAllocations',
+  'validateOrRebuildReceiptAllocationsForMutation'
+];
+
 const violations: Array<{ file: string; pattern: string }> = [];
 
 function walk(dir: string) {
@@ -33,10 +51,41 @@ function walk(dir: string) {
         violations.push({ file: full, pattern: pattern.name });
       }
     }
+    if (!LOW_LEVEL_ALLOWED.has(full)) {
+      for (const symbol of LOW_LEVEL_SYMBOLS) {
+        if (new RegExp(`\\b${symbol}\\b`).test(contents)) {
+          violations.push({ file: full, pattern: `low-level ${symbol}` });
+        }
+      }
+    }
   }
 }
 
 walk(SRC);
+
+for (const rel of ['src/jobs', 'src/worker.ts', 'src/server.ts']) {
+  const full = path.join(ROOT, rel);
+  if (!fs.existsSync(full)) continue;
+  const files = fs.statSync(full).isDirectory() ? [] : [full];
+  if (fs.statSync(full).isDirectory()) {
+    const collect = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const child = path.join(dir, entry.name);
+        if (entry.isDirectory()) collect(child);
+        else if (entry.name.endsWith('.ts')) files.push(child);
+      }
+    };
+    collect(full);
+  }
+  for (const file of files) {
+    const contents = fs.readFileSync(file, 'utf8');
+    for (const symbol of BACKGROUND_REBUILD_SYMBOLS) {
+      if (new RegExp(`\\b${symbol}\\b`).test(contents)) {
+        violations.push({ file, pattern: `background ${symbol}` });
+      }
+    }
+  }
+}
 
 if (violations.length > 0) {
   console.error('Receipt allocation write ownership violations detected:');

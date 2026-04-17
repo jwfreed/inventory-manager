@@ -9,6 +9,8 @@ require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 
 const { createQcEvent } = require('../../src/services/qc.service.ts');
+const { closePurchaseOrderReceipt } = require('../../src/services/closeout.service.ts');
+const { rebuildReceiptAllocations } = require('../../src/domain/receipts/receiptAllocationRebuilder.ts');
 
 async function createReceiptInQa(harness, { quantity, unitCost = 5, uom = 'each' }) {
   const item = await harness.createItem({
@@ -66,6 +68,103 @@ async function loadReceiptLifecycle(db, tenantId, receiptId) {
     [tenantId, receiptId]
   );
   return res.rows[0] ?? null;
+}
+
+function normalizeAllocationsForRebuildComparison(allocations) {
+  return allocations.map((allocation) => ({
+    id: allocation.id,
+    locationId: allocation.locationId,
+    binId: allocation.binId,
+    movementId: allocation.movementId,
+    movementLineId: allocation.movementLineId,
+    status: allocation.status,
+    quantity: allocation.quantity
+  }));
+}
+
+function normalizeAllocationsForStateComparison(allocations) {
+  return allocations.map((allocation) => ({
+    locationId: allocation.locationId,
+    binId: allocation.binId,
+    movementId: allocation.movementId,
+    movementLineId: allocation.movementLineId,
+    status: allocation.status,
+    quantity: allocation.quantity
+  }));
+}
+
+async function loadDefaultBinId(db, tenantId, locationId) {
+  const res = await db.query(
+    `SELECT id
+       FROM inventory_bins
+      WHERE tenant_id = $1
+        AND location_id = $2
+        AND is_default = true
+      LIMIT 1`,
+    [tenantId, locationId]
+  );
+  assert.equal(res.rowCount, 1);
+  return res.rows[0].id;
+}
+
+async function runInTransaction(db, callback) {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function duplicateMovementLine(db, tenantId, movementLineId) {
+  await db.query(
+    `INSERT INTO inventory_movement_lines (
+        id,
+        movement_id,
+        item_id,
+        location_id,
+        quantity_delta,
+        uom,
+        reason_code,
+        line_notes,
+        created_at,
+        tenant_id,
+        unit_cost,
+        extended_cost,
+        quantity_delta_entered,
+        uom_entered,
+        quantity_delta_canonical,
+        canonical_uom,
+        uom_dimension
+     )
+     SELECT $1,
+            movement_id,
+            item_id,
+            location_id,
+            quantity_delta,
+            uom,
+            reason_code,
+            line_notes,
+            created_at + interval '1 millisecond',
+            tenant_id,
+            unit_cost,
+            extended_cost,
+            quantity_delta_entered,
+            uom_entered,
+            quantity_delta_canonical,
+            canonical_uom,
+            uom_dimension
+       FROM inventory_movement_lines
+      WHERE tenant_id = $2
+        AND id = $3`,
+    [randomUUID(), tenantId, movementLineId]
+  );
 }
 
 async function countAuditRows(db, tenantId, entityType, entityId) {
@@ -297,6 +396,198 @@ test('receipt QC rebuilds missing allocation state before mutating receipt alloc
   assert.equal(allocations.length, 2);
   assert.equal(allocations.find((allocation) => allocation.status === 'AVAILABLE')?.locationId, topology.defaults.SELLABLE.id);
   assert.equal(allocations.reduce((total, allocation) => total + allocation.quantity, 0), 3);
+});
+
+test('receipt allocation rebuild is deterministic and idempotent', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-allocation-idempotent',
+    tenantName: 'Contract QC Allocation Idempotent'
+  });
+  const { tenantId, pool: db } = harness;
+  const fixture = await createReceiptInQa(harness, { quantity: 4 });
+
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'accept',
+      quantity: 2,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `qc-receipt-idempotent:${randomUUID()}` }
+  );
+
+  await runInTransaction(db, (client) =>
+    rebuildReceiptAllocations({
+      client,
+      tenantId,
+      receiptId: fixture.receipt.id,
+      occurredAt: new Date()
+    })
+  );
+  const first = normalizeAllocationsForRebuildComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+  await runInTransaction(db, (client) =>
+    rebuildReceiptAllocations({
+      client,
+      tenantId,
+      receiptId: fixture.receipt.id,
+      occurredAt: new Date()
+    })
+  );
+  const second = normalizeAllocationsForRebuildComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+
+  assert.deepEqual(second, first);
+});
+
+test('receipt allocation rebuild fails when authoritative movement link is unmatched', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-allocation-unmatched',
+    tenantName: 'Contract QC Allocation Unmatched'
+  });
+  const { tenantId, pool: db } = harness;
+  const fixture = await createReceiptInQa(harness, { quantity: 3 });
+
+  const result = await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'accept',
+      quantity: 1,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `qc-receipt-unmatched:${randomUUID()}` }
+  );
+  await db.query(
+    `DELETE FROM qc_inventory_links
+      WHERE tenant_id = $1
+        AND inventory_movement_id = $2`,
+    [tenantId, result.movementId]
+  );
+
+  await assert.rejects(
+    runInTransaction(db, (client) =>
+      rebuildReceiptAllocations({
+        client,
+        tenantId,
+        receiptId: fixture.receipt.id,
+        occurredAt: new Date()
+      })
+    ),
+    /RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT:qc_movement_missing/
+  );
+});
+
+test('receipt allocation rebuild fails on authoritative movement ambiguity', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-allocation-ambiguous',
+    tenantName: 'Contract QC Allocation Ambiguous'
+  });
+  const { tenantId, pool: db } = harness;
+  const fixture = await createReceiptInQa(harness, { quantity: 2 });
+  const [initialAllocation] = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
+
+  await duplicateMovementLine(db, tenantId, initialAllocation.movementLineId);
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+
+  await assert.rejects(
+    runInTransaction(db, (client) =>
+      rebuildReceiptAllocations({
+        client,
+        tenantId,
+        receiptId: fixture.receipt.id,
+        occurredAt: new Date()
+      })
+    ),
+    /RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT:movement_line_note_unmatched/
+  );
+});
+
+test('receipt closeout adjustment uses adjustment-aware allocation expectations', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-receipt-closeout-adjustment',
+    tenantName: 'Contract Receipt Closeout Adjustment'
+  });
+  const { tenantId, pool: db, topology } = harness;
+  const fixture = await createReceiptInQa(harness, { quantity: 5 });
+  const sellableBinId = await loadDefaultBinId(db, tenantId, topology.defaults.SELLABLE.id);
+
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'accept',
+      quantity: 5,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `qc-receipt-closeout-adjustment:${randomUUID()}` }
+  );
+
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+
+  const reconciliation = await closePurchaseOrderReceipt(tenantId, fixture.receipt.id, {
+    actorType: 'system',
+    notes: 'adjust closeout mismatch',
+    physicalCounts: [
+      {
+        purchaseOrderReceiptLineId: fixture.receiptLineId,
+        locationId: topology.defaults.SELLABLE.id,
+        binId: sellableBinId,
+        allocationStatus: 'AVAILABLE',
+        countedQty: 3,
+        toleranceQty: 0
+      }
+    ],
+    resolution: {
+      mode: 'adjustment',
+      notes: 'adjust to counted quantity'
+    }
+  });
+
+  assert.equal(reconciliation.receipt.status, 'closed');
+  assert.equal(reconciliation.lines[0].quantityReceived, 5);
+  assert.equal(reconciliation.lines[0].allocationExpectedQuantity, 3);
+  assert.equal(reconciliation.lines[0].allocationSummary.total, 3);
+  assert.equal(reconciliation.lines[0].blockedReasons.includes('Receipt allocation total does not match received quantity'), false);
+
+  const beforeRebuild = normalizeAllocationsForStateComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+  await db.query(
+    `DELETE FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2`,
+    [tenantId, fixture.receiptLineId]
+  );
+  await runInTransaction(db, (client) =>
+    rebuildReceiptAllocations({
+      client,
+      tenantId,
+      receiptId: fixture.receipt.id,
+      occurredAt: new Date()
+    })
+  );
+  const afterRebuild = normalizeAllocationsForStateComparison(
+    await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)
+  );
+
+  assert.deepEqual(afterRebuild, beforeRebuild);
 });
 
 test('receipt QC aborts without authoritative side effects when allocation rebuild cannot validate', { timeout: 240000 }, async () => {

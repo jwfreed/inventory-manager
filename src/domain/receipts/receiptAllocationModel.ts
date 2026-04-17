@@ -64,7 +64,9 @@ export type ReceiptAllocationWriteContext = {
   readonly tenantId: string;
   readonly kind: ReceiptAllocationWriteContextKind;
   readonly receiptLineIds: ReadonlySet<string>;
-  readonly allocationsByLine: ReadonlyMap<string, ReceiptAllocation[]>;
+  readonly expectedQtyByLine: ReadonlyMap<string, number>;
+  allocationsByLine: ReadonlyMap<string, ReceiptAllocation[]>;
+  readonly aggregate: ReceiptAllocationAggregate;
   readonly [RECEIPT_ALLOCATION_WRITE_CONTEXT]: true;
 };
 
@@ -88,16 +90,22 @@ function assertReceiptAllocationWriteContext(
 function buildReceiptAllocationWriteContext(params: {
   tenantId: string;
   kind: ReceiptAllocationWriteContextKind;
-  receiptLineIds: Iterable<string>;
-  allocationsByLine?: Map<string, ReceiptAllocation[]>;
+  expectedQtyByLine: Map<string, number>;
+  aggregate: ReceiptAllocationAggregate;
 }): ReceiptAllocationWriteContext {
   return {
     tenantId: params.tenantId,
     kind: params.kind,
-    receiptLineIds: new Set(params.receiptLineIds),
-    allocationsByLine: params.allocationsByLine ?? new Map(),
+    receiptLineIds: new Set(params.expectedQtyByLine.keys()),
+    expectedQtyByLine: new Map(params.expectedQtyByLine),
+    allocationsByLine: params.aggregate.snapshotByLine(),
+    aggregate: params.aggregate,
     [RECEIPT_ALLOCATION_WRITE_CONTEXT]: true
   };
+}
+
+function refreshContextSnapshot(context: ReceiptAllocationWriteContext) {
+  context.allocationsByLine = context.aggregate.snapshotByLine();
 }
 
 function assertContextCoversAllocations(
@@ -165,6 +173,309 @@ export function assertReceiptAllocationTraceability(allocations: ReceiptAllocati
   }
 }
 
+function assertValidReceiptAllocationStatus(status: string): asserts status is ReceiptAllocationStatus {
+  if (!Object.values(RECEIPT_ALLOCATION_STATUSES).includes(status as ReceiptAllocationStatus)) {
+    throw new Error('RECEIPT_ALLOCATION_STATUS_INVALID');
+  }
+}
+
+function cloneReceiptAllocation(allocation: ReceiptAllocation): ReceiptAllocation {
+  return {
+    ...allocation,
+    id: allocation.id ?? uuidv4(),
+    quantity: roundQuantity(allocation.quantity)
+  };
+}
+
+function allocationBucketKey(params: {
+  receiptLineId: string;
+  status: ReceiptAllocationStatus;
+  binId?: string | null;
+}) {
+  return [
+    params.receiptLineId,
+    params.status,
+    params.binId ?? '*'
+  ].join('|');
+}
+
+function addExpectedDelta(
+  expectedQtyByLine: Map<string, number>,
+  receiptLineId: string,
+  delta: number
+) {
+  expectedQtyByLine.set(
+    receiptLineId,
+    roundQuantity((expectedQtyByLine.get(receiptLineId) ?? 0) + delta)
+  );
+}
+
+export class ReceiptAllocationAggregate {
+  private constructor(
+    private readonly expectedQtyByLine: Map<string, number>,
+    private readonly allocationsByLine: Map<string, ReceiptAllocation[]>
+  ) {}
+
+  static create(params: {
+    expectedQtyByReceiptLineId: Map<string, number>;
+    allocations: ReceiptAllocation[];
+  }) {
+    const allocationsByLine = new Map<string, ReceiptAllocation[]>();
+    for (const allocation of params.allocations) {
+      const normalized = cloneReceiptAllocation(allocation);
+      assertValidReceiptAllocationStatus(normalized.status);
+      const entries = allocationsByLine.get(normalized.receiptLineId) ?? [];
+      entries.push(normalized);
+      allocationsByLine.set(normalized.receiptLineId, entries);
+    }
+    const aggregate = new ReceiptAllocationAggregate(
+      new Map(
+        Array.from(params.expectedQtyByReceiptLineId.entries()).map(([lineId, quantity]) => [
+          lineId,
+          roundQuantity(quantity)
+        ])
+      ),
+      allocationsByLine
+    );
+    aggregate.validateAll();
+    return aggregate;
+  }
+
+  snapshotByLine() {
+    const snapshot = new Map<string, ReceiptAllocation[]>();
+    for (const [lineId, allocations] of this.allocationsByLine.entries()) {
+      snapshot.set(lineId, allocations.map(cloneReceiptAllocation));
+    }
+    return snapshot;
+  }
+
+  snapshotAllocations() {
+    return Array.from(this.snapshotByLine().values()).flat();
+  }
+
+  expectedQuantities() {
+    return new Map(this.expectedQtyByLine);
+  }
+
+  assertRequirements(requirements: ReceiptAllocationValidationRequirement[]) {
+    const requiredByBucket = new Map<string, ReceiptAllocationValidationRequirement & { requiredQuantity: number }>();
+    for (const requirement of requirements) {
+      if (!this.expectedQtyByLine.has(requirement.receiptLineId)) {
+        throw new Error('RECEIPT_ALLOCATION_VALIDATION_SCOPE_MISMATCH');
+      }
+      if (!requirement.requiredStatus || requirement.requiredQuantity === undefined) {
+        continue;
+      }
+      const requiredQuantity = roundQuantity(requirement.requiredQuantity);
+      if (requiredQuantity <= RECEIPT_STATUS_EPSILON) {
+        continue;
+      }
+      const key = allocationBucketKey({
+        receiptLineId: requirement.receiptLineId,
+        status: requirement.requiredStatus,
+        binId: requirement.requiredBinId
+      });
+      const existing = requiredByBucket.get(key);
+      requiredByBucket.set(key, {
+        ...requirement,
+        requiredQuantity: roundQuantity((existing?.requiredQuantity ?? 0) + requiredQuantity)
+      });
+    }
+    for (const requirement of requiredByBucket.values()) {
+      const availableQty = this.quantityAvailable({
+        receiptLineId: requirement.receiptLineId,
+        status: requirement.requiredStatus!,
+        binId: requirement.requiredBinId
+      });
+      if (availableQty + RECEIPT_STATUS_EPSILON < requirement.requiredQuantity) {
+        throw new Error('RECEIPT_ALLOCATION_PRECHECK_FAILED');
+      }
+    }
+  }
+
+  applyInsert(params: {
+    allocations: ReceiptAllocation[];
+    expectedQuantityDeltaByReceiptLineId?: Map<string, number>;
+  }) {
+    const prepared = params.allocations.map(cloneReceiptAllocation);
+    const nextExpected = new Map(this.expectedQtyByLine);
+    for (const [receiptLineId, delta] of params.expectedQuantityDeltaByReceiptLineId?.entries() ?? []) {
+      addExpectedDelta(nextExpected, receiptLineId, delta);
+    }
+    for (const allocation of prepared) {
+      if (!nextExpected.has(allocation.receiptLineId)) {
+        throw new Error('RECEIPT_ALLOCATION_VALIDATION_SCOPE_MISMATCH');
+      }
+      assertValidReceiptAllocationStatus(allocation.status);
+    }
+    const touchedLineIds = new Set(prepared.map((allocation) => allocation.receiptLineId));
+    for (const [receiptLineId, expectedQty] of nextExpected.entries()) {
+      this.expectedQtyByLine.set(receiptLineId, expectedQty);
+    }
+    for (const allocation of prepared) {
+      const entries = this.allocationsByLine.get(allocation.receiptLineId) ?? [];
+      entries.push(allocation);
+      this.allocationsByLine.set(allocation.receiptLineId, entries);
+    }
+    for (const receiptLineId of touchedLineIds) {
+      this.validateLine(receiptLineId);
+    }
+    return prepared;
+  }
+
+  applyConsume(params: {
+    receiptLineId: string;
+    quantity: number;
+    sourceStatus: ReceiptAllocationStatus;
+    sourceBinId: string;
+    destinationLocationId?: string | null;
+    destinationBinId?: string | null;
+    destinationStatus?: ReceiptAllocationStatus | null;
+    movementId: string;
+    movementLineId?: string | null;
+    expectedQuantityDelta?: number;
+  }) {
+    if (!this.expectedQtyByLine.has(params.receiptLineId)) {
+      throw new Error('RECEIPT_ALLOCATION_VALIDATION_SCOPE_MISMATCH');
+    }
+    if (!params.sourceBinId) {
+      throw new Error('RECEIPT_ALLOCATION_BIN_TARGET_REQUIRED');
+    }
+    if (!params.movementId || !params.movementLineId) {
+      throw new Error('RECEIPT_ALLOCATION_TRACEABILITY_VIOLATION');
+    }
+    assertValidReceiptAllocationStatus(params.sourceStatus);
+    if (params.destinationStatus) {
+      assertValidReceiptAllocationStatus(params.destinationStatus);
+      if (
+        params.sourceStatus !== RECEIPT_ALLOCATION_STATUSES.QA
+        || !(new Set<ReceiptAllocationStatus>([
+          RECEIPT_ALLOCATION_STATUSES.AVAILABLE,
+          RECEIPT_ALLOCATION_STATUSES.HOLD
+        ])).has(params.destinationStatus)
+      ) {
+        throw new Error('RECEIPT_ALLOCATION_STATUS_TRANSITION_INVALID');
+      }
+      if (!params.destinationLocationId || !params.destinationBinId) {
+        throw new Error('RECEIPT_ALLOCATION_DESTINATION_REQUIRED');
+      }
+    } else if (roundQuantity(params.expectedQuantityDelta ?? 0) >= 0) {
+      throw new Error('RECEIPT_ALLOCATION_STATUS_TRANSITION_INVALID');
+    }
+
+    const targetQuantity = roundQuantity(params.quantity);
+    if (targetQuantity <= RECEIPT_STATUS_EPSILON) {
+      throw new Error('RECEIPT_ALLOCATION_QUANTITY_INVALID');
+    }
+    let remaining = targetQuantity;
+    const lineAllocations = this.allocationsByLine.get(params.receiptLineId) ?? [];
+    const candidates = lineAllocations
+      .filter(
+        (allocation) =>
+          allocation.status === params.sourceStatus
+          && allocation.binId === params.sourceBinId
+      )
+      .sort((left, right) => String(left.id ?? '').localeCompare(String(right.id ?? '')));
+    const updates: Array<{ id: string; quantity: number }> = [];
+    const deletes: string[] = [];
+    const inserts: ReceiptAllocation[] = [];
+
+    for (const allocation of candidates) {
+      if (remaining <= RECEIPT_STATUS_EPSILON) {
+        break;
+      }
+      if (!allocation.id) {
+        throw new Error('RECEIPT_ALLOCATION_TRACEABILITY_VIOLATION');
+      }
+      const consumed = Math.min(remaining, allocation.quantity);
+      remaining = roundQuantity(remaining - consumed);
+      const updatedQty = roundQuantity(allocation.quantity - consumed);
+      if (updatedQty <= RECEIPT_STATUS_EPSILON) {
+        deletes.push(allocation.id);
+        allocation.quantity = 0;
+      } else {
+        updates.push({ id: allocation.id, quantity: updatedQty });
+        allocation.quantity = updatedQty;
+      }
+      if (params.destinationStatus && params.destinationLocationId && params.destinationBinId) {
+        inserts.push({
+          id: uuidv4(),
+          receiptId: allocation.receiptId,
+          receiptLineId: allocation.receiptLineId,
+          warehouseId: allocation.warehouseId,
+          locationId: params.destinationLocationId,
+          binId: params.destinationBinId,
+          inventoryMovementId: params.movementId,
+          inventoryMovementLineId: params.movementLineId,
+          costLayerId: allocation.costLayerId,
+          quantity: consumed,
+          status: params.destinationStatus
+        });
+      }
+    }
+    if (remaining > RECEIPT_STATUS_EPSILON) {
+      throw new Error('RECEIPT_ALLOCATION_PRECHECK_FAILED');
+    }
+
+    this.allocationsByLine.set(
+      params.receiptLineId,
+      lineAllocations.filter((allocation) => allocation.quantity > RECEIPT_STATUS_EPSILON)
+    );
+    if (params.expectedQuantityDelta) {
+      addExpectedDelta(this.expectedQtyByLine, params.receiptLineId, params.expectedQuantityDelta);
+    }
+    for (const insert of inserts) {
+      const entries = this.allocationsByLine.get(insert.receiptLineId) ?? [];
+      entries.push(insert);
+      this.allocationsByLine.set(insert.receiptLineId, entries);
+    }
+    this.validateLine(params.receiptLineId);
+    return { updates, deletes, inserts };
+  }
+
+  private quantityAvailable(params: {
+    receiptLineId: string;
+    status: ReceiptAllocationStatus;
+    binId?: string | null;
+  }) {
+    return roundQuantity(
+      (this.allocationsByLine.get(params.receiptLineId) ?? [])
+        .filter(
+          (allocation) =>
+            allocation.status === params.status
+            && (!params.binId || allocation.binId === params.binId)
+        )
+        .reduce((total, allocation) => total + allocation.quantity, 0)
+    );
+  }
+
+  private validateAll() {
+    for (const receiptLineId of this.expectedQtyByLine.keys()) {
+      this.validateLine(receiptLineId);
+    }
+    for (const receiptLineId of this.allocationsByLine.keys()) {
+      if (!this.expectedQtyByLine.has(receiptLineId)) {
+        throw new Error('RECEIPT_ALLOCATION_VALIDATION_SCOPE_MISMATCH');
+      }
+    }
+  }
+
+  private validateLine(receiptLineId: string) {
+    const allocations = this.allocationsByLine.get(receiptLineId) ?? [];
+    assertReceiptAllocationTraceability(allocations);
+    for (const allocation of allocations) {
+      assertValidReceiptAllocationStatus(allocation.status);
+      if (allocation.receiptLineId !== receiptLineId) {
+        throw new Error('RECEIPT_ALLOCATION_VALIDATION_SCOPE_MISMATCH');
+      }
+    }
+    assertReceiptAllocationQuantityConservation({
+      receiptQuantity: this.expectedQtyByLine.get(receiptLineId) ?? 0,
+      allocations
+    });
+  }
+}
+
 export async function assertReceiptAllocationMovementLinks(params: {
   client: PoolClient;
   tenantId: string;
@@ -191,7 +502,7 @@ export async function assertReceiptAllocationMovementLinks(params: {
       : Promise.resolve({ rows: [] }),
     movementLineIds.length > 0
       ? params.client.query(
-          `SELECT id
+          `SELECT id, movement_id
              FROM inventory_movement_lines
             WHERE tenant_id = $1
               AND id = ANY($2::uuid[])`,
@@ -200,13 +511,13 @@ export async function assertReceiptAllocationMovementLinks(params: {
       : Promise.resolve({ rows: [] })
   ]);
   const foundMovements = new Set(movementResult.rows.map((row: any) => row.id));
-  const foundMovementLines = new Set(movementLineResult.rows.map((row: any) => row.id));
+  const foundMovementLines = new Map(movementLineResult.rows.map((row: any) => [row.id, row.movement_id]));
   for (const allocation of params.allocations) {
     if (
       !allocation.inventoryMovementId
       || !allocation.inventoryMovementLineId
       || !foundMovements.has(allocation.inventoryMovementId)
-      || !foundMovementLines.has(allocation.inventoryMovementLineId)
+      || foundMovementLines.get(allocation.inventoryMovementLineId) !== allocation.inventoryMovementId
     ) {
       throw new Error('RECEIPT_ALLOCATION_MOVEMENT_LINK_INVALID');
     }
@@ -218,24 +529,15 @@ export function createInitialReceiptAllocationWriteContext(params: {
   expectedQtyByReceiptLineId: Map<string, number>;
   allocations: ReceiptAllocation[];
 }) {
-  const allocationsByLine = new Map<string, ReceiptAllocation[]>();
-  for (const allocation of params.allocations) {
-    const lineAllocations = allocationsByLine.get(allocation.receiptLineId) ?? [];
-    lineAllocations.push(allocation);
-    allocationsByLine.set(allocation.receiptLineId, lineAllocations);
-  }
-  for (const [receiptLineId, expectedQty] of params.expectedQtyByReceiptLineId.entries()) {
-    assertReceiptAllocationQuantityConservation({
-      receiptQuantity: expectedQty,
-      allocations: allocationsByLine.get(receiptLineId) ?? []
-    });
-  }
-  assertReceiptAllocationTraceability(params.allocations);
+  const aggregate = ReceiptAllocationAggregate.create({
+    expectedQtyByReceiptLineId: params.expectedQtyByReceiptLineId,
+    allocations: params.allocations
+  });
   return buildReceiptAllocationWriteContext({
     tenantId: params.tenantId,
     kind: 'initial',
-    receiptLineIds: params.expectedQtyByReceiptLineId.keys(),
-    allocationsByLine
+    expectedQtyByLine: aggregate.expectedQuantities(),
+    aggregate
   });
 }
 
@@ -248,9 +550,50 @@ export function createRebuildReceiptAllocationWriteContext(params: {
   return buildReceiptAllocationWriteContext({
     tenantId: params.tenantId,
     kind: 'rebuild',
-    receiptLineIds: context.receiptLineIds,
-    allocationsByLine: new Map(context.allocationsByLine)
+    expectedQtyByLine: new Map(context.expectedQtyByLine),
+    aggregate: context.aggregate
   });
+}
+
+async function loadExpectedReceiptAllocationQuantities(params: {
+  client: PoolClient;
+  tenantId: string;
+  receiptLineIds: string[];
+}) {
+  const lineResult = await params.client.query(
+    `SELECT id, quantity_received
+       FROM purchase_order_receipt_lines
+      WHERE tenant_id = $1
+        AND id = ANY($2::uuid[])
+      ORDER BY created_at ASC, id ASC
+      FOR UPDATE`,
+    [params.tenantId, params.receiptLineIds]
+  );
+  if ((lineResult.rowCount ?? 0) !== params.receiptLineIds.length) {
+    throw new Error('RECEIPT_ALLOCATION_VALIDATION_LINE_NOT_FOUND');
+  }
+  const expectedQtyByLine = new Map<string, number>();
+  for (const row of lineResult.rows) {
+    expectedQtyByLine.set(row.id, roundQuantity(Number(row.quantity_received ?? 0)));
+  }
+  const adjustmentResult = await params.client.query(
+    `SELECT d.purchase_order_receipt_line_id AS receipt_line_id,
+            COALESCE(SUM(d.discrepancy_qty), 0)::numeric AS adjustment_qty
+       FROM receipt_reconciliation_discrepancies d
+       JOIN receipt_reconciliation_resolutions r
+         ON r.discrepancy_id = d.id
+        AND r.tenant_id = d.tenant_id
+        AND r.resolution_type = 'ADJUSTMENT'
+      WHERE d.tenant_id = $1
+        AND d.purchase_order_receipt_line_id = ANY($2::uuid[])
+        AND d.status = 'ADJUSTED'
+      GROUP BY d.purchase_order_receipt_line_id`,
+    [params.tenantId, params.receiptLineIds]
+  );
+  for (const row of adjustmentResult.rows) {
+    addExpectedDelta(expectedQtyByLine, row.receipt_line_id, Number(row.adjustment_qty ?? 0));
+  }
+  return expectedQtyByLine;
 }
 
 export async function validateReceiptAllocationMutationContext(params: {
@@ -262,70 +605,30 @@ export async function validateReceiptAllocationMutationContext(params: {
   if (receiptLineIds.length === 0) {
     throw new Error('RECEIPT_ALLOCATION_VALIDATION_SCOPE_REQUIRED');
   }
-  const lineResult = await params.client.query(
-    `SELECT id, quantity_received
-       FROM purchase_order_receipt_lines
-      WHERE tenant_id = $1
-        AND id = ANY($2::uuid[])
-      ORDER BY created_at ASC, id ASC
-      FOR UPDATE`,
-    [params.tenantId, receiptLineIds]
-  );
-  if ((lineResult.rowCount ?? 0) !== receiptLineIds.length) {
-    throw new Error('RECEIPT_ALLOCATION_VALIDATION_LINE_NOT_FOUND');
-  }
-
-  const expectedQtyByLine = new Map<string, number>();
-  for (const row of lineResult.rows) {
-    expectedQtyByLine.set(row.id, roundQuantity(Number(row.quantity_received ?? 0)));
-  }
-
+  const expectedQtyByLine = await loadExpectedReceiptAllocationQuantities({
+    client: params.client,
+    tenantId: params.tenantId,
+    receiptLineIds
+  });
   const allocationsByLine = await loadReceiptAllocationsByLine(params.client, params.tenantId, receiptLineIds);
-  for (const receiptLineId of receiptLineIds) {
-    const expectedQty = expectedQtyByLine.get(receiptLineId) ?? 0;
-    const allocations = allocationsByLine.get(receiptLineId) ?? [];
-    assertReceiptAllocationTraceability(allocations);
-    await assertReceiptAllocationMovementLinks({
-      client: params.client,
-      tenantId: params.tenantId,
-      allocations
-    });
-    assertReceiptAllocationQuantityConservation({
-      receiptQuantity: expectedQty,
-      allocations
-    });
-  }
+  const allAllocations = Array.from(allocationsByLine.values()).flat();
+  await assertReceiptAllocationMovementLinks({
+    client: params.client,
+    tenantId: params.tenantId,
+    allocations: allAllocations
+  });
+  const aggregate = ReceiptAllocationAggregate.create({
+    expectedQtyByReceiptLineId: expectedQtyByLine,
+    allocations: allAllocations
+  });
 
-  for (const requirement of params.requirements) {
-    if (!requirement.requiredStatus || requirement.requiredQuantity === undefined) {
-      continue;
-    }
-    const requiredQuantity = roundQuantity(requirement.requiredQuantity);
-    if (requiredQuantity <= RECEIPT_STATUS_EPSILON) {
-      continue;
-    }
-    const availableQty = roundQuantity(
-      (allocationsByLine.get(requirement.receiptLineId) ?? [])
-        .filter(
-          (allocation) =>
-            allocation.status === requirement.requiredStatus
-            && (
-              !requirement.requiredBinId
-              || allocation.binId === requirement.requiredBinId
-            )
-        )
-        .reduce((total, allocation) => total + allocation.quantity, 0)
-    );
-    if (availableQty + RECEIPT_STATUS_EPSILON < requiredQuantity) {
-      throw new Error('RECEIPT_ALLOCATION_PRECHECK_FAILED');
-    }
-  }
+  aggregate.assertRequirements(params.requirements);
 
   return buildReceiptAllocationWriteContext({
     tenantId: params.tenantId,
     kind: 'validated',
-    receiptLineIds,
-    allocationsByLine
+    expectedQtyByLine,
+    aggregate
   }) as ValidatedReceiptAllocationMutationContext;
 }
 
@@ -415,6 +718,7 @@ export async function insertReceiptAllocations(
   assertReceiptAllocationWriteContext(tenantId, context);
   assertContextCoversAllocations(context, allocations);
   assertReceiptAllocationTraceability(allocations);
+  await assertReceiptAllocationMovementLinks({ client, tenantId, allocations });
   for (const allocation of allocations) {
     await client.query(
       `INSERT INTO receipt_allocations (
@@ -441,6 +745,50 @@ export async function insertReceiptAllocations(
   }
 }
 
+export async function createInitialReceiptAllocations(params: {
+  client: PoolClient;
+  tenantId: string;
+  expectedQtyByReceiptLineId: Map<string, number>;
+  allocations: ReceiptAllocation[];
+  occurredAt: Date;
+}) {
+  const context = createInitialReceiptAllocationWriteContext({
+    tenantId: params.tenantId,
+    expectedQtyByReceiptLineId: params.expectedQtyByReceiptLineId,
+    allocations: params.allocations
+  });
+  await insertReceiptAllocations(
+    params.client,
+    params.tenantId,
+    context.aggregate.snapshotAllocations(),
+    params.occurredAt,
+    context
+  );
+}
+
+export async function addReceiptAllocations(params: {
+  client: PoolClient;
+  tenantId: string;
+  context: ValidatedReceiptAllocationMutationContext;
+  allocations: ReceiptAllocation[];
+  expectedQuantityDeltaByReceiptLineId?: Map<string, number>;
+  occurredAt: Date;
+}) {
+  assertReceiptAllocationWriteContext(params.tenantId, params.context);
+  const prepared = params.context.aggregate.applyInsert({
+    allocations: params.allocations,
+    expectedQuantityDeltaByReceiptLineId: params.expectedQuantityDeltaByReceiptLineId
+  });
+  await insertReceiptAllocations(
+    params.client,
+    params.tenantId,
+    prepared,
+    params.occurredAt,
+    params.context
+  );
+  refreshContextSnapshot(params.context);
+}
+
 export async function replaceReceiptAllocationsForReceipt(params: {
   client: PoolClient;
   tenantId: string;
@@ -454,19 +802,26 @@ export async function replaceReceiptAllocationsForReceipt(params: {
     throw new Error('RECEIPT_ALLOCATION_REBUILD_CONTEXT_REQUIRED');
   }
   assertContextCoversAllocations(params.context, params.allocations);
-  await params.client.query(
-    `DELETE FROM receipt_allocations
-      WHERE tenant_id = $1
-        AND purchase_order_receipt_id = $2`,
-    [params.tenantId, params.receiptId]
-  );
-  await insertReceiptAllocations(
-    params.client,
-    params.tenantId,
-    params.allocations,
-    params.occurredAt,
-    params.context
-  );
+  await params.client.query('SAVEPOINT receipt_allocation_replace');
+  try {
+    await params.client.query(
+      `DELETE FROM receipt_allocations
+        WHERE tenant_id = $1
+          AND purchase_order_receipt_id = $2`,
+      [params.tenantId, params.receiptId]
+    );
+    await insertReceiptAllocations(
+      params.client,
+      params.tenantId,
+      params.allocations,
+      params.occurredAt,
+      params.context
+    );
+    await params.client.query('RELEASE SAVEPOINT receipt_allocation_replace');
+  } catch (error) {
+    await params.client.query('ROLLBACK TO SAVEPOINT receipt_allocation_replace');
+    throw error;
+  }
 }
 
 export async function consumeReceiptAllocations(params: {
@@ -483,72 +838,62 @@ export async function consumeReceiptAllocations(params: {
   movementId: string;
   movementLineId?: string | null;
   occurredAt: Date;
+  expectedQuantityDelta?: number;
 }) {
   assertReceiptAllocationWriteContext(params.tenantId, params.context);
   if (!params.context.receiptLineIds.has(params.receiptLineId)) {
     throw new Error('RECEIPT_ALLOCATION_VALIDATION_SCOPE_MISMATCH');
   }
-  let remaining = roundQuantity(params.quantity);
-  const sourceAllocations = (params.context.allocationsByLine.get(params.receiptLineId) ?? [])
-    .filter(
-      (allocation) =>
-        allocation.status === params.sourceStatus
-        && (!params.sourceBinId || allocation.binId === params.sourceBinId)
-    )
-    .sort((left, right) => String(left.id ?? '').localeCompare(String(right.id ?? '')));
-  const inserts: ReceiptAllocation[] = [];
-
-  for (const allocation of sourceAllocations) {
-    if (remaining <= RECEIPT_STATUS_EPSILON) {
-      break;
-    }
-    const consumed = Math.min(remaining, allocation.quantity);
-    remaining = roundQuantity(remaining - consumed);
-    const updatedQty = roundQuantity(allocation.quantity - consumed);
-    if (updatedQty <= RECEIPT_STATUS_EPSILON) {
-      await params.client.query(
-        `DELETE FROM receipt_allocations
-          WHERE id = $1
-            AND tenant_id = $2`,
-        [allocation.id, params.tenantId]
-      );
-    } else {
-      await params.client.query(
-        `UPDATE receipt_allocations
-            SET quantity = $3,
-                updated_at = $4
-          WHERE id = $1
-            AND tenant_id = $2`,
-        [allocation.id, params.tenantId, updatedQty, params.occurredAt]
-      );
-    }
-    if (params.destinationStatus && params.destinationLocationId && params.destinationBinId) {
-      inserts.push({
-        receiptId: allocation.receiptId,
-        receiptLineId: allocation.receiptLineId,
-        warehouseId: allocation.warehouseId,
-        locationId: params.destinationLocationId,
-        binId: params.destinationBinId,
-        inventoryMovementId: params.movementId,
-        inventoryMovementLineId: params.movementLineId ?? null,
-        costLayerId: allocation.costLayerId,
-        quantity: consumed,
-        status: params.destinationStatus
-      });
+  const plan = params.context.aggregate.applyConsume({
+    receiptLineId: params.receiptLineId,
+    quantity: params.quantity,
+    sourceStatus: params.sourceStatus,
+    sourceBinId: params.sourceBinId ?? '',
+    destinationLocationId: params.destinationLocationId,
+    destinationBinId: params.destinationBinId,
+    destinationStatus: params.destinationStatus,
+    movementId: params.movementId,
+    movementLineId: params.movementLineId,
+    expectedQuantityDelta: params.expectedQuantityDelta
+  });
+  for (const allocationId of plan.deletes) {
+    const result = await params.client.query(
+      `DELETE FROM receipt_allocations
+        WHERE id = $1
+          AND tenant_id = $2`,
+      [allocationId, params.tenantId]
+    );
+    if ((result.rowCount ?? 0) !== 1) {
+      throw new Error('RECEIPT_ALLOCATION_MUTATION_STALE');
     }
   }
-  if (remaining > RECEIPT_STATUS_EPSILON) {
-    throw new Error('RECEIPT_ALLOCATION_PRECHECK_FAILED');
+  for (const update of plan.updates) {
+    const result = await params.client.query(
+      `UPDATE receipt_allocations
+          SET quantity = $3,
+              updated_at = $4
+        WHERE id = $1
+          AND tenant_id = $2`,
+      [update.id, params.tenantId, update.quantity, params.occurredAt]
+    );
+    if ((result.rowCount ?? 0) !== 1) {
+      throw new Error('RECEIPT_ALLOCATION_MUTATION_STALE');
+    }
   }
-  if (inserts.length > 0) {
+  if (plan.inserts.length > 0) {
     await insertReceiptAllocations(
       params.client,
       params.tenantId,
-      inserts,
+      plan.inserts,
       params.occurredAt,
       params.context
     );
   }
+  refreshContextSnapshot(params.context);
+}
+
+export async function moveReceiptAllocations(params: Parameters<typeof consumeReceiptAllocations>[0]) {
+  await consumeReceiptAllocations(params);
 }
 
 export async function loadReceiptAllocationsByLine(

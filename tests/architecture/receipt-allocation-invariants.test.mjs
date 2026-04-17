@@ -8,11 +8,13 @@ require('tsconfig-paths/register');
 
 const {
   RECEIPT_ALLOCATION_STATUSES,
+  ReceiptAllocationAggregate,
   assertReceiptAllocationTraceability,
   assertReceiptAllocationQuantityConservation,
   deriveReceiptAvailabilityFromAllocations,
   buildReceiptPostingIntegrity,
-  reconcileReceiptPhysicalCount
+  reconcileReceiptPhysicalCount,
+  moveReceiptAllocations
 } = require('../../src/domain/receipts/receiptAllocationModel.ts');
 const { RECEIPT_STATES } = require('../../src/domain/receipts/receiptStateModel.ts');
 
@@ -156,4 +158,140 @@ test('physical reconciliation detects mismatched counts', () => {
   });
   assert.equal(result.discrepancyQty, -3);
   assert.equal(result.withinTolerance, false);
+});
+
+test('receipt allocation aggregate owns repeated consumption state', () => {
+  const aggregate = ReceiptAllocationAggregate.create({
+    expectedQtyByReceiptLineId: new Map([['l1', 5]]),
+    allocations: [
+      {
+        id: 'a1',
+        receiptId: 'r1',
+        receiptLineId: 'l1',
+        warehouseId: 'w1',
+        locationId: 'qa',
+        binId: 'qa-bin',
+        inventoryMovementId: 'm1',
+        inventoryMovementLineId: 'ml1',
+        costLayerId: 'cl1',
+        quantity: 5,
+        status: RECEIPT_ALLOCATION_STATUSES.QA
+      }
+    ]
+  });
+
+  aggregate.assertRequirements([
+    {
+      receiptLineId: 'l1',
+      requiredStatus: RECEIPT_ALLOCATION_STATUSES.QA,
+      requiredBinId: 'qa-bin',
+      requiredQuantity: 2
+    },
+    {
+      receiptLineId: 'l1',
+      requiredStatus: RECEIPT_ALLOCATION_STATUSES.QA,
+      requiredBinId: 'qa-bin',
+      requiredQuantity: 3
+    }
+  ]);
+
+  aggregate.applyConsume({
+    receiptLineId: 'l1',
+    quantity: 3,
+    sourceStatus: RECEIPT_ALLOCATION_STATUSES.QA,
+    sourceBinId: 'qa-bin',
+    destinationLocationId: 'sellable',
+    destinationBinId: 'sellable-bin',
+    destinationStatus: RECEIPT_ALLOCATION_STATUSES.AVAILABLE,
+    movementId: 'm2',
+    movementLineId: 'ml2'
+  });
+
+  assert.throws(
+    () =>
+      aggregate.assertRequirements([
+        {
+          receiptLineId: 'l1',
+          requiredStatus: RECEIPT_ALLOCATION_STATUSES.QA,
+          requiredBinId: 'qa-bin',
+          requiredQuantity: 3
+        }
+      ]),
+    /RECEIPT_ALLOCATION_PRECHECK_FAILED/
+  );
+});
+
+test('receipt allocation aggregate rejects unsafe status transitions and missing bin targets', () => {
+  const aggregate = ReceiptAllocationAggregate.create({
+    expectedQtyByReceiptLineId: new Map([['l1', 2]]),
+    allocations: [
+      {
+        id: 'a1',
+        receiptId: 'r1',
+        receiptLineId: 'l1',
+        warehouseId: 'w1',
+        locationId: 'sellable',
+        binId: 'sellable-bin',
+        inventoryMovementId: 'm1',
+        inventoryMovementLineId: 'ml1',
+        costLayerId: 'cl1',
+        quantity: 2,
+        status: RECEIPT_ALLOCATION_STATUSES.AVAILABLE
+      }
+    ]
+  });
+
+  assert.throws(
+    () =>
+      aggregate.applyConsume({
+        receiptLineId: 'l1',
+        quantity: 1,
+        sourceStatus: RECEIPT_ALLOCATION_STATUSES.AVAILABLE,
+        sourceBinId: 'sellable-bin',
+        destinationLocationId: 'hold',
+        destinationBinId: 'hold-bin',
+        destinationStatus: RECEIPT_ALLOCATION_STATUSES.HOLD,
+        movementId: 'm2',
+        movementLineId: 'ml2'
+      }),
+    /RECEIPT_ALLOCATION_STATUS_TRANSITION_INVALID/
+  );
+
+  assert.throws(
+    () =>
+      aggregate.applyConsume({
+        receiptLineId: 'l1',
+        quantity: 1,
+        sourceStatus: RECEIPT_ALLOCATION_STATUSES.AVAILABLE,
+        sourceBinId: '',
+        movementId: 'm2',
+        movementLineId: 'ml2',
+        expectedQuantityDelta: -1
+      }),
+    /RECEIPT_ALLOCATION_BIN_TARGET_REQUIRED/
+  );
+});
+
+test('receipt allocation mutation rejects fabricated validation context', async () => {
+  await assert.rejects(
+    moveReceiptAllocations({
+      client: { query: async () => ({ rowCount: 0, rows: [] }) },
+      tenantId: 't1',
+      context: {
+        tenantId: 't1',
+        kind: 'validated',
+        receiptLineIds: new Set(['l1']),
+        allocationsByLine: new Map()
+      },
+      receiptLineId: 'l1',
+      quantity: 1,
+      sourceStatus: RECEIPT_ALLOCATION_STATUSES.QA,
+      sourceBinId: 'qa-bin',
+      movementId: 'm1',
+      movementLineId: 'ml1',
+      occurredAt: new Date(),
+      expectedQuantityDelta: -1
+    }),
+    /RECEIPT_ALLOCATION_VALIDATION_REQUIRED/
+  );
 });

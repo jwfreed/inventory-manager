@@ -33,7 +33,7 @@ import {
 } from './inbound/receivingAggregations';
 import {
   RECEIPT_ALLOCATION_STATUSES,
-  consumeReceiptAllocations,
+  moveReceiptAllocations,
   type ValidatedReceiptAllocationMutationContext
 } from '../domain/receipts/receiptAllocationModel';
 import { validateOrRebuildReceiptAllocationsForMutation } from '../domain/receipts/receiptAllocationRebuilder';
@@ -296,7 +296,7 @@ async function moveReceiptAllocationsToAvailable(params: {
       throw new Error('PUTAWAY_ALLOCATION_VALIDATION_REQUIRED');
     }
     try {
-      await consumeReceiptAllocations({
+      await moveReceiptAllocations({
         client: params.client,
         tenantId: params.tenantId,
         context: allocationContext,

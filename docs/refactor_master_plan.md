@@ -339,9 +339,9 @@ All core Sprint 2 implementation objectives are complete and ready for formal cl
 - [x] No behavioral change was introduced for the preserved QC and transfer semantics listed above.
 - [x] Architecture and contract guardrails cover the Sprint 2 boundary outcomes.
 
-### Unresolved / Carry-Forward Items
+### Resolved / Carry-Forward Items
 
-- `receipt_allocations` ownership/classification remains unresolved by design. It is observed as receipt/QC operational state that is mutated during Receipt QC, but Sprint 2 did not decide whether it is authoritative operational state or a projection derived from ledger rows. This must be carried forward explicitly.
+- `receipt_allocations` ownership/classification is resolved: it is non-authoritative operational support state, required for receipt workflow execution, maintained transactionally, and not projection-owned.
 - Broader repository verification issues outside Sprint 2 scope remain documented elsewhere and must not be represented as Sprint 2 implementation failures. Known examples include pre-existing `lint:inventory-writes` ownership violations and broader scenario-suite load/timeout failures.
 - The private transfer-scoped runner introduced for forward transfers must remain transfer-scoped. It must not be moved into shared platform infrastructure or generalized into a replacement caller-client hook.
 
@@ -363,7 +363,7 @@ Safely decompose the WorkOrderExecution monolith.
 - Transfers pattern proven (Sprint 1 complete — met)
 - QC separation pattern proven (Sprint 2 complete — met)
 - Correctness boundaries defined for all QC workflows — met
-- Carry-forward issues from Sprint 2 explicitly acknowledged, especially `receipt_allocations` ownership/classification
+- Carry-forward issues from Sprint 2 explicitly acknowledged; `receipt_allocations` ownership/classification has since been resolved as operational support state
 
 ### Phase A — Correctness Boundary Definition
 
@@ -457,7 +457,7 @@ These rules apply to all sprints without exception.
 | 2026-04-10 | Replace single-module rule with ownership boundary rule in §4 and §10 | Structural rigidity of "one workflow per module" would have forbidden shared infrastructure; ownership boundary preserves intent |
 | 2026-04-10 | Correct Sprint 0.5 exit criteria | Overstated completeness; QC workflow definition is deferred to Sprint 2 Phase A |
 | 2026-04-12 | Mark Sprint 2 complete / closeout ready | Phase A definition, QC workflow separation, Warehouse Disposition atomicity, transfer path unification, and transfer-scoped boundary enforcement are complete |
-| 2026-04-12 | Preserve `receipt_allocations` as carry-forward ambiguity | Sprint 2 preserved behavior but did not resolve whether `receipt_allocations` is authoritative operational state or projection state |
+| 2026-04-12 | Preserve `receipt_allocations` as carry-forward ambiguity | Sprint 2 preserved behavior before the later receipt allocation hardening classified it as non-authoritative operational support state |
 | 2026-04-12 | Remove generic caller-client execution bypass from shared command wrapper | `runInventoryCommand` must remain workflow-agnostic with a single lifecycle model; transfer caller-client support is private to the Transfer workflow |
 | 2026-04-14 | Mark Sprint 2 as complete; Sprint 3 as active | Formal Sprint 2 closeout complete; Sprint 3 in progress with Phase A boundary definition done and Phase B decomposition underway |
 | 2026-04-14 | WF-2, WF-4, WF-5 extracted in Sprint 3 Phase B | Workflows verified with no behavioral changes; contract tests passing; WF-7 is next; WF-6 deferred due to two-transaction exception |

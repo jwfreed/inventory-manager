@@ -13,8 +13,8 @@ import { receiptCloseSchema, poCloseSchema } from '../schemas/closeout.schema';
 import { mapPurchaseOrder } from './purchaseOrders.service';
 import {
   RECEIPT_ALLOCATION_STATUSES,
-  consumeReceiptAllocations,
-  insertReceiptAllocations,
+  addReceiptAllocations,
+  moveReceiptAllocations,
   loadReceiptAllocationsByLine,
   summarizeReceiptAllocations,
   type ReceiptAllocation,
@@ -56,6 +56,7 @@ type ReconciliationDiscrepancyRow = {
 export type ReceiptLineReconciliation = {
   purchaseOrderReceiptLineId: string;
   quantityReceived: number;
+  allocationExpectedQuantity: number;
   qcBreakdown: { hold: number; accept: number; reject: number };
   allocationSummary: { qa: number; available: number; hold: number; total: number };
   quantityPutawayPosted: number;
@@ -133,6 +134,33 @@ async function loadPersistedDiscrepancies(
     [tenantId, receiptId]
   );
   return rows.map(mapDiscrepancy);
+}
+
+async function loadAllocationExpectedQtyByLine(
+  tenantId: string,
+  receiptId: string,
+  client?: PoolClient
+) {
+  const executor = client ?? pool;
+  const { rows } = await executor.query<{ receipt_line_id: string; adjustment_qty: string | number }>(
+    `SELECT d.purchase_order_receipt_line_id AS receipt_line_id,
+            COALESCE(SUM(d.discrepancy_qty), 0)::numeric AS adjustment_qty
+       FROM receipt_reconciliation_discrepancies d
+       JOIN receipt_reconciliation_resolutions r
+         ON r.discrepancy_id = d.id
+        AND r.tenant_id = d.tenant_id
+        AND r.resolution_type = 'ADJUSTMENT'
+      WHERE d.tenant_id = $1
+        AND d.purchase_order_receipt_id = $2
+        AND d.status = 'ADJUSTED'
+      GROUP BY d.purchase_order_receipt_line_id`,
+    [tenantId, receiptId]
+  );
+  const adjustmentQtyByLine = new Map<string, number>();
+  for (const row of rows) {
+    adjustmentQtyByLine.set(row.receipt_line_id, roundQuantity(toNumber(row.adjustment_qty ?? 0)));
+  }
+  return adjustmentQtyByLine;
 }
 
 async function upsertReconciliationDiscrepancy(params: {
@@ -366,10 +394,11 @@ async function applyAdjustmentResolution(params: {
   }
 
   if (delta > 0) {
-    await insertReceiptAllocations(
-      params.client,
-      params.tenantId,
-      [
+    await addReceiptAllocations({
+      client: params.client,
+      tenantId: params.tenantId,
+      context: params.allocationContext,
+      allocations: [
         {
           id: uuidv4(),
           receiptId: params.receiptId,
@@ -384,12 +413,12 @@ async function applyAdjustmentResolution(params: {
           status: allocationStatus
         }
       ],
-      params.occurredAt,
-      params.allocationContext
-    );
+      expectedQuantityDeltaByReceiptLineId: new Map([[params.line.id, delta]]),
+      occurredAt: params.occurredAt
+    });
   } else {
     try {
-      await consumeReceiptAllocations({
+      await moveReceiptAllocations({
         client: params.client,
         tenantId: params.tenantId,
         context: params.allocationContext,
@@ -399,7 +428,8 @@ async function applyAdjustmentResolution(params: {
         sourceBinId: binId,
         movementId: movement.movementId,
         movementLineId,
-        occurredAt: params.occurredAt
+        occurredAt: params.occurredAt,
+        expectedQuantityDelta: delta
       });
     } catch (error) {
       if ((error as Error).message === 'RECEIPT_ALLOCATION_PRECHECK_FAILED') {
@@ -438,6 +468,7 @@ export async function fetchReceiptReconciliation(
     ? await loadReceiptAllocationsByLine(client, tenantId, lineIds)
     : await withTransaction((tx) => loadReceiptAllocationsByLine(tx, tenantId, lineIds));
   const discrepancies = await loadPersistedDiscrepancies(tenantId, receiverId, client);
+  const adjustmentQtyByLine = await loadAllocationExpectedQtyByLine(tenantId, receiverId, client);
 
   const closeoutResult = await executor.query<CloseoutRow>(
     'SELECT * FROM inbound_closeouts WHERE purchase_order_receipt_id = $1 AND tenant_id = $2',
@@ -449,10 +480,13 @@ export async function fetchReceiptReconciliation(
     const qc = qcMap.get(line.id) ?? { hold: 0, accept: 0, reject: 0 };
     const totals = totalsMap.get(line.id) ?? { posted: 0, pending: 0, qa: 0, hold: 0 };
     const quantityReceived = roundQuantity(toNumber(line.quantity_received));
+    const allocationExpectedQuantity = roundQuantity(
+      quantityReceived + (adjustmentQtyByLine.get(line.id) ?? 0)
+    );
     const allocationSummary = summarizeReceiptAllocations(allocationsByLine.get(line.id) ?? []);
     const remaining = Math.max(0, roundQuantity(allocationSummary.qaQty));
     const blockedReasons: string[] = [];
-    if (Math.abs(allocationSummary.totalQty - quantityReceived) > 1e-6) {
+    if (Math.abs(allocationSummary.totalQty - allocationExpectedQuantity) > 1e-6) {
       blockedReasons.push('Receipt allocation total does not match received quantity');
     }
     if (remaining > 0) {
@@ -464,6 +498,7 @@ export async function fetchReceiptReconciliation(
     return {
       purchaseOrderReceiptLineId: line.id,
       quantityReceived,
+      allocationExpectedQuantity,
       qcBreakdown: {
         hold: roundQuantity(qc.hold ?? 0),
         accept: roundQuantity(qc.accept ?? 0),
@@ -529,6 +564,7 @@ export async function closePurchaseOrderReceipt(
     );
     const lineIds = linesResult.rows.map((line: any) => line.id);
     const now = new Date();
+    const adjustmentQtyByLine = await loadAllocationExpectedQtyByLine(tenantId, receiptId, client);
     const allocationContext = await validateOrRebuildReceiptAllocationsForMutation({
       client,
       tenantId,
@@ -540,15 +576,16 @@ export async function closePurchaseOrderReceipt(
 
     for (const line of linesResult.rows) {
       const receivedQty = roundQuantity(toNumber(line.quantity_received ?? 0));
+      const expectedQty = roundQuantity(receivedQty + (adjustmentQtyByLine.get(line.id) ?? 0));
       const allocationSummary = summarizeReceiptAllocations(allocationsByLine.get(line.id) ?? []);
-      if (Math.abs(allocationSummary.totalQty - receivedQty) > 1e-6) {
+      if (Math.abs(allocationSummary.totalQty - expectedQty) > 1e-6) {
         await upsertReconciliationDiscrepancy({
           client,
           tenantId,
           receiptId,
           receiptLineId: line.id,
           discrepancyType: 'POSTING_INTEGRITY',
-          expectedQty: receivedQty,
+          expectedQty,
           actualQty: allocationSummary.totalQty,
           notes: 'Receipt quantity does not match persisted allocations.',
           occurredAt: now
@@ -648,7 +685,7 @@ export async function closePurchaseOrderReceipt(
       lineFacts: refreshedReconciliation.lines.map((line) => ({
         remainingToPutaway: line.remainingToPutaway,
         holdQty: line.qcBreakdown.hold,
-        allocationQuantityMatchesReceipt: line.allocationSummary.total === line.quantityReceived
+        allocationQuantityMatchesReceipt: line.allocationSummary.total === line.allocationExpectedQuantity
       })),
       openDiscrepancyCount: refreshedReconciliation.discrepancies.filter((item) => item.status === 'OPEN').length
     });

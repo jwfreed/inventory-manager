@@ -11,7 +11,7 @@
 ### What This Means
 
 - **Non-authoritative.** It is not the source of truth for any quantity or status. The authoritative sources are: `purchase_order_receipt_lines` (quantity received), `inventory_movements` + `inventory_movement_lines` (ledger), `qc_events` (QC decisions), `putaway_lines` (putaway completions), and `receipt_reconciliation_resolutions` (adjustments).
-- **Derived.** The complete state of `receipt_allocations` can be reconstructed from the authoritative sources above. If it is lost, it can be rebuilt.
+- **Reconstructable, not projection-owned.** The complete state of `receipt_allocations` can be reconstructed from the authoritative sources above only when every mapping is unambiguous. It is maintained transactionally by receipt workflows, not by background projection replay.
 - **Mutable.** It is modified (INSERT / UPDATE / DELETE) during workflow execution. It is not append-only.
 
 ### What This Does NOT Mean

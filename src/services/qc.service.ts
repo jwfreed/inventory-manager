@@ -22,7 +22,7 @@ import { buildReplayCorruptionError } from '../modules/platform/application/inve
 import { withInventoryTransaction } from '../modules/platform/application/withInventoryTransaction';
 import {
   RECEIPT_ALLOCATION_STATUSES,
-  consumeReceiptAllocations,
+  moveReceiptAllocations,
   type ValidatedReceiptAllocationMutationContext
 } from '../domain/receipts/receiptAllocationModel';
 import { validateOrRebuildReceiptAllocationsForMutation } from '../domain/receipts/receiptAllocationRebuilder';
@@ -131,7 +131,7 @@ async function moveReceiptAllocationsFromQa(params: {
   allocationContext: ValidatedReceiptAllocationMutationContext;
 }) {
   try {
-    await consumeReceiptAllocations({
+    await moveReceiptAllocations({
       client: params.client,
       tenantId: params.tenantId,
       context: params.allocationContext,
