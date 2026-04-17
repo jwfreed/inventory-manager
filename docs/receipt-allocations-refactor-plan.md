@@ -1,38 +1,49 @@
-# Receipt Allocations — Refactor Plan
+# Receipt Allocations — Refactor Plan (Corrected)
 
-## Classification Decision
-
-`receipt_allocations` is **Operational Support State**. It is:
-- Non-authoritative
-- Mutable (INSERT / UPDATE / DELETE)
-- Derivable from authoritative sources
-- Useful for workflow coordination
-
-It is NOT:
-- A ledger table
-- A projection (it is not rebuilt from ledger replay)
-- A source of truth for quantity correctness
+> **Revision note:** This version corrects a critical flaw in the prior plan. The prior plan assumed workflows (QC, putaway, reconciliation) could safely proceed with missing or inconsistent allocation state and "repair later." That assumption is unproven and likely unsafe. This version enforces: **validate before execution; fail fast or repair before proceeding. No silent continuation.**
 
 ---
 
-## 1. Allowed Uses
+## 1. Classification
 
-### 1.1 Workflow Coordination
+`receipt_allocations` is **Operational Support State**.
 
-`receipt_allocations` acts as a **materialized cursor** that tracks bin-level receipt quantity through inbound workflow phases (QC → putaway → reconciliation). It exists to answer: "Where is this receipt line's quantity right now, and what status is it in?"
+### What This Means
 
-Allowed coordination roles:
+- **Non-authoritative.** It is not the source of truth for any quantity or status. The authoritative sources are: `purchase_order_receipt_lines` (quantity received), `inventory_movements` + `inventory_movement_lines` (ledger), `qc_events` (QC decisions), `putaway_lines` (putaway completions), and `receipt_reconciliation_resolutions` (adjustments).
+- **Derived.** The complete state of `receipt_allocations` can be reconstructed from the authoritative sources above. If it is lost, it can be rebuilt.
+- **Mutable.** It is modified (INSERT / UPDATE / DELETE) during workflow execution. It is not append-only.
+
+### What This Does NOT Mean
+
+- **Not optional during execution.** Workflows depend on allocations for correct bin targeting, quantity partitioning, and status routing. A workflow cannot safely proceed if the allocation state it depends on is missing, stale, or inconsistent.
+- **Not a projection.** It is not rebuilt from ledger replay. It is not updated by the projection rebuild machinery. It is maintained as a side-effect of inbound workflow transactions.
+- **Not a ledger table.** It is not governed by `ledgerWriter.ts` or protected by the existing inventory write ownership guard.
+
+### The Key Distinction
+
+> **Non-authoritative ≠ optional during execution.**
+>
+> `receipt_allocations` is required for correct workflow execution. But it is never the source of truth. If allocations and authoritative sources disagree, the authoritative sources win — and the system must detect the disagreement before damage occurs, not after.
+
+---
+
+## 2. Responsibilities (Allowed Uses)
+
+### 2.1 Coordination Roles
+
+`receipt_allocations` acts as a **materialized cursor** that tracks bin-level receipt quantity through inbound workflow phases (QC → putaway → reconciliation). It answers: "Where is this receipt line's quantity right now, and what status is it in?"
 
 | Role | Description |
 |------|-------------|
-| QC routing | Track which bins hold QA-pending quantity so QC events can target the correct source |
-| Putaway source | Identify QA allocations at a source bin for putaway line consumption |
+| QC routing | Track which bins hold QA-pending quantity so QC events can target the correct source bin |
+| Putaway source | Identify QA allocations at a source bin for putaway line consumption and destination placement |
 | Reconciliation targeting | Locate allocations by location/bin/status for adjustment application |
-| Status aggregation | Summarize QA / AVAILABLE / HOLD quantities per receipt line for API responses |
+| Status aggregation | Summarize QA / AVAILABLE / HOLD quantities per receipt line for API display |
 
-### 1.2 Allowed Write Patterns
+### 2.2 Allowed Write Patterns
 
-Writes are permitted only when **paired with a corresponding ledger write** (inventory movement) in the same transaction. Every INSERT must populate `inventory_movement_id` and `inventory_movement_line_id` (enforced by existing `assertReceiptAllocationTraceability`).
+Writes are permitted **only when paired with a corresponding ledger write** (inventory movement) in the same transaction.
 
 | Writer | Service | Trigger | Operations |
 |--------|---------|---------|------------|
@@ -43,45 +54,44 @@ Writes are permitted only when **paired with a corresponding ledger write** (inv
 
 No other write paths are permitted.
 
-### 1.3 Allowed Read Patterns
+Every INSERT must populate `inventory_movement_id` and `inventory_movement_line_id` (enforced by `assertReceiptAllocationTraceability`).
+
+### 2.3 Allowed Read Patterns
 
 | Reader | Purpose | Constraint |
 |--------|---------|------------|
-| `loadReceiptAllocationsByLine()` | Load allocations for workflow mutation targeting | Must be followed by authoritative validation |
+| `loadReceiptAllocationsByLine()` | Load allocations for workflow mutation targeting | Workflow must validate allocation invariants before proceeding |
 | `receivingAggregations.ts` | Compute QA/AVAILABLE/HOLD summaries for API | Display only — must not drive correctness decisions |
 | `deriveReceiptAvailabilityFromAllocations()` | Determine receipt availability state | Informational — gated by lifecycle state, not allocation alone |
 | Putaway readiness check | Sum AVAILABLE allocations per receipt | Informational — must not be sole gate for receipt closeout |
 
-### 1.4 Acceptable Dependencies
+### 2.4 Acceptable Dependencies
 
 - `receipt_allocations` MAY depend on: `purchase_order_receipt_lines`, `inventory_movements`, `inventory_movement_lines`, `inventory_bins`, `locations`, `inventory_cost_layers`
 - Other tables MUST NOT depend on `receipt_allocations` (no inbound foreign keys)
 
 ---
 
-## 2. Forbidden Uses
+## 3. Forbidden Uses
 
-### 2.1 Never Source of Truth
+### 3.1 Never Source of Truth
 
 | Forbidden Use | Reason | Enforcement |
 |---------------|--------|-------------|
 | Using allocation totals to validate inventory correctness | Allocations are mutable; ledger is authoritative | Truth test + code review |
-| Using allocation status to gate ledger writes | Would make operational state a correctness prerequisite | Static analysis guard |
+| Treating allocation quantity as canonical received quantity | `purchase_order_receipt_lines.quantity_received` is authoritative | Drift detection |
 | Using allocations as input to `inventory_balance` projection rebuild | Projections derive from ledger only (AGENTS.md § Projection Rebuilds) | Existing truth test |
 | Reading allocations during full-system replay | Replay consumes ledger only (System Model § 3.3) | Architecture invariant |
-| Treating allocation quantity as canonical received quantity | `purchase_order_receipt_lines.quantity_received` is authoritative | Drift detection |
 
-### 2.2 Never a Correctness Gate
+### 3.2 Never Standalone Decision-Making
 
-No code path may allow a workflow to fail or succeed based **solely** on the state of `receipt_allocations`.
+No workflow may make a **correctness decision** based solely on allocation state without cross-validation against authoritative data.
 
-Specifically:
+- **Receipt closeout** must validate posting integrity against ledger movements AND allocations — not allocations alone.
+- **QC event quantity** is validated against QC event input, not allocation balance. Allocations provide bin targeting, not quantity authority.
+- **Reconciliation adjustments** must validate expected quantities from authoritative sources before applying allocation mutations.
 
-- **Receipt closeout** must not fail only because allocation totals disagree — it must validate against ledger movements.
-- **QC event recording** must create the `qc_event` and the ledger movement regardless of allocation state. Allocation mutation is a side-effect, not a prerequisite.
-- **Putaway completion** must succeed based on movement integrity, not allocation availability. If allocations are missing, the system must detect this as drift rather than block the workflow.
-
-### 2.3 Never Written Outside Transaction + Movement Pair
+### 3.3 Never Written Outside Transaction + Movement Pair
 
 Every allocation write must occur:
 1. Inside a `withTransaction` / `withTransactionRetry` boundary
@@ -90,36 +100,160 @@ Every allocation write must occur:
 
 Writing allocation rows without a corresponding movement is forbidden.
 
+### 3.4 Never Used as Correctness Gate for Ledger Writes
+
+Allocation state must never be a prerequisite for creating the authoritative record. Specifically:
+- The `qc_events` row and its inventory movement must not fail to write because allocations are invalid.
+- The putaway movement must not fail to write because allocations are invalid.
+- The reconciliation movement must not fail to write because allocations are invalid.
+
+If allocations are invalid, the workflow must **detect this before execution begins** and either repair or fail — not after the authoritative write has been skipped.
+
 ---
 
-## 3. Drift Detection Strategy
+## 4. Operational Role Definition
 
-### 3.1 What Can Drift
+### The Coordination Contract
 
-| Drift Type | Description |
-|------------|-------------|
-| Quantity drift | Sum of allocations per receipt line ≠ `quantity_received` on `purchase_order_receipt_lines` |
-| Movement link drift | Allocation references a movement ID that does not exist or has different quantity |
-| Status drift | Allocation in status X but corresponding QC events / putaway lines indicate status Y |
-| Orphan allocations | Allocation row references a receipt line that no longer exists or has been voided |
-| Missing allocations | Receipt line has posted movements but no corresponding allocations |
+`receipt_allocations` provides three things workflows need that authoritative tables do not directly expose:
 
-### 3.2 When to Check
+1. **Bin-level quantity partitioning.** A single receipt line's `quantity_received` may be spread across multiple bins. Allocations track which quantity is in which bin. This cannot be derived from the receipt line alone at query time — it requires replaying movements. Allocations are the materialized result of that replay.
 
-| Trigger | What to Check | Severity |
-|---------|---------------|----------|
-| Receipt closeout (pre-close validation) | Quantity conservation, movement link integrity, status completeness | **Hard fail** — closeout blocked until drift resolved |
-| Periodic background job (recommended: daily) | All drift types across open receipts | **Soft alert** — log + expose in admin API |
-| On-demand rebuild request | Full reconciliation of specified receipt | **Informational** — operator-initiated |
-| Before reconciliation adjustment application | Quantity conservation for affected receipt line | **Hard fail** — adjustment blocked if pre-existing drift detected |
+2. **Status partitioning.** A single receipt line's quantity may be partially in QA, partially AVAILABLE, partially on HOLD. Allocations partition by status so workflows can target the correct subset.
 
-### 3.3 Drift Detection Implementation
+3. **Consumption cursor.** When a QC event or putaway consumes QA quantity, allocations track which specific bin-level rows have been consumed and which remain. This is mutable state that advances as workflows execute.
 
-#### 3.3.1 Quantity Conservation Check
+### Why Workflows Cannot Skip Allocations
 
-Already exists as `assertReceiptAllocationQuantityConservation()` in `receiptAllocationModel.ts`. Currently called inline during individual workflows.
+Without valid allocation state:
+- **QC** cannot know which bin holds the QA quantity to accept/hold/reject. The QC event itself records a quantity, but the allocation tells the system where that quantity physically is.
+- **Putaway** cannot know which QA allocation to consume at the source bin. `putaway_lines` reference allocations by `from_bin_id` — without allocations, the system cannot execute the bin-level consumption.
+- **Reconciliation** cannot target the correct location/bin/status combination for adjustment application.
 
-**New requirement:** Expose as a standalone callable check that can be run against any receipt line ID:
+### The Correct Model
+
+```
+Workflow execution requires:
+  1. Load allocations
+  2. Validate allocation invariants (conservation, traceability, status consistency)
+  3. If valid → proceed with workflow (ledger write + allocation mutation in same transaction)
+  4. If invalid → attempt repair (rebuild from authoritative sources)
+  5. If repair succeeds → re-validate → proceed
+  6. If repair fails → fail the workflow with explicit error
+```
+
+There is **no path** where a workflow proceeds with invalid or missing allocation state. There is **no "degraded mode."**
+
+---
+
+## 5. Invariants
+
+### 5.1 Global Invariants
+
+These invariants must hold at all times (enforced at write time and verifiable at check time):
+
+| # | Invariant | Enforcement |
+|---|-----------|-------------|
+| G1 | **Quantity conservation.** For every non-voided receipt line: `SUM(receipt_allocations.quantity) = purchase_order_receipt_lines.quantity_received` (within epsilon) | `assertReceiptAllocationQuantityConservation()` (existing) + standalone drift check (new) |
+| G2 | **Traceability.** Every allocation must have non-null `inventory_movement_id` and `inventory_movement_line_id` referencing existing ledger rows | `assertReceiptAllocationTraceability()` (existing) + drift check (new) |
+| G3 | **Positive quantity.** All allocation quantities > 0. Zero-quantity rows must be deleted, not updated to zero | `CHECK (quantity > 0)` constraint (existing) |
+| G4 | **Status validity.** Status must be one of `QA`, `AVAILABLE`, `HOLD` | Schema CHECK constraint (existing) |
+| G5 | **Write ownership.** Writes only from the 4 allowed service files + `receiptAllocationModel.ts` | Static analysis guard (new) |
+| G6 | **Transaction coupling.** Every allocation write occurs in the same transaction as its corresponding inventory movement | Architecture rule (existing) + code review |
+| G7 | **Non-authority.** No ledger table, projection rebuild, or replay logic references `receipt_allocations` | Truth test (new) |
+
+### 5.2 Per-Workflow Invariants
+
+| Workflow | Pre-condition | Post-condition |
+|----------|---------------|----------------|
+| Receipt creation | Receipt line exists with `quantity_received > 0` | Allocations created in `QA` status, `SUM(qty) = quantity_received`, all linked to posting movement |
+| QC accept/hold | QA allocations exist at source bin with sufficient quantity | Source QA consumed, destination AVAILABLE/HOLD created, linked to QC movement. Conservation preserved |
+| Putaway completion | QA allocations exist at `from_bin_id` with sufficient quantity | Source QA consumed, destination AVAILABLE created at `to_bin_id`, linked to putaway movement. Conservation preserved |
+| Reconciliation adjustment | Allocations at target location/bin/status exist (for negative delta) or conservation allows addition (for positive delta) | Allocations adjusted, linked to adjustment movement. Conservation preserved |
+
+If any pre-condition fails, the workflow must not proceed with allocation mutation. See §6 for the specific handling.
+
+---
+
+## 6. Workflow Constraints
+
+### 6.1 QC Workflow
+
+| Aspect | Rule |
+|--------|------|
+| **Pre-execution validation** | Load QA allocations for the receipt line. Validate: (a) allocations exist, (b) quantity conservation holds against receipt line, (c) sufficient QA quantity at the source bin for the event quantity |
+| **If validation passes** | Execute in single transaction: create QC event → create inventory movement → mutate allocations (consume QA, insert AVAILABLE/HOLD) |
+| **If validation fails: insufficient QA quantity** | Attempt rebuild for the affected receipt line (§8). After rebuild, re-validate. If re-validation passes, proceed. If it fails, **fail the workflow** with error code `RECEIPT_ALLOCATION_DRIFT_UNRECOVERABLE` |
+| **If validation fails: missing allocations entirely** | Attempt rebuild. If rebuild produces valid state with sufficient QA, proceed. If not, **fail the workflow** |
+| **Authoritative record** | The QC event and its movement are authoritative. But they must not be written without valid allocation state — because the allocation provides the bin targeting that the movement requires |
+| **Why not "proceed anyway"** | The inventory movement for a QC event encodes `from_location`, `from_bin`. Without valid allocations, the system does not know which bin to transfer from. A movement with incorrect bin targeting corrupts the ledger |
+
+### 6.2 Putaway Workflow
+
+| Aspect | Rule |
+|--------|------|
+| **Pre-execution validation** | Load QA allocations for the receipt line. Validate: (a) allocations exist, (b) quantity conservation holds, (c) sufficient QA quantity at `from_bin_id` for `quantity_planned` |
+| **If validation passes** | Execute in single transaction: complete putaway line → create inventory movement → mutate allocations (consume QA, insert AVAILABLE at destination) |
+| **If validation fails** | Attempt rebuild for the affected receipt line. After rebuild, re-validate. If re-validation passes, proceed. If it fails, **fail the workflow** with error code `RECEIPT_ALLOCATION_DRIFT_UNRECOVERABLE` |
+| **Why not "proceed anyway"** | Putaway movements encode `from_bin` → `to_bin`. Without valid QA allocations at the source bin, the system would create a movement from a bin that (according to allocations) has no QA material. This is either incorrect or untraceable |
+
+### 6.3 Reconciliation Workflow
+
+| Aspect | Rule |
+|--------|------|
+| **Pre-execution validation** | Load allocations for the receipt line. Validate quantity conservation. For negative deltas: verify matching allocations exist at the target location/bin/status with sufficient quantity |
+| **If validation passes** | Execute in single transaction: record resolution → create adjustment movement → mutate allocations |
+| **If validation fails** | Attempt rebuild. After rebuild, re-validate. If re-validation passes, proceed. If it fails, **fail the workflow** |
+| **Special case: positive delta** | Positive-delta adjustments INSERT new allocations. Pre-condition: quantity conservation must hold BEFORE the adjustment (to ensure we are adjusting from a consistent baseline). After INSERT, conservation must still hold (with the new expected total) |
+
+### 6.4 Receipt Closeout Workflow
+
+| Aspect | Rule |
+|--------|------|
+| **Pre-closeout validation** | Run full drift detection (§7) for the receipt: quantity conservation, movement link integrity, status consistency |
+| **If validation passes** | Validate posting integrity via `buildReceiptPostingIntegrity()` (compares allocations + receipt lines + posted movements). If posting integrity passes, proceed with closeout |
+| **If drift detected** | Attempt rebuild (§8). After rebuild, re-run full drift detection. If clean, proceed. If drift persists, **block closeout** with explicit error listing all unresolved drifts |
+| **Allocation writes** | None during closeout itself. Closeout is a read + state transition, not an allocation mutation |
+
+### 6.5 Summary: No Workflow Proceeds With Invalid State
+
+```
+For all workflows:
+  validate(allocations) → PASS → execute
+                        → FAIL → rebuild → re-validate → PASS → execute
+                                                        → FAIL → ABORT
+```
+
+There is no third branch. There is no "proceed and fix later."
+
+---
+
+## 7. Drift Detection Strategy
+
+### 7.1 What Can Drift
+
+| Drift Type | Description | Severity |
+|------------|-------------|----------|
+| Quantity drift | `SUM(allocations.quantity)` per receipt line ≠ `quantity_received` | **Critical** — blocks workflows |
+| Movement link drift | Allocation references a movement ID that does not exist | **Critical** — indicates ledger-level issue |
+| Status drift | Allocation status does not match expected state from QC events + putaway lines | **High** — causes incorrect bin targeting |
+| Orphan allocations | Allocation references a voided or non-existent receipt line | **Medium** — inflates reported quantities |
+| Missing allocations | Receipt line has posted movements but zero allocation rows | **Critical** — blocks all workflows for the receipt line |
+
+### 7.2 When to Check
+
+| Trigger | Checks Run | Action on Drift |
+|---------|-----------|-----------------|
+| Before QC/putaway/reconciliation execution | Quantity conservation + sufficient quantity at target bin | Attempt rebuild → re-validate → proceed or abort |
+| Receipt closeout (pre-close) | All drift types | Attempt rebuild → re-validate → proceed or block |
+| Background job (daily) | All drift types across open receipts | Log + alert. Do NOT auto-rebuild in background (rebuild must occur within workflow transaction context) |
+| On-demand admin request | All drift types for specified receipt | Report only, or operator-triggered rebuild |
+
+### 7.3 Drift Detection Functions
+
+#### 7.3.1 Quantity Conservation Check
+
+Exists as `assertReceiptAllocationQuantityConservation()`. Extend with a standalone non-throwing verifier:
 
 ```
 verifyAllocationQuantityConservation(client, tenantId, receiptLineIds)
@@ -129,116 +263,121 @@ verifyAllocationQuantityConservation(client, tenantId, receiptLineIds)
 Source of expected: `purchase_order_receipt_lines.quantity_received`
 Source of actual: `SUM(receipt_allocations.quantity) WHERE receipt_line_id = X`
 
-#### 3.3.2 Movement Link Integrity Check
-
-New function:
+#### 7.3.2 Movement Link Integrity Check
 
 ```
 verifyAllocationMovementLinks(client, tenantId, receiptLineIds)
-  → { allocationId, movementId, movementLineId, exists, qtyMatch, pass }[]
+  → { allocationId, movementId, movementLineId, exists, pass }[]
 ```
 
-For each allocation:
-- Verify `inventory_movement_id` exists in `inventory_movements`
-- Verify `inventory_movement_line_id` exists in `inventory_movement_lines`
-- Verify movement line quantity is consistent with allocation purpose
+For each allocation: verify referenced movement and movement line exist in ledger tables.
 
-#### 3.3.3 Status Consistency Check
-
-New function:
+#### 7.3.3 Status Consistency Check
 
 ```
 verifyAllocationStatusConsistency(client, tenantId, receiptLineIds)
-  → { lineId, qaQty, acceptedQty, heldQty, expectedFromEvents, drifts[] }
+  → { lineId, allocatedByStatus: {QA, AVAILABLE, HOLD}, expectedByStatus: {QA, AVAILABLE, HOLD}, drifts[] }
 ```
 
 Derives expected status distribution from:
-- `qc_events` (accept → AVAILABLE, hold → HOLD, reject → removed)
-- `putaway_lines` with status=completed (QA → AVAILABLE)
-- `receipt_reconciliation_resolutions` (adjustments)
+- `qc_events`: accept → AVAILABLE, hold → HOLD, reject → removed
+- `putaway_lines` (status=completed): QA → AVAILABLE
+- `receipt_reconciliation_resolutions`: adjustments
 
 Compares against actual allocation status breakdown.
 
-### 3.4 Drift Logging
+### 7.4 Drift Logging
 
-All drift detections must be logged with:
+All drift detections logged with:
 - Receipt ID, receipt line ID
-- Drift type
+- Drift type and magnitude
 - Expected vs actual values
-- Timestamp
-- Whether the check was blocking (closeout) or informational (background)
+- Trigger context (workflow pre-check, closeout, background, admin)
+- Whether repair was attempted and its outcome
 
-Drift events should be written to a `receipt_allocation_drift_events` table or logged to structured application logs (implementation detail — do not require a new table if structured logging is sufficient).
+Use structured application logging. A dedicated drift events table is not required unless operational experience shows structured logs are insufficient.
 
 ---
 
-## 4. Rebuild Strategy
+## 8. Repair / Rebuild Strategy
 
-### 4.1 Rebuild Sources
+### 8.1 Purpose
 
-`receipt_allocations` can be reconstructed from the following authoritative tables, processed in order:
+Rebuild exists for **recovery and validation** — not for normal workflow execution. It is triggered when drift is detected, not as a routine operation.
+
+### 8.2 Rebuild Sources
 
 | Step | Source Table | What It Provides |
 |------|-------------|------------------|
 | 1 | `purchase_order_receipt_lines` | Receipt line IDs, `quantity_received` |
-| 2 | `inventory_movements` + `inventory_movement_lines` | Movement IDs, quantities, movement types for the receipt |
-| 3 | `qc_events` | QC decisions (accept/hold/reject) with quantities, ordered by `occurred_at` |
-| 4 | `putaway_lines` (status=completed) | Putaway completions with from/to location/bin, ordered by `updated_at` |
-| 5 | `receipt_reconciliation_resolutions` (type=ADJUSTMENT) | Adjustment deltas applied during reconciliation |
+| 2 | `inventory_movements` + `inventory_movement_lines` | Movement IDs, quantities, types for the receipt |
+| 3 | `qc_events` | QC decisions (accept/hold/reject) with quantities |
+| 4 | `putaway_lines` (status=completed) | Completed putaways with from/to location/bin |
+| 5 | `receipt_reconciliation_resolutions` (type=ADJUSTMENT) | Adjustment deltas |
 
-### 4.2 Rebuild Algorithm
+### 8.3 Rebuild Algorithm
 
 ```
 rebuildReceiptAllocations(client, tenantId, receiptId):
 
   1. Load receipt lines for receiptId
-  2. Load all inventory movements linked to this receipt (by reference)
+  2. Load all inventory movements linked to this receipt
   3. For each receipt line:
      a. Start with initial posting movement → create QA allocation(s)
-        - Use movement line to derive warehouseId, locationId, binId, costLayerId
-     b. Apply QC events in occurred_at order:
+        - Use movement line for warehouseId, locationId, binId, costLayerId
+     b. Apply QC events in occurred_at ASC, id ASC order:
         - accept: consume QA qty → create AVAILABLE allocation
         - hold: consume QA qty → create HOLD allocation
-        - reject: consume QA qty → no allocation (removed)
+        - reject: consume QA qty → no allocation
         - Use QC-linked movement for movement IDs and bin targeting
-     c. Apply putaway completions in updated_at order:
+     c. Apply putaway completions in updated_at ASC, id ASC order:
         - consume QA qty at from_bin → create AVAILABLE allocation at to_bin
         - Use putaway-linked movement for movement IDs
-     d. Apply reconciliation adjustments in created_at order:
-        - positive delta: insert allocation at specified location/bin/status
+     d. Apply reconciliation adjustments in created_at ASC, id ASC order:
+        - positive delta: insert at specified location/bin/status
         - negative delta: consume from matching allocations
         - Use adjustment-linked movement for movement IDs
-  4. Delete existing receipt_allocations for this receipt
-  5. Insert rebuilt allocations
-  6. Validate quantity conservation against receipt line quantities
-  7. Return rebuild report: { linesRebuilt, allocationsCreated, driftsDetected[] }
+  4. Validate rebuilt state: quantity conservation per receipt line
+  5. If validation fails: ABORT rebuild, return error (authoritative sources are inconsistent — escalate)
+  6. Delete existing receipt_allocations for this receipt (within same transaction)
+  7. Insert rebuilt allocations
+  8. Return: { linesRebuilt, allocationsCreated, driftsCorrected[] }
 ```
 
-### 4.3 Ordering Guarantees
+### 8.4 Ordering Guarantees
 
-- QC events: ordered by `occurred_at ASC, id ASC`
-- Putaway lines: ordered by `updated_at ASC, id ASC`
-- Reconciliation resolutions: ordered by `created_at ASC, id ASC`
-- Within each step, allocation consumption uses `created_at ASC, id ASC` (matching existing `loadReceiptAllocationsByLine` ordering)
+- QC events: `occurred_at ASC, id ASC`
+- Putaway lines: `updated_at ASC, id ASC`
+- Reconciliation resolutions: `created_at ASC, id ASC`
+- Allocation consumption within each step: `created_at ASC, id ASC` (matches existing `loadReceiptAllocationsByLine` ordering)
 
-### 4.4 Idempotency
+### 8.5 Idempotency
 
-Rebuild is idempotent: running it multiple times for the same receipt produces identical allocation state. The rebuild deletes all existing allocations and reconstructs from authoritative data.
+Rebuild is idempotent: running it N times for the same receipt produces identical allocation state. It deletes all existing allocations and reconstructs from authoritative data.
 
-### 4.5 When Rebuild Is Triggered
+### 8.6 When Rebuild Is Triggered
 
-| Trigger | Scope | Automation |
-|---------|-------|------------|
-| Drift detected at closeout | Single receipt | Automatic — attempt rebuild, re-check, then proceed or fail |
-| Operator request via admin API | Single receipt or batch | Manual |
-| Background job finds persistent drift | Affected receipts | Semi-automatic — queued for review or auto-rebuild based on policy |
-| Schema migration affecting allocations | All open receipts | Migration script |
+| Trigger | Context | Transaction Boundary |
+|---------|---------|---------------------|
+| Workflow pre-check fails (§6) | Single receipt line | Within the workflow's transaction — rebuild, re-validate, then proceed or abort. If the workflow aborts, the rebuild is also rolled back |
+| Closeout drift detection (§6.4) | Entire receipt | Within closeout transaction — rebuild, re-validate, then proceed or block |
+| Operator-initiated admin request | Single receipt or batch | Dedicated transaction |
+
+**Rebuild must NEVER run in a background job without operator authorization.** Background jobs detect and report drift; they do not repair it. Repair occurs only within an active workflow transaction or via explicit operator action.
+
+### 8.7 Rebuild Failure
+
+If rebuild itself fails (e.g., authoritative sources are inconsistent — QC events imply more quantity than receipt line has), this is NOT an allocation problem. It indicates inconsistency in the authoritative sources themselves. The system must:
+1. Abort the rebuild (no partial writes)
+2. Log the authoritative inconsistency with full details
+3. Fail the requesting workflow with `RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT`
+4. Require manual investigation
 
 ---
 
-## 5. API Boundaries
+## 9. API & Write Boundaries
 
-### 5.1 Write Rules
+### 9.1 Write Rules
 
 | Rule | Enforcement |
 |------|-------------|
@@ -246,20 +385,20 @@ Rebuild is idempotent: running it multiple times for the same receipt produces i
 | All writes within `withTransaction` / `withTransactionRetry` | Existing transaction boundary enforcement |
 | INSERT must populate `inventory_movement_id` and `inventory_movement_line_id` | `assertReceiptAllocationTraceability()` (existing) |
 | All INSERTs must go through `insertReceiptAllocations()` in `receiptAllocationModel.ts` | Static analysis guard (new) |
-| DELETE/UPDATE inline SQL must reference `receipt_allocations` only in the 4 allowed service files | Static analysis guard (new) |
+| DELETE/UPDATE inline SQL must reference `receipt_allocations` only in the allowed service files | Static analysis guard (new) |
 
-### 5.2 Read Rules
+### 9.2 Read Rules
 
 | Rule | Enforcement |
 |------|-------------|
 | Read via `loadReceiptAllocationsByLine()` for workflow operations | Convention — domain model provides the canonical loader |
-| Reads for API display aggregation in `receivingAggregations.ts` | Allowed — clearly display-only |
+| Reads for API display aggregation via `receivingAggregations.ts` | Allowed — clearly display-only |
 | Reads must NOT be used as sole validation for ledger writes | Code review + truth tests |
-| No cross-domain reads (e.g., manufacturing, sales order allocation must not read `receipt_allocations`) | Static analysis guard or code review |
+| No cross-domain reads (manufacturing, sales orders must not read `receipt_allocations`) | Static analysis guard or code review |
 
-### 5.3 Static Analysis Guard
+### 9.3 Static Analysis Guard
 
-Extend `scripts/check-inventory-writes.ts` (or create a parallel guard `scripts/check-receipt-allocation-writes.ts`) to enforce:
+Create `scripts/check-receipt-allocation-writes.ts`:
 
 ```typescript
 const RECEIPT_ALLOCATION_WRITE_PATTERNS = [
@@ -271,277 +410,237 @@ const RECEIPT_ALLOCATION_ALLOWED = new Set([
   'src/services/qc.service.ts',
   'src/services/putaways.service.ts',
   'src/services/closeout.service.ts',
-  'src/domain/receipts/receiptAllocationModel.ts'  // insertReceiptAllocations only
+  'src/domain/receipts/receiptAllocationModel.ts'
 ]);
 ```
 
-Add as `npm run lint:receipt-allocation-writes` and include in CI.
+Register as `npm run lint:receipt-allocation-writes`. Include in CI alongside `lint:inventory-writes`.
 
 ---
 
-## 6. Workflow Constraints
+## 10. Test Guardrails
 
-### 6.1 QC Workflow
-
-| Aspect | Constraint |
-|--------|-----------|
-| Allocation read | Load QA allocations by receipt line + source bin to target consumption |
-| Allocation write | DELETE/UPDATE consumed QA rows, INSERT new AVAILABLE/HOLD rows |
-| Must validate against | QC event quantity ≤ available QA quantity in allocations; if insufficient, this is a drift signal, not a workflow block |
-| Authoritative action | `qc_events` INSERT + inventory movement creation must succeed regardless of allocation state |
-| Failure mode | If allocations are missing/drifted, record QC event and movement, then trigger allocation rebuild for the affected receipt line |
-
-### 6.2 Putaway Workflow
-
-| Aspect | Constraint |
-|--------|-----------|
-| Allocation read | Load QA allocations by receipt line + from_bin_id |
-| Allocation write | DELETE/UPDATE consumed QA rows, INSERT AVAILABLE rows at destination bin |
-| Must validate against | Putaway `quantity_planned` ≤ available QA quantity; if insufficient, flag drift |
-| Authoritative action | Putaway line completion + inventory movement must succeed based on planned quantity |
-| Failure mode | If QA allocations insufficient, complete the putaway movement and schedule allocation rebuild |
-
-### 6.3 Reconciliation Workflow
-
-| Aspect | Constraint |
-|--------|-----------|
-| Allocation read | Load allocations at discrepancy location/bin/status |
-| Allocation write | INSERT (positive delta), DELETE/UPDATE (negative delta) |
-| Must validate against | Expected quantity from authoritative sources before applying adjustment |
-| Authoritative action | Reconciliation resolution + adjustment movement is authoritative; allocation mutation follows |
-| Failure mode | If matching allocations not found for negative delta, apply the adjustment movement anyway and trigger rebuild |
-
-### 6.4 Receipt Closeout Workflow
-
-| Aspect | Constraint |
-|--------|-----------|
-| Allocation read | Aggregate allocations by status to determine readiness |
-| Allocation write | None during closeout itself |
-| Must validate against | Posting integrity check: `buildReceiptPostingIntegrity()` compares allocations against receipt line quantities AND posted movement quantities |
-| Pre-closeout gate | Run drift detection (§3). If drift found, attempt rebuild (§4). If rebuild fails, block closeout with explicit error |
-| Authoritative action | Closeout state transition is authoritative; allocation state is informational input |
-
----
-
-## 7. Test Guardrails
-
-### 7.1 Truth Tests (add to `tests/truth/`)
+### 10.1 Truth Tests (add to `tests/truth/`)
 
 #### T1: Allocation Write Ownership Guard
 
 **File:** `tests/truth/receipt-allocation-write-ownership.test.mjs`
 
-Verify that `receipt_allocations` write SQL (INSERT/UPDATE/DELETE) appears only in the allowed files. Mirrors the pattern in `scripts/check-inventory-writes.ts`.
-
-Assertion: Scan `src/` for SQL statements referencing `receipt_allocations` with write verbs. Fail if found outside the allowed set.
+Scan `src/` for SQL statements containing `INSERT|UPDATE|DELETE ... receipt_allocations`. Fail if found outside the allowed set.
 
 #### T2: Allocation Never Used as Ledger Input
 
 **File:** `tests/truth/receipt-allocation-non-authority.test.mjs`
 
-Verify that:
+Verify:
 - No file in `src/domains/inventory/` reads from `receipt_allocations`
-- `receipt_allocations` does not appear in any projection rebuild logic
-- `receipt_allocations` is not referenced in `ledgerWriter.ts`
-- `receipt_allocations` is not referenced in `inventoryBalance.ts`
-
-Assertion: Grep-based static check. Fail if `receipt_allocations` appears in ledger/projection files.
+- `receipt_allocations` does not appear in projection rebuild logic
+- `receipt_allocations` is not referenced in `ledgerWriter.ts` or `inventoryBalance.ts`
 
 #### T3: Allocation Quantity Conservation (runtime)
 
 **File:** `tests/truth/receipt-allocation-quantity-conservation.test.mjs`
 
-After test seed data is loaded, verify that for every receipt line:
-- `SUM(receipt_allocations.quantity)` = `purchase_order_receipt_lines.quantity_received`
-- Or the receipt line has zero allocations (voided/rejected)
+After test seed data: for every non-voided receipt line, `SUM(receipt_allocations.quantity) = quantity_received` (within epsilon).
 
-This runs against the test database to catch conservation violations.
-
-#### T4: Allocation Movement Traceability
+#### T4: Allocation Movement Traceability (runtime)
 
 **File:** `tests/truth/receipt-allocation-traceability.test.mjs`
 
-Verify that every `receipt_allocations` row with non-null `inventory_movement_id`:
-- References a movement that exists in `inventory_movements`
-- References a movement line that exists in `inventory_movement_lines`
+Every allocation with non-null `inventory_movement_id` references an existing movement and movement line.
 
-### 7.2 Contract Tests (add to `tests/contracts/`)
+### 10.2 Contract Tests (add to `tests/contracts/`)
 
 #### C1: Drift Detection Catches Known Drift
 
-**File:** extend `tests/contracts/receive.test.mjs` or new file
-
-Create a receipt, manually corrupt an allocation quantity, then run drift detection. Verify drift is detected with correct type and magnitude.
+Create a receipt, manually corrupt an allocation quantity via direct SQL, run drift detection. Assert drift detected with correct type and magnitude.
 
 #### C2: Rebuild Produces Identical State
 
-**File:** new `tests/contracts/receipt-allocation-rebuild.test.mjs`
+1. Create receipt → QC accept (partial) → complete putaway
+2. Snapshot allocation state
+3. Delete all allocations
+4. Run rebuild
+5. Assert rebuilt state matches snapshot (quantities, statuses, movement links)
 
-1. Create a receipt
-2. Run QC accept on part of it
-3. Complete putaway
-4. Snapshot allocation state
-5. Delete all allocations
-6. Run rebuild
-7. Assert rebuilt state matches snapshot (same rows, quantities, statuses, movement links)
+#### C3: Workflow Blocks on Invalid Allocations
 
-#### C3: Workflow Succeeds Without Allocations (degraded mode)
+1. Create receipt (allocations created in QA)
+2. Corrupt allocations (e.g., delete one row, breaking quantity conservation)
+3. Attempt QC accept
+4. Assert: workflow detects drift, attempts rebuild, re-validates
+5. Assert: if rebuild succeeds, workflow completes correctly
+6. Assert: if rebuild cannot fix (simulate by corrupting authoritative data), workflow fails with explicit error — NOT silent continuation
 
-If the design moves to non-blocking allocation updates (§6), add a contract test:
+#### C4: Workflow Blocks on Missing Allocations
 
-1. Create a receipt (allocations created)
-2. Delete allocations (simulate corruption)
-3. Run QC accept (should succeed — QC event + movement created)
-4. Verify allocations were rebuilt
-5. Verify ledger is correct
+1. Create receipt
+2. Delete all allocations (simulate total loss)
+3. Attempt QC accept
+4. Assert: workflow detects missing allocations, attempts rebuild from authoritative sources
+5. Assert: if receipt has valid movements, rebuild succeeds and workflow completes
+6. Assert: conservation holds after rebuild + workflow
 
-This test validates that allocations are truly non-authoritative.
+### 10.3 Scenario Tests
 
-### 7.3 Scenario Tests
+#### S1: Full Lifecycle with Drift Detection and Recovery
 
-#### S1: Full Lifecycle Drift and Recovery
+Receipt → QC accept → putaway → introduce quantity drift → attempt closeout → closeout detects drift → rebuild triggered → re-validation passes → closeout succeeds.
 
-End-to-end: receipt → QC → putaway → introduce drift → closeout detects drift → rebuild → closeout succeeds.
+#### S2: Full Lifecycle with Unrecoverable Drift
 
----
-
-## 8. Failure Modes & Recovery
-
-### 8.1 Quantity Drift
-
-| Aspect | Detail |
-|--------|--------|
-| Cause | Bug in allocation mutation logic (partial update without matching delete), concurrent transaction conflict, application crash between movement write and allocation write |
-| Detection | `verifyAllocationQuantityConservation()` at closeout or background check |
-| System behavior | Closeout blocked; background alert raised |
-| Recovery | Rebuild allocations from authoritative sources (§4). If rebuild also fails quantity conservation, escalate — indicates ledger/receipt line mismatch (separate issue) |
-
-### 8.2 Missing Allocations
-
-| Aspect | Detail |
-|--------|--------|
-| Cause | Application crash after movement creation but before allocation INSERT; partial transaction rollback where movement committed but allocation did not (should not happen with proper transaction boundaries) |
-| Detection | Receipt line has posted movements but zero `receipt_allocations` rows |
-| System behavior | QC/putaway workflow finds no QA allocations to consume |
-| Recovery | Rebuild allocations for affected receipt line. If movements exist, allocations are reconstructable |
-
-### 8.3 Orphan Allocations
-
-| Aspect | Detail |
-|--------|--------|
-| Cause | Receipt line deleted or voided without cleaning up allocations; FK cascade should handle receipt deletion but voiding may not |
-| Detection | Allocation references a receipt line that is voided or does not exist |
-| System behavior | Allocations inflate reported QA/AVAILABLE/HOLD quantities |
-| Recovery | Delete orphan allocations. Verify receipt line status before deletion |
-
-### 8.4 Status Drift
-
-| Aspect | Detail |
-|--------|--------|
-| Cause | QC event recorded but allocation status not updated (partial failure); putaway completed but allocation still shows QA |
-| Detection | `verifyAllocationStatusConsistency()` — compare allocation status distribution against QC events + putaway lines |
-| System behavior | API shows incorrect QA/AVAILABLE/HOLD breakdown; operator sees stale status |
-| Recovery | Rebuild allocations. QC events and putaway lines are authoritative for status derivation |
-
-### 8.5 Movement Link Corruption
-
-| Aspect | Detail |
-|--------|--------|
-| Cause | Allocation `inventory_movement_id` references a deleted or non-existent movement (should not happen — movements are append-only) |
-| Detection | `verifyAllocationMovementLinks()` — join check against movement tables |
-| System behavior | Traceability broken — cannot audit allocation back to ledger event |
-| Recovery | This indicates a serious system integrity issue. If the movement truly does not exist, this is a ledger problem, not an allocation problem. Allocation rebuild would produce allocations linked to existing movements only; the missing-movement gap must be investigated separately |
-
-### 8.6 Concurrent Mutation Conflict
-
-| Aspect | Detail |
-|--------|--------|
-| Cause | Two workflows (e.g., QC accept + putaway) attempt to consume the same QA allocation concurrently |
-| Detection | Transaction serialization failure or insufficient-quantity error |
-| System behavior | One transaction succeeds, the other retries or fails |
-| Recovery | Existing `withTransactionRetry` handles serialization conflicts. The retry will reload current allocation state |
+Receipt → QC accept → introduce drift that rebuild cannot fix (simulate authoritative inconsistency) → attempt putaway → rebuild fails → workflow fails with explicit error → no silent data corruption.
 
 ---
 
-## 9. Implementation Phases
+## 11. Failure Modes & Handling
+
+### 11.1 Quantity Drift
+
+| Aspect | Detail |
+|--------|--------|
+| Cause | Bug in allocation mutation (partial update without matching delete), concurrent conflict, application crash mid-transaction |
+| Detection | `verifyAllocationQuantityConservation()` at workflow pre-check or closeout |
+| System behavior | Workflow pauses, attempts rebuild |
+| Recovery | Rebuild from authoritative sources. If rebuild passes conservation, proceed. If rebuild also fails, escalate — indicates authoritative source inconsistency |
+
+### 11.2 Missing Allocations
+
+| Aspect | Detail |
+|--------|--------|
+| Cause | Application crash after movement but before allocation INSERT (should not happen if transaction boundaries are correct); data migration error |
+| Detection | Receipt line has movements but zero allocation rows |
+| System behavior | Workflow pre-check fails, triggers rebuild |
+| Recovery | Rebuild from authoritative sources. If movements exist, allocations are fully reconstructable |
+
+### 11.3 Orphan Allocations
+
+| Aspect | Detail |
+|--------|--------|
+| Cause | Receipt voided without cleaning allocations (FK cascade handles deletion but not voiding) |
+| Detection | Background drift check finds allocations referencing voided receipt lines |
+| System behavior | API over-reports QA/AVAILABLE/HOLD quantities |
+| Recovery | Delete orphan allocations. Not workflow-blocking — caught by background check |
+
+### 11.4 Status Drift
+
+| Aspect | Detail |
+|--------|--------|
+| Cause | QC event written but allocation status not updated (partial failure before allocation mutation in same transaction — should not happen with correct transaction boundaries) |
+| Detection | `verifyAllocationStatusConsistency()` — compares allocation status breakdown against QC events + putaway lines |
+| System behavior | Workflow targets wrong bin or status. Pre-check catches insufficient QA at expected bin |
+| Recovery | Rebuild from authoritative sources |
+
+### 11.5 Movement Link Corruption
+
+| Aspect | Detail |
+|--------|--------|
+| Cause | Should not occur — movements are append-only |
+| Detection | `verifyAllocationMovementLinks()` — join check against ledger |
+| System behavior | Traceability broken |
+| Recovery | If movement does not exist, this is a **ledger integrity issue**, not an allocation issue. Rebuild will link to existing movements only. The missing-movement gap requires separate investigation |
+
+### 11.6 Concurrent Mutation Conflict
+
+| Aspect | Detail |
+|--------|--------|
+| Cause | Two workflows attempt to consume the same QA allocation simultaneously |
+| Detection | Transaction serialization failure or insufficient-quantity error on retry |
+| System behavior | One transaction succeeds, the other retries via `withTransactionRetry` |
+| Recovery | Retry reloads current allocation state. Standard behavior — not a drift scenario |
+
+### 11.7 Rebuild Failure (Authoritative Inconsistency)
+
+| Aspect | Detail |
+|--------|--------|
+| Cause | QC events + putaway lines + reconciliation imply a quantity that does not match `quantity_received`. The authoritative sources themselves disagree |
+| Detection | Rebuild post-validation fails conservation check |
+| System behavior | Rebuild aborted (no partial writes). Requesting workflow fails with `RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT` |
+| Recovery | Manual investigation required. This is not an allocation problem — it is a deeper data integrity issue |
+
+---
+
+## 12. Implementation Phases
 
 ### Phase 1: Classification and Documentation (no code changes)
 
 1. Update `docs/refactor_master_plan.md` to resolve the carry-forward:
-   - `receipt_allocations` is classified as **Operational Support State**
-   - Document allowed/forbidden uses from §1–§2
-2. Update `docs/domain-invariants.md` with explicit receipt allocation invariant:
-   - "receipt_allocations is non-authoritative operational support state. It must never be used as the source of truth for quantity correctness."
-3. Add inline code comment to `receiptAllocationModel.ts`:
-   - Classification header explaining the table's role and constraints
+   - `receipt_allocations` classified as **Operational Support State**
+   - Non-authoritative but required for execution
+   - Document allowed/forbidden uses
+2. Update `docs/domain-invariants.md` with receipt allocation invariant:
+   - "receipt_allocations is non-authoritative operational support state. It is required for correct workflow execution but must never be used as the source of truth for quantity correctness."
+3. Add classification header comment to `receiptAllocationModel.ts`
 
 ### Phase 2: Write Ownership Guard (static analysis)
 
 1. Create `scripts/check-receipt-allocation-writes.ts`
-   - Mirrors `check-inventory-writes.ts` pattern
-   - Allowed files: `receipts.service.ts`, `qc.service.ts`, `putaways.service.ts`, `closeout.service.ts`, `receiptAllocationModel.ts`
-   - Fail if any other `.ts` file contains `INSERT|UPDATE|DELETE ... receipt_allocations`
-2. Add `npm run lint:receipt-allocation-writes` script to `package.json`
-3. Add to CI pipeline (alongside `lint:inventory-writes`)
-4. Create truth test `receipt-allocation-write-ownership.test.mjs`
-5. Create truth test `receipt-allocation-non-authority.test.mjs`
+2. Add `npm run lint:receipt-allocation-writes` to `package.json`
+3. Include in CI
+4. Create truth test T1 (`receipt-allocation-write-ownership.test.mjs`)
+5. Create truth test T2 (`receipt-allocation-non-authority.test.mjs`)
 
-### Phase 3: Drift Detection (new code)
+### Phase 3: Standalone Drift Detection (new code)
 
-1. Implement `verifyAllocationQuantityConservation()` as standalone function in `receiptAllocationModel.ts`
+1. Implement `verifyAllocationQuantityConservation()` as standalone non-throwing verifier in `receiptAllocationModel.ts`
 2. Implement `verifyAllocationMovementLinks()` in `receiptAllocationModel.ts`
 3. Implement `verifyAllocationStatusConsistency()` in `receiptAllocationModel.ts`
-4. Wire quantity conservation check into closeout pre-validation (hard fail)
-5. Create truth tests for quantity conservation and traceability (T3, T4)
+4. Create truth tests T3 (quantity conservation) and T4 (traceability)
+5. Create contract test C1 (drift detection catches known drift)
 
 ### Phase 4: Rebuild Capability (new code)
 
-1. Implement `rebuildReceiptAllocations()` in a new file `src/domain/receipts/receiptAllocationRebuilder.ts`
-2. Build from authoritative sources per §4.2 algorithm
-3. Create contract test `receipt-allocation-rebuild.test.mjs` (C2)
-4. Wire rebuild into closeout: if drift detected → attempt rebuild → re-validate → proceed or fail
-5. Create contract test for drift-detection-catches-known-drift (C1)
+1. Implement `rebuildReceiptAllocations()` in `src/domain/receipts/receiptAllocationRebuilder.ts`
+2. Rebuild from authoritative sources per §8.3 algorithm
+3. Include post-rebuild conservation validation (abort on failure)
+4. Create contract test C2 (rebuild produces identical state)
 
-### Phase 5: Workflow Hardening (code changes to existing services)
+### Phase 5: Workflow Pre-Check Integration (code changes to existing services)
 
-1. In each write service (`qc.service.ts`, `putaways.service.ts`, `closeout.service.ts`):
-   - Ensure allocation mutation failure does NOT block the authoritative action (movement + event)
-   - If allocation mutation fails, log the failure and trigger rebuild
-   - Authoritative writes must complete independently of allocation state
-2. This is the highest-risk phase — requires careful contract test coverage for each workflow
-3. Create contract test C3 (workflow succeeds without allocations)
-4. Create scenario test S1 (full lifecycle drift and recovery)
+Wire the validate → rebuild → re-validate → execute-or-abort pattern into each workflow:
+
+1. **QC workflow** (`qc.service.ts`): Before `moveReceiptAllocationsFromQa()`, validate allocations. On failure, rebuild and retry. On rebuild failure, abort QC event.
+2. **Putaway workflow** (`putaways.service.ts`): Before `moveReceiptAllocationsToAvailable()`, validate. On failure, rebuild and retry. On rebuild failure, abort putaway completion.
+3. **Reconciliation workflow** (`closeout.service.ts`): Before `applyAdjustmentResolution()`, validate. On failure, rebuild and retry. On rebuild failure, abort resolution.
+4. **Closeout workflow** (`closeout.service.ts`): Before closeout state transition, run full drift detection. On drift, rebuild and re-check. On persistent drift, block closeout.
+
+This phase does NOT introduce dual execution paths. The existing workflow path is unchanged — a validation gate and repair attempt are inserted before the existing execution logic. The execution logic itself is not modified.
+
+5. Create contract tests C3 (workflow blocks on invalid allocations) and C4 (workflow blocks on missing allocations)
+6. Create scenario tests S1 (lifecycle with recovery) and S2 (lifecycle with unrecoverable drift)
 
 ### Phase 6: Background Monitoring (operational)
 
 1. Implement background drift check job (daily or configurable)
 2. Scan all open (non-closed-out) receipts
-3. Log drift events to structured logs or drift events table
-4. Expose drift summary in admin API (optional, lower priority)
+3. Log drift events to structured logs
+4. Report-only — background jobs do NOT auto-rebuild
 
 ---
 
-## 10. Confidence
+## 13. Confidence
 
 | Section | Confidence | Notes |
 |---------|-----------|-------|
-| Allowed uses | **High** | Directly observed from codebase; 4 write paths, 4 read paths, well-bounded |
-| Forbidden uses | **High** | Aligns with existing system model (§3.1 of refactor master plan) and AGENTS.md invariants |
-| Drift detection | **High** | `assertReceiptAllocationQuantityConservation()` already exists; extending to standalone checks is straightforward |
-| Rebuild strategy | **Medium-High** | Algorithm is sound but rebuild from QC events + putaway lines ordering has not been validated against edge cases (partial QC, multiple putaway rounds, reconciliation on top of partial putaway). Contract test C2 is the key validator |
-| API boundaries | **High** | Static guard is a proven pattern (mirrors `check-inventory-writes.ts`) |
-| Workflow constraints | **Medium-High** | Phase 5 (non-blocking allocation mutation) is the highest-risk change. Today, QC/putaway workflows throw if allocations are insufficient. Making them non-blocking requires careful failure path design |
-| Test guardrails | **High** | Truth tests are static analysis; contract tests follow established patterns; scenario test covers end-to-end |
-| Failure modes | **High** | All modes are observable in practice or derivable from the transaction model |
+| Classification | **High** | Directly supported by codebase structure and refactor master plan |
+| Allowed/forbidden uses | **High** | Enumerated from code; 4 write paths, 4 read paths, well-bounded |
+| Operational role definition | **High** | bin targeting and quantity partitioning requirements are observable in QC, putaway, and reconciliation code |
+| Invariants | **High** | Conservation and traceability already partially enforced; extending to standalone checks is straightforward |
+| Workflow constraints | **High** | Validate → repair → retry → abort is a single code path with no branching. No dual execution model. No "degraded mode" |
+| Drift detection | **High** | Three dimensions (quantity, links, status) cover all observable drift types |
+| Rebuild strategy | **Medium-High** | Algorithm is sound but ordering edge cases (partial QC + partial putaway + reconciliation) need validation via contract test C2 |
+| API boundaries | **High** | Static guard mirrors proven `check-inventory-writes.ts` pattern |
+| Test guardrails | **High** | 4 truth tests, 4 contract tests, 2 scenario tests. C3 and C4 specifically validate that workflows fail correctly on invalid state |
+| Failure modes | **High** | All modes derivable from transaction model; §11.7 explicitly handles rebuild failure |
 
-**Overall: High confidence** that this plan correctly positions `receipt_allocations` as operational support state with enforceable boundaries. The rebuild algorithm (Phase 4) and workflow hardening (Phase 5) are the areas requiring the most careful validation during implementation.
+**Overall: High.** The highest-risk area is the rebuild algorithm (Phase 4) — specifically whether it correctly replays all workflow events in order for edge cases. Contract test C2 is the key validator. Phase 5 (workflow pre-check integration) is lower risk than the prior plan's Phase 5 because it does not change the execution logic — it adds a validation gate before it.
 
 ---
 
 ## Verification
 
-- [x] Allowed vs forbidden uses are unambiguous — §1 and §2 are enumerated and non-overlapping
-- [x] No path allows allocations to become authoritative — write ownership guard (§5.3) + truth test T2 prevent cross-domain use; forbidden-use rules (§2) prevent correctness gating
-- [x] Drift is always detectable — three detection functions cover quantity, movement link, and status dimensions; closeout gates on drift check
-- [x] Rebuild is always possible — authoritative sources (receipt lines, movements, QC events, putaway lines, reconciliation resolutions) are append-only or immutable; ordering is deterministic
-- [x] Tests are sufficient to prevent regression — 4 truth tests, 3 contract tests, 1 scenario test cover write ownership, non-authority, quantity conservation, traceability, drift detection, rebuild correctness, and degraded-mode operation
+- [x] **No path where workflows proceed with invalid allocations.** §6.5 defines the single execution model: validate → repair → re-validate → proceed-or-abort. There is no "proceed anyway" branch. C3 and C4 test this explicitly.
+- [x] **`receipt_allocations` never treated as truth.** §3 enumerates forbidden uses. T2 enforces via static analysis. G7 invariant prevents cross-domain reference.
+- [x] **Drift always detected before correctness is impacted.** Drift detection runs as a pre-check before every workflow execution (§6) and before closeout (§6.4). No workflow reaches its mutation step with invalid allocation state.
+- [x] **Rebuild used only for recovery.** §8.1 states this explicitly. §8.6 constrains triggers to drift detection within workflows or operator action. Background jobs report only — they do not rebuild.
+- [x] **Complexity minimized.** No dual execution paths. No "degraded mode." No "temporal inconsistency." One execution model: validate → repair → execute or abort. The existing workflow code is unchanged — a validation gate is added before it.
