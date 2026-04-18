@@ -828,7 +828,7 @@ async function applyReceiptQcSideEffects(params: {
       WHERE movement_id = $1
         AND tenant_id = $2
         AND quantity_delta > 0
-      ORDER BY created_at DESC, id DESC
+      ORDER BY COALESCE(event_timestamp, created_at) DESC, id DESC
       LIMIT 1`,
     [params.transferExecution.result.movementId, params.tenantId]
   );

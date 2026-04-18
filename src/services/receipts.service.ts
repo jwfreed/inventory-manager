@@ -1492,6 +1492,7 @@ export async function voidReceipt(
           id: line.id,
           warehouseId: line.warehouseId,
           sourceLineId: line.sourceLineId,
+          eventTimestamp: now,
           itemId: line.itemId,
           locationId: line.locationId,
           quantityDelta: line.quantityDelta,

@@ -123,3 +123,39 @@ export function sortDeterministicMovementLines<T>(
     compareDeterministicMovementLineIdentity(getIdentity(left), getIdentity(right))
   );
 }
+
+function normalizeSourceLineIdPart(part: string | number | null | undefined): string {
+  return String(part ?? '').trim();
+}
+
+export function computeSourceLineId(parts: ReadonlyArray<string | number | null | undefined>): string {
+  const sourceLineId = parts.map(normalizeSourceLineIdPart).join(':');
+  if (!sourceLineId || sourceLineId.split(':').some((part) => part.length === 0)) {
+    throw new Error('INVENTORY_SOURCE_LINE_ID_INVALID');
+  }
+  return sourceLineId;
+}
+
+export function computeSplitSourceLineIds<T>(
+  baseId: string,
+  entries: ReadonlyArray<T>,
+  getStableKey: (entry: T) => string
+): Map<T, string> {
+  if (!baseId || baseId.trim().length === 0) {
+    throw new Error('INVENTORY_SOURCE_LINE_ID_INVALID');
+  }
+  const decorated = entries.map((entry) => ({
+    entry,
+    stableKey: getStableKey(entry)
+  }));
+  if (decorated.some((entry) => !entry.stableKey || entry.stableKey.trim().length === 0)) {
+    throw new Error('INVENTORY_SOURCE_LINE_SPLIT_KEY_INVALID');
+  }
+  decorated.sort((left, right) => left.stableKey.localeCompare(right.stableKey));
+
+  const result = new Map<T, string>();
+  decorated.forEach((entry, index) => {
+    result.set(entry.entry, `${baseId}#${index}`);
+  });
+  return result;
+}

@@ -263,7 +263,7 @@ async function loadOriginalLines(
         AND l.tenant_id = iml.tenant_id
       WHERE iml.tenant_id = $1
         AND iml.movement_id = $2
-      ORDER BY iml.created_at ASC, iml.id ASC`,
+      ORDER BY COALESCE(iml.event_timestamp, iml.created_at) ASC, iml.id ASC`,
     [tenantId, originalMovementId]
   );
   if ((result.rowCount ?? 0) === 0) {

@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
 import { roundQuantity } from '../../lib/numbers';
+import { computeSourceLineId } from '../../modules/platform/application/inventoryMovementDeterminism';
 import { RECEIPT_STATUS_EPSILON } from './receiptPolicy';
 import {
   RECEIPT_ALLOCATION_STATUSES,
@@ -74,10 +75,12 @@ type WorkingAllocation = ReceiptAllocation & {
 
 type MovementLineMatch = {
   id: string;
+  source_line_id: string | null;
   quantity: string | number;
   line_notes: string | null;
   reason_code: string | null;
   created_at: string;
+  event_timestamp: string | null;
 };
 
 function failAuthoritativeInconsistency(
@@ -194,15 +197,47 @@ async function findMovementLine(params: {
   locationId: string;
   quantity: number;
   direction: 'positive' | 'negative';
+  sourceLineId?: string | null;
   noteIncludes?: string;
   reasonCode?: string;
 }) {
+  let structuralMatch: MovementLineMatch | null = null;
+  if (params.sourceLineId) {
+    const structural = await params.client.query<MovementLineMatch>(
+      `SELECT id,
+              source_line_id,
+              COALESCE(quantity_delta_canonical, quantity_delta)::numeric AS quantity,
+              line_notes,
+              reason_code,
+              created_at,
+              event_timestamp
+         FROM inventory_movement_lines
+        WHERE tenant_id = $1
+          AND movement_id = $2
+          AND source_line_id = $3
+        LIMIT 2`,
+      [params.tenantId, params.movementId, params.sourceLineId]
+    );
+    if ((structural.rowCount ?? 0) === 1) {
+      structuralMatch = structural.rows[0];
+    }
+    if ((structural.rowCount ?? 0) > 1) {
+      failAuthoritativeInconsistency('movement_line_source_line_ambiguous', {
+        movementId: params.movementId,
+        sourceLineId: params.sourceLineId,
+        candidateCount: structural.rowCount ?? 0
+      });
+    }
+  }
+
   const result = await params.client.query<MovementLineMatch>(
     `SELECT id,
+            source_line_id,
             COALESCE(quantity_delta_canonical, quantity_delta)::numeric AS quantity,
             line_notes,
             reason_code,
-            created_at
+            created_at,
+            event_timestamp
        FROM inventory_movement_lines
       WHERE tenant_id = $1
         AND movement_id = $2
@@ -211,7 +246,7 @@ async function findMovementLine(params: {
         AND ${params.direction === 'positive'
           ? 'COALESCE(quantity_delta_canonical, quantity_delta) > 0'
           : 'COALESCE(quantity_delta_canonical, quantity_delta) < 0'}
-      ORDER BY created_at ASC, id ASC`,
+      ORDER BY COALESCE(event_timestamp, created_at) ASC, id ASC`,
     [params.tenantId, params.movementId, params.itemId, params.locationId]
   );
   let candidates = result.rows.filter(
@@ -234,6 +269,26 @@ async function findMovementLine(params: {
   if (params.reasonCode) {
     candidates = candidates.filter((row) => row.reason_code === params.reasonCode);
   }
+  if (structuralMatch) {
+    if (!candidates.some((candidate) => candidate.id === structuralMatch.id)) {
+      failAuthoritativeInconsistency('movement_line_structural_mismatch', {
+        movementId: params.movementId,
+        sourceLineId: params.sourceLineId ?? null,
+        itemId: params.itemId,
+        locationId: params.locationId,
+        quantity: params.quantity,
+        direction: params.direction,
+        reasonCode: params.reasonCode ?? null
+      });
+    }
+    return structuralMatch;
+  }
+
+  console.warn('RECEIPT_ALLOCATION_REBUILD_LEGACY_MOVEMENT_LINE_FALLBACK', {
+    tenantId: params.tenantId,
+    movementId: params.movementId,
+    sourceLineId: params.sourceLineId ?? null
+  });
   if (candidates.length !== 1) {
     failAuthoritativeInconsistency('movement_line_ambiguous', {
       movementId: params.movementId,
@@ -360,6 +415,7 @@ async function rebuildFromAuthoritativeSources(params: {
       locationId: line.received_to_location_id,
       quantity,
       direction: 'positive',
+      sourceLineId: line.id,
       noteIncludes: line.id
     });
     const warehouseId = await loadWarehouseIdForLocation(
@@ -434,7 +490,8 @@ async function rebuildFromAuthoritativeSources(params: {
       itemId: event.item_id,
       locationId: event.destination_location_id,
       quantity,
-      direction: 'positive'
+      direction: 'positive',
+      sourceLineId: `${computeSourceLineId(['qc_event', event.id])}#1`
     });
     const destinationStatus =
       event.event_type === 'accept'
@@ -498,6 +555,7 @@ async function rebuildFromAuthoritativeSources(params: {
       locationId: line.to_location_id,
       quantity,
       direction: 'positive',
+      sourceLineId: `${line.id}#1`,
       noteIncludes: `Putaway ${line.putaway_id} line ${line.line_number}`
     });
     for (const [consumedIndex, item] of consumed.entries()) {
@@ -570,6 +628,7 @@ async function rebuildFromAuthoritativeSources(params: {
       locationId,
       quantity: Math.abs(delta),
       direction: delta > 0 ? 'positive' : 'negative',
+      sourceLineId: adjustment.id,
       reasonCode: 'receipt_reconciliation'
     });
     if (delta > 0) {

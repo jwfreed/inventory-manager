@@ -68,6 +68,7 @@ export async function postReceiptInventoryMovement(params: {
     lines: lines.map((line) => ({
       warehouseId: params.warehouseId,
       sourceLineId: line.receiptLineId,
+      eventTimestamp: params.occurredAt,
       itemId: line.itemId,
       locationId: params.locationId,
       quantityDelta: line.canonicalFields.quantityDeltaCanonical,

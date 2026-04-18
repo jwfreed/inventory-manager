@@ -12,6 +12,8 @@ import {
 } from './inventoryMovementDeterminism';
 export {
   buildMovementDeterministicHash,
+  computeSourceLineId,
+  computeSplitSourceLineIds,
   sortDeterministicMovementLines,
   type MovementDeterministicHashInput,
   type MovementDeterministicHashLineInput,

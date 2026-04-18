@@ -2414,6 +2414,7 @@ export async function postShipment(
         updatedAt: now,
         lines: plannedShipmentLines.map((lineContext) => ({
           sourceLineId: lineContext.line.id,
+          eventTimestamp: shipment.shipped_at ?? now,
           warehouseId: shipFromWarehouseId!,
           itemId: lineContext.line.item_id,
             locationId: shipment.ship_from_location_id,

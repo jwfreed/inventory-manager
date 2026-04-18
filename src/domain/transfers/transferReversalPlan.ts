@@ -104,12 +104,14 @@ function mapReversalLine(
 }
 
 function mapPersistMovementLine(
-  line: PlannedTransferReversalLine
+  line: PlannedTransferReversalLine,
+  eventTimestamp: Date | string
 ): PersistInventoryMovementLineInput {
   return {
     id: line.id,
     warehouseId: line.warehouseId,
     sourceLineId: line.sourceLineId,
+    eventTimestamp,
     itemId: line.itemId,
     locationId: line.locationId,
     quantityDelta: line.quantityDelta,
@@ -293,7 +295,7 @@ export function buildTransferReversalPlan(
       reversalReason: params.reason,
       createdAt: params.occurredAt,
       updatedAt: params.occurredAt,
-      lines: lines.map(mapPersistMovementLine)
+      lines: lines.map((line) => mapPersistMovementLine(line, params.occurredAt))
     }
   });
 }

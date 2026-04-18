@@ -152,7 +152,7 @@ export async function getMovement(tenantId: string, id: string) {
 export async function getMovementLines(tenantId: string, id: string) {
   const res = await query(
     `SELECT id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, reason_code, line_notes, created_at
-     FROM inventory_movement_lines WHERE movement_id = $1 AND tenant_id = $2 ORDER BY created_at ASC`,
+     FROM inventory_movement_lines WHERE movement_id = $1 AND tenant_id = $2 ORDER BY COALESCE(event_timestamp, created_at) ASC, id ASC`,
     [id, tenantId]
   );
   return res.rows.map(mapMovementLine);

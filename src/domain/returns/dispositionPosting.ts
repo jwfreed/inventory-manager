@@ -187,7 +187,7 @@ async function buildReturnDispositionRepairPlan(params: {
       const quantity = roundQuantity(toNumber(line.quantity));
       return [
         {
-          sourceLineId: `${params.disposition.id}:${line.id}:out`,
+          sourceLineId: `${params.disposition.id}:${line.id}#0`,
           warehouseId,
           itemId: line.item_id,
           locationId: params.disposition.from_location_id,
@@ -197,7 +197,7 @@ async function buildReturnDispositionRepairPlan(params: {
           lineNotes: line.notes ?? `Return disposition ${params.disposition.id} line ${line.id} outbound`
         },
         {
-          sourceLineId: `${params.disposition.id}:${line.id}:in`,
+          sourceLineId: `${params.disposition.id}:${line.id}#1`,
           warehouseId,
           itemId: line.item_id,
           locationId: params.disposition.to_location_id!,
@@ -213,8 +213,8 @@ async function buildReturnDispositionRepairPlan(params: {
 
   const actualLineBySource = new Map(plannedLines.map((line) => [line.sourceLineId, line]));
   const pairs = params.dispositionLines.map((line) => {
-    const outSourceLineId = `${params.disposition.id}:${line.id}:out`;
-    const inSourceLineId = `${params.disposition.id}:${line.id}:in`;
+    const outSourceLineId = `${params.disposition.id}:${line.id}#0`;
+    const inSourceLineId = `${params.disposition.id}:${line.id}#1`;
     const outbound = actualLineBySource.get(outSourceLineId);
     const inbound = actualLineBySource.get(inSourceLineId);
     if (!outbound || !inbound) {
@@ -690,8 +690,8 @@ export async function buildReturnDispositionMovementPlan(params: {
   const rawLines = [];
   for (const line of params.dispositionLines) {
     const qty = roundQuantity(toNumber(line.quantity));
-    const outSourceLineId = `${params.disposition.id}:${line.id}:out`;
-    const inSourceLineId = `${params.disposition.id}:${line.id}:in`;
+    const outSourceLineId = `${params.disposition.id}:${line.id}#0`;
+    const inSourceLineId = `${params.disposition.id}:${line.id}#1`;
     rawLines.push({
       sourceLineId: outSourceLineId,
       warehouseId: params.policy.warehouseId,
@@ -743,8 +743,8 @@ export async function buildReturnDispositionMovementPlan(params: {
     movement.sortedLines.map((line, index) => [line.sourceLineId, { line, index }])
   );
   const pairs = params.dispositionLines.map((line) => {
-    const outSourceLineId = `${params.disposition.id}:${line.id}:out`;
-    const inSourceLineId = `${params.disposition.id}:${line.id}:in`;
+    const outSourceLineId = `${params.disposition.id}:${line.id}#0`;
+    const inSourceLineId = `${params.disposition.id}:${line.id}#1`;
     const outbound = sortedLineBySourceLineId.get(outSourceLineId)?.line;
     const inbound = sortedLineBySourceLineId.get(inSourceLineId)?.line;
     if (!outbound || !inbound) {

@@ -6,6 +6,12 @@ export type InventoryNegativePolicy = {
   allowedRolesForOverride: string[];
 };
 
+export const INVENTORY_CONSUMPTION_POLICY = 'FIFO' as const;
+
+export function getInventoryConsumptionPolicy() {
+  return INVENTORY_CONSUMPTION_POLICY;
+}
+
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback;
   if (value.toLowerCase() === 'true') return true;

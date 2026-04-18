@@ -278,6 +278,7 @@ export async function postInventoryAdjustment(
           lines: plannedMovementLines.map((preparedLine) => ({
             warehouseId: preparedLine.warehouseId,
             sourceLineId: preparedLine.line.id,
+            eventTimestamp: adjustmentRow!.occurred_at,
             itemId: preparedLine.line.item_id,
             locationId: preparedLine.line.location_id,
             quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,

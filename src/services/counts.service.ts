@@ -992,6 +992,7 @@ export async function postInventoryCount(
         lines: plannedMovementLines.map((plannedLine) => ({
           warehouseId: currentCycleCount.warehouse_id,
           sourceLineId: plannedLine.delta.line.id,
+          eventTimestamp: now,
           itemId: plannedLine.delta.line.item_id,
           locationId: plannedLine.delta.line.location_id,
           quantityDelta: plannedLine.canonicalFields.quantityDeltaCanonical,

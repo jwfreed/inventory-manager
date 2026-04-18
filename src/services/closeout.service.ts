@@ -374,6 +374,7 @@ async function applyAdjustmentResolution(params: {
       {
         warehouseId,
         sourceLineId: params.discrepancy.id,
+        eventTimestamp: params.occurredAt,
         itemId: params.line.item_id,
         locationId,
         quantityDelta: canonical.quantityDeltaCanonical,

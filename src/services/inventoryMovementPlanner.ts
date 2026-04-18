@@ -116,10 +116,14 @@ export async function planMovementLines(params: {
   );
 }
 
-function mapPersistMovementLine(line: PlannedWorkOrderMovementLine): PersistInventoryMovementLineInput {
+function mapPersistMovementLine(
+  line: PlannedWorkOrderMovementLine,
+  eventTimestamp: Date | string
+): PersistInventoryMovementLineInput {
   return {
     warehouseId: line.warehouseId,
     sourceLineId: line.sourceLineId,
+    eventTimestamp,
     itemId: line.itemId,
     locationId: line.locationId,
     quantityDelta: line.canonicalFields.quantityDeltaCanonical,
@@ -190,7 +194,7 @@ export function buildPlannedMovementFromLines(params: {
       updatedAt: params.header.updatedAt,
       lotId: params.header.lotId ?? null,
       productionBatchId: params.header.productionBatchId ?? null,
-      lines: sortedLines.map(mapPersistMovementLine)
+      lines: sortedLines.map((line) => mapPersistMovementLine(line, params.header.occurredAt))
     }
   });
 }

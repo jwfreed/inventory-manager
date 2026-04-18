@@ -114,7 +114,7 @@ async function verifyLicensePlateInventoryIntegrity(params: {
       WHERE iml.tenant_id = $1
         AND iml.movement_id = $2
       GROUP BY iml.id, iml.location_id, COALESCE(iml.quantity_delta_canonical, iml.quantity_delta), COALESCE(iml.canonical_uom, iml.uom)
-      ORDER BY iml.created_at ASC, iml.id ASC`,
+      ORDER BY COALESCE(iml.event_timestamp, iml.created_at) ASC, iml.id ASC`,
     [params.tenantId, params.movementId]
   );
   if ((lineLinkResult.rowCount ?? 0) === 0) {
@@ -702,7 +702,7 @@ export async function moveLicensePlate(
             warehouseId: sourceWarehouseId,
             itemId: currentLpn.itemId,
             locationId: data.fromLocationId,
-            sourceLineId: `${data.licensePlateId}:out`,
+            sourceLineId: `${data.licensePlateId}#0`,
             reasonCode: 'lpn_transfer_out',
             lineNotes: `LPN ${currentLpn.lpn} out`,
             canonicalFields: canonicalOut
@@ -712,7 +712,7 @@ export async function moveLicensePlate(
             warehouseId: destinationWarehouseId,
             itemId: currentLpn.itemId,
             locationId: data.toLocationId,
-            sourceLineId: `${data.licensePlateId}:in`,
+            sourceLineId: `${data.licensePlateId}#1`,
             reasonCode: 'lpn_transfer_in',
             lineNotes: `LPN ${currentLpn.lpn} in`,
             canonicalFields: canonicalIn
@@ -747,6 +747,7 @@ export async function moveLicensePlate(
           id: preparedLine.id,
           warehouseId: preparedLine.warehouseId,
           sourceLineId: preparedLine.sourceLineId,
+          eventTimestamp: now,
           itemId: preparedLine.itemId,
           locationId: preparedLine.locationId,
           quantityDelta: preparedLine.canonicalFields.quantityDeltaCanonical,

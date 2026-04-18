@@ -758,7 +758,7 @@ export async function postPutaway(
           {
             id: uuidv4(),
             putawayLineId: line.id,
-            sourceLineId: `${line.id}:out`,
+            sourceLineId: `${line.id}#0`,
             warehouseId: warehouseIdsByLocation.get(line.from_location_id) ?? '',
             itemId: line.item_id,
             locationId: line.from_location_id,
@@ -769,7 +769,7 @@ export async function postPutaway(
           {
             id: uuidv4(),
             putawayLineId: line.id,
-            sourceLineId: `${line.id}:in`,
+            sourceLineId: `${line.id}#1`,
             warehouseId: warehouseIdsByLocation.get(line.to_location_id) ?? '',
             itemId: line.item_id,
             locationId: line.to_location_id,
@@ -810,6 +810,7 @@ export async function postPutaway(
           id: line.id,
           warehouseId: line.warehouseId,
           sourceLineId: line.sourceLineId,
+          eventTimestamp: now,
           itemId: line.itemId,
           locationId: line.locationId,
           quantityDelta: line.canonicalFields.quantityDeltaCanonical,

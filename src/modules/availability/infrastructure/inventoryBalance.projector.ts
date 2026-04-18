@@ -153,14 +153,69 @@ export async function applyInventoryBalanceProjectionDelta(
     reserved: normalizeQuantity(currentRow.reserved),
     allocated: normalizeQuantity(currentRow.allocated)
   };
+  const currentAvailable = roundQuantity(current.onHand - current.reserved - current.allocated);
+  const allocationAvailable = roundQuantity(currentAvailable + Math.max(0, -deltaReserved));
+  if (deltaAllocated > EPSILON && deltaAllocated - allocationAvailable > EPSILON) {
+    console.error('INVENTORY_INVARIANT_VIOLATION', {
+      invariant: 'allocation_lte_available',
+      tenantId: params.tenantId,
+      itemId: params.itemId,
+      locationId: params.locationId,
+      uom: params.uom,
+      deltaAllocated,
+      allocationAvailable
+    });
+    throw new Error('INVENTORY_BALANCE_ALLOCATION_EXCEEDS_AVAILABLE');
+  }
   const nextOnHand = roundQuantity(current.onHand + deltaOnHand);
   const nextReserved = roundQuantity(current.reserved + deltaReserved);
   const nextAllocated = roundQuantity(current.allocated + deltaAllocated);
+  const nextAvailable = roundQuantity(nextOnHand - nextReserved - nextAllocated);
   if (nextReserved < -EPSILON) {
+    console.error('INVENTORY_INVARIANT_VIOLATION', {
+      invariant: 'reserved_non_negative',
+      tenantId: params.tenantId,
+      itemId: params.itemId,
+      locationId: params.locationId,
+      uom: params.uom,
+      nextReserved
+    });
     throw new Error('INVENTORY_BALANCE_RESERVED_NEGATIVE');
   }
   if (nextAllocated < -EPSILON) {
+    console.error('INVENTORY_INVARIANT_VIOLATION', {
+      invariant: 'allocated_non_negative',
+      tenantId: params.tenantId,
+      itemId: params.itemId,
+      locationId: params.locationId,
+      uom: params.uom,
+      nextAllocated
+    });
     throw new Error('INVENTORY_BALANCE_ALLOCATED_NEGATIVE');
+  }
+  if (nextAvailable < -EPSILON) {
+    console.error('INVENTORY_INVARIANT_VIOLATION', {
+      invariant: 'available_non_negative',
+      tenantId: params.tenantId,
+      itemId: params.itemId,
+      locationId: params.locationId,
+      uom: params.uom,
+      nextAvailable
+    });
+    throw new Error('INVENTORY_BALANCE_AVAILABLE_NEGATIVE');
+  }
+  if (nextAllocated - roundQuantity(nextOnHand - nextReserved) > EPSILON) {
+    console.error('INVENTORY_INVARIANT_VIOLATION', {
+      invariant: 'allocated_lte_available_base',
+      tenantId: params.tenantId,
+      itemId: params.itemId,
+      locationId: params.locationId,
+      uom: params.uom,
+      nextAllocated,
+      nextOnHand,
+      nextReserved
+    });
+    throw new Error('INVENTORY_BALANCE_ALLOCATION_EXCEEDS_AVAILABLE');
   }
   await client.query(
     `UPDATE inventory_balance

@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { buildMovementDeterministicHash, sortDeterministicMovementLines } from '../../../modules/platform/application/inventoryMovementDeterminism';
+import { classifyInventoryMovementLineAction } from '../../../modules/platform/application/inventoryMovementLineSemantics';
 
 type InventoryMovementInput = {
   id?: string;
@@ -29,6 +30,9 @@ type InventoryMovementLineInput = {
   id?: string;
   tenantId: string;
   movementId: string;
+  movementType: string;
+  sourceLineId: string;
+  eventTimestamp: Date | string;
   itemId: string;
   locationId: string;
   quantityDelta: number;
@@ -43,11 +47,13 @@ type InventoryMovementLineInput = {
   reasonCode?: string | null;
   lineNotes?: string | null;
   createdAt?: Date | string;
+  recordedAt?: Date | string | null;
 };
 
-export type PersistInventoryMovementLineInput = Omit<InventoryMovementLineInput, 'tenantId' | 'movementId'> & {
+export type PersistInventoryMovementLineInput = Omit<InventoryMovementLineInput, 'tenantId' | 'movementId' | 'movementType'> & {
   warehouseId: string;
   sourceLineId: string;
+  eventTimestamp: Date | string;
 };
 
 export type PersistInventoryMovementInput = Omit<InventoryMovementInput, 'movementDeterministicHash'> & {
@@ -177,6 +183,15 @@ export async function persistInventoryMovement(
     createdAt: line.createdAt ?? createdAt
   }));
 
+  for (const line of sortedLines) {
+    if (!line.sourceLineId) {
+      throw new Error('INVENTORY_MOVEMENT_LINE_SOURCE_LINE_ID_REQUIRED');
+    }
+    if (!line.eventTimestamp) {
+      throw new Error('INVENTORY_MOVEMENT_LINE_EVENT_TIMESTAMP_REQUIRED');
+    }
+  }
+
   const movementDeterministicHash = buildMovementDeterministicHash({
     tenantId: input.tenantId,
     movementType: input.movementType,
@@ -215,6 +230,9 @@ export async function persistInventoryMovement(
       id: line.id,
       tenantId: input.tenantId,
       movementId,
+      movementType: input.movementType,
+      sourceLineId: line.sourceLineId,
+      eventTimestamp: line.eventTimestamp,
       itemId: line.itemId,
       locationId: line.locationId,
       quantityDelta: line.quantityDelta,
@@ -228,7 +246,8 @@ export async function persistInventoryMovement(
       extendedCost: line.extendedCost ?? null,
       reasonCode: line.reasonCode ?? null,
       lineNotes: line.lineNotes ?? null,
-      createdAt: line.createdAt
+      createdAt: line.createdAt,
+      recordedAt: line.recordedAt ?? createdAt
     });
   }
 
@@ -246,6 +265,18 @@ async function createInventoryMovementLine(
 ): Promise<string> {
   const id = input.id ?? uuidv4();
   const createdAt = input.createdAt ?? new Date();
+  const recordedAt = input.recordedAt ?? createdAt;
+  if (!input.sourceLineId) {
+    throw new Error('INVENTORY_MOVEMENT_LINE_SOURCE_LINE_ID_REQUIRED');
+  }
+  if (!input.eventTimestamp) {
+    throw new Error('INVENTORY_MOVEMENT_LINE_EVENT_TIMESTAMP_REQUIRED');
+  }
+  classifyInventoryMovementLineAction({
+    movementType: input.movementType,
+    quantityDelta: Number(input.quantityDeltaCanonical ?? input.quantityDelta),
+    reasonCode: input.reasonCode ?? null
+  });
   const enforceCanonical =
     process.env.ENFORCE_CANONICAL_MOVEMENT_FIELDS === 'true' ||
     (process.env.CANONICAL_MOVEMENT_REQUIRED_AFTER
@@ -266,14 +297,18 @@ async function createInventoryMovementLine(
 
   await client.query(
     `INSERT INTO inventory_movement_lines (
-        id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom,
+        id, tenant_id, movement_id, source_line_id, event_timestamp, recorded_at,
+        item_id, location_id, quantity_delta, uom,
         quantity_delta_entered, uom_entered, quantity_delta_canonical, canonical_uom, uom_dimension,
         unit_cost, extended_cost, reason_code, line_notes, created_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
     [
       id,
       input.tenantId,
       input.movementId,
+      input.sourceLineId,
+      input.eventTimestamp,
+      recordedAt,
       input.itemId,
       input.locationId,
       input.quantityDelta,

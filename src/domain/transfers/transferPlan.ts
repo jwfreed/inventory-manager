@@ -5,6 +5,7 @@ import type {
 } from '../../domains/inventory';
 import {
   buildMovementDeterministicHash,
+  computeSourceLineId,
   sortDeterministicMovementLines
 } from '../../modules/platform/application/inventoryMutationSupport';
 import { roundQuantity } from '../../lib/numbers';
@@ -58,11 +59,13 @@ function deepFreeze<T>(value: T): T {
 }
 
 function mapPersistMovementLine(
-  line: PlannedTransferMovementLine
+  line: PlannedTransferMovementLine,
+  eventTimestamp: Date | string
 ): PersistInventoryMovementLineInput {
   return {
     warehouseId: line.warehouseId,
     sourceLineId: line.sourceLineId,
+    eventTimestamp,
     itemId: line.itemId,
     locationId: line.locationId,
     quantityDelta: line.canonicalFields.quantityDeltaCanonical,
@@ -143,6 +146,7 @@ export async function buildTransferMovementPlan(
   prepared: PreparedTransferMutation,
   client: PoolClient
 ): Promise<TransferMovementPlan> {
+  const baseSourceLineId = computeSourceLineId([prepared.sourceType, prepared.sourceId]);
   const [canonicalOut, canonicalIn] = await Promise.all([
     getCanonicalMovementFields(
       prepared.tenantId,
@@ -167,7 +171,7 @@ export async function buildTransferMovementPlan(
         warehouseId: prepared.sourceWarehouseId,
         itemId: prepared.itemId,
         locationId: prepared.sourceLocationId,
-        sourceLineId: `${prepared.sourceType}:${prepared.sourceId}:out`,
+        sourceLineId: `${baseSourceLineId}#0`,
         reasonCode: `${prepared.reasonCode}_out`,
         lineNotes: `${prepared.notes} (outbound)`,
         canonicalFields: Object.freeze(canonicalOut)
@@ -177,7 +181,7 @@ export async function buildTransferMovementPlan(
         warehouseId: prepared.destinationWarehouseId,
         itemId: prepared.itemId,
         locationId: prepared.destinationLocationId,
-        sourceLineId: `${prepared.sourceType}:${prepared.sourceId}:in`,
+        sourceLineId: `${baseSourceLineId}#1`,
         reasonCode: `${prepared.reasonCode}_in`,
         lineNotes: `${prepared.notes} (inbound)`,
         canonicalFields: Object.freeze(canonicalIn)
@@ -237,7 +241,7 @@ export async function buildTransferMovementPlan(
       createdAt: prepared.occurredAt,
       updatedAt: prepared.occurredAt,
       lotId: prepared.lotId,
-      lines: lines.map(mapPersistMovementLine)
+      lines: lines.map((line) => mapPersistMovementLine(line, prepared.occurredAt))
     }
   });
 }

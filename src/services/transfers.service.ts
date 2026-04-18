@@ -336,7 +336,7 @@ async function fetchTransferReplayView(
         AND l.tenant_id = iml.tenant_id
       WHERE iml.tenant_id = $1
         AND iml.movement_id = $2
-      ORDER BY iml.created_at ASC, iml.id ASC`,
+      ORDER BY COALESCE(iml.event_timestamp, iml.created_at) ASC, iml.id ASC`,
     [tenantId, movementId]
   );
   const sourceLine = lineScopeResult.rows.find((row) => toNumber(row.effective_quantity) < 0);

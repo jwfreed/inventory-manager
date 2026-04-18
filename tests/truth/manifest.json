@@ -8,6 +8,7 @@
     "tests/architecture/ai-guardrails-contract.test.mjs",
     "tests/architecture/fresh-db-contract-scripts.test.mjs",
     "tests/architecture/idempotency-endpoint-uniqueness-guard.test.mjs",
+    "tests/architecture/inventory-movement-line-identity-policy.test.mjs",
     "tests/architecture/ledger-immutability-guard.test.mjs",
     "tests/architecture/ledger-immutability-role-guard.test.mjs",
     "tests/architecture/ledger-immutability-trigger-metadata.test.mjs",
