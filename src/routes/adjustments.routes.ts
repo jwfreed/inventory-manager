@@ -284,6 +284,14 @@ router.post('/inventory-adjustments/:id/post', async (req: Request, res: Respons
     if (error?.message === 'ADJUSTMENT_LINE_ZERO') {
       return res.status(400).json({ error: 'Inventory adjustment lines must have non-zero quantity.' });
     }
+    if (error?.message === 'ADJUSTMENT_REASON_REQUIRED') {
+      return res.status(409).json({
+        error: {
+          code: 'ADJUSTMENT_REASON_REQUIRED',
+          message: 'Reason code required for every inventory adjustment line.'
+        }
+      });
+    }
     if (error?.code === 'ADJUSTMENT_POST_INCOMPLETE' || error?.message === 'ADJUSTMENT_POST_INCOMPLETE') {
       return res.status(409).json({
         error: {

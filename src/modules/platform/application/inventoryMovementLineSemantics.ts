@@ -6,8 +6,36 @@ export const INVENTORY_MOVEMENT_LINE_ACTIONS = [
   'MOVE_LOCATION'
 ] as const;
 
+export const INVENTORY_STATES = [
+  'received',
+  'qc_hold',
+  'available',
+  'allocated',
+  'picked',
+  'shipped',
+  'adjusted'
+] as const;
+
+export const INVENTORY_STATE_TRANSITIONS = [
+  'received->qc_hold',
+  'received->available',
+  'qc_hold->available',
+  'available->allocated',
+  'allocated->available',
+  'allocated->picked',
+  'picked->shipped',
+  'available->shipped',
+  'available->adjusted',
+  'adjusted->available'
+] as const;
+
 export type InventoryMovementLineAction =
   (typeof INVENTORY_MOVEMENT_LINE_ACTIONS)[number];
+
+export type InventoryState = (typeof INVENTORY_STATES)[number];
+export type InventoryStateTransition = (typeof INVENTORY_STATE_TRANSITIONS)[number];
+
+const VALID_INVENTORY_STATE_TRANSITIONS = new Set<string>(INVENTORY_STATE_TRANSITIONS);
 
 export function classifyInventoryMovementLineAction(params: {
   movementType: string;
@@ -33,6 +61,59 @@ export function classifyInventoryMovementLineAction(params: {
     return 'DECREASE_ON_HAND';
   }
   throw new Error('INVENTORY_MOVEMENT_LINE_ACTION_INVALID');
+}
+
+export function assertInventoryStateTransition(
+  fromState: InventoryState,
+  toState: InventoryState
+): InventoryStateTransition {
+  const transition = `${fromState}->${toState}`;
+  if (!VALID_INVENTORY_STATE_TRANSITIONS.has(transition)) {
+    throw new Error('INVENTORY_STATE_TRANSITION_INVALID');
+  }
+  return transition as InventoryStateTransition;
+}
+
+export function deriveInventoryBalanceStateTransition(params: {
+  deltaOnHand?: number;
+  deltaReserved?: number;
+  deltaAllocated?: number;
+  reasonCode?: string | null;
+}): InventoryStateTransition {
+  const deltaOnHand = params.deltaOnHand ?? 0;
+  const deltaReserved = params.deltaReserved ?? 0;
+  const deltaAllocated = params.deltaAllocated ?? 0;
+  const reasonCode = params.reasonCode?.trim().toLowerCase() ?? '';
+
+  if (deltaReserved > 0 && deltaAllocated === 0) {
+    return assertInventoryStateTransition('available', 'allocated');
+  }
+  if (deltaReserved < 0 && deltaAllocated > 0) {
+    return assertInventoryStateTransition('allocated', 'picked');
+  }
+  if (deltaReserved < 0 && deltaAllocated === 0) {
+    return assertInventoryStateTransition('allocated', 'available');
+  }
+  if (deltaOnHand < 0 && deltaAllocated < 0) {
+    return assertInventoryStateTransition('picked', 'shipped');
+  }
+  if (deltaOnHand > 0 && reasonCode.includes('adjust')) {
+    return assertInventoryStateTransition('adjusted', 'available');
+  }
+  if (deltaOnHand > 0) {
+    return assertInventoryStateTransition('received', 'available');
+  }
+  if (deltaOnHand < 0 && reasonCode.includes('adjust')) {
+    return assertInventoryStateTransition('available', 'adjusted');
+  }
+  if (deltaOnHand < 0) {
+    return assertInventoryStateTransition('available', 'shipped');
+  }
+  if (deltaAllocated < 0) {
+    return assertInventoryStateTransition('allocated', 'available');
+  }
+
+  throw new Error('INVENTORY_STATE_TRANSITION_INVALID');
 }
 
 export function assertSourceLineQuantityConservation(params: {

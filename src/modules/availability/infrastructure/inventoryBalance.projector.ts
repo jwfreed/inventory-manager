@@ -1,6 +1,8 @@
 import type { PoolClient } from 'pg';
 import { pool } from '../../../db';
+import { recordAuditLog } from '../../../lib/audit';
 import { roundQuantity, toNumber } from '../../../lib/numbers';
+import { deriveInventoryBalanceStateTransition } from '../../platform/application/inventoryMovementLineSemantics';
 
 const EPSILON = 1e-6;
 
@@ -21,6 +23,16 @@ export type InventoryBalanceProjectionRow = {
 
 function normalizeQuantity(value: unknown): number {
   return roundQuantity(toNumber(value));
+}
+
+function buildInventoryInvariantError(code: string, details: Record<string, unknown>) {
+  const error = new Error(code) as Error & {
+    code?: string;
+    details?: Record<string, unknown>;
+  };
+  error.code = code;
+  error.details = details;
+  return error;
 }
 
 export async function ensureInventoryBalanceProjectionRow(
@@ -107,6 +119,13 @@ export async function applyInventoryBalanceProjectionDelta(
     deltaOnHand?: number;
     deltaReserved?: number;
     deltaAllocated?: number;
+    mutationContext?: {
+      movementId?: string | null;
+      sourceLineId?: string | null;
+      reasonCode?: string | null;
+      eventTimestamp?: Date | string | null;
+      stateTransition?: string | null;
+    };
   }
 ) {
   const deltaOnHand = params.deltaOnHand ?? 0;
@@ -156,7 +175,7 @@ export async function applyInventoryBalanceProjectionDelta(
   const currentAvailable = roundQuantity(current.onHand - current.reserved - current.allocated);
   const allocationAvailable = roundQuantity(currentAvailable + Math.max(0, -deltaReserved));
   if (deltaAllocated > EPSILON && deltaAllocated - allocationAvailable > EPSILON) {
-    console.error('INVENTORY_INVARIANT_VIOLATION', {
+    throw buildInventoryInvariantError('INVENTORY_BALANCE_ALLOCATION_EXCEEDS_AVAILABLE', {
       invariant: 'allocation_lte_available',
       tenantId: params.tenantId,
       itemId: params.itemId,
@@ -165,14 +184,13 @@ export async function applyInventoryBalanceProjectionDelta(
       deltaAllocated,
       allocationAvailable
     });
-    throw new Error('INVENTORY_BALANCE_ALLOCATION_EXCEEDS_AVAILABLE');
   }
   const nextOnHand = roundQuantity(current.onHand + deltaOnHand);
   const nextReserved = roundQuantity(current.reserved + deltaReserved);
   const nextAllocated = roundQuantity(current.allocated + deltaAllocated);
   const nextAvailable = roundQuantity(nextOnHand - nextReserved - nextAllocated);
   if (nextReserved < -EPSILON) {
-    console.error('INVENTORY_INVARIANT_VIOLATION', {
+    throw buildInventoryInvariantError('INVENTORY_BALANCE_RESERVED_NEGATIVE', {
       invariant: 'reserved_non_negative',
       tenantId: params.tenantId,
       itemId: params.itemId,
@@ -180,10 +198,9 @@ export async function applyInventoryBalanceProjectionDelta(
       uom: params.uom,
       nextReserved
     });
-    throw new Error('INVENTORY_BALANCE_RESERVED_NEGATIVE');
   }
   if (nextAllocated < -EPSILON) {
-    console.error('INVENTORY_INVARIANT_VIOLATION', {
+    throw buildInventoryInvariantError('INVENTORY_BALANCE_ALLOCATED_NEGATIVE', {
       invariant: 'allocated_non_negative',
       tenantId: params.tenantId,
       itemId: params.itemId,
@@ -191,10 +208,9 @@ export async function applyInventoryBalanceProjectionDelta(
       uom: params.uom,
       nextAllocated
     });
-    throw new Error('INVENTORY_BALANCE_ALLOCATED_NEGATIVE');
   }
   if (nextAvailable < -EPSILON) {
-    console.error('INVENTORY_INVARIANT_VIOLATION', {
+    throw buildInventoryInvariantError('INVENTORY_BALANCE_AVAILABLE_NEGATIVE', {
       invariant: 'available_non_negative',
       tenantId: params.tenantId,
       itemId: params.itemId,
@@ -202,10 +218,9 @@ export async function applyInventoryBalanceProjectionDelta(
       uom: params.uom,
       nextAvailable
     });
-    throw new Error('INVENTORY_BALANCE_AVAILABLE_NEGATIVE');
   }
   if (nextAllocated - roundQuantity(nextOnHand - nextReserved) > EPSILON) {
-    console.error('INVENTORY_INVARIANT_VIOLATION', {
+    throw buildInventoryInvariantError('INVENTORY_BALANCE_ALLOCATION_EXCEEDS_AVAILABLE', {
       invariant: 'allocated_lte_available_base',
       tenantId: params.tenantId,
       itemId: params.itemId,
@@ -215,8 +230,14 @@ export async function applyInventoryBalanceProjectionDelta(
       nextOnHand,
       nextReserved
     });
-    throw new Error('INVENTORY_BALANCE_ALLOCATION_EXCEEDS_AVAILABLE');
   }
+  const stateTransition = params.mutationContext?.stateTransition
+    ?? deriveInventoryBalanceStateTransition({
+      deltaOnHand,
+      deltaReserved,
+      deltaAllocated,
+      reasonCode: params.mutationContext?.reasonCode
+    });
   await client.query(
     `UPDATE inventory_balance
         SET on_hand = $1,
@@ -233,6 +254,44 @@ export async function applyInventoryBalanceProjectionDelta(
       params.locationId,
       params.uom
     ]
+  );
+  await recordAuditLog(
+    {
+      tenantId: params.tenantId,
+      actorType: 'system',
+      actorId: null,
+      action: 'post',
+      entityType: 'inventory_balance',
+      entityId: params.itemId,
+      occurredAt: params.mutationContext?.eventTimestamp
+        ? new Date(params.mutationContext.eventTimestamp)
+        : new Date(),
+      metadata: {
+        sku_id: params.itemId,
+        item_id: params.itemId,
+        location_id: params.locationId,
+        unit_of_measure: params.uom,
+        state_transition: stateTransition,
+        movement_id: params.mutationContext?.movementId ?? null,
+        source_line_id: params.mutationContext?.sourceLineId ?? null,
+        reason_code: params.mutationContext?.reasonCode ?? null
+      },
+      before: {
+        record_quantity: current.onHand,
+        physical_quantity: current.onHand,
+        available_quantity: currentAvailable,
+        reserved_quantity: current.reserved,
+        allocated_quantity: current.allocated
+      },
+      after: {
+        record_quantity: nextOnHand,
+        physical_quantity: nextOnHand,
+        available_quantity: nextAvailable,
+        reserved_quantity: nextReserved,
+        allocated_quantity: nextAllocated
+      }
+    },
+    client
   );
 }
 

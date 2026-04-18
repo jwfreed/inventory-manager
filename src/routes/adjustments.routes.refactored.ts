@@ -215,6 +215,15 @@ router.post(
           details: error.details
         }
       }
+    }),
+    'ADJUSTMENT_REASON_REQUIRED': () => ({
+      status: 409,
+      body: {
+        error: {
+          code: 'ADJUSTMENT_REASON_REQUIRED',
+          message: 'Reason code required for every inventory adjustment line.'
+        }
+      }
     })
   })
 );

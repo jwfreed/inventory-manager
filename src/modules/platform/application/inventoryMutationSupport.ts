@@ -381,6 +381,13 @@ export function buildInventoryBalanceProjectionOp(params: {
   deltaOnHand?: number;
   deltaReserved?: number;
   deltaAllocated?: number;
+  mutationContext?: {
+    movementId?: string | null;
+    sourceLineId?: string | null;
+    reasonCode?: string | null;
+    eventTimestamp?: Date | string | null;
+    stateTransition?: string | null;
+  };
 }): InventoryCommandProjectionOp {
   return async (client: PoolClient) => {
     await applyInventoryBalanceDelta(client, params);

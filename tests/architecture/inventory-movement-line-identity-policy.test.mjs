@@ -16,10 +16,13 @@ const {
 const {
   classifyInventoryMovementLineAction,
   assertAllocationWithinAvailable,
+  assertInventoryStateTransition,
+  deriveInventoryBalanceStateTransition,
   assertSourceLineQuantityConservation
 } = require('../../src/modules/platform/application/inventoryMovementLineSemantics.ts');
 const {
-  getInventoryConsumptionPolicy
+  getInventoryConsumptionPolicy,
+  getInventoryReconciliationPolicy
 } = require('../../src/config/inventoryPolicy.ts');
 
 test('movement line identity is complete, deterministic, and stable for partial flows', () => {
@@ -63,6 +66,23 @@ test('movement line action, conservation, allocation, and FIFO policies are expl
   assert.equal(classifyInventoryMovementLineAction({ movementType: 'transfer', quantityDelta: -1 }), 'MOVE_LOCATION');
   assert.equal(classifyInventoryMovementLineAction({ movementType: 'allocate', quantityDelta: 1 }), 'ALLOCATE');
   assert.equal(classifyInventoryMovementLineAction({ movementType: 'release', quantityDelta: -1 }), 'RELEASE');
+  assert.equal(assertInventoryStateTransition('available', 'allocated'), 'available->allocated');
+  assert.equal(
+    deriveInventoryBalanceStateTransition({ deltaReserved: -2, deltaAllocated: 2 }),
+    'allocated->picked'
+  );
+  assert.equal(
+    deriveInventoryBalanceStateTransition({ deltaOnHand: -2, deltaAllocated: -2 }),
+    'picked->shipped'
+  );
+  assert.equal(
+    deriveInventoryBalanceStateTransition({ deltaOnHand: -1, reasonCode: 'cycle_count_adjustment' }),
+    'available->adjusted'
+  );
+  assert.throws(
+    () => assertInventoryStateTransition('received', 'shipped'),
+    /INVENTORY_STATE_TRANSITION_INVALID/
+  );
   assert.doesNotThrow(() =>
     assertSourceLineQuantityConservation({
       sourceLineId: 'receipt-line-1',
@@ -86,6 +106,7 @@ test('movement line action, conservation, allocation, and FIFO policies are expl
     /INVENTORY_ALLOCATION_EXCEEDS_AVAILABLE/
   );
   assert.equal(getInventoryConsumptionPolicy(), 'FIFO');
+  assert.equal(getInventoryReconciliationPolicy().autoAdjustMaxAbsQuantity, 100);
 });
 
 test('schema, writer, and rebuild matching enforce structural identity and event time', async () => {
@@ -96,6 +117,12 @@ test('schema, writer, and rebuild matching enforce structural identity and event
   );
   const writer = await readFile(path.join(root, 'src/domains/inventory/internal/ledgerWriter.ts'), 'utf8');
   const rebuilder = await readFile(path.join(root, 'src/domain/receipts/receiptAllocationRebuilder.ts'), 'utf8');
+  const projector = await readFile(
+    path.join(root, 'src/modules/availability/infrastructure/inventoryBalance.projector.ts'),
+    'utf8'
+  );
+  const counts = await readFile(path.join(root, 'src/services/counts.service.ts'), 'utf8');
+  const adjustments = await readFile(path.join(root, 'src/services/adjustments/posting.service.ts'), 'utf8');
 
   assert.match(migration, /source_line_id/);
   assert.match(migration, /event_timestamp/);
@@ -110,4 +137,13 @@ test('schema, writer, and rebuild matching enforce structural identity and event
   assert.match(rebuilder, /AND source_line_id = \$3/);
   assert.match(rebuilder, /RECEIPT_ALLOCATION_REBUILD_LEGACY_MOVEMENT_LINE_FALLBACK/);
   assert.match(rebuilder, /ORDER BY COALESCE\(event_timestamp, created_at\) ASC, id ASC/);
+
+  assert.match(projector, /recordAuditLog/);
+  assert.match(projector, /state_transition/);
+  assert.match(projector, /quantity: current|record_quantity: current/);
+  assert.doesNotMatch(projector, /console\.(log|warn|error)/);
+
+  assert.match(counts, /COUNT_RECONCILIATION_ESCALATION_REQUIRED/);
+  assert.match(counts, /getInventoryReconciliationPolicy/);
+  assert.match(adjustments, /ADJUSTMENT_REASON_REQUIRED/);
 });

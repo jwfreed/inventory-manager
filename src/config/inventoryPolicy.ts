@@ -6,6 +6,10 @@ export type InventoryNegativePolicy = {
   allowedRolesForOverride: string[];
 };
 
+export type InventoryReconciliationPolicy = {
+  autoAdjustMaxAbsQuantity: number;
+};
+
 export const INVENTORY_CONSUMPTION_POLICY = 'FIFO' as const;
 
 export function getInventoryConsumptionPolicy() {
@@ -37,5 +41,20 @@ export function getInventoryNegativePolicy(): InventoryNegativePolicy {
       'admin',
       'inventory_manager'
     ])
+  };
+}
+
+function parseNonNegativeNumber(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+export function getInventoryReconciliationPolicy(): InventoryReconciliationPolicy {
+  return {
+    autoAdjustMaxAbsQuantity: parseNonNegativeNumber(
+      process.env.INVENTORY_RECONCILIATION_AUTO_ADJUST_MAX_ABS_QTY,
+      100
+    )
   };
 }

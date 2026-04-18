@@ -49,6 +49,13 @@ export async function applyInventoryBalanceDelta(
     deltaOnHand?: number;
     deltaReserved?: number;
     deltaAllocated?: number;
+    mutationContext?: {
+      movementId?: string | null;
+      sourceLineId?: string | null;
+      reasonCode?: string | null;
+      eventTimestamp?: Date | string | null;
+      stateTransition?: string | null;
+    };
   }
 ) {
   return applyInventoryBalanceProjectionDelta(client, params);

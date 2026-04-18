@@ -180,6 +180,12 @@ export async function postInventoryAdjustment(
         }
 
         const now = new Date();
+        const missingReason = adjustmentLines.find(
+          (line) => toNumber(line.quantity_delta) !== 0 && !line.reason_code
+        );
+        if (missingReason) {
+          throw new Error('ADJUSTMENT_REASON_REQUIRED');
+        }
         const negativeLines = adjustmentLines
           .map((line) => {
             const qty = toNumber(line.quantity_delta);
@@ -366,7 +372,14 @@ export async function postInventoryAdjustment(
               itemId: line.item_id,
               locationId: line.location_id,
               uom: canonicalFields.canonicalUom,
-              deltaOnHand: canonicalQty
+              deltaOnHand: canonicalQty,
+              mutationContext: {
+                movementId: movement.movementId,
+                sourceLineId: line.id,
+                reasonCode: line.reason_code,
+                eventTimestamp: adjustmentRow!.occurred_at,
+                stateTransition: canonicalQty > 0 ? 'adjusted->available' : 'available->adjusted'
+              }
             })
           );
           itemsToRefresh.add(line.item_id);

@@ -263,6 +263,15 @@ router.post('/inventory-counts/:id/post', async (req: Request, res: Response) =>
         }
       });
     }
+    if (error?.code === 'COUNT_RECONCILIATION_ESCALATION_REQUIRED' || error?.message === 'COUNT_RECONCILIATION_ESCALATION_REQUIRED') {
+      return res.status(409).json({
+        error: {
+          code: 'COUNT_RECONCILIATION_ESCALATION_REQUIRED',
+          message: 'Cycle count variance exceeds auto-adjust threshold and requires escalation.',
+          details: error?.details
+        }
+      });
+    }
     if (error?.message === 'WAREHOUSE_SCOPE_MISMATCH' || error?.code === 'WAREHOUSE_SCOPE_MISMATCH') {
       return res.status(409).json({
         error: {

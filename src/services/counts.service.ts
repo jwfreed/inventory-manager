@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
 import type { z } from 'zod';
+import { getInventoryReconciliationPolicy } from '../config/inventoryPolicy';
 import { pool, withTransaction } from '../db';
 import { inventoryCountSchema, inventoryCountUpdateSchema } from '../schemas/counts.schema';
 import { roundQuantity, toNumber } from '../lib/numbers';
@@ -363,6 +364,16 @@ function inventoryCountPostIncompleteError(
     hint: 'Retry with the same Idempotency-Key or contact admin',
     ...(details ?? {})
   };
+  return error;
+}
+
+function inventoryCountReconciliationEscalationError(details: Record<string, unknown>) {
+  const error = new Error('COUNT_RECONCILIATION_ESCALATION_REQUIRED') as Error & {
+    code?: string;
+    details?: Record<string, unknown>;
+  };
+  error.code = 'COUNT_RECONCILIATION_ESCALATION_REQUIRED';
+  error.details = details;
   return error;
 }
 
@@ -854,6 +865,24 @@ export async function postInventoryCount(
       if (missingReason) {
         throw new Error('COUNT_REASON_REQUIRED');
       }
+      const reconciliationPolicy = getInventoryReconciliationPolicy();
+      const escalationRequired = deltas.find(
+        (delta) =>
+          Math.abs(delta.variance) - reconciliationPolicy.autoAdjustMaxAbsQuantity > 1e-6
+          && !context?.overrideRequested
+      );
+      if (escalationRequired) {
+        throw inventoryCountReconciliationEscalationError({
+          countId: id,
+          itemId: escalationRequired.line.item_id,
+          locationId: escalationRequired.line.location_id,
+          uom: escalationRequired.line.uom,
+          countedQuantity: escalationRequired.countedQty,
+          systemQuantity: escalationRequired.systemQty,
+          varianceQuantity: escalationRequired.variance,
+          autoAdjustMaxAbsQuantity: reconciliationPolicy.autoAdjustMaxAbsQuantity
+        });
+      }
 
       const missingPositiveCost = deltas.find(
         (delta) => delta.variance > 0 && delta.line.unit_cost_for_positive_adjustment === null
@@ -1096,7 +1125,14 @@ export async function postInventoryCount(
             itemId: delta.line.item_id,
             locationId: delta.line.location_id,
             uom: canonicalFields.canonicalUom,
-            deltaOnHand: canonicalQty
+            deltaOnHand: canonicalQty,
+            mutationContext: {
+              movementId: movement.movementId,
+              sourceLineId: delta.line.id,
+              reasonCode: delta.line.reason_code ?? 'cycle_count_adjustment',
+              eventTimestamp: now,
+              stateTransition: canonicalQty > 0 ? 'adjusted->available' : 'available->adjusted'
+            }
           })
         );
         itemsToRefresh.add(delta.line.item_id);
