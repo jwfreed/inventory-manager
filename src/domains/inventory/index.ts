@@ -17,6 +17,11 @@ export {
 export { assertSellableLocationOrThrow } from './internal/locationGuards';
 
 export {
+  applyPersistedMovementToInventoryUnits,
+  rebuildInventoryUnitsFromEvents
+} from './internal/inventoryUnits';
+
+export {
   acquireAtpLocks,
   assertAtpLockHeldOrThrow,
   buildAtpLockKeys,

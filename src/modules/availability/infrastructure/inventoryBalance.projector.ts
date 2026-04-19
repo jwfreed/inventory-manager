@@ -274,18 +274,20 @@ export async function applyInventoryBalanceProjectionDelta(
         state_transition: stateTransition,
         movement_id: params.mutationContext?.movementId ?? null,
         source_line_id: params.mutationContext?.sourceLineId ?? null,
-        reason_code: params.mutationContext?.reasonCode ?? null
+        reason_code: params.mutationContext?.reasonCode ?? null,
+        record_quantity_source: 'inventory_movement_event',
+        physical_quantity_source: 'not_observed'
       },
       before: {
         record_quantity: current.onHand,
-        physical_quantity: current.onHand,
+        physical_quantity: null,
         available_quantity: currentAvailable,
         reserved_quantity: current.reserved,
         allocated_quantity: current.allocated
       },
       after: {
         record_quantity: nextOnHand,
-        physical_quantity: nextOnHand,
+        physical_quantity: null,
         available_quantity: nextAvailable,
         reserved_quantity: nextReserved,
         allocated_quantity: nextAllocated

@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { buildMovementDeterministicHash, sortDeterministicMovementLines } from '../../../modules/platform/application/inventoryMovementDeterminism';
 import { classifyInventoryMovementLineAction } from '../../../modules/platform/application/inventoryMovementLineSemantics';
+import { applyPersistedMovementToInventoryUnits } from './inventoryUnits';
 
 type InventoryMovementInput = {
   id?: string;
@@ -250,6 +251,10 @@ export async function persistInventoryMovement(
       recordedAt: line.recordedAt ?? createdAt
     });
   }
+  await applyPersistedMovementToInventoryUnits(client, {
+    tenantId: input.tenantId,
+    movementId
+  });
 
   return {
     movementId,
@@ -271,6 +276,9 @@ async function createInventoryMovementLine(
   }
   if (!input.eventTimestamp) {
     throw new Error('INVENTORY_MOVEMENT_LINE_EVENT_TIMESTAMP_REQUIRED');
+  }
+  if (!input.reasonCode?.trim()) {
+    throw new Error('INVENTORY_MOVEMENT_LINE_REASON_CODE_REQUIRED');
   }
   classifyInventoryMovementLineAction({
     movementType: input.movementType,

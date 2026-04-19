@@ -21,6 +21,10 @@ const {
   assertSourceLineQuantityConservation
 } = require('../../src/modules/platform/application/inventoryMovementLineSemantics.ts');
 const {
+  planFifoUnitConsumption,
+  rebuildInventoryUnitStates
+} = require('../../src/modules/platform/application/inventoryUnitAuthority.ts');
+const {
   getInventoryConsumptionPolicy,
   getInventoryReconciliationPolicy
 } = require('../../src/config/inventoryPolicy.ts');
@@ -109,6 +113,90 @@ test('movement line action, conservation, allocation, and FIFO policies are expl
   assert.equal(getInventoryReconciliationPolicy().autoAdjustMaxAbsQuantity, 100);
 });
 
+test('unit authority rebuilds state and plans deterministic FIFO partial consumption', () => {
+  const events = [
+    {
+      id: '00000000-0000-0000-0000-000000000003',
+      movementId: 'movement-new',
+      sourceLineId: 'line-new',
+      skuId: 'sku-1',
+      lotId: 'lot-new',
+      locationId: 'loc-a',
+      unitOfMeasure: 'each',
+      eventTimestamp: '2026-03-03T00:00:00.000Z',
+      reasonCode: 'receipt',
+      stateTransition: 'received->available',
+      recordQuantityDelta: 6
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000001',
+      movementId: 'movement-old',
+      sourceLineId: 'line-old',
+      skuId: 'sku-1',
+      lotId: 'lot-old',
+      locationId: 'loc-a',
+      unitOfMeasure: 'each',
+      eventTimestamp: '2026-03-01T00:00:00.000Z',
+      reasonCode: 'receipt',
+      stateTransition: 'received->available',
+      recordQuantityDelta: 4
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000002',
+      movementId: 'movement-other-location',
+      sourceLineId: 'line-other-location',
+      skuId: 'sku-1',
+      lotId: 'lot-other-location',
+      locationId: 'loc-b',
+      unitOfMeasure: 'each',
+      eventTimestamp: '2026-03-02T00:00:00.000Z',
+      reasonCode: 'receipt',
+      stateTransition: 'received->available',
+      recordQuantityDelta: 9
+    }
+  ];
+
+  assert.deepEqual(
+    planFifoUnitConsumption({
+      events,
+      skuId: 'sku-1',
+      locationId: 'loc-a',
+      unitOfMeasure: 'each',
+      quantity: 7
+    }).map((entry) => [entry.lotId, entry.quantity]),
+    [
+      ['lot-old', 4],
+      ['lot-new', 3]
+    ]
+  );
+  assert.equal(rebuildInventoryUnitStates(events).length, 3);
+});
+
+test('unit authority rejects implicit mutation fields and invalid transitions', () => {
+  const base = {
+    id: 'event-1',
+    movementId: 'movement-1',
+    sourceLineId: 'line-1',
+    skuId: 'sku-1',
+    lotId: 'lot-1',
+    locationId: 'loc-a',
+    unitOfMeasure: 'each',
+    eventTimestamp: '2026-03-01T00:00:00.000Z',
+    reasonCode: 'receipt',
+    stateTransition: 'received->available',
+    recordQuantityDelta: 1
+  };
+
+  assert.throws(
+    () => rebuildInventoryUnitStates([{ ...base, reasonCode: '' }]),
+    /INVENTORY_UNIT_EVENT_REASON_CODE_REQUIRED/
+  );
+  assert.throws(
+    () => rebuildInventoryUnitStates([{ ...base, stateTransition: 'received->shipped' }]),
+    /INVENTORY_STATE_TRANSITION_INVALID/
+  );
+});
+
 test('schema, writer, and rebuild matching enforce structural identity and event time', async () => {
   const root = process.cwd();
   const migration = await readFile(
@@ -140,7 +228,9 @@ test('schema, writer, and rebuild matching enforce structural identity and event
 
   assert.match(projector, /recordAuditLog/);
   assert.match(projector, /state_transition/);
-  assert.match(projector, /quantity: current|record_quantity: current/);
+  assert.match(projector, /record_quantity: current/);
+  assert.match(projector, /physical_quantity: null/);
+  assert.match(projector, /physical_quantity_source: 'not_observed'/);
   assert.doesNotMatch(projector, /console\.(log|warn|error)/);
 
   assert.match(counts, /COUNT_RECONCILIATION_ESCALATION_REQUIRED/);

@@ -55,7 +55,7 @@ async function lockAvailableLayersForUpdate(
         AND uom = $4
         AND remaining_quantity > 0
         AND voided_at IS NULL
-      ORDER BY layer_date ASC, layer_sequence ASC, id ASC
+      ORDER BY layer_date ASC, id ASC
       FOR UPDATE`,
     [tenantId, itemId, sourceLocationId, uom]
   );

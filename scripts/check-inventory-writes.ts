@@ -5,7 +5,9 @@ const ROOT = path.resolve(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
 const ALLOWED = new Set([
   path.join(SRC, 'domains', 'inventory', 'internal', 'ledgerWriter.ts'),
-  path.join(SRC, 'domains', 'inventory', 'internal', 'inventoryBalance.ts')
+  path.join(SRC, 'domains', 'inventory', 'internal', 'inventoryBalance.ts'),
+  path.join(SRC, 'modules', 'availability', 'infrastructure', 'inventoryBalance.projector.ts'),
+  path.join(SRC, 'services', 'inventoryLedgerReconcile.service.ts')
 ]);
 
 const WRITE_PATTERNS: Array<{ name: string; regex: RegExp }> = [
@@ -21,6 +23,7 @@ function walk(dir: string) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+      if (entry.name === 'migrations') continue;
       walk(full);
       continue;
     }

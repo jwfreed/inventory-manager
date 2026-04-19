@@ -24,6 +24,7 @@
     "tests/ops/clean-dev-db-no-drift.test.mjs",
     "tests/truth/cost-conservation.test.mjs",
     "tests/truth/idempotency-retry.test.mjs",
+    "tests/truth/inventory-completeness.test.mjs",
     "tests/truth/movement-hash-integrity.test.mjs",
     "tests/truth/projection-rebuild-equality.test.mjs",
     "tests/truth/quantity-conservation.test.mjs",

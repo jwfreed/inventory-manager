@@ -331,7 +331,7 @@ export async function getAvailableLayers(
     params.push(lot_id);
   }
 
-  sql += ` ORDER BY layer_date ASC, layer_sequence ASC, id ASC`;
+  sql += ` ORDER BY layer_date ASC, id ASC`;
   if (options?.forUpdate) {
     sql += ' FOR UPDATE';
   }
