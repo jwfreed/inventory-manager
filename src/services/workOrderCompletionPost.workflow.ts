@@ -11,7 +11,8 @@ import {
 } from '../modules/platform/application/runInventoryCommand';
 import {
   buildPostedDocumentReplayResult,
-  buildInventoryBalanceProjectionOp
+  buildInventoryBalanceProjectionOp,
+  buildRefreshItemCostSummaryProjectionOp
 } from '../modules/platform/application/inventoryMutationSupport';
 import { isTerminalWorkOrderStatus } from './workOrderLifecycle.service';
 import * as movementPlanner from './inventoryMovementPlanner';
@@ -412,6 +413,7 @@ export async function postWorkOrderCompletion(
       const wipUnitCostCanonical = totalIssueCost / totalProducedCanonical;
 
       const projectionOps: InventoryCommandProjectionOp[] = [];
+      const itemsToRefresh = new Set<string>();
       for (const { preparedLine, sourceLine, unitCost } of plannedMovementLines) {
         await createCostLayer({
           tenant_id: tenantId,
@@ -435,7 +437,13 @@ export async function postWorkOrderCompletion(
             deltaOnHand: preparedLine.canonicalFields.quantityDeltaCanonical
           })
         );
+        itemsToRefresh.add(sourceLine.item_id);
       }
+
+      for (const itemId of itemsToRefresh.values()) {
+        projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, itemId));
+      }
+
       await wipEngine.allocateWipCost(client, {
         tenantId,
         executionId: completionId,

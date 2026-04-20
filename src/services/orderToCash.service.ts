@@ -31,7 +31,8 @@ import {
   buildPostedDocumentReplayResult,
   buildInventoryBalanceProjectionOp,
   buildReplayCorruptionError,
-  buildMovementPostedEvent
+  buildMovementPostedEvent,
+  buildRefreshItemCostSummaryProjectionOp
 } from '../modules/platform/application/inventoryMutationSupport';
 import { upsertBackorder } from './backorders.service';
 import { roundQuantity, toNumber } from '../lib/numbers';
@@ -2435,6 +2436,7 @@ export async function postShipment(
 
         const events: InventoryCommandEvent[] = [];
         const projectionOps: InventoryCommandProjectionOp[] = [];
+        const itemsToRefresh = new Set<string>();
 
         if (!movement.created) {
           return buildShipmentReplayResult({
@@ -2502,6 +2504,7 @@ export async function postShipment(
               deltaAllocated: -reserveConsume
             })
           );
+          itemsToRefresh.add(line.item_id);
 
           if (reservation && reserveConsume > 0) {
             if (reservation.status !== 'ALLOCATED') {
@@ -2543,6 +2546,11 @@ export async function postShipment(
             events.push(buildReservationChangedEvent(reservation, eventVersion, transactionalIdempotencyKey));
           }
         }
+
+        for (const itemId of itemsToRefresh.values()) {
+          projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, itemId));
+        }
+
         await client.query(
           `UPDATE sales_order_shipments
               SET inventory_movement_id = $1,

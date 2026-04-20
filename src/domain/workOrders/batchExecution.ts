@@ -9,7 +9,8 @@ import {
 } from '../inventory/mutationInvariants';
 import { roundQuantity, toNumber } from '../../lib/numbers';
 import {
-  buildInventoryBalanceProjectionOp
+  buildInventoryBalanceProjectionOp,
+  buildRefreshItemCostSummaryProjectionOp
 } from '../../modules/platform/application/inventoryMutationSupport';
 import type {
   InventoryCommandEvent,
@@ -373,6 +374,7 @@ export async function executeWorkOrderBatchPosting(
 
   let totalConsumedCost = 0;
   const projectionOps: InventoryCommandProjectionOp[] = [];
+  const itemsToRefresh = new Set<string>();
   for (const { preparedConsume, sourceLine, issueCost, consumptionPlan } of plannedIssueMovementLines) {
     const canonicalQty = Math.abs(preparedConsume.canonicalFields.quantityDeltaCanonical);
     await applyPlannedCostLayerConsumption({
@@ -402,6 +404,7 @@ export async function executeWorkOrderBatchPosting(
       uom: preparedConsume.canonicalFields.canonicalUom,
       deltaOnHand: preparedConsume.canonicalFields.quantityDeltaCanonical
     });
+    itemsToRefresh.add(sourceLine.componentItemId);
   }
 
   await params.client.query(
@@ -501,6 +504,11 @@ export async function executeWorkOrderBatchPosting(
       uom: preparedProduce.canonicalFields.canonicalUom,
       deltaOnHand: preparedProduce.canonicalFields.quantityDeltaCanonical
     });
+    itemsToRefresh.add(sourceLine.outputItemId);
+  }
+
+  for (const itemId of itemsToRefresh.values()) {
+    projectionOps.push(buildRefreshItemCostSummaryProjectionOp(params.tenantId, itemId));
   }
 
   await wipEngine.createWipValuationRecord(params.client, {

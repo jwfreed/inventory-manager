@@ -37,6 +37,8 @@
     "tests/truth/cross-workflow-conservation.test.mjs",
     "tests/truth/cross-workflow-concurrency.test.mjs",
     "tests/truth/global-projection-rebuild-parity.test.mjs",
-    "tests/truth/wo-void-sequencing.test.mjs"
+    "tests/truth/wo-void-sequencing.test.mjs",
+    "tests/truth/item-summary-consistency.test.mjs",
+    "tests/truth/closeout-reconciliation.test.mjs"
   ]
 }

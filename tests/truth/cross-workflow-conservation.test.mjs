@@ -199,8 +199,7 @@ test('receipt → WO issue → WO completion → QC accept pipeline conserves st
   assert.equal(mismatches.length, 0, 'zero quantity conservation mismatches');
 
   // Projection rebuild parity
-  // Note: reportProduction does not update item_summary in real-time,
-  // so we verify rebuild from ledger produces the CORRECT values.
+  // Verify rebuild from ledger produces the same values as live projections.
   await harness.clearDerivedProjections();
   await harness.rebuildDerivedProjections();
   const after = await harness.snapshotDerivedProjections();

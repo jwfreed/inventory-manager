@@ -6,6 +6,10 @@ import { roundQuantity, toNumber } from '../lib/numbers';
 import { getCanonicalMovementFields } from './uomCanonical.service';
 import { acquireAtpLocks, createAtpLockContext, persistInventoryMovement } from '../domains/inventory';
 import {
+  buildInventoryBalanceProjectionOp,
+  buildRefreshItemCostSummaryProjectionOp
+} from '../modules/platform/application/inventoryMutationSupport';
+import {
   loadPutawayTotals,
   loadQcBreakdown
 } from './inbound/receivingAggregations';
@@ -403,6 +407,18 @@ async function applyAdjustmentResolution(params: {
   if (!movementLineId) {
     throw new Error('RECEIPT_RECONCILIATION_ADJUSTMENT_MOVEMENT_LINE_REQUIRED');
   }
+
+  // Update balance + cost summary projections for the affected item/location
+  const balanceOp = buildInventoryBalanceProjectionOp({
+    tenantId: params.tenantId,
+    itemId: params.line.item_id,
+    locationId,
+    uom: canonical.canonicalUom,
+    deltaOnHand: canonical.quantityDeltaCanonical
+  });
+  await balanceOp(params.client);
+  const costOp = buildRefreshItemCostSummaryProjectionOp(params.tenantId, params.line.item_id);
+  await costOp(params.client);
 
   if (delta > 0) {
     await addReceiptAllocations({
