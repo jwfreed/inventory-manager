@@ -30,6 +30,9 @@
     "tests/truth/quantity-conservation.test.mjs",
     "tests/truth/record-physical-reconciliation.test.mjs",
     "tests/truth/sequencing-validity.test.mjs",
-    "tests/truth/transaction-bijection.test.mjs"
+    "tests/truth/transaction-bijection.test.mjs",
+    "tests/truth/transfer-acceptance.test.mjs",
+    "tests/truth/transfer-concurrency-correctness.test.mjs",
+    "tests/truth/transfer-replay-correctness.test.mjs"
   ]
 }
