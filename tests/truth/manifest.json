@@ -33,6 +33,10 @@
     "tests/truth/transaction-bijection.test.mjs",
     "tests/truth/transfer-acceptance.test.mjs",
     "tests/truth/transfer-concurrency-correctness.test.mjs",
-    "tests/truth/transfer-replay-correctness.test.mjs"
+    "tests/truth/transfer-replay-correctness.test.mjs",
+    "tests/truth/cross-workflow-conservation.test.mjs",
+    "tests/truth/cross-workflow-concurrency.test.mjs",
+    "tests/truth/global-projection-rebuild-parity.test.mjs",
+    "tests/truth/wo-void-sequencing.test.mjs"
   ]
 }
