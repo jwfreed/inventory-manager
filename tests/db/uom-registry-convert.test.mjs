@@ -131,7 +131,7 @@ test('convertQty applies context-bound rounding and precision-min rule', async (
   assert.equal(precisionMin.qty, '1.234568');
 });
 
-test('convertQty emits LEGACY_FALLBACK_USED trace with watch severity', async () => {
+test('convertQty rejects legacy uom_conversions without fallback', async () => {
   const anchor = await query(
     `SELECT tenant_id, id
        FROM items
@@ -151,19 +151,17 @@ test('convertQty emits LEGACY_FALLBACK_USED trace with watch severity', async ()
   );
 
   try {
-    const converted = await convertQty({
-      qty: '4',
-      fromUom,
-      toUom,
-      roundingContext: 'transfer',
-      tenantId,
-      itemId
-    });
-    assert.equal(converted.exactQty, '10');
-    assert.equal(converted.status, 'LEGACY_FALLBACK_USED');
-    assert.equal(converted.severity, 'watch');
-    assert.equal(converted.canAggregate, true);
-    assert.ok(converted.traces.some((trace) => trace.status === 'LEGACY_FALLBACK_USED'));
+    await assert.rejects(
+      convertQty({
+        qty: '4',
+        fromUom,
+        toUom,
+        roundingContext: 'transfer',
+        tenantId,
+        itemId
+      }),
+      (error) => error.code === 'UOM_CONVERSION_MISSING' || error.code === 'UOM_UNKNOWN'
+    );
   } finally {
     await query(`DELETE FROM uom_conversions WHERE id = $1`, [conversionId]);
   }

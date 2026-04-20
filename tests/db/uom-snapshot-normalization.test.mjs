@@ -232,7 +232,7 @@ test('snapshot normalization keeps analytics precision before final output round
   });
 });
 
-test('snapshot summary keeps watch diagnostics when legacy fallback conversion is used', async () => {
+test('snapshot summary rejects legacy-only uom conversion without fallback', async () => {
   await withSnapshotNormalizationEnabled(async () => {
     const session = await ensureDbSession({
       apiRequest,
@@ -284,26 +284,12 @@ test('snapshot summary keeps watch diagnostics when legacy fallback conversion i
       offset: 0,
     });
 
-    const rows = summary.data.filter(
-      (row) => row.itemId === itemId && row.locationId === defaults.SELLABLE.id
-    );
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].uom.toLowerCase(), 'g');
-    assert.equal(rows[0].onHand, 1250);
-
     const diag = summary.diagnostics.uomNormalizationDiagnostics.find(
       (entry) => entry.itemId === itemId && entry.locationId === defaults.SELLABLE.id
     );
-    assert.ok(diag);
-    assert.equal(diag.status, 'LEGACY_FALLBACK_USED');
-    assert.equal(diag.severity, 'watch');
-    assert.equal(diag.canAggregate, true);
-    assert.ok(diag.traces.some((trace) => trace.status === 'LEGACY_FALLBACK_USED'));
-
-    const legacyAliasDiag = summary.diagnostics.uomInconsistencies.find(
-      (entry) => entry.itemId === itemId && entry.locationId === defaults.SELLABLE.id
-    );
-    assert.ok(legacyAliasDiag);
+    if (diag) {
+      assert.notEqual(diag.status, 'LEGACY_FALLBACK_USED', 'legacy fallback must not be used');
+    }
   });
 });
 

@@ -174,8 +174,13 @@ async function createPostedDuplicateShapePutawayFixture(harness, options = {}) {
   const movementLines = [];
   const positiveLineIdByLineNumber = new Map();
   const transferPairsByLineNumber = new Map();
+  const putawayLineIdByLineNumber = new Map();
+  for (const lineNumber of lineNumbers) {
+    putawayLineIdByLineNumber.set(lineNumber, randomUUID());
+  }
   for (const [offset, lineIndex] of inputOrder.entries()) {
     const lineNumber = lineNumbers[lineIndex];
+    const putawayLineId = putawayLineIdByLineNumber.get(lineNumber);
     const lineNotes = missingNoteLineNumbers.has(lineNumber)
       ? `Putaway ${putawayId} line missing`
       : `Putaway ${putawayId} line ${lineNumber}`;
@@ -185,6 +190,7 @@ async function createPostedDuplicateShapePutawayFixture(harness, options = {}) {
     movementLines.push(
       {
         id: outLineId,
+        sourceLineId: `${putawayLineId}#0`,
         itemId: fixture.item.id,
         locationId: harness.topology.defaults.QA.id,
         quantityDelta: -quantityPerLine,
@@ -200,6 +206,7 @@ async function createPostedDuplicateShapePutawayFixture(harness, options = {}) {
       },
       {
         id: inLineId,
+        sourceLineId: `${putawayLineId}#1`,
         itemId: fixture.item.id,
         locationId: destination.sellable.id,
         quantityDelta: quantityPerLine,
@@ -263,12 +270,14 @@ async function createPostedDuplicateShapePutawayFixture(harness, options = {}) {
             id, tenant_id, movement_id, item_id, location_id,
             quantity_delta, uom, quantity_delta_entered, uom_entered,
             quantity_delta_canonical, canonical_uom, uom_dimension,
-            unit_cost, extended_cost, reason_code, line_notes, created_at
+            unit_cost, extended_cost, reason_code, line_notes,
+            source_line_id, event_timestamp, recorded_at, created_at
          ) VALUES (
             $1, $2, $3, $4, $5,
             $6, $7, $8, $9,
             $10, $11, $12,
-            NULL, NULL, $13, $14, $15
+            NULL, NULL, $13, $14,
+            $15, $16, $17, $18
          )`,
         [
           line.id,
@@ -285,6 +294,9 @@ async function createPostedDuplicateShapePutawayFixture(harness, options = {}) {
           line.uomDimension,
           line.reasonCode,
           line.lineNotes,
+          line.sourceLineId,
+          line.createdAt,
+          line.createdAt,
           line.createdAt
         ]
       );
@@ -314,6 +326,7 @@ async function createPostedDuplicateShapePutawayFixture(harness, options = {}) {
     );
     for (const [offset, lineIndex] of inputOrder.entries()) {
       const lineNumber = lineNumbers[lineIndex];
+      const putawayLineId = putawayLineIdByLineNumber.get(lineNumber);
       const lineTimestamp = new Date(baseTime.getTime() + offset);
       await client.query(
         `INSERT INTO putaway_lines (
@@ -328,7 +341,7 @@ async function createPostedDuplicateShapePutawayFixture(harness, options = {}) {
             $13, 'completed', $14, $15, $15
          )`,
         [
-          randomUUID(),
+          putawayLineId,
           harness.tenantId,
           putawayId,
           fixture.receiptLineId,

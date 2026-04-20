@@ -223,7 +223,7 @@ test('schema, writer, and rebuild matching enforce structural identity and event
   assert.match(writer, /source_line_id, event_timestamp, recorded_at/);
 
   assert.match(rebuilder, /AND source_line_id = \$3/);
-  assert.match(rebuilder, /RECEIPT_ALLOCATION_REBUILD_LEGACY_MOVEMENT_LINE_FALLBACK/);
+  assert.match(rebuilder, /movement_line_source_line_missing/);
   assert.match(rebuilder, /ORDER BY COALESCE\(event_timestamp, created_at\) ASC, id ASC/);
 
   assert.match(projector, /recordAuditLog/);

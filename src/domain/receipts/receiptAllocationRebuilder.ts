@@ -197,38 +197,39 @@ async function findMovementLine(params: {
   locationId: string;
   quantity: number;
   direction: 'positive' | 'negative';
-  sourceLineId?: string | null;
+  sourceLineId: string;
   noteIncludes?: string;
   reasonCode?: string;
 }) {
-  let structuralMatch: MovementLineMatch | null = null;
-  if (params.sourceLineId) {
-    const structural = await params.client.query<MovementLineMatch>(
-      `SELECT id,
-              source_line_id,
-              COALESCE(quantity_delta_canonical, quantity_delta)::numeric AS quantity,
-              line_notes,
-              reason_code,
-              created_at,
-              event_timestamp
-         FROM inventory_movement_lines
-        WHERE tenant_id = $1
-          AND movement_id = $2
-          AND source_line_id = $3
-        LIMIT 2`,
-      [params.tenantId, params.movementId, params.sourceLineId]
-    );
-    if ((structural.rowCount ?? 0) === 1) {
-      structuralMatch = structural.rows[0];
-    }
-    if ((structural.rowCount ?? 0) > 1) {
-      failAuthoritativeInconsistency('movement_line_source_line_ambiguous', {
-        movementId: params.movementId,
-        sourceLineId: params.sourceLineId,
-        candidateCount: structural.rowCount ?? 0
-      });
-    }
+  const structural = await params.client.query<MovementLineMatch>(
+    `SELECT id,
+            source_line_id,
+            COALESCE(quantity_delta_canonical, quantity_delta)::numeric AS quantity,
+            line_notes,
+            reason_code,
+            created_at,
+            event_timestamp
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND source_line_id = $3
+      LIMIT 2`,
+    [params.tenantId, params.movementId, params.sourceLineId]
+  );
+  if ((structural.rowCount ?? 0) === 0) {
+    failAuthoritativeInconsistency('movement_line_source_line_missing', {
+      movementId: params.movementId,
+      sourceLineId: params.sourceLineId
+    });
   }
+  if ((structural.rowCount ?? 0) > 1) {
+    failAuthoritativeInconsistency('movement_line_source_line_ambiguous', {
+      movementId: params.movementId,
+      sourceLineId: params.sourceLineId,
+      candidateCount: structural.rowCount ?? 0
+    });
+  }
+  const structuralMatch = structural.rows[0];
 
   const result = await params.client.query<MovementLineMatch>(
     `SELECT id,
@@ -269,38 +270,18 @@ async function findMovementLine(params: {
   if (params.reasonCode) {
     candidates = candidates.filter((row) => row.reason_code === params.reasonCode);
   }
-  if (structuralMatch) {
-    if (!candidates.some((candidate) => candidate.id === structuralMatch.id)) {
-      failAuthoritativeInconsistency('movement_line_structural_mismatch', {
-        movementId: params.movementId,
-        sourceLineId: params.sourceLineId ?? null,
-        itemId: params.itemId,
-        locationId: params.locationId,
-        quantity: params.quantity,
-        direction: params.direction,
-        reasonCode: params.reasonCode ?? null
-      });
-    }
-    return structuralMatch;
-  }
-
-  console.warn('RECEIPT_ALLOCATION_REBUILD_LEGACY_MOVEMENT_LINE_FALLBACK', {
-    tenantId: params.tenantId,
-    movementId: params.movementId,
-    sourceLineId: params.sourceLineId ?? null
-  });
-  if (candidates.length !== 1) {
-    failAuthoritativeInconsistency('movement_line_ambiguous', {
+  if (!candidates.some((candidate) => candidate.id === structuralMatch.id)) {
+    failAuthoritativeInconsistency('movement_line_structural_mismatch', {
       movementId: params.movementId,
+      sourceLineId: params.sourceLineId,
       itemId: params.itemId,
       locationId: params.locationId,
       quantity: params.quantity,
       direction: params.direction,
-      reasonCode: params.reasonCode ?? null,
-      candidateCount: candidates.length
+      reasonCode: params.reasonCode ?? null
     });
   }
-  return candidates[0];
+  return structuralMatch;
 }
 
 function consumeWorkingAllocations(params: {

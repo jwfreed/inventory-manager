@@ -49,8 +49,6 @@ export type UomConversionError = Error & {
   context?: Record<string, unknown>;
 };
 
-const STRICT_NO_LEGACY_CONVERSIONS = process.env.STRICT_NO_LEGACY_CONVERSIONS === 'true';
-
 function conversionError(
   code: UomConversionErrorCode,
   detail: string,
@@ -220,42 +218,6 @@ async function lookupItemOverrideFactor(
   return null;
 }
 
-async function lookupLegacyFactor(
-  tenantId: string,
-  itemId: string,
-  fromUom: string,
-  toUom: string
-): Promise<Decimal | null> {
-  const direct = await query<{ factor: string }>(
-    `SELECT factor::text
-       FROM uom_conversions
-      WHERE tenant_id = $1
-        AND item_id = $2
-        AND LOWER(from_uom) = LOWER($3)
-        AND LOWER(to_uom) = LOWER($4)
-      LIMIT 1`,
-    [tenantId, itemId, fromUom, toUom]
-  );
-  if (direct.rowCount && direct.rows[0]) {
-    return new Decimal(direct.rows[0].factor);
-  }
-
-  const reverse = await query<{ factor: string }>(
-    `SELECT factor::text
-       FROM uom_conversions
-      WHERE tenant_id = $1
-        AND item_id = $2
-        AND LOWER(from_uom) = LOWER($4)
-        AND LOWER(to_uom) = LOWER($3)
-      LIMIT 1`,
-    [tenantId, itemId, fromUom, toUom]
-  );
-  if (reverse.rowCount && reverse.rows[0]) {
-    return new Decimal(1).div(new Decimal(reverse.rows[0].factor));
-  }
-  return null;
-}
-
 function buildResult(input: {
   exactQty: Decimal;
   targetPrecision: number;
@@ -370,58 +332,6 @@ export async function convertQty(input: ConvertQtyInput): Promise<ConvertQtyResu
       analyticsPrecisionMode: input.analyticsPrecisionMode,
       traces: [trace],
       status: 'OK'
-    });
-  }
-
-  const legacyFactor = await lookupLegacyFactor(input.tenantId, input.itemId, fromUom, toUom);
-  if (legacyFactor && legacyFactor.gt(0)) {
-    if (STRICT_NO_LEGACY_CONVERSIONS) {
-      throw conversionError(
-        'UOM_CONVERSION_MISSING',
-        `Legacy fallback disabled by STRICT_NO_LEGACY_CONVERSIONS for ${fromUom} -> ${toUom}`,
-        {
-          fromUom,
-          toUom,
-          tenantId: input.tenantId,
-          itemId: input.itemId,
-          strictMode: true,
-          source: 'legacy_conversion',
-          status: 'UNKNOWN_UOM',
-          ...mapUomStatusToRouting('UNKNOWN_UOM')
-        }
-      );
-    }
-
-    warnings.push('UOM_REGISTRY_FALLBACK_LEGACY_CONVERSION');
-    const trace = resolveRegistryTrace({
-      status: 'LEGACY_FALLBACK_USED',
-      source: 'legacy_conversion',
-      fromMeta: {
-        inputUomCode: fromUom,
-        normalizedInput: fromUom.toLowerCase(),
-        resolvedCanonical: fromUom,
-        aliasMatched: false
-      },
-      toMeta: {
-        inputUomCode: toUom,
-        normalizedInput: toUom.toLowerCase(),
-        resolvedCanonical: toUom,
-        aliasMatched: false
-      },
-      itemId: input.itemId,
-      detailCode: 'UOM_LEGACY_FALLBACK_USED',
-      detail: `Conversion resolved via legacy uom_conversions (${fromUom}->${toUom})`
-    });
-
-    return buildResult({
-      exactQty: qty.mul(legacyFactor),
-      targetPrecision,
-      roundingContext,
-      contextPrecision: input.contextPrecision,
-      warnings,
-      analyticsPrecisionMode: input.analyticsPrecisionMode,
-      traces: [trace],
-      status: 'LEGACY_FALLBACK_USED'
     });
   }
 
