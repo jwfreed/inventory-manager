@@ -121,6 +121,27 @@ function normalizeQuantity(value: unknown): number {
   return roundQuantity(toNumber(value));
 }
 
+function assertUnitEventAppendInput(event: InventoryUnitEventRow): void {
+  if (!event.movement_id) throw new Error('INVENTORY_UNIT_EVENT_MOVEMENT_ID_REQUIRED');
+  if (!event.movement_line_id) throw new Error('INVENTORY_UNIT_EVENT_MOVEMENT_LINE_ID_REQUIRED');
+  if (!event.inventory_unit_id) throw new Error('INVENTORY_UNIT_EVENT_UNIT_ID_REQUIRED');
+  if (!event.source_line_id?.trim()) throw new Error('INVENTORY_UNIT_EVENT_SOURCE_LINE_ID_REQUIRED');
+  if (!event.reason_code?.trim()) throw new Error('INVENTORY_UNIT_EVENT_REASON_CODE_REQUIRED');
+  if (!event.event_timestamp) throw new Error('INVENTORY_UNIT_EVENT_TIMESTAMP_REQUIRED');
+  if (!event.sku_id || !event.location_id || !event.unit_of_measure?.trim()) {
+    throw new Error('INVENTORY_UNIT_EVENT_SCOPE_REQUIRED');
+  }
+  const recordDelta = normalizeQuantity(event.record_quantity_delta);
+  const physicalDelta = event.physical_quantity_delta === null || event.physical_quantity_delta === undefined
+    ? 0
+    : normalizeQuantity(event.physical_quantity_delta);
+  if (Math.abs(recordDelta) <= EPSILON && Math.abs(physicalDelta) <= EPSILON) {
+    throw new Error('INVENTORY_UNIT_EVENT_QUANTITY_DELTA_NONZERO_REQUIRED');
+  }
+  const [fromState, toState] = splitTransition(event.state_transition);
+  assertInventoryStateTransition(fromState, toState);
+}
+
 function resolveStateTransition(params: {
   delta: number;
   reasonCode: string;
@@ -151,6 +172,7 @@ async function insertUnitEvent(
   client: PoolClient,
   event: InventoryUnitEventRow
 ): Promise<boolean> {
+  assertUnitEventAppendInput(event);
   const result = await client.query(
     `INSERT INTO inventory_unit_events (
         id,
@@ -332,8 +354,7 @@ async function appendAndApplyUnitEvent(
   client: PoolClient,
   event: InventoryUnitEventRow
 ) {
-  const [fromState, toState] = splitTransition(event.state_transition);
-  assertInventoryStateTransition(fromState, toState);
+  assertUnitEventAppendInput(event);
   const inserted = await insertUnitEvent(client, event);
   if (!inserted) return;
   await applyUnitEventToProjection(client, event);

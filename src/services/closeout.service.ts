@@ -4,7 +4,7 @@ import type { z } from 'zod';
 import { pool, withTransaction } from '../db';
 import { roundQuantity, toNumber } from '../lib/numbers';
 import { getCanonicalMovementFields } from './uomCanonical.service';
-import { persistInventoryMovement } from '../domains/inventory';
+import { acquireAtpLocks, createAtpLockContext, persistInventoryMovement } from '../domains/inventory';
 import {
   loadPutawayTotals,
   loadQcBreakdown
@@ -360,6 +360,15 @@ async function applyAdjustmentResolution(params: {
     params.line.uom,
     params.client
   );
+  const lockContext = createAtpLockContext({
+    operation: 'receipt_reconciliation_adjustment',
+    tenantId: params.tenantId
+  });
+  await acquireAtpLocks(
+    params.client,
+    [{ tenantId: params.tenantId, warehouseId, itemId: params.line.item_id, locationId }],
+    { lockContext }
+  );
   const movement = await persistInventoryMovement(params.client, {
     tenantId: params.tenantId,
     movementType: 'adjustment',
@@ -367,6 +376,7 @@ async function applyAdjustmentResolution(params: {
     externalRef: `receipt_reconciliation:${params.discrepancy.id}`,
     sourceType: 'receipt_reconciliation',
     sourceId: params.discrepancy.id,
+    idempotencyKey: `receipt-reconciliation:${params.discrepancy.id}`,
     occurredAt: params.occurredAt,
     postedAt: params.occurredAt,
     notes: params.notes ?? 'Receipt reconciliation adjustment',

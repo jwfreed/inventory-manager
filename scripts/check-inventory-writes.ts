@@ -3,8 +3,10 @@ import path from 'path';
 
 const ROOT = path.resolve(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
+const SCRIPTS = path.join(ROOT, 'scripts');
 const ALLOWED = new Set([
   path.join(SRC, 'domains', 'inventory', 'internal', 'ledgerWriter.ts'),
+  path.join(SRC, 'domains', 'inventory', 'internal', 'inventoryUnits.ts'),
   path.join(SRC, 'domains', 'inventory', 'internal', 'inventoryBalance.ts'),
   path.join(SRC, 'modules', 'availability', 'infrastructure', 'inventoryBalance.projector.ts'),
   path.join(SRC, 'services', 'inventoryLedgerReconcile.service.ts')
@@ -13,7 +15,15 @@ const ALLOWED = new Set([
 const WRITE_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   { name: 'inventory_movements', regex: /\b(INSERT|UPDATE|DELETE)\s+.*\binventory_movements\b/i },
   { name: 'inventory_movement_lines', regex: /\b(INSERT|UPDATE|DELETE)\s+.*\binventory_movement_lines\b/i },
+  { name: 'inventory_unit_events', regex: /\b(INSERT|UPDATE|DELETE)\s+.*\binventory_unit_events\b/i },
+  { name: 'inventory_units', regex: /\b(INSERT|UPDATE|DELETE)\s+.*\binventory_units\b/i },
   { name: 'inventory_balance', regex: /\b(INSERT|UPDATE|DELETE)\s+.*\binventory_balance\b/i }
+];
+
+const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
+  { name: 'inventory_movements_update_delete', regex: /\b(UPDATE|DELETE)\s+.*\binventory_movements\b/i },
+  { name: 'inventory_movement_lines_update_delete', regex: /\b(UPDATE|DELETE)\s+.*\binventory_movement_lines\b/i },
+  { name: 'inventory_unit_events_update_delete', regex: /\b(UPDATE|DELETE)\s+.*\binventory_unit_events\b/i }
 ];
 
 const violations: Array<{ file: string; pattern: string }> = [];
@@ -28,8 +38,13 @@ function walk(dir: string) {
       continue;
     }
     if (!entry.name.endsWith('.ts')) continue;
-    if (ALLOWED.has(full)) continue;
     const contents = fs.readFileSync(full, 'utf8');
+    for (const pattern of FORBIDDEN_PATTERNS) {
+      if (pattern.regex.test(contents)) {
+        violations.push({ file: full, pattern: pattern.name });
+      }
+    }
+    if (ALLOWED.has(full)) continue;
     for (const pattern of WRITE_PATTERNS) {
       if (pattern.regex.test(contents)) {
         violations.push({ file: full, pattern: pattern.name });
@@ -39,6 +54,7 @@ function walk(dir: string) {
 }
 
 walk(SRC);
+walk(SCRIPTS);
 
 if (violations.length > 0) {
   console.error('Inventory write ownership violations detected:');

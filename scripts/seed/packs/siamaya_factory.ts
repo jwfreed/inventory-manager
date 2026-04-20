@@ -5,7 +5,7 @@ import path from 'node:path';
 import { v5 as uuidv5 } from 'uuid';
 import type { PoolClient } from 'pg';
 import bcrypt from 'bcryptjs';
-import { persistInventoryMovement } from '../../../src/domains/inventory';
+import { acquireAtpLocks, createAtpLockContext, persistInventoryMovement } from '../../../src/domains/inventory';
 import { createOpeningBalanceCostLayerOnce } from '../../../src/services/costLayers.service';
 import {
   importBomDatasetFromFile,
@@ -2143,6 +2143,22 @@ async function seedInitialStockMovement(
       canonicalUnitCost
     });
   }
+
+  const lockContext = createAtpLockContext({
+    operation: 'seed_initial_stock',
+    tenantId: args.tenantId
+  });
+  await acquireAtpLocks(
+    client,
+    preparedSeedLines.map((line) => ({
+      tenantId: args.tenantId,
+      warehouseId: line.warehouseId,
+      itemId: line.itemId,
+      locationId: line.locationId,
+      lotId: line.lotId
+    })),
+    { lockContext }
+  );
 
   const movementResult = await persistInventoryMovement(client, {
     id: movementId,

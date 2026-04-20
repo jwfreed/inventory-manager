@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { markInventoryMutationLocksHeld } from './mutationGuards';
 
 export type AtpLockTarget = {
   tenantId: string;
   warehouseId: string;
   itemId: string;
+  locationId?: string | null;
+  lotId?: string | null;
+  unitId?: string | null;
 };
 
 export type AtpLockKey = AtpLockTarget & {
@@ -41,8 +45,11 @@ function normalizeLockTarget(target: AtpLockTarget): AtpLockTarget | null {
   const tenantId = String(target.tenantId ?? '').trim();
   const warehouseId = String(target.warehouseId ?? '').trim();
   const itemId = String(target.itemId ?? '').trim();
+  const locationId = String(target.locationId ?? '').trim() || null;
+  const lotId = String(target.lotId ?? '').trim() || null;
+  const unitId = String(target.unitId ?? '').trim() || null;
   if (!tenantId || !warehouseId || !itemId) return null;
-  return { tenantId, warehouseId, itemId };
+  return { tenantId, warehouseId, itemId, locationId, lotId, unitId };
 }
 
 function toLockTargetSampleValue(raw: unknown): string {
@@ -66,9 +73,15 @@ function toLockTargetSample(rawTarget: unknown): {
 function compareAtpLockTarget(left: AtpLockTarget, right: AtpLockTarget): number {
   const tenant = left.tenantId.localeCompare(right.tenantId);
   if (tenant !== 0) return tenant;
-  const warehouse = left.warehouseId.localeCompare(right.warehouseId);
-  if (warehouse !== 0) return warehouse;
-  return left.itemId.localeCompare(right.itemId);
+  const item = left.itemId.localeCompare(right.itemId);
+  if (item !== 0) return item;
+  const location = (left.locationId ?? '').localeCompare(right.locationId ?? '');
+  if (location !== 0) return location;
+  const lot = (left.lotId ?? '').localeCompare(right.lotId ?? '');
+  if (lot !== 0) return lot;
+  const unit = (left.unitId ?? '').localeCompare(right.unitId ?? '');
+  if (unit !== 0) return unit;
+  return left.warehouseId.localeCompare(right.warehouseId);
 }
 
 export function stableHashInt32(value: string, offset = 0): number {
@@ -184,6 +197,11 @@ export async function acquireAtpLocks(
     if (options?.lockContext) {
       options.lockContext.held = true;
       options.lockContext.lockKeysCount = 0;
+      await markInventoryMutationLocksHeld(client, {
+        operation: options.lockContext.operation,
+        tenantId: options.lockContext.tenantId,
+        lockKeysCount: 0
+      });
     }
     return { lockKeys, lockWaitMs: 0 };
   }
@@ -225,6 +243,11 @@ export async function acquireAtpLocks(
   if (options?.lockContext) {
     options.lockContext.held = true;
     options.lockContext.lockKeysCount = lockKeys.length;
+    await markInventoryMutationLocksHeld(client, {
+      operation: options.lockContext.operation,
+      tenantId: options.lockContext.tenantId,
+      lockKeysCount: lockKeys.length
+    });
   }
 
   return {

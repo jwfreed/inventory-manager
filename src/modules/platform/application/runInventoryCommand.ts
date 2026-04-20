@@ -44,11 +44,17 @@ function compareInventoryCommandLockTarget(
   left: AtpLockTarget,
   right: AtpLockTarget
 ) {
-  const warehouseCompare = left.warehouseId.localeCompare(right.warehouseId);
-  if (warehouseCompare !== 0) return warehouseCompare;
+  const tenantCompare = left.tenantId.localeCompare(right.tenantId);
+  if (tenantCompare !== 0) return tenantCompare;
   const itemCompare = left.itemId.localeCompare(right.itemId);
   if (itemCompare !== 0) return itemCompare;
-  return left.tenantId.localeCompare(right.tenantId);
+  const locationCompare = (left.locationId ?? '').localeCompare(right.locationId ?? '');
+  if (locationCompare !== 0) return locationCompare;
+  const lotCompare = (left.lotId ?? '').localeCompare(right.lotId ?? '');
+  if (lotCompare !== 0) return lotCompare;
+  const unitCompare = (left.unitId ?? '').localeCompare(right.unitId ?? '');
+  if (unitCompare !== 0) return unitCompare;
+  return left.warehouseId.localeCompare(right.warehouseId);
 }
 
 function isInventoryCommandExecutionResult<T>(

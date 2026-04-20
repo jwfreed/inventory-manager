@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { buildMovementDeterministicHash, sortDeterministicMovementLines } from '../../../modules/platform/application/inventoryMovementDeterminism';
 import { classifyInventoryMovementLineAction } from '../../../modules/platform/application/inventoryMovementLineSemantics';
 import { applyPersistedMovementToInventoryUnits } from './inventoryUnits';
+import { assertInventoryMutationBoundary } from './mutationGuards';
 
 type InventoryMovementInput = {
   id?: string;
@@ -74,11 +75,25 @@ export type PersistInventoryMovementResult = {
 };
 
 const ENFORCE_EXTERNAL_REF = process.env.ENFORCE_INVENTORY_MOVEMENT_EXTERNAL_REF === 'true';
+const EPSILON = 1e-6;
+
+function normalizeRequiredMovementIdempotencyKey(input: InventoryMovementInput): string {
+  const explicit = input.idempotencyKey?.trim();
+  if (explicit) return explicit;
+  if (input.sourceType?.trim() && input.sourceId?.trim()) {
+    return `source:${input.tenantId}:${input.sourceType.trim()}:${input.sourceId.trim()}:${input.movementType}`;
+  }
+  if (input.externalRef?.trim()) {
+    return `external:${input.tenantId}:${input.externalRef.trim()}:${input.movementType}`;
+  }
+  throw new Error('INVENTORY_MOVEMENT_IDEMPOTENCY_KEY_REQUIRED');
+}
 
 async function createInventoryMovement(
   client: PoolClient,
   input: InventoryMovementInput
 ): Promise<InventoryMovementResult> {
+  const idempotencyKey = normalizeRequiredMovementIdempotencyKey(input);
   if (
     (input.movementType === 'receive' || input.movementType === 'transfer')
     && (!input.sourceType || !input.sourceId)
@@ -90,11 +105,9 @@ async function createInventoryMovement(
     throw new Error('INVENTORY_MOVEMENT_EXTERNAL_REF_REQUIRED');
   }
 
-  if (input.idempotencyKey) {
-    const existing = await findMovementByIdempotencyKey(client, input.tenantId, input.idempotencyKey);
-    if (existing) {
-      return { id: existing, created: false };
-    }
+  const existingByIdempotency = await findMovementByIdempotencyKey(client, input.tenantId, idempotencyKey);
+  if (existingByIdempotency) {
+    return { id: existingByIdempotency, created: false };
   }
 
   const existing = await findMovementByExternalRef(client, input.tenantId, input.externalRef);
@@ -120,7 +133,7 @@ async function createInventoryMovement(
         input.externalRef,
         input.sourceType ?? null,
         input.sourceId ?? null,
-        input.idempotencyKey ?? null,
+        idempotencyKey,
         input.occurredAt,
         input.postedAt ?? null,
         input.notes ?? null,
@@ -164,6 +177,12 @@ export async function persistInventoryMovement(
   client: PoolClient,
   input: PersistInventoryMovementInput
 ): Promise<PersistInventoryMovementResult> {
+  await assertInventoryMutationBoundary(client, {
+    tenantId: input.tenantId,
+    movementType: input.movementType,
+    sourceType: input.sourceType ?? null,
+    sourceId: input.sourceId ?? null
+  });
   if (input.lines.length === 0) {
     throw new Error('INVENTORY_MOVEMENT_LINES_REQUIRED');
   }
@@ -190,6 +209,9 @@ export async function persistInventoryMovement(
     }
     if (!line.eventTimestamp) {
       throw new Error('INVENTORY_MOVEMENT_LINE_EVENT_TIMESTAMP_REQUIRED');
+    }
+    if (Math.abs(Number(line.quantityDeltaCanonical ?? line.quantityDelta)) <= EPSILON) {
+      throw new Error('INVENTORY_MOVEMENT_LINE_QUANTITY_DELTA_NONZERO_REQUIRED');
     }
   }
 
@@ -255,6 +277,7 @@ export async function persistInventoryMovement(
     tenantId: input.tenantId,
     movementId
   });
+  await assertMovementUnitEventCoverage(client, input.tenantId, movementId);
 
   return {
     movementId,
@@ -279,6 +302,9 @@ async function createInventoryMovementLine(
   }
   if (!input.reasonCode?.trim()) {
     throw new Error('INVENTORY_MOVEMENT_LINE_REASON_CODE_REQUIRED');
+  }
+  if (Math.abs(Number(input.quantityDeltaCanonical ?? input.quantityDelta)) <= EPSILON) {
+    throw new Error('INVENTORY_MOVEMENT_LINE_QUANTITY_DELTA_NONZERO_REQUIRED');
   }
   classifyInventoryMovementLineAction({
     movementType: input.movementType,
@@ -383,4 +409,28 @@ async function findMovementByIdempotencyKey(
   );
   if (res.rowCount === 0) return null;
   return res.rows[0].id;
+}
+
+async function assertMovementUnitEventCoverage(
+  client: PoolClient,
+  tenantId: string,
+  movementId: string
+): Promise<void> {
+  const result = await client.query<{ missing_count: string }>(
+    `SELECT COUNT(*)::int::text AS missing_count
+       FROM inventory_movement_lines l
+      WHERE l.tenant_id = $1
+        AND l.movement_id = $2
+        AND NOT EXISTS (
+          SELECT 1
+            FROM inventory_unit_events e
+           WHERE e.tenant_id = l.tenant_id
+             AND e.movement_line_id = l.id
+        )`,
+    [tenantId, movementId]
+  );
+  const missingCount = Number(result.rows[0]?.missing_count ?? 0);
+  if (missingCount > 0) {
+    throw new Error('INVENTORY_UNIT_EVENTS_REQUIRED_FOR_MOVEMENT');
+  }
 }

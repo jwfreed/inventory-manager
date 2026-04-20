@@ -190,7 +190,7 @@ test('idempotent retry storms converge on one movement and one cost relocation s
   await harness.runStrictInvariants();
 });
 
-test('post-persist transfer costing failures roll back movement, links, and idempotency state', async () => {
+test('post-persist transfer authority failures roll back movement, links, and idempotency state', async () => {
   await withEnv(
     {
       ALLOW_NEGATIVE_INVENTORY: 'false',
@@ -225,9 +225,9 @@ test('post-persist transfer costing failures roll back movement, links, and idem
             overrideNegative: true,
             overrideReason: 'rollback-proof',
             idempotencyKey
-          }),
+        }),
         (error) => {
-          assert.equal(error?.code ?? error?.message, 'TRANSFER_INSUFFICIENT_COST_LAYERS');
+          assert.equal(error?.code ?? error?.message, 'INVENTORY_UNIT_INSUFFICIENT_AVAILABLE');
           return true;
         }
       );
