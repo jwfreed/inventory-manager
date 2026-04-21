@@ -18,8 +18,10 @@ function optionalValue(value, fallback) {
 }
 
 function normalizeFixtureLine(line, occurredAt) {
+  const id = line.id ?? randomUUID();
   return {
-    id: line.id ?? randomUUID(),
+    id,
+    sourceLineId: optionalValue(line.sourceLineId, `syn:${id}`),
     itemId: line.itemId,
     locationId: line.locationId,
     quantityDelta: line.quantityDelta,
@@ -125,6 +127,7 @@ export async function insertPostedMovementFixture(pool, params) {
           id,
           tenant_id,
           movement_id,
+          source_line_id,
           item_id,
           location_id,
           quantity_delta,
@@ -140,12 +143,13 @@ export async function insertPostedMovementFixture(pool, params) {
           line_notes,
           created_at
        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
        )`,
       [
         line.id,
         params.tenantId,
         movementId,
+        line.sourceLineId,
         line.itemId,
         line.locationId,
         line.quantityDelta,
