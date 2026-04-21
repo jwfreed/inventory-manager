@@ -9,10 +9,9 @@ const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 
-const { createBom, activateBomVersion } = require('../../src/services/boms.service.ts');
-const { getWorkOrderRequirements } = require('../../src/services/workOrders.service.ts');
+const { createBom } = require('../../src/services/boms.service.ts');
 
-test('work order requirements fall back to legacy uom_conversions for piece-count BOMs', { timeout: 120000 }, async () => {
+test('work order requirements reject legacy-only uom_conversions paths', { timeout: 120000 }, async () => {
   const harness = await createServiceHarness({ tenantPrefix: 'wo-uom-fallback' });
   const { pool, tenantId, topology } = harness;
 
@@ -20,7 +19,7 @@ test('work order requirements fall back to legacy uom_conversions for piece-coun
     skuPrefix: 'COMP-PIECE',
     name: `Component Piece ${randomUUID().slice(0, 6)}`,
     type: 'packaging',
-    defaultUom: 'piece',
+    defaultUom: 'legacy_piece',
     uomDimension: 'count',
     canonicalUom: 'each',
     stockingUom: 'each',
@@ -31,7 +30,7 @@ test('work order requirements fall back to legacy uom_conversions for piece-coun
     skuPrefix: 'FG-PIECE',
     name: `Finished Piece ${randomUUID().slice(0, 6)}`,
     type: 'finished',
-    defaultUom: 'piece',
+    defaultUom: 'legacy_piece',
     uomDimension: 'count',
     canonicalUom: 'each',
     stockingUom: 'each',
@@ -61,57 +60,37 @@ test('work order requirements fall back to legacy uom_conversions for piece-coun
           created_at,
           updated_at
        ) VALUES
-          ($1, $2, 'piece', 'each', 1, now(), now()),
-          ($1, $2, 'each', 'piece', 1, now(), now())
+         ($1, $2, 'legacy_piece', 'each', 1, now(), now()),
+         ($1, $2, 'each', 'legacy_piece', 1, now(), now())
        ON CONFLICT (tenant_id, item_id, from_uom, to_uom)
        DO UPDATE SET factor = EXCLUDED.factor, updated_at = EXCLUDED.updated_at`,
       [tenantId, itemId]
     );
   }
 
-  const bom = await createBom(tenantId, {
-    bomCode: `BOM-PIECE-${randomUUID().slice(0, 6)}`,
-    outputItemId: output.id,
-    defaultUom: 'piece',
-    version: {
-      versionNumber: 1,
-      yieldQuantity: 1,
-      yieldUom: 'piece',
-      components: [
-        {
-          lineNumber: 1,
-          componentItemId: component.id,
-          uom: 'piece',
-          quantityPer: 1
-        }
-      ]
+  await assert.rejects(
+    () => createBom(tenantId, {
+      bomCode: `BOM-PIECE-${randomUUID().slice(0, 6)}`,
+      outputItemId: output.id,
+      defaultUom: 'legacy_piece',
+      version: {
+        versionNumber: 1,
+        yieldQuantity: 1,
+        yieldUom: 'legacy_piece',
+        components: [
+          {
+            lineNumber: 1,
+            componentItemId: component.id,
+            uom: 'legacy_piece',
+            quantityPer: 1
+          }
+        ]
+      }
+    }),
+    (error) => {
+      const code = String(error?.code ?? '');
+      const message = String(error?.message ?? '');
+      return code === 'UOM_UNKNOWN' || message.includes('UOM_UNKNOWN');
     }
-  });
-
-  await activateBomVersion(tenantId, bom.versions[0].id, {}, new Date('2026-01-01T00:00:00.000Z'), null);
-
-  const workOrder = await harness.createWorkOrder({
-    kind: 'production',
-    outputItemId: output.id,
-    outputUom: 'piece',
-    quantityPlanned: 3,
-    bomId: bom.id,
-    defaultConsumeLocationId: topology.defaults.SELLABLE.id,
-    defaultProduceLocationId: topology.defaults.QA.id
-  });
-
-  const requirements = await getWorkOrderRequirements(tenantId, workOrder.id);
-  assert.ok(requirements);
-  assert.equal(requirements.requestedUom, 'each');
-  assert.equal(requirements.quantityRequested, 3);
-  assert.equal(requirements.lines.length, 1);
-  assert.deepEqual(requirements.lines[0], {
-    lineNumber: 1,
-    componentItemId: component.id,
-    uom: 'each',
-    quantityRequired: 3,
-    usesPackSize: false,
-    variableUom: null,
-    scrapFactor: null
-  });
+  );
 });

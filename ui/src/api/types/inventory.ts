@@ -21,7 +21,6 @@ export type UomNormalizationStatus =
   | 'INCONSISTENT'
   | 'UNKNOWN_UOM'
   | 'DIMENSION_MISMATCH'
-  | 'LEGACY_FALLBACK_USED'
 
 export type UomDiagnosticSeverity = 'info' | 'watch' | 'action' | 'critical'
 
@@ -29,7 +28,7 @@ export type UomResolutionTrace = {
   status: UomNormalizationStatus
   severity: UomDiagnosticSeverity
   canAggregate: boolean
-  source: 'registry' | 'alias' | 'item_override' | 'legacy_conversion'
+  source: 'registry' | 'alias' | 'item_override'
   inputUomCode: string
   resolvedFromUom?: string
   resolvedToUom?: string
@@ -44,7 +43,7 @@ export type InventoryUomInconsistency = {
   locationId: string
   stockingUom: string | null
   observedUoms: string[]
-  reason?: InventoryUomInconsistencyReason | 'UNKNOWN_UOM' | 'DIMENSION_MISMATCH' | 'LEGACY_FALLBACK_USED'
+  reason?: InventoryUomInconsistencyReason | 'UNKNOWN_UOM' | 'DIMENSION_MISMATCH'
   status: UomNormalizationStatus
   severity: UomDiagnosticSeverity
   canAggregate: boolean

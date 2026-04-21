@@ -20,12 +20,12 @@ test('summarizeDistinctUomDiagnosticGroups counts distinct groups and splits wat
     {
       itemId: 'item-1',
       locationId: 'loc-1',
-      status: 'LEGACY_FALLBACK_USED'
+      status: 'UNKNOWN_UOM'
     },
     {
       itemId: 'item-1',
       locationId: 'loc-1',
-      status: 'LEGACY_FALLBACK_USED'
+      status: 'UNKNOWN_UOM'
     },
     {
       itemId: 'item-2',
@@ -35,8 +35,8 @@ test('summarizeDistinctUomDiagnosticGroups counts distinct groups and splits wat
   ]);
 
   assert.equal(result.totalGroups, 2);
-  assert.equal(result.watchGroups, 1);
-  assert.equal(result.actionGroups, 1);
+  assert.equal(result.watchGroups, 0);
+  assert.equal(result.actionGroups, 2);
 });
 
 test('summarizeDistinctUomDiagnosticGroups upgrades mixed-severity group to action', () => {
@@ -44,7 +44,7 @@ test('summarizeDistinctUomDiagnosticGroups upgrades mixed-severity group to acti
     {
       itemId: 'item-1',
       locationId: 'loc-1',
-      status: 'LEGACY_FALLBACK_USED'
+      status: 'UNKNOWN_UOM'
     },
     {
       itemId: 'item-1',
@@ -70,7 +70,7 @@ test('selectUomDiagnosticsForKpi prefers canonical diagnostics and falls back to
     {
       itemId: 'item-2',
       locationId: 'loc-2',
-      status: 'LEGACY_FALLBACK_USED'
+      status: 'UNKNOWN_UOM'
     }
   ];
 

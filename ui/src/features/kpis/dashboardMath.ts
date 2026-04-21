@@ -576,9 +576,7 @@ export function buildDashboardExceptions(input: BuildDashboardExceptionsInput): 
     const recommendedAction =
       entry.reason === 'STOCKING_UOM_UNSET'
         ? 'Set stock UOM and conversion policy for this item before aggregating location availability.'
-        : entry.reason === 'LEGACY_FALLBACK_USED'
-          ? 'Review legacy conversion fallback and promote to registry or item override mapping.'
-          : entry.reason === 'UNKNOWN_UOM'
+        : entry.reason === 'UNKNOWN_UOM'
             ? 'Resolve unknown UOM codes by mapping aliases or updating canonical registry entries.'
             : 'Define valid UOM conversion/override mappings; non-convertible UOMs are blocking safe aggregation.'
     rows.push({

@@ -306,7 +306,7 @@ describe('dashboardMath', () => {
     expect(row?.recommendedAction).toContain('stock UOM')
   })
 
-  it('preserves watch severity for legacy fallback UOM diagnostics', () => {
+  it('treats unknown UOM diagnostics as action severity', () => {
     const exceptions = buildDashboardExceptions({
       inventoryRows: [],
       uomInconsistencies: [
@@ -314,11 +314,11 @@ describe('dashboardMath', () => {
           itemId: 'item-1',
           locationId: 'loc-1',
           stockingUom: 'g',
-          observedUoms: ['legacy_uom', 'g'],
-          reason: 'LEGACY_FALLBACK_USED',
-          status: 'LEGACY_FALLBACK_USED',
-          severity: 'watch',
-          canAggregate: true,
+          observedUoms: ['unknown_uom', 'g'],
+          reason: 'UNKNOWN_UOM',
+          status: 'UNKNOWN_UOM',
+          severity: 'action',
+          canAggregate: false,
           traces: [],
         },
       ],
@@ -349,8 +349,8 @@ describe('dashboardMath', () => {
     })
 
     const row = exceptions.find((entry) => entry.type === 'uom_inconsistent')
-    expect(row?.severity).toBe('watch')
-    expect(row?.recommendedAction).toContain('legacy conversion fallback')
+    expect(row?.severity).toBe('action')
+    expect(row?.recommendedAction).toContain('Resolve unknown UOM codes')
   })
 
   it('sorts resolution queue by severity then impact then recency', () => {
@@ -515,9 +515,9 @@ describe('dashboardMath', () => {
         locationId: 'loc-1',
         stockingUom: 'g',
         observedUoms: ['kg', 'g'],
-        status: 'LEGACY_FALLBACK_USED',
-        severity: 'watch',
-        canAggregate: true,
+        status: 'UNKNOWN_UOM',
+        severity: 'action',
+        canAggregate: false,
         traces: [],
       },
       {
@@ -525,9 +525,9 @@ describe('dashboardMath', () => {
         locationId: 'loc-1',
         stockingUom: 'g',
         observedUoms: ['kg', 'g'],
-        status: 'LEGACY_FALLBACK_USED',
-        severity: 'watch',
-        canAggregate: true,
+        status: 'UNKNOWN_UOM',
+        severity: 'action',
+        canAggregate: false,
         traces: [],
       },
       {
@@ -543,8 +543,8 @@ describe('dashboardMath', () => {
     ])
 
     expect(buckets.totalGroups).toBe(2)
-    expect(buckets.watchGroups).toBe(1)
-    expect(buckets.actionGroups).toBe(1)
+    expect(buckets.watchGroups).toBe(0)
+    expect(buckets.actionGroups).toBe(2)
   })
 
   it('treats mixed watch/action diagnostics in one group as action', () => {
@@ -554,9 +554,9 @@ describe('dashboardMath', () => {
         locationId: 'loc-1',
         stockingUom: 'g',
         observedUoms: ['kg', 'g'],
-        status: 'LEGACY_FALLBACK_USED',
-        severity: 'watch',
-        canAggregate: true,
+        status: 'UNKNOWN_UOM',
+        severity: 'action',
+        canAggregate: false,
         traces: [],
       },
       {

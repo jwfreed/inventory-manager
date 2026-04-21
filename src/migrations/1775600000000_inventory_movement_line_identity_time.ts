@@ -4,7 +4,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.addColumns('inventory_movement_lines', {
     source_line_id: {
       type: 'text',
-      comment: 'Deterministic source line identity, unique within a movement. Nullable only for legacy rows.'
+      comment: 'Deterministic source line identity, unique within a movement.'
     },
     event_timestamp: {
       type: 'timestamp',

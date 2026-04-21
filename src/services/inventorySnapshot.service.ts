@@ -52,7 +52,7 @@ export type InventorySnapshotSummaryParams = {
 export type InventoryUomInconsistencyReason = 'STOCKING_UOM_UNSET' | 'NON_CONVERTIBLE_UOM';
 
 export type InventoryUomInconsistency = Omit<UomNormalizationDiagnostic, 'reason'> & {
-  reason?: InventoryUomInconsistencyReason | UomNormalizationReason | 'LEGACY_FALLBACK_USED';
+  reason?: InventoryUomInconsistencyReason | UomNormalizationReason;
 };
 
 export type InventorySnapshotSummaryDiagnostics = {
@@ -735,9 +735,7 @@ async function normalizeSummaryRows(
     const traceOutcome = resolveTraceOutcome(traceAccumulator);
     if (traceOutcome.status !== 'OK') {
       const reason: InventoryUomInconsistency['reason'] =
-        traceOutcome.status === 'LEGACY_FALLBACK_USED'
-          ? 'LEGACY_FALLBACK_USED'
-          : traceOutcome.status === 'UNKNOWN_UOM'
+        traceOutcome.status === 'UNKNOWN_UOM'
             ? 'UNKNOWN_UOM'
             : traceOutcome.status === 'DIMENSION_MISMATCH'
               ? 'DIMENSION_MISMATCH'

@@ -2,8 +2,7 @@ export type UomNormalizationStatus =
   | 'OK'
   | 'INCONSISTENT'
   | 'UNKNOWN_UOM'
-  | 'DIMENSION_MISMATCH'
-  | 'LEGACY_FALLBACK_USED';
+  | 'DIMENSION_MISMATCH';
 
 export type UomDiagnosticSeverity = 'info' | 'watch' | 'action' | 'critical';
 
@@ -17,7 +16,7 @@ export type UomResolutionTrace = {
   status: UomNormalizationStatus;
   severity: UomDiagnosticSeverity;
   canAggregate: boolean;
-  source: 'registry' | 'alias' | 'item_override' | 'legacy_conversion';
+  source: 'registry' | 'alias' | 'item_override';
   inputUomCode: string;
   resolvedFromUom?: string;
   resolvedToUom?: string;

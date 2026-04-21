@@ -288,7 +288,7 @@ test('snapshot summary rejects legacy-only uom conversion without fallback', asy
       (entry) => entry.itemId === itemId && entry.locationId === defaults.SELLABLE.id
     );
     if (diag) {
-      assert.notEqual(diag.status, 'LEGACY_FALLBACK_USED', 'legacy fallback must not be used');
+      assert.notEqual(diag.status, 'OK', 'mixed legacy-only rows must not be reported as converted');
     }
   });
 });

@@ -1,6 +1,5 @@
 import Decimal from 'decimal.js';
 import { query } from '../db';
-import { canonicalizeRequiredUom } from './uomCanonical.service';
 import {
   resolveUomWithMeta,
   suggestUomCodes,
@@ -48,6 +47,16 @@ export type UomConversionError = Error & {
   code: UomConversionErrorCode;
   context?: Record<string, unknown>;
 };
+
+function canonicalizeRequiredUom(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    throw conversionError('UOM_INVALID_QTY', 'UOM_REQUIRED', {
+      inputUomCode: value
+    });
+  }
+  return normalized;
+}
 
 function conversionError(
   code: UomConversionErrorCode,

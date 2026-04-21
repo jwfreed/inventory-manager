@@ -11,8 +11,6 @@ export function mapUomStatusToRouting(status: UomNormalizationStatus): {
   switch (status) {
     case 'OK':
       return { severity: 'info', canAggregate: true };
-    case 'LEGACY_FALLBACK_USED':
-      return { severity: 'watch', canAggregate: true };
     case 'INCONSISTENT':
     case 'UNKNOWN_UOM':
     case 'DIMENSION_MISMATCH':
@@ -38,7 +36,6 @@ const statusPriority: Record<UomNormalizationStatus, number> = {
   DIMENSION_MISMATCH: 5,
   UNKNOWN_UOM: 4,
   INCONSISTENT: 3,
-  LEGACY_FALLBACK_USED: 2,
   OK: 1
 };
 

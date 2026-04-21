@@ -199,8 +199,12 @@ test('unit authority rejects implicit mutation fields and invalid transitions', 
 
 test('schema, writer, and rebuild matching enforce structural identity and event time', async () => {
   const root = process.cwd();
-  const migration = await readFile(
+  const baseMigration = await readFile(
     path.join(root, 'src/migrations/1775600000000_inventory_movement_line_identity_time.ts'),
+    'utf8'
+  );
+  const hardeningMigration = await readFile(
+    path.join(root, 'src/migrations/1778000000000_enforce_inventory_movement_line_source_line_not_null.ts'),
     'utf8'
   );
   const writer = await readFile(path.join(root, 'src/domains/inventory/internal/ledgerWriter.ts'), 'utf8');
@@ -212,11 +216,15 @@ test('schema, writer, and rebuild matching enforce structural identity and event
   const counts = await readFile(path.join(root, 'src/services/counts.service.ts'), 'utf8');
   const adjustments = await readFile(path.join(root, 'src/services/adjustments/posting.service.ts'), 'utf8');
 
-  assert.match(migration, /source_line_id/);
-  assert.match(migration, /event_timestamp/);
-  assert.match(migration, /recorded_at/);
-  assert.match(migration, /movement_id.*source_line_id/s);
-  assert.match(migration, /where: 'source_line_id IS NOT NULL'/);
+  assert.match(baseMigration, /source_line_id/);
+  assert.match(baseMigration, /event_timestamp/);
+  assert.match(baseMigration, /recorded_at/);
+  assert.match(baseMigration, /movement_id.*source_line_id/s);
+  const hardeningUpMigration = hardeningMigration.split('export async function down')[0];
+  assert.match(hardeningMigration, /UPDATE inventory_movement_lines/s);
+  assert.match(hardeningMigration, /legacy:' \|\| id::text/);
+  assert.match(hardeningMigration, /source_line_id.*notNull:\s*true/s);
+  assert.doesNotMatch(hardeningUpMigration, /where: 'source_line_id IS NOT NULL'/);
 
   assert.match(writer, /INVENTORY_MOVEMENT_LINE_SOURCE_LINE_ID_REQUIRED/);
   assert.match(writer, /INVENTORY_MOVEMENT_LINE_EVENT_TIMESTAMP_REQUIRED/);
