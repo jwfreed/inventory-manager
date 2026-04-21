@@ -71,7 +71,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             skipAuthRefresh: true,
           })
           if (!active) return
-          hydrateFromMe(me)
+          // broadcast: false — bootstrap must not re-broadcast to other tabs; the original
+          // sign-in event already notified them. Re-broadcasting here creates a cross-tab
+          // ping-pong where each tab's bootstrap triggers the other's, causing an infinite
+          // /auth/me loop.
+          setAuthenticatedProfile(me, { accessToken: token, broadcast: false })
           return
         } catch (error) {
           if (!active) return
@@ -83,7 +87,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        await refresh()
+        const session = await refreshAccessToken()
+        if (!active) return
+        if (session?.accessToken && session.user && session.tenant) {
+          setAuthenticatedSession(session as AuthSession, { broadcast: false })
+          return
+        }
+        if (session?.accessToken) {
+          const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string }>('/auth/me', {
+            skipAuthRefresh: true,
+          })
+          if (!active) return
+          setAuthenticatedProfile(me, { accessToken: session.accessToken, broadcast: false })
+          return
+        }
+        clearAuthSession('refresh-failed')
       } catch {
         if (!active) return
         clearAuthSession('refresh-failed')
@@ -94,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
-  }, [hydrateFromMe, refresh, state.status])
+  }, [state.status])
 
   const login = useCallback(async (input: LoginInput) => {
     const session = await apiPost<AuthSession>('/auth/login', input)
