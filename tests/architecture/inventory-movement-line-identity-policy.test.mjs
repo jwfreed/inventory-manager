@@ -222,7 +222,7 @@ test('schema, writer, and rebuild matching enforce structural identity and event
   assert.match(baseMigration, /movement_id.*source_line_id/s);
   const hardeningUpMigration = hardeningMigration.split('export async function down')[0];
   assert.match(hardeningMigration, /UPDATE inventory_movement_lines/s);
-  assert.match(hardeningMigration, /legacy:' \|\| id::text/);
+  assert.match(hardeningMigration, /iml:' \|\| id::text/);
   assert.match(hardeningMigration, /source_line_id.*notNull:\s*true/s);
   assert.doesNotMatch(hardeningUpMigration, /where: 'source_line_id IS NOT NULL'/);
 

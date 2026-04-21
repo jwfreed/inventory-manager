@@ -6,7 +6,7 @@ const NON_EMPTY_CHECK = 'chk_inventory_movement_lines_source_line_nonempty';
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.sql(`
     UPDATE inventory_movement_lines
-       SET source_line_id = 'legacy:' || id::text
+       SET source_line_id = 'iml:' || id::text
      WHERE source_line_id IS NULL
         OR btrim(source_line_id) = '';
   `);
