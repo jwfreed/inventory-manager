@@ -144,6 +144,7 @@ async function insertBalancedTransferLineCorruption(params) {
     await client.query(
       `INSERT INTO inventory_movement_lines (
           id,
+          source_line_id,
           tenant_id,
           movement_id,
           item_id,
@@ -161,8 +162,8 @@ async function insertBalancedTransferLineCorruption(params) {
           line_notes,
           created_at
         ) VALUES
-        ($1, $2, $3, $4, $5, -1, 'each', -1, 'each', -1, 'each', 'count', 0, 0, 'tamper_out', 'tamper', now()),
-        ($6, $2, $3, $4, $7, 1, 'each', 1, 'each', 1, 'each', 'count', 0, 0, 'tamper_in', 'tamper', now())`,
+        ($1, $8, $2, $3, $4, $5, -1, 'each', -1, 'each', -1, 'each', 'count', 0, 0, 'tamper_out', 'tamper', now()),
+        ($6, $9, $2, $3, $4, $7, 1, 'each', 1, 'each', 1, 'each', 'count', 0, 0, 'tamper_in', 'tamper', now())`,
       [
         outLineId,
         tenantId,
@@ -170,7 +171,9 @@ async function insertBalancedTransferLineCorruption(params) {
         itemId,
         sourceLocationId,
         inLineId,
-        destinationLocationId
+        destinationLocationId,
+        `syn:${outLineId}`,
+        `syn:${inLineId}`
       ]
     );
     await client.query(

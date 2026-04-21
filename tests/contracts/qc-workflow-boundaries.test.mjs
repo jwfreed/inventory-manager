@@ -419,9 +419,11 @@ async function runInTransaction(db, callback) {
 }
 
 async function duplicateMovementLine(db, tenantId, movementLineId) {
+  const newId = randomUUID();
   await db.query(
     `INSERT INTO inventory_movement_lines (
         id,
+        source_line_id,
         movement_id,
         item_id,
         location_id,
@@ -440,6 +442,7 @@ async function duplicateMovementLine(db, tenantId, movementLineId) {
         uom_dimension
      )
      SELECT $1,
+            $4,
             movement_id,
             item_id,
             location_id,
@@ -459,7 +462,7 @@ async function duplicateMovementLine(db, tenantId, movementLineId) {
        FROM inventory_movement_lines
       WHERE tenant_id = $2
         AND id = $3`,
-    [randomUUID(), tenantId, movementLineId]
+    [newId, tenantId, movementLineId, `syn:${newId}`]
   );
 }
 

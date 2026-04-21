@@ -288,9 +288,11 @@ test('return receipt retry tolerates linkage drift by repairing the document poi
       syntheticHash
     ]
   );
+  const driftLineId = randomUUID();
   await harness.pool.query(
     `INSERT INTO inventory_movement_lines (
         id,
+        source_line_id,
         movement_id,
         item_id,
         location_id,
@@ -308,10 +310,10 @@ test('return receipt retry tolerates linkage drift by repairing the document poi
         canonical_uom,
         uom_dimension
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,'manual_test_drift',$7,$8,$9,$10,$11,$5,$6,$5,$12,'count'
+        $1,$13,$2,$3,$4,$5,$6,'manual_test_drift',$7,$8,$9,$10,$11,$5,$6,$5,$12,'count'
       )`,
     [
-      randomUUID(),
+      driftLineId,
       syntheticMovementId,
       primary.item.id,
       primary.topology.defaults.HOLD.id,
@@ -322,7 +324,8 @@ test('return receipt retry tolerates linkage drift by repairing the document poi
       harness.tenantId,
       0,
       0,
-      'each'
+      'each',
+      `syn:${driftLineId}`
     ]
   );
   await harness.pool.query(
