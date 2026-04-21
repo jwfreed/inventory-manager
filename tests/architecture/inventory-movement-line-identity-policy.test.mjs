@@ -11,6 +11,7 @@ require('tsconfig-paths/register');
 const {
   computeSourceLineId,
   computeSplitSourceLineIds,
+  computeSyntheticSourceLineId,
   sortDeterministicMovementLines
 } = require('../../src/modules/platform/application/inventoryMovementDeterminism.ts');
 const {
@@ -32,6 +33,10 @@ const {
 test('movement line identity is complete, deterministic, and stable for partial flows', () => {
   assert.equal(computeSourceLineId(['receipt', 'line-1']), 'receipt:line-1');
   assert.throws(() => computeSourceLineId(['receipt', '']), /INVENTORY_SOURCE_LINE_ID_INVALID/);
+
+  assert.equal(computeSyntheticSourceLineId('abc-uuid'), 'syn:abc-uuid');
+  assert.ok(computeSyntheticSourceLineId('abc-uuid').startsWith('syn:'));
+  assert.throws(() => computeSyntheticSourceLineId(''), /INVENTORY_SYNTHETIC_SOURCE_LINE_ID_MISSING_INPUT/);
 
   const firstOrder = [{ key: 'sellable' }, { key: 'qa' }];
   const secondOrder = [...firstOrder].reverse();
@@ -222,7 +227,7 @@ test('schema, writer, and rebuild matching enforce structural identity and event
   assert.match(baseMigration, /movement_id.*source_line_id/s);
   const hardeningUpMigration = hardeningMigration.split('export async function down')[0];
   assert.match(hardeningMigration, /UPDATE inventory_movement_lines/s);
-  assert.match(hardeningMigration, /iml:' \|\| id::text/);
+  assert.match(hardeningMigration, /syn:' \|\| id::text/);
   assert.match(hardeningMigration, /source_line_id.*notNull:\s*true/s);
   assert.doesNotMatch(hardeningUpMigration, /where: 'source_line_id IS NOT NULL'/);
 

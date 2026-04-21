@@ -136,6 +136,19 @@ export function computeSourceLineId(parts: ReadonlyArray<string | number | null 
   return sourceLineId;
 }
 
+/**
+ * Deterministic synthetic identity for a movement line when no originating domain source is known.
+ * Format: 'syn:{movementLineId}'
+ * Used for movement lines that predate the source_line_id column; the movement line's own stable
+ * UUID primary key is the invariant input.  This is first-class behavior, not a migration artifact.
+ */
+export function computeSyntheticSourceLineId(movementLineId: string): string {
+  if (!movementLineId || movementLineId.trim().length === 0) {
+    throw new Error('INVENTORY_SYNTHETIC_SOURCE_LINE_ID_MISSING_INPUT');
+  }
+  return `syn:${movementLineId}`;
+}
+
 export function computeSplitSourceLineIds<T>(
   baseId: string,
   entries: ReadonlyArray<T>,
