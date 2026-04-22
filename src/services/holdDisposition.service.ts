@@ -64,6 +64,9 @@ type HoldDispositionWorkflowState = {
 
 function destinationRoleForDispositionType(dispositionType: HoldDispositionType): string {
   if (dispositionType === 'release') return 'SELLABLE';
+  // WP3: rework and discard share REJECT location role as a temporary simplification.
+  // Physical separation of rework staging vs. discard staging is a WP4 concern.
+  // The semantic distinction is preserved via disposition_type in hold_disposition_events.
   return 'REJECT';
 }
 
