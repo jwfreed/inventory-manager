@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import { query } from '../../db';
 import { roundQuantity, toNumber } from '../../lib/numbers';
 
-export type QcBreakdown = { hold: number; accept: number; reject: number };
+export type QcBreakdown = { hold: number; accept: number; reject: number; disposed?: number };
 
 export type ReceiptLineContext = {
   id: string;
@@ -22,7 +22,7 @@ export type PutawayTotals = {
 };
 
 export function defaultBreakdown(): QcBreakdown {
-  return { hold: 0, accept: 0, reject: 0 };
+  return { hold: 0, accept: 0, reject: 0, disposed: 0 };
 }
 
 export async function loadReceiptLineContexts(
@@ -158,6 +158,7 @@ export async function loadQcBreakdown(
     const breakdown = map.get(lineId) ?? defaultBreakdown();
     const disposed = roundQuantity(toNumber(row.total_disposed));
     breakdown.hold = roundQuantity(Math.max(0, (breakdown.hold ?? 0) - disposed));
+    breakdown.disposed = roundQuantity((breakdown.disposed ?? 0) + disposed);
     map.set(lineId, breakdown);
   }
   return map;
@@ -174,7 +175,10 @@ export function calculatePutawayAvailability(
   const rejected = roundQuantity(qcBreakdown.reject ?? 0);
   const hold = roundQuantity(qcBreakdown.hold ?? 0);
   const accept = roundQuantity(qcBreakdown.accept ?? 0);
-  const inspectedTotal = roundQuantity(accept + hold + rejected);
+  // disposed units (REWORK/DISCARDED) were inspected via QC hold before disposition;
+  // include them in inspectedTotal so they are not misclassified as uninspected.
+  const disposed = roundQuantity(qcBreakdown.disposed ?? 0);
+  const inspectedTotal = roundQuantity(accept + hold + rejected + disposed);
   const remainingUninspected = Math.max(0, receiptQty - inspectedTotal);
   const requireAcceptance = options.requireAcceptance ?? true;
 
@@ -184,11 +188,15 @@ export function calculatePutawayAvailability(
   if (requireAcceptance) {
     if (remainingUninspected > 1e-6) {
       blockedReason = 'QC must be completed before putaway.';
-    } else if (hold > 1e-6) {
-      blockedReason = 'Receipt line is on QC hold.';
     } else if (accept <= 1e-6) {
-      blockedReason = 'Receipt line has no accepted quantity.';
+      // HOLD, REWORK, and DISCARDED qty are blocked; only accepted qty flows to putaway.
+      blockedReason = hold > 1e-6
+        ? 'Receipt line is on QC hold with no accepted quantity.'
+        : 'Receipt line has no accepted quantity.';
     } else {
+      // accept > 0: eligible quantity is the accepted fraction.
+      // HOLD qty is excluded naturally because qcAllowed is capped at accept, not receiptQty.
+      // REWORK and DISCARDED derive from HOLD (via hold_disposition_events) and are similarly excluded.
       qcAllowed = Math.min(Math.max(0, receiptQty - rejected), accept);
     }
   } else {
