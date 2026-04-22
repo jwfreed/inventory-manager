@@ -663,6 +663,68 @@ test('receipt QC characterization preserves allocation movement, lifecycle trans
   assert.equal(Number(ncrRes.rows[0]?.count ?? 0), 1);
 });
 
+test('unresolved hold prevents QC completion — full hold', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-hold-blocks',
+    tenantName: 'Contract QC Hold Blocks Completion'
+  });
+  const { tenantId, pool: db } = harness;
+
+  const fixture = await createReceiptInQa(harness, { quantity: 5 });
+
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'hold',
+      quantity: 5,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `qc-hold-full:${randomUUID()}` }
+  );
+
+  const lifecycle = await loadReceiptLifecycle(db, tenantId, fixture.receipt.id);
+  assert.equal(lifecycle?.lifecycle_state, 'QC_PENDING', 'QC must not complete while hold quantity is unresolved');
+});
+
+test('unresolved hold prevents QC completion — partial accept + partial hold', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-qc-partial-hold',
+    tenantName: 'Contract QC Partial Hold Blocks Completion'
+  });
+  const { tenantId, pool: db } = harness;
+
+  const fixture = await createReceiptInQa(harness, { quantity: 6 });
+
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'accept',
+      quantity: 4,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `qc-partial-accept:${randomUUID()}` }
+  );
+
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'hold',
+      quantity: 2,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `qc-partial-hold:${randomUUID()}` }
+  );
+
+  const lifecycle = await loadReceiptLifecycle(db, tenantId, fixture.receipt.id);
+  assert.equal(lifecycle?.lifecycle_state, 'QC_PENDING', 'QC must not complete while hold quantity remains unresolved');
+});
+
 test('receipt QC rebuilds missing allocation state before mutating receipt allocations', { timeout: 240000 }, async () => {
   const harness = await createServiceHarness({
     tenantPrefix: 'contract-qc-allocation-rebuild',

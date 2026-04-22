@@ -57,6 +57,9 @@ export async function evaluateQcCommand(params: {
   if (!params.qcComplete) {
     return params.currentState;
   }
+  if (params.heldQty > 1e-6) {
+    return params.currentState;
+  }
 
   const completedState = await applyReceiptStateTransition({
     client: params.client,
