@@ -843,7 +843,7 @@ export function deriveReceiptAvailabilityFromAllocations(params: {
   return {
     state: RECEIPT_AVAILABILITY_STATES.AVAILABLE,
     availableQty: roundQuantity(summary.availableQty),
-    blockedQty: roundQuantity(summary.qaQty + summary.holdQty),
+    blockedQty: roundQuantity(summary.qaQty + summary.holdQty + summary.reworkQty + summary.discardedQty),
     blockedReasons
   };
 }

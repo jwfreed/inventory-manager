@@ -329,3 +329,176 @@ test('receipt allocation mutation rejects fabricated validation context', async 
     /RECEIPT_ALLOCATION_VALIDATION_REQUIRED/
   );
 });
+
+test('rework and discarded allocations are counted in blocked quantity', () => {
+  // availableQty + blockedQty must equal totalQty when terminal dispositions exist
+  const availability = deriveReceiptAvailabilityFromAllocations({
+    baseStatus: 'posted',
+    lifecycleState: RECEIPT_STATES.AVAILABLE,
+    allocations: [
+      {
+        receiptId: 'r1',
+        receiptLineId: 'l1',
+        warehouseId: 'w1',
+        locationId: 'sellable',
+        binId: 'sellable-bin',
+        inventoryMovementId: 'm1',
+        inventoryMovementLineId: 'ml1',
+        costLayerId: 'cl1',
+        quantity: 5,
+        status: RECEIPT_ALLOCATION_STATUSES.AVAILABLE
+      },
+      {
+        receiptId: 'r1',
+        receiptLineId: 'l1',
+        warehouseId: 'w1',
+        locationId: 'reject',
+        binId: 'reject-bin',
+        inventoryMovementId: 'm2',
+        inventoryMovementLineId: 'ml2',
+        costLayerId: 'cl1',
+        quantity: 3,
+        status: RECEIPT_ALLOCATION_STATUSES.REWORK
+      },
+      {
+        receiptId: 'r1',
+        receiptLineId: 'l1',
+        warehouseId: 'w1',
+        locationId: 'reject',
+        binId: 'reject-bin',
+        inventoryMovementId: 'm3',
+        inventoryMovementLineId: 'ml3',
+        costLayerId: 'cl1',
+        quantity: 2,
+        status: RECEIPT_ALLOCATION_STATUSES.DISCARDED
+      }
+    ]
+  });
+  assert.equal(availability.availableQty, 5);
+  assert.equal(availability.blockedQty, 5, 'rework(3) + discarded(2) must appear in blockedQty');
+  assert.equal(
+    availability.availableQty + availability.blockedQty,
+    10,
+    'availableQty + blockedQty must equal totalQty'
+  );
+});
+
+test('conservation holds after hold transitions to rework and discarded', () => {
+  const aggregate = ReceiptAllocationAggregate.create({
+    expectedQtyByReceiptLineId: new Map([['l1', 10]]),
+    allocations: [
+      {
+        id: 'a1',
+        receiptId: 'r1',
+        receiptLineId: 'l1',
+        warehouseId: 'w1',
+        locationId: 'hold',
+        binId: 'hold-bin',
+        inventoryMovementId: 'm1',
+        inventoryMovementLineId: 'ml1',
+        costLayerId: 'cl1',
+        quantity: 10,
+        status: RECEIPT_ALLOCATION_STATUSES.HOLD
+      }
+    ]
+  });
+
+  aggregate.applyConsume({
+    receiptLineId: 'l1',
+    quantity: 6,
+    sourceStatus: RECEIPT_ALLOCATION_STATUSES.HOLD,
+    sourceBinId: 'hold-bin',
+    destinationLocationId: 'reject',
+    destinationBinId: 'reject-bin',
+    destinationStatus: RECEIPT_ALLOCATION_STATUSES.REWORK,
+    movementId: 'm2',
+    movementLineId: 'ml2'
+  });
+
+  aggregate.applyConsume({
+    receiptLineId: 'l1',
+    quantity: 4,
+    sourceStatus: RECEIPT_ALLOCATION_STATUSES.HOLD,
+    sourceBinId: 'hold-bin',
+    destinationLocationId: 'reject',
+    destinationBinId: 'reject-bin',
+    destinationStatus: RECEIPT_ALLOCATION_STATUSES.DISCARDED,
+    movementId: 'm3',
+    movementLineId: 'ml3'
+  });
+
+  const allocations = aggregate.snapshotAllocations();
+  const total = allocations.reduce((sum, a) => sum + a.quantity, 0);
+  assert.equal(Math.round(total * 1e6) / 1e6, 10, 'total quantity must be conserved');
+  assert.equal(allocations.filter((a) => a.status === RECEIPT_ALLOCATION_STATUSES.HOLD).length, 0);
+  assert.equal(allocations.filter((a) => a.status === RECEIPT_ALLOCATION_STATUSES.REWORK).length, 1);
+  assert.equal(allocations.filter((a) => a.status === RECEIPT_ALLOCATION_STATUSES.DISCARDED).length, 1);
+});
+
+test('receipt allocation aggregate rejects transitions from terminal states', () => {
+  const aggregate = ReceiptAllocationAggregate.create({
+    expectedQtyByReceiptLineId: new Map([['l1', 4]]),
+    allocations: [
+      {
+        id: 'a1',
+        receiptId: 'r1',
+        receiptLineId: 'l1',
+        warehouseId: 'w1',
+        locationId: 'reject',
+        binId: 'reject-bin',
+        inventoryMovementId: 'm1',
+        inventoryMovementLineId: 'ml1',
+        costLayerId: 'cl1',
+        quantity: 2,
+        status: RECEIPT_ALLOCATION_STATUSES.REWORK
+      },
+      {
+        id: 'a2',
+        receiptId: 'r1',
+        receiptLineId: 'l1',
+        warehouseId: 'w1',
+        locationId: 'reject',
+        binId: 'reject-bin',
+        inventoryMovementId: 'm2',
+        inventoryMovementLineId: 'ml2',
+        costLayerId: 'cl1',
+        quantity: 2,
+        status: RECEIPT_ALLOCATION_STATUSES.DISCARDED
+      }
+    ]
+  });
+
+  assert.throws(
+    () =>
+      aggregate.applyConsume({
+        receiptLineId: 'l1',
+        quantity: 1,
+        sourceStatus: RECEIPT_ALLOCATION_STATUSES.REWORK,
+        sourceBinId: 'reject-bin',
+        destinationLocationId: 'sellable',
+        destinationBinId: 'sellable-bin',
+        destinationStatus: RECEIPT_ALLOCATION_STATUSES.AVAILABLE,
+        movementId: 'm3',
+        movementLineId: 'ml3'
+      }),
+    /RECEIPT_ALLOCATION_STATUS_TRANSITION_INVALID/,
+    'REWORK must be a terminal state with no valid outgoing transitions'
+  );
+
+  assert.throws(
+    () =>
+      aggregate.applyConsume({
+        receiptLineId: 'l1',
+        quantity: 1,
+        sourceStatus: RECEIPT_ALLOCATION_STATUSES.DISCARDED,
+        sourceBinId: 'reject-bin',
+        destinationLocationId: 'sellable',
+        destinationBinId: 'sellable-bin',
+        destinationStatus: RECEIPT_ALLOCATION_STATUSES.AVAILABLE,
+        movementId: 'm4',
+        movementLineId: 'ml4'
+      }),
+    /RECEIPT_ALLOCATION_STATUS_TRANSITION_INVALID/,
+    'DISCARDED must be a terminal state with no valid outgoing transitions'
+  );
+});
