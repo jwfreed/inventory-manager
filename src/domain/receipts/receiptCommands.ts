@@ -50,6 +50,9 @@ export async function evaluateQcCommand(params: {
   heldQty: number;
   rejectedQty: number;
   receivedQty: number;
+  // Rework is not permanent rejection; if any units were reworked the receipt
+  // is not "fully rejected" even when acceptedQty == 0.
+  reworkedQty?: number;
 }) {
   if (params.currentState !== RECEIPT_STATES.QC_PENDING) {
     return params.currentState;
@@ -76,7 +79,7 @@ export async function evaluateQcCommand(params: {
     }
   });
 
-  if (params.acceptedQty > 0) {
+  if (params.acceptedQty > 0 || (params.reworkedQty ?? 0) > 1e-6) {
     return completedState;
   }
 

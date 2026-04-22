@@ -396,7 +396,8 @@ async function evaluateQcAfterDisposition(params: {
       dispositions AS (
         SELECT prl.purchase_order_receipt_id AS receipt_id,
                COALESCE(SUM(hde.quantity), 0)::numeric AS total_disposed,
-               COALESCE(SUM(CASE WHEN hde.disposition_type = 'release' THEN hde.quantity ELSE 0 END), 0)::numeric AS released_qty
+               COALESCE(SUM(CASE WHEN hde.disposition_type = 'release' THEN hde.quantity ELSE 0 END), 0)::numeric AS released_qty,
+               COALESCE(SUM(CASE WHEN hde.disposition_type = 'rework' THEN hde.quantity ELSE 0 END), 0)::numeric AS reworked_qty
           FROM purchase_order_receipt_lines prl
           JOIN hold_disposition_events hde
             ON hde.purchase_order_receipt_line_id = prl.id
@@ -411,7 +412,8 @@ async function evaluateQcAfterDisposition(params: {
              rq.hold_qty,
              rq.reject_qty,
              COALESCE(d.total_disposed, 0) AS total_disposed,
-             COALESCE(d.released_qty, 0) AS released_qty
+             COALESCE(d.released_qty, 0) AS released_qty,
+             COALESCE(d.reworked_qty, 0) AS reworked_qty
         FROM purchase_order_receipts por
         JOIN receipt_lines rl ON rl.receipt_id = por.id
         JOIN receipt_qc rq ON rq.receipt_id = por.id
@@ -431,6 +433,7 @@ async function evaluateQcAfterDisposition(params: {
   const totalReject = roundQuantity(toNumber(guardRow.reject_qty ?? 0));
   const totalDisposed = roundQuantity(toNumber(guardRow.total_disposed ?? 0));
   const releasedQty = roundQuantity(toNumber(guardRow.released_qty ?? 0));
+  const reworkedQty = roundQuantity(toNumber(guardRow.reworked_qty ?? 0));
 
   const netHold = roundQuantity(grossHold - totalDisposed);
   const effectiveAccept = roundQuantity(totalAccept + releasedQty);
@@ -445,7 +448,8 @@ async function evaluateQcAfterDisposition(params: {
     acceptedQty: effectiveAccept,
     heldQty: netHold,
     rejectedQty: totalReject,
-    receivedQty: totalReceived
+    receivedQty: totalReceived,
+    reworkedQty
   });
 }
 

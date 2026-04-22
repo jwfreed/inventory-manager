@@ -2008,7 +2008,9 @@ test('hold → rework: quantity exits normal flow, QC completes', { timeout: 240
   assert.ok(Math.abs(allocationsAfter[0].quantity - 6) < 1e-6);
 
   const lifecycleAfter = await loadReceiptLifecycle(db, tenantId, fixture.receipt.id);
-  assert.equal(lifecycleAfter?.lifecycle_state, 'REJECTED', 'QC must complete with REJECTED state when all units are reworked (no accepted quantity)');
+  // Rework is not permanent rejection — items leave normal flow for remake/reuse.
+  // QC_COMPLETED is correct; REJECTED is reserved for fully discarded/rejected receipts.
+  assert.equal(lifecycleAfter?.lifecycle_state, 'QC_COMPLETED', 'QC must complete when all units are reworked (rework is not permanent rejection)');
 });
 
 test('partial: accept 90, hold 10, release 10 → QC completes, accepted qty unaffected', { timeout: 240000 }, async () => {
