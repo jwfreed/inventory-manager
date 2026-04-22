@@ -1859,3 +1859,353 @@ test('warehouse disposition transfer and audit log are co-committed within the s
   const auditCountAfterReplay = await countAuditRows(db, tenantId, 'qc_accept', first.movementId);
   assert.equal(auditCountAfterReplay, 1, 'replay must not insert a second audit row');
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// WP3: Hold Disposition Tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+const { resolveHoldDisposition } = require('../../src/services/holdDisposition.service.ts');
+
+async function loadHoldDispositionEvents(db, tenantId, receiptLineId) {
+  const res = await db.query(
+    `SELECT id, disposition_type, quantity::numeric AS quantity, uom,
+            inventory_movement_id AS "movementId"
+       FROM hold_disposition_events
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = $2
+      ORDER BY created_at ASC, id ASC`,
+    [tenantId, receiptLineId]
+  );
+  return res.rows.map((row) => ({ ...row, quantity: Number(row.quantity) }));
+}
+
+async function createHoldFixture(harness, { quantity = 10 } = {}) {
+  const fixture = await createReceiptInQa(harness, { quantity });
+  await createQcEvent(
+    harness.tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'hold',
+      quantity,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `qc-hold-fixture:${randomUUID()}` }
+  );
+  return fixture;
+}
+
+test('hold → release: held quantity becomes available, QC completes', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp3-hold-release',
+    tenantName: 'WP3 Hold Release'
+  });
+  const { tenantId, pool: db, topology } = harness;
+
+  const fixture = await createHoldFixture(harness, { quantity: 10 });
+
+  const lifecycleBefore = await loadReceiptLifecycle(db, tenantId, fixture.receipt.id);
+  assert.equal(lifecycleBefore?.lifecycle_state, 'QC_PENDING', 'QC must be pending while hold is unresolved');
+
+  const allocationsBefore = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
+  assert.equal(allocationsBefore.length, 1);
+  assert.equal(allocationsBefore[0].status, 'HOLD');
+
+  const result = await resolveHoldDisposition(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      dispositionType: 'release',
+      quantity: 10,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-release:${randomUUID()}` }
+  );
+
+  assert.equal(result.replayed, false);
+  assert.ok(result.movementId, 'movement must be created');
+  assert.equal(result.dispositionType, 'release');
+  assert.ok(Math.abs(result.quantity - 10) < 1e-6);
+
+  const allocationsAfter = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
+  assert.equal(allocationsAfter.length, 1, 'one allocation must exist after release');
+  assert.equal(allocationsAfter[0].status, 'AVAILABLE', 'allocation must become AVAILABLE');
+  assert.equal(allocationsAfter[0].locationId, topology.defaults.SELLABLE.id, 'allocation must be at SELLABLE location');
+  assert.ok(Math.abs(allocationsAfter[0].quantity - 10) < 1e-6, 'full quantity must be available');
+
+  const dispositions = await loadHoldDispositionEvents(db, tenantId, fixture.receiptLineId);
+  assert.equal(dispositions.length, 1, 'one disposition event must be recorded');
+  assert.equal(dispositions[0].disposition_type, 'release');
+  assert.ok(Math.abs(dispositions[0].quantity - 10) < 1e-6);
+
+  const lifecycleAfter = await loadReceiptLifecycle(db, tenantId, fixture.receipt.id);
+  assert.equal(lifecycleAfter?.lifecycle_state, 'QC_COMPLETED', 'QC must complete after hold is released');
+
+  const auditCount = await countAuditRows(db, tenantId, 'hold_disposition_event', result.eventId);
+  assert.equal(auditCount, 1, 'audit log must be written');
+});
+
+test('hold → discard: quantity permanently removed, QC completes', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp3-hold-discard',
+    tenantName: 'WP3 Hold Discard'
+  });
+  const { tenantId, pool: db } = harness;
+
+  const fixture = await createHoldFixture(harness, { quantity: 8 });
+
+  const result = await resolveHoldDisposition(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      dispositionType: 'discard',
+      quantity: 8,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-discard:${randomUUID()}` }
+  );
+
+  assert.equal(result.dispositionType, 'discard');
+  assert.ok(result.movementId, 'movement must be created for discard');
+
+  const allocationsAfter = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
+  assert.equal(allocationsAfter.length, 1, 'one terminal allocation must remain');
+  assert.equal(allocationsAfter[0].status, 'DISCARDED', 'allocation must be DISCARDED');
+  assert.ok(Math.abs(allocationsAfter[0].quantity - 8) < 1e-6, 'quantity must be conserved in terminal status');
+
+  const lifecycleAfter = await loadReceiptLifecycle(db, tenantId, fixture.receipt.id);
+  assert.equal(lifecycleAfter?.lifecycle_state, 'REJECTED', 'QC must complete with REJECTED state when all units are discarded (no accepted quantity)');
+});
+
+test('hold → rework: quantity exits normal flow, QC completes', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp3-hold-rework',
+    tenantName: 'WP3 Hold Rework'
+  });
+  const { tenantId, pool: db } = harness;
+
+  const fixture = await createHoldFixture(harness, { quantity: 6 });
+
+  const result = await resolveHoldDisposition(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      dispositionType: 'rework',
+      quantity: 6,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-rework:${randomUUID()}` }
+  );
+
+  assert.equal(result.dispositionType, 'rework');
+
+  const allocationsAfter = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
+  assert.equal(allocationsAfter.length, 1, 'one terminal allocation must remain');
+  assert.equal(allocationsAfter[0].status, 'REWORK', 'allocation must be REWORK');
+  assert.ok(Math.abs(allocationsAfter[0].quantity - 6) < 1e-6);
+
+  const lifecycleAfter = await loadReceiptLifecycle(db, tenantId, fixture.receipt.id);
+  assert.equal(lifecycleAfter?.lifecycle_state, 'REJECTED', 'QC must complete with REJECTED state when all units are reworked (no accepted quantity)');
+});
+
+test('partial: accept 90, hold 10, release 10 → QC completes, accepted qty unaffected', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp3-partial-release',
+    tenantName: 'WP3 Partial Release'
+  });
+  const { tenantId, pool: db, topology } = harness;
+
+  const fixture = await createReceiptInQa(harness, { quantity: 100 });
+
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'accept',
+      quantity: 90,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-accept-90:${randomUUID()}` }
+  );
+
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'hold',
+      quantity: 10,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-hold-10:${randomUUID()}` }
+  );
+
+  const midLifecycle = await loadReceiptLifecycle(db, tenantId, fixture.receipt.id);
+  assert.equal(midLifecycle?.lifecycle_state, 'QC_PENDING', 'QC must still be pending with 10 on hold');
+
+  await resolveHoldDisposition(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      dispositionType: 'release',
+      quantity: 10,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-release-10:${randomUUID()}` }
+  );
+
+  const finalLifecycle = await loadReceiptLifecycle(db, tenantId, fixture.receipt.id);
+  assert.equal(finalLifecycle?.lifecycle_state, 'QC_COMPLETED', 'QC must complete after releasing held 10');
+
+  const allocations = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
+  const availableAllocations = allocations.filter((a) => a.status === 'AVAILABLE');
+  const holdAllocations = allocations.filter((a) => a.status === 'HOLD');
+
+  assert.equal(holdAllocations.length, 0, 'no HOLD allocations must remain');
+  const totalAvailable = availableAllocations.reduce((sum, a) => sum + a.quantity, 0);
+  assert.ok(Math.abs(totalAvailable - 100) < 1e-6, 'all 100 units must be AVAILABLE');
+
+  // All allocations at SELLABLE location
+  for (const alloc of availableAllocations) {
+    assert.equal(alloc.locationId, topology.defaults.SELLABLE.id, 'released hold must be at SELLABLE location');
+  }
+});
+
+test('hold disposition: cannot dispose more than held quantity', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp3-over-dispose',
+    tenantName: 'WP3 Over-Disposition Guard'
+  });
+  const { tenantId } = harness;
+
+  const fixture = await createHoldFixture(harness, { quantity: 5 });
+
+  await assert.rejects(
+    resolveHoldDisposition(
+      tenantId,
+      {
+        purchaseOrderReceiptLineId: fixture.receiptLineId,
+        dispositionType: 'release',
+        quantity: 6,
+        uom: 'each',
+        actorType: 'system'
+      },
+      { idempotencyKey: `wp3-over-dispose:${randomUUID()}` }
+    ),
+    (error) => {
+      assert.equal(error?.message, 'HOLD_DISPOSITION_EXCEEDS_HELD');
+      return true;
+    }
+  );
+});
+
+test('hold disposition: cannot re-resolve already fully disposed quantity', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp3-redispose',
+    tenantName: 'WP3 Re-Disposition Guard'
+  });
+  const { tenantId } = harness;
+
+  const fixture = await createHoldFixture(harness, { quantity: 5 });
+
+  await resolveHoldDisposition(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      dispositionType: 'discard',
+      quantity: 5,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-first-dispose:${randomUUID()}` }
+  );
+
+  await assert.rejects(
+    resolveHoldDisposition(
+      tenantId,
+      {
+        purchaseOrderReceiptLineId: fixture.receiptLineId,
+        dispositionType: 'release',
+        quantity: 1,
+        uom: 'each',
+        actorType: 'system'
+      },
+      { idempotencyKey: `wp3-re-dispose:${randomUUID()}` }
+    ),
+    (error) => {
+      assert.ok(
+        error?.message === 'HOLD_DISPOSITION_EXCEEDS_HELD' || error?.message === 'HOLD_DISPOSITION_NO_HELD_QUANTITY',
+        `expected over-disposition error but got: ${error?.message}`
+      );
+      return true;
+    }
+  );
+});
+
+test('hold disposition: accepted quantity is not affected by hold resolution', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp3-accepted-safe',
+    tenantName: 'WP3 Accepted Qty Unaffected'
+  });
+  const { tenantId, pool: db, topology } = harness;
+
+  const fixture = await createReceiptInQa(harness, { quantity: 20 });
+
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'accept',
+      quantity: 15,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-accepted-15:${randomUUID()}` }
+  );
+
+  await createQcEvent(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      eventType: 'hold',
+      quantity: 5,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-held-5:${randomUUID()}` }
+  );
+
+  const allocsBefore = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
+  const availBefore = allocsBefore.filter((a) => a.status === 'AVAILABLE');
+  const totalAvailBefore = availBefore.reduce((sum, a) => sum + a.quantity, 0);
+  assert.ok(Math.abs(totalAvailBefore - 15) < 1e-6, 'accepted 15 must be AVAILABLE before disposition');
+
+  await resolveHoldDisposition(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      dispositionType: 'rework',
+      quantity: 5,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-rework-5:${randomUUID()}` }
+  );
+
+  const allocsAfter = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
+  const availAfter = allocsAfter.filter((a) => a.status === 'AVAILABLE');
+  const totalAvailAfter = availAfter.reduce((sum, a) => sum + a.quantity, 0);
+  assert.ok(Math.abs(totalAvailAfter - 15) < 1e-6, 'accepted 15 must still be AVAILABLE and unaffected by rework');
+
+  const reworkAllocs = allocsAfter.filter((a) => a.status === 'REWORK');
+  assert.equal(reworkAllocs.length, 1, 'one REWORK terminal allocation must exist');
+  assert.ok(Math.abs(reworkAllocs[0].quantity - 5) < 1e-6);
+
+  const lifecycle = await loadReceiptLifecycle(db, tenantId, fixture.receipt.id);
+  assert.equal(lifecycle?.lifecycle_state, 'QC_COMPLETED', 'QC must complete');
+});

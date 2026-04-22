@@ -869,15 +869,30 @@ async function applyReceiptQcSideEffects(params: {
          WHERE prl.purchase_order_receipt_id = $1
            AND prl.tenant_id = $2
          GROUP BY prl.purchase_order_receipt_id
+      ),
+      dispositions AS (
+        SELECT prl.purchase_order_receipt_id AS receipt_id,
+               COALESCE(SUM(hde.quantity), 0)::numeric AS total_disposed,
+               COALESCE(SUM(CASE WHEN hde.disposition_type = 'release' THEN hde.quantity ELSE 0 END), 0)::numeric AS released_qty
+          FROM purchase_order_receipt_lines prl
+          JOIN hold_disposition_events hde
+            ON hde.purchase_order_receipt_line_id = prl.id
+           AND hde.tenant_id = prl.tenant_id
+         WHERE prl.purchase_order_receipt_id = $1
+           AND prl.tenant_id = $2
+         GROUP BY prl.purchase_order_receipt_id
       )
       SELECT por.lifecycle_state,
              rq.received_qty,
              rq.accept_qty,
              rq.hold_qty,
-             rq.reject_qty
+             rq.reject_qty,
+             COALESCE(d.total_disposed, 0) AS total_disposed,
+             COALESCE(d.released_qty, 0) AS released_qty
         FROM purchase_order_receipts por
         JOIN receipt_qc rq
           ON rq.receipt_id = por.id
+        LEFT JOIN dispositions d ON d.receipt_id = por.id
        WHERE por.id = $1
          AND por.tenant_id = $2`,
     [receiptId, params.tenantId]
@@ -889,17 +904,23 @@ async function applyReceiptQcSideEffects(params: {
 
   const totalReceived = roundQuantity(toNumber(guardRow.received_qty ?? 0));
   const totalAccept = roundQuantity(toNumber(guardRow.accept_qty ?? 0));
-  const totalHold = roundQuantity(toNumber(guardRow.hold_qty ?? 0));
+  const grossHold = roundQuantity(toNumber(guardRow.hold_qty ?? 0));
   const totalReject = roundQuantity(toNumber(guardRow.reject_qty ?? 0));
+  const totalDisposed = roundQuantity(toNumber(guardRow.total_disposed ?? 0));
+  const releasedQty = roundQuantity(toNumber(guardRow.released_qty ?? 0));
+
+  const netHold = roundQuantity(grossHold - totalDisposed);
+  const effectiveAccept = roundQuantity(totalAccept + releasedQty);
+
   await evaluateQcCommand({
     client: params.client,
     tenantId: params.tenantId,
     receiptId,
     occurredAt: params.occurredAt,
     currentState: guardRow.lifecycle_state,
-    qcComplete: totalReceived > 0 && totalReceived - (totalAccept + totalHold + totalReject) <= 1e-6,
-    acceptedQty: totalAccept,
-    heldQty: totalHold,
+    qcComplete: totalReceived > 0 && totalReceived - (totalAccept + grossHold + totalReject) <= 1e-6,
+    acceptedQty: effectiveAccept,
+    heldQty: netHold,
     rejectedQty: totalReject,
     receivedQty: totalReceived
   });

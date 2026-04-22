@@ -16,7 +16,9 @@ import { RECEIPT_STATES, type ReceiptState } from './receiptStateModel';
 export const RECEIPT_ALLOCATION_STATUSES = {
   QA: 'QA',
   AVAILABLE: 'AVAILABLE',
-  HOLD: 'HOLD'
+  HOLD: 'HOLD',
+  REWORK: 'REWORK',
+  DISCARDED: 'DISCARDED'
 } as const;
 
 export type ReceiptAllocationStatus =
@@ -40,6 +42,8 @@ export type ReceiptAllocationSummary = {
   qaQty: number;
   availableQty: number;
   holdQty: number;
+  reworkQty: number;
+  discardedQty: number;
   totalQty: number;
 };
 
@@ -151,6 +155,8 @@ export function summarizeReceiptAllocations(allocations: ReceiptAllocation[]): R
     qaQty: 0,
     availableQty: 0,
     holdQty: 0,
+    reworkQty: 0,
+    discardedQty: 0,
     totalQty: 0
   };
   for (const allocation of allocations) {
@@ -162,6 +168,10 @@ export function summarizeReceiptAllocations(allocations: ReceiptAllocation[]): R
       summary.availableQty = roundQuantity(summary.availableQty + quantity);
     } else if (allocation.status === RECEIPT_ALLOCATION_STATUSES.HOLD) {
       summary.holdQty = roundQuantity(summary.holdQty + quantity);
+    } else if (allocation.status === RECEIPT_ALLOCATION_STATUSES.REWORK) {
+      summary.reworkQty = roundQuantity(summary.reworkQty + quantity);
+    } else if (allocation.status === RECEIPT_ALLOCATION_STATUSES.DISCARDED) {
+      summary.discardedQty = roundQuantity(summary.discardedQty + quantity);
     }
   }
   return summary;
@@ -437,13 +447,21 @@ export class ReceiptAllocationAggregate {
     assertValidReceiptAllocationStatus(params.sourceStatus);
     if (params.destinationStatus) {
       assertValidReceiptAllocationStatus(params.destinationStatus);
-      if (
-        params.sourceStatus !== RECEIPT_ALLOCATION_STATUSES.QA
-        || !(new Set<ReceiptAllocationStatus>([
-          RECEIPT_ALLOCATION_STATUSES.AVAILABLE,
-          RECEIPT_ALLOCATION_STATUSES.HOLD
-        ])).has(params.destinationStatus)
-      ) {
+      const VALID_TRANSITIONS = new Map<ReceiptAllocationStatus, Set<ReceiptAllocationStatus>>([
+        [
+          RECEIPT_ALLOCATION_STATUSES.QA,
+          new Set([RECEIPT_ALLOCATION_STATUSES.AVAILABLE, RECEIPT_ALLOCATION_STATUSES.HOLD])
+        ],
+        [
+          RECEIPT_ALLOCATION_STATUSES.HOLD,
+          new Set([
+            RECEIPT_ALLOCATION_STATUSES.AVAILABLE,
+            RECEIPT_ALLOCATION_STATUSES.REWORK,
+            RECEIPT_ALLOCATION_STATUSES.DISCARDED
+          ])
+        ]
+      ]);
+      if (!VALID_TRANSITIONS.get(params.sourceStatus)?.has(params.destinationStatus)) {
         throw createReceiptAllocationError('RECEIPT_ALLOCATION_STATUS_TRANSITION_INVALID', {
           receiptLineId: params.receiptLineId,
           sourceStatus: params.sourceStatus,

@@ -144,6 +144,22 @@ export async function loadQcBreakdown(
     breakdown[eventType] = roundQuantity(toNumber(row.total_quantity));
     map.set(lineId, breakdown);
   }
+  // Subtract disposed hold quantities so downstream logic sees net hold.
+  const { rows: dispositionRows } = await executor(
+    `SELECT purchase_order_receipt_line_id AS line_id, SUM(quantity) AS total_disposed
+       FROM hold_disposition_events
+      WHERE purchase_order_receipt_line_id = ANY($1::uuid[])
+        AND tenant_id = $2
+      GROUP BY purchase_order_receipt_line_id`,
+    [lineIds, tenantId]
+  );
+  for (const row of dispositionRows) {
+    const lineId = row.line_id as string;
+    const breakdown = map.get(lineId) ?? defaultBreakdown();
+    const disposed = roundQuantity(toNumber(row.total_disposed));
+    breakdown.hold = roundQuantity(Math.max(0, (breakdown.hold ?? 0) - disposed));
+    map.set(lineId, breakdown);
+  }
   return map;
 }
 
