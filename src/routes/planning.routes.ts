@@ -45,6 +45,8 @@ import {
   listReplenishmentPolicies,
   computeReplenishmentRecommendations,
   computeFulfillmentFillRate,
+  loadSalesOrderDemandIntoRun,
+  computeMrpRun,
 } from '../services/planning.service';
 import { computeDashboardKpis } from '../services/dashboardKpi.service';
 
@@ -250,6 +252,32 @@ router.get('/mrp/runs/:id/planned-orders', async (req: Request, res: Response) =
   if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
   const data = await listMrpPlannedOrders(req.auth!.tenantId, id);
   return res.json({ data });
+});
+
+router.post('/mrp/runs/:id/load-sales-demand', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
+  try {
+    const result = await loadSalesOrderDemandIntoRun(req.auth!.tenantId, id);
+    return res.json(result);
+  } catch (error: any) {
+    if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MRP run not found.' });
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to load sales demand into run.' });
+  }
+});
+
+router.post('/mrp/runs/:id/compute', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid run id.' });
+  try {
+    const result = await computeMrpRun(req.auth!.tenantId, id);
+    return res.json(result);
+  } catch (error: any) {
+    if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MRP run not found.' });
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to compute MRP run.' });
+  }
 });
 
 router.post('/replenishment/policies', async (req: Request, res: Response) => {

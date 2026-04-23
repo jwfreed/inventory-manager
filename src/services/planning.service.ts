@@ -995,6 +995,309 @@ export async function computeReplenishmentRecommendations(tenantId: string, limi
   return recommendations;
 }
 
+// ─── MRP Compute ─────────────────────────────────────────────────────────────
+
+/**
+ * Subtract `days` from an ISO date string (YYYY-MM-DD) and return YYYY-MM-DD.
+ * Uses UTC arithmetic to avoid DST ambiguity.
+ */
+function subtractDays(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Apply lot-sizing policy to a net requirement quantity.
+ * l4l  — lot-for-lot: order exactly what is needed.
+ * foq  — fixed order quantity: round up to nearest multiple of foqQty.
+ * poq/ppb — not implemented in WP8; fall back to l4l.
+ */
+function applyLotSizing(netReqQty: number, method: string, foqQty: number): number {
+  if (method === 'foq' && foqQty > 0) {
+    return Math.ceil(netReqQty / foqQty) * foqQty;
+  }
+  return netReqQty; // l4l, poq, ppb → l4l fallback
+}
+
+/**
+ * Populate mrp_gross_requirements for a run from open sales order lines.
+ *
+ * INVARIANT: uses source_type = 'sales_orders'.
+ * IDEMPOTENT: deletes existing 'sales_orders' rows for the run before inserting.
+ * Only includes SO lines whose requested_ship_date falls within [run.starts_on, run.ends_on].
+ */
+export async function loadSalesOrderDemandIntoRun(tenantId: string, runId: string) {
+  return withTransaction(async (client) => {
+    const runRes = await client.query(
+      `SELECT id, starts_on, ends_on FROM mrp_runs WHERE id = $1 AND tenant_id = $2`,
+      [runId, tenantId],
+    );
+    if (runRes.rowCount === 0) {
+      const err: any = new Error('MRP_RUN_NOT_FOUND');
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+    const run = runRes.rows[0];
+
+    // Load open SO lines within the planning horizon.
+    const demandRes = await client.query(
+      `SELECT sol.id AS so_line_id, sol.item_id, sol.uom, sol.quantity_ordered,
+              so.requested_ship_date
+         FROM sales_order_lines sol
+         JOIN sales_orders so ON so.id = sol.sales_order_id AND so.tenant_id = sol.tenant_id
+        WHERE sol.tenant_id = $1
+          AND so.status IN ('submitted','partially_shipped')
+          AND so.requested_ship_date IS NOT NULL
+          AND so.requested_ship_date >= $2
+          AND so.requested_ship_date <= $3
+        ORDER BY so.requested_ship_date ASC`,
+      [tenantId, run.starts_on, run.ends_on],
+    );
+
+    // Idempotent: remove prior load for this run.
+    await client.query(
+      `DELETE FROM mrp_gross_requirements WHERE mrp_run_id = $1 AND source_type = 'sales_orders'`,
+      [runId],
+    );
+
+    const now = new Date();
+    let loadedCount = 0;
+    for (const row of demandRes.rows) {
+      await client.query(
+        `INSERT INTO mrp_gross_requirements
+           (id, tenant_id, mrp_run_id, item_id, uom, site_location_id,
+            period_start, source_type, source_ref, quantity, created_at)
+         VALUES ($1,$2,$3,$4,$5,NULL,$6,'sales_orders',$7,$8,$9)`,
+        [
+          uuidv4(), tenantId, runId,
+          row.item_id, row.uom,
+          row.requested_ship_date, row.so_line_id,
+          row.quantity_ordered,
+          now,
+        ],
+      );
+      loadedCount += 1;
+    }
+
+    return { loadedCount };
+  });
+}
+
+/**
+ * Net requirements netting algorithm for an MRP run.
+ *
+ * Algorithm (per item × uom):
+ *   1. beginOnHand = available inventory (sellable locations only — excludes QA, HOLD, REJECT, SCRAP)
+ *   2. For each period sorted by period_start:
+ *        netReq = max(0, grossReq − beginOnHand − scheduledReceipts + safetyStock)
+ *        if netReq > 0: create planned order (lot-sized); planned_order_release = period_start − leadTime
+ *        projectedEndOnHand = beginOnHand + scheduledReceipts + plannedOrderReceipt − grossReq
+ *        beginOnHand = max(0, projectedEndOnHand)   (carry forward)
+ *
+ * INVARIANT: does NOT write to inventory_movements or any inventory ledger table.
+ * IDEMPOTENT: deletes mrp_plan_lines + mrp_planned_orders for the run then re-inserts.
+ */
+export async function computeMrpRun(tenantId: string, runId: string) {
+  return withTransaction(async (client) => {
+    const runRes = await client.query(
+      `SELECT id, starts_on, ends_on, bucket_type, status
+         FROM mrp_runs WHERE id = $1 AND tenant_id = $2`,
+      [runId, tenantId],
+    );
+    if (runRes.rowCount === 0) {
+      const err: any = new Error('MRP_RUN_NOT_FOUND');
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+
+    // Aggregate gross requirements by (item_id, uom, period_start).
+    const grossReqRes = await client.query(
+      `SELECT item_id, uom, period_start::text AS period_start,
+              SUM(quantity)::numeric AS quantity
+         FROM mrp_gross_requirements
+        WHERE mrp_run_id = $1
+        GROUP BY item_id, uom, period_start
+        ORDER BY item_id, uom, period_start ASC`,
+      [runId],
+    );
+
+    // Aggregate scheduled receipts by (item_id, uom, period_start).
+    const schedRes = await client.query(
+      `SELECT item_id, uom, period_start::text AS period_start,
+              SUM(quantity)::numeric AS quantity
+         FROM mrp_scheduled_receipts
+        WHERE mrp_run_id = $1
+        GROUP BY item_id, uom, period_start`,
+      [runId],
+    );
+
+    // Item policies for lot sizing and lead time.
+    const policiesRes = await client.query(
+      `SELECT item_id, uom,
+              COALESCE(planning_lead_time_days, 0) AS lead_time_days,
+              COALESCE(safety_stock_qty, 0)        AS safety_stock_qty,
+              COALESCE(lot_sizing_method, 'l4l')   AS lot_sizing_method,
+              COALESCE(foq_qty, 0)                 AS foq_qty
+         FROM mrp_item_policies
+        WHERE mrp_run_id = $1`,
+      [runId],
+    );
+
+    const itemIds = [...new Set<string>(grossReqRes.rows.map((r: any) => r.item_id))];
+
+    if (itemIds.length === 0) {
+      // Nothing to net — mark computed and return.
+      await client.query(`UPDATE mrp_runs SET status = 'computed' WHERE id = $1`, [runId]);
+      return { planLinesCreated: 0, plannedOrdersCreated: 0 };
+    }
+
+    // Available inventory — SELLABLE locations only (excludes QA, HOLD, REJECT, SCRAP).
+    // Uses inventory_available_location_sellable_v which enforces is_sellable = true.
+    const availableRes = await client.query(
+      `SELECT item_id, uom,
+              COALESCE(SUM(available_qty), 0)::numeric AS available_qty
+         FROM inventory_available_location_sellable_v
+        WHERE tenant_id = $1
+          AND item_id = ANY($2::uuid[])
+        GROUP BY item_id, uom`,
+      [tenantId, itemIds],
+    );
+
+    // Item metadata for order type derivation.
+    const itemsRes = await client.query(
+      `SELECT id, COALESCE(is_manufactured, false) AS is_manufactured
+         FROM items
+        WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+      [tenantId, itemIds],
+    );
+
+    // ── Build lookup maps ────────────────────────────────────────────────────
+
+    // availableMap: "itemId:uom" → available qty
+    const availableMap = new Map<string, number>();
+    for (const row of availableRes.rows) {
+      availableMap.set(`${row.item_id}:${row.uom}`, toNumber(row.available_qty));
+    }
+
+    // policyMap: "itemId:uom" → policy row
+    const policyMap = new Map<string, { leadTimeDays: number; safetyStockQty: number; lotSizingMethod: string; foqQty: number }>();
+    for (const row of policiesRes.rows) {
+      policyMap.set(`${row.item_id}:${row.uom}`, {
+        leadTimeDays: toNumber(row.lead_time_days),
+        safetyStockQty: toNumber(row.safety_stock_qty),
+        lotSizingMethod: row.lot_sizing_method,
+        foqQty: toNumber(row.foq_qty),
+      });
+    }
+
+    // isManufacturedMap: itemId → boolean
+    const isManufacturedMap = new Map<string, boolean>();
+    for (const row of itemsRes.rows) {
+      isManufacturedMap.set(row.id, Boolean(row.is_manufactured));
+    }
+
+    // grossMap: "itemId:uom" → Map<periodStart, qty>
+    const grossMap = new Map<string, Map<string, number>>();
+    for (const row of grossReqRes.rows) {
+      const key = `${row.item_id}:${row.uom}`;
+      if (!grossMap.has(key)) grossMap.set(key, new Map());
+      grossMap.get(key)!.set(row.period_start, toNumber(row.quantity));
+    }
+
+    // schedMap: "itemId:uom" → Map<periodStart, qty>
+    const schedMap = new Map<string, Map<string, number>>();
+    for (const row of schedRes.rows) {
+      const key = `${row.item_id}:${row.uom}`;
+      if (!schedMap.has(key)) schedMap.set(key, new Map());
+      const prev = schedMap.get(key)!.get(row.period_start) ?? 0;
+      schedMap.get(key)!.set(row.period_start, prev + toNumber(row.quantity));
+    }
+
+    // ── Idempotent delete of prior results ───────────────────────────────────
+    await client.query(`DELETE FROM mrp_plan_lines    WHERE mrp_run_id = $1`, [runId]);
+    await client.query(`DELETE FROM mrp_planned_orders WHERE mrp_run_id = $1`, [runId]);
+
+    const now = new Date();
+    let planLinesCreated = 0;
+    let plannedOrdersCreated = 0;
+
+    // ── Net requirements — one pass per (item × uom) ─────────────────────────
+    for (const [itemUomKey, demandByPeriod] of grossMap.entries()) {
+      const [itemId, uom] = itemUomKey.split(':');
+      const policy = policyMap.get(itemUomKey) ?? { leadTimeDays: 0, safetyStockQty: 0, lotSizingMethod: 'l4l', foqQty: 0 };
+      const orderType = isManufacturedMap.get(itemId) ? 'planned_work_order' : 'planned_purchase_order';
+      const schedByPeriod = schedMap.get(itemUomKey) ?? new Map<string, number>();
+
+      // Sort periods ascending so we can carry forward projected on-hand.
+      const periods = [...demandByPeriod.keys()].sort();
+
+      let beginOnHand = availableMap.get(itemUomKey) ?? 0;
+
+      for (const period of periods) {
+        const grossReqQty = roundQuantity(demandByPeriod.get(period) ?? 0);
+        const scheduledReceiptQty = roundQuantity(schedByPeriod.get(period) ?? 0);
+
+        const netReqQty = roundQuantity(
+          Math.max(0, grossReqQty - beginOnHand - scheduledReceiptQty + policy.safetyStockQty),
+        );
+
+        let plannedOrderReceiptQty = 0;
+        if (netReqQty > 0) {
+          plannedOrderReceiptQty = roundQuantity(
+            applyLotSizing(netReqQty, policy.lotSizingMethod, policy.foqQty),
+          );
+        }
+
+        const projectedEndOnHand = roundQuantity(
+          beginOnHand + scheduledReceiptQty + plannedOrderReceiptQty - grossReqQty,
+        );
+
+        await client.query(
+          `INSERT INTO mrp_plan_lines
+             (id, tenant_id, mrp_run_id, item_id, uom, site_location_id, period_start,
+              begin_on_hand_qty, gross_requirements_qty, scheduled_receipts_qty,
+              net_requirements_qty, planned_order_receipt_qty, planned_order_release_qty,
+              projected_end_on_hand_qty, computed_at)
+           VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8,$9,$10,$11,$11,$12,now())`,
+          [
+            uuidv4(), tenantId, runId, itemId, uom, period,
+            beginOnHand, grossReqQty, scheduledReceiptQty,
+            netReqQty, plannedOrderReceiptQty, projectedEndOnHand,
+          ],
+        );
+        planLinesCreated += 1;
+
+        if (plannedOrderReceiptQty > 0) {
+          const receiptDate = period;
+          const releaseDate = subtractDays(period, policy.leadTimeDays);
+          await client.query(
+            `INSERT INTO mrp_planned_orders
+               (id, tenant_id, mrp_run_id, item_id, uom, site_location_id, order_type,
+                quantity, release_date, receipt_date, source_ref, created_at)
+             VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8,$9,NULL,$10)`,
+            [
+              uuidv4(), tenantId, runId, itemId, uom,
+              orderType, plannedOrderReceiptQty,
+              releaseDate, receiptDate, now,
+            ],
+          );
+          plannedOrdersCreated += 1;
+        }
+
+        // Carry forward — can't go below zero.
+        beginOnHand = Math.max(0, projectedEndOnHand);
+      }
+    }
+
+    await client.query(`UPDATE mrp_runs SET status = 'computed' WHERE id = $1`, [runId]);
+
+    return { planLinesCreated, plannedOrdersCreated };
+  });
+}
+
+// ─── KPI Fill Rate ────────────────────────────────────────────────────────────
+
 export async function computeFulfillmentFillRate(
   tenantId: string,
   queryWindow: FulfillmentFillRateQuery

@@ -66,7 +66,7 @@ export const mrpGrossRequirementSchema = z.object({
   uom: uomSchema.max(32),
   siteLocationId: z.string().uuid().nullable().optional(),
   periodStart: isoDateString,
-  sourceType: z.enum(['mps', 'bom_explosion']),
+  sourceType: z.enum(['mps', 'bom_explosion', 'sales_orders']),
   sourceRef: z.string().max(255).optional(),
   quantity: z.number().nonnegative()
 });
