@@ -21,7 +21,8 @@ export const IDEMPOTENCY_ENDPOINTS = Object.freeze({
   WORK_ORDER_RECORD_BATCH: 'wo.record_batch',
   WORK_ORDER_VOID_REPORT_PRODUCTION: 'wo.void_report_production',
   WORK_ORDER_REPORT_SCRAP: 'wo.report_scrap',
-  HOLD_DISPOSITION_CREATE: 'hold_disposition.post'
+  HOLD_DISPOSITION_CREATE: 'hold_disposition.post',
+  CYCLE_COUNT_RECONCILE_TASK: 'cycle_count.reconcile_task'
 } as const);
 
 export type IdempotencyEndpoint = (typeof IDEMPOTENCY_ENDPOINTS)[keyof typeof IDEMPOTENCY_ENDPOINTS];

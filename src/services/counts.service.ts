@@ -63,10 +63,14 @@ type CycleCountLineRow = {
   counted_quantity: string | number;
   unit_cost_for_positive_adjustment: string | number | null;
   system_quantity: string | number | null;
+  system_qty_snapshot: string | number | null;
   variance_quantity: string | number | null;
   reason_code: string | null;
   notes: string | null;
   created_at: string;
+  task_status: string;
+  reconciled_movement_id: string | null;
+  reconciled_at: string | null;
 };
 
 type OnHandKey = string;
@@ -116,6 +120,7 @@ type CycleCountLineSummary = {
   countedQuantity: number;
   unitCostForPositiveAdjustment: number | null;
   systemQuantity: number;
+  systemQtySnapshot: number | null;
   varianceQuantity: number;
   varianceRatio: number;
   variancePct: number;
@@ -124,6 +129,9 @@ type CycleCountLineSummary = {
   reasonCode: string | null;
   notes: string | null;
   createdAt: string;
+  taskStatus: string;
+  reconciledMovementId: string | null;
+  reconciledAt: string | null;
 };
 
 type CycleCountSummary = {
@@ -173,6 +181,10 @@ function mapCycleCountLines(
           ? roundQuantity(toNumber(line.unit_cost_for_positive_adjustment))
           : null,
       systemQuantity: systemQty,
+      systemQtySnapshot:
+        line.system_qty_snapshot !== null
+          ? roundQuantity(toNumber(line.system_qty_snapshot))
+          : null,
       varianceQuantity: variance,
       varianceRatio: roundQuantity(varianceRatio),
       variancePct: roundQuantity(variancePct),
@@ -180,7 +192,10 @@ function mapCycleCountLines(
       hit,
       reasonCode: line.reason_code,
       notes: line.notes,
-      createdAt: line.created_at
+      createdAt: line.created_at,
+      taskStatus: line.task_status ?? 'pending',
+      reconciledMovementId: line.reconciled_movement_id ?? null,
+      reconciledAt: line.reconciled_at ?? null
     };
   });
 
@@ -300,7 +315,7 @@ function normalizeCountLines(data: InventoryCountInput) {
       uom: line.uom,
       countedQuantity: roundQuantity(line.countedQuantity),
       unitCostForPositiveAdjustment:
-        line.unitCostForPositiveAdjustment !== undefined
+        line.unitCostForPositiveAdjustment != null
           ? roundQuantity(line.unitCostForPositiveAdjustment)
           : null,
       reasonCode: line.reasonCode ?? null,
@@ -485,12 +500,22 @@ export async function createInventoryCount(
       ]
     );
 
+    // Capture system_qty_snapshot at task-creation time so the per-task
+    // recordCount/reconcileTask workflow has a stable baseline.
+    const snapshotMap = await loadSystemOnHandForLines(
+      tenantId,
+      now.toISOString(),
+      normalizedLines.map((l) => ({ itemId: l.itemId, locationId: l.locationId, uom: l.uom })),
+      client
+    );
+
     for (const line of normalizedLines) {
+      const snapshot = snapshotMap.get(makeOnHandKey(line.itemId, line.locationId, line.uom)) ?? 0;
       await client.query(
         `INSERT INTO cycle_count_lines (
             id, tenant_id, cycle_count_id, line_number, item_id, location_id, uom, counted_quantity,
-            unit_cost_for_positive_adjustment, reason_code, notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            unit_cost_for_positive_adjustment, reason_code, notes, system_qty_snapshot
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           uuidv4(),
           tenantId,
@@ -502,7 +527,8 @@ export async function createInventoryCount(
           line.countedQuantity,
           line.unitCostForPositiveAdjustment,
           line.reasonCode,
-          line.notes
+          line.notes,
+          snapshot
         ]
       );
     }
@@ -615,12 +641,19 @@ export async function updateInventoryCount(
             AND tenant_id = $2`,
         [id, tenantId]
       );
+      const snapshotMapUpdate = await loadSystemOnHandForLines(
+        tenantId,
+        now.toISOString(),
+        normalizedLines.map((l) => ({ itemId: l.itemId, locationId: l.locationId, uom: l.uom })),
+        client
+      );
       for (const line of normalizedLines) {
+        const snapshot = snapshotMapUpdate.get(makeOnHandKey(line.itemId, line.locationId, line.uom)) ?? 0;
         await client.query(
           `INSERT INTO cycle_count_lines (
               id, tenant_id, cycle_count_id, line_number, item_id, location_id, uom, counted_quantity,
-              unit_cost_for_positive_adjustment, reason_code, notes
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+              unit_cost_for_positive_adjustment, reason_code, notes, system_qty_snapshot
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
             uuidv4(),
             tenantId,
@@ -632,7 +665,8 @@ export async function updateInventoryCount(
             line.countedQuantity,
             line.unitCostForPositiveAdjustment,
             line.reasonCode,
-            line.notes
+            line.notes,
+            snapshot
           ]
         );
       }
@@ -1214,6 +1248,444 @@ export async function postInventoryCount(
           buildMovementPostedEvent(movement.movementId, idempotencyKey),
           buildInventoryCountPostedEvent(id, movement.movementId, idempotencyKey)
         ],
+        projectionOps
+      };
+    }
+  });
+}
+
+/**
+ * recordCount — update the physical counted quantity for a specific task.
+ *
+ * Uses the immutable system_qty_snapshot captured at task-creation time to
+ * compute variance. Once recorded the task transitions to 'counted'.
+ * Re-calling with the same qty is idempotent; re-calling with a different qty
+ * updates the count (task must not yet be reconciled).
+ */
+export async function recordCount(
+  tenantId: string,
+  countId: string,
+  lineId: string,
+  countedQty: number
+) {
+  if (!Number.isFinite(countedQty) || countedQty < 0) {
+    throw new Error('COUNT_QUANTITY_NONNEGATIVE');
+  }
+  const rounded = roundQuantity(countedQty);
+
+  return withTransaction(async (client: PoolClient) => {
+    const countResult = await client.query<CycleCountRow>(
+      'SELECT * FROM cycle_counts WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+      [countId, tenantId]
+    );
+    if (countResult.rowCount === 0) {
+      throw new Error('COUNT_NOT_FOUND');
+    }
+    const cycleCount = countResult.rows[0];
+    if (cycleCount.status === 'posted') {
+      throw new Error('COUNT_ALREADY_POSTED');
+    }
+    if (cycleCount.status === 'canceled') {
+      throw new Error('COUNT_CANCELED');
+    }
+
+    const lineResult = await client.query<CycleCountLineRow>(
+      `SELECT * FROM cycle_count_lines
+        WHERE id = $1
+          AND cycle_count_id = $2
+          AND tenant_id = $3
+        FOR UPDATE`,
+      [lineId, countId, tenantId]
+    );
+    if (lineResult.rowCount === 0) {
+      throw new Error('COUNT_LINE_NOT_FOUND');
+    }
+    const line = lineResult.rows[0];
+
+    if (line.task_status === 'reconciled') {
+      throw new Error('COUNT_TASK_ALREADY_RECONCILED');
+    }
+
+    const snapshot = roundQuantity(toNumber(line.system_qty_snapshot ?? 0));
+    const now = new Date();
+
+    await client.query(
+      `UPDATE cycle_count_lines
+          SET counted_quantity = $1,
+              task_status      = 'counted'
+        WHERE id        = $2
+          AND tenant_id = $3`,
+      [rounded, lineId, tenantId]
+    );
+
+    // Transition session to in_progress if still draft
+    if (cycleCount.status === 'draft') {
+      await client.query(
+        `UPDATE cycle_counts
+            SET status     = 'in_progress',
+                updated_at = $1
+          WHERE id        = $2
+            AND tenant_id = $3`,
+        [now, countId, tenantId]
+      );
+    }
+
+    return fetchCycleCountById(tenantId, countId, client);
+  });
+}
+
+/**
+ * reconcileTask — reconcile a single counted task against the inventory ledger.
+ *
+ * Zero variance: marks the task 'reconciled' with no inventory movement.
+ * Non-zero variance: requires a reasonCode, validates the threshold policy,
+ * then posts an adjustment movement (via ledger) and marks the task reconciled.
+ *
+ * Idempotent: if the task is already 'reconciled' the current state is returned.
+ * Concurrency: the task row is locked FOR UPDATE; a second concurrent call blocks
+ * until the first completes, then sees task_status='reconciled' and replays.
+ */
+export async function reconcileTask(
+  tenantId: string,
+  countId: string,
+  lineId: string,
+  idempotencyKey: string,
+  options?: {
+    reasonCode?: string | null;
+    overrideRequested?: boolean;
+    actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
+  }
+) {
+  if (!idempotencyKey) {
+    throw new Error('IDEMPOTENCY_KEY_REQUIRED');
+  }
+
+  let cycleCount: CycleCountRow | null = null;
+  let countLine: CycleCountLineRow | null = null;
+
+  return runInventoryCommand<any>({
+    tenantId,
+    endpoint: IDEMPOTENCY_ENDPOINTS.CYCLE_COUNT_RECONCILE_TASK,
+    operation: 'cycle_count_reconcile_task',
+    retryOptions: { isolationLevel: 'SERIALIZABLE', retries: 2 },
+
+    lockTargets: async (client) => {
+      const countResult = await client.query<CycleCountRow>(
+        'SELECT * FROM cycle_counts WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+        [countId, tenantId]
+      );
+      if (countResult.rowCount === 0) {
+        throw new Error('COUNT_NOT_FOUND');
+      }
+      cycleCount = countResult.rows[0];
+      if (cycleCount.status === 'posted') {
+        throw new Error('COUNT_ALREADY_POSTED');
+      }
+      if (cycleCount.status === 'canceled') {
+        throw new Error('COUNT_CANCELED');
+      }
+
+      const lineResult = await client.query<CycleCountLineRow>(
+        `SELECT * FROM cycle_count_lines
+          WHERE id = $1
+            AND cycle_count_id = $2
+            AND tenant_id = $3
+          FOR UPDATE`,
+        [lineId, countId, tenantId]
+      );
+      if (lineResult.rowCount === 0) {
+        throw new Error('COUNT_LINE_NOT_FOUND');
+      }
+      countLine = lineResult.rows[0];
+
+      if (countLine.task_status === 'pending') {
+        throw new Error('COUNT_TASK_NOT_COUNTED');
+      }
+
+      // Already reconciled — skip lock acquisition, replay in execute
+      if (countLine.task_status === 'reconciled') {
+        return [];
+      }
+
+      const variance = roundQuantity(
+        toNumber(countLine.counted_quantity) - toNumber(countLine.system_qty_snapshot ?? 0)
+      );
+      if (Math.abs(variance) <= 1e-6) {
+        // Zero variance — no ATP lock needed
+        return [];
+      }
+
+      return [{ tenantId, warehouseId: cycleCount.warehouse_id, itemId: countLine.item_id }];
+    },
+
+    execute: async ({ client }) => {
+      if (!cycleCount || !countLine) {
+        throw new Error('COUNT_NOT_FOUND');
+      }
+      const now = new Date();
+
+      // Idempotent replay: task already reconciled
+      if (countLine.task_status === 'reconciled') {
+        const view = await fetchCycleCountById(tenantId, countId, client);
+        return { responseBody: view, responseStatus: 200 };
+      }
+
+      const variance = roundQuantity(
+        toNumber(countLine.counted_quantity) - toNumber(countLine.system_qty_snapshot ?? 0)
+      );
+      const countedQty = roundQuantity(toNumber(countLine.counted_quantity));
+      const currentCycleCount = cycleCount;
+      const currentLine = countLine;
+
+      // ── Zero variance path ───────────────────────────────────────────────
+      if (Math.abs(variance) <= 1e-6) {
+        await client.query(
+          `UPDATE cycle_count_lines
+              SET task_status       = 'reconciled',
+                  variance_quantity = $1
+            WHERE id        = $2
+              AND tenant_id = $3`,
+          [0, lineId, tenantId]
+        );
+        const view = await fetchCycleCountById(tenantId, countId, client);
+        return { responseBody: view, responseStatus: 200 };
+      }
+
+      // ── Non-zero variance path ───────────────────────────────────────────
+      const effectiveReasonCode =
+        (options?.reasonCode ?? currentLine.reason_code) || null;
+      if (!effectiveReasonCode) {
+        throw new Error('COUNT_REASON_REQUIRED');
+      }
+
+      const reconciliationPolicy = getInventoryReconciliationPolicy();
+      if (
+        Math.abs(variance) - reconciliationPolicy.autoAdjustMaxAbsQuantity > 1e-6
+        && !options?.overrideRequested
+      ) {
+        throw inventoryCountReconciliationEscalationError({
+          countId,
+          lineId,
+          itemId: currentLine.item_id,
+          locationId: currentLine.location_id,
+          uom: currentLine.uom,
+          countedQuantity: countedQty,
+          systemQtySnapshot: roundQuantity(toNumber(currentLine.system_qty_snapshot ?? 0)),
+          varianceQuantity: variance,
+          autoAdjustMaxAbsQuantity: reconciliationPolicy.autoAdjustMaxAbsQuantity
+        });
+      }
+
+      // Validate positive-variance unit cost
+      if (variance > 0 && currentLine.unit_cost_for_positive_adjustment === null) {
+        throw new Error('CYCLE_COUNT_UNIT_COST_REQUIRED');
+      }
+
+      // Validate sufficient stock for negative variances
+      const negativeCheck =
+        variance < 0
+          ? await validateSufficientStock(
+              tenantId,
+              now,
+              [
+                {
+                  warehouseId: currentCycleCount.warehouse_id,
+                  itemId: currentLine.item_id,
+                  locationId: currentLine.location_id,
+                  uom: currentLine.uom,
+                  quantityToConsume: Math.abs(variance)
+                }
+              ],
+              {
+                actorId: options?.actor?.id ?? null,
+                actorRole: options?.actor?.role ?? null,
+                overrideRequested: options?.overrideRequested,
+                overrideReason: null,
+                overrideReference: `cycle_count_task:${lineId}`
+              },
+              { client }
+            )
+          : {};
+
+      const canonicalFields = await getCanonicalMovementFields(
+        tenantId,
+        currentLine.item_id,
+        variance,
+        currentLine.uom,
+        client
+      );
+      const canonicalQty = canonicalFields.quantityDeltaCanonical;
+
+      let unitCost: number | null = null;
+      let extendedCost: number | null = null;
+      let consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>> | null = null;
+
+      const movementId = uuidv4();
+
+      if (variance < 0) {
+        consumptionPlan = await planCostLayerConsumption({
+          tenant_id: tenantId,
+          item_id: currentLine.item_id,
+          location_id: currentLine.location_id,
+          quantity: Math.abs(canonicalQty),
+          consumption_type: 'adjustment',
+          consumption_document_id: countId,
+          movement_id: movementId,
+          notes: `Cycle count task shrink count=${countId} line=${lineId}`,
+          client
+        });
+        unitCost =
+          Math.abs(canonicalQty) > 0 ? consumptionPlan.total_cost / Math.abs(canonicalQty) : null;
+        extendedCost =
+          consumptionPlan.total_cost !== null ? -consumptionPlan.total_cost : null;
+      } else {
+        unitCost = toNumber(currentLine.unit_cost_for_positive_adjustment ?? 0);
+        extendedCost = roundQuantity(canonicalQty * unitCost);
+      }
+
+      const movement = await persistInventoryMovement(client, {
+        id: movementId,
+        tenantId,
+        movementType: 'adjustment',
+        status: 'posted',
+        externalRef: `cycle_count_task:${lineId}`,
+        sourceType: 'cycle_count_task',
+        sourceId: lineId,
+        idempotencyKey: `cycle-count-task-reconcile:${lineId}:${idempotencyKey}`,
+        occurredAt: now,
+        postedAt: now,
+        notes: currentCycleCount.notes ?? null,
+        metadata: (negativeCheck as any).overrideMetadata ?? null,
+        createdAt: now,
+        updatedAt: now,
+        lines: [
+          {
+            warehouseId: currentCycleCount.warehouse_id,
+            sourceLineId: lineId,
+            eventTimestamp: now,
+            itemId: currentLine.item_id,
+            locationId: currentLine.location_id,
+            quantityDelta: canonicalQty,
+            uom: canonicalFields.canonicalUom,
+            quantityDeltaEntered: canonicalFields.quantityDeltaEntered,
+            uomEntered: canonicalFields.uomEntered,
+            quantityDeltaCanonical: canonicalQty,
+            canonicalUom: canonicalFields.canonicalUom,
+            uomDimension: canonicalFields.uomDimension,
+            unitCost,
+            extendedCost,
+            reasonCode: effectiveReasonCode,
+            lineNotes:
+              currentLine.notes
+              ?? `Cycle count task ${countId} line ${currentLine.line_number}`,
+            createdAt: now
+          }
+        ]
+      });
+
+      if (variance < 0) {
+        if (!consumptionPlan) {
+          throw new Error('INV_COUNT_COST_PLAN_REQUIRED');
+        }
+        await applyPlannedCostLayerConsumption({
+          tenant_id: tenantId,
+          item_id: currentLine.item_id,
+          location_id: currentLine.location_id,
+          quantity: Math.abs(canonicalQty),
+          consumption_type: 'adjustment',
+          consumption_document_id: countId,
+          movement_id: movement.movementId,
+          notes: `Cycle count task shrink count=${countId} line=${lineId}`,
+          client,
+          plan: consumptionPlan
+        });
+      } else {
+        await createCostLayer({
+          tenant_id: tenantId,
+          item_id: currentLine.item_id,
+          location_id: currentLine.location_id,
+          uom: canonicalFields.canonicalUom,
+          quantity: canonicalQty,
+          unit_cost: unitCost ?? 0,
+          source_type: 'adjustment',
+          source_document_id: countId,
+          movement_id: movement.movementId,
+          notes: `Cycle count task found count=${countId} line=${lineId}`,
+          client
+        });
+      }
+
+      // Mark task reconciled with link to movement
+      await client.query(
+        `UPDATE cycle_count_lines
+            SET task_status             = 'reconciled',
+                variance_quantity       = $1,
+                reason_code             = $2,
+                reconciled_movement_id  = $3,
+                reconciled_at           = $4
+          WHERE id        = $5
+            AND tenant_id = $6`,
+        [variance, effectiveReasonCode, movement.movementId, now, lineId, tenantId]
+      );
+
+      // Conservation check: final on-hand must equal counted qty
+      const postReconcileMap = await loadSystemOnHandForLines(
+        tenantId,
+        now.toISOString(),
+        [{ itemId: currentLine.item_id, locationId: currentLine.location_id, uom: currentLine.uom }],
+        client
+      );
+      const finalOnHand =
+        postReconcileMap.get(
+          makeOnHandKey(currentLine.item_id, currentLine.location_id, currentLine.uom)
+        ) ?? 0;
+      if (Math.abs(finalOnHand - countedQty) > 1e-6) {
+        throw new Error('CYCLE_COUNT_RECONCILIATION_FAILED');
+      }
+
+      if ((negativeCheck as any).overrideMetadata && options?.actor) {
+        await recordAuditLog(
+          {
+            tenantId,
+            actorType: options.actor.type,
+            actorId: options.actor.id ?? null,
+            action: 'negative_override',
+            entityType: 'inventory_movement',
+            entityId: movement.movementId,
+            occurredAt: now,
+            metadata: {
+              reason: (negativeCheck as any).overrideMetadata.override_reason ?? null,
+              cycleCountId: countId,
+              lineId,
+              reference: (negativeCheck as any).overrideMetadata.override_reference ?? null
+            }
+          },
+          client
+        );
+      }
+
+      const projectionOps: InventoryCommandProjectionOp[] = [
+        buildInventoryBalanceProjectionOp({
+          tenantId,
+          itemId: currentLine.item_id,
+          locationId: currentLine.location_id,
+          uom: canonicalFields.canonicalUom,
+          deltaOnHand: canonicalQty,
+          mutationContext: {
+            movementId: movement.movementId,
+            sourceLineId: lineId,
+            reasonCode: effectiveReasonCode,
+            eventTimestamp: now,
+            stateTransition: canonicalQty > 0 ? 'adjusted->available' : 'available->adjusted'
+          }
+        }),
+        buildRefreshItemCostSummaryProjectionOp(tenantId, currentLine.item_id)
+      ];
+
+      const view = await fetchCycleCountById(tenantId, countId, client);
+      return {
+        responseBody: view,
+        responseStatus: 200,
         projectionOps
       };
     }

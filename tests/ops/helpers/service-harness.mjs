@@ -45,7 +45,7 @@ const {
   postInventoryTransfer,
   voidTransferMovement
 } = require('../../../src/services/transfers.service.ts');
-const { createInventoryCount, getInventoryCount, postInventoryCount } = require('../../../src/services/counts.service.ts');
+const { createInventoryCount, getInventoryCount, postInventoryCount, recordCount, reconcileTask } = require('../../../src/services/counts.service.ts');
 const {
   compareBalances,
   repairBalancesFromLedger,
@@ -671,6 +671,9 @@ export async function createServiceHarness(options = {}) {
     createInventoryCountDraft,
     getInventoryCount: getInventoryCountDocument,
     postInventoryCount: postInventoryCountDocument,
+    recordCount: (countId, lineId, countedQty) => recordCount(tenantId, countId, lineId, countedQty),
+    reconcileTask: (countId, lineId, idempotencyKey, options) =>
+      reconcileTask(tenantId, countId, lineId, idempotencyKey, options),
     createReceipt,
     createPurchaseOrder: createPurchaseOrderDocument,
     postReceipt: postReceiptDocument,
