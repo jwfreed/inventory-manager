@@ -1230,6 +1230,35 @@ function subtractDays(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function addBucket(dateStr: string, bucketType: 'day' | 'week' | 'month'): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  if (bucketType === 'day') {
+    d.setUTCDate(d.getUTCDate() + 1);
+  } else if (bucketType === 'week') {
+    d.setUTCDate(d.getUTCDate() + 7);
+  } else {
+    d.setUTCMonth(d.getUTCMonth() + 1);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+function buildMrpHorizonBuckets(
+  startsOn: string,
+  endsOn: string,
+  bucketType: 'day' | 'week' | 'month',
+): string[] {
+  if (startsOn > endsOn) {
+    return [];
+  }
+  const periods: string[] = [];
+  let period = startsOn;
+  while (period <= endsOn) {
+    periods.push(period);
+    period = addBucket(period, bucketType);
+  }
+  return periods;
+}
+
 /**
  * Apply lot-sizing policy to a net requirement quantity.
  * l4l  — lot-for-lot: order exactly what is needed.
@@ -1474,7 +1503,46 @@ export async function computeMrpRun(tenantId: string, runId: string) {
       [runId],
     );
 
-    const itemIds = [...new Set<string>(grossReqRes.rows.map((r: any) => r.item_id))];
+    const policyMap = new Map<string, { leadTimeDays: number; safetyStockQty: number; lotSizingMethod: string; foqQty: number }>();
+    const defaultPolicyMap = new Map<string, { leadTimeDays: number; safetyStockQty: number; lotSizingMethod: string; foqQty: number }>();
+    const scopeByKey = new Map<string, { itemId: string; locationId: string; uom: string }>();
+    for (const row of policiesRes.rows) {
+      const policy = {
+        leadTimeDays: toNumber(row.lead_time_days),
+        safetyStockQty: toNumber(row.safety_stock_qty),
+        lotSizingMethod: row.lot_sizing_method,
+        foqQty: toNumber(row.foq_qty),
+      };
+      if (row.site_location_id) {
+        const scopeKey = buildMrpScopeKey(row.item_id, row.site_location_id, row.uom);
+        policyMap.set(scopeKey, policy);
+        if (policy.safetyStockQty > 0) {
+          scopeByKey.set(scopeKey, { itemId: row.item_id, locationId: row.site_location_id, uom: row.uom });
+        }
+      } else {
+        defaultPolicyMap.set(buildMrpPolicyKey(row.item_id, row.uom), policy);
+      }
+    }
+
+    const isManufacturedMap = new Map<string, boolean>();
+    const grossMap = new Map<string, Map<string, number>>();
+    for (const row of grossReqRes.rows) {
+      const key = buildMrpScopeKey(row.item_id, row.site_location_id, row.uom);
+      if (!grossMap.has(key)) grossMap.set(key, new Map());
+      scopeByKey.set(key, { itemId: row.item_id, locationId: row.site_location_id, uom: row.uom });
+      grossMap.get(key)!.set(row.period_start, toNumber(row.quantity));
+    }
+
+    const schedMap = new Map<string, Map<string, number>>();
+    for (const row of schedRes.rows) {
+      const key = buildMrpScopeKey(row.item_id, row.site_location_id, row.uom);
+      if (!schedMap.has(key)) schedMap.set(key, new Map());
+      scopeByKey.set(key, { itemId: row.item_id, locationId: row.site_location_id, uom: row.uom });
+      const prev = schedMap.get(key)!.get(row.period_start) ?? 0;
+      schedMap.get(key)!.set(row.period_start, prev + toNumber(row.quantity));
+    }
+
+    const itemIds = [...new Set<string>([...scopeByKey.values()].map((scope) => scope.itemId))];
 
     if (itemIds.length === 0) {
       await client.query(`DELETE FROM mrp_plan_lines WHERE mrp_run_id = $1`, [runId]);
@@ -1508,68 +1576,30 @@ export async function computeMrpRun(tenantId: string, runId: string) {
       availableMap.set(buildMrpScopeKey(row.item_id, row.location_id, row.uom), toNumber(row.available_qty));
     }
 
-    const policyMap = new Map<string, { leadTimeDays: number; safetyStockQty: number; lotSizingMethod: string; foqQty: number }>();
-    const defaultPolicyMap = new Map<string, { leadTimeDays: number; safetyStockQty: number; lotSizingMethod: string; foqQty: number }>();
-    for (const row of policiesRes.rows) {
-      const policy = {
-        leadTimeDays: toNumber(row.lead_time_days),
-        safetyStockQty: toNumber(row.safety_stock_qty),
-        lotSizingMethod: row.lot_sizing_method,
-        foqQty: toNumber(row.foq_qty),
-      };
-      if (row.site_location_id) {
-        policyMap.set(buildMrpScopeKey(row.item_id, row.site_location_id, row.uom), policy);
-      } else {
-        defaultPolicyMap.set(buildMrpPolicyKey(row.item_id, row.uom), policy);
-      }
-    }
-
-    const isManufacturedMap = new Map<string, boolean>();
     for (const row of itemsRes.rows) {
       isManufacturedMap.set(row.id, Boolean(row.is_manufactured));
-    }
-
-    const grossMap = new Map<string, Map<string, number>>();
-    const scopeByKey = new Map<string, { itemId: string; locationId: string; uom: string }>();
-    for (const row of grossReqRes.rows) {
-      const key = buildMrpScopeKey(row.item_id, row.site_location_id, row.uom);
-      if (!grossMap.has(key)) grossMap.set(key, new Map());
-      scopeByKey.set(key, { itemId: row.item_id, locationId: row.site_location_id, uom: row.uom });
-      grossMap.get(key)!.set(row.period_start, toNumber(row.quantity));
-    }
-
-    const schedMap = new Map<string, Map<string, number>>();
-    for (const row of schedRes.rows) {
-      const key = buildMrpScopeKey(row.item_id, row.site_location_id, row.uom);
-      if (!schedMap.has(key)) schedMap.set(key, new Map());
-      scopeByKey.set(key, { itemId: row.item_id, locationId: row.site_location_id, uom: row.uom });
-      const prev = schedMap.get(key)!.get(row.period_start) ?? 0;
-      schedMap.get(key)!.set(row.period_start, prev + toNumber(row.quantity));
     }
 
     await client.query(`DELETE FROM mrp_plan_lines WHERE mrp_run_id = $1`, [runId]);
     await client.query(`DELETE FROM mrp_planned_orders WHERE mrp_run_id = $1`, [runId]);
 
     const now = new Date();
+    const horizonPeriods = buildMrpHorizonBuckets(run.starts_on, run.ends_on, run.bucket_type);
     let planLinesCreated = 0;
     let plannedOrdersCreated = 0;
 
-    for (const [scopeKey, demandByPeriod] of grossMap.entries()) {
-      const scope = scopeByKey.get(scopeKey);
-      if (!scope) {
-        continue;
-      }
+    for (const [scopeKey, scope] of scopeByKey.entries()) {
       const { itemId, locationId, uom } = scope;
       const policy =
         policyMap.get(scopeKey)
         ?? defaultPolicyMap.get(buildMrpPolicyKey(itemId, uom))
         ?? { leadTimeDays: 0, safetyStockQty: 0, lotSizingMethod: 'l4l', foqQty: 0 };
       const orderType = isManufacturedMap.get(itemId) ? 'planned_work_order' : 'planned_purchase_order';
+      const demandByPeriod = grossMap.get(scopeKey) ?? new Map<string, number>();
       const schedByPeriod = schedMap.get(scopeKey) ?? new Map<string, number>();
-      const periods = Array.from(new Set([...demandByPeriod.keys(), ...schedByPeriod.keys()])).sort();
       let beginOnHand = roundQuantity(availableMap.get(scopeKey) ?? 0);
 
-      for (const period of periods) {
+      for (const period of horizonPeriods) {
         const grossReqQty = roundQuantity(demandByPeriod.get(period) ?? 0);
         const scheduledReceiptQty = roundQuantity(schedByPeriod.get(period) ?? 0);
 
@@ -1593,36 +1623,39 @@ export async function computeMrpRun(tenantId: string, runId: string) {
           throw err;
         }
 
-        await client.query(
-          `INSERT INTO mrp_plan_lines
-             (id, tenant_id, mrp_run_id, item_id, uom, site_location_id, period_start,
-              begin_on_hand_qty, gross_requirements_qty, scheduled_receipts_qty,
-              net_requirements_qty, planned_order_receipt_qty, planned_order_release_qty,
-              projected_end_on_hand_qty, computed_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,now())`,
-          [
-            uuidv4(), tenantId, runId, itemId, uom, locationId, period,
-            beginOnHand, grossReqQty, scheduledReceiptQty,
-            netReqQty, plannedOrderReceiptQty, projectedEndOnHand,
-          ],
-        );
-        planLinesCreated += 1;
-
-        if (plannedOrderReceiptQty > 0) {
-          const receiptDate = period;
-          const releaseDate = subtractDays(period, policy.leadTimeDays);
+        const shouldPersistPlanLine = grossReqQty > 0 || scheduledReceiptQty > 0 || plannedOrderReceiptQty > 0;
+        if (shouldPersistPlanLine) {
           await client.query(
-            `INSERT INTO mrp_planned_orders
-               (id, tenant_id, mrp_run_id, item_id, uom, site_location_id, order_type,
-                status, quantity, release_date, receipt_date, source_ref, created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,'planned',$8,$9,$10,$11,$12)`,
+            `INSERT INTO mrp_plan_lines
+               (id, tenant_id, mrp_run_id, item_id, uom, site_location_id, period_start,
+                begin_on_hand_qty, gross_requirements_qty, scheduled_receipts_qty,
+                net_requirements_qty, planned_order_receipt_qty, planned_order_release_qty,
+                projected_end_on_hand_qty, computed_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,now())`,
             [
-              uuidv4(), tenantId, runId, itemId, uom, locationId,
-              orderType, plannedOrderReceiptQty,
-              releaseDate, receiptDate, `${runId}:${itemId}:${locationId}:${period}`, now,
+              uuidv4(), tenantId, runId, itemId, uom, locationId, period,
+              beginOnHand, grossReqQty, scheduledReceiptQty,
+              netReqQty, plannedOrderReceiptQty, projectedEndOnHand,
             ],
           );
-          plannedOrdersCreated += 1;
+          planLinesCreated += 1;
+
+          if (plannedOrderReceiptQty > 0) {
+            const receiptDate = period;
+            const releaseDate = subtractDays(period, policy.leadTimeDays);
+            await client.query(
+              `INSERT INTO mrp_planned_orders
+                 (id, tenant_id, mrp_run_id, item_id, uom, site_location_id, order_type,
+                  status, quantity, release_date, receipt_date, source_ref, created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,'planned',$8,$9,$10,$11,$12)`,
+              [
+                uuidv4(), tenantId, runId, itemId, uom, locationId,
+                orderType, plannedOrderReceiptQty,
+                releaseDate, receiptDate, `${runId}:${itemId}:${locationId}:${period}`, now,
+              ],
+            );
+            plannedOrdersCreated += 1;
+          }
         }
 
         beginOnHand = roundQuantity(Math.max(0, projectedEndOnHand));

@@ -89,6 +89,27 @@ async function insertGrossRequirementRow(pool, tenantId, runId, requirement) {
   );
 }
 
+async function insertScheduledReceiptRow(pool, tenantId, runId, receipt) {
+  await pool.query(
+    `INSERT INTO mrp_scheduled_receipts (
+       id, tenant_id, mrp_run_id, item_id, uom, site_location_id,
+       period_start, source_type, source_ref, quantity, created_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`,
+    [
+      randomUUID(),
+      tenantId,
+      runId,
+      receipt.itemId,
+      receipt.uom,
+      receipt.siteLocationId,
+      receipt.periodStart,
+      receipt.sourceType,
+      receipt.sourceRef ?? null,
+      receipt.quantity,
+    ],
+  );
+}
+
 async function countMovements(pool, tenantId) {
   const res = await pool.query(
     'SELECT COUNT(*)::int AS cnt FROM inventory_movements WHERE tenant_id = $1',
@@ -374,6 +395,197 @@ test('D. safety stock acts as a projected end-on-hand floor', async () => {
   assert.equal(Number(line.projected_end_on_hand_qty), 5, 'projected end on hand must meet safety stock');
 });
 
+test('D1. quiet horizon buckets without gross demand still replenish to the safety floor', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'mrp-d1',
+    tenantName: 'MRP Test D1',
+  });
+  const { tenantId, topology } = harness;
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'MRP-D1',
+    type: 'raw',
+  });
+
+  const { run } = await setupRun(tenantId, {
+    startsOn: '2026-06-01',
+    endsOn: '2026-06-03',
+  });
+  await seedItemPolicies(tenantId, run.id, [
+    {
+      itemId: item.id,
+      uom: 'each',
+      siteLocationId: topology.defaults.SELLABLE.id,
+      safetyStockQty: 5,
+      lotSizingMethod: 'l4l',
+    },
+  ]);
+
+  const result = await computeMrpRun(tenantId, run.id);
+  const lines = await listMrpPlanLines(tenantId, run.id);
+  const orders = await listMrpPlannedOrders(tenantId, run.id);
+
+  assert.equal(result.planLinesCreated, 1);
+  assert.equal(result.plannedOrdersCreated, 1);
+  assert.equal(lines.length, 1, 'the first quiet bucket must still be evaluated');
+  assert.equal(lines[0].period_start, '2026-06-01');
+  assert.equal(Number(lines[0].gross_requirements_qty), 0);
+  assert.equal(Number(lines[0].net_requirements_qty), 5);
+  assert.equal(Number(lines[0].projected_end_on_hand_qty), 5);
+  assert.equal(orders[0].receipt_date, '2026-06-01');
+  assert.equal(Number(orders[0].quantity), 5);
+});
+
+test('D2. scheduled-receipt-only scopes are evaluated even without gross demand rows', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'mrp-d2',
+    tenantName: 'MRP Test D2',
+  });
+  const { tenantId, topology, pool } = harness;
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'MRP-D2',
+    type: 'raw',
+  });
+
+  await harness.seedStockViaCount({
+    itemId: item.id,
+    locationId: topology.defaults.SELLABLE.id,
+    quantity: 5,
+    unitCost: 5,
+  });
+
+  const { run } = await setupRun(tenantId, {
+    startsOn: '2026-06-01',
+    endsOn: '2026-06-03',
+  });
+  await seedItemPolicies(tenantId, run.id, [
+    {
+      itemId: item.id,
+      uom: 'each',
+      siteLocationId: topology.defaults.SELLABLE.id,
+      safetyStockQty: 5,
+      lotSizingMethod: 'l4l',
+    },
+  ]);
+  await insertScheduledReceiptRow(pool, tenantId, run.id, {
+    itemId: item.id,
+    uom: 'each',
+    siteLocationId: topology.defaults.SELLABLE.id,
+    periodStart: '2026-06-02',
+    sourceType: 'purchase_orders',
+    sourceRef: 'po-d2-1',
+    quantity: 1,
+  });
+
+  const result = await computeMrpRun(tenantId, run.id);
+  const lines = await listMrpPlanLines(tenantId, run.id);
+
+  assert.equal(result.planLinesCreated, 1, 'scheduled receipt scope should not be skipped');
+  assert.equal(result.plannedOrdersCreated, 0);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].period_start, '2026-06-02');
+  assert.equal(Number(lines[0].gross_requirements_qty), 0);
+  assert.equal(Number(lines[0].scheduled_receipts_qty), 1);
+  assert.equal(Number(lines[0].net_requirements_qty), 0);
+  assert.equal(Number(lines[0].projected_end_on_hand_qty), 6);
+});
+
+test('D3. zero-demand horizons still replenish to safety stock when policy requires it', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'mrp-d3',
+    tenantName: 'MRP Test D3',
+  });
+  const { tenantId, topology } = harness;
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'MRP-D3',
+    type: 'raw',
+  });
+
+  await harness.seedStockViaCount({
+    itemId: item.id,
+    locationId: topology.defaults.SELLABLE.id,
+    quantity: 2,
+    unitCost: 5,
+  });
+
+  const { run } = await setupRun(tenantId, {
+    startsOn: '2026-06-01',
+    endsOn: '2026-06-04',
+  });
+  await seedItemPolicies(tenantId, run.id, [
+    {
+      itemId: item.id,
+      uom: 'each',
+      siteLocationId: topology.defaults.SELLABLE.id,
+      safetyStockQty: 5,
+      lotSizingMethod: 'l4l',
+    },
+  ]);
+
+  await computeMrpRun(tenantId, run.id);
+  const lines = await listMrpPlanLines(tenantId, run.id);
+  const orders = await listMrpPlannedOrders(tenantId, run.id);
+
+  assert.equal(lines.length, 1, 'the first horizon bucket should replenish to safety and later quiet buckets stay implicit');
+  assert.equal(lines[0].period_start, '2026-06-01');
+  assert.equal(Number(lines[0].begin_on_hand_qty), 2);
+  assert.equal(Number(lines[0].planned_order_receipt_qty), 3);
+  assert.equal(Number(lines[0].projected_end_on_hand_qty), 5);
+  assert.equal(orders.length, 1);
+  assert.equal(Number(orders[0].quantity), 3);
+});
+
+test('D4. later demand after a quiet period uses carry-forward from the safety-stock replenishment bucket', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'mrp-d4',
+    tenantName: 'MRP Test D4',
+  });
+  const { tenantId, topology } = harness;
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'MRP-D4',
+    type: 'raw',
+  });
+
+  const { run } = await setupRun(tenantId, {
+    startsOn: '2026-06-01',
+    endsOn: '2026-06-03',
+  });
+  await seedItemPolicies(tenantId, run.id, [
+    {
+      itemId: item.id,
+      uom: 'each',
+      siteLocationId: topology.defaults.SELLABLE.id,
+      safetyStockQty: 5,
+      lotSizingMethod: 'l4l',
+    },
+  ]);
+  await seedGrossRequirements(tenantId, run.id, [
+    {
+      itemId: item.id,
+      uom: 'each',
+      siteLocationId: topology.defaults.SELLABLE.id,
+      periodStart: '2026-06-03',
+      sourceType: 'mps',
+      sourceRef: 'mps-d4-1',
+      quantity: 6,
+    },
+  ]);
+
+  await computeMrpRun(tenantId, run.id);
+  const lines = await listMrpPlanLines(tenantId, run.id);
+  const quietBucket = findPlanLine(lines, topology.defaults.SELLABLE.id, '2026-06-01');
+  const demandBucket = findPlanLine(lines, topology.defaults.SELLABLE.id, '2026-06-03');
+
+  assert.equal(lines.length, 2, 'the quiet replenishment bucket and later demand bucket should both persist');
+  assert.equal(Number(quietBucket.projected_end_on_hand_qty), 5);
+  assert.equal(Number(demandBucket.begin_on_hand_qty), 5, 'later demand must inherit the quiet-bucket projected balance');
+  assert.equal(Number(demandBucket.net_requirements_qty), 6);
+  assert.equal(Number(demandBucket.projected_end_on_hand_qty), 5);
+});
+
 test('E. planning remains independent per location when the same item is demanded in multiple locations', async () => {
   const harness = await createServiceHarness({
     tenantPrefix: 'mrp-e',
@@ -520,6 +732,50 @@ test('G. computeMrpRun does not create inventory movements or alter stock balanc
   const onHandAfter = await harness.readOnHand(item.id, topology.defaults.SELLABLE.id);
   assert.equal(movementsAfter, movementsBefore, 'planning must not write inventory movements');
   assert.equal(onHandAfter, onHandBefore, 'planning must not change inventory balances');
+});
+
+test('G1. safety-stock-only recompute does not create inventory movements or alter stock balances', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'mrp-g1',
+    tenantName: 'MRP Test G1',
+  });
+  const { tenantId, topology, pool } = harness;
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'MRP-G1',
+    type: 'raw',
+  });
+
+  await harness.seedStockViaCount({
+    itemId: item.id,
+    locationId: topology.defaults.SELLABLE.id,
+    quantity: 2,
+    unitCost: 5,
+  });
+
+  const movementsBefore = await countMovements(pool, tenantId);
+  const onHandBefore = await harness.readOnHand(item.id, topology.defaults.SELLABLE.id);
+
+  const { run } = await setupRun(tenantId, {
+    startsOn: '2026-06-01',
+    endsOn: '2026-06-03',
+  });
+  await seedItemPolicies(tenantId, run.id, [
+    {
+      itemId: item.id,
+      uom: 'each',
+      siteLocationId: topology.defaults.SELLABLE.id,
+      safetyStockQty: 5,
+      lotSizingMethod: 'l4l',
+    },
+  ]);
+
+  await computeMrpRun(tenantId, run.id);
+
+  const movementsAfter = await countMovements(pool, tenantId);
+  const onHandAfter = await harness.readOnHand(item.id, topology.defaults.SELLABLE.id);
+  assert.equal(movementsAfter, movementsBefore, 'safety-stock planning must not write inventory movements');
+  assert.equal(onHandAfter, onHandBefore, 'safety-stock planning must not change inventory balances');
 });
 
 test('H. planned orders transition planned -> firmed -> released without execution side effects', async () => {
