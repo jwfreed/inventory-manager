@@ -47,6 +47,9 @@ export type KpiRunInput = z.infer<typeof kpiRunSchema>;
 export type KpiSnapshotsCreateInput = z.infer<typeof kpiSnapshotsCreateSchema>;
 export type KpiRollupInputsCreateInput = z.infer<typeof kpiRollupInputsCreateSchema>;
 
+type MrpDemandMode = 'mps_only' | 'sales_orders_only' | 'combined';
+type MrpPlannedOrderStatus = 'planned' | 'firmed' | 'released';
+
 export function mapMpsPlan(row: any) {
   return {
     id: row.id,
@@ -192,6 +195,7 @@ export function mapMrpRun(row: any) {
     id: row.id,
     mpsPlanId: row.mps_plan_id,
     status: row.status,
+    demandMode: row.demand_mode,
     asOf: row.as_of,
     bucketType: row.bucket_type,
     startsOn: row.starts_on,
@@ -205,15 +209,17 @@ export async function createMrpRun(tenantId: string, data: MrpRunInput) {
   const id = uuidv4();
   const now = new Date();
   const status = data.status ?? 'draft';
+  const demandMode: MrpDemandMode = data.demandMode ?? 'mps_only';
   const res = await query(
-    `INSERT INTO mrp_runs (id, tenant_id, mps_plan_id, status, as_of, bucket_type, starts_on, ends_on, notes, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    `INSERT INTO mrp_runs (id, tenant_id, mps_plan_id, status, demand_mode, as_of, bucket_type, starts_on, ends_on, notes, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      RETURNING *`,
     [
       id,
       tenantId,
       data.mpsPlanId,
       status,
+      demandMode,
       data.asOf,
       data.bucketType,
       data.startsOn,
@@ -293,14 +299,52 @@ export async function createMrpGrossRequirements(
 ) {
   const now = new Date();
   return withTransaction(async (client) => {
-    const run = await client.query('SELECT 1 FROM mrp_runs WHERE id = $1 AND tenant_id = $2', [runId, tenantId]);
+    const run = await client.query(
+      'SELECT id, demand_mode FROM mrp_runs WHERE id = $1 AND tenant_id = $2',
+      [runId, tenantId]
+    );
     if (run.rowCount === 0) {
       const err: any = new Error('MRP_RUN_NOT_FOUND');
       err.code = 'NOT_FOUND';
       throw err;
     }
+
+    const demandMode = run.rows[0].demand_mode as MrpDemandMode;
+    const locationIds = Array.from(
+      new Set(
+        data.requirements
+          .map((req) => req.siteLocationId ?? null)
+          .filter((locationId): locationId is string => Boolean(locationId))
+      )
+    );
+    const sellableLocationIds = await loadSellableLocationIds(client, tenantId, locationIds);
+    if (demandMode === 'combined') {
+      const combinedRefs = data.requirements
+        .filter((req) => req.sourceType === 'mps' || req.sourceType === 'sales_orders')
+        .map((req) => req.sourceRef ?? null)
+        .filter((sourceRef): sourceRef is string => Boolean(sourceRef));
+      await assertCombinedTopLevelSourceRefsAvailable(client, runId, combinedRefs);
+    }
+
     const inserted: any[] = [];
     for (const req of data.requirements) {
+      assertMrpDemandModeAllowsSource(demandMode, req.sourceType);
+      if (!req.siteLocationId) {
+        const err: any = new Error('MRP_LOCATION_SCOPE_REQUIRED');
+        err.code = 'BAD_REQUEST';
+        throw err;
+      }
+      if (!sellableLocationIds.has(req.siteLocationId)) {
+        const err: any = new Error('MRP_SELLABLE_LOCATION_REQUIRED');
+        err.code = 'BAD_REQUEST';
+        throw err;
+      }
+      if (req.sourceType === 'sales_orders' && !req.sourceRef) {
+        const err: any = new Error('MRP_SALES_ORDER_SOURCE_REF_REQUIRED');
+        err.code = 'BAD_REQUEST';
+        throw err;
+      }
+
       const res = await client.query(
         `INSERT INTO mrp_gross_requirements (
           id, tenant_id, mrp_run_id, item_id, uom, site_location_id, period_start, source_type, source_ref, quantity, created_at
@@ -997,6 +1041,185 @@ export async function computeReplenishmentRecommendations(tenantId: string, limi
 
 // ─── MRP Compute ─────────────────────────────────────────────────────────────
 
+const MRP_PLANNING_SOURCE_TYPES = ['mrp', 'mrp_run', 'mrp_planned_order', 'planning'];
+
+function buildMrpScopeKey(itemId: string, locationId: string, uom: string) {
+  return `${itemId}:${locationId}:${uom}`;
+}
+
+function buildMrpPolicyKey(itemId: string, uom: string) {
+  return `${itemId}:${uom}`;
+}
+
+function assertMrpDemandModeAllowsSource(demandMode: MrpDemandMode, sourceType: string) {
+  if (sourceType === 'sales_orders' && demandMode === 'mps_only') {
+    const err: any = new Error('MRP_DEMAND_MODE_CONFLICT');
+    err.code = 'BAD_REQUEST';
+    throw err;
+  }
+  if (sourceType === 'mps' && demandMode === 'sales_orders_only') {
+    const err: any = new Error('MRP_DEMAND_MODE_CONFLICT');
+    err.code = 'BAD_REQUEST';
+    throw err;
+  }
+}
+
+async function loadSellableLocationIds(client: any, tenantId: string, locationIds: string[]) {
+  if (locationIds.length === 0) {
+    return new Set<string>();
+  }
+  const res = await client.query(
+    `SELECT id
+       FROM locations
+      WHERE tenant_id = $1
+        AND id = ANY($2::uuid[])
+        AND is_sellable = true`,
+    [tenantId, locationIds],
+  );
+  return new Set<string>(res.rows.map((row: any) => row.id));
+}
+
+async function assertCombinedTopLevelSourceRefsAvailable(client: any, runId: string, sourceRefs: string[]) {
+  if (sourceRefs.length === 0) {
+    return;
+  }
+
+  const seen = new Set<string>();
+  for (const sourceRef of sourceRefs) {
+    if (seen.has(sourceRef)) {
+      const err: any = new Error('MRP_DUPLICATE_DEMAND_SOURCE_REF');
+      err.code = 'BAD_REQUEST';
+      throw err;
+    }
+    seen.add(sourceRef);
+  }
+
+  const existing = await client.query(
+    `SELECT source_ref
+       FROM mrp_gross_requirements
+      WHERE mrp_run_id = $1
+        AND source_type IN ('mps', 'sales_orders')
+        AND source_ref = ANY($2::text[])
+      LIMIT 1`,
+    [runId, sourceRefs],
+  );
+  if (existing.rowCount > 0) {
+    const err: any = new Error('MRP_DUPLICATE_DEMAND_SOURCE_REF');
+    err.code = 'BAD_REQUEST';
+    throw err;
+  }
+}
+
+async function assertMrpLocationScopedInputs(
+  client: any,
+  tenantId: string,
+  runId: string,
+  demandMode: MrpDemandMode,
+) {
+  const grossInvalid = await client.query(
+    `SELECT gr.id,
+            gr.site_location_id,
+            COALESCE(l.is_sellable, false) AS is_sellable
+       FROM mrp_gross_requirements gr
+       LEFT JOIN locations l
+         ON l.id = gr.site_location_id
+        AND l.tenant_id = $2
+      WHERE gr.mrp_run_id = $1
+        AND (
+          gr.source_type = 'bom_explosion'
+          OR (gr.source_type = 'mps' AND $3 <> 'sales_orders_only')
+          OR (gr.source_type = 'sales_orders' AND $3 <> 'mps_only')
+        )
+        AND (
+          gr.site_location_id IS NULL
+          OR l.id IS NULL
+          OR l.is_sellable IS DISTINCT FROM true
+        )
+      LIMIT 1`,
+    [runId, tenantId, demandMode],
+  );
+  if (grossInvalid.rowCount > 0) {
+    const err: any = new Error(
+      grossInvalid.rows[0].site_location_id ? 'MRP_SELLABLE_LOCATION_REQUIRED' : 'MRP_LOCATION_SCOPE_REQUIRED',
+    );
+    err.code = 'BAD_REQUEST';
+    throw err;
+  }
+
+  const scheduledInvalid = await client.query(
+    `SELECT sr.id,
+            sr.site_location_id,
+            COALESCE(l.is_sellable, false) AS is_sellable
+       FROM mrp_scheduled_receipts sr
+       LEFT JOIN locations l
+         ON l.id = sr.site_location_id
+        AND l.tenant_id = $2
+      WHERE sr.mrp_run_id = $1
+        AND (
+          sr.site_location_id IS NULL
+          OR l.id IS NULL
+          OR l.is_sellable IS DISTINCT FROM true
+        )
+      LIMIT 1`,
+    [runId, tenantId],
+  );
+  if (scheduledInvalid.rowCount > 0) {
+    const err: any = new Error(
+      scheduledInvalid.rows[0].site_location_id ? 'MRP_SELLABLE_LOCATION_REQUIRED' : 'MRP_LOCATION_SCOPE_REQUIRED',
+    );
+    err.code = 'BAD_REQUEST';
+    throw err;
+  }
+}
+
+async function assertCombinedDemandModeNoOverlap(client: any, runId: string, demandMode: MrpDemandMode) {
+  if (demandMode !== 'combined') {
+    return;
+  }
+
+  const overlap = await client.query(
+    `SELECT source_ref
+       FROM mrp_gross_requirements
+      WHERE mrp_run_id = $1
+        AND source_type IN ('mps', 'sales_orders')
+        AND source_ref IS NOT NULL
+      GROUP BY source_ref
+     HAVING COUNT(*) FILTER (WHERE source_type = 'sales_orders') > 1
+         OR COUNT(DISTINCT source_type) > 1
+      LIMIT 1`,
+    [runId],
+  );
+  if (overlap.rowCount > 0) {
+    const err: any = new Error('MRP_DUPLICATE_DEMAND_SOURCE_REF');
+    err.code = 'BAD_REQUEST';
+    throw err;
+  }
+}
+
+async function assertNoPlanningInventoryMutation(client: any, tenantId: string, refs: string[]) {
+  if (refs.length === 0) {
+    return;
+  }
+  const uniqueRefs = Array.from(new Set(refs));
+  const res = await client.query(
+    `SELECT EXISTS (
+       SELECT 1
+         FROM inventory_movements
+        WHERE tenant_id = $1
+          AND (
+            source_type = ANY($2::text[])
+            OR source_id = ANY($3::text[])
+          )
+     ) AS exists`,
+    [tenantId, MRP_PLANNING_SOURCE_TYPES, uniqueRefs],
+  );
+  if (res.rows[0]?.exists) {
+    const err: any = new Error('MRP_PLANNING_MUTATION_FORBIDDEN');
+    err.code = 'INVARIANT_VIOLATION';
+    throw err;
+  }
+}
+
 /**
  * Subtract `days` from an ISO date string (YYYY-MM-DD) and return YYYY-MM-DD.
  * Uses UTC arithmetic to avoid DST ambiguity.
@@ -1030,7 +1253,9 @@ function applyLotSizing(netReqQty: number, method: string, foqQty: number): numb
 export async function loadSalesOrderDemandIntoRun(tenantId: string, runId: string) {
   return withTransaction(async (client) => {
     const runRes = await client.query(
-      `SELECT id, starts_on, ends_on FROM mrp_runs WHERE id = $1 AND tenant_id = $2`,
+      `SELECT id, starts_on, ends_on, demand_mode
+         FROM mrp_runs
+        WHERE id = $1 AND tenant_id = $2`,
       [runId, tenantId],
     );
     if (runRes.rowCount === 0) {
@@ -1039,21 +1264,108 @@ export async function loadSalesOrderDemandIntoRun(tenantId: string, runId: strin
       throw err;
     }
     const run = runRes.rows[0];
+    const demandMode = run.demand_mode as MrpDemandMode;
+    assertMrpDemandModeAllowsSource(demandMode, 'sales_orders');
 
-    // Load open SO lines within the planning horizon.
-    const demandRes = await client.query(
-      `SELECT sol.id AS so_line_id, sol.item_id, sol.uom, sol.quantity_ordered,
-              so.requested_ship_date
+    const invalidScopeRes = await client.query(
+      `SELECT sol.id AS so_line_id,
+              so.ship_from_location_id,
+              COALESCE(l.is_sellable, false) AS is_sellable
          FROM sales_order_lines sol
-         JOIN sales_orders so ON so.id = sol.sales_order_id AND so.tenant_id = sol.tenant_id
+         JOIN sales_orders so
+           ON so.id = sol.sales_order_id
+          AND so.tenant_id = sol.tenant_id
+         LEFT JOIN locations l
+           ON l.id = so.ship_from_location_id
+          AND l.tenant_id = so.tenant_id
         WHERE sol.tenant_id = $1
           AND so.status IN ('submitted','partially_shipped')
           AND so.requested_ship_date IS NOT NULL
           AND so.requested_ship_date >= $2
           AND so.requested_ship_date <= $3
-        ORDER BY so.requested_ship_date ASC`,
+          AND (
+            so.ship_from_location_id IS NULL
+            OR l.id IS NULL
+            OR l.is_sellable IS DISTINCT FROM true
+          )
+        LIMIT 1`,
       [tenantId, run.starts_on, run.ends_on],
     );
+    if ((invalidScopeRes.rowCount ?? 0) > 0) {
+      const err: any = new Error(
+        invalidScopeRes.rows[0].ship_from_location_id
+          ? 'MRP_SELLABLE_LOCATION_REQUIRED'
+          : 'MRP_LOCATION_SCOPE_REQUIRED',
+      );
+      err.code = 'BAD_REQUEST';
+      throw err;
+    }
+
+    const demandRes = await client.query(
+      `SELECT sol.id AS so_line_id,
+              sol.item_id,
+              sol.uom,
+              so.ship_from_location_id AS site_location_id,
+              so.requested_ship_date,
+              GREATEST(
+                sol.quantity_ordered
+                - COALESCE(
+                    SUM(
+                      CASE
+                        WHEN sos.inventory_movement_id IS NOT NULL THEN sosl.quantity_shipped
+                        ELSE 0
+                      END
+                    ),
+                    0
+                  ),
+                0
+              )::numeric AS open_quantity
+         FROM sales_order_lines sol
+         JOIN sales_orders so
+           ON so.id = sol.sales_order_id
+          AND so.tenant_id = sol.tenant_id
+         LEFT JOIN sales_order_shipment_lines sosl
+           ON sosl.sales_order_line_id = sol.id
+          AND sosl.tenant_id = sol.tenant_id
+         LEFT JOIN sales_order_shipments sos
+           ON sos.id = sosl.sales_order_shipment_id
+          AND sos.tenant_id = sol.tenant_id
+        WHERE sol.tenant_id = $1
+          AND so.status IN ('submitted','partially_shipped')
+          AND so.requested_ship_date IS NOT NULL
+          AND so.requested_ship_date >= $2
+          AND so.requested_ship_date <= $3
+        GROUP BY
+          sol.id,
+          sol.item_id,
+          sol.uom,
+          sol.quantity_ordered,
+          so.requested_ship_date,
+          so.ship_from_location_id
+       HAVING GREATEST(
+                sol.quantity_ordered
+                - COALESCE(
+                    SUM(
+                      CASE
+                        WHEN sos.inventory_movement_id IS NOT NULL THEN sosl.quantity_shipped
+                        ELSE 0
+                      END
+                    ),
+                    0
+                  ),
+                0
+              ) > 0
+        ORDER BY so.requested_ship_date ASC, sol.id ASC`,
+      [tenantId, run.starts_on, run.ends_on],
+    );
+
+    if (demandMode === 'combined') {
+      await assertCombinedTopLevelSourceRefsAvailable(
+        client,
+        runId,
+        demandRes.rows.map((row: any) => row.so_line_id),
+      );
+    }
 
     // Idempotent: remove prior load for this run.
     await client.query(
@@ -1068,18 +1380,20 @@ export async function loadSalesOrderDemandIntoRun(tenantId: string, runId: strin
         `INSERT INTO mrp_gross_requirements
            (id, tenant_id, mrp_run_id, item_id, uom, site_location_id,
             period_start, source_type, source_ref, quantity, created_at)
-         VALUES ($1,$2,$3,$4,$5,NULL,$6,'sales_orders',$7,$8,$9)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'sales_orders',$8,$9,$10)`,
         [
           uuidv4(), tenantId, runId,
           row.item_id, row.uom,
+          row.site_location_id,
           row.requested_ship_date, row.so_line_id,
-          row.quantity_ordered,
+          row.open_quantity,
           now,
         ],
       );
       loadedCount += 1;
     }
 
+    await assertNoPlanningInventoryMutation(client, tenantId, [runId]);
     return { loadedCount };
   });
 }
@@ -1087,10 +1401,10 @@ export async function loadSalesOrderDemandIntoRun(tenantId: string, runId: strin
 /**
  * Net requirements netting algorithm for an MRP run.
  *
- * Algorithm (per item × uom):
+ * Algorithm (per item × location × uom):
  *   1. beginOnHand = available inventory (sellable locations only — excludes QA, HOLD, REJECT, SCRAP)
  *   2. For each period sorted by period_start:
- *        netReq = max(0, grossReq − beginOnHand − scheduledReceipts + safetyStock)
+ *        netReq = max(0, grossReq + safetyStock − (beginOnHand + scheduledReceipts))
  *        if netReq > 0: create planned order (lot-sized); planned_order_release = period_start − leadTime
  *        projectedEndOnHand = beginOnHand + scheduledReceipts + plannedOrderReceipt − grossReq
  *        beginOnHand = max(0, projectedEndOnHand)   (carry forward)
@@ -1101,8 +1415,9 @@ export async function loadSalesOrderDemandIntoRun(tenantId: string, runId: strin
 export async function computeMrpRun(tenantId: string, runId: string) {
   return withTransaction(async (client) => {
     const runRes = await client.query(
-      `SELECT id, starts_on, ends_on, bucket_type, status
-         FROM mrp_runs WHERE id = $1 AND tenant_id = $2`,
+      `SELECT id, starts_on, ends_on, bucket_type, status, demand_mode
+         FROM mrp_runs
+        WHERE id = $1 AND tenant_id = $2`,
       [runId, tenantId],
     );
     if (runRes.rowCount === 0) {
@@ -1110,31 +1425,46 @@ export async function computeMrpRun(tenantId: string, runId: string) {
       err.code = 'NOT_FOUND';
       throw err;
     }
+    const run = runRes.rows[0];
+    const demandMode = run.demand_mode as MrpDemandMode;
 
-    // Aggregate gross requirements by (item_id, uom, period_start).
+    await assertMrpLocationScopedInputs(client, tenantId, runId, demandMode);
+    await assertCombinedDemandModeNoOverlap(client, runId, demandMode);
+
     const grossReqRes = await client.query(
-      `SELECT item_id, uom, period_start::text AS period_start,
+      `SELECT item_id,
+              uom,
+              site_location_id,
+              period_start::text AS period_start,
               SUM(quantity)::numeric AS quantity
          FROM mrp_gross_requirements
         WHERE mrp_run_id = $1
-        GROUP BY item_id, uom, period_start
-        ORDER BY item_id, uom, period_start ASC`,
-      [runId],
+          AND (
+            source_type = 'bom_explosion'
+            OR (source_type = 'mps' AND $2 <> 'sales_orders_only')
+            OR (source_type = 'sales_orders' AND $2 <> 'mps_only')
+          )
+        GROUP BY item_id, uom, site_location_id, period_start
+        ORDER BY item_id, site_location_id, uom, period_start ASC`,
+      [runId, demandMode],
     );
 
-    // Aggregate scheduled receipts by (item_id, uom, period_start).
     const schedRes = await client.query(
-      `SELECT item_id, uom, period_start::text AS period_start,
+      `SELECT item_id,
+              uom,
+              site_location_id,
+              period_start::text AS period_start,
               SUM(quantity)::numeric AS quantity
          FROM mrp_scheduled_receipts
         WHERE mrp_run_id = $1
-        GROUP BY item_id, uom, period_start`,
+        GROUP BY item_id, uom, site_location_id, period_start`,
       [runId],
     );
 
-    // Item policies for lot sizing and lead time.
     const policiesRes = await client.query(
-      `SELECT item_id, uom,
+      `SELECT item_id,
+              uom,
+              site_location_id,
               COALESCE(planning_lead_time_days, 0) AS lead_time_days,
               COALESCE(safety_stock_qty, 0)        AS safety_stock_qty,
               COALESCE(lot_sizing_method, 'l4l')   AS lot_sizing_method,
@@ -1147,24 +1477,25 @@ export async function computeMrpRun(tenantId: string, runId: string) {
     const itemIds = [...new Set<string>(grossReqRes.rows.map((r: any) => r.item_id))];
 
     if (itemIds.length === 0) {
-      // Nothing to net — mark computed and return.
+      await client.query(`DELETE FROM mrp_plan_lines WHERE mrp_run_id = $1`, [runId]);
+      await client.query(`DELETE FROM mrp_planned_orders WHERE mrp_run_id = $1`, [runId]);
       await client.query(`UPDATE mrp_runs SET status = 'computed' WHERE id = $1`, [runId]);
+      await assertNoPlanningInventoryMutation(client, tenantId, [runId]);
       return { planLinesCreated: 0, plannedOrdersCreated: 0 };
     }
 
-    // Available inventory — SELLABLE locations only (excludes QA, HOLD, REJECT, SCRAP).
-    // Uses inventory_available_location_sellable_v which enforces is_sellable = true.
     const availableRes = await client.query(
-      `SELECT item_id, uom,
+      `SELECT item_id,
+              location_id,
+              uom,
               COALESCE(SUM(available_qty), 0)::numeric AS available_qty
          FROM inventory_available_location_sellable_v
         WHERE tenant_id = $1
           AND item_id = ANY($2::uuid[])
-        GROUP BY item_id, uom`,
+        GROUP BY item_id, location_id, uom`,
       [tenantId, itemIds],
     );
 
-    // Item metadata for order type derivation.
     const itemsRes = await client.query(
       `SELECT id, COALESCE(is_manufactured, false) AS is_manufactured
          FROM items
@@ -1172,74 +1503,78 @@ export async function computeMrpRun(tenantId: string, runId: string) {
       [tenantId, itemIds],
     );
 
-    // ── Build lookup maps ────────────────────────────────────────────────────
-
-    // availableMap: "itemId:uom" → available qty
     const availableMap = new Map<string, number>();
     for (const row of availableRes.rows) {
-      availableMap.set(`${row.item_id}:${row.uom}`, toNumber(row.available_qty));
+      availableMap.set(buildMrpScopeKey(row.item_id, row.location_id, row.uom), toNumber(row.available_qty));
     }
 
-    // policyMap: "itemId:uom" → policy row
     const policyMap = new Map<string, { leadTimeDays: number; safetyStockQty: number; lotSizingMethod: string; foqQty: number }>();
+    const defaultPolicyMap = new Map<string, { leadTimeDays: number; safetyStockQty: number; lotSizingMethod: string; foqQty: number }>();
     for (const row of policiesRes.rows) {
-      policyMap.set(`${row.item_id}:${row.uom}`, {
+      const policy = {
         leadTimeDays: toNumber(row.lead_time_days),
         safetyStockQty: toNumber(row.safety_stock_qty),
         lotSizingMethod: row.lot_sizing_method,
         foqQty: toNumber(row.foq_qty),
-      });
+      };
+      if (row.site_location_id) {
+        policyMap.set(buildMrpScopeKey(row.item_id, row.site_location_id, row.uom), policy);
+      } else {
+        defaultPolicyMap.set(buildMrpPolicyKey(row.item_id, row.uom), policy);
+      }
     }
 
-    // isManufacturedMap: itemId → boolean
     const isManufacturedMap = new Map<string, boolean>();
     for (const row of itemsRes.rows) {
       isManufacturedMap.set(row.id, Boolean(row.is_manufactured));
     }
 
-    // grossMap: "itemId:uom" → Map<periodStart, qty>
     const grossMap = new Map<string, Map<string, number>>();
+    const scopeByKey = new Map<string, { itemId: string; locationId: string; uom: string }>();
     for (const row of grossReqRes.rows) {
-      const key = `${row.item_id}:${row.uom}`;
+      const key = buildMrpScopeKey(row.item_id, row.site_location_id, row.uom);
       if (!grossMap.has(key)) grossMap.set(key, new Map());
+      scopeByKey.set(key, { itemId: row.item_id, locationId: row.site_location_id, uom: row.uom });
       grossMap.get(key)!.set(row.period_start, toNumber(row.quantity));
     }
 
-    // schedMap: "itemId:uom" → Map<periodStart, qty>
     const schedMap = new Map<string, Map<string, number>>();
     for (const row of schedRes.rows) {
-      const key = `${row.item_id}:${row.uom}`;
+      const key = buildMrpScopeKey(row.item_id, row.site_location_id, row.uom);
       if (!schedMap.has(key)) schedMap.set(key, new Map());
+      scopeByKey.set(key, { itemId: row.item_id, locationId: row.site_location_id, uom: row.uom });
       const prev = schedMap.get(key)!.get(row.period_start) ?? 0;
       schedMap.get(key)!.set(row.period_start, prev + toNumber(row.quantity));
     }
 
-    // ── Idempotent delete of prior results ───────────────────────────────────
-    await client.query(`DELETE FROM mrp_plan_lines    WHERE mrp_run_id = $1`, [runId]);
+    await client.query(`DELETE FROM mrp_plan_lines WHERE mrp_run_id = $1`, [runId]);
     await client.query(`DELETE FROM mrp_planned_orders WHERE mrp_run_id = $1`, [runId]);
 
     const now = new Date();
     let planLinesCreated = 0;
     let plannedOrdersCreated = 0;
 
-    // ── Net requirements — one pass per (item × uom) ─────────────────────────
-    for (const [itemUomKey, demandByPeriod] of grossMap.entries()) {
-      const [itemId, uom] = itemUomKey.split(':');
-      const policy = policyMap.get(itemUomKey) ?? { leadTimeDays: 0, safetyStockQty: 0, lotSizingMethod: 'l4l', foqQty: 0 };
+    for (const [scopeKey, demandByPeriod] of grossMap.entries()) {
+      const scope = scopeByKey.get(scopeKey);
+      if (!scope) {
+        continue;
+      }
+      const { itemId, locationId, uom } = scope;
+      const policy =
+        policyMap.get(scopeKey)
+        ?? defaultPolicyMap.get(buildMrpPolicyKey(itemId, uom))
+        ?? { leadTimeDays: 0, safetyStockQty: 0, lotSizingMethod: 'l4l', foqQty: 0 };
       const orderType = isManufacturedMap.get(itemId) ? 'planned_work_order' : 'planned_purchase_order';
-      const schedByPeriod = schedMap.get(itemUomKey) ?? new Map<string, number>();
-
-      // Sort periods ascending so we can carry forward projected on-hand.
-      const periods = [...demandByPeriod.keys()].sort();
-
-      let beginOnHand = availableMap.get(itemUomKey) ?? 0;
+      const schedByPeriod = schedMap.get(scopeKey) ?? new Map<string, number>();
+      const periods = Array.from(new Set([...demandByPeriod.keys(), ...schedByPeriod.keys()])).sort();
+      let beginOnHand = roundQuantity(availableMap.get(scopeKey) ?? 0);
 
       for (const period of periods) {
         const grossReqQty = roundQuantity(demandByPeriod.get(period) ?? 0);
         const scheduledReceiptQty = roundQuantity(schedByPeriod.get(period) ?? 0);
 
         const netReqQty = roundQuantity(
-          Math.max(0, grossReqQty - beginOnHand - scheduledReceiptQty + policy.safetyStockQty),
+          Math.max(0, grossReqQty + policy.safetyStockQty - (beginOnHand + scheduledReceiptQty)),
         );
 
         let plannedOrderReceiptQty = 0;
@@ -1250,8 +1585,13 @@ export async function computeMrpRun(tenantId: string, runId: string) {
         }
 
         const projectedEndOnHand = roundQuantity(
-          beginOnHand + scheduledReceiptQty + plannedOrderReceiptQty - grossReqQty,
+          Math.max(0, beginOnHand + scheduledReceiptQty + plannedOrderReceiptQty - grossReqQty),
         );
+        if (projectedEndOnHand < (policy.safetyStockQty - 0.000001)) {
+          const err: any = new Error('MRP_SAFETY_STOCK_INVARIANT');
+          err.code = 'INVARIANT_VIOLATION';
+          throw err;
+        }
 
         await client.query(
           `INSERT INTO mrp_plan_lines
@@ -1259,9 +1599,9 @@ export async function computeMrpRun(tenantId: string, runId: string) {
               begin_on_hand_qty, gross_requirements_qty, scheduled_receipts_qty,
               net_requirements_qty, planned_order_receipt_qty, planned_order_release_qty,
               projected_end_on_hand_qty, computed_at)
-           VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8,$9,$10,$11,$11,$12,now())`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,now())`,
           [
-            uuidv4(), tenantId, runId, itemId, uom, period,
+            uuidv4(), tenantId, runId, itemId, uom, locationId, period,
             beginOnHand, grossReqQty, scheduledReceiptQty,
             netReqQty, plannedOrderReceiptQty, projectedEndOnHand,
           ],
@@ -1274,26 +1614,73 @@ export async function computeMrpRun(tenantId: string, runId: string) {
           await client.query(
             `INSERT INTO mrp_planned_orders
                (id, tenant_id, mrp_run_id, item_id, uom, site_location_id, order_type,
-                quantity, release_date, receipt_date, source_ref, created_at)
-             VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8,$9,NULL,$10)`,
+                status, quantity, release_date, receipt_date, source_ref, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'planned',$8,$9,$10,$11,$12)`,
             [
-              uuidv4(), tenantId, runId, itemId, uom,
+              uuidv4(), tenantId, runId, itemId, uom, locationId,
               orderType, plannedOrderReceiptQty,
-              releaseDate, receiptDate, now,
+              releaseDate, receiptDate, `${runId}:${itemId}:${locationId}:${period}`, now,
             ],
           );
           plannedOrdersCreated += 1;
         }
 
-        // Carry forward — can't go below zero.
-        beginOnHand = Math.max(0, projectedEndOnHand);
+        beginOnHand = roundQuantity(Math.max(0, projectedEndOnHand));
       }
     }
 
     await client.query(`UPDATE mrp_runs SET status = 'computed' WHERE id = $1`, [runId]);
-
+    await assertNoPlanningInventoryMutation(client, tenantId, [runId]);
     return { planLinesCreated, plannedOrdersCreated };
   });
+}
+
+async function transitionPlannedOrderStatus(
+  tenantId: string,
+  orderId: string,
+  expectedStatus: MrpPlannedOrderStatus,
+  nextStatus: MrpPlannedOrderStatus,
+) {
+  return withTransaction(async (client) => {
+    const currentRes = await client.query(
+      `SELECT id, mrp_run_id, status
+         FROM mrp_planned_orders
+        WHERE id = $1 AND tenant_id = $2`,
+      [orderId, tenantId],
+    );
+    if (currentRes.rowCount === 0) {
+      const err: any = new Error('MRP_PLANNED_ORDER_NOT_FOUND');
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+
+    const current = currentRes.rows[0];
+    if (current.status !== expectedStatus) {
+      const err: any = new Error('MRP_PLANNED_ORDER_INVALID_STATUS');
+      err.code = 'BAD_REQUEST';
+      throw err;
+    }
+
+    const updated = await client.query(
+      `UPDATE mrp_planned_orders
+          SET status = $3
+        WHERE id = $1
+          AND tenant_id = $2
+      RETURNING *`,
+      [orderId, tenantId, nextStatus],
+    );
+
+    await assertNoPlanningInventoryMutation(client, tenantId, [orderId, current.mrp_run_id]);
+    return updated.rows[0];
+  });
+}
+
+export async function firmPlannedOrder(tenantId: string, orderId: string) {
+  return transitionPlannedOrderStatus(tenantId, orderId, 'planned', 'firmed');
+}
+
+export async function releasePlannedOrder(tenantId: string, orderId: string) {
+  return transitionPlannedOrderStatus(tenantId, orderId, 'firmed', 'released');
 }
 
 // ─── KPI Fill Rate ────────────────────────────────────────────────────────────

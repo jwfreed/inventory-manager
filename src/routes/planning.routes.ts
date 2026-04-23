@@ -47,6 +47,8 @@ import {
   computeFulfillmentFillRate,
   loadSalesOrderDemandIntoRun,
   computeMrpRun,
+  firmPlannedOrder,
+  releasePlannedOrder,
 } from '../services/planning.service';
 import { computeDashboardKpis } from '../services/dashboardKpi.service';
 
@@ -223,9 +225,27 @@ router.post('/mrp/runs/:id/gross-requirements', async (req: Request, res: Respon
     return res.status(201).json({ data });
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MRP run not found.' });
+    if (error?.code === 'BAD_REQUEST') {
+      if (error?.message === 'MRP_LOCATION_SCOPE_REQUIRED') {
+        return res.status(400).json({ error: 'Location scope is required for MRP gross requirements.' });
+      }
+      if (error?.message === 'MRP_SELLABLE_LOCATION_REQUIRED') {
+        return res.status(400).json({ error: 'MRP gross requirements must use SELLABLE locations.' });
+      }
+      if (error?.message === 'MRP_SALES_ORDER_SOURCE_REF_REQUIRED') {
+        return res.status(400).json({ error: 'sales_orders gross requirements require sourceRef.' });
+      }
+      if (error?.message === 'MRP_DEMAND_MODE_CONFLICT') {
+        return res.status(400).json({ error: 'Gross requirement source conflicts with the run demand_mode.' });
+      }
+      if (error?.message === 'MRP_DUPLICATE_DEMAND_SOURCE_REF') {
+        return res.status(400).json({ error: 'Duplicate top-level demand source_ref is not allowed for this MRP run.' });
+      }
+    }
     const mapped = mapPgErrorToHttp(error, {
       foreignKey: () => ({ status: 400, body: { error: 'Invalid item or location reference.' } }),
       check: () => ({ status: 400, body: { error: 'Invalid source type or quantity.' } }),
+      unique: () => ({ status: 409, body: { error: 'Duplicate demand source is not allowed for this MRP run.' } }),
     });
     if (mapped) return res.status(mapped.status).json(mapped.body);
     console.error(error);
@@ -262,6 +282,20 @@ router.post('/mrp/runs/:id/load-sales-demand', async (req: Request, res: Respons
     return res.json(result);
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MRP run not found.' });
+    if (error?.code === 'BAD_REQUEST') {
+      if (error?.message === 'MRP_DEMAND_MODE_CONFLICT') {
+        return res.status(400).json({ error: 'sales_orders demand is disabled by this run demand_mode.' });
+      }
+      if (error?.message === 'MRP_LOCATION_SCOPE_REQUIRED') {
+        return res.status(400).json({ error: 'Sales orders in the planning horizon require ship-from locations.' });
+      }
+      if (error?.message === 'MRP_SELLABLE_LOCATION_REQUIRED') {
+        return res.status(400).json({ error: 'Sales-order demand must use SELLABLE ship-from locations.' });
+      }
+      if (error?.message === 'MRP_DUPLICATE_DEMAND_SOURCE_REF') {
+        return res.status(400).json({ error: 'Duplicate top-level demand source_ref is not allowed for combined demand mode.' });
+      }
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to load sales demand into run.' });
   }
@@ -275,8 +309,52 @@ router.post('/mrp/runs/:id/compute', async (req: Request, res: Response) => {
     return res.json(result);
   } catch (error: any) {
     if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MRP run not found.' });
+    if (error?.code === 'BAD_REQUEST') {
+      if (error?.message === 'MRP_LOCATION_SCOPE_REQUIRED') {
+        return res.status(400).json({ error: 'Location scope is required for MRP planning inputs.' });
+      }
+      if (error?.message === 'MRP_SELLABLE_LOCATION_REQUIRED') {
+        return res.status(400).json({ error: 'MRP planning inputs must use SELLABLE locations.' });
+      }
+      if (error?.message === 'MRP_DUPLICATE_DEMAND_SOURCE_REF') {
+        return res.status(400).json({ error: 'Duplicate top-level demand source_ref is not allowed for combined demand mode.' });
+      }
+    }
+    if (error?.code === 'INVARIANT_VIOLATION') {
+      return res.status(409).json({ error: error.message });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to compute MRP run.' });
+  }
+});
+
+router.post('/mrp/planned-orders/:id/firm', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid planned order id.' });
+  try {
+    const order = await firmPlannedOrder(req.auth!.tenantId, id);
+    return res.json(order);
+  } catch (error: any) {
+    if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MRP planned order not found.' });
+    if (error?.code === 'BAD_REQUEST') return res.status(400).json({ error: 'Only planned orders may be firmed.' });
+    if (error?.code === 'INVARIANT_VIOLATION') return res.status(409).json({ error: error.message });
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to firm MRP planned order.' });
+  }
+});
+
+router.post('/mrp/planned-orders/:id/release', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!uuidSchema.safeParse(id).success) return res.status(400).json({ error: 'Invalid planned order id.' });
+  try {
+    const order = await releasePlannedOrder(req.auth!.tenantId, id);
+    return res.json(order);
+  } catch (error: any) {
+    if (error?.code === 'NOT_FOUND') return res.status(404).json({ error: 'MRP planned order not found.' });
+    if (error?.code === 'BAD_REQUEST') return res.status(400).json({ error: 'Only firmed orders may be released.' });
+    if (error?.code === 'INVARIANT_VIOLATION') return res.status(409).json({ error: error.message });
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to release MRP planned order.' });
   }
 });
 

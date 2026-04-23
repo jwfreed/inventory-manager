@@ -38,6 +38,7 @@ export const mpsDemandInputsCreateSchema = z.object({
 export const mrpRunSchema = z.object({
   mpsPlanId: z.string().uuid(),
   status: z.enum(['draft', 'computed', 'published', 'archived']).optional(),
+  demandMode: z.enum(['mps_only', 'sales_orders_only', 'combined']).optional(),
   asOf: z.string(),
   bucketType: z.enum(['day', 'week', 'month']),
   startsOn: isoDateString,
@@ -61,15 +62,25 @@ export const mrpItemPoliciesCreateSchema = z.object({
   policies: z.array(mrpItemPolicySchema).min(1)
 });
 
-export const mrpGrossRequirementSchema = z.object({
-  itemId: z.string().uuid(),
-  uom: uomSchema.max(32),
-  siteLocationId: z.string().uuid().nullable().optional(),
-  periodStart: isoDateString,
-  sourceType: z.enum(['mps', 'bom_explosion', 'sales_orders']),
-  sourceRef: z.string().max(255).optional(),
-  quantity: z.number().nonnegative()
-});
+export const mrpGrossRequirementSchema = z
+  .object({
+    itemId: z.string().uuid(),
+    uom: uomSchema.max(32),
+    siteLocationId: z.string().uuid(),
+    periodStart: isoDateString,
+    sourceType: z.enum(['mps', 'bom_explosion', 'sales_orders']),
+    sourceRef: z.string().max(255).optional(),
+    quantity: z.number().nonnegative()
+  })
+  .superRefine((value, ctx) => {
+    if (value.sourceType === 'sales_orders' && !value.sourceRef) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sourceRef'],
+        message: 'sales_orders demand requires sourceRef.'
+      });
+    }
+  });
 
 export const mrpGrossRequirementsCreateSchema = z.object({
   requirements: z.array(mrpGrossRequirementSchema).min(1)
