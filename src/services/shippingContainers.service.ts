@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import { query, withTransaction } from '../db';
 import type { shippingContainerSchema, shippingContainerItemSchema } from '../schemas/shippingContainers.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { postShipment } from './orderToCash.service';
 
 export type ShippingContainerInput = z.infer<typeof shippingContainerSchema>;
 export type ShippingContainerItemInput = z.infer<typeof shippingContainerItemSchema>;
@@ -15,6 +16,7 @@ export function mapShippingContainer(row: any, items?: any[]) {
     salesOrderId: row.sales_order_id,
     packageRef: row.package_ref,
     trackingNumber: row.tracking_number,
+    shippedAt: row.shipped_at ?? null,
     notes: row.notes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -125,7 +127,7 @@ export async function addShippingContainerItem(tenantId: string, containerId: st
     // Only picked inventory can be packed: validate pick task is picked
     if (item.pickTaskId) {
       const taskRes = await client.query(
-        `SELECT status FROM pick_tasks WHERE id = $1 AND tenant_id = $2`,
+        `SELECT status, quantity_picked FROM pick_tasks WHERE id = $1 AND tenant_id = $2`,
         [item.pickTaskId, tenantId]
       );
       if (taskRes.rowCount === 0) {
@@ -133,6 +135,20 @@ export async function addShippingContainerItem(tenantId: string, containerId: st
       }
       if (taskRes.rows[0].status !== 'picked') {
         throw new Error('PICK_TASK_NOT_PICKED');
+      }
+
+      // Pack quantity integrity: total packed across ALL containers for this task ≤ quantity_picked
+      const alreadyPackedRes = await client.query(
+        `SELECT COALESCE(SUM(quantity), 0)::numeric AS already_packed
+           FROM shipment_container_items
+          WHERE tenant_id = $1
+            AND pick_task_id = $2`,
+        [tenantId, item.pickTaskId]
+      );
+      const alreadyPacked = Number(alreadyPackedRes.rows[0].already_packed);
+      const quantityPicked = Number(taskRes.rows[0].quantity_picked ?? 0);
+      if (alreadyPacked + Number(item.quantity) > quantityPicked) {
+        throw new Error('PACK_QUANTITY_EXCEEDS_PICKED');
       }
     }
 
@@ -182,6 +198,63 @@ export async function sealShippingContainer(tenantId: string, containerId: strin
       throw new Error('SHIPPING_CONTAINER_NOT_OPEN');
     }
     return mapShippingContainer(update.rows[0]);
+  });
+}
+
+export async function shipContainer(
+  tenantId: string,
+  containerId: string,
+  params: {
+    idempotencyKey: string;
+    actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
+  }
+) {
+  // 1. Read container status — must be sealed to proceed
+  const containerRes = await query(
+    `SELECT status, sales_order_shipment_id FROM shipment_containers WHERE id = $1 AND tenant_id = $2`,
+    [containerId, tenantId]
+  );
+  if ((containerRes.rowCount ?? 0) === 0) {
+    throw new Error('SHIPPING_CONTAINER_NOT_FOUND');
+  }
+  const container = containerRes.rows[0];
+  if (container.status !== 'sealed') {
+    throw new Error('SHIPPING_CONTAINER_NOT_SEALED');
+  }
+
+  // 2. Exit inventory via the linked shipment document (idempotent)
+  if (container.sales_order_shipment_id) {
+    await postShipment(tenantId, container.sales_order_shipment_id, {
+      idempotencyKey: params.idempotencyKey,
+      actor: params.actor
+    });
+  }
+
+  // 3. Mark container shipped — conditional UPDATE is the double-ship guard
+  const now = new Date();
+  return withTransaction(async (client) => {
+    const locked = await client.query(
+      `SELECT status FROM shipment_containers WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [containerId, tenantId]
+    );
+    if ((locked.rowCount ?? 0) === 0 || locked.rows[0].status !== 'sealed') {
+      throw new Error('SHIPPING_CONTAINER_NOT_SEALED');
+    }
+    const res = await client.query(
+      `UPDATE shipment_containers
+          SET status = 'shipped',
+              shipped_at = $1,
+              updated_at = $1
+        WHERE id = $2
+          AND tenant_id = $3
+          AND status = 'sealed'
+        RETURNING *`,
+      [now, containerId, tenantId]
+    );
+    if ((res.rowCount ?? 0) === 0) {
+      throw new Error('SHIPPING_CONTAINER_NOT_SEALED');
+    }
+    return mapShippingContainer(res.rows[0]);
   });
 }
 
