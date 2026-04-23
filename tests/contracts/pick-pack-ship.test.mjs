@@ -15,6 +15,7 @@ const {
 } = require('../../src/services/orderToCash.service.ts');
 const {
   createWave,
+  createPickTask,
   getPickTask,
   confirmPickTask
 } = require('../../src/services/picking.service.ts');
@@ -381,10 +382,20 @@ test('pick confirmation requires reservation to be ALLOCATED, not RESERVED', asy
   );
   assert.equal(reservations[0].status, 'RESERVED');
 
-  // Create wave → pick task linked to RESERVED reservation
-  const { tasks } = await createWave(harness.tenantId, [order.id]);
-  assert.equal(tasks.length, 1);
-  const task = tasks[0];
+  // Create a pick task manually linked to the RESERVED reservation
+  const task = await createPickTask(harness.tenantId, {
+    pickBatchId: (await harness.pool.query(
+      `INSERT INTO pick_batches (id, tenant_id, status, pick_type, notes, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, 'draft', 'single_order', NULL, now(), now()) RETURNING id`,
+      [harness.tenantId]
+    )).rows[0].id,
+    inventoryReservationId: reservations[0].id,
+    salesOrderLineId: order.lines[0].id,
+    itemId: item.id,
+    uom: 'each',
+    fromLocationId: topology.defaults.SELLABLE.id,
+    quantityRequested: 3
+  });
 
   // Confirm pick while reservation is still RESERVED → must fail
   await assert.rejects(
