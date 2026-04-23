@@ -9,6 +9,7 @@ export const IDEMPOTENCY_ENDPOINTS = Object.freeze({
   QC_EVENTS_CREATE: 'qc_events.post',
   QC_WAREHOUSE_ACCEPT: 'qc.accept_warehouse_disposition',
   QC_WAREHOUSE_REJECT: 'qc.reject_warehouse_disposition',
+  SHIPPING_CONTAINERS_SHIP: 'shipping_containers.ship',
   RESERVATIONS_CREATE: 'otc.create_reservations',
   RESERVATIONS_ALLOCATE: 'otc.allocate_reservation',
   RESERVATIONS_CANCEL: 'otc.cancel_reservation',

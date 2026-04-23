@@ -60,6 +60,22 @@ import { resolveAtpRetryBudgets } from '../config/atpRetryBudgets';
 export type SalesOrderInput = z.infer<typeof salesOrderSchema>;
 export type ReservationInput = z.infer<typeof reservationSchema>;
 export type ReservationCreateInput = z.infer<typeof reservationsCreateSchema>;
+export type PostShipmentInternalHooks = {
+  onLoaded?: (context: {
+    client: PoolClient;
+    shipment: any;
+    shipmentLines: any[];
+    shipmentAlreadyPosted: boolean;
+  }) => Promise<void>;
+  afterPost?: (context: {
+    client: PoolClient;
+    shipment: any;
+    shipmentLines: any[];
+    movementId: string;
+    occurredAt: Date;
+    idempotencyKey: string;
+  }) => Promise<void>;
+};
 type ReservationCreateLine = ReservationCreateInput['reservations'][number];
 type PreparedReservationCreateLine = {
   reservation: ReservationCreateLine;
@@ -2023,6 +2039,7 @@ export async function postShipment(
     actor?: { type: 'user' | 'system'; id?: string | null; role?: string | null };
     overrideRequested?: boolean;
     overrideReason?: string | null;
+    internalHooks?: PostShipmentInternalHooks;
   }
 ) {
   if (!params.idempotencyKey) {
@@ -2125,6 +2142,15 @@ export async function postShipment(
           throw new Error('SHIPMENT_NO_LINES');
         }
         shipmentLines = linesRes.rows;
+        const detectedShipmentAlreadyPosted = shipment.inventory_movement_id || shipment.status === 'posted';
+        if (params.internalHooks?.onLoaded) {
+          await params.internalHooks.onLoaded({
+            client,
+            shipment,
+            shipmentLines,
+            shipmentAlreadyPosted: !!detectedShipmentAlreadyPosted
+          });
+        }
         if (shipment.inventory_movement_id || shipment.status === 'posted') {
           shipmentAlreadyPosted = true;
           shipmentRetryContext = {
@@ -2244,7 +2270,7 @@ export async function postShipment(
               reason: 'shipment_posted_without_movement'
             });
           }
-          return buildShipmentReplayResult({
+          const replayed = await buildShipmentReplayResult({
             tenantId,
             shipmentId,
             movementId: shipment.inventory_movement_id,
@@ -2252,6 +2278,17 @@ export async function postShipment(
             idempotencyKey: transactionalIdempotencyKey,
             client
           });
+          if (params.internalHooks?.afterPost) {
+            await params.internalHooks.afterPost({
+              client,
+              shipment,
+              shipmentLines,
+              movementId: shipment.inventory_movement_id,
+              occurredAt: new Date(),
+              idempotencyKey: transactionalIdempotencyKey
+            });
+          }
+          return replayed;
         }
         if (!shipFromWarehouseId) {
           throw new Error('WAREHOUSE_SCOPE_REQUIRED');
@@ -2439,7 +2476,7 @@ export async function postShipment(
         const itemsToRefresh = new Set<string>();
 
         if (!movement.created) {
-          return buildShipmentReplayResult({
+          const replayed = await buildShipmentReplayResult({
             tenantId,
             shipmentId,
             movementId: movement.movementId,
@@ -2447,6 +2484,17 @@ export async function postShipment(
             idempotencyKey: transactionalIdempotencyKey,
             client
           });
+          if (params.internalHooks?.afterPost) {
+            await params.internalHooks.afterPost({
+              client,
+              shipment,
+              shipmentLines,
+              movementId: movement.movementId,
+              occurredAt: now,
+              idempotencyKey: transactionalIdempotencyKey
+            });
+          }
+          return replayed;
         }
 
         for (const lineContext of plannedShipmentLines) {
@@ -2560,6 +2608,17 @@ export async function postShipment(
             WHERE id = $4 AND tenant_id = $5`,
           [movement.movementId, now, transactionalIdempotencyKey, shipmentId, tenantId]
         );
+
+        if (params.internalHooks?.afterPost) {
+          await params.internalHooks.afterPost({
+            client,
+            shipment,
+            shipmentLines,
+            movementId: movement.movementId,
+            occurredAt: now,
+            idempotencyKey: transactionalIdempotencyKey
+          });
+        }
 
         events.push(buildMovementPostedEvent(movement.movementId, transactionalIdempotencyKey));
 

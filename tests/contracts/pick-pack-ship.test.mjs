@@ -645,6 +645,44 @@ test('pack: adding a pending (unpicked) task to a container is rejected', async 
   assert.equal(containerItem.pickTaskId, task.id);
 });
 
+test('pack: adding inventory to a container requires a picked task reference', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp6-pack-task-required',
+    tenantName: 'WP6 Pack Task Required'
+  });
+  const { topology } = harness;
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'PACK-REQ',
+    type: 'raw'
+  });
+  const customer = await harness.createCustomer('PKREQ');
+  const order = await harness.createSalesOrder({
+    soNumber: `SO-PKREQ-${randomUUID().slice(0, 8)}`,
+    customerId: customer.id,
+    status: 'submitted',
+    warehouseId: topology.warehouse.id,
+    shipFromLocationId: topology.defaults.SELLABLE.id,
+    lines: [{ itemId: item.id, uom: 'each', quantityOrdered: 2 }]
+  });
+  const container = await createShippingContainer(harness.tenantId, {
+    packageRef: 'BOX-PKREQ'
+  });
+
+  await assert.rejects(
+    () => addShippingContainerItem(harness.tenantId, container.id, {
+      salesOrderLineId: order.lines[0].id,
+      itemId: item.id,
+      uom: 'each',
+      quantity: 1
+    }),
+    (err) => {
+      assert.equal(err.message, 'PACK_PICK_TASK_REQUIRED');
+      return true;
+    }
+  );
+});
+
 test('seal: sealing a container twice is rejected', async () => {
   const harness = await createServiceHarness({
     tenantPrefix: 'wp6-seal-twice',
@@ -955,6 +993,202 @@ test('ship: shipping a container twice is rejected', async () => {
   );
 });
 
+test('ship: retry with the same idempotency key replays safely without duplicate exit', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp6-ship-replay',
+    tenantName: 'WP6 Ship Replay'
+  });
+  const { topology } = harness;
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'SHIP-REPLAY',
+    type: 'raw'
+  });
+  await harness.seedStockViaCount({
+    warehouseId: topology.warehouse.id,
+    itemId: item.id,
+    locationId: topology.defaults.SELLABLE.id,
+    quantity: 8,
+    unitCost: 7
+  });
+  const customer = await harness.createCustomer('SREPLAY');
+  const order = await harness.createSalesOrder({
+    soNumber: `SO-SREPLAY-${randomUUID().slice(0, 8)}`,
+    customerId: customer.id,
+    status: 'submitted',
+    warehouseId: topology.warehouse.id,
+    shipFromLocationId: topology.defaults.SELLABLE.id,
+    lines: [{ itemId: item.id, uom: 'each', quantityOrdered: 5 }]
+  });
+
+  const reservations = await createReservations(
+    harness.tenantId,
+    {
+      reservations: [{
+        demandType: 'sales_order_line',
+        demandId: order.lines[0].id,
+        itemId: item.id,
+        locationId: topology.defaults.SELLABLE.id,
+        warehouseId: topology.warehouse.id,
+        uom: 'each',
+        quantityReserved: 5
+      }]
+    },
+    { idempotencyKey: `sreplay-res:${randomUUID()}` }
+  );
+  await allocateReservation(harness.tenantId, reservations[0].id, topology.warehouse.id, {
+    idempotencyKey: `sreplay-alloc:${randomUUID()}`
+  });
+  const { tasks } = await createWave(harness.tenantId, [order.id]);
+  await confirmPickTask(harness.tenantId, tasks[0].id, { quantityPicked: 5 });
+
+  const shipment = await harness.createShipment({
+    salesOrderId: order.id,
+    shippedAt: new Date().toISOString(),
+    shipFromLocationId: topology.defaults.SELLABLE.id,
+    lines: [{ salesOrderLineId: order.lines[0].id, uom: 'each', quantityShipped: 5 }]
+  });
+  const container = await createShippingContainer(harness.tenantId, {
+    salesOrderShipmentId: shipment.id,
+    packageRef: 'BOX-SREPLAY'
+  });
+  await addShippingContainerItem(harness.tenantId, container.id, {
+    pickTaskId: tasks[0].id,
+    salesOrderLineId: order.lines[0].id,
+    itemId: item.id,
+    uom: 'each',
+    quantity: 5
+  });
+  await sealShippingContainer(harness.tenantId, container.id);
+
+  const idempotencyKey = `sreplay-ship:${randomUUID()}`;
+  const first = await shipContainer(harness.tenantId, container.id, {
+    idempotencyKey,
+    actor: { type: 'system', id: null }
+  });
+  const replayed = await shipContainer(harness.tenantId, container.id, {
+    idempotencyKey,
+    actor: { type: 'system', id: null }
+  });
+
+  assert.equal(first.status, 'shipped');
+  assert.equal(replayed.status, 'shipped');
+
+  const balanceAfter = await readBalance(harness, item.id, topology.defaults.SELLABLE.id);
+  assert.equal(balanceAfter.onHand, 3);
+  assert.equal(balanceAfter.allocated, 0);
+
+  const movementCount = await harness.pool.query(
+    `SELECT COUNT(*)::int AS movement_count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_type = 'shipment_post'
+        AND source_id = $2`,
+    [harness.tenantId, shipment.id]
+  );
+  assert.equal(Number(movementCount.rows[0].movement_count), 1);
+});
+
+test('ship: concurrent double-ship only allows one successful finalization', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp6-ship-race',
+    tenantName: 'WP6 Ship Race'
+  });
+  const { topology } = harness;
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'SHIP-RACE',
+    type: 'raw'
+  });
+  await harness.seedStockViaCount({
+    warehouseId: topology.warehouse.id,
+    itemId: item.id,
+    locationId: topology.defaults.SELLABLE.id,
+    quantity: 8,
+    unitCost: 7
+  });
+  const customer = await harness.createCustomer('SRACE');
+  const order = await harness.createSalesOrder({
+    soNumber: `SO-SRACE-${randomUUID().slice(0, 8)}`,
+    customerId: customer.id,
+    status: 'submitted',
+    warehouseId: topology.warehouse.id,
+    shipFromLocationId: topology.defaults.SELLABLE.id,
+    lines: [{ itemId: item.id, uom: 'each', quantityOrdered: 5 }]
+  });
+
+  const reservations = await createReservations(
+    harness.tenantId,
+    {
+      reservations: [{
+        demandType: 'sales_order_line',
+        demandId: order.lines[0].id,
+        itemId: item.id,
+        locationId: topology.defaults.SELLABLE.id,
+        warehouseId: topology.warehouse.id,
+        uom: 'each',
+        quantityReserved: 5
+      }]
+    },
+    { idempotencyKey: `srace-res:${randomUUID()}` }
+  );
+  await allocateReservation(harness.tenantId, reservations[0].id, topology.warehouse.id, {
+    idempotencyKey: `srace-alloc:${randomUUID()}`
+  });
+  const { tasks } = await createWave(harness.tenantId, [order.id]);
+  await confirmPickTask(harness.tenantId, tasks[0].id, { quantityPicked: 5 });
+
+  const shipment = await harness.createShipment({
+    salesOrderId: order.id,
+    shippedAt: new Date().toISOString(),
+    shipFromLocationId: topology.defaults.SELLABLE.id,
+    lines: [{ salesOrderLineId: order.lines[0].id, uom: 'each', quantityShipped: 5 }]
+  });
+  const container = await createShippingContainer(harness.tenantId, {
+    salesOrderShipmentId: shipment.id,
+    packageRef: 'BOX-SRACE'
+  });
+  await addShippingContainerItem(harness.tenantId, container.id, {
+    pickTaskId: tasks[0].id,
+    salesOrderLineId: order.lines[0].id,
+    itemId: item.id,
+    uom: 'each',
+    quantity: 5
+  });
+  await sealShippingContainer(harness.tenantId, container.id);
+
+  const [first, second] = await Promise.allSettled([
+    shipContainer(harness.tenantId, container.id, {
+      idempotencyKey: `srace-ship-a:${randomUUID()}`,
+      actor: { type: 'system', id: null }
+    }),
+    shipContainer(harness.tenantId, container.id, {
+      idempotencyKey: `srace-ship-b:${randomUUID()}`,
+      actor: { type: 'system', id: null }
+    })
+  ]);
+
+  const fulfilled = [first, second].filter((result) => result.status === 'fulfilled');
+  const rejected = [first, second].filter((result) => result.status === 'rejected');
+  assert.equal(fulfilled.length, 1);
+  assert.equal(rejected.length, 1);
+  assert.equal(rejected[0].reason.message, 'SHIPPING_CONTAINER_NOT_SEALED');
+
+  const movementCount = await harness.pool.query(
+    `SELECT COUNT(*)::int AS movement_count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND source_type = 'shipment_post'
+        AND source_id = $2`,
+    [harness.tenantId, shipment.id]
+  );
+  assert.equal(Number(movementCount.rows[0].movement_count), 1);
+
+  const balanceAfter = await readBalance(harness, item.id, topology.defaults.SELLABLE.id);
+  assert.equal(balanceAfter.onHand, 3);
+  assert.equal(balanceAfter.allocated, 0);
+});
+
 // ─── D: Pack cannot exceed picked quantity ────────────────────────────────────
 
 test('pack integrity: packed quantity cannot exceed picked quantity', async () => {
@@ -1034,6 +1268,77 @@ test('pack integrity: packed quantity cannot exceed picked quantity', async () =
     quantity: 3
   });
   assert.equal(containerItem.quantity, 3);
+});
+
+test('pack integrity: packed line must match the picked task item and order line', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp6-pack-task-match',
+    tenantName: 'WP6 Pack Task Match'
+  });
+  const { topology } = harness;
+  const itemA = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'PACK-MATCH-A',
+    type: 'raw'
+  });
+  const itemB = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'PACK-MATCH-B',
+    type: 'raw'
+  });
+  await harness.seedStockViaCount({
+    warehouseId: topology.warehouse.id,
+    itemId: itemA.id,
+    locationId: topology.defaults.SELLABLE.id,
+    quantity: 5,
+    unitCost: 5
+  });
+  const customer = await harness.createCustomer('PKMATCH');
+  const order = await harness.createSalesOrder({
+    soNumber: `SO-PKMATCH-${randomUUID().slice(0, 8)}`,
+    customerId: customer.id,
+    status: 'submitted',
+    warehouseId: topology.warehouse.id,
+    shipFromLocationId: topology.defaults.SELLABLE.id,
+    lines: [{ itemId: itemA.id, uom: 'each', quantityOrdered: 3 }]
+  });
+
+  const reservations = await createReservations(
+    harness.tenantId,
+    {
+      reservations: [{
+        demandType: 'sales_order_line',
+        demandId: order.lines[0].id,
+        itemId: itemA.id,
+        locationId: topology.defaults.SELLABLE.id,
+        warehouseId: topology.warehouse.id,
+        uom: 'each',
+        quantityReserved: 3
+      }]
+    },
+    { idempotencyKey: `pkmatch-res:${randomUUID()}` }
+  );
+  await allocateReservation(harness.tenantId, reservations[0].id, topology.warehouse.id, {
+    idempotencyKey: `pkmatch-alloc:${randomUUID()}`
+  });
+
+  const { tasks } = await createWave(harness.tenantId, [order.id]);
+  await confirmPickTask(harness.tenantId, tasks[0].id, { quantityPicked: 3 });
+
+  const container = await createShippingContainer(harness.tenantId, { packageRef: 'BOX-PKMATCH' });
+  await assert.rejects(
+    () => addShippingContainerItem(harness.tenantId, container.id, {
+      pickTaskId: tasks[0].id,
+      salesOrderLineId: order.lines[0].id,
+      itemId: itemB.id,
+      uom: 'each',
+      quantity: 1
+    }),
+    (err) => {
+      assert.equal(err.message, 'PACK_PICK_TASK_ITEM_MISMATCH');
+      return true;
+    }
+  );
 });
 
 // ─── E: Same pick task cannot be packed beyond picked qty across containers ───
@@ -1337,4 +1642,88 @@ test('partial shipment: picking and shipping less than ordered leaves correct re
   // 3 units remain allocated for the unfulfilled portion of the reservation (correct)
   assert.equal(bFinal.allocated, 3);
   assert.equal(bFinal.reserved, 0);
+});
+
+test('ship: linked shipment quantities must exactly match sealed container contents', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp6-ship-mismatch',
+    tenantName: 'WP6 Ship Mismatch'
+  });
+  const { topology } = harness;
+  const item = await harness.createItem({
+    defaultLocationId: topology.defaults.SELLABLE.id,
+    skuPrefix: 'SHIP-MISMATCH',
+    type: 'raw'
+  });
+  await harness.seedStockViaCount({
+    warehouseId: topology.warehouse.id,
+    itemId: item.id,
+    locationId: topology.defaults.SELLABLE.id,
+    quantity: 8,
+    unitCost: 6
+  });
+  const customer = await harness.createCustomer('SMISMATCH');
+  const order = await harness.createSalesOrder({
+    soNumber: `SO-SMISMATCH-${randomUUID().slice(0, 8)}`,
+    customerId: customer.id,
+    status: 'submitted',
+    warehouseId: topology.warehouse.id,
+    shipFromLocationId: topology.defaults.SELLABLE.id,
+    lines: [{ itemId: item.id, uom: 'each', quantityOrdered: 5 }]
+  });
+
+  const reservations = await createReservations(
+    harness.tenantId,
+    {
+      reservations: [{
+        demandType: 'sales_order_line',
+        demandId: order.lines[0].id,
+        itemId: item.id,
+        locationId: topology.defaults.SELLABLE.id,
+        warehouseId: topology.warehouse.id,
+        uom: 'each',
+        quantityReserved: 5
+      }]
+    },
+    { idempotencyKey: `smismatch-res:${randomUUID()}` }
+  );
+  await allocateReservation(harness.tenantId, reservations[0].id, topology.warehouse.id, {
+    idempotencyKey: `smismatch-alloc:${randomUUID()}`
+  });
+  const { tasks } = await createWave(harness.tenantId, [order.id]);
+  await confirmPickTask(harness.tenantId, tasks[0].id, { quantityPicked: 5 });
+
+  const shipment = await harness.createShipment({
+    salesOrderId: order.id,
+    shippedAt: new Date().toISOString(),
+    shipFromLocationId: topology.defaults.SELLABLE.id,
+    lines: [{ salesOrderLineId: order.lines[0].id, uom: 'each', quantityShipped: 5 }]
+  });
+  const container = await createShippingContainer(harness.tenantId, {
+    salesOrderShipmentId: shipment.id,
+    packageRef: 'BOX-SMISMATCH'
+  });
+  await addShippingContainerItem(harness.tenantId, container.id, {
+    pickTaskId: tasks[0].id,
+    salesOrderLineId: order.lines[0].id,
+    itemId: item.id,
+    uom: 'each',
+    quantity: 4
+  });
+  await sealShippingContainer(harness.tenantId, container.id);
+
+  await assert.rejects(
+    () => shipContainer(harness.tenantId, container.id, {
+      idempotencyKey: `smismatch-ship:${randomUUID()}`,
+      actor: { type: 'system', id: null }
+    }),
+    (err) => {
+      assert.equal(err.message, 'SHIPPING_CONTAINER_CONTENT_MISMATCH');
+      return true;
+    }
+  );
+
+  const balanceAfter = await readBalance(harness, item.id, topology.defaults.SELLABLE.id);
+  assert.equal(balanceAfter.onHand, 8);
+  assert.equal(balanceAfter.allocated, 5);
 });
