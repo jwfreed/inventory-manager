@@ -25,6 +25,7 @@
     "tests/contracts/work-order-issue.test.mjs",
     "tests/contracts/work-order-production-report-invariants.test.mjs",
     "tests/contracts/work-order-reversal.test.mjs",
-    "tests/unit/putawayAllocationEligibility.test.mjs"
+    "tests/unit/putawayAllocationEligibility.test.mjs",
+    "tests/contracts/pick-pack-ship.test.mjs"
   ]
 }

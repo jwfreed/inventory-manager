@@ -109,22 +109,80 @@ export async function getShippingContainer(tenantId: string, id: string) {
 }
 
 export async function addShippingContainerItem(tenantId: string, containerId: string, item: ShippingContainerItemInput) {
-  const res = await query(
-    `INSERT INTO shipment_container_items (id, tenant_id, shipment_container_id, pick_task_id, sales_order_line_id, item_id, uom, quantity)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-     RETURNING *`,
-    [
-      uuidv4(),
-      tenantId,
-      containerId,
-      item.pickTaskId ?? null,
-      item.salesOrderLineId,
-      item.itemId,
-      item.uom,
-      item.quantity,
-    ],
-  )
-  return mapShippingContainerItem(res.rows[0])
+  return withTransaction(async (client) => {
+    // Validate container is open
+    const containerRes = await client.query(
+      `SELECT status FROM shipment_containers WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [containerId, tenantId]
+    );
+    if (containerRes.rowCount === 0) {
+      throw new Error('SHIPPING_CONTAINER_NOT_FOUND');
+    }
+    if (containerRes.rows[0].status !== 'open') {
+      throw new Error('SHIPPING_CONTAINER_NOT_OPEN');
+    }
+
+    // Only picked inventory can be packed: validate pick task is picked
+    if (item.pickTaskId) {
+      const taskRes = await client.query(
+        `SELECT status FROM pick_tasks WHERE id = $1 AND tenant_id = $2`,
+        [item.pickTaskId, tenantId]
+      );
+      if (taskRes.rowCount === 0) {
+        throw new Error('PICK_TASK_NOT_FOUND');
+      }
+      if (taskRes.rows[0].status !== 'picked') {
+        throw new Error('PICK_TASK_NOT_PICKED');
+      }
+    }
+
+    const res = await client.query(
+      `INSERT INTO shipment_container_items (id, tenant_id, shipment_container_id, pick_task_id, sales_order_line_id, item_id, uom, quantity)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING *`,
+      [
+        uuidv4(),
+        tenantId,
+        containerId,
+        item.pickTaskId ?? null,
+        item.salesOrderLineId,
+        item.itemId,
+        item.uom,
+        item.quantity,
+      ],
+    );
+    return mapShippingContainerItem(res.rows[0]);
+  });
+}
+
+export async function sealShippingContainer(tenantId: string, containerId: string) {
+  return withTransaction(async (client) => {
+    const now = new Date();
+    const containerRes = await client.query(
+      `SELECT status FROM shipment_containers WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [containerId, tenantId]
+    );
+    if (containerRes.rowCount === 0) {
+      throw new Error('SHIPPING_CONTAINER_NOT_FOUND');
+    }
+    if (containerRes.rows[0].status !== 'open') {
+      throw new Error('SHIPPING_CONTAINER_NOT_OPEN');
+    }
+    const update = await client.query(
+      `UPDATE shipment_containers
+          SET status = 'sealed',
+              updated_at = $1
+        WHERE id = $2
+          AND tenant_id = $3
+          AND status = 'open'
+        RETURNING *`,
+      [now, containerId, tenantId]
+    );
+    if (update.rowCount === 0) {
+      throw new Error('SHIPPING_CONTAINER_NOT_OPEN');
+    }
+    return mapShippingContainer(update.rows[0]);
+  });
 }
 
 export async function deleteShippingContainerItem(tenantId: string, containerId: string, itemId: string) {

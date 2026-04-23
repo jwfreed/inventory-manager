@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import { query, withTransaction } from '../db';
 import type { pickBatchSchema, pickTaskSchema } from '../schemas/picking.schema';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
+import { roundQuantity, toNumber } from '../lib/numbers';
 
 export type PickBatchInput = z.infer<typeof pickBatchSchema>;
 export type PickTaskInput = z.infer<typeof pickTaskSchema>;
@@ -179,4 +180,72 @@ export async function getPickTask(tenantId: string, id: string) {
   const res = await query('SELECT * FROM pick_tasks WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   if (res.rowCount === 0) return null;
   return mapPickTask(res.rows[0]);
+}
+
+export async function confirmPickTask(
+  tenantId: string,
+  taskId: string,
+  params: { quantityPicked: number }
+) {
+  return withTransaction(async (client) => {
+    const now = new Date();
+
+    // Lock the pick task to prevent concurrent confirmation
+    const taskRes = await client.query(
+      `SELECT * FROM pick_tasks WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [taskId, tenantId]
+    );
+    if (taskRes.rowCount === 0) {
+      throw new Error('PICK_TASK_NOT_FOUND');
+    }
+    const task = taskRes.rows[0];
+
+    if (task.status !== 'pending') {
+      throw new Error('PICK_TASK_INVALID_STATE');
+    }
+
+    const quantityPicked = roundQuantity(toNumber(params.quantityPicked));
+    const quantityRequested = roundQuantity(toNumber(task.quantity_requested));
+
+    if (!Number.isFinite(quantityPicked) || quantityPicked <= 1e-6) {
+      throw new Error('PICK_TASK_INVALID_QUANTITY');
+    }
+    if (quantityPicked - quantityRequested > 1e-6) {
+      throw new Error('PICK_TASK_EXCEEDS_REQUESTED');
+    }
+
+    // Only allocated inventory can be picked: validate reservation is ALLOCATED
+    if (task.inventory_reservation_id) {
+      const reservationRes = await client.query(
+        `SELECT status FROM inventory_reservations
+          WHERE id = $1 AND tenant_id = $2`,
+        [task.inventory_reservation_id, tenantId]
+      );
+      if (reservationRes.rowCount === 0) {
+        throw new Error('PICK_TASK_RESERVATION_NOT_FOUND');
+      }
+      if (reservationRes.rows[0].status !== 'ALLOCATED') {
+        throw new Error('PICK_TASK_RESERVATION_NOT_ALLOCATED');
+      }
+    }
+
+    // Conditional update: prevents double-pick via status guard
+    const update = await client.query(
+      `UPDATE pick_tasks
+          SET status = 'picked',
+              quantity_picked = $1,
+              picked_at = $2,
+              updated_at = $2
+        WHERE id = $3
+          AND tenant_id = $4
+          AND status = 'pending'
+        RETURNING *`,
+      [quantityPicked, now, taskId, tenantId]
+    );
+    if (update.rowCount === 0) {
+      throw new Error('PICK_TASK_INVALID_STATE');
+    }
+
+    return mapPickTask(update.rows[0]);
+  });
 }
