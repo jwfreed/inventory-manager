@@ -235,6 +235,11 @@ function mapCycleCount(
   useSnapshots: boolean
 ) {
   const { lineSummaries, summary } = mapCycleCountLines(row, lines, systemMap, useSnapshots);
+  const totalLines = lineSummaries.length;
+  const reconciledLines = lineSummaries.filter((l) => l.taskStatus === 'reconciled').length;
+  const countedLines = lineSummaries.filter((l) => l.taskStatus === 'counted').length;
+  const pendingLines = lineSummaries.filter((l) => l.taskStatus === 'pending').length;
+  const completionProgress = totalLines === 0 ? 0 : roundQuantity(reconciledLines / totalLines);
   return {
     id: row.id,
     warehouseId: row.warehouse_id,
@@ -251,7 +256,8 @@ function mapCycleCount(
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lines: lineSummaries,
-    summary
+    summary,
+    progress: { totalLines, reconciledLines, countedLines, pendingLines, completionProgress }
   };
 }
 
@@ -596,6 +602,12 @@ export async function updateInventoryCount(
       throw new Error('COUNT_NOT_FOUND');
     }
     const header = countRes.rows[0];
+    if (header.status === 'completed') {
+      throw new Error('COUNT_ALREADY_COMPLETED');
+    }
+    if (header.status === 'in_progress') {
+      throw new Error('COUNT_MUTATION_NOT_ALLOWED');
+    }
     if (header.status !== 'draft') {
       throw new Error('COUNT_NOT_DRAFT');
     }
@@ -1282,6 +1294,9 @@ export async function recordCount(
       throw new Error('COUNT_NOT_FOUND');
     }
     const cycleCount = countResult.rows[0];
+    if (cycleCount.status === 'completed') {
+      throw new Error('COUNT_ALREADY_COMPLETED');
+    }
     if (cycleCount.status === 'posted') {
       throw new Error('COUNT_ALREADY_POSTED');
     }
@@ -1378,6 +1393,9 @@ export async function reconcileTask(
         throw new Error('COUNT_NOT_FOUND');
       }
       cycleCount = countResult.rows[0];
+      if (cycleCount.status === 'completed') {
+        throw new Error('COUNT_ALREADY_COMPLETED');
+      }
       if (cycleCount.status === 'posted') {
         throw new Error('COUNT_ALREADY_POSTED');
       }
@@ -1689,5 +1707,64 @@ export async function reconcileTask(
         projectionOps
       };
     }
+  });
+}
+
+/**
+ * completeCycleCount — transition a session to 'completed'.
+ *
+ * Preconditions (enforced under session row lock):
+ *   - session must be in_progress
+ *   - ALL cycle_count_lines must have task_status = 'reconciled'
+ *
+ * Idempotent: if already completed, returns current state without error.
+ * Concurrency: session row is locked FOR UPDATE before the line check,
+ * so a concurrent reconcileTask that finishes last and a concurrent
+ * completeCycleCount cannot race past the guard.
+ */
+export async function completeCycleCount(tenantId: string, countId: string) {
+  return withTransaction(async (client: PoolClient) => {
+    const countResult = await client.query<CycleCountRow>(
+      'SELECT * FROM cycle_counts WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+      [countId, tenantId]
+    );
+    if (countResult.rowCount === 0) {
+      throw new Error('COUNT_NOT_FOUND');
+    }
+    const cycleCount = countResult.rows[0];
+
+    if (cycleCount.status === 'completed') {
+      return fetchCycleCountById(tenantId, countId, client);
+    }
+    if (cycleCount.status === 'posted') {
+      throw new Error('COUNT_ALREADY_POSTED');
+    }
+    if (cycleCount.status === 'canceled') {
+      throw new Error('COUNT_CANCELED');
+    }
+    if (cycleCount.status === 'draft') {
+      throw new Error('COUNT_MUTATION_NOT_ALLOWED');
+    }
+
+    // Under the session lock, verify every line is reconciled
+    const unreconciledResult = await client.query<{ cnt: number }>(
+      `SELECT count(*)::int AS cnt
+         FROM cycle_count_lines
+        WHERE cycle_count_id = $1
+          AND tenant_id = $2
+          AND task_status != 'reconciled'`,
+      [countId, tenantId]
+    );
+    if (unreconciledResult.rows[0].cnt > 0) {
+      throw new Error('COUNT_COMPLETION_INCOMPLETE');
+    }
+
+    const now = new Date();
+    await client.query(
+      `UPDATE cycle_counts SET status = 'completed', updated_at = $1 WHERE id = $2 AND tenant_id = $3`,
+      [now, countId, tenantId]
+    );
+
+    return fetchCycleCountById(tenantId, countId, client);
   });
 }
