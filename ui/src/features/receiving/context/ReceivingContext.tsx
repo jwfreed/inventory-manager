@@ -354,7 +354,6 @@ export function ReceivingProvider({ children }: Props) {
         await createQcEvent(queuedPayload.request, {
           idempotencyKey: queuedPayload.idempotencyKey,
         })
-        qcOperationIdempotencyKeysRef.current.delete(buildQcEventOperationSignature(queuedPayload.request))
         break
       }
       case 'putaway-create':
