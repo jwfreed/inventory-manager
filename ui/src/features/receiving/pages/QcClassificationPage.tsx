@@ -344,6 +344,7 @@ export default function QcClassificationPage() {
                         onReasonCodeChange={(reasonCode) => ctx.updateQcDraft({ reasonCode })}
                         onNotesChange={(notes) => ctx.updateQcDraft({ notes })}
                         onRecord={ctx.onCreateQcEvent}
+                        onQuickAccept={ctx.onQuickAcceptQc}
                         onResolveHoldDisposition={ctx.onResolveHoldDisposition}
                         putawayAvailable={ctx.selectedQcLine.availableForNewPutaway ?? ctx.selectedQcLine.remainingQuantityToPutaway ?? 0}
                         putawayBlockedReason={ctx.selectedQcLine.putawayBlockedReason ?? null}

@@ -1895,6 +1895,33 @@ async function createHoldFixture(harness, { quantity = 10 } = {}) {
   return fixture;
 }
 
+test('hold disposition response shape includes warehouse ids', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'wp3-hold-response-shape',
+    tenantName: 'WP3 Hold Response Shape'
+  });
+  const { tenantId, topology } = harness;
+
+  const fixture = await createHoldFixture(harness, { quantity: 10 });
+
+  const result = await resolveHoldDisposition(
+    tenantId,
+    {
+      purchaseOrderReceiptLineId: fixture.receiptLineId,
+      dispositionType: 'release',
+      quantity: 10,
+      uom: 'each',
+      actorType: 'system'
+    },
+    { idempotencyKey: `wp3-hold-response-shape:${randomUUID()}` }
+  );
+
+  assert.equal(result.sourceLocationId, topology.defaults.HOLD.id);
+  assert.equal(result.destinationLocationId, topology.defaults.SELLABLE.id);
+  assert.equal(result.sourceWarehouseId, topology.warehouse.id);
+  assert.equal(result.destinationWarehouseId, topology.warehouse.id);
+});
+
 test('hold → release: held quantity becomes available, QC completes', { timeout: 240000 }, async () => {
   const harness = await createServiceHarness({
     tenantPrefix: 'wp3-hold-release',

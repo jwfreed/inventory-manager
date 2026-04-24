@@ -122,6 +122,7 @@ export type ReceivingContextValue = {
   qcEventMutation: ReturnType<typeof useMutation<QcEvent, unknown, QcEventCreatePayload>>
   holdDispositionMutation: ReturnType<typeof useMutation<HoldDispositionResult, unknown, HoldDispositionPayload>>
   onCreateQcEvent: () => void
+  onQuickAcceptQc: () => void
   onResolveHoldDisposition: (
     dispositionType: HoldDispositionPayload['dispositionType'],
     quantity: number,
@@ -881,6 +882,33 @@ export function ReceivingProvider({ children }: Props) {
     qcEventMutation.mutate(payload)
   }, [selectedQcLine, qcQuantityInvalid, qcEventType, qcQuantityNumber, qcReasonCode, qcNotes, user, qcEventMutation, isOnline, queueOperation, updateQcDraft])
 
+  const onQuickAcceptQc = useCallback(async () => {
+    if (!selectedQcLine) return
+    if (!(qcRemaining > 0)) return
+
+    qcEventMutation.reset()
+    setLastQcEvent(null)
+    updateQcDraft({ eventType: 'accept', quantity: qcRemaining })
+
+    const payload = {
+      purchaseOrderReceiptLineId: selectedQcLine.id,
+      eventType: 'accept' as const,
+      quantity: qcRemaining,
+      uom: selectedQcLine.uom,
+      actorType: 'user' as const,
+      actorId: user?.id ?? user?.email ?? undefined,
+    }
+
+    if (!isOnline) {
+      await queueOperation({ type: 'qc-event', payload })
+      setLastQcEvent({ ...payload, id: 'pending-' + Date.now(), occurredAt: new Date().toISOString() } as QcEvent)
+      updateQcDraft({ reasonCode: '', notes: '' })
+      return
+    }
+
+    qcEventMutation.mutate(payload)
+  }, [selectedQcLine, qcRemaining, user, qcEventMutation, isOnline, queueOperation, updateQcDraft])
+
   const onResolveHoldDisposition = useCallback(
     (
       dispositionType: HoldDispositionPayload['dispositionType'],
@@ -1429,6 +1457,7 @@ export function ReceivingProvider({ children }: Props) {
       qcEventMutation,
       holdDispositionMutation,
       onCreateQcEvent,
+      onQuickAcceptQc,
       onResolveHoldDisposition,
 
       // Putaway Step
@@ -1547,6 +1576,7 @@ export function ReceivingProvider({ children }: Props) {
       qcEventMutation,
       holdDispositionMutation,
       onCreateQcEvent,
+      onQuickAcceptQc,
       onResolveHoldDisposition,
       putawayLines,
       addPutawayLine,

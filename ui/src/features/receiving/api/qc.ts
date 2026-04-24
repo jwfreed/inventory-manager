@@ -33,6 +33,8 @@ export type HoldDispositionResult = {
   movementId: string
   sourceLocationId: string
   destinationLocationId: string
+  sourceWarehouseId: string
+  destinationWarehouseId: string
   replayed: boolean
 }
 

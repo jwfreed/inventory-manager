@@ -28,6 +28,7 @@ type Props = {
   onReasonCodeChange: (value: string) => void
   onNotesChange: (value: string) => void
   onRecord: () => void
+  onQuickAccept: () => void
   onResolveHoldDisposition: (
     dispositionType: 'release' | 'rework' | 'discard',
     quantity: number,
@@ -61,6 +62,7 @@ export function QcDetailPanel({
   onReasonCodeChange,
   onNotesChange,
   onRecord,
+  onQuickAccept,
   onResolveHoldDisposition,
   putawayAvailable,
   putawayBlockedReason,
@@ -138,14 +140,7 @@ export function QcDetailPanel({
               type="button"
               size="sm"
               variant="primary"
-              onClick={() => {
-                onEventTypeChange('accept')
-                onQuantityChange(qcRemaining)
-                // Auto-submit after short delay to allow user to see the change
-                setTimeout(() => {
-                  if (qcRemaining > 0) onRecord()
-                }, 100)
-              }}
+              onClick={onQuickAccept}
               disabled={qcRemaining <= 0 || mutationPending}
             >
               Accept All <KeyboardHint shortcut="A" />
