@@ -98,6 +98,7 @@ import { useOfflineQueue } from '../../features/receiving/hooks/useOfflineQueue'
 
 const mockedCreateQcEvent = vi.mocked(createQcEvent)
 const mockedUseOfflineQueue = vi.mocked(useOfflineQueue)
+let queueOperationMock = vi.fn()
 
 function QuickAcceptProbe() {
   const ctx = useReceivingContext()
@@ -110,6 +111,50 @@ function QuickAcceptProbe() {
       }}
     >
       quick accept twice
+    </button>
+  )
+}
+
+function RecordQcProbe() {
+  const ctx = useReceivingContext()
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void ctx.onCreateQcEvent()
+        void ctx.onCreateQcEvent()
+      }}
+    >
+      record qc twice
+    </button>
+  )
+}
+
+function ShortcutProbe() {
+  const ctx = useReceivingContext()
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void ctx.onSubmitQcShortcutEvent({
+          purchaseOrderReceiptLineId: 'line-1',
+          eventType: 'hold',
+          quantity: 5,
+          uom: 'each',
+          reasonCode: 'damaged',
+          actorType: 'user',
+        })
+        void ctx.onSubmitQcShortcutEvent({
+          purchaseOrderReceiptLineId: 'line-1',
+          eventType: 'hold',
+          quantity: 5,
+          uom: 'each',
+          reasonCode: 'damaged',
+          actorType: 'user',
+        })
+      }}
+    >
+      shortcut twice
     </button>
   )
 }
@@ -128,12 +173,13 @@ function renderProvider(ui: ReactNode) {
 describe('receiving QC safety', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    queueOperationMock = vi.fn().mockResolvedValue('queued-1')
     mockedUseOfflineQueue.mockImplementation(() => ({
       isOnline: true,
       pendingCount: 0,
       pendingOperations: [],
       isSyncing: false,
-      queueOperation: vi.fn(),
+      queueOperation: queueOperationMock,
       syncPendingOperations: vi.fn(),
       clearQueue: vi.fn(),
     }))
@@ -171,6 +217,66 @@ describe('receiving QC safety', () => {
 
     await waitFor(() => {
       expect(mockedCreateQcEvent).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('blocks duplicate record QC submission while pending', async () => {
+    mockedCreateQcEvent.mockImplementation(
+      () =>
+        new Promise(() => {
+          // Keep the mutation pending so the second record call must be blocked synchronously.
+        }),
+    )
+
+    renderProvider(<RecordQcProbe />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'record qc twice' }))
+
+    await waitFor(() => {
+      expect(mockedCreateQcEvent).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('blocks duplicate shortcut submission while pending', async () => {
+    mockedCreateQcEvent.mockImplementation(
+      () =>
+        new Promise(() => {
+          // Keep the mutation pending so the second shortcut call must be blocked synchronously.
+        }),
+    )
+
+    renderProvider(<ShortcutProbe />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'shortcut twice' }))
+
+    await waitFor(() => {
+      expect(mockedCreateQcEvent).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('blocks duplicate offline quick accept queueing while the operation is being enqueued', async () => {
+    queueOperationMock = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve('queued-1'), 10)
+        }),
+    )
+    mockedUseOfflineQueue.mockImplementation(() => ({
+      isOnline: false,
+      pendingCount: 0,
+      pendingOperations: [],
+      isSyncing: false,
+      queueOperation: queueOperationMock,
+      syncPendingOperations: vi.fn(),
+      clearQueue: vi.fn(),
+    }))
+
+    renderProvider(<QuickAcceptProbe />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'quick accept twice' }))
+
+    await waitFor(() => {
+      expect(queueOperationMock).toHaveBeenCalledTimes(1)
     })
   })
 })

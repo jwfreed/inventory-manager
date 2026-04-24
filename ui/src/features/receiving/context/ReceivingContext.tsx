@@ -18,7 +18,7 @@ import { createReceipt, voidReceiptApi, type ReceiptCreatePayload } from '../api
 import { createPutaway, postPutaway, type PutawayCreatePayload } from '../api/putaways'
 import {
   createQcEvent,
-  createQcEventIdempotencyKey,
+  createNewQcEventIdempotencyKey,
   resolveHoldDisposition,
   type CreateQcEventOptions,
   type HoldDispositionPayload,
@@ -69,6 +69,19 @@ type QueuedQcEventPayload = {
   idempotencyKey: string
 }
 
+function buildQcEventOperationSignature(payload: QcEventCreatePayload) {
+  return JSON.stringify({
+    purchaseOrderReceiptLineId: payload.purchaseOrderReceiptLineId,
+    eventType: payload.eventType,
+    quantity: payload.quantity,
+    uom: payload.uom,
+    reasonCode: payload.reasonCode ?? null,
+    notes: payload.notes ?? null,
+    actorType: payload.actorType,
+    actorId: payload.actorId ?? null,
+  })
+}
+
 function isQueuedQcEventPayload(payload: Record<string, unknown>): payload is QueuedQcEventPayload {
   return (
     typeof payload.idempotencyKey === 'string' &&
@@ -80,7 +93,7 @@ function isQueuedQcEventPayload(payload: Record<string, unknown>): payload is Qu
 
 export function buildQueuedQcEventPayload(
   request: QcEventCreatePayload,
-  idempotencyKey = createQcEventIdempotencyKey(request),
+  idempotencyKey = createNewQcEventIdempotencyKey(request),
 ): QueuedQcEventPayload {
   return {
     request,
@@ -700,6 +713,23 @@ export function ReceivingProvider({ children }: Props) {
   })
 
   const qcShortcutSubmitInFlightRef = useRef(false)
+  const bulkQcSubmitInFlightRef = useRef(false)
+  const qcOperationIdempotencyKeysRef = useRef<Map<string, string>>(new Map())
+
+  const resolveQcEventOperationIdempotencyKey = useCallback(
+    (payload: QcEventCreatePayload, providedIdempotencyKey?: string) => {
+      if (providedIdempotencyKey) return providedIdempotencyKey
+
+      const signature = buildQcEventOperationSignature(payload)
+      const existingIdempotencyKey = qcOperationIdempotencyKeysRef.current.get(signature)
+      if (existingIdempotencyKey) return existingIdempotencyKey
+
+      const idempotencyKey = createNewQcEventIdempotencyKey(payload)
+      qcOperationIdempotencyKeysRef.current.set(signature, idempotencyKey)
+      return idempotencyKey
+    },
+    [],
+  )
 
   const submitQcEventRequest = useCallback(
     async (
@@ -710,25 +740,31 @@ export function ReceivingProvider({ children }: Props) {
         return false
       }
 
-      const idempotencyKey = options?.idempotencyKey ?? createQcEventIdempotencyKey(payload)
+      const idempotencyKey = resolveQcEventOperationIdempotencyKey(payload, options?.idempotencyKey)
 
       qcEventMutation.reset()
       setLastQcEvent(null)
 
-      if (!isOnline) {
-        await queueOperation({
-          type: 'qc-event',
-          payload: buildQueuedQcEventPayload(payload, idempotencyKey),
-        })
-        setLastQcEvent({ ...payload, id: 'pending-' + Date.now(), occurredAt: new Date().toISOString() } as QcEvent)
-        if (options?.resetDraft !== false) {
-          updateQcDraft({ reasonCode: '', notes: '' })
-        }
-        return true
-      }
-
       if (options?.guardPending) {
         qcShortcutSubmitInFlightRef.current = true
+      }
+
+      if (!isOnline) {
+        try {
+          await queueOperation({
+            type: 'qc-event',
+            payload: buildQueuedQcEventPayload(payload, idempotencyKey),
+          })
+          setLastQcEvent({ ...payload, id: 'pending-' + Date.now(), occurredAt: new Date().toISOString() } as QcEvent)
+          if (options?.resetDraft !== false) {
+            updateQcDraft({ reasonCode: '', notes: '' })
+          }
+          return true
+        } finally {
+          if (options?.guardPending) {
+            qcShortcutSubmitInFlightRef.current = false
+          }
+        }
       }
 
       qcEventMutation.mutate(
@@ -746,7 +782,7 @@ export function ReceivingProvider({ children }: Props) {
       )
       return true
     },
-    [isOnline, qcEventMutation, queueOperation, updateQcDraft],
+    [isOnline, qcEventMutation, queueOperation, resolveQcEventOperationIdempotencyKey, updateQcDraft],
   )
 
   const holdDispositionMutation = useMutation({
@@ -974,7 +1010,7 @@ export function ReceivingProvider({ children }: Props) {
       actorId: user?.id ?? user?.email ?? undefined,
     }
 
-    await submitQcEventRequest(payload)
+    await submitQcEventRequest(payload, { guardPending: true })
   }, [selectedQcLine, qcQuantityInvalid, qcEventType, qcQuantityNumber, qcReasonCode, qcNotes, user, submitQcEventRequest])
 
   const onQuickAcceptQc = useCallback(async () => {
@@ -1001,7 +1037,7 @@ export function ReceivingProvider({ children }: Props) {
         ...request,
         actorType: 'user',
         actorId: request.actorId ?? user?.id ?? user?.email ?? undefined,
-      }),
+      }, { guardPending: true }),
     [submitQcEventRequest, user],
   )
 
@@ -1106,7 +1142,9 @@ export function ReceivingProvider({ children }: Props) {
 
   const bulkAcceptQcLines = useCallback(async () => {
     if (selectedQcLineIds.size === 0 || !receiptQuery.data) return
-    
+    if (isBulkProcessing || bulkQcSubmitInFlightRef.current) return
+
+    bulkQcSubmitInFlightRef.current = true
     setIsBulkProcessing(true)
     try {
       const selectedLines = receiptQuery.data.lines?.filter((line) => selectedQcLineIds.has(line.id)) ?? []
@@ -1122,7 +1160,7 @@ export function ReceivingProvider({ children }: Props) {
             actorType: 'user',
             actorId: user?.id ?? user?.email ?? undefined,
           } satisfies QcEventCreatePayload
-          await createQcEvent(payload, { idempotencyKey: createQcEventIdempotencyKey(payload) })
+          await createQcEvent(payload, { idempotencyKey: resolveQcEventOperationIdempotencyKey(payload) })
         }
       }
       
@@ -1133,12 +1171,15 @@ export function ReceivingProvider({ children }: Props) {
       console.error('Bulk accept failed:', error)
     } finally {
       setIsBulkProcessing(false)
+      bulkQcSubmitInFlightRef.current = false
     }
-  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, queryClient, clearQcLineSelection])
+  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, queryClient, clearQcLineSelection, isBulkProcessing, resolveQcEventOperationIdempotencyKey])
 
   const bulkHoldQcLines = useCallback(async (reasonCode: string, notes: string) => {
     if (selectedQcLineIds.size === 0 || !receiptQuery.data) return
-    
+    if (isBulkProcessing || bulkQcSubmitInFlightRef.current) return
+
+    bulkQcSubmitInFlightRef.current = true
     setIsBulkProcessing(true)
     try {
       const selectedLines = receiptQuery.data.lines?.filter((line) => selectedQcLineIds.has(line.id)) ?? []
@@ -1156,7 +1197,7 @@ export function ReceivingProvider({ children }: Props) {
             actorType: 'user',
             actorId: user?.id ?? user?.email ?? undefined,
           } satisfies QcEventCreatePayload
-          await createQcEvent(payload, { idempotencyKey: createQcEventIdempotencyKey(payload) })
+          await createQcEvent(payload, { idempotencyKey: resolveQcEventOperationIdempotencyKey(payload) })
         }
       }
       
@@ -1167,12 +1208,15 @@ export function ReceivingProvider({ children }: Props) {
       console.error('Bulk hold failed:', error)
     } finally {
       setIsBulkProcessing(false)
+      bulkQcSubmitInFlightRef.current = false
     }
-  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, queryClient, clearQcLineSelection])
+  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, queryClient, clearQcLineSelection, isBulkProcessing, resolveQcEventOperationIdempotencyKey])
 
   const bulkRejectQcLines = useCallback(async (reasonCode: string, notes: string) => {
     if (selectedQcLineIds.size === 0 || !receiptQuery.data) return
-    
+    if (isBulkProcessing || bulkQcSubmitInFlightRef.current) return
+
+    bulkQcSubmitInFlightRef.current = true
     setIsBulkProcessing(true)
     try {
       const selectedLines = receiptQuery.data.lines?.filter((line) => selectedQcLineIds.has(line.id)) ?? []
@@ -1190,7 +1234,7 @@ export function ReceivingProvider({ children }: Props) {
             actorType: 'user',
             actorId: user?.id ?? user?.email ?? undefined,
           } satisfies QcEventCreatePayload
-          await createQcEvent(payload, { idempotencyKey: createQcEventIdempotencyKey(payload) })
+          await createQcEvent(payload, { idempotencyKey: resolveQcEventOperationIdempotencyKey(payload) })
         }
       }
       
@@ -1201,8 +1245,9 @@ export function ReceivingProvider({ children }: Props) {
       console.error('Bulk reject failed:', error)
     } finally {
       setIsBulkProcessing(false)
+      bulkQcSubmitInFlightRef.current = false
     }
-  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, queryClient, clearQcLineSelection])
+  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, queryClient, clearQcLineSelection, isBulkProcessing, resolveQcEventOperationIdempotencyKey])
 
   // ─────────────────────────────────────────────────────────────
   // Validation

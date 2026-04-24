@@ -60,50 +60,53 @@ function renderPage() {
 }
 
 describe('QcClassificationPage keyboard shortcuts', () => {
+  const buildContextValue = (overrides: Record<string, unknown> = {}) => ({
+    receiptIdForQc: 'receipt-1',
+    loadReceiptForQc: vi.fn(),
+    selectedQcLineId: 'line-1',
+    selectedQcLine: { id: 'line-1', uom: 'each' },
+    qcStats: { accept: 0, hold: 0, reject: 0, remaining: 5 },
+    onQuickAcceptQc: vi.fn().mockResolvedValue(undefined),
+    onSubmitQcShortcutEvent: vi.fn().mockResolvedValue(true),
+    updateQcDraft: vi.fn(),
+    onCreateQcEvent: vi.fn(),
+    bulkAcceptQcLines: vi.fn(),
+    bulkHoldQcLines: vi.fn(),
+    bulkRejectQcLines: vi.fn(),
+    selectAllQcLines: vi.fn(),
+    toggleQcLineSelection: vi.fn(),
+    setSelectedQcLineId: vi.fn(),
+    filteredReceipts: [],
+    filteredReceiptLines: [],
+    selectedQcLineIds: new Set(),
+    recentReceiptsQuery: { data: { data: [] }, isLoading: false },
+    receiptQuery: { data: null, isLoading: false, isError: false, error: null },
+    receiptTotals: { received: 0, accepted: 0, hold: 0, reject: 0, remaining: 5 },
+    qcEventType: 'accept',
+    qcQuantity: 5,
+    qcReasonCode: '',
+    qcNotes: '',
+    qcQuantityInvalid: false,
+    canRecordQc: true,
+    qcEventsList: [],
+    qcEventMutation: { isPending: false },
+    holdDispositionMutation: { isPending: false, error: null },
+    mapErrorMessage: vi.fn((message: string) => message),
+    getErrorMessage: vi.fn((_error: unknown, fallback: string) => fallback),
+    onResolveHoldDisposition: vi.fn(),
+    updateReceivingParams: vi.fn(),
+    isOnline: true,
+    pendingCount: 0,
+    pendingOperations: [],
+    isSyncing: false,
+    syncPendingOperations: vi.fn(),
+    clearOfflineQueue: vi.fn(),
+    ...overrides,
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
-    mockedUseReceivingContext.mockReturnValue({
-      receiptIdForQc: 'receipt-1',
-      loadReceiptForQc: vi.fn(),
-      selectedQcLineId: 'line-1',
-      selectedQcLine: { id: 'line-1', uom: 'each' },
-      qcStats: { accept: 0, hold: 0, reject: 0, remaining: 5 },
-      onQuickAcceptQc: vi.fn().mockResolvedValue(undefined),
-      onSubmitQcShortcutEvent: vi.fn().mockResolvedValue(true),
-      updateQcDraft: vi.fn(),
-      onCreateQcEvent: vi.fn(),
-      bulkAcceptQcLines: vi.fn(),
-      bulkHoldQcLines: vi.fn(),
-      bulkRejectQcLines: vi.fn(),
-      selectAllQcLines: vi.fn(),
-      toggleQcLineSelection: vi.fn(),
-      setSelectedQcLineId: vi.fn(),
-      filteredReceipts: [],
-      filteredReceiptLines: [],
-      selectedQcLineIds: new Set(),
-      recentReceiptsQuery: { data: { data: [] }, isLoading: false },
-      receiptQuery: { data: null, isLoading: false, isError: false, error: null },
-      receiptTotals: { received: 0, accepted: 0, hold: 0, reject: 0, remaining: 5 },
-      qcEventType: 'accept',
-      qcQuantity: 5,
-      qcReasonCode: '',
-      qcNotes: '',
-      qcQuantityInvalid: false,
-      canRecordQc: true,
-      qcEventsList: [],
-      qcEventMutation: { isPending: false },
-      holdDispositionMutation: { isPending: false, error: null },
-      mapErrorMessage: vi.fn((message: string) => message),
-      getErrorMessage: vi.fn((_error: unknown, fallback: string) => fallback),
-      onResolveHoldDisposition: vi.fn(),
-      updateReceivingParams: vi.fn(),
-      isOnline: true,
-      pendingCount: 0,
-      pendingOperations: [],
-      isSyncing: false,
-      syncPendingOperations: vi.fn(),
-      clearOfflineQueue: vi.fn(),
-    } as any)
+    mockedUseReceivingContext.mockReturnValue(buildContextValue() as any)
   })
 
   it('routes the A shortcut through onQuickAcceptQc without setTimeout', () => {
@@ -151,5 +154,22 @@ describe('QcClassificationPage keyboard shortcuts', () => {
     })
     expect(setTimeoutSpy).not.toHaveBeenCalled()
     expect(promptSpy).toHaveBeenCalledTimes(4)
+  })
+
+  it('does not submit hold or reject shortcuts when the selected line is missing', () => {
+    const promptSpy = vi.spyOn(window, 'prompt')
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        selectedQcLine: undefined,
+      }) as any,
+    )
+
+    renderPage()
+    fireEvent.keyDown(window, { key: 'h' })
+    fireEvent.keyDown(window, { key: 'r' })
+
+    const ctx = mockedUseReceivingContext.mock.results.at(-1)?.value
+    expect(ctx.onSubmitQcShortcutEvent).not.toHaveBeenCalled()
+    expect(promptSpy).not.toHaveBeenCalled()
   })
 })

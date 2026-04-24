@@ -42,7 +42,7 @@ export type HoldDispositionResult = {
   replayed: boolean
 }
 
-export function createQcEventIdempotencyKey(payload: QcEventCreatePayload) {
+export function createNewQcEventIdempotencyKey(payload: QcEventCreatePayload) {
   return createIdempotencyKey(`qc-event:${payload.eventType}:${payload.purchaseOrderReceiptLineId}`)
 }
 
@@ -50,7 +50,7 @@ export async function createQcEvent(
   payload: QcEventCreatePayload,
   options?: CreateQcEventOptions,
 ): Promise<QcEvent> {
-  const idempotencyKey = options?.idempotencyKey ?? createQcEventIdempotencyKey(payload)
+  const idempotencyKey = options?.idempotencyKey ?? createNewQcEventIdempotencyKey(payload)
   return apiPost<QcEvent>('/qc-events', payload, {
     headers: buildIdempotencyHeaders(idempotencyKey),
   })

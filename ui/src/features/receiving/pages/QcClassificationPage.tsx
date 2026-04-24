@@ -65,7 +65,7 @@ export default function QcClassificationPage() {
     {
       key: 'h',
       handler: () => {
-        if (ctx.selectedQcLineId && ctx.qcStats && ctx.qcStats.remaining > 0) {
+        if (ctx.selectedQcLineId && ctx.selectedQcLine && ctx.qcStats && ctx.qcStats.remaining > 0) {
           const reason = window.prompt('Enter reason code for hold:')
           if (reason !== null) {
             const notes = window.prompt('Enter notes (optional):')
@@ -73,7 +73,7 @@ export default function QcClassificationPage() {
               purchaseOrderReceiptLineId: ctx.selectedQcLineId,
               eventType: 'hold',
               quantity: ctx.qcStats.remaining,
-              uom: ctx.selectedQcLine?.uom ?? 'each',
+              uom: ctx.selectedQcLine.uom,
               reasonCode: reason,
               notes: notes || undefined,
               actorType: 'user',
@@ -85,7 +85,7 @@ export default function QcClassificationPage() {
     {
       key: 'r',
       handler: () => {
-        if (ctx.selectedQcLineId && ctx.qcStats && ctx.qcStats.remaining > 0) {
+        if (ctx.selectedQcLineId && ctx.selectedQcLine && ctx.qcStats && ctx.qcStats.remaining > 0) {
           const reason = window.prompt('Enter reason code for rejection:')
           if (reason !== null) {
             const notes = window.prompt('Enter notes (optional):')
@@ -93,7 +93,7 @@ export default function QcClassificationPage() {
               purchaseOrderReceiptLineId: ctx.selectedQcLineId,
               eventType: 'reject',
               quantity: ctx.qcStats.remaining,
-              uom: ctx.selectedQcLine?.uom ?? 'each',
+              uom: ctx.selectedQcLine.uom,
               reasonCode: reason,
               notes: notes || undefined,
               actorType: 'user',
