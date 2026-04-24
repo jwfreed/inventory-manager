@@ -18,7 +18,9 @@ import { createReceipt, voidReceiptApi, type ReceiptCreatePayload } from '../api
 import { createPutaway, postPutaway, type PutawayCreatePayload } from '../api/putaways'
 import {
   createQcEvent,
+  createQcEventIdempotencyKey,
   resolveHoldDisposition,
+  type CreateQcEventOptions,
   type HoldDispositionPayload,
   type HoldDispositionResult,
   type QcEventCreatePayload,
@@ -29,7 +31,7 @@ import type { PutawayLineInput, QcDraft, ReceiptLineInput, ReceiptLineOption, Re
 import type { PurchaseOrderReceiptLine, PurchaseOrderReceipt, QcEvent, Putaway } from '@api/types'
 import type { ReceivingFilters } from '../components/SearchFiltersBar'
 import { useOfflineQueue } from '../hooks/useOfflineQueue'
-import type { OfflineOperation } from '../lib/indexedDB'
+import { updateOperation, type OfflineOperation } from '../lib/indexedDB'
 import { DISCREPANCY_LABELS } from './constants'
 
 // ─────────────────────────────────────────────────────────────
@@ -55,6 +57,52 @@ type PurchaseOrderOption = {
   value: string
   label: string
   keywords: string
+}
+
+type QcEventMutationVariables = {
+  payload: QcEventCreatePayload
+  options?: CreateQcEventOptions
+}
+
+type QueuedQcEventPayload = {
+  request: QcEventCreatePayload
+  idempotencyKey: string
+}
+
+function isQueuedQcEventPayload(payload: Record<string, unknown>): payload is QueuedQcEventPayload {
+  return (
+    typeof payload.idempotencyKey === 'string' &&
+    !!payload.idempotencyKey &&
+    typeof payload.request === 'object' &&
+    payload.request !== null
+  )
+}
+
+export function buildQueuedQcEventPayload(
+  request: QcEventCreatePayload,
+  idempotencyKey = createQcEventIdempotencyKey(request),
+): QueuedQcEventPayload {
+  return {
+    request,
+    idempotencyKey,
+  }
+}
+
+export function resolveQueuedQcEventPayload(payload: Record<string, unknown>) {
+  if (isQueuedQcEventPayload(payload)) {
+    return {
+      request: payload.request,
+      idempotencyKey: payload.idempotencyKey,
+      persistedPayload: null,
+    }
+  }
+
+  const persistedPayload = buildQueuedQcEventPayload(payload as QcEventCreatePayload)
+  return {
+    request: persistedPayload.request,
+    idempotencyKey: persistedPayload.idempotencyKey,
+    persistedPayload,
+  }
 }
 
 export type ReceivingContextValue = {
@@ -119,10 +167,11 @@ export type ReceivingContextValue = {
   recentReceiptsQuery: ReturnType<typeof useReceiptsList>
 
   // ── QC Mutations ──
-  qcEventMutation: ReturnType<typeof useMutation<QcEvent, unknown, QcEventCreatePayload>>
+  qcEventMutation: ReturnType<typeof useMutation<QcEvent, unknown, QcEventMutationVariables>>
   holdDispositionMutation: ReturnType<typeof useMutation<HoldDispositionResult, unknown, HoldDispositionPayload>>
   onCreateQcEvent: () => void
   onQuickAcceptQc: () => void
+  onSubmitQcShortcutEvent: (request: QcEventCreatePayload) => Promise<boolean>
   onResolveHoldDisposition: (
     dispositionType: HoldDispositionPayload['dispositionType'],
     quantity: number,
@@ -283,9 +332,16 @@ export function ReceivingProvider({ children }: Props) {
   // Sync handler for offline operations
   const handleOfflineSync = useCallback(async (operation: OfflineOperation) => {
     switch (operation.type) {
-      case 'qc-event':
-        await createQcEvent(operation.payload as unknown as QcEventCreatePayload)
+      case 'qc-event': {
+        const queuedPayload = resolveQueuedQcEventPayload(operation.payload)
+        if (queuedPayload.persistedPayload) {
+          await updateOperation(operation.id, { payload: queuedPayload.persistedPayload })
+        }
+        await createQcEvent(queuedPayload.request, {
+          idempotencyKey: queuedPayload.idempotencyKey,
+        })
         break
+      }
       case 'putaway-create':
         await createPutaway(operation.payload as unknown as PutawayCreatePayload)
         break
@@ -621,8 +677,19 @@ export function ReceivingProvider({ children }: Props) {
     },
   })
 
+  const updateQcDraft = useCallback((patch: Partial<QcDraft>) => {
+    if (!activeQcLineId) return
+    setQcDraft((prev) => {
+      const base =
+        prev.lineId === activeQcLineId
+          ? prev
+          : { lineId: activeQcLineId, eventType: 'accept' as const, quantity: '' as const, reasonCode: '', notes: '' }
+      return { ...base, ...patch, lineId: activeQcLineId }
+    })
+  }, [activeQcLineId])
+
   const qcEventMutation = useMutation({
-    mutationFn: (payload: QcEventCreatePayload) => createQcEvent(payload),
+    mutationFn: ({ payload, options }: QcEventMutationVariables) => createQcEvent(payload, options),
     onSuccess: (event) => {
       setLastQcEvent(event)
       updateQcDraft({ reasonCode: '', notes: '' })
@@ -631,6 +698,56 @@ export function ReceivingProvider({ children }: Props) {
       void recentReceiptsQuery.refetch()
     },
   })
+
+  const qcShortcutSubmitInFlightRef = useRef(false)
+
+  const submitQcEventRequest = useCallback(
+    async (
+      payload: QcEventCreatePayload,
+      options?: { idempotencyKey?: string; guardPending?: boolean; resetDraft?: boolean },
+    ) => {
+      if (options?.guardPending && (qcEventMutation.isPending || qcShortcutSubmitInFlightRef.current)) {
+        return false
+      }
+
+      const idempotencyKey = options?.idempotencyKey ?? createQcEventIdempotencyKey(payload)
+
+      qcEventMutation.reset()
+      setLastQcEvent(null)
+
+      if (!isOnline) {
+        await queueOperation({
+          type: 'qc-event',
+          payload: buildQueuedQcEventPayload(payload, idempotencyKey),
+        })
+        setLastQcEvent({ ...payload, id: 'pending-' + Date.now(), occurredAt: new Date().toISOString() } as QcEvent)
+        if (options?.resetDraft !== false) {
+          updateQcDraft({ reasonCode: '', notes: '' })
+        }
+        return true
+      }
+
+      if (options?.guardPending) {
+        qcShortcutSubmitInFlightRef.current = true
+      }
+
+      qcEventMutation.mutate(
+        {
+          payload,
+          options: { idempotencyKey },
+        },
+        {
+          onSettled: () => {
+            if (options?.guardPending) {
+              qcShortcutSubmitInFlightRef.current = false
+            }
+          },
+        },
+      )
+      return true
+    },
+    [isOnline, qcEventMutation, queueOperation, updateQcDraft],
+  )
 
   const holdDispositionMutation = useMutation({
     mutationFn: (payload: HoldDispositionPayload) => resolveHoldDisposition(payload),
@@ -699,17 +816,6 @@ export function ReceivingProvider({ children }: Props) {
       return lines.map((line) => (line.purchaseOrderLineId === lineId ? { ...line, ...patch } : line))
     })
   }, [resolvedReceiptLineInputs])
-
-  const updateQcDraft = useCallback((patch: Partial<QcDraft>) => {
-    if (!activeQcLineId) return
-    setQcDraft((prev) => {
-      const base =
-        prev.lineId === activeQcLineId
-          ? prev
-          : { lineId: activeQcLineId, eventType: 'accept' as const, quantity: '' as const, reasonCode: '', notes: '' }
-      return { ...base, ...patch, lineId: activeQcLineId }
-    })
-  }, [activeQcLineId])
 
   const addPutawayLine = useCallback(() => {
     setPutawayLines((prev) => [
@@ -856,8 +962,6 @@ export function ReceivingProvider({ children }: Props) {
   const onCreateQcEvent = useCallback(async () => {
     if (!selectedQcLine) return
     if (qcQuantityInvalid) return
-    qcEventMutation.reset()
-    setLastQcEvent(null)
 
     const payload = {
       purchaseOrderReceiptLineId: selectedQcLine.id,
@@ -870,24 +974,13 @@ export function ReceivingProvider({ children }: Props) {
       actorId: user?.id ?? user?.email ?? undefined,
     }
 
-    // Queue operation when offline
-    if (!isOnline) {
-      await queueOperation({ type: 'qc-event', payload })
-      // Optimistically update local state
-      setLastQcEvent({ ...payload, id: 'pending-' + Date.now(), occurredAt: new Date().toISOString() } as QcEvent)
-      updateQcDraft({ reasonCode: '', notes: '' })
-      return
-    }
-
-    qcEventMutation.mutate(payload)
-  }, [selectedQcLine, qcQuantityInvalid, qcEventType, qcQuantityNumber, qcReasonCode, qcNotes, user, qcEventMutation, isOnline, queueOperation, updateQcDraft])
+    await submitQcEventRequest(payload)
+  }, [selectedQcLine, qcQuantityInvalid, qcEventType, qcQuantityNumber, qcReasonCode, qcNotes, user, submitQcEventRequest])
 
   const onQuickAcceptQc = useCallback(async () => {
     if (!selectedQcLine) return
     if (!(qcRemaining > 0)) return
-
-    qcEventMutation.reset()
-    setLastQcEvent(null)
+    if (qcEventMutation.isPending || qcShortcutSubmitInFlightRef.current) return
     updateQcDraft({ eventType: 'accept', quantity: qcRemaining })
 
     const payload = {
@@ -899,15 +992,18 @@ export function ReceivingProvider({ children }: Props) {
       actorId: user?.id ?? user?.email ?? undefined,
     }
 
-    if (!isOnline) {
-      await queueOperation({ type: 'qc-event', payload })
-      setLastQcEvent({ ...payload, id: 'pending-' + Date.now(), occurredAt: new Date().toISOString() } as QcEvent)
-      updateQcDraft({ reasonCode: '', notes: '' })
-      return
-    }
+    await submitQcEventRequest(payload, { guardPending: true })
+  }, [selectedQcLine, qcRemaining, user, qcEventMutation.isPending, submitQcEventRequest, updateQcDraft])
 
-    qcEventMutation.mutate(payload)
-  }, [selectedQcLine, qcRemaining, user, qcEventMutation, isOnline, queueOperation, updateQcDraft])
+  const onSubmitQcShortcutEvent = useCallback(
+    async (request: QcEventCreatePayload) =>
+      submitQcEventRequest({
+        ...request,
+        actorType: 'user',
+        actorId: request.actorId ?? user?.id ?? user?.email ?? undefined,
+      }),
+    [submitQcEventRequest, user],
+  )
 
   const onResolveHoldDisposition = useCallback(
     (
@@ -1018,14 +1114,15 @@ export function ReceivingProvider({ children }: Props) {
       for (const line of selectedLines) {
         const remaining = line.qcSummary?.remainingUninspectedQuantity ?? 0
         if (remaining > 0) {
-          await createQcEvent({
+          const payload = {
             purchaseOrderReceiptLineId: line.id,
             eventType: 'accept',
             quantity: remaining,
             uom: line.uom,
             actorType: 'user',
             actorId: user?.id ?? user?.email ?? undefined,
-          })
+          } satisfies QcEventCreatePayload
+          await createQcEvent(payload, { idempotencyKey: createQcEventIdempotencyKey(payload) })
         }
       }
       
@@ -1049,7 +1146,7 @@ export function ReceivingProvider({ children }: Props) {
       for (const line of selectedLines) {
         const remaining = line.qcSummary?.remainingUninspectedQuantity ?? 0
         if (remaining > 0) {
-          await createQcEvent({
+          const payload = {
             purchaseOrderReceiptLineId: line.id,
             eventType: 'hold',
             quantity: remaining,
@@ -1058,7 +1155,8 @@ export function ReceivingProvider({ children }: Props) {
             notes: notes.trim() || undefined,
             actorType: 'user',
             actorId: user?.id ?? user?.email ?? undefined,
-          })
+          } satisfies QcEventCreatePayload
+          await createQcEvent(payload, { idempotencyKey: createQcEventIdempotencyKey(payload) })
         }
       }
       
@@ -1082,7 +1180,7 @@ export function ReceivingProvider({ children }: Props) {
       for (const line of selectedLines) {
         const remaining = line.qcSummary?.remainingUninspectedQuantity ?? 0
         if (remaining > 0) {
-          await createQcEvent({
+          const payload = {
             purchaseOrderReceiptLineId: line.id,
             eventType: 'reject',
             quantity: remaining,
@@ -1091,7 +1189,8 @@ export function ReceivingProvider({ children }: Props) {
             notes: notes.trim() || undefined,
             actorType: 'user',
             actorId: user?.id ?? user?.email ?? undefined,
-          })
+          } satisfies QcEventCreatePayload
+          await createQcEvent(payload, { idempotencyKey: createQcEventIdempotencyKey(payload) })
         }
       }
       
@@ -1458,6 +1557,7 @@ export function ReceivingProvider({ children }: Props) {
       holdDispositionMutation,
       onCreateQcEvent,
       onQuickAcceptQc,
+      onSubmitQcShortcutEvent,
       onResolveHoldDisposition,
 
       // Putaway Step
@@ -1577,6 +1677,7 @@ export function ReceivingProvider({ children }: Props) {
       holdDispositionMutation,
       onCreateQcEvent,
       onQuickAcceptQc,
+      onSubmitQcShortcutEvent,
       onResolveHoldDisposition,
       putawayLines,
       addPutawayLine,
