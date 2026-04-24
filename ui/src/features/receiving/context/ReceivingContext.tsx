@@ -61,6 +61,7 @@ type PurchaseOrderOption = {
 
 type QcEventMutationVariables = {
   payload: QcEventCreatePayload
+  operationSignature: string
   options?: CreateQcEventOptions
 }
 
@@ -353,6 +354,7 @@ export function ReceivingProvider({ children }: Props) {
         await createQcEvent(queuedPayload.request, {
           idempotencyKey: queuedPayload.idempotencyKey,
         })
+        qcOperationIdempotencyKeysRef.current.delete(buildQcEventOperationSignature(queuedPayload.request))
         break
       }
       case 'putaway-create':
@@ -703,7 +705,8 @@ export function ReceivingProvider({ children }: Props) {
 
   const qcEventMutation = useMutation({
     mutationFn: ({ payload, options }: QcEventMutationVariables) => createQcEvent(payload, options),
-    onSuccess: (event) => {
+    onSuccess: (event, variables) => {
+      qcOperationIdempotencyKeysRef.current.delete(variables.operationSignature)
       setLastQcEvent(event)
       updateQcDraft({ reasonCode: '', notes: '' })
       void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.detail(receiptIdForQc) })
@@ -717,10 +720,10 @@ export function ReceivingProvider({ children }: Props) {
   const qcOperationIdempotencyKeysRef = useRef<Map<string, string>>(new Map())
 
   const resolveQcEventOperationIdempotencyKey = useCallback(
-    (payload: QcEventCreatePayload, providedIdempotencyKey?: string) => {
+    (payload: QcEventCreatePayload, providedIdempotencyKey?: string, operationSignature?: string) => {
       if (providedIdempotencyKey) return providedIdempotencyKey
 
-      const signature = buildQcEventOperationSignature(payload)
+      const signature = operationSignature ?? buildQcEventOperationSignature(payload)
       const existingIdempotencyKey = qcOperationIdempotencyKeysRef.current.get(signature)
       if (existingIdempotencyKey) return existingIdempotencyKey
 
@@ -740,7 +743,8 @@ export function ReceivingProvider({ children }: Props) {
         return false
       }
 
-      const idempotencyKey = resolveQcEventOperationIdempotencyKey(payload, options?.idempotencyKey)
+      const operationSignature = buildQcEventOperationSignature(payload)
+      const idempotencyKey = resolveQcEventOperationIdempotencyKey(payload, options?.idempotencyKey, operationSignature)
 
       qcEventMutation.reset()
       setLastQcEvent(null)
@@ -770,6 +774,7 @@ export function ReceivingProvider({ children }: Props) {
       qcEventMutation.mutate(
         {
           payload,
+          operationSignature,
           options: { idempotencyKey },
         },
         {
@@ -1160,7 +1165,10 @@ export function ReceivingProvider({ children }: Props) {
             actorType: 'user',
             actorId: user?.id ?? user?.email ?? undefined,
           } satisfies QcEventCreatePayload
-          await createQcEvent(payload, { idempotencyKey: resolveQcEventOperationIdempotencyKey(payload) })
+          const operationSignature = buildQcEventOperationSignature(payload)
+          const idempotencyKey = resolveQcEventOperationIdempotencyKey(payload, undefined, operationSignature)
+          await createQcEvent(payload, { idempotencyKey })
+          qcOperationIdempotencyKeysRef.current.delete(operationSignature)
         }
       }
       
@@ -1197,7 +1205,10 @@ export function ReceivingProvider({ children }: Props) {
             actorType: 'user',
             actorId: user?.id ?? user?.email ?? undefined,
           } satisfies QcEventCreatePayload
-          await createQcEvent(payload, { idempotencyKey: resolveQcEventOperationIdempotencyKey(payload) })
+          const operationSignature = buildQcEventOperationSignature(payload)
+          const idempotencyKey = resolveQcEventOperationIdempotencyKey(payload, undefined, operationSignature)
+          await createQcEvent(payload, { idempotencyKey })
+          qcOperationIdempotencyKeysRef.current.delete(operationSignature)
         }
       }
       
@@ -1234,7 +1245,10 @@ export function ReceivingProvider({ children }: Props) {
             actorType: 'user',
             actorId: user?.id ?? user?.email ?? undefined,
           } satisfies QcEventCreatePayload
-          await createQcEvent(payload, { idempotencyKey: resolveQcEventOperationIdempotencyKey(payload) })
+          const operationSignature = buildQcEventOperationSignature(payload)
+          const idempotencyKey = resolveQcEventOperationIdempotencyKey(payload, undefined, operationSignature)
+          await createQcEvent(payload, { idempotencyKey })
+          qcOperationIdempotencyKeysRef.current.delete(operationSignature)
         }
       }
       

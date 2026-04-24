@@ -100,6 +100,20 @@ const mockedCreateQcEvent = vi.mocked(createQcEvent)
 const mockedUseOfflineQueue = vi.mocked(useOfflineQueue)
 let queueOperationMock = vi.fn()
 
+function QuickAcceptOnceProbe() {
+  const ctx = useReceivingContext()
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void ctx.onQuickAcceptQc()
+      }}
+    >
+      quick accept once
+    </button>
+  )
+}
+
 function QuickAcceptProbe() {
   const ctx = useReceivingContext()
   return (
@@ -185,24 +199,6 @@ describe('receiving QC safety', () => {
     }))
   })
 
-  it('reuses the same queued QC event idempotency key on replay', () => {
-    const legacyRequest = {
-      purchaseOrderReceiptLineId: 'line-1',
-      eventType: 'accept' as const,
-      quantity: 5,
-      uom: 'each',
-      actorType: 'user' as const,
-    }
-
-    const legacyReplay = resolveQueuedQcEventPayload(legacyRequest)
-    expect(legacyReplay.persistedPayload).not.toBeNull()
-    expect(legacyReplay.persistedPayload?.idempotencyKey).toBe(legacyReplay.idempotencyKey)
-
-    const nextReplay = resolveQueuedQcEventPayload(legacyReplay.persistedPayload ?? buildQueuedQcEventPayload(legacyRequest))
-    expect(nextReplay.idempotencyKey).toBe(legacyReplay.idempotencyKey)
-    expect(nextReplay.persistedPayload).toBeNull()
-  })
-
   it('blocks duplicate quick accept submission while pending', async () => {
     mockedCreateQcEvent.mockImplementation(
       () =>
@@ -278,5 +274,94 @@ describe('receiving QC safety', () => {
     await waitFor(() => {
       expect(queueOperationMock).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it('reuses the same key for a retry before success, then clears it after success', async () => {
+    mockedCreateQcEvent
+      .mockRejectedValueOnce(new Error('temporary qc failure'))
+      .mockResolvedValueOnce({
+        id: 'qc-1',
+        eventType: 'accept',
+        quantity: 5,
+        uom: 'each',
+      } as any)
+      .mockResolvedValueOnce({
+        id: 'qc-2',
+        eventType: 'accept',
+        quantity: 5,
+        uom: 'each',
+      } as any)
+
+    renderProvider(<QuickAcceptOnceProbe />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'quick accept once' }))
+    await waitFor(() => {
+      expect(mockedCreateQcEvent).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'quick accept once' }))
+    await waitFor(() => {
+      expect(mockedCreateQcEvent).toHaveBeenCalledTimes(2)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'quick accept once' }))
+    await waitFor(() => {
+      expect(mockedCreateQcEvent).toHaveBeenCalledTimes(3)
+    })
+
+    const firstRetryKey = mockedCreateQcEvent.mock.calls[0]?.[1]?.idempotencyKey
+    const secondRetryKey = mockedCreateQcEvent.mock.calls[1]?.[1]?.idempotencyKey
+    const postSuccessKey = mockedCreateQcEvent.mock.calls[2]?.[1]?.idempotencyKey
+
+    expect(firstRetryKey).toBeTruthy()
+    expect(secondRetryKey).toBe(firstRetryKey)
+    expect(postSuccessKey).toBeTruthy()
+    expect(postSuccessKey).not.toBe(firstRetryKey)
+  })
+
+  it('retains the original queued QC event key for replay', async () => {
+    mockedUseOfflineQueue.mockImplementation(() => ({
+      isOnline: false,
+      pendingCount: 0,
+      pendingOperations: [],
+      isSyncing: false,
+      queueOperation: queueOperationMock,
+      syncPendingOperations: vi.fn(),
+      clearQueue: vi.fn(),
+    }))
+
+    renderProvider(<QuickAcceptOnceProbe />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'quick accept once' }))
+
+    await waitFor(() => {
+      expect(queueOperationMock).toHaveBeenCalledTimes(1)
+    })
+
+    const queuedOperation = queueOperationMock.mock.calls[0]?.[0]
+    const queuedPayload = queuedOperation?.payload as Record<string, unknown>
+    const replayPayload = resolveQueuedQcEventPayload(queuedPayload)
+
+    expect(typeof queuedPayload.idempotencyKey).toBe('string')
+    expect(replayPayload.idempotencyKey).toBe(queuedPayload.idempotencyKey)
+    expect(replayPayload.request).toEqual((queuedPayload as { request: unknown }).request)
+  })
+
+  it('upgrades legacy queued QC payloads by generating one replay key and reusing it thereafter', () => {
+    const legacyRequest = {
+      purchaseOrderReceiptLineId: 'line-1',
+      eventType: 'accept' as const,
+      quantity: 5,
+      uom: 'each',
+      actorType: 'user' as const,
+    }
+
+    const legacyReplay = resolveQueuedQcEventPayload(legacyRequest)
+    expect(legacyReplay.persistedPayload).not.toBeNull()
+    expect(legacyReplay.persistedPayload?.idempotencyKey).toBe(legacyReplay.idempotencyKey)
+
+    const nextReplay = resolveQueuedQcEventPayload(legacyReplay.persistedPayload ?? buildQueuedQcEventPayload(legacyRequest))
+    expect(nextReplay.idempotencyKey).toBe(legacyReplay.idempotencyKey)
+    expect(nextReplay.persistedPayload).toBeNull()
   })
 })
