@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { qcEventSchema, qcWarehouseDispositionSchema } from '../schemas/qc.schema';
+import { holdDispositionSchema, qcEventSchema, qcWarehouseDispositionSchema } from '../schemas/qc.schema';
 import { 
   postQcWarehouseDisposition,
   createQcEvent, 
@@ -9,6 +9,7 @@ import {
   listQcEventsForWorkOrder, 
   listQcEventsForExecutionLine 
 } from '../services/qc.service';
+import { resolveHoldDisposition } from '../services/holdDisposition.service';
 import { mapPgErrorToHttp } from '../lib/pgErrors';
 import { getIdempotencyKey } from '../lib/idempotency';
 import { mapTxRetryExhausted } from './shared/inventoryMutationConflicts';
@@ -163,6 +164,84 @@ router.post('/qc/reject', async (req: Request, res: Response) => {
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post QC reject.' });
+  }
+});
+
+router.post('/qc/hold-dispositions', async (req: Request, res: Response) => {
+  const parsed = holdDispositionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const idempotencyKey = resolveRequestIdempotencyKey(req, null);
+
+  try {
+    const result = await resolveHoldDisposition(req.auth!.tenantId, parsed.data, { idempotencyKey });
+    return res.status(result.replayed ? 200 : 201).json(result);
+  } catch (error: any) {
+    if (mapTxRetryExhausted(error, res)) {
+      return;
+    }
+    if (error?.code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+      return res.status(409).json({ error: 'Hold disposition already in progress for this idempotency key.' });
+    }
+    if (error?.code === 'IDEMPOTENCY_KEY_REUSE_ACROSS_ENDPOINTS') {
+      return res.status(409).json({ error: 'Idempotency key was already used for a different endpoint.' });
+    }
+    if (error?.code === 'IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD') {
+      return res.status(409).json({ error: 'Hold disposition idempotency key was reused with a different payload.' });
+    }
+    if (error?.message === 'HOLD_DISPOSITION_LINE_NOT_FOUND') {
+      return res.status(404).json({ error: 'Receipt line not found.' });
+    }
+    if (error?.message === 'HOLD_DISPOSITION_RECEIPT_VOIDED') {
+      return res.status(409).json({ error: 'Receipt is voided; hold disposition is not allowed.' });
+    }
+    if (error?.message === 'HOLD_DISPOSITION_RECEIPT_NOT_ELIGIBLE') {
+      return res.status(409).json({ error: 'Receipt is not eligible for hold disposition.' });
+    }
+    if (error?.message === 'HOLD_DISPOSITION_UOM_MISMATCH') {
+      return res.status(400).json({ error: 'Hold disposition UOM must match the receipt line UOM.' });
+    }
+    if (error?.message === 'HOLD_DISPOSITION_EXCEEDS_HELD') {
+      return res.status(400).json({ error: 'Hold disposition quantity exceeds remaining held quantity.' });
+    }
+    if (error?.message === 'HOLD_DISPOSITION_NO_HELD_QUANTITY') {
+      return res.status(409).json({ error: 'No held quantity remains to resolve.' });
+    }
+    if (error?.message === 'HOLD_DISPOSITION_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Receipt line has no receiving location for hold disposition.' });
+    }
+    if (error?.message === 'HOLD_DISPOSITION_HOLD_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Hold disposition requires a HOLD source location.' });
+    }
+    if (error?.message === 'HOLD_DISPOSITION_SELLABLE_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Hold release requires a SELLABLE destination location.' });
+    }
+    if (error?.message === 'HOLD_DISPOSITION_REJECT_LOCATION_REQUIRED') {
+      return res.status(400).json({ error: 'Hold rework/discard requires a REJECT destination location.' });
+    }
+    if (error?.message === 'TRANSFER_INSUFFICIENT_COST_LAYERS') {
+      return res.status(409).json({
+        error: 'Hold disposition requires available FIFO cost layers at source. Ensure receipt lines include unit cost/price before resolving hold.'
+      });
+    }
+    if (error?.code === 'INSUFFICIENT_STOCK') {
+      return res.status(409).json({
+        error: { code: 'INSUFFICIENT_STOCK', message: error.details?.message, details: error.details }
+      });
+    }
+    if (error?.code === 'REPLAY_CORRUPTION_DETECTED' || error?.message === 'REPLAY_CORRUPTION_DETECTED') {
+      return res.status(409).json({
+        error: {
+          code: 'REPLAY_CORRUPTION_DETECTED',
+          message: 'Replay repair detected corrupted authoritative hold disposition movement state.',
+          details: error?.details
+        }
+      });
+    }
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to resolve QC hold.' });
   }
 });
 

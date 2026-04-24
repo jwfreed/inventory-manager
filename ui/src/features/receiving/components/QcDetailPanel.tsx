@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import type { PurchaseOrderReceiptLine, QcEvent } from '@api/types'
 import { Alert, Badge, Button, Input, LoadingSpinner, Textarea } from '@shared/ui'
 import { formatDate } from '@shared/formatters'
@@ -21,11 +21,19 @@ type Props = {
   lastEvent?: QcEvent | null
   mutationErrorMessage?: string
   mutationPending: boolean
+  holdDispositionPending: boolean
+  holdDispositionErrorMessage?: string
   onEventTypeChange: (eventType: 'accept' | 'hold' | 'reject') => void
   onQuantityChange: (value: number | '') => void
   onReasonCodeChange: (value: string) => void
   onNotesChange: (value: string) => void
   onRecord: () => void
+  onResolveHoldDisposition: (
+    dispositionType: 'release' | 'rework' | 'discard',
+    quantity: number,
+    reasonCode?: string,
+    notes?: string,
+  ) => void
   putawayAvailable: number
   putawayBlockedReason?: string | null
 }
@@ -46,15 +54,29 @@ export function QcDetailPanel({
   lastEvent,
   mutationErrorMessage,
   mutationPending,
+  holdDispositionPending,
+  holdDispositionErrorMessage,
   onEventTypeChange,
   onQuantityChange,
   onReasonCodeChange,
   onNotesChange,
   onRecord,
+  onResolveHoldDisposition,
   putawayAvailable,
   putawayBlockedReason,
 }: Props) {
   const status = getQcStatus(line)
+  const [holdDispositionType, setHoldDispositionType] = useState<'release' | 'rework' | 'discard'>('release')
+  const [holdDispositionQuantity, setHoldDispositionQuantity] = useState<number | ''>('')
+  const [holdDispositionReason, setHoldDispositionReason] = useState('')
+  const [holdDispositionNotes, setHoldDispositionNotes] = useState('')
+  const unresolvedHoldQty = qcStats.hold
+  const resolvedHoldDispositionQuantity =
+    holdDispositionQuantity === '' ? unresolvedHoldQty : Number(holdDispositionQuantity)
+  const holdDispositionQuantityInvalid =
+    unresolvedHoldQty <= 0 ||
+    !(resolvedHoldDispositionQuantity > 0) ||
+    resolvedHoldDispositionQuantity - unresolvedHoldQty > 1e-6
 
   return (
     <div className="rounded-lg border border-slate-200 p-3 space-y-3">
@@ -63,6 +85,12 @@ export function QcDetailPanel({
       )}
       {mutationPending && (
         <Alert variant="info" title="Recording QC event" message="Updating QC totals and putaway eligibility." />
+      )}
+      {holdDispositionErrorMessage && (
+        <Alert variant="error" title="Hold not resolved" message={holdDispositionErrorMessage} />
+      )}
+      {holdDispositionPending && (
+        <Alert variant="info" title="Resolving hold" message="Moving held quantity through release, rework, or discard." />
       )}
       {lastEvent && (
         <Alert
@@ -174,7 +202,9 @@ export function QcDetailPanel({
           </p>
           {qcRemaining <= 0 && (
             <p className="mt-2 text-xs text-slate-500">
-              QC is complete for this line. There is no remaining quantity to classify.
+              {unresolvedHoldQty > 0
+                ? 'All quantity is classified, but held quantity must be resolved before QC can complete.'
+                : 'QC is complete for this line. There is no remaining quantity to classify.'}
             </p>
           )}
         </div>
@@ -223,6 +253,83 @@ export function QcDetailPanel({
       </div>
         </div>
       </details>
+      {unresolvedHoldQty > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
+          <div>
+            <div className="text-sm font-semibold text-amber-950">Resolve held quantity</div>
+            <div className="text-xs text-amber-800">
+              {unresolvedHoldQty} {line.uom} remains on hold. Release makes it eligible for putaway; rework and discard keep it out of usable stock.
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <label className="space-y-1 text-sm">
+              <span className="text-xs uppercase tracking-wide text-amber-900">Disposition</span>
+              <select
+                className="h-10 w-full rounded-md border border-amber-300 bg-white px-3 text-sm text-slate-900"
+                value={holdDispositionType}
+                onChange={(event) => setHoldDispositionType(event.target.value as 'release' | 'rework' | 'discard')}
+                disabled={holdDispositionPending}
+              >
+                <option value="release">Release</option>
+                <option value="rework">Rework</option>
+                <option value="discard">Discard</option>
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="text-xs uppercase tracking-wide text-amber-900">Quantity</span>
+              <Input
+                type="number"
+                min={0}
+                max={unresolvedHoldQty}
+                value={holdDispositionQuantity}
+                placeholder={String(unresolvedHoldQty)}
+                onChange={(event) =>
+                  setHoldDispositionQuantity(event.target.value === '' ? '' : Number(event.target.value))
+                }
+                disabled={holdDispositionPending}
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="text-xs uppercase tracking-wide text-amber-900">Reason code</span>
+              <Input
+                value={holdDispositionReason}
+                onChange={(event) => setHoldDispositionReason(event.target.value)}
+                placeholder={`hold_${holdDispositionType}`}
+                disabled={holdDispositionPending}
+              />
+            </label>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                size="sm"
+                disabled={holdDispositionPending || holdDispositionQuantityInvalid}
+                onClick={() =>
+                  onResolveHoldDisposition(
+                    holdDispositionType,
+                    resolvedHoldDispositionQuantity,
+                    holdDispositionReason,
+                    holdDispositionNotes,
+                  )
+                }
+              >
+                {holdDispositionPending ? 'Resolving...' : 'Resolve hold'}
+              </Button>
+            </div>
+          </div>
+          <label className="block space-y-1 text-sm">
+            <span className="text-xs uppercase tracking-wide text-amber-900">Notes</span>
+            <Textarea
+              value={holdDispositionNotes}
+              onChange={(event) => setHoldDispositionNotes(event.target.value)}
+              placeholder="Optional disposition notes"
+              disabled={holdDispositionPending}
+            />
+          </label>
+          {holdDispositionQuantityInvalid && unresolvedHoldQty > 0 && (
+            <div className="text-xs text-amber-800">Enter a quantity between 1 and {unresolvedHoldQty}.</div>
+          )}
+        </div>
+      )}
       <div className="border-t border-slate-200 pt-3">
         <div className="text-xs uppercase tracking-wide text-slate-500">QC events</div>
         {qcEventsLoading && <LoadingSpinner label="Loading QC events..." />}

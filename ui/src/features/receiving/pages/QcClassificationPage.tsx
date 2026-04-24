@@ -10,6 +10,7 @@ import { createQcBulkActions, BulkActionIcons } from '../components/bulkOperatio
 import { KeyboardHint } from '../components/KeyboardHint'
 import { ReceivingLayout } from '../components/ReceivingLayout'
 import { useReceivingContext } from '../context'
+import { QC_ERROR_MAP } from '../context/constants'
 import { useResponsive } from '../hooks/useResponsive'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -329,19 +330,29 @@ export default function QcClassificationPage() {
                         lastEvent={ctx.lastQcEvent}
                         mutationErrorMessage={undefined}
                         mutationPending={ctx.qcEventMutation.isPending}
+                        holdDispositionPending={ctx.holdDispositionMutation.isPending}
+                        holdDispositionErrorMessage={
+                          ctx.holdDispositionMutation.error
+                            ? ctx.mapErrorMessage(
+                                ctx.getErrorMessage(ctx.holdDispositionMutation.error, 'Failed to resolve hold.'),
+                                QC_ERROR_MAP,
+                              )
+                            : undefined
+                        }
                         onEventTypeChange={(eventType) => ctx.updateQcDraft({ eventType })}
                         onQuantityChange={(quantity) => ctx.updateQcDraft({ quantity })}
                         onReasonCodeChange={(reasonCode) => ctx.updateQcDraft({ reasonCode })}
                         onNotesChange={(notes) => ctx.updateQcDraft({ notes })}
                         onRecord={ctx.onCreateQcEvent}
-                        putawayAvailable={0}
-                        putawayBlockedReason={null}
+                        onResolveHoldDisposition={ctx.onResolveHoldDisposition}
+                        putawayAvailable={ctx.selectedQcLine.availableForNewPutaway ?? ctx.selectedQcLine.remainingQuantityToPutaway ?? 0}
+                        putawayBlockedReason={ctx.selectedQcLine.putawayBlockedReason ?? null}
                       />
                     </div>
                   )}
 
                   {/* QC Complete Notice */}
-                  {!ctx.qcNeedsAttention && (
+                  {ctx.receiptTotals.remaining <= 0 && ctx.receiptTotals.hold <= 0 && (
                     <Alert
                       variant="success"
                       title="QC classification complete"
@@ -359,6 +370,13 @@ export default function QcClassificationPage() {
                           Plan putaway →
                         </Button>
                       }
+                    />
+                  )}
+                  {ctx.receiptTotals.remaining <= 0 && ctx.receiptTotals.hold > 0 && (
+                    <Alert
+                      variant="warning"
+                      title="QC hold unresolved"
+                      message="All received quantity is classified, but held quantity must be released, reworked, or discarded before QC can complete."
                     />
                   )}
                 </div>

@@ -36,6 +36,18 @@ export const QC_ERROR_MAP: Record<string, string> = {
     'Set a receiving/staging location on the PO before recording acceptance.',
   'Receipt is voided; QC events are not allowed.':
     'This receipt is voided. QC events are locked.',
+  'Hold disposition quantity exceeds remaining held quantity.':
+    'Reduce the quantity to the remaining held amount.',
+  'No held quantity remains to resolve.':
+    'This hold has already been resolved. Reload the receipt.',
+  'Hold disposition UOM must match the receipt line UOM.':
+    'UOM mismatch. Hold resolution must use the receipt line UOM.',
+  'Hold release requires a SELLABLE destination location.':
+    'Configure a SELLABLE default location before releasing held stock.',
+  'Hold rework/discard requires a REJECT destination location.':
+    'Configure a REJECT default location before resolving held stock to rework or discard.',
+  'Hold disposition requires a HOLD source location.':
+    'Configure a HOLD default location before resolving held stock.',
 }
 
 export const PUTAWAY_CREATE_ERROR_MAP: Record<string, string> = {

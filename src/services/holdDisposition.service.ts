@@ -31,7 +31,7 @@ export type HoldDispositionInput = {
   uom: string;
   reasonCode?: string | null;
   notes?: string | null;
-  actorType: string;
+  actorType: 'user' | 'system';
   actorId?: string | null;
   sourceBinId?: string | null;
   destinationBinId?: string | null;
@@ -46,6 +46,8 @@ export type HoldDispositionResult = {
   movementId: string;
   sourceLocationId: string;
   destinationLocationId: string;
+  sourceWarehouseId: string;
+  destinationWarehouseId: string;
   replayed: boolean;
 };
 
@@ -56,13 +58,17 @@ type HoldDispositionWorkflowState = {
   itemId: string;
   sourceLocationId: string;
   destinationLocationId: string;
+  sourceWarehouseId: string;
+  destinationWarehouseId: string;
   sourceBinId: string;
   destinationBinId: string;
   preparedTransfer: PreparedTransferMutation;
   allocationContext: ValidatedReceiptAllocationMutationContext;
 };
 
-function destinationRoleForDispositionType(dispositionType: HoldDispositionType): string {
+type WarehouseDefaultRole = 'SELLABLE' | 'QA' | 'HOLD' | 'REJECT' | 'SCRAP';
+
+function destinationRoleForDispositionType(dispositionType: HoldDispositionType): WarehouseDefaultRole {
   if (dispositionType === 'release') return 'SELLABLE';
   // WP3: rework and discard share REJECT location role as a temporary simplification.
   // Physical separation of rework staging vs. discard staging is a WP4 concern.
@@ -214,7 +220,6 @@ async function prepareHoldDispositionWorkflowState(params: {
       sourceType: 'hold_disposition',
       sourceId: params.eventId,
       movementType: 'transfer',
-      qcAction: params.data.dispositionType,
       reasonCode,
       notes,
       occurredAt: params.occurredAt,
@@ -246,6 +251,8 @@ async function prepareHoldDispositionWorkflowState(params: {
     itemId: line.item_id,
     sourceLocationId,
     destinationLocationId,
+    sourceWarehouseId,
+    destinationWarehouseId,
     sourceBinId,
     destinationBinId,
     preparedTransfer,
@@ -360,6 +367,8 @@ async function executeHoldDispositionWorkflow(params: {
       movementId: transferExecution.result.movementId,
       sourceLocationId: params.workflowState.sourceLocationId,
       destinationLocationId: params.workflowState.destinationLocationId,
+      sourceWarehouseId: params.workflowState.sourceWarehouseId,
+      destinationWarehouseId: params.workflowState.destinationWarehouseId,
       replayed: !transferExecution.result.created
     },
     responseStatus: transferExecution.result.created ? 201 : 200,
@@ -491,8 +500,8 @@ async function replayHoldDisposition(params: {
       itemId: '',
       quantity: params.responseBody.quantity,
       uom: params.responseBody.uom,
-      sourceWarehouseId: null,
-      destinationWarehouseId: null,
+      sourceWarehouseId: params.responseBody.sourceWarehouseId,
+      destinationWarehouseId: params.responseBody.destinationWarehouseId,
       expectedLineCount: 2
     });
   }

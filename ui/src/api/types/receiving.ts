@@ -27,6 +27,7 @@ export type PurchaseOrderReceiptLine = {
       accept: number
       reject: number
       hold: number
+      disposed?: number
     }
   }
   remainingQuantityToPutaway?: number

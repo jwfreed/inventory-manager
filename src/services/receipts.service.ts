@@ -834,7 +834,7 @@ export async function listReceipts(
 
   const { rows } = await query(
     `
-    WITH line_qc AS (
+    WITH line_qc_raw AS (
       SELECT
         prl.id AS line_id,
         prl.purchase_order_receipt_id AS receipt_id,
@@ -848,6 +848,26 @@ export async function listReceipts(
        AND qe.tenant_id = prl.tenant_id
       WHERE prl.tenant_id = $1
       GROUP BY prl.id
+    ),
+    line_hold_dispositions AS (
+      SELECT
+        purchase_order_receipt_line_id AS line_id,
+        COALESCE(SUM(quantity), 0) AS disposed_qty
+      FROM hold_disposition_events
+      WHERE tenant_id = $1
+      GROUP BY purchase_order_receipt_line_id
+    ),
+    line_qc AS (
+      SELECT
+        raw.line_id,
+        raw.receipt_id,
+        raw.quantity_received,
+        raw.accept_qty,
+        GREATEST(raw.hold_qty - COALESCE(dispositions.disposed_qty, 0), 0) AS hold_qty,
+        raw.reject_qty,
+        COALESCE(dispositions.disposed_qty, 0) AS disposed_qty
+      FROM line_qc_raw raw
+      LEFT JOIN line_hold_dispositions dispositions ON dispositions.line_id = raw.line_id
     ),
     line_putaway AS (
       SELECT
@@ -867,6 +887,7 @@ export async function listReceipts(
         SUM(l.accept_qty) AS total_accept,
         SUM(l.hold_qty) AS total_hold,
         SUM(l.reject_qty) AS total_reject,
+        SUM(l.disposed_qty) AS total_disposed,
         SUM(l.accept_qty) AS total_accepted_qty,
         SUM(COALESCE(p.posted_qty, 0)) AS putaway_posted,
         SUM(COALESCE(p.pending_qty, 0)) AS putaway_pending
@@ -917,7 +938,12 @@ export async function listReceipts(
         COALESCE(rt.total_reject, 0) AS "totalReject",
         GREATEST(
           COALESCE(rt.total_received, 0)
-          - (COALESCE(rt.total_accept, 0) + COALESCE(rt.total_hold, 0) + COALESCE(rt.total_reject, 0)),
+          - (
+            COALESCE(rt.total_accept, 0)
+            + COALESCE(rt.total_hold, 0)
+            + COALESCE(rt.total_reject, 0)
+            + COALESCE(rt.total_disposed, 0)
+          ),
           0
         ) AS "qcRemaining",
         COALESCE(rt.putaway_posted, 0) AS "putawayPosted",
@@ -927,7 +953,12 @@ export async function listReceipts(
           WHEN COALESCE(rt.total_received, 0) <= 0 THEN 'pending'
           WHEN GREATEST(
             COALESCE(rt.total_received, 0)
-            - (COALESCE(rt.total_accept, 0) + COALESCE(rt.total_hold, 0) + COALESCE(rt.total_reject, 0)),
+            - (
+              COALESCE(rt.total_accept, 0)
+              + COALESCE(rt.total_hold, 0)
+              + COALESCE(rt.total_reject, 0)
+              + COALESCE(rt.total_disposed, 0)
+            ),
             0
           ) > ${STATUS_EPSILON} THEN 'pending'
           WHEN COALESCE(rt.total_hold, 0) > ${STATUS_EPSILON} THEN 'failed'
@@ -937,11 +968,15 @@ export async function listReceipts(
         CASE
           WHEN GREATEST(
             COALESCE(rt.total_received, 0)
-            - (COALESCE(rt.total_accept, 0) + COALESCE(rt.total_hold, 0) + COALESCE(rt.total_reject, 0)),
+            - (
+              COALESCE(rt.total_accept, 0)
+              + COALESCE(rt.total_hold, 0)
+              + COALESCE(rt.total_reject, 0)
+              + COALESCE(rt.total_disposed, 0)
+            ),
             0
           ) > ${STATUS_EPSILON} THEN 'not_available'
           WHEN COALESCE(rt.total_accept, 0) <= ${STATUS_EPSILON} THEN 'not_available'
-          WHEN COALESCE(rt.total_hold, 0) > ${STATUS_EPSILON} THEN 'not_available'
           WHEN COALESCE(rt.total_accept, 0) > ${STATUS_EPSILON}
                AND COALESCE(rt.putaway_posted, 0) + COALESCE(rt.putaway_pending, 0) <= ${STATUS_EPSILON}
             THEN 'not_started'
@@ -957,7 +992,12 @@ export async function listReceipts(
           WHEN COALESCE(rt.total_received, 0) <= 0 THEN 'posted'
           WHEN GREATEST(
             COALESCE(rt.total_received, 0)
-            - (COALESCE(rt.total_accept, 0) + COALESCE(rt.total_hold, 0) + COALESCE(rt.total_reject, 0)),
+            - (
+              COALESCE(rt.total_accept, 0)
+              + COALESCE(rt.total_hold, 0)
+              + COALESCE(rt.total_reject, 0)
+              + COALESCE(rt.total_disposed, 0)
+            ),
             0
           ) > ${STATUS_EPSILON} THEN 'pending_qc'
           WHEN COALESCE(rt.total_hold, 0) > ${STATUS_EPSILON} THEN 'qc_failed'
@@ -974,17 +1014,26 @@ export async function listReceipts(
           por.status = 'posted'
           AND GREATEST(
             COALESCE(rt.total_received, 0)
-            - (COALESCE(rt.total_accept, 0) + COALESCE(rt.total_hold, 0) + COALESCE(rt.total_reject, 0)),
+            - (
+              COALESCE(rt.total_accept, 0)
+              + COALESCE(rt.total_hold, 0)
+              + COALESCE(rt.total_reject, 0)
+              + COALESCE(rt.total_disposed, 0)
+            ),
             0
           ) > ${STATUS_EPSILON}
         ) AS "qcEligible",
         (
           por.status = 'posted'
           AND COALESCE(rt.total_accept, 0) > ${STATUS_EPSILON}
-          AND COALESCE(rt.total_hold, 0) <= ${STATUS_EPSILON}
           AND GREATEST(
             COALESCE(rt.total_received, 0)
-            - (COALESCE(rt.total_accept, 0) + COALESCE(rt.total_hold, 0) + COALESCE(rt.total_reject, 0)),
+            - (
+              COALESCE(rt.total_accept, 0)
+              + COALESCE(rt.total_hold, 0)
+              + COALESCE(rt.total_reject, 0)
+              + COALESCE(rt.total_disposed, 0)
+            ),
             0
           ) <= ${STATUS_EPSILON}
           AND COALESCE(rt.putaway_posted, 0) + COALESCE(rt.putaway_pending, 0) + ${STATUS_EPSILON}

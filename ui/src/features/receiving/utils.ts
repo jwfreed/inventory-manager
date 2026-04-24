@@ -28,19 +28,22 @@ export const buildReceiptLines = (po: PurchaseOrder): ReceiptLineInput[] => {
 
 export const getQcBreakdown = (line: PurchaseOrderReceiptLine) => {
   const breakdown = line.qcSummary?.breakdown ?? { accept: 0, hold: 0, reject: 0 }
-  const totalQc = breakdown.accept + breakdown.hold + breakdown.reject
+  const totalQc = breakdown.accept + breakdown.hold + breakdown.reject + (breakdown.disposed ?? 0)
   const remaining =
     line.qcSummary?.remainingUninspectedQuantity ?? Math.max(0, line.quantityReceived - totalQc)
   return { ...breakdown, remaining, totalQc }
 }
 
 export const getQcStatus = (line: PurchaseOrderReceiptLine) => {
-  const { totalQc, remaining } = getQcBreakdown(line)
+  const { hold, totalQc, remaining } = getQcBreakdown(line)
   if (totalQc === 0) {
     return { label: 'QC not started', variant: 'neutral' as const }
   }
   if (remaining > 0) {
     return { label: 'QC in progress', variant: 'warning' as const }
+  }
+  if (hold > 0) {
+    return { label: 'Hold unresolved', variant: 'warning' as const }
   }
   return { label: 'QC complete', variant: 'success' as const }
 }

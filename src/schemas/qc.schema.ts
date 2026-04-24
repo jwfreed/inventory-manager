@@ -34,3 +34,16 @@ export const qcWarehouseDispositionSchema = z.object({
   overrideNegative: z.boolean().optional(),
   overrideReason: z.string().max(2000).optional()
 });
+
+export const holdDispositionSchema = z.object({
+  purchaseOrderReceiptLineId: z.string().uuid(),
+  dispositionType: z.enum(['release', 'rework', 'discard']),
+  quantity: z.number().positive(),
+  uom: uomSchema.max(32),
+  reasonCode: z.string().max(255).optional(),
+  notes: z.string().max(2000).optional(),
+  actorType: z.enum(['user', 'system']),
+  actorId: z.string().max(255).optional(),
+  sourceBinId: z.string().uuid().optional(),
+  destinationBinId: z.string().uuid().optional()
+});

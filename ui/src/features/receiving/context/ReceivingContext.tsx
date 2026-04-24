@@ -16,7 +16,13 @@ import { purchaseOrdersQueryKeys, usePurchaseOrder, usePurchaseOrdersList } from
 import { useLocationsList } from '@features/locations/queries'
 import { createReceipt, voidReceiptApi, type ReceiptCreatePayload } from '../api/receipts'
 import { createPutaway, postPutaway, type PutawayCreatePayload } from '../api/putaways'
-import { createQcEvent, type QcEventCreatePayload } from '../api/qc'
+import {
+  createQcEvent,
+  resolveHoldDisposition,
+  type HoldDispositionPayload,
+  type HoldDispositionResult,
+  type QcEventCreatePayload,
+} from '../api/qc'
 import { receivingQueryKeys, usePutaway, useQcEventsForLine, useReceipt, useReceiptsList } from '../queries'
 import { buildReceiptLines, getQcBreakdown } from '../utils'
 import type { PutawayLineInput, QcDraft, ReceiptLineInput, ReceiptLineOption, ReceiptLineSummary } from '../types'
@@ -114,7 +120,14 @@ export type ReceivingContextValue = {
 
   // ── QC Mutations ──
   qcEventMutation: ReturnType<typeof useMutation<QcEvent, unknown, QcEventCreatePayload>>
+  holdDispositionMutation: ReturnType<typeof useMutation<HoldDispositionResult, unknown, HoldDispositionPayload>>
   onCreateQcEvent: () => void
+  onResolveHoldDisposition: (
+    dispositionType: HoldDispositionPayload['dispositionType'],
+    quantity: number,
+    reasonCode?: string,
+    notes?: string,
+  ) => void
 
   // ── Putaway Step State ──
   putawayLines: PutawayLineInput[]
@@ -560,7 +573,10 @@ export function ReceivingProvider({ children }: Props) {
   const poEligibleForReceipt = poStatus === 'approved'
   const receiptLoaded = !!receiptQuery.data
   const qcNeedsAttention = receiptLoaded
-    ? receiptLines.some((line) => (line.qcSummary?.remainingUninspectedQuantity ?? 0) > 0)
+    ? receiptLines.some((line) => {
+        const breakdown = line.qcSummary?.breakdown
+        return (line.qcSummary?.remainingUninspectedQuantity ?? 0) > 0 || (breakdown?.hold ?? 0) > 0
+      })
     : true
 
   const putawayBlockingLine = receiptLines.find((line) => {
@@ -611,6 +627,16 @@ export function ReceivingProvider({ children }: Props) {
       updateQcDraft({ reasonCode: '', notes: '' })
       void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.detail(receiptIdForQc) })
       void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.qcEvents.forLine(activeQcLineId) })
+      void recentReceiptsQuery.refetch()
+    },
+  })
+
+  const holdDispositionMutation = useMutation({
+    mutationFn: (payload: HoldDispositionPayload) => resolveHoldDisposition(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.detail(receiptIdForQc) })
+      void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.qcEvents.forLine(activeQcLineId) })
+      void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.all })
       void recentReceiptsQuery.refetch()
     },
   })
@@ -854,6 +880,29 @@ export function ReceivingProvider({ children }: Props) {
 
     qcEventMutation.mutate(payload)
   }, [selectedQcLine, qcQuantityInvalid, qcEventType, qcQuantityNumber, qcReasonCode, qcNotes, user, qcEventMutation, isOnline, queueOperation, updateQcDraft])
+
+  const onResolveHoldDisposition = useCallback(
+    (
+      dispositionType: HoldDispositionPayload['dispositionType'],
+      quantity: number,
+      reasonCode?: string,
+      notes?: string,
+    ) => {
+      if (!selectedQcLine) return
+      if (!(quantity > 0)) return
+      holdDispositionMutation.mutate({
+        purchaseOrderReceiptLineId: selectedQcLine.id,
+        dispositionType,
+        quantity,
+        uom: selectedQcLine.uom,
+        reasonCode: reasonCode?.trim() ? reasonCode.trim() : undefined,
+        notes: notes?.trim() ? notes.trim() : undefined,
+        actorType: 'user',
+        actorId: user?.id ?? user?.email ?? undefined,
+      })
+    },
+    [holdDispositionMutation, selectedQcLine, user],
+  )
 
   const onCreatePutaway = useCallback(
     async (e: React.FormEvent) => {
@@ -1378,7 +1427,9 @@ export function ReceivingProvider({ children }: Props) {
 
       // QC Mutations
       qcEventMutation,
+      holdDispositionMutation,
       onCreateQcEvent,
+      onResolveHoldDisposition,
 
       // Putaway Step
       putawayLines,
@@ -1494,7 +1545,9 @@ export function ReceivingProvider({ children }: Props) {
       qcEventsList,
       recentReceiptsQuery,
       qcEventMutation,
+      holdDispositionMutation,
       onCreateQcEvent,
+      onResolveHoldDisposition,
       putawayLines,
       addPutawayLine,
       updatePutawayLine,

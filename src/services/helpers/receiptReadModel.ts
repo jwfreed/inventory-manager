@@ -36,7 +36,9 @@ export type ReceiptStatusSummary = {
 
 function buildQcSummary(lineId: string, breakdownMap: Map<string, QcBreakdown>, quantityReceived: number) {
   const breakdown = breakdownMap.get(lineId) ?? defaultBreakdown();
-  const totalQcQuantity = roundQuantity(breakdown.hold + breakdown.accept + breakdown.reject);
+  const totalQcQuantity = roundQuantity(
+    breakdown.hold + breakdown.accept + breakdown.reject + (breakdown.disposed ?? 0)
+  );
   return {
     totalQcQuantity,
     breakdown,
