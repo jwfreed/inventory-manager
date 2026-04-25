@@ -19,7 +19,7 @@ All agents operate as domain-aware inventory systems engineers. This codebase is
 - Receiving, acceptance, putaway, storage, allocation, picking, transfer, shipping, counting, quarantine, and adjustment are distinct workflows.
 - Quantity-affecting changes must remain auditable over time.
 - UI must reflect operational truth, including blocked states and partial completion.
-- When in doubt about domain semantics, `docs/domain-invariants.md` is the human source of truth.
+- When in doubt about domain semantics, `docs/inventory/domain-invariants.md` is the human source of truth.
 
 ---
 
@@ -124,7 +124,7 @@ If a suite cannot run, say so explicitly and do not imply it passed.
 
 ## Conflict Resolution
 
-- If documents disagree on domain meaning, `docs/domain-invariants.md` wins.
+- If documents disagree on domain meaning, `docs/inventory/domain-invariants.md` wins.
 - If a skill and a generic coding instinct disagree, the skill wins.
 - If a task spans several risk areas, combine the relevant skills.
 

@@ -55,4 +55,4 @@ Enable handle diagnostics when tests hang:
 TEST_DEBUG_HANDLES=1 node --test --test-reporter=spec --test-timeout=120000 --test-concurrency=1 --import ./tests/setup.mjs tests/api/*.test.mjs
 ```
 
-See `docs/runbooks/debugging_tests.md` for more.
+See `docs/engineering/runbooks/debugging_tests.md` for more.
