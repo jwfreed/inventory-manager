@@ -5,7 +5,6 @@ import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { seedWarehouseTopologyForTenant } from '../../scripts/seed_warehouse_topology.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -16,12 +15,17 @@ if (!process.env.DB_POOL_MAX) {
 if (!process.env.DB_STATEMENT_TIMEOUT_MS) {
   process.env.DB_STATEMENT_TIMEOUT_MS = '15000';
 }
+if (!process.env.DB_CONNECTION_TIMEOUT_MS) {
+  process.env.DB_CONNECTION_TIMEOUT_MS = '30000';
+}
 if (!process.env.ATP_SERIALIZABLE_RETRIES) {
   process.env.ATP_SERIALIZABLE_RETRIES = '10';
 }
 if (!process.env.ATP_RESERVATION_CREATE_RETRIES) {
   process.env.ATP_RESERVATION_CREATE_RETRIES = '50';
 }
+
+const { seedWarehouseTopologyForTenant } = await import('../../scripts/seed_warehouse_topology.mjs');
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');

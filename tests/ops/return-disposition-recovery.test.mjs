@@ -212,6 +212,7 @@ test('return disposition retry fails closed when authoritative movement state is
     `INSERT INTO inventory_movement_lines (
         id,
         movement_id,
+        source_line_id,
         item_id,
         location_id,
         quantity_delta,
@@ -228,11 +229,12 @@ test('return disposition retry fails closed when authoritative movement state is
         canonical_uom,
         uom_dimension
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,'return_disposition_corruption',$7,$8,$9,$10,$11,$5,$6,$5,$12,'count'
+        $1,$2,$3,$4,$5,$6,$7,'return_disposition_corruption',$8,$9,$10,$11,$12,$6,$7,$6,$13,'count'
       )`,
     [
       randomUUID(),
       ambiguousMovementId,
+      'return-disposition-corruption-line',
       movementLine.item_id,
       movementLine.location_id,
       movementLine.quantity_delta,

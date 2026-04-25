@@ -114,9 +114,9 @@ test('inventory_balance and inventory_movement_lines reject blank and whitespace
   await assert.rejects(
     db.query(
       `INSERT INTO inventory_movement_lines (
-          id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, created_at
-       ) VALUES ($1, $2, $3, $4, $5, 1, '', now())`,
-      [randomUUID(), tenantId, movementId, itemId, defaults.SELLABLE.id],
+          id, tenant_id, movement_id, source_line_id, item_id, location_id, quantity_delta, uom, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, 1, '', now())`,
+      [randomUUID(), tenantId, movementId, 'uom-empty-fixture', itemId, defaults.SELLABLE.id],
     ),
     (error) =>
       error?.code === '23514'
@@ -126,9 +126,9 @@ test('inventory_balance and inventory_movement_lines reject blank and whitespace
   await assert.rejects(
     db.query(
       `INSERT INTO inventory_movement_lines (
-          id, tenant_id, movement_id, item_id, location_id, quantity_delta, uom, created_at
-       ) VALUES ($1, $2, $3, $4, $5, 1, '   ', now())`,
-      [randomUUID(), tenantId, movementId, itemId, defaults.SELLABLE.id],
+          id, tenant_id, movement_id, source_line_id, item_id, location_id, quantity_delta, uom, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, 1, '   ', now())`,
+      [randomUUID(), tenantId, movementId, 'uom-whitespace-fixture', itemId, defaults.SELLABLE.id],
     ),
     (error) =>
       error?.code === '23514'

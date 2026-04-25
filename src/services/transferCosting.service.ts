@@ -10,6 +10,7 @@ type SourceLayerRow = {
   item_id: string;
   location_id: string;
   uom: string;
+  layer_date: Date;
   remaining_quantity: string | number;
   unit_cost: string | number;
 };
@@ -46,6 +47,7 @@ async function lockAvailableLayersForUpdate(
             item_id,
             location_id,
             uom,
+            layer_date,
             remaining_quantity,
             unit_cost
        FROM inventory_cost_layers
@@ -239,7 +241,7 @@ export async function relocateTransferCostLayersInTx(params: {
         source_type: 'transfer_in',
         source_document_id: pair.inLineId,
         movement_id: params.transferMovementId,
-        layer_date: params.occurredAt,
+        layer_date: layer.layer_date,
         notes: params.notes ?? undefined,
         client: params.client
       });
