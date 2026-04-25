@@ -8,6 +8,10 @@ require('tsconfig-paths/register');
 const {
   buildMovementDeterministicHash
 } = require('../../src/modules/platform/application/inventoryMovementDeterminism.ts');
+const {
+  applyInventoryBalanceDelta,
+  applyPersistedMovementToInventoryUnits
+} = require('../../src/domains/inventory/index.ts');
 
 function toIsoTimestamp(value = new Date()) {
   return new Date(value).toISOString();
@@ -166,6 +170,32 @@ export async function insertPostedMovementFixture(pool, params) {
         line.createdAt
       ]
     );
+  }
+
+  const shouldProject = optionalValue(params.project, true)
+    && optionalValue(params.status, 'posted') === 'posted'
+    && lines.length > 0;
+  if (shouldProject) {
+    await applyPersistedMovementToInventoryUnits(pool, {
+      tenantId: params.tenantId,
+      movementId
+    });
+
+    for (const line of lines) {
+      await applyInventoryBalanceDelta(pool, {
+        tenantId: params.tenantId,
+        itemId: line.itemId,
+        locationId: line.locationId,
+        uom: line.canonicalUom ?? line.uom,
+        deltaOnHand: line.quantityDeltaCanonical ?? line.quantityDelta,
+        mutationContext: {
+          movementId,
+          sourceLineId: line.sourceLineId,
+          reasonCode: line.reasonCode,
+          eventTimestamp: line.createdAt
+        }
+      });
+    }
   }
 
   return {

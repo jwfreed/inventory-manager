@@ -416,6 +416,56 @@ test('record-batch replay fails closed when authoritative movement lines drift',
     () => harness.recordBatch(workOrderId, requestBody, {}, { idempotencyKey }),
     'REPLAY_CORRUPTION_DETECTED'
   );
+
+  await db.query(
+    `INSERT INTO inventory_movement_lines (
+        id,
+        tenant_id,
+        movement_id,
+        source_line_id,
+        item_id,
+        location_id,
+        quantity_delta,
+        uom,
+        quantity_delta_entered,
+        uom_entered,
+        quantity_delta_canonical,
+        canonical_uom,
+        uom_dimension,
+        unit_cost,
+        extended_cost,
+        reason_code,
+        line_notes,
+        created_at
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        1,
+        'each',
+        1,
+        'each',
+        1,
+        'each',
+        'count',
+        0,
+        0,
+        'tamper_issue_restore',
+        'restore tamper issue line for post-scenario integrity',
+        now()
+      )`,
+    [
+      randomUUID(),
+      tenantId,
+      first.issueMovementId,
+      `tamper-issue-restore:${randomUUID()}`,
+      componentItemId,
+      topology.defaults.SELLABLE.id
+    ]
+  );
 });
 
 test('record-batch replay fails when WIP valuation ledger integrity is broken', async () => {

@@ -9,6 +9,9 @@ import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
+const {
+  applyInventoryBalanceDelta
+} = require('../../src/domains/inventory/index.ts');
 
 const FIXED_OCCURRED_AT = new Date('2026-03-01T00:00:00.000Z');
 
@@ -500,6 +503,29 @@ test('inventory transfer replay fails closed when authoritative movement lines d
     'REPLAY_CORRUPTION_DETECTED',
     'authoritative_movement_line_count_mismatch'
   );
+
+  await applyInventoryBalanceDelta(db, {
+    tenantId,
+    itemId,
+    locationId: factory.defaults.SELLABLE.id,
+    uom: 'each',
+    deltaOnHand: -1,
+    mutationContext: {
+      reasonCode: 'tamper_out',
+      eventTimestamp: new Date()
+    }
+  });
+  await applyInventoryBalanceDelta(db, {
+    tenantId,
+    itemId,
+    locationId: store.sellable.id,
+    uom: 'each',
+    deltaOnHand: 1,
+    mutationContext: {
+      reasonCode: 'tamper_in',
+      eventTimestamp: new Date()
+    }
+  });
 });
 
 test('inventory transfer schema rejects missing hashes and replay fails closed on mismatches', async () => {

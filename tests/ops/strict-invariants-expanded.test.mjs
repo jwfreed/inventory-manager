@@ -113,13 +113,14 @@ async function runInvariantStrictExpectFailure(tenantId) {
 }
 
 async function insertNegativeOnHandFixture({ pool, tenantId, itemId, locationId }) {
-  await insertPostedMovementFixture(pool, {
+  const result = await insertPostedMovementFixture(pool, {
     tenantId,
     movementType: 'adjustment',
     sourceType: 'test_fixture',
     sourceId: randomUUID(),
     externalRef: `NEG-ON-HAND-${randomUUID()}`,
     notes: 'negative on_hand fixture',
+    project: false,
     lines: [
       {
         itemId,
@@ -138,6 +139,7 @@ async function insertNegativeOnHandFixture({ pool, tenantId, itemId, locationId 
       }
     ]
   });
+  return result;
 }
 
 async function insertCostLayerFixtures({
@@ -269,7 +271,7 @@ test('negative_on_hand check detects negative ledger position and strict mode fa
 
   const sellable = await getSellableDefault(session.pool, tenantId);
   const itemId = await createItem(token, sellable.locationId, 'NEG-OH');
-  await insertNegativeOnHandFixture({
+  const negativeFixture = await insertNegativeOnHandFixture({
     pool: session.pool,
     tenantId,
     itemId,
@@ -287,6 +289,56 @@ test('negative_on_hand check detects negative ledger position and strict mode fa
   const strictCombined = `${strictFailure.stdout}\n${strictFailure.stderr}`;
   assert.match(strictFailure.stdout, /\[negative_on_hand\] count=/);
   assert.match(strictCombined, /"negative_on_hand":/);
+
+  await session.pool.query(
+    `INSERT INTO inventory_movement_lines (
+        id,
+        tenant_id,
+        movement_id,
+        source_line_id,
+        item_id,
+        location_id,
+        quantity_delta,
+        uom,
+        quantity_delta_entered,
+        uom_entered,
+        quantity_delta_canonical,
+        canonical_uom,
+        uom_dimension,
+        unit_cost,
+        extended_cost,
+        reason_code,
+        line_notes,
+        created_at
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        5,
+        'each',
+        5,
+        'each',
+        5,
+        'each',
+        'count',
+        0,
+        0,
+        'phase42_negative_on_hand_restore',
+        'restore negative on_hand fixture for post-scenario integrity',
+        now()
+      )`,
+    [
+      randomUUID(),
+      tenantId,
+      negativeFixture.movementId,
+      `restore:${randomUUID()}`,
+      itemId,
+      sellable.locationId
+    ]
+  );
 });
 
 test('unmatched_cost_layers and orphaned_cost_layers detect controlled fixture drift', { timeout: 120000 }, async () => {

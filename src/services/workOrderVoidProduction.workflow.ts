@@ -9,6 +9,7 @@ import {
   planCostLayerConsumption
 } from './costLayers.service';
 import {
+  applyInventoryBalanceDelta,
   persistInventoryMovement
 } from '../domains/inventory';
 import {
@@ -858,7 +859,60 @@ export async function voidWorkOrderProductionReport(
         outputReversalCost: totalOutputReversalCost,
         componentReturnCost: totalComponentReturnCost
       });
-      await restoreReservationsForVoid(tenantId, workOrderId, currentExecution.id, client);
+      const reservationProjectionTargets = await restoreReservationsForVoid(
+        tenantId,
+        workOrderId,
+        currentExecution.id,
+        client
+      );
+      for (const target of reservationProjectionTargets) {
+        projectionOps.push(async (projectionClient) => {
+          const current = await projectionClient.query<{
+            reserved: string | number;
+            allocated: string | number;
+          }>(
+            `SELECT reserved, allocated
+               FROM inventory_balance
+              WHERE tenant_id = $1
+                AND item_id = $2
+                AND location_id = $3
+                AND uom = $4`,
+            [tenantId, target.itemId, target.locationId, target.uom]
+          );
+          const currentReserved = roundQuantity(toNumber(current.rows[0]?.reserved ?? 0));
+          const currentAllocated = roundQuantity(toNumber(current.rows[0]?.allocated ?? 0));
+          const deltaAllocated = roundQuantity(target.allocated - currentAllocated);
+          if (Math.abs(deltaAllocated) > 1e-6) {
+            await applyInventoryBalanceDelta(projectionClient, {
+              tenantId,
+              itemId: target.itemId,
+              locationId: target.locationId,
+              uom: target.uom,
+              deltaAllocated,
+              mutationContext: {
+                reasonCode: 'work_order_void_reservation_restore',
+                eventTimestamp: now,
+                stateTransition: deltaAllocated < 0 ? 'allocated->available' : 'available->allocated'
+              }
+            });
+          }
+          const deltaReserved = roundQuantity(target.reserved - currentReserved);
+          if (Math.abs(deltaReserved) > 1e-6) {
+            await applyInventoryBalanceDelta(projectionClient, {
+              tenantId,
+              itemId: target.itemId,
+              locationId: target.locationId,
+              uom: target.uom,
+              deltaReserved,
+              mutationContext: {
+                reasonCode: 'work_order_void_reservation_restore',
+                eventTimestamp: now,
+                stateTransition: deltaReserved < 0 ? 'allocated->available' : 'available->allocated'
+              }
+            });
+          }
+        });
+      }
 
       projectionOps.push(
         ...projectionEngine.buildVoidProjectionOps({

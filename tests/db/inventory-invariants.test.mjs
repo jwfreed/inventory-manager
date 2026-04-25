@@ -221,4 +221,25 @@ test('invariants detect ATP oversell condition on sellable warehouse scope', asy
   const summary = results.find((row) => row.tenantId === tenantId);
   assert.ok(summary, 'summary expected');
   assert.ok((summary.atpOversellDetectedCount ?? 0) > 0, JSON.stringify(summary));
+
+  await db.query(
+    `UPDATE inventory_reservations
+        SET status = 'CANCELLED',
+            updated_at = now()
+      WHERE tenant_id = $1
+        AND id = $2`,
+    [tenantId, reservationId]
+  );
+  await db.query(
+    `UPDATE inventory_balance
+        SET on_hand = 0,
+            reserved = 0,
+            allocated = 0,
+            updated_at = now()
+      WHERE tenant_id = $1
+        AND item_id = $2
+        AND location_id = $3
+        AND uom = 'each'`,
+    [tenantId, itemId, defaults.SELLABLE.id]
+  );
 });

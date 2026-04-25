@@ -108,7 +108,21 @@ test('inventory_balance and inventory_movement_lines reject blank and whitespace
     sourceType: 'uom_constraint_fixture',
     sourceId: randomUUID(),
     notes: 'uom constraint fixture',
-    lines: [],
+    lines: [
+      {
+        itemId,
+        locationId: defaults.SELLABLE.id,
+        quantityDelta: 1,
+        uom: 'each',
+        quantityDeltaEntered: 1,
+        uomEntered: 'each',
+        quantityDeltaCanonical: 1,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        reasonCode: 'uom_constraint_fixture',
+        lineNotes: 'valid fixture line'
+      }
+    ],
   });
 
   await assert.rejects(

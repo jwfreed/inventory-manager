@@ -87,6 +87,14 @@ export type WorkOrderReservationSnapshotLine = WorkOrderReservationPlanLine & {
   shortageQty: number;
 };
 
+export type ReservationCommitmentProjectionTarget = {
+  itemId: string;
+  locationId: string;
+  uom: string;
+  reserved: number;
+  allocated: number;
+};
+
 type WorkOrderReservationPlan = {
   workOrder: WorkOrderRow;
   stageType: string;
@@ -780,13 +788,13 @@ export async function restoreReservationsForVoid(
   workOrderId: string,
   executionId: string,
   client?: PoolClient
-): Promise<void> {
+): Promise<ReservationCommitmentProjectionTarget[]> {
   if (!client) {
     return withTransaction((tx) => restoreReservationsForVoid(tenantId, workOrderId, executionId, tx));
   }
 
   if (await hasVoidReservationRestoreMarker(client, tenantId, executionId)) {
-    return;
+    return [];
   }
 
   const executionResult = await client.query<{ consumption_movement_id: string | null }>(
@@ -841,7 +849,7 @@ export async function restoreReservationsForVoid(
       },
       client
     );
-    return;
+    return [];
   }
 
   const reservations = await loadExistingReservations(client, tenantId, workOrderId);
@@ -979,6 +987,46 @@ export async function restoreReservationsForVoid(
     },
     client
   );
+
+  const targetResult = await client.query<{
+    item_id: string;
+    location_id: string;
+    uom: string;
+    reserved: string | number;
+    allocated: string | number;
+  }>(
+    `SELECT item_id,
+            location_id,
+            uom,
+            COALESCE(SUM(
+              CASE
+                WHEN status = 'RESERVED'
+                THEN GREATEST(0, quantity_reserved - COALESCE(quantity_fulfilled, 0))
+                ELSE 0
+              END
+            ), 0)::numeric AS reserved,
+            COALESCE(SUM(
+              CASE
+                WHEN status = 'ALLOCATED'
+                THEN GREATEST(0, quantity_reserved - COALESCE(quantity_fulfilled, 0))
+                ELSE 0
+              END
+            ), 0)::numeric AS allocated
+       FROM inventory_reservations
+      WHERE tenant_id = $1
+        AND demand_type = 'work_order_component'
+        AND demand_id = $2
+        AND status IN ('RESERVED', 'ALLOCATED')
+      GROUP BY item_id, location_id, uom`,
+    [tenantId, workOrderId]
+  );
+  return targetResult.rows.map((row) => ({
+    itemId: row.item_id,
+    locationId: row.location_id,
+    uom: row.uom,
+    reserved: roundQuantity(toNumber(row.reserved)),
+    allocated: roundQuantity(toNumber(row.allocated))
+  }));
 }
 
 export async function releaseWorkOrderReservations(

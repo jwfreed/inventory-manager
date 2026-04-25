@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createServiceHarness } from '../helpers/service-harness.mjs';
+import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -180,73 +181,38 @@ test('return disposition retry fails closed when authoritative movement state is
     }]
   });
 
-  await harness.pool.query(
-    `INSERT INTO inventory_movements (
-        id,
-        movement_type,
-        status,
-        external_ref,
-        occurred_at,
-        posted_at,
-        notes,
-        created_at,
-        updated_at,
-        tenant_id,
-        metadata,
-        idempotency_key,
-        source_type,
-        source_id,
-        movement_deterministic_hash
-      ) VALUES ($1,'receive','posted',$2,$3,$3,$4,$3,$3,$5,NULL,NULL,'return_disposition_post',$6,$7)`,
-    [
-      ambiguousMovementId,
-      `corrupt:${ambiguousMovementId}`,
-      '2026-03-19T00:00:00.000Z',
-      'Ambiguous authoritative movement',
-      harness.tenantId,
-      disposition.id,
-      ambiguousHash
+  await insertPostedMovementFixture(harness.pool, {
+    id: ambiguousMovementId,
+    tenantId: harness.tenantId,
+    movementType: 'receive',
+    sourceType: 'return_disposition_post',
+    sourceId: disposition.id,
+    externalRef: `corrupt:${ambiguousMovementId}`,
+    occurredAt: '2026-03-19T00:00:00.000Z',
+    postedAt: '2026-03-19T00:00:00.000Z',
+    notes: 'Ambiguous authoritative movement',
+    movementDeterministicHash: ambiguousHash,
+    lines: [
+      {
+        id: randomUUID(),
+        sourceLineId: 'return-disposition-corruption-line',
+        itemId: movementLine.item_id,
+        locationId: movementLine.location_id,
+        quantityDelta: Number(movementLine.quantity_delta),
+        uom: movementLine.canonical_uom,
+        quantityDeltaEntered: Number(movementLine.quantity_delta),
+        uomEntered: movementLine.canonical_uom,
+        quantityDeltaCanonical: Number(movementLine.quantity_delta),
+        canonicalUom: movementLine.canonical_uom,
+        uomDimension: 'count',
+        unitCost: Number(movementLine.unit_cost ?? 0),
+        extendedCost: Number(movementLine.quantity_delta) * Number(movementLine.unit_cost ?? 0),
+        reasonCode: 'return_disposition_corruption',
+        lineNotes: 'Ambiguous authoritative movement line',
+        createdAt: '2026-03-19T00:00:00.000Z'
+      }
     ]
-  );
-  await harness.pool.query(
-    `INSERT INTO inventory_movement_lines (
-        id,
-        movement_id,
-        source_line_id,
-        item_id,
-        location_id,
-        quantity_delta,
-        uom,
-        reason_code,
-        line_notes,
-        created_at,
-        tenant_id,
-        unit_cost,
-        extended_cost,
-        quantity_delta_entered,
-        uom_entered,
-        quantity_delta_canonical,
-        canonical_uom,
-        uom_dimension
-      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,'return_disposition_corruption',$8,$9,$10,$11,$12,$6,$7,$6,$13,'count'
-      )`,
-    [
-      randomUUID(),
-      ambiguousMovementId,
-      'return-disposition-corruption-line',
-      movementLine.item_id,
-      movementLine.location_id,
-      movementLine.quantity_delta,
-      movementLine.canonical_uom,
-      'Ambiguous authoritative movement line',
-      '2026-03-19T00:00:00.000Z',
-      harness.tenantId,
-      movementLine.unit_cost,
-      Number(movementLine.quantity_delta) * Number(movementLine.unit_cost ?? 0),
-      movementLine.canonical_uom
-    ]
-  );
+  });
 
   await assert.rejects(
     () =>

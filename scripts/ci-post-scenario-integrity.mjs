@@ -61,40 +61,45 @@ try {
   console.log(`[integrity] Found ${tenantIds.length} tenant(s). Running invariant checks...\n`);
 
   // ────────────────────────────────────────────────────────
-  // 1. LEDGER-BALANCE RECONCILIATION
-  //    The on_hand in inventory_balance must equal the sum
-  //    of quantity_delta from movement lines for each
-  //    (tenant, item, location, uom) tuple.
+  // 1. AUTHORITY-BALANCE RECONCILIATION
+  //    inventory_balance is a compatibility projection. It must
+  //    match the authoritative ledger/reservation availability view
+  //    for each (tenant, item, location, uom) tuple.
   // ────────────────────────────────────────────────────────
   const ledgerReconcileRes = await pool.query(`
-    WITH ledger_sums AS (
-      SELECT iml.tenant_id,
-             iml.item_id,
-             iml.location_id,
-             COALESCE(iml.canonical_uom, iml.uom) AS uom,
-             SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS ledger_on_hand
-        FROM inventory_movement_lines iml
-        JOIN inventory_movements im
-          ON im.id = iml.movement_id
-         AND im.tenant_id = iml.tenant_id
-       WHERE im.status NOT IN ('voided', 'reversed')
-       GROUP BY iml.tenant_id, iml.item_id, iml.location_id,
-                COALESCE(iml.canonical_uom, iml.uom)
+    WITH authority AS (
+      SELECT tenant_id,
+             item_id,
+             location_id,
+             uom,
+             SUM(on_hand_qty) AS on_hand,
+             SUM(reserved_qty) AS reserved,
+             SUM(allocated_qty) AS allocated
+        FROM inventory_available_location_v
+       GROUP BY tenant_id, item_id, location_id, uom
     )
     SELECT b.tenant_id,
            b.item_id,
            b.location_id,
            b.uom,
            b.on_hand AS balance_on_hand,
-           COALESCE(ls.ledger_on_hand, 0) AS ledger_on_hand,
-           b.on_hand - COALESCE(ls.ledger_on_hand, 0) AS drift
+           COALESCE(a.on_hand, 0) AS authority_on_hand,
+           b.reserved AS balance_reserved,
+           COALESCE(a.reserved, 0) AS authority_reserved,
+           b.allocated AS balance_allocated,
+           COALESCE(a.allocated, 0) AS authority_allocated,
+           b.on_hand - COALESCE(a.on_hand, 0) AS on_hand_drift,
+           b.reserved - COALESCE(a.reserved, 0) AS reserved_drift,
+           b.allocated - COALESCE(a.allocated, 0) AS allocated_drift
       FROM inventory_balance b
-      LEFT JOIN ledger_sums ls
-        ON ls.tenant_id = b.tenant_id
-       AND ls.item_id = b.item_id
-       AND ls.location_id = b.location_id
-       AND ls.uom = b.uom
-     WHERE ABS(b.on_hand - COALESCE(ls.ledger_on_hand, 0)) > 0.0001
+      LEFT JOIN authority a
+        ON a.tenant_id = b.tenant_id
+       AND a.item_id = b.item_id
+       AND a.location_id = b.location_id
+       AND a.uom = b.uom
+     WHERE ABS(b.on_hand - COALESCE(a.on_hand, 0)) > 0.0001
+        OR ABS(b.reserved - COALESCE(a.reserved, 0)) > 0.0001
+        OR ABS(b.allocated - COALESCE(a.allocated, 0)) > 0.0001
      LIMIT 50
   `);
   report(
@@ -103,34 +108,35 @@ try {
     ledgerReconcileRes.rows
   );
 
-  // Also check for ledger sums with no balance row
+  // Also check for authoritative rows with no balance projection row
   const orphanedLedgerRes = await pool.query(`
-    WITH ledger_sums AS (
-      SELECT iml.tenant_id,
-             iml.item_id,
-             iml.location_id,
-             COALESCE(iml.canonical_uom, iml.uom) AS uom,
-             SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS ledger_on_hand
-        FROM inventory_movement_lines iml
-        JOIN inventory_movements im
-          ON im.id = iml.movement_id
-         AND im.tenant_id = iml.tenant_id
-       WHERE im.status NOT IN ('voided', 'reversed')
-       GROUP BY iml.tenant_id, iml.item_id, iml.location_id,
-                COALESCE(iml.canonical_uom, iml.uom)
-      HAVING ABS(SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta))) > 0.0001
+    WITH authority AS (
+      SELECT tenant_id,
+             item_id,
+             location_id,
+             uom,
+             SUM(on_hand_qty) AS on_hand,
+             SUM(reserved_qty) AS reserved,
+             SUM(allocated_qty) AS allocated
+        FROM inventory_available_location_v
+       GROUP BY tenant_id, item_id, location_id, uom
+      HAVING ABS(SUM(on_hand_qty)) > 0.0001
+          OR ABS(SUM(reserved_qty)) > 0.0001
+          OR ABS(SUM(allocated_qty)) > 0.0001
     )
-    SELECT ls.tenant_id,
-           ls.item_id,
-           ls.location_id,
-           ls.uom,
-           ls.ledger_on_hand
-      FROM ledger_sums ls
+    SELECT a.tenant_id,
+           a.item_id,
+           a.location_id,
+           a.uom,
+           a.on_hand AS authority_on_hand,
+           a.reserved AS authority_reserved,
+           a.allocated AS authority_allocated
+      FROM authority a
       LEFT JOIN inventory_balance b
-        ON b.tenant_id = ls.tenant_id
-       AND b.item_id = ls.item_id
-       AND b.location_id = ls.location_id
-       AND b.uom = ls.uom
+        ON b.tenant_id = a.tenant_id
+       AND b.item_id = a.item_id
+       AND b.location_id = a.location_id
+       AND b.uom = a.uom
      WHERE b.tenant_id IS NULL
      LIMIT 50
   `);
@@ -166,10 +172,12 @@ try {
   // ────────────────────────────────────────────────────────
   const stateRelationRes = await pool.query(`
     SELECT tenant_id, item_id, location_id, uom,
-           on_hand, reserved, allocated,
-           (on_hand - reserved - allocated) AS available
-      FROM inventory_balance
-     WHERE (reserved + allocated) > on_hand + 0.0001
+           on_hand_qty AS on_hand,
+           reserved_qty AS reserved,
+           allocated_qty AS allocated,
+           available_qty AS available
+      FROM inventory_available_location_v
+     WHERE (reserved_qty + allocated_qty) > on_hand_qty + 0.0001
      LIMIT 50
   `);
   report(
@@ -316,11 +324,11 @@ try {
   //    No two non-voided movements share the same idempotency_key
   // ────────────────────────────────────────────────────────
   const idempotencyRes = await pool.query(`
-    SELECT idempotency_key, COUNT(*)::int AS cnt
+    SELECT tenant_id, idempotency_key, COUNT(*)::int AS cnt
       FROM inventory_movements
      WHERE idempotency_key IS NOT NULL
        AND status NOT IN ('voided', 'reversed')
-     GROUP BY idempotency_key
+     GROUP BY tenant_id, idempotency_key
     HAVING COUNT(*) > 1
      LIMIT 50
   `);
@@ -336,14 +344,10 @@ try {
   // ────────────────────────────────────────────────────────
   const conservationRes = await pool.query(`
     WITH ledger_totals AS (
-      SELECT iml.tenant_id,
-             SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)) AS total_ledger
-        FROM inventory_movement_lines iml
-        JOIN inventory_movements im
-          ON im.id = iml.movement_id
-         AND im.tenant_id = iml.tenant_id
-       WHERE im.status NOT IN ('voided', 'reversed')
-       GROUP BY iml.tenant_id
+      SELECT tenant_id,
+             SUM(on_hand_qty) AS total_ledger
+        FROM inventory_available_location_v
+       GROUP BY tenant_id
     ),
     balance_totals AS (
       SELECT tenant_id,
