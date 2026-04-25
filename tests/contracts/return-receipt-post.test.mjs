@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createServiceHarness } from '../helpers/service-harness.mjs';
+import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 import { assertMovementContract } from './helpers/mutationContract.mjs';
 
 const require = createRequire(import.meta.url);
@@ -20,6 +21,21 @@ const {
 const {
   buildMovementDeterministicHash
 } = require('../../src/modules/platform/application/inventoryMutationSupport.ts');
+
+async function runInTransaction(db, callback) {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 async function createPostedReturnReceiptFixture(harness, options = {}) {
   const { topology } = harness;
@@ -244,6 +260,7 @@ test('return receipt retry tolerates linkage drift by repairing the document poi
     skuPrefix: 'RET-DRIFT-A'
   });
   const syntheticMovementId = randomUUID();
+  const driftLineId = randomUUID();
   const syntheticHash = buildMovementDeterministicHash({
     tenantId: harness.tenantId,
     movementType: 'receive',
@@ -260,74 +277,34 @@ test('return receipt retry tolerates linkage drift by repairing the document poi
     }]
   });
 
-  await harness.pool.query(
-    `INSERT INTO inventory_movements (
-        id,
-        movement_type,
-        status,
-        external_ref,
-        occurred_at,
-        posted_at,
-        notes,
-        created_at,
-        updated_at,
-        tenant_id,
-        metadata,
-        idempotency_key,
-        source_type,
-        source_id,
-        movement_deterministic_hash
-      ) VALUES ($1,'receive','posted',$2,$3,$3,$4,$3,$3,$5,NULL,NULL,'manual_test_drift',$6,$7)`,
-    [
-      syntheticMovementId,
-      `drift:${syntheticMovementId}`,
-      '2026-03-08T00:00:00.000Z',
-      'Synthetic drift movement',
-      harness.tenantId,
-      `drift:${primary.receipt.id}`,
-      syntheticHash
-    ]
-  );
-  const driftLineId = randomUUID();
-  await harness.pool.query(
-    `INSERT INTO inventory_movement_lines (
-        id,
-        source_line_id,
-        movement_id,
-        item_id,
-        location_id,
-        quantity_delta,
-        uom,
-        reason_code,
-        line_notes,
-        created_at,
-        tenant_id,
-        unit_cost,
-        extended_cost,
-        quantity_delta_entered,
-        uom_entered,
-        quantity_delta_canonical,
-        canonical_uom,
-        uom_dimension
-      ) VALUES (
-        $1,$13,$2,$3,$4,$5,$6,'manual_test_drift',$7,$8,$9,$10,$11,$5,$6,$5,$12,'count'
-      )`,
-    [
-      driftLineId,
-      syntheticMovementId,
-      primary.item.id,
-      primary.topology.defaults.HOLD.id,
-      1,
-      'each',
-      'Synthetic drift movement line',
-      '2026-03-08T00:00:00.000Z',
-      harness.tenantId,
-      0,
-      0,
-      'each',
-      `syn:${driftLineId}`
-    ]
-  );
+  await insertPostedMovementFixture(harness.pool, {
+    id: syntheticMovementId,
+    tenantId: harness.tenantId,
+    movementType: 'receive',
+    sourceType: 'manual_test_drift',
+    sourceId: `drift:${primary.receipt.id}`,
+    externalRef: `drift:${syntheticMovementId}`,
+    occurredAt: '2026-03-08T00:00:00.000Z',
+    notes: 'Synthetic drift movement',
+    movementDeterministicHash: syntheticHash,
+    lines: [{
+      id: driftLineId,
+      sourceLineId: `syn:${driftLineId}`,
+      itemId: primary.item.id,
+      locationId: primary.topology.defaults.HOLD.id,
+      quantityDelta: 1,
+      uom: 'each',
+      quantityDeltaEntered: 1,
+      uomEntered: 'each',
+      quantityDeltaCanonical: 1,
+      canonicalUom: 'each',
+      uomDimension: 'count',
+      unitCost: 0,
+      extendedCost: 0,
+      reasonCode: 'manual_test_drift',
+      lineNotes: 'Synthetic drift movement line'
+    }]
+  });
   await harness.pool.query(
     `UPDATE return_receipts
         SET inventory_movement_id = $3
@@ -356,42 +333,57 @@ test('return receipt retry fails closed when authoritative movement state is irr
   });
 
   const ambiguousMovementId = randomUUID();
+  const ambiguousLineId = randomUUID();
+  const ambiguousLines = [
+    {
+      itemId: receipt.lines[0].itemId,
+      locationId: receipt.receivedToLocationId,
+      quantityDelta: 1,
+      canonicalUom: 'each',
+      unitCost: 0,
+      reasonCode: 'manual_test_ambiguous'
+    }
+  ];
   const ambiguousHash = buildMovementDeterministicHash({
     tenantId: harness.tenantId,
-    movementType: 'transfer',
+    movementType: 'adjustment',
     occurredAt: '2026-03-09T00:00:00.000Z',
     sourceType: 'return_receipt_post',
     sourceId: receipt.id,
-    lines: []
+    lines: ambiguousLines
   });
 
-  await harness.pool.query(
-    `INSERT INTO inventory_movements (
-        id,
-        movement_type,
-        status,
-        external_ref,
-        occurred_at,
-        posted_at,
-        notes,
-        created_at,
-        updated_at,
-        tenant_id,
-        metadata,
-        idempotency_key,
-        source_type,
-        source_id,
-        movement_deterministic_hash
-      ) VALUES ($1,'transfer','posted',$2,$3,$3,$4,$3,$3,$5,NULL,NULL,'return_receipt_post',$6,$7)`,
-    [
-      ambiguousMovementId,
-      `corrupt:${ambiguousMovementId}`,
-      '2026-03-09T00:00:00.000Z',
-      'Ambiguous authoritative receipt movement',
-      harness.tenantId,
-      receipt.id,
-      ambiguousHash
-    ]
+  await runInTransaction(harness.pool, (client) =>
+    insertPostedMovementFixture(client, {
+      id: ambiguousMovementId,
+      tenantId: harness.tenantId,
+      movementType: 'adjustment',
+      sourceType: 'return_receipt_post',
+      sourceId: receipt.id,
+      externalRef: `ambiguous:${ambiguousMovementId}`,
+      occurredAt: '2026-03-09T00:00:00.000Z',
+      notes: 'Ambiguous authoritative receipt movement',
+      movementDeterministicHash: ambiguousHash,
+      lines: [
+        {
+          id: ambiguousLineId,
+          sourceLineId: `syn:${ambiguousLineId}`,
+          itemId: receipt.lines[0].itemId,
+          locationId: receipt.receivedToLocationId,
+          quantityDelta: 1,
+          uom: 'each',
+          quantityDeltaEntered: 1,
+          uomEntered: 'each',
+          quantityDeltaCanonical: 1,
+          canonicalUom: 'each',
+          uomDimension: 'count',
+          unitCost: 0,
+          extendedCost: 0,
+          reasonCode: 'manual_test_ambiguous',
+          lineNotes: 'Ambiguous authoritative receipt movement'
+        }
+      ]
+    })
   );
 
   await assert.rejects(

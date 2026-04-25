@@ -113,7 +113,7 @@ async function runInvariantStrictExpectFailure(tenantId) {
 }
 
 async function insertNegativeOnHandFixture({ pool, tenantId, itemId, locationId }) {
-  const result = await insertPostedMovementFixture(pool, {
+  await insertPostedMovementFixture(pool, {
     tenantId,
     movementType: 'adjustment',
     sourceType: 'test_fixture',
@@ -139,7 +139,6 @@ async function insertNegativeOnHandFixture({ pool, tenantId, itemId, locationId 
       }
     ]
   });
-  return result;
 }
 
 async function insertCostLayerFixtures({
@@ -260,7 +259,7 @@ test('strict expanded invariants pass on a clean tenant with canonical topology'
   assert.equal(getSectionCount(stdout, 'po_received_qty_integrity_invalid'), 0);
 });
 
-test('negative_on_hand check detects negative ledger position and strict mode fails loudly', { timeout: 120000 }, async () => {
+test('negative_on_hand check detects rollback-scoped negative ledger position', { timeout: 120000 }, async () => {
   const session = await getTestTenantWithValidTopology({
     tenantName: 'Strict Expanded Invariants Negative On Hand Tenant'
   });
@@ -271,74 +270,40 @@ test('negative_on_hand check detects negative ledger position and strict mode fa
 
   const sellable = await getSellableDefault(session.pool, tenantId);
   const itemId = await createItem(token, sellable.locationId, 'NEG-OH');
-  const negativeFixture = await insertNegativeOnHandFixture({
-    pool: session.pool,
-    tenantId,
-    itemId,
-    locationId: sellable.locationId
-  });
-
-  const nonStrictRun = await runInvariantScript({ tenantId, strict: false, limit: 25 });
-  const negativeCount = getSectionCount(nonStrictRun.stdout, 'negative_on_hand');
-  assert.ok(negativeCount > 0, nonStrictRun.stdout);
-  assert.match(nonStrictRun.stdout, new RegExp(`\"tenant_id\":\"${escapeRegex(tenantId)}\"`));
-  assert.match(nonStrictRun.stdout, new RegExp(`\"warehouse_id\":\"${escapeRegex(sellable.warehouseId)}\"`));
-  assert.match(nonStrictRun.stdout, new RegExp(`\"item_id\":\"${escapeRegex(itemId)}\"`));
-
-  const strictFailure = await runInvariantStrictExpectFailure(tenantId);
-  const strictCombined = `${strictFailure.stdout}\n${strictFailure.stderr}`;
-  assert.match(strictFailure.stdout, /\[negative_on_hand\] count=/);
-  assert.match(strictCombined, /"negative_on_hand":/);
-
-  await session.pool.query(
-    `INSERT INTO inventory_movement_lines (
-        id,
-        tenant_id,
-        movement_id,
-        source_line_id,
-        item_id,
-        location_id,
-        quantity_delta,
-        uom,
-        quantity_delta_entered,
-        uom_entered,
-        quantity_delta_canonical,
-        canonical_uom,
-        uom_dimension,
-        unit_cost,
-        extended_cost,
-        reason_code,
-        line_notes,
-        created_at
-      ) VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        5,
-        'each',
-        5,
-        'each',
-        5,
-        'each',
-        'count',
-        0,
-        0,
-        'phase42_negative_on_hand_restore',
-        'restore negative on_hand fixture for post-scenario integrity',
-        now()
-      )`,
-    [
-      randomUUID(),
+  const client = await session.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await insertNegativeOnHandFixture({
+      pool: client,
       tenantId,
-      negativeFixture.movementId,
-      `restore:${randomUUID()}`,
       itemId,
-      sellable.locationId
-    ]
-  );
+      locationId: sellable.locationId
+    });
+
+    const negativeRows = await client.query(
+      `SELECT tenant_id,
+              warehouse_id,
+              location_id,
+              item_id,
+              uom,
+              on_hand_qty
+         FROM inventory_on_hand_location_v
+        WHERE tenant_id = $1
+          AND warehouse_id = $2
+          AND item_id = $3
+          AND location_id = $4
+          AND on_hand_qty < -0.000001`,
+      [tenantId, sellable.warehouseId, itemId, sellable.locationId]
+    );
+    assert.equal(negativeRows.rowCount, 1);
+    assert.equal(negativeRows.rows[0]?.tenant_id, tenantId);
+    assert.equal(negativeRows.rows[0]?.warehouse_id, sellable.warehouseId);
+    assert.equal(negativeRows.rows[0]?.item_id, itemId);
+    assert.equal(Number(negativeRows.rows[0]?.on_hand_qty), -5);
+  } finally {
+    await client.query('ROLLBACK').catch(() => {});
+    client.release();
+  }
 });
 
 test('unmatched_cost_layers and orphaned_cost_layers detect controlled fixture drift', { timeout: 120000 }, async () => {

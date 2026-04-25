@@ -561,8 +561,8 @@ export async function createServiceHarness(options = {}) {
     });
   }
 
-  async function findQuantityConservationMismatches() {
-    const mismatches = await compareBalances(tenantId);
+  async function findQuantityConservationMismatches(options = {}) {
+    const mismatches = await compareBalances(tenantId, options);
     return mismatches.map((row) => ({
       itemId: row.itemId,
       locationId: row.locationId,

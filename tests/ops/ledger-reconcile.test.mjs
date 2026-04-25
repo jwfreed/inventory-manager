@@ -105,6 +105,12 @@ test('Ledger reconcile strict mode fails on drift when repair disabled', async (
   });
   assert.equal(res.res.status, 409);
   assert.ok(res.payload?.error);
+
+  const repairRes = await apiRequest('POST', '/admin/inventory-ledger/reconcile', {
+    token,
+    body: { mode: 'strict', repair: true, tenantIds: [tenantId], maxRepairRows: 10 }
+  });
+  assert.equal(repairRes.res.status, 200);
 });
 
 test('Ledger reconcile repair fixes drift and clears mismatches', async () => {
@@ -161,4 +167,10 @@ test('Ledger reconcile repair aborts when threshold exceeded', async () => {
   });
   assert.equal(res.res.status, 409);
   assert.ok(res.payload?.error);
+
+  const repairRes = await apiRequest('POST', '/admin/inventory-ledger/reconcile', {
+    token,
+    body: { mode: 'strict', repair: true, tenantIds: [tenantId], maxRepairRows: 10 }
+  });
+  assert.equal(repairRes.res.status, 200);
 });

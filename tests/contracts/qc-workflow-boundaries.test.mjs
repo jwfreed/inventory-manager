@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createServiceHarness } from '../helpers/service-harness.mjs';
-import { buildMovementFixtureHash } from '../helpers/movementFixture.mjs';
+import { buildMovementFixtureHash, insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
 
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
@@ -242,65 +242,20 @@ async function createPostedDuplicateShapePutawayFixture(harness, options = {}) {
     lines: movementLines
   });
   await runInTransaction(harness.pool, async (client) => {
-    await client.query(
-      `INSERT INTO inventory_movements (
-          id, tenant_id, movement_type, status, external_ref, source_type, source_id,
-          idempotency_key, occurred_at, posted_at, notes, metadata,
-          reversal_of_movement_id, reversed_by_movement_id, reversal_reason,
-          movement_deterministic_hash, created_at, updated_at
-       ) VALUES (
-          $1, $2, 'transfer', 'posted', $3, 'putaway', $4,
-          NULL, $5, $5, $6, NULL,
-          NULL, NULL, NULL,
-          $7, $5, $5
-       )`,
-      [
-        movementId,
-        harness.tenantId,
-        `putaway:${putawayId}`,
-        putawayId,
-        baseTime,
-        `Putaway ${putawayId}`,
-        movementHash
-      ]
-    );
-    for (const line of movementLines) {
-      await client.query(
-        `INSERT INTO inventory_movement_lines (
-            id, tenant_id, movement_id, item_id, location_id,
-            quantity_delta, uom, quantity_delta_entered, uom_entered,
-            quantity_delta_canonical, canonical_uom, uom_dimension,
-            unit_cost, extended_cost, reason_code, line_notes,
-            source_line_id, event_timestamp, recorded_at, created_at
-         ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9,
-            $10, $11, $12,
-            NULL, NULL, $13, $14,
-            $15, $16, $17, $18
-         )`,
-        [
-          line.id,
-          harness.tenantId,
-          movementId,
-          line.itemId,
-          line.locationId,
-          line.quantityDelta,
-          line.uom,
-          line.quantityDeltaEntered,
-          line.uomEntered,
-          line.quantityDeltaCanonical,
-          line.canonicalUom,
-          line.uomDimension,
-          line.reasonCode,
-          line.lineNotes,
-          line.sourceLineId,
-          line.createdAt,
-          line.createdAt,
-          line.createdAt
-        ]
-      );
-    }
+    await insertPostedMovementFixture(client, {
+      id: movementId,
+      tenantId: harness.tenantId,
+      movementType: 'transfer',
+      sourceType: 'putaway',
+      sourceId: putawayId,
+      externalRef: `putaway:${putawayId}`,
+      occurredAt: baseTime,
+      postedAt: baseTime,
+      createdAt: baseTime,
+      notes: `Putaway ${putawayId}`,
+      movementDeterministicHash: movementHash,
+      lines: movementLines
+    });
     await relocateTransferCostLayersInTx({
       client,
       tenantId: harness.tenantId,
@@ -1056,24 +1011,26 @@ test('receipt allocation rebuild fails when authoritative movement link is unmat
     },
     { idempotencyKey: `qc-receipt-unmatched:${randomUUID()}` }
   );
-  await db.query(
-    `DELETE FROM qc_inventory_links
-      WHERE tenant_id = $1
-        AND inventory_movement_id = $2`,
-    [tenantId, result.movementId]
-  );
-
-  await assert.rejects(
-    runInTransaction(db, (client) =>
+  await runInTransaction(db, async (client) => {
+    await client.query(
+      `DELETE FROM qc_inventory_links
+        WHERE tenant_id = $1
+          AND inventory_movement_id = $2`,
+      [tenantId, result.movementId]
+    );
+    await assert.rejects(
       rebuildReceiptAllocations({
         client,
         tenantId,
         receiptId: fixture.receipt.id,
         occurredAt: new Date()
-      })
-    ),
-    /RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT:qc_movement_missing/
-  );
+      }),
+      /RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT:qc_movement_missing/
+    );
+    throw new Error('ROLLBACK_EXPECTED');
+  }).catch((error) => {
+    if (error?.message !== 'ROLLBACK_EXPECTED') throw error;
+  });
 });
 
 test('receipt allocation rebuild fails on authoritative movement ambiguity', { timeout: 240000 }, async () => {
@@ -1085,26 +1042,29 @@ test('receipt allocation rebuild fails on authoritative movement ambiguity', { t
   const fixture = await createReceiptInQa(harness, { quantity: 2 });
   const [initialAllocation] = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
 
-  await duplicateMovementLine(db, tenantId, initialAllocation.movementLineId);
-  await db.query(
-    `DELETE FROM receipt_allocations
-      WHERE tenant_id = $1
-        AND purchase_order_receipt_line_id = $2`,
-    [tenantId, fixture.receiptLineId]
-  );
+  await runInTransaction(db, async (client) => {
+    await duplicateMovementLine(client, tenantId, initialAllocation.movementLineId);
+    await client.query(
+      `DELETE FROM receipt_allocations
+        WHERE tenant_id = $1
+          AND purchase_order_receipt_line_id = $2`,
+      [tenantId, fixture.receiptLineId]
+    );
 
-  await assert.rejects(
-    runInTransaction(db, (client) =>
+    await assert.rejects(
       rebuildReceiptAllocations({
         client,
         tenantId,
         receiptId: fixture.receipt.id,
         occurredAt: new Date()
-      })
-    ),
-    /RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT:movement_line_note_unmatched/
-  );
-  assert.equal((await loadReceiptAllocations(db, tenantId, fixture.receiptLineId)).length, 0);
+      }),
+      /RECEIPT_AUTHORITATIVE_DATA_INCONSISTENT:movement_line_note_unmatched/
+    );
+    assert.equal((await loadReceiptAllocations(client, tenantId, fixture.receiptLineId)).length, 0);
+    throw new Error('ROLLBACK_EXPECTED');
+  }).catch((error) => {
+    if (error?.message !== 'ROLLBACK_EXPECTED') throw error;
+  });
 });
 
 test('receipt allocation validation rejects orphaned receipt linkage before mutation', { timeout: 240000 }, async () => {

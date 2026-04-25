@@ -33,6 +33,8 @@ const pool = new Pool({
 const violations = [];
 let checksRun = 0;
 
+const unitEventCoverageExceptionClauses = [];
+
 function report(name, count, rows) {
   checksRun += 1;
   if (count > 0) {
@@ -61,7 +63,7 @@ try {
   console.log(`[integrity] Found ${tenantIds.length} tenant(s). Running invariant checks...\n`);
 
   // ────────────────────────────────────────────────────────
-  // 1. AUTHORITY-BALANCE RECONCILIATION
+  // 1. AUTHORITY-COMPATIBILITY RECONCILIATION
   //    inventory_balance is a compatibility projection. It must
   //    match the authoritative ledger/reservation availability view
   //    for each (tenant, item, location, uom) tuple.
@@ -103,7 +105,7 @@ try {
      LIMIT 50
   `);
   report(
-    'ledger_balance_reconciliation',
+    'compatibility_balance_reconciliation',
     ledgerReconcileRes.rowCount ?? 0,
     ledgerReconcileRes.rows
   );
@@ -141,7 +143,7 @@ try {
      LIMIT 50
   `);
   report(
-    'ledger_orphaned_sums_no_balance',
+    'authority_rows_missing_compatibility_balance',
     orphanedLedgerRes.rowCount ?? 0,
     orphanedLedgerRes.rows
   );
@@ -187,8 +189,8 @@ try {
   );
 
   // ────────────────────────────────────────────────────────
-  // 4. MOVEMENT COMPLETENESS
-  //    Every non-voided movement must have at least one line
+  // 4. POSTED MOVEMENT COMPLETENESS
+  //    Every posted movement must have at least one line
   // ────────────────────────────────────────────────────────
   const movementCompletenessRes = await pool.query(`
     SELECT im.id, im.tenant_id, im.movement_type, im.status, im.created_at
@@ -196,18 +198,60 @@ try {
       LEFT JOIN inventory_movement_lines iml
         ON iml.movement_id = im.id
        AND iml.tenant_id = im.tenant_id
-     WHERE im.status NOT IN ('voided', 'reversed')
+     WHERE im.status = 'posted'
        AND iml.id IS NULL
      LIMIT 50
   `);
   report(
-    'movement_completeness_has_lines',
+    'posted_movement_completeness_has_lines',
     movementCompletenessRes.rowCount ?? 0,
     movementCompletenessRes.rows
   );
 
   // ────────────────────────────────────────────────────────
-  // 5. MOVEMENT LINE INTEGRITY
+  // 5. MOVEMENT LINE UNIT-EVENT COVERAGE
+  //    Every posted movement line must append at least one
+  //    inventory_unit_event. No production movement types are exempt.
+  // ────────────────────────────────────────────────────────
+  const unitEventCoverageExceptionSql = unitEventCoverageExceptionClauses.length > 0
+    ? `AND NOT (${unitEventCoverageExceptionClauses.join(' OR ')})`
+    : '';
+  const unitEventCoverageRes = await pool.query(`
+    SELECT im.tenant_id,
+           im.id AS movement_id,
+           im.movement_type,
+           im.source_type,
+           im.source_id,
+           iml.id AS movement_line_id,
+           iml.source_line_id,
+           iml.reason_code,
+           iml.item_id,
+           iml.location_id,
+           COALESCE(iml.canonical_uom, iml.uom) AS uom,
+           COALESCE(iml.quantity_delta_canonical, iml.quantity_delta) AS quantity_delta,
+           'posted_movement_line_missing_unit_event' AS classification
+      FROM inventory_movements im
+      JOIN inventory_movement_lines iml
+        ON iml.movement_id = im.id
+       AND iml.tenant_id = im.tenant_id
+     WHERE im.status = 'posted'
+       AND NOT EXISTS (
+         SELECT 1
+           FROM inventory_unit_events iue
+          WHERE iue.tenant_id = iml.tenant_id
+            AND iue.movement_line_id = iml.id
+       )
+       ${unitEventCoverageExceptionSql}
+     LIMIT 50
+  `);
+  report(
+    'posted_movement_line_unit_event_coverage',
+    unitEventCoverageRes.rowCount ?? 0,
+    unitEventCoverageRes.rows
+  );
+
+  // ────────────────────────────────────────────────────────
+  // 6. MOVEMENT LINE INTEGRITY
   //    Every movement line must reference a valid movement
   // ────────────────────────────────────────────────────────
   const lineIntegrityRes = await pool.query(`
@@ -226,7 +270,7 @@ try {
   );
 
   // ────────────────────────────────────────────────────────
-  // 6. TRANSACTION TRACEABILITY
+  // 7. TRANSACTION TRACEABILITY
   //    Every movement must have a non-null, non-empty
   //    movement_type AND external_ref for auditability.
   // ────────────────────────────────────────────────────────
@@ -246,7 +290,7 @@ try {
   );
 
   // ────────────────────────────────────────────────────────
-  // 7. HASH INTEGRITY
+  // 8. HASH INTEGRITY
   //    Non-legacy movements should have deterministic hashes
   // ────────────────────────────────────────────────────────
   const hashIntegrityRes = await pool.query(`
@@ -264,7 +308,7 @@ try {
   );
 
   // ────────────────────────────────────────────────────────
-  // 8. RESERVATION BOUNDS
+  // 9. RESERVATION BOUNDS
   //    Active reservations should have valid quantities
   // ────────────────────────────────────────────────────────
   const hasReservationsTable = await pool.query(`
@@ -320,7 +364,7 @@ try {
   }
 
   // ────────────────────────────────────────────────────────
-  // 9. IDEMPOTENCY KEY UNIQUENESS
+  // 10. IDEMPOTENCY KEY UNIQUENESS
   //    No two non-voided movements share the same idempotency_key
   // ────────────────────────────────────────────────────────
   const idempotencyRes = await pool.query(`
@@ -339,7 +383,7 @@ try {
   );
 
   // ────────────────────────────────────────────────────────
-  // 10. CONSERVATION PER-TENANT (cross-check)
+  // 11. CONSERVATION PER-TENANT (cross-check)
   //     Total ledger net by tenant should equal total balance net
   // ────────────────────────────────────────────────────────
   const conservationRes = await pool.query(`

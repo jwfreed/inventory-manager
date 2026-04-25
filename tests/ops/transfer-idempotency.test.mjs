@@ -2,16 +2,8 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { createRequire } from 'node:module';
 import { createServiceHarness } from './helpers/service-harness.mjs';
 import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
-
-const require = createRequire(import.meta.url);
-require('ts-node/register/transpile-only');
-require('tsconfig-paths/register');
-const {
-  applyInventoryBalanceDelta
-} = require('../../src/domains/inventory/index.ts');
 
 const FIXED_OCCURRED_AT = new Date('2026-03-01T00:00:00.000Z');
 
@@ -127,115 +119,85 @@ async function insertTransferReplayFixture(params) {
   return movementId;
 }
 
-async function insertBalancedTransferLineCorruption(params) {
+async function insertLineCountMismatchReplayFixture(params) {
   const {
     db,
     tenantId,
-    movementId,
     itemId,
     sourceLocationId,
-    destinationLocationId
+    destinationLocationId,
+    occurredAt = FIXED_OCCURRED_AT
   } = params;
-  const outLineId = randomUUID();
-  const inLineId = randomUUID();
-  const sourceLayerId = randomUUID();
-  const destLayerId = randomUUID();
-  const linkId = randomUUID();
-  const client = await db.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query(
-      `INSERT INTO inventory_movement_lines (
-          id,
-          source_line_id,
-          tenant_id,
-          movement_id,
-          item_id,
-          location_id,
-          quantity_delta,
-          uom,
-          quantity_delta_entered,
-          uom_entered,
-          quantity_delta_canonical,
-          canonical_uom,
-          uom_dimension,
-          unit_cost,
-          extended_cost,
-          reason_code,
-          line_notes,
-          created_at
-        ) VALUES
-        ($1, $8, $2, $3, $4, $5, -1, 'each', -1, 'each', -1, 'each', 'count', 0, 0, 'tamper_out', 'tamper', now()),
-        ($6, $9, $2, $3, $4, $7, 1, 'each', 1, 'each', 1, 'each', 'count', 0, 0, 'tamper_in', 'tamper', now())`,
-      [
-        outLineId,
-        tenantId,
-        movementId,
+  const movementId = randomUUID();
+  await insertPostedMovementFixture(db, {
+    id: movementId,
+    tenantId,
+    movementType: 'adjustment',
+    sourceType: 'transfer_replay_line_count_fixture',
+    sourceId: movementId,
+    externalRef: `fixture:${movementId}`,
+    occurredAt,
+    notes: 'line-count mismatch replay fixture',
+    lines: [
+      {
         itemId,
-        sourceLocationId,
-        inLineId,
-        destinationLocationId,
-        `syn:${outLineId}`,
-        `syn:${inLineId}`
-      ]
-    );
-    await client.query(
-      `INSERT INTO inventory_cost_layers (
-          id,
-          tenant_id,
-          item_id,
-          location_id,
-          uom,
-          layer_date,
-          layer_sequence,
-          original_quantity,
-          remaining_quantity,
-          unit_cost,
-          extended_cost,
-          source_type,
-          notes,
-          created_at,
-          updated_at
-        ) VALUES
-        ($1, $2, $3, $4, 'each', now(), 1, 1, 1, 0, 0, 'opening_balance', 'tamper source', now(), now()),
-        ($5, $2, $3, $6, 'each', now(), 1, 1, 1, 0, 0, 'opening_balance', 'tamper dest', now(), now())`,
-      [sourceLayerId, tenantId, itemId, sourceLocationId, destLayerId, destinationLocationId]
-    );
-    await client.query(
-      `INSERT INTO cost_layer_transfer_links (
-          id,
-          tenant_id,
-          transfer_movement_id,
-          transfer_out_line_id,
-          transfer_in_line_id,
-          source_cost_layer_id,
-          dest_cost_layer_id,
-          quantity,
-          unit_cost,
-          extended_cost,
-          created_at
-        ) VALUES (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          $7,
-          1,
-          0,
-          0,
-          now()
-        )`,
-      [linkId, tenantId, movementId, outLineId, inLineId, sourceLayerId, destLayerId]
-    );
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
+        locationId: sourceLocationId,
+        quantityDelta: -1,
+        uom: 'each',
+        quantityDeltaCanonical: -1,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 0,
+        extendedCost: 0,
+        reasonCode: 'line_count_fixture_out',
+        lineNotes: 'line-count mismatch fixture',
+        createdAt: occurredAt
+      },
+      {
+        itemId,
+        locationId: destinationLocationId,
+        quantityDelta: 1,
+        uom: 'each',
+        quantityDeltaCanonical: 1,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 0,
+        extendedCost: 0,
+        reasonCode: 'line_count_fixture_in',
+        lineNotes: 'line-count mismatch fixture',
+        createdAt: occurredAt
+      },
+      {
+        itemId,
+        locationId: sourceLocationId,
+        quantityDelta: -1,
+        uom: 'each',
+        quantityDeltaCanonical: -1,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 0,
+        extendedCost: 0,
+        reasonCode: 'line_count_fixture_out',
+        lineNotes: 'line-count mismatch fixture',
+        createdAt: occurredAt
+      },
+      {
+        itemId,
+        locationId: destinationLocationId,
+        quantityDelta: 1,
+        uom: 'each',
+        quantityDeltaCanonical: 1,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 0,
+        extendedCost: 0,
+        reasonCode: 'line_count_fixture_in',
+        lineNotes: 'line-count mismatch fixture',
+        createdAt: occurredAt
+      }
+    ]
+  });
+  return movementId;
 }
 
 test('inventory transfer idempotency defaults omitted occurredAt once and replays deterministically', async () => {
@@ -478,14 +440,14 @@ test('inventory transfer replay fails closed when authoritative movement lines d
     occurredAt: FIXED_OCCURRED_AT
   });
 
-  await insertBalancedTransferLineCorruption({
+  const lineCountMismatchMovementId = await insertLineCountMismatchReplayFixture({
     db,
     tenantId,
-    movementId: first.movementId,
     itemId,
     sourceLocationId: factory.defaults.SELLABLE.id,
     destinationLocationId: store.sellable.id
   });
+  await retargetTransferReplayMovement(db, tenantId, idempotencyKey, lineCountMismatchMovementId);
 
   await expectServiceError(
     () =>
@@ -503,29 +465,6 @@ test('inventory transfer replay fails closed when authoritative movement lines d
     'REPLAY_CORRUPTION_DETECTED',
     'authoritative_movement_line_count_mismatch'
   );
-
-  await applyInventoryBalanceDelta(db, {
-    tenantId,
-    itemId,
-    locationId: factory.defaults.SELLABLE.id,
-    uom: 'each',
-    deltaOnHand: -1,
-    mutationContext: {
-      reasonCode: 'tamper_out',
-      eventTimestamp: new Date()
-    }
-  });
-  await applyInventoryBalanceDelta(db, {
-    tenantId,
-    itemId,
-    locationId: store.sellable.id,
-    uom: 'each',
-    deltaOnHand: 1,
-    mutationContext: {
-      reasonCode: 'tamper_in',
-      eventTimestamp: new Date()
-    }
-  });
 });
 
 test('inventory transfer schema rejects missing hashes and replay fails closed on mismatches', async () => {

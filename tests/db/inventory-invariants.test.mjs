@@ -13,6 +13,7 @@ require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 
 const { runInventoryInvariantCheck } = require('../../src/jobs/inventoryInvariants.job.ts');
+const { applyInventoryBalanceDelta } = require('../../src/domains/inventory/index.ts');
 
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
@@ -230,16 +231,28 @@ test('invariants detect ATP oversell condition on sellable warehouse scope', asy
         AND id = $2`,
     [tenantId, reservationId]
   );
-  await db.query(
-    `UPDATE inventory_balance
-        SET on_hand = 0,
-            reserved = 0,
-            allocated = 0,
-            updated_at = now()
-      WHERE tenant_id = $1
-        AND item_id = $2
-        AND location_id = $3
-        AND uom = 'each'`,
-    [tenantId, itemId, defaults.SELLABLE.id]
-  );
+  await applyInventoryBalanceDelta(db, {
+    tenantId,
+    itemId,
+    locationId: defaults.SELLABLE.id,
+    uom: 'each',
+    deltaReserved: -3,
+    mutationContext: {
+      reasonCode: 'test_oversell_restore_reserved',
+      eventTimestamp: new Date(),
+      stateTransition: 'allocated->available'
+    }
+  });
+  await applyInventoryBalanceDelta(db, {
+    tenantId,
+    itemId,
+    locationId: defaults.SELLABLE.id,
+    uom: 'each',
+    deltaOnHand: -2,
+    mutationContext: {
+      reasonCode: 'test_oversell_restore_on_hand',
+      eventTimestamp: new Date(),
+      stateTransition: 'available->adjusted'
+    }
+  });
 });

@@ -3,6 +3,69 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createServiceHarness } from './helpers/service-harness.mjs';
+import { insertPostedMovementFixture } from '../helpers/movementFixture.mjs';
+
+async function retargetBatchReplayIssueMovement(db, tenantId, idempotencyKey, issueMovementId) {
+  await db.query(
+    `UPDATE idempotency_keys
+        SET response_body = jsonb_set(response_body, '{issueMovementId}', to_jsonb($3::text), true),
+            updated_at = now()
+      WHERE tenant_id = $1
+        AND key = $2`,
+    [tenantId, idempotencyKey, issueMovementId]
+  );
+}
+
+async function insertIssueLineCountMismatchReplayFixture({
+  db,
+  tenantId,
+  itemId,
+  locationId,
+  occurredAt = '2026-02-23T00:00:00.000Z'
+}) {
+  const movementId = randomUUID();
+  await insertPostedMovementFixture(db, {
+    id: movementId,
+    tenantId,
+    movementType: 'adjustment',
+    sourceType: 'work_order_batch_replay_line_count_fixture',
+    sourceId: movementId,
+    externalRef: `fixture:${movementId}`,
+    occurredAt,
+    notes: 'work-order batch line-count mismatch replay fixture',
+    lines: [
+      {
+        itemId,
+        locationId,
+        quantityDelta: 1,
+        uom: 'each',
+        quantityDeltaCanonical: 1,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 0,
+        extendedCost: 0,
+        reasonCode: 'line_count_fixture_in',
+        lineNotes: 'line-count mismatch fixture',
+        createdAt: occurredAt
+      },
+      {
+        itemId,
+        locationId,
+        quantityDelta: 1,
+        uom: 'each',
+        quantityDeltaCanonical: 1,
+        canonicalUom: 'each',
+        uomDimension: 'count',
+        unitCost: 0,
+        extendedCost: 0,
+        reasonCode: 'line_count_fixture_in',
+        lineNotes: 'line-count mismatch fixture',
+        createdAt: occurredAt
+      }
+    ]
+  });
+  return movementId;
+}
 
 async function createProductionFixture(label, componentLayers) {
   const harness = await createServiceHarness({
@@ -329,7 +392,7 @@ test('record-batch idempotency replay stays deterministic and does not double-po
   }
 });
 
-test('record-batch replay fails closed when authoritative movement lines drift', async () => {
+test('record-batch replay fails closed when idempotent response points to an incompatible movement', async () => {
   const { harness, componentItemId, outputItemId, workOrderId } = await createProductionFixture('wo-batch-drift', [
     { quantity: 6, unitCost: 4 }
   ]);
@@ -355,116 +418,29 @@ test('record-batch replay fails closed when authoritative movement lines drift',
     ]
   };
 
-  const first = await harness.recordBatch(
+  await harness.recordBatch(
     workOrderId,
     requestBody,
     {},
     { idempotencyKey }
   );
 
-  await db.query(
-    `INSERT INTO inventory_movement_lines (
-        id,
-        tenant_id,
-        movement_id,
-        source_line_id,
-        item_id,
-        location_id,
-        quantity_delta,
-        uom,
-        quantity_delta_entered,
-        uom_entered,
-        quantity_delta_canonical,
-        canonical_uom,
-        uom_dimension,
-        unit_cost,
-        extended_cost,
-        reason_code,
-        line_notes,
-        created_at
-      ) VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        -1,
-        'each',
-        -1,
-        'each',
-        -1,
-        'each',
-        'count',
-        0,
-        0,
-        'tamper_issue',
-        'tamper',
-        now()
-      )`,
-    [
-      randomUUID(),
-      tenantId,
-      first.issueMovementId,
-      'tamper-issue-line',
-      componentItemId,
-      topology.defaults.SELLABLE.id
-    ]
+  const lineCountMismatchIssueMovementId = await insertIssueLineCountMismatchReplayFixture({
+    db,
+    tenantId,
+    itemId: componentItemId,
+    locationId: topology.defaults.QA.id
+  });
+  await retargetBatchReplayIssueMovement(
+    db,
+    tenantId,
+    idempotencyKey,
+    lineCountMismatchIssueMovementId
   );
 
   await expectServiceError(
     () => harness.recordBatch(workOrderId, requestBody, {}, { idempotencyKey }),
-    'REPLAY_CORRUPTION_DETECTED'
-  );
-
-  await db.query(
-    `INSERT INTO inventory_movement_lines (
-        id,
-        tenant_id,
-        movement_id,
-        source_line_id,
-        item_id,
-        location_id,
-        quantity_delta,
-        uom,
-        quantity_delta_entered,
-        uom_entered,
-        quantity_delta_canonical,
-        canonical_uom,
-        uom_dimension,
-        unit_cost,
-        extended_cost,
-        reason_code,
-        line_notes,
-        created_at
-      ) VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        1,
-        'each',
-        1,
-        'each',
-        1,
-        'each',
-        'count',
-        0,
-        0,
-        'tamper_issue_restore',
-        'restore tamper issue line for post-scenario integrity',
-        now()
-      )`,
-    [
-      randomUUID(),
-      tenantId,
-      first.issueMovementId,
-      `tamper-issue-restore:${randomUUID()}`,
-      componentItemId,
-      topology.defaults.SELLABLE.id
-    ]
+    'WO_EXECUTION_RECOVERY_IRRECOVERABLE'
   );
 });
 
