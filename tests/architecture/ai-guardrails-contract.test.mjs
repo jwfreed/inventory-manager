@@ -6,7 +6,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 const REQUIRED_FILES = [
   '.repo/ai-engineering-contract.md',
   '.github/copilot-instructions.md',
-  'docs/ai-development.md'
+  'docs/engineering/ai-development.md'
 ];
 
 test('AI guardrail files exist and encode the repository safety contract', async () => {
@@ -18,7 +18,7 @@ test('AI guardrail files exist and encode the repository safety contract', async
 
   const engineeringContract = await readFile(path.resolve(process.cwd(), '.repo/ai-engineering-contract.md'), 'utf8');
   const copilotInstructions = await readFile(path.resolve(process.cwd(), '.github/copilot-instructions.md'), 'utf8');
-  const aiDevelopmentDoc = await readFile(path.resolve(process.cwd(), 'docs/ai-development.md'), 'utf8');
+  const aiDevelopmentDoc = await readFile(path.resolve(process.cwd(), 'docs/engineering/ai-development.md'), 'utf8');
 
   assert.match(engineeringContract, /append-only/i);
   assert.match(engineeringContract, /withTransaction|withTransactionRetry/);

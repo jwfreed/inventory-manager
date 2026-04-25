@@ -39,7 +39,11 @@ Inventory and operations system for warehouse, manufacturing, purchasing, qualit
 ```bash
 npm install
 cp .env.example .env
-edit .env and set DATABASE_URL before running migrations
+```
+
+Set `DATABASE_URL` in `.env`, then run:
+
+```bash
 npm run migrate
 npm run dev
 ```
@@ -78,5 +82,5 @@ seeds/      Seed data assets
 - Read `AGENTS.md` before non-trivial changes.
 - Do not bypass `withTransaction(...)` / `withTransactionRetry(...)` for multi-step mutations.
 - Do not write inventory ledger rows outside `src/domains/inventory/internal/ledgerWriter.ts`.
-- Do not change schema or migrations unless explicitly requested.
+- Do not change schema or migrations casually. Schema changes must be intentional, reviewed, and covered by migration/testing updates.
 - Keep changes small, explicit, and behavior-preserving unless the task says otherwise.
