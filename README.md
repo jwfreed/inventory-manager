@@ -27,7 +27,7 @@ Inventory and operations system for warehouse, manufacturing, purchasing, qualit
 
 ## Tech Stack
 
-- Node.js 20+
+- Node.js 20.19+
 - TypeScript
 - Express
 - PostgreSQL
@@ -39,6 +39,7 @@ Inventory and operations system for warehouse, manufacturing, purchasing, qualit
 ```bash
 npm install
 cp .env.example .env
+edit .env and set DATABASE_URL before running migrations
 npm run migrate
 npm run dev
 ```
