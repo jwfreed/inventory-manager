@@ -1,13 +1,14 @@
 /* eslint-disable no-console */
 import { Client } from 'pg'
+import { v4 as uuidv4 } from 'uuid'
 
 /**
- * Canonical chocolate seed with optional destructive reset.
+ * Canonical chocolate seed with optional destructive reset and 1,000-bar demo flow.
  *
  * Required:
  * - API running (API_BASE_URL)
  * - DB migrated (npm run migrate)
- * - CONFIRM_CANONICAL_RESET=1 to run destructive reset
+ * - Optional: CONFIRM_CANONICAL_RESET=1 to run destructive reset before seeding
  */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
@@ -31,9 +32,33 @@ type ApiError = Error & { status?: number; details?: unknown }
 
 type Session = { accessToken: string }
 
-type Item = { id: string; sku: string; name: string }
+type Item = {
+  id: string
+  sku: string
+  name: string
+  description?: string | null
+  type?: 'raw' | 'wip' | 'finished' | 'packaging'
+  defaultUom?: string | null
+  uomDimension?: 'mass' | 'volume' | 'count' | 'length' | 'area' | 'time' | null
+  canonicalUom?: string | null
+  stockingUom?: string | null
+  defaultLocationId?: string | null
+  weight?: number | null
+  weightUom?: string | null
+  isPurchasable?: boolean
+  isManufactured?: boolean
+}
 
-type Location = { id: string; code: string; name: string; type: string }
+type Location = {
+  id: string
+  code: string
+  name: string
+  type: string
+  role?: string | null
+  isSellable?: boolean
+  warehouseId?: string | null
+  parentLocationId?: string | null
+}
 
 type Bom = { id: string; bomCode: string; versions: { id: string; status: string }[] }
 
@@ -41,6 +66,73 @@ type CreateBomResponse = {
   id: string
   bomCode: string
   versions: { id: string; status: string }[]
+}
+
+type Vendor = { id: string; code: string; name: string }
+
+type Customer = { id: string; code: string; name: string }
+
+type PurchaseOrder = {
+  id: string
+  poNumber: string
+  status: string
+  lines: Array<{ id: string; itemId: string; uom: string; quantityOrdered: string | number }>
+}
+
+type Receipt = {
+  id: string
+  purchaseOrderId: string
+  status?: string
+  inventoryMovementId?: string | null
+  lines: Array<{ id: string; itemId: string; uom: string; quantityReceived: string | number }>
+}
+
+type SalesOrder = {
+  id: string
+  soNumber: string
+  status: string
+  lines: Array<{ id: string; itemId: string; uom: string; quantityOrdered: string | number }>
+}
+
+type Reservation = {
+  id: string
+  status: string
+  demandId: string
+  itemId: string
+  locationId: string
+  warehouseId: string
+  uom: string
+  quantityReserved: string | number
+  quantityFulfilled: string | number | null
+}
+
+type Shipment = {
+  id: string
+  salesOrderId: string
+  status: string | null
+  inventoryMovementId: string | null
+  externalRef: string | null
+  lines: Array<{ salesOrderLineId: string; uom: string; quantityShipped: string | number }>
+}
+
+const DEMO = {
+  itemSku: 'DEMO-MILK-CHOCOLATE-BAR',
+  itemName: 'Milk Chocolate Bar',
+  vendorCode: 'DEMO-CHOCOLATE-SUPPLIER',
+  vendorName: 'Demo Chocolate Supplier',
+  customerCode: 'DEMO-CUSTOMER',
+  customerName: 'Demo Customer',
+  poNumber: 'PO-DEMO-1000-MILK-CHOCOLATE',
+  soNumber: 'SO-DEMO-1000-MILK-CHOCOLATE',
+  shipmentExternalRef: 'SHIP-DEMO-1000-MILK-CHOCOLATE',
+  quantity: 1000,
+  uom: 'each',
+  orderDate: '2026-01-15',
+  expectedDate: '2026-01-16',
+  receiptAt: '2026-01-16T09:00:00.000Z',
+  qcAt: '2026-01-16T10:00:00.000Z',
+  requestedShipDate: '2026-01-17',
+  shippedAt: '2026-01-17T15:00:00.000Z',
 }
 
 function requiredEnv(name: string): string {
@@ -55,7 +147,7 @@ function parseBool(value: string | undefined): boolean {
 }
 
 function loadConfig(): SeedConfig {
-  const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
+  const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3100').replace(/\/$/, '')
   const prefix = process.env.SEED_PREFIX || 'CHOC'
   const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@example.com'
   const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!'
@@ -113,9 +205,14 @@ function toApiError(err: unknown): ApiError {
 
 async function apiRequest<T>(
   config: SeedConfig,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PUT',
   path: string,
-  opts: { token?: string; params?: Record<string, string | number | boolean | undefined>; body?: unknown } = {},
+  opts: {
+    token?: string
+    params?: Record<string, string | number | boolean | undefined>
+    body?: unknown
+    idempotencyKey?: string
+  } = {},
 ): Promise<T> {
   const url = new URL(config.baseUrl + path)
   if (opts.params) {
@@ -131,10 +228,11 @@ async function apiRequest<T>(
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (opts.token) headers.Authorization = `Bearer ${opts.token}`
+    if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey
     const res = await fetch(url.toString(), {
       method,
       headers,
-      body: method === 'POST' ? JSON.stringify(opts.body ?? {}) : undefined,
+      body: method === 'POST' || method === 'PUT' ? JSON.stringify(opts.body ?? {}) : undefined,
       signal: controller.signal,
     })
 
@@ -261,7 +359,7 @@ async function findItemBySku(config: SeedConfig, token: string, sku: string): Pr
   })
   const rows = Array.isArray(res) ? res : res.data ?? []
   const found = rows.find((r) => (r?.sku ?? '').toLowerCase() === sku.toLowerCase())
-  return found ? ({ id: found.id, sku: found.sku, name: found.name } as Item) : null
+  return found ? (found as Item) : null
 }
 
 async function ensureItem(
@@ -280,10 +378,44 @@ async function ensureItem(
     defaultLocationId?: string | null
     weight?: number | null
     weightUom?: string | null
+    isPurchasable?: boolean
+    isManufactured?: boolean
   },
 ): Promise<Item> {
   const existing = await findItemBySku(config, token, payload.sku)
   if (existing) {
+    const needsUpdate =
+      (payload.isPurchasable !== undefined && existing.isPurchasable !== payload.isPurchasable) ||
+      (payload.isManufactured !== undefined && existing.isManufactured !== payload.isManufactured) ||
+      (payload.defaultLocationId !== undefined && existing.defaultLocationId !== payload.defaultLocationId)
+    if (needsUpdate) {
+      const updated = await apiRequest<Item>(config, 'PUT', `/items/${existing.id}`, {
+        token,
+        body: {
+          sku: payload.sku,
+          name: payload.name,
+          description: payload.description ?? existing.description ?? undefined,
+          type: payload.type,
+          defaultUom: payload.defaultUom,
+          uomDimension: payload.uomDimension,
+          canonicalUom: payload.canonicalUom,
+          stockingUom: payload.stockingUom,
+          defaultLocationId: payload.defaultLocationId ?? null,
+          weight: payload.weight ?? existing.weight ?? null,
+          weightUom: payload.weightUom ?? existing.weightUom ?? null,
+          isPurchasable: payload.isPurchasable,
+          isManufactured: payload.isManufactured,
+        },
+      }).catch(async (error) => {
+        const e = toApiError(error)
+        if (e.status !== 404) throw error
+        return existing
+      })
+      if (updated !== existing) {
+        log.info(`Item updated: ${payload.sku} (${updated.id})`)
+        return updated
+      }
+    }
     log.info(`Item exists: ${payload.sku} (${existing.id})`)
     return existing
   }
@@ -302,6 +434,8 @@ async function ensureItem(
       defaultLocationId: payload.defaultLocationId ?? null,
       weight: payload.weight ?? null,
       weightUom: payload.weightUom ?? null,
+      isPurchasable: payload.isPurchasable,
+      isManufactured: payload.isManufactured,
     },
   })
   log.info(`Item created: ${payload.sku} (${created.id})`)
@@ -458,13 +592,619 @@ async function createOpeningBalance(
   await apiRequest(config, 'POST', `/inventory-adjustments/${adjustment.id}/post`, { token, body: {} })
 }
 
+async function withDbClient<T>(handler: (client: Client) => Promise<T>): Promise<T> {
+  const databaseUrl = requiredEnv('DATABASE_URL')
+  const client = new Client({ connectionString: databaseUrl })
+  await client.connect()
+  try {
+    return await handler(client)
+  } finally {
+    await client.end()
+  }
+}
+
+async function resolveTenantId(config: SeedConfig): Promise<string> {
+  return withDbClient(async (client) => {
+    const res = await client.query<{ id: string }>('SELECT id FROM tenants WHERE slug = $1', [config.tenantSlug])
+    const tenantId = res.rows[0]?.id
+    if (!tenantId) throw new Error(`Tenant not found after bootstrap: ${config.tenantSlug}`)
+    return tenantId
+  })
+}
+
+async function ensureStandardWarehouseTemplate(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+) {
+  const result = await apiRequest<{ created?: Location[]; skipped?: string[] }>(
+    config,
+    'POST',
+    '/locations/templates/standard-warehouse',
+    { token, body: { includeReceivingQc: true } },
+  )
+  log.info(
+    `Warehouse template ready (created=${result.created?.length ?? 0}, skipped=${result.skipped?.length ?? 0})`,
+  )
+}
+
+async function getDemoWarehouseContext(tenantId: string) {
+  return withDbClient(async (client) => {
+    const warehouseRes = await client.query<Location>(
+      `SELECT id, code, name, type
+         FROM locations
+        WHERE tenant_id = $1
+          AND type = 'warehouse'
+        ORDER BY CASE WHEN code = 'MAIN' THEN 0 ELSE 1 END, created_at ASC
+        LIMIT 1`,
+      [tenantId],
+    )
+    const warehouse = warehouseRes.rows[0]
+    if (!warehouse) throw new Error('Demo warehouse root was not created')
+
+    const defaultsRes = await client.query<Location>(
+      `SELECT l.id, l.code, l.name, l.type, l.role, l.is_sellable AS "isSellable",
+              l.warehouse_id AS "warehouseId", l.parent_location_id AS "parentLocationId"
+         FROM warehouse_default_location wdl
+         JOIN locations l
+           ON l.id = wdl.location_id
+          AND l.tenant_id = wdl.tenant_id
+        WHERE wdl.tenant_id = $1
+          AND wdl.warehouse_id = $2
+          AND wdl.role = ANY($3::text[])`,
+      [tenantId, warehouse.id, ['SELLABLE', 'QA']],
+    )
+    const byRole = new Map(defaultsRes.rows.map((row) => [row.role, row]))
+    const sellable = byRole.get('SELLABLE')
+    const qa = byRole.get('QA')
+    if (!sellable || !qa) {
+      throw new Error('Warehouse template did not create SELLABLE and QA defaults')
+    }
+    return { warehouse, sellable, qa }
+  })
+}
+
+async function ensureVendor(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+): Promise<Vendor> {
+  const list = await apiRequest<{ data?: Vendor[] } | Vendor[]>(config, 'GET', '/vendors', {
+    token,
+    params: { active: true },
+  })
+  const rows = Array.isArray(list) ? list : list.data ?? []
+  const existing = rows.find((row) => row.code === DEMO.vendorCode)
+  if (existing) {
+    log.info(`Vendor exists: ${DEMO.vendorCode} (${existing.id})`)
+    return existing
+  }
+
+  const created = await apiRequest<Vendor>(config, 'POST', '/vendors', {
+    token,
+    body: {
+      code: DEMO.vendorCode,
+      name: DEMO.vendorName,
+      email: 'supplier@example.test',
+      contactName: 'Demo Supplier Contact',
+      notes: 'Seeded supplier for 1,000 milk chocolate bar demo.',
+    },
+  })
+  log.info(`Vendor created: ${DEMO.vendorCode} (${created.id})`)
+  return created
+}
+
+async function ensureCustomer(tenantId: string, log: ReturnType<typeof makeLogger>): Promise<Customer> {
+  return withDbClient(async (client) => {
+    const existing = await client.query<Customer>(
+      `SELECT id, code, name
+         FROM customers
+        WHERE code = $1
+          AND tenant_id = $2
+        LIMIT 1`,
+      [DEMO.customerCode, tenantId],
+    )
+    if (existing.rows[0]) {
+      log.info(`Customer exists: ${DEMO.customerCode} (${existing.rows[0].id})`)
+      return existing.rows[0]
+    }
+
+    const conflicting = await client.query<Customer>(
+      `SELECT id, code, name
+         FROM customers
+        WHERE code = $1
+          AND tenant_id <> $2
+        LIMIT 1`,
+      [DEMO.customerCode, tenantId],
+    )
+    if (conflicting.rows[0]) {
+      throw new Error(`Customer code ${DEMO.customerCode} already exists for a different tenant`)
+    }
+
+    const id = uuidv4()
+    const created = await client.query<Customer>(
+      `INSERT INTO customers (id, tenant_id, code, name, email, phone, active, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, true, now(), now())
+       RETURNING id, code, name`,
+      [id, tenantId, DEMO.customerCode, DEMO.customerName, 'customer@example.test', '+1-555-0100'],
+    )
+    log.info(`Customer created: ${DEMO.customerCode} (${id})`)
+    return created.rows[0]
+  })
+}
+
+async function findPurchaseOrderByNumber(
+  config: SeedConfig,
+  token: string,
+  poNumber: string,
+): Promise<PurchaseOrder | null> {
+  const list = await apiRequest<{ data?: Array<{ id: string; poNumber: string }> }>(config, 'GET', '/purchase-orders', {
+    token,
+    params: { search: poNumber, limit: 20, offset: 0 },
+  })
+  const summary = (list.data ?? []).find((row) => row.poNumber === poNumber)
+  if (!summary) return null
+  return apiRequest<PurchaseOrder>(config, 'GET', `/purchase-orders/${summary.id}`, { token })
+}
+
+async function ensureDemoPurchaseOrder(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  vendor: Vendor,
+  item: Item,
+  warehouse: Location,
+): Promise<PurchaseOrder> {
+  const existing = await findPurchaseOrderByNumber(config, token, DEMO.poNumber)
+  if (existing) {
+    log.info(`Purchase order exists: ${DEMO.poNumber} (${existing.id})`)
+    return existing
+  }
+
+  const created = await apiRequest<PurchaseOrder>(config, 'POST', '/purchase-orders', {
+    token,
+    body: {
+      poNumber: DEMO.poNumber,
+      vendorId: vendor.id,
+      status: 'submitted',
+      orderDate: DEMO.orderDate,
+      expectedDate: DEMO.expectedDate,
+      shipToLocationId: warehouse.id,
+      receivingLocationId: warehouse.id,
+      vendorReference: 'DEMO-PO-1000-BARS',
+      notes: 'Demo purchase order for exactly 1,000 milk chocolate bars.',
+      lines: [
+        {
+          lineNumber: 1,
+          itemId: item.id,
+          uom: DEMO.uom,
+          quantityOrdered: DEMO.quantity,
+          unitCost: 1.5,
+          currencyCode: 'THB',
+          notes: 'Demo inbound finished goods.',
+        },
+      ],
+    },
+  })
+  log.info(`Purchase order created: ${DEMO.poNumber} (${created.id})`)
+  return created
+}
+
+async function ensureDemoReceipt(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  po: PurchaseOrder,
+): Promise<Receipt> {
+  const poLine = po.lines[0]
+  if (!poLine) throw new Error('Demo purchase order has no lines')
+  const idempotencyKey = 'seed:milk-chocolate-1000:receipt:v1'
+  const receipt = await apiRequest<Receipt>(config, 'POST', '/purchase-order-receipts', {
+    token,
+    idempotencyKey,
+    body: {
+      purchaseOrderId: po.id,
+      receivedAt: DEMO.receiptAt,
+      externalRef: 'RCPT-DEMO-1000-MILK-CHOCOLATE',
+      notes: 'Demo receipt for exactly 1,000 milk chocolate bars.',
+      idempotencyKey,
+      lines: [
+        {
+          purchaseOrderLineId: poLine.id,
+          uom: DEMO.uom,
+          quantityReceived: DEMO.quantity,
+          unitCost: 1.5,
+        },
+      ],
+    },
+  })
+  log.info(`Receipt ready for ${DEMO.poNumber} (${receipt.id})`)
+  return receipt
+}
+
+async function ensureDemoQcAccepted(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  receipt: Receipt,
+) {
+  const receiptLine = receipt.lines[0]
+  if (!receiptLine) throw new Error('Demo receipt has no lines')
+  const idempotencyKey = 'seed:milk-chocolate-1000:qc-accept:v1'
+  const result = await apiRequest<{ id: string } | { eventId: string; replayed?: boolean }>(
+    config,
+    'POST',
+    '/qc-events',
+    {
+      token,
+      idempotencyKey,
+      body: {
+        purchaseOrderReceiptLineId: receiptLine.id,
+        eventType: 'accept',
+        quantity: DEMO.quantity,
+        uom: DEMO.uom,
+        reasonCode: 'demo_accept',
+        notes: 'Demo QC accept for exactly 1,000 milk chocolate bars.',
+        actorType: 'system',
+        actorId: 'chocolate-seed',
+      },
+    },
+  )
+  log.info(`QC accept ready (${(result as any).eventId ?? (result as any).id})`)
+}
+
+async function findSalesOrderByNumber(
+  config: SeedConfig,
+  token: string,
+  soNumber: string,
+): Promise<SalesOrder | null> {
+  const list = await apiRequest<{ data?: Array<{ id: string; soNumber?: string; so_number?: string }> }>(
+    config,
+    'GET',
+    '/sales-orders',
+    {
+      token,
+      params: { limit: 100, offset: 0 },
+    },
+  )
+  const summary = (list.data ?? []).find((row) => (row.soNumber ?? row.so_number) === soNumber)
+  if (!summary) return null
+  return apiRequest<SalesOrder>(config, 'GET', `/sales-orders/${summary.id}`, { token })
+}
+
+async function ensureDemoSalesOrder(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  customer: Customer,
+  item: Item,
+  warehouse: Location,
+  sellable: Location,
+): Promise<SalesOrder> {
+  const existing = await findSalesOrderByNumber(config, token, DEMO.soNumber)
+  if (existing) {
+    log.info(`Sales order exists: ${DEMO.soNumber} (${existing.id})`)
+    return existing
+  }
+
+  const created = await apiRequest<SalesOrder>(config, 'POST', '/sales-orders', {
+    token,
+    body: {
+      soNumber: DEMO.soNumber,
+      customerId: customer.id,
+      warehouseId: warehouse.id,
+      status: 'submitted',
+      orderDate: DEMO.orderDate,
+      requestedShipDate: DEMO.requestedShipDate,
+      shipFromLocationId: sellable.id,
+      customerReference: 'DEMO-CUSTOMER-PO-1000-BARS',
+      notes: 'Demo sales order for exactly 1,000 milk chocolate bars.',
+      lines: [
+        {
+          lineNumber: 1,
+          itemId: item.id,
+          uom: DEMO.uom,
+          quantityOrdered: DEMO.quantity,
+          unitPrice: 3.5,
+          currencyCode: 'THB',
+          notes: 'Demo outbound finished goods.',
+        },
+      ],
+    },
+  })
+  log.info(`Sales order created: ${DEMO.soNumber} (${created.id})`)
+  return created
+}
+
+async function ensureDemoReservation(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  so: SalesOrder,
+  item: Item,
+  warehouse: Location,
+  sellable: Location,
+): Promise<Reservation> {
+  const soLine = so.lines[0]
+  if (!soLine) throw new Error('Demo sales order has no lines')
+  const idempotencyKey = 'seed:milk-chocolate-1000:reservation:v1'
+  const result = await apiRequest<{ data: Reservation[] }>(config, 'POST', '/reservations', {
+    token,
+    idempotencyKey,
+    body: {
+      reservations: [
+        {
+          demandType: 'sales_order_line',
+          demandId: soLine.id,
+          itemId: item.id,
+          locationId: sellable.id,
+          warehouseId: warehouse.id,
+          uom: DEMO.uom,
+          quantityReserved: DEMO.quantity,
+          allowBackorder: false,
+          notes: 'Demo reservation for exactly 1,000 milk chocolate bars.',
+        },
+      ],
+    },
+  })
+  const reservation = result.data[0]
+  if (!reservation) throw new Error('Demo reservation was not created')
+  log.info(`Reservation ready (${reservation.id}, status=${reservation.status})`)
+  return reservation
+}
+
+async function findShipmentByExternalRef(
+  config: SeedConfig,
+  token: string,
+  externalRef: string,
+): Promise<Shipment | null> {
+  const list = await apiRequest<{ data?: Array<{ id: string; external_ref?: string; externalRef?: string }> }>(
+    config,
+    'GET',
+    '/shipments',
+    { token, params: { limit: 100, offset: 0 } },
+  )
+  const summary = (list.data ?? []).find((row) => (row.externalRef ?? row.external_ref) === externalRef)
+  if (!summary) return null
+  return apiRequest<Shipment>(config, 'GET', `/shipments/${summary.id}`, { token })
+}
+
+async function ensureDemoShipment(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  so: SalesOrder,
+  sellable: Location,
+): Promise<Shipment> {
+  const existing = await findShipmentByExternalRef(config, token, DEMO.shipmentExternalRef)
+  if (existing) {
+    log.info(`Shipment exists: ${DEMO.shipmentExternalRef} (${existing.id}, status=${existing.status})`)
+    return existing
+  }
+  const soLine = so.lines[0]
+  if (!soLine) throw new Error('Demo sales order has no lines')
+
+  const created = await apiRequest<Shipment>(config, 'POST', '/shipments', {
+    token,
+    body: {
+      salesOrderId: so.id,
+      shippedAt: DEMO.shippedAt,
+      shipFromLocationId: sellable.id,
+      externalRef: DEMO.shipmentExternalRef,
+      autoAllocateReservations: true,
+      notes: 'Demo shipment for exactly 1,000 milk chocolate bars.',
+      lines: [
+        {
+          salesOrderLineId: soLine.id,
+          uom: DEMO.uom,
+          quantityShipped: DEMO.quantity,
+        },
+      ],
+    },
+  })
+  log.info(`Shipment created: ${DEMO.shipmentExternalRef} (${created.id})`)
+  return created
+}
+
+async function ensureDemoShipmentPosted(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  shipment: Shipment,
+): Promise<Shipment> {
+  if (shipment.status === 'posted' && shipment.inventoryMovementId) {
+    log.info(`Shipment already posted: ${DEMO.shipmentExternalRef} (${shipment.inventoryMovementId})`)
+    return shipment
+  }
+  const posted = await apiRequest<Shipment>(config, 'POST', `/shipments/${shipment.id}/post`, {
+    token,
+    idempotencyKey: 'seed:milk-chocolate-1000:shipment-post:v1',
+    body: {},
+  })
+  log.info(`Shipment posted: ${DEMO.shipmentExternalRef} (${posted.inventoryMovementId})`)
+  return posted
+}
+
+async function markDemoSalesOrderShipped(tenantId: string, shipment: Shipment) {
+  if (shipment.status !== 'posted' || !shipment.inventoryMovementId) return
+  await withDbClient(async (client) => {
+    await client.query(
+      `UPDATE sales_orders
+          SET status = 'shipped',
+              updated_at = now()
+        WHERE tenant_id = $1
+          AND so_number = $2
+          AND status <> 'shipped'`,
+      [tenantId, DEMO.soNumber],
+    )
+  })
+}
+
+async function verifyDemoSeed(tenantId: string) {
+  return withDbClient(async (client) => {
+    const result = await client.query<{
+      po_quantity: string | null
+      so_quantity: string | null
+      shipped_quantity: string | null
+      reservation_status: string | null
+      reservation_qty: string | null
+      fulfilled_qty: string | null
+      shipment_status: string | null
+      shipment_movement_id: string | null
+      sellable_on_hand: string | null
+      sellable_available: string | null
+    }>(
+      `WITH demo_item AS (
+         SELECT id FROM items WHERE tenant_id = $1 AND sku = $2
+       ),
+       demo_po AS (
+         SELECT po.id
+           FROM purchase_orders po
+          WHERE po.tenant_id = $1
+            AND po.po_number = $3
+       ),
+       demo_so AS (
+         SELECT so.id
+           FROM sales_orders so
+          WHERE so.tenant_id = $1
+            AND so.so_number = $4
+       ),
+       demo_shipment AS (
+         SELECT s.id, s.status, s.inventory_movement_id
+           FROM sales_order_shipments s
+          WHERE s.tenant_id = $1
+            AND s.external_ref = $5
+       )
+       SELECT
+         (SELECT SUM(pol.quantity_ordered)::text
+            FROM purchase_order_lines pol
+            JOIN demo_po po ON po.id = pol.purchase_order_id
+            JOIN demo_item i ON i.id = pol.item_id
+           WHERE pol.tenant_id = $1 AND pol.uom = $6) AS po_quantity,
+         (SELECT SUM(sol.quantity_ordered)::text
+            FROM sales_order_lines sol
+            JOIN demo_so so ON so.id = sol.sales_order_id
+            JOIN demo_item i ON i.id = sol.item_id
+           WHERE sol.tenant_id = $1 AND sol.uom = $6) AS so_quantity,
+         (SELECT SUM(ssl.quantity_shipped)::text
+            FROM sales_order_shipment_lines ssl
+            JOIN demo_shipment s ON s.id = ssl.sales_order_shipment_id
+            JOIN sales_order_lines sol ON sol.id = ssl.sales_order_line_id AND sol.tenant_id = ssl.tenant_id
+            JOIN demo_item i ON i.id = sol.item_id
+           WHERE ssl.tenant_id = $1 AND ssl.uom = $6) AS shipped_quantity,
+         (SELECT r.status
+            FROM inventory_reservations r
+            JOIN sales_order_lines sol ON sol.id = r.demand_id AND sol.tenant_id = r.tenant_id
+            JOIN demo_so so ON so.id = sol.sales_order_id
+            JOIN demo_item i ON i.id = r.item_id
+           WHERE r.tenant_id = $1
+           ORDER BY r.created_at DESC
+           LIMIT 1) AS reservation_status,
+         (SELECT r.quantity_reserved::text
+            FROM inventory_reservations r
+            JOIN sales_order_lines sol ON sol.id = r.demand_id AND sol.tenant_id = r.tenant_id
+            JOIN demo_so so ON so.id = sol.sales_order_id
+            JOIN demo_item i ON i.id = r.item_id
+           WHERE r.tenant_id = $1
+           ORDER BY r.created_at DESC
+           LIMIT 1) AS reservation_qty,
+         (SELECT r.quantity_fulfilled::text
+            FROM inventory_reservations r
+            JOIN sales_order_lines sol ON sol.id = r.demand_id AND sol.tenant_id = r.tenant_id
+            JOIN demo_so so ON so.id = sol.sales_order_id
+            JOIN demo_item i ON i.id = r.item_id
+           WHERE r.tenant_id = $1
+           ORDER BY r.created_at DESC
+           LIMIT 1) AS fulfilled_qty,
+         (SELECT status FROM demo_shipment LIMIT 1) AS shipment_status,
+         (SELECT inventory_movement_id::text FROM demo_shipment LIMIT 1) AS shipment_movement_id,
+         (SELECT ib.on_hand::text
+            FROM inventory_balance ib
+            JOIN demo_item i ON i.id = ib.item_id
+            JOIN locations l ON l.id = ib.location_id AND l.tenant_id = ib.tenant_id
+           WHERE ib.tenant_id = $1
+             AND l.role = 'SELLABLE'
+             AND ib.uom = $6
+           ORDER BY ib.updated_at DESC NULLS LAST
+           LIMIT 1) AS sellable_on_hand,
+         (SELECT (ib.on_hand - ib.reserved - ib.allocated)::text
+            FROM inventory_balance ib
+            JOIN demo_item i ON i.id = ib.item_id
+            JOIN locations l ON l.id = ib.location_id AND l.tenant_id = ib.tenant_id
+           WHERE ib.tenant_id = $1
+             AND l.role = 'SELLABLE'
+             AND ib.uom = $6
+           ORDER BY ib.updated_at DESC NULLS LAST
+           LIMIT 1) AS sellable_available`,
+      [tenantId, DEMO.itemSku, DEMO.poNumber, DEMO.soNumber, DEMO.shipmentExternalRef, DEMO.uom],
+    )
+    const row = result.rows[0]
+    const expected = String(DEMO.quantity)
+    const failures: string[] = []
+    if (Number(row?.po_quantity ?? 0) !== DEMO.quantity) failures.push(`PO quantity ${row?.po_quantity}`)
+    if (Number(row?.so_quantity ?? 0) !== DEMO.quantity) failures.push(`SO quantity ${row?.so_quantity}`)
+    if (Number(row?.shipped_quantity ?? 0) !== DEMO.quantity) {
+      failures.push(`shipped quantity ${row?.shipped_quantity}`)
+    }
+    if (row?.reservation_status !== 'FULFILLED') failures.push(`reservation status ${row?.reservation_status}`)
+    if (Number(row?.reservation_qty ?? 0) !== DEMO.quantity) failures.push(`reservation qty ${row?.reservation_qty}`)
+    if (Number(row?.fulfilled_qty ?? 0) !== DEMO.quantity) failures.push(`fulfilled qty ${row?.fulfilled_qty}`)
+    if (row?.shipment_status !== 'posted') failures.push(`shipment status ${row?.shipment_status}`)
+    if (!row?.shipment_movement_id) failures.push('shipment movement missing')
+    if (failures.length > 0) {
+      throw new Error(`Demo seed verification failed: ${failures.join(', ')}; expected ${expected} ${DEMO.uom}`)
+    }
+    return row
+  })
+}
+
+async function seedMilkChocolateDemo(
+  config: SeedConfig,
+  token: string,
+  tenantId: string,
+  log: ReturnType<typeof makeLogger>,
+) {
+  await ensureStandardWarehouseTemplate(config, token, log)
+  const { warehouse, sellable } = await getDemoWarehouseContext(tenantId)
+  const vendor = await ensureVendor(config, token, log)
+  const customer = await ensureCustomer(tenantId, log)
+  const item = await ensureItem(config, token, log, {
+    sku: DEMO.itemSku,
+    name: DEMO.itemName,
+    description: '75 g demo milk chocolate bar used for the local 1,000-bar shipment walkthrough.',
+    type: 'finished',
+    defaultUom: DEMO.uom,
+    uomDimension: 'count',
+    canonicalUom: DEMO.uom,
+    stockingUom: DEMO.uom,
+    defaultLocationId: sellable.id,
+    weight: 75,
+    weightUom: 'g',
+    isPurchasable: true,
+    isManufactured: false,
+  })
+  const po = await ensureDemoPurchaseOrder(config, token, log, vendor, item, warehouse)
+  const receipt = await ensureDemoReceipt(config, token, log, po)
+  await ensureDemoQcAccepted(config, token, log, receipt)
+  const so = await ensureDemoSalesOrder(config, token, log, customer, item, warehouse, sellable)
+  await ensureDemoReservation(config, token, log, so, item, warehouse, sellable)
+  const shipment = await ensureDemoShipment(config, token, log, so, sellable)
+  const postedShipment = await ensureDemoShipmentPosted(config, token, log, shipment)
+  await markDemoSalesOrderShipped(tenantId, postedShipment)
+  const verification = await verifyDemoSeed(tenantId)
+  log.info('Milk chocolate demo verification passed.', verification)
+}
+
 async function main() {
   const config = loadConfig()
   const log = makeLogger(config.logLevel)
 
-  await resetOperationalData(config, log)
+  if (config.reset) {
+    await resetOperationalData(config, log)
+  }
 
   const token = await ensureSession(config)
+  const tenantId = await resolveTenantId(config)
   const mainLocation = await ensureLocation(config, token, log, 'MAIN', 'Main Warehouse', 'warehouse')
 
   const sku = (base: string) => (config.prefix ? `${config.prefix}-${base}` : base)
@@ -805,6 +1545,8 @@ async function main() {
       log.info(`Opening balance posted for ${entry.item.sku}`)
     }
   }
+
+  await seedMilkChocolateDemo(config, token, tenantId, log)
 
   log.info('Chocolate canonical seed complete.')
 }

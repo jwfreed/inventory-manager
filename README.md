@@ -57,6 +57,22 @@ npm run test:contracts
 npm run test:scenarios
 ```
 
+## Local Demo Seed
+
+With `DATABASE_URL` configured, migrations applied, and the API running, seed the chocolate demo data with:
+
+```bash
+npm run dev:seed:chocolate
+```
+
+The seed defaults to the local dev API at `http://localhost:3100`, is idempotent for the demo flow, and verifies a posted shipment for exactly 1,000 `Milk Chocolate Bar` units. It creates or reuses deterministic records including `PO-DEMO-1000-MILK-CHOCOLATE`, `SO-DEMO-1000-MILK-CHOCOLATE`, `Demo Customer`, and `SHIP-DEMO-1000-MILK-CHOCOLATE`.
+
+For a local-only destructive operational reset before seeding:
+
+```bash
+CONFIRM_CANONICAL_RESET=1 npm run dev:seed:chocolate
+```
+
 ## Project Structure
 
 ```text
