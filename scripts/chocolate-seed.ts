@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 import { Client } from 'pg'
 import { v4 as uuidv4 } from 'uuid'
+import { hashPassword } from '../src/lib/auth'
 
 /**
  * Canonical chocolate seed with optional destructive reset and 1,000-bar demo flow.
@@ -12,8 +13,10 @@ import { v4 as uuidv4 } from 'uuid'
  */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+type SeedMode = 'completed' | 'manual'
 
 type SeedConfig = {
+  mode: SeedMode
   baseUrl: string
   prefix: string
   adminEmail: string
@@ -30,7 +33,16 @@ type SeedConfig = {
 
 type ApiError = Error & { status?: number; details?: unknown }
 
-type Session = { accessToken: string }
+type Session = {
+  accessToken: string
+  user?: { email?: string }
+  tenant?: { id?: string; slug?: string }
+}
+
+type AuthenticatedSession = {
+  accessToken: string
+  adminEmail: string
+}
 
 type Item = {
   id: string
@@ -116,15 +128,15 @@ type Shipment = {
 }
 
 const DEMO = {
-  itemSku: 'DEMO-MILK-CHOCOLATE-BAR',
+  itemSku: 'SIAMAYA-MILK-CHOCOLATE-BAR',
   itemName: 'Milk Chocolate Bar',
-  vendorCode: 'DEMO-CHOCOLATE-SUPPLIER',
+  vendorCode: 'SIAMAYA-DEMO-CHOCOLATE-SUPPLIER',
   vendorName: 'Demo Chocolate Supplier',
-  customerCode: 'DEMO-CUSTOMER',
+  customerCode: 'SIAMAYA-DEMO-CUSTOMER',
   customerName: 'Demo Customer',
-  poNumber: 'PO-DEMO-1000-MILK-CHOCOLATE',
-  soNumber: 'SO-DEMO-1000-MILK-CHOCOLATE',
-  shipmentExternalRef: 'SHIP-DEMO-1000-MILK-CHOCOLATE',
+  poNumber: 'PO-SIAMAYA-1000-MILK-CHOCOLATE',
+  soNumber: 'SO-SIAMAYA-1000-MILK-CHOCOLATE',
+  shipmentExternalRef: 'SHIP-SIAMAYA-1000-MILK-CHOCOLATE',
   quantity: 1000,
   uom: 'each',
   orderDate: '2026-01-15',
@@ -133,6 +145,85 @@ const DEMO = {
   qcAt: '2026-01-16T10:00:00.000Z',
   requestedShipDate: '2026-01-17',
   shippedAt: '2026-01-17T15:00:00.000Z',
+}
+
+const MANUAL_DEMO = {
+  bomCode: 'SIAMAYA-BOM-MILK-CHOCOLATE-BAR',
+  rawMaterialLocationCodes: {
+    receiving: 'FACTORY_RECEIVING',
+    rawStore: 'FACTORY_RM_STORE',
+    packStore: 'FACTORY_PACK_STORE',
+    production: 'FACTORY_PRODUCTION',
+    fgStage: 'FACTORY_FG_STAGE',
+  },
+  components: [
+    {
+      key: 'cacaoNibs',
+      sku: 'SIAMAYA-MILK-CHOC-CACAO-NIBS',
+      name: 'Milk Chocolate Cacao Nibs',
+      type: 'raw' as const,
+      uom: 'g',
+      dimension: 'mass' as const,
+      quantityPer: 30,
+      topUpQuantity: 33000,
+      store: 'rawStore' as const,
+    },
+    {
+      key: 'sugar',
+      sku: 'SIAMAYA-MILK-CHOC-SUGAR',
+      name: 'Milk Chocolate Sugar',
+      type: 'raw' as const,
+      uom: 'g',
+      dimension: 'mass' as const,
+      quantityPer: 20,
+      topUpQuantity: 22000,
+      store: 'rawStore' as const,
+    },
+    {
+      key: 'milkPowder',
+      sku: 'SIAMAYA-MILK-CHOC-MILK-POWDER',
+      name: 'Milk Chocolate Milk Powder',
+      type: 'raw' as const,
+      uom: 'g',
+      dimension: 'mass' as const,
+      quantityPer: 15,
+      topUpQuantity: 16500,
+      store: 'rawStore' as const,
+    },
+    {
+      key: 'cacaoButter',
+      sku: 'SIAMAYA-MILK-CHOC-CACAO-BUTTER',
+      name: 'Milk Chocolate Cacao Butter',
+      type: 'raw' as const,
+      uom: 'g',
+      dimension: 'mass' as const,
+      quantityPer: 10,
+      topUpQuantity: 11000,
+      store: 'rawStore' as const,
+    },
+    {
+      key: 'lecithin',
+      sku: 'SIAMAYA-MILK-CHOC-LECITHIN',
+      name: 'Milk Chocolate Lecithin',
+      type: 'raw' as const,
+      uom: 'g',
+      dimension: 'mass' as const,
+      quantityPer: 0.5,
+      topUpQuantity: 600,
+      store: 'rawStore' as const,
+    },
+    {
+      key: 'foilWrap',
+      sku: 'SIAMAYA-MILK-CHOC-FOIL-WRAP',
+      name: 'Milk Chocolate Foil Wrapper',
+      type: 'packaging' as const,
+      uom: 'each',
+      dimension: 'count' as const,
+      quantityPer: 1,
+      topUpQuantity: 1100,
+      store: 'packStore' as const,
+    },
+  ],
 }
 
 function requiredEnv(name: string): string {
@@ -147,12 +238,16 @@ function parseBool(value: string | undefined): boolean {
 }
 
 function loadConfig(): SeedConfig {
+  const rawMode = process.env.CHOCOLATE_SEED_MODE || process.env.SEED_MODE || 'completed'
+  if (rawMode !== 'completed' && rawMode !== 'manual') {
+    throw new Error(`Unsupported seed mode ${rawMode}; expected completed or manual`)
+  }
   const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3100').replace(/\/$/, '')
-  const prefix = process.env.SEED_PREFIX || 'CHOC'
-  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@example.com'
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!'
-  const tenantSlug = process.env.SEED_TENANT_SLUG || 'default'
-  const tenantName = process.env.SEED_TENANT_NAME || 'Chocolate Tenant'
+  const prefix = process.env.SEED_PREFIX || 'SIAMAYA-CHOC'
+  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com'
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local'
+  const tenantSlug = process.env.SEED_TENANT_SLUG || 'siamaya'
+  const tenantName = process.env.SEED_TENANT_NAME || 'SIAMAYA'
   const logLevel = (process.env.LOG_LEVEL as LogLevel) || 'info'
   const timeoutMs = Number(process.env.TIMEOUT_MS || '15000')
   const reset = parseBool(process.env.CONFIRM_CANONICAL_RESET)
@@ -160,6 +255,7 @@ function loadConfig(): SeedConfig {
   const openingBalanceMassG = Number(process.env.OPENING_BALANCE_MASS_G || '0')
   const openingBalanceCount = Number(process.env.OPENING_BALANCE_COUNT || '0')
   return {
+    mode: rawMode,
     baseUrl,
     prefix,
     adminEmail,
@@ -266,7 +362,43 @@ async function apiRequest<T>(
   }
 }
 
-async function ensureSession(config: SeedConfig): Promise<string> {
+async function tryLogin(config: SeedConfig): Promise<AuthenticatedSession | null> {
+  try {
+    const session = await apiRequest<Session>(config, 'POST', '/auth/login', {
+      body: {
+        email: config.adminEmail,
+        password: config.adminPassword,
+        tenantSlug: config.tenantSlug,
+      },
+    })
+    if (session.tenant?.slug && session.tenant.slug !== config.tenantSlug) {
+      throw new Error(`Authenticated into ${session.tenant.slug}, expected ${config.tenantSlug}`)
+    }
+    return {
+      accessToken: session.accessToken,
+      adminEmail: session.user?.email ?? config.adminEmail,
+    }
+  } catch (err) {
+    const e = toApiError(err)
+    if ([400, 401, 403, 404].includes(e.status ?? 0)) return null
+    throw err
+  }
+}
+
+async function ensureSession(config: SeedConfig, log: ReturnType<typeof makeLogger>): Promise<AuthenticatedSession> {
+  const existingLogin = await tryLogin(config)
+  if (existingLogin) {
+    log.info(`Authenticated with existing Siamaya admin: ${existingLogin.adminEmail}`)
+    return existingLogin
+  }
+
+  await ensureLocalTenantAdminPrincipal(config, log)
+  const repairedPrincipalLogin = await tryLogin(config)
+  if (repairedPrincipalLogin) {
+    log.info(`Authenticated with local Siamaya admin: ${repairedPrincipalLogin.adminEmail}`)
+    return repairedPrincipalLogin
+  }
+
   try {
     const session = await apiRequest<Session>(config, 'POST', '/auth/bootstrap', {
       body: {
@@ -274,22 +406,30 @@ async function ensureSession(config: SeedConfig): Promise<string> {
         adminPassword: config.adminPassword,
         tenantSlug: config.tenantSlug,
         tenantName: config.tenantName,
+        adminName: 'Siamaya Admin',
       },
     })
-    return session.accessToken
+    if (session.tenant?.slug && session.tenant.slug !== config.tenantSlug) {
+      throw new Error(`Bootstrap authenticated into ${session.tenant.slug}, expected ${config.tenantSlug}`)
+    }
+    log.info(`Bootstrapped Siamaya admin access: ${session.user?.email ?? config.adminEmail}`)
+    return {
+      accessToken: session.accessToken,
+      adminEmail: session.user?.email ?? config.adminEmail,
+    }
   } catch (err) {
     const e = toApiError(err)
     if (e.status !== 409) throw err
   }
 
-  const session = await apiRequest<Session>(config, 'POST', '/auth/login', {
-    body: {
-      email: config.adminEmail,
-      password: config.adminPassword,
-      tenantSlug: config.tenantSlug,
-    },
-  })
-  return session.accessToken
+  const repairedLogin = await tryLogin(config)
+  if (!repairedLogin) {
+    throw new Error(
+      `Unable to authenticate ${config.adminEmail} into tenant ${config.tenantSlug} after local bootstrap/repair`,
+    )
+  }
+  log.info(`Authenticated with repaired Siamaya admin: ${repairedLogin.adminEmail}`)
+  return repairedLogin
 }
 
 async function resetOperationalData(config: SeedConfig, log: ReturnType<typeof makeLogger>) {
@@ -350,6 +490,70 @@ async function resetOperationalData(config: SeedConfig, log: ReturnType<typeof m
   } finally {
     await client.end()
   }
+}
+
+async function ensureLocalTenantAdminPrincipal(config: SeedConfig, log: ReturnType<typeof makeLogger>) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Local demo seeds cannot create or repair auth principals in production.')
+  }
+  await withDbClient(async (client) => {
+    await client.query('BEGIN')
+    try {
+      await client.query(
+        `INSERT INTO currencies (code, name, symbol, decimal_places, active)
+         VALUES ('THB', 'Thai Baht', 'THB', 2, true)
+         ON CONFLICT (code) DO NOTHING`,
+      )
+
+      const tenantRes = await client.query<{ id: string }>('SELECT id FROM tenants WHERE slug = $1', [
+        config.tenantSlug,
+      ])
+      const tenantId = tenantRes.rows[0]?.id ?? uuidv4()
+      if (!tenantRes.rows[0]) {
+        await client.query(
+          `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
+           VALUES ($1, $2, $3, NULL, now())`,
+          [tenantId, config.tenantName, config.tenantSlug],
+        )
+        log.info(`Tenant created: ${config.tenantSlug} (${tenantId})`)
+      }
+
+      const userRes = await client.query<{ id: string }>('SELECT id FROM users WHERE email = $1', [
+        config.adminEmail,
+      ])
+      const passwordHash = await hashPassword(config.adminPassword)
+      const userId = userRes.rows[0]?.id ?? uuidv4()
+      if (!userRes.rows[0]) {
+        await client.query(
+          `INSERT INTO users (id, email, password_hash, full_name, base_currency, active, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'THB', true, now(), now())`,
+          [userId, config.adminEmail, passwordHash, 'Siamaya Admin'],
+        )
+        log.info(`Admin user created: ${config.adminEmail} (${userId})`)
+      } else {
+        await client.query(
+          `UPDATE users
+              SET password_hash = $1,
+                  base_currency = COALESCE(base_currency, 'THB'),
+                  active = true,
+                  updated_at = now()
+            WHERE id = $2`,
+          [passwordHash, userId],
+        )
+      }
+
+      await client.query(
+        `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
+         VALUES ($1, $2, $3, 'admin', 'active', now())
+         ON CONFLICT DO NOTHING`,
+        [uuidv4(), tenantId, userId],
+      )
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    }
+  })
 }
 
 async function findItemBySku(config: SeedConfig, token: string, sku: string): Promise<Item | null> {
@@ -449,9 +653,7 @@ async function findLocationByCode(config: SeedConfig, token: string, code: strin
   })
   const rows = Array.isArray(res) ? res : res.data ?? []
   const found = rows.find((r) => (r?.code ?? '').toLowerCase() === code.toLowerCase())
-  return found
-    ? ({ id: found.id, code: found.code, name: found.name, type: found.type } as Location)
-    : null
+  return found ? (found as Location) : null
 }
 
 async function ensureLocation(
@@ -461,6 +663,7 @@ async function ensureLocation(
   code: string,
   name: string,
   type: Location['type'],
+  opts: { role?: string | null; isSellable?: boolean; parentLocationId?: string | null } = {},
 ): Promise<Location> {
   const existing = await findLocationByCode(config, token, code)
   if (existing) {
@@ -470,7 +673,15 @@ async function ensureLocation(
 
   const created = await apiRequest<Location>(config, 'POST', '/locations', {
     token,
-    body: { code, name, type, active: true, parentLocationId: null },
+    body: {
+      code,
+      name,
+      type,
+      active: true,
+      role: opts.role ?? undefined,
+      isSellable: opts.isSellable,
+      parentLocationId: type === 'warehouse' ? null : (opts.parentLocationId ?? null),
+    },
   })
   log.info(`Location created: ${code} (${created.id})`)
   return created
@@ -485,15 +696,17 @@ async function ensureUomConversion(
   toUom: string,
   factor: number,
 ) {
-  const existing = await apiRequest<{ conversions?: { fromUom: string; toUom: string }[] }>(
+  const existing = await apiRequest<{ conversions?: Record<string, string>[] } | Record<string, string>[]>(
     config,
     'GET',
     `/items/${itemId}/uom-conversions`,
     { token },
   )
-  const conversions = existing.conversions ?? []
+  const conversions = Array.isArray(existing) ? existing : existing.conversions ?? []
   const found = conversions.some(
-    (c) => c.fromUom?.toLowerCase() === fromUom.toLowerCase() && c.toUom?.toLowerCase() === toUom.toLowerCase(),
+    (c) =>
+      (c.fromUom ?? c.from_uom)?.toLowerCase() === fromUom.toLowerCase() &&
+      (c.toUom ?? c.to_uom)?.toLowerCase() === toUom.toLowerCase(),
   )
   if (found) {
     log.info(`UOM conversion exists: ${fromUom} -> ${toUom}`)
@@ -664,6 +877,61 @@ async function getDemoWarehouseContext(tenantId: string) {
   })
 }
 
+async function ensureOperationalLocations(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  warehouse: Location,
+) {
+  const receiving = await ensureLocation(
+    config,
+    token,
+    log,
+    MANUAL_DEMO.rawMaterialLocationCodes.receiving,
+    'Factory Receiving',
+    'bin',
+    { role: 'HOLD', parentLocationId: warehouse.id, isSellable: false },
+  )
+  const rawStore = await ensureLocation(
+    config,
+    token,
+    log,
+    MANUAL_DEMO.rawMaterialLocationCodes.rawStore,
+    'Factory Raw Material Store',
+    'bin',
+    { role: 'RM_STORE', parentLocationId: warehouse.id, isSellable: false },
+  )
+  const packStore = await ensureLocation(
+    config,
+    token,
+    log,
+    MANUAL_DEMO.rawMaterialLocationCodes.packStore,
+    'Factory Packaging Store',
+    'bin',
+    { role: 'PACKAGING', parentLocationId: warehouse.id, isSellable: false },
+  )
+  const production = await ensureLocation(
+    config,
+    token,
+    log,
+    MANUAL_DEMO.rawMaterialLocationCodes.production,
+    'Factory Production',
+    'bin',
+    { role: 'WIP', parentLocationId: warehouse.id, isSellable: false },
+  )
+  const fgStage = await ensureLocation(
+    config,
+    token,
+    log,
+    MANUAL_DEMO.rawMaterialLocationCodes.fgStage,
+    'Factory Finished Goods Sellable Stage',
+    'bin',
+    { role: 'FG_SELLABLE', parentLocationId: warehouse.id, isSellable: true },
+  )
+
+  return { receiving, rawStore, packStore, production, fgStage }
+}
+
 async function ensureVendor(
   config: SeedConfig,
   token: string,
@@ -798,7 +1066,7 @@ async function ensureDemoReceipt(
 ): Promise<Receipt> {
   const poLine = po.lines[0]
   if (!poLine) throw new Error('Demo purchase order has no lines')
-  const idempotencyKey = 'seed:milk-chocolate-1000:receipt:v1'
+  const idempotencyKey = 'seed:siamaya:milk-chocolate-1000:receipt:v1'
   const receipt = await apiRequest<Receipt>(config, 'POST', '/purchase-order-receipts', {
     token,
     idempotencyKey,
@@ -830,7 +1098,7 @@ async function ensureDemoQcAccepted(
 ) {
   const receiptLine = receipt.lines[0]
   if (!receiptLine) throw new Error('Demo receipt has no lines')
-  const idempotencyKey = 'seed:milk-chocolate-1000:qc-accept:v1'
+  const idempotencyKey = 'seed:siamaya:milk-chocolate-1000:qc-accept:v1'
   const result = await apiRequest<{ id: string } | { eventId: string; replayed?: boolean }>(
     config,
     'POST',
@@ -927,7 +1195,7 @@ async function ensureDemoReservation(
 ): Promise<Reservation> {
   const soLine = so.lines[0]
   if (!soLine) throw new Error('Demo sales order has no lines')
-  const idempotencyKey = 'seed:milk-chocolate-1000:reservation:v1'
+  const idempotencyKey = 'seed:siamaya:milk-chocolate-1000:reservation:v1'
   const result = await apiRequest<{ data: Reservation[] }>(config, 'POST', '/reservations', {
     token,
     idempotencyKey,
@@ -1018,7 +1286,7 @@ async function ensureDemoShipmentPosted(
   }
   const posted = await apiRequest<Shipment>(config, 'POST', `/shipments/${shipment.id}/post`, {
     token,
-    idempotencyKey: 'seed:milk-chocolate-1000:shipment-post:v1',
+    idempotencyKey: 'seed:siamaya:milk-chocolate-1000:shipment-post:v1',
     body: {},
   })
   log.info(`Shipment posted: ${DEMO.shipmentExternalRef} (${posted.inventoryMovementId})`)
@@ -1038,6 +1306,172 @@ async function markDemoSalesOrderShipped(tenantId: string, shipment: Shipment) {
       [tenantId, DEMO.soNumber],
     )
   })
+}
+
+async function getInventoryOnHand(
+  tenantId: string,
+  itemId: string,
+  locationId: string,
+  uom: string,
+): Promise<number> {
+  return withDbClient(async (client) => {
+    const res = await client.query<{ on_hand: string | null }>(
+      `SELECT COALESCE(SUM(on_hand), 0)::text AS on_hand
+         FROM inventory_balance
+        WHERE tenant_id = $1
+          AND item_id = $2
+          AND location_id = $3
+          AND uom = $4`,
+      [tenantId, itemId, locationId, uom],
+    )
+    return Number(res.rows[0]?.on_hand ?? 0)
+  })
+}
+
+async function topUpInventory(
+  config: SeedConfig,
+  token: string,
+  tenantId: string,
+  log: ReturnType<typeof makeLogger>,
+  entry: { item: Item; location: Location; uom: string; targetOnHand: number; reasonCode: string },
+) {
+  const current = await getInventoryOnHand(tenantId, entry.item.id, entry.location.id, entry.uom)
+  const delta = entry.targetOnHand - current
+  if (delta <= 0) {
+    log.info(`Inventory sufficient: ${entry.item.sku} at ${entry.location.code} (${current} ${entry.uom})`)
+    return
+  }
+  const now = new Date().toISOString()
+  const adjustment = await apiRequest<{ id: string }>(config, 'POST', '/inventory-adjustments', {
+    token,
+    body: {
+      occurredAt: now,
+      notes: `manual_seed_top_up:${entry.item.sku}:${entry.location.code}`,
+      lines: [
+        {
+          itemId: entry.item.id,
+          locationId: entry.location.id,
+          uom: entry.uom,
+          quantityDelta: delta,
+          reasonCode: entry.reasonCode,
+          notes: `Top up to ${entry.targetOnHand} ${entry.uom} for Siamaya manual demo.`,
+        },
+      ],
+    },
+  })
+  await apiRequest(config, 'POST', `/inventory-adjustments/${adjustment.id}/post`, { token, body: {} })
+  log.info(`Inventory topped up: ${entry.item.sku} +${delta} ${entry.uom} at ${entry.location.code}`)
+}
+
+async function countBusinessWorkflowRecords(tenantId: string) {
+  return withDbClient(async (client) => {
+    const result = await client.query<Record<string, string>>(
+      `SELECT
+         (SELECT COUNT(*)::text FROM purchase_orders WHERE tenant_id = $1) AS purchase_orders,
+         (SELECT COUNT(*)::text FROM purchase_order_receipts WHERE tenant_id = $1) AS purchase_order_receipts,
+         (SELECT COUNT(*)::text FROM work_orders WHERE tenant_id = $1) AS work_orders,
+         (SELECT COUNT(*)::text FROM sales_orders WHERE tenant_id = $1) AS sales_orders,
+         (SELECT COUNT(*)::text FROM inventory_reservations WHERE tenant_id = $1) AS inventory_reservations,
+         (SELECT COUNT(*)::text FROM sales_order_shipments WHERE tenant_id = $1) AS sales_order_shipments`,
+      [tenantId],
+    )
+    const row = result.rows[0] ?? {}
+    return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, Number(value)]))
+  })
+}
+
+function assertCountsUnchanged(
+  before: Record<string, number>,
+  after: Record<string, number>,
+) {
+  const changed = Object.keys(before).filter((key) => before[key] !== after[key])
+  if (changed.length > 0) {
+    throw new Error(`Manual seed created or removed transactional records: ${changed.join(', ')}`)
+  }
+}
+
+async function ensureMilkChocolateManufacturingPrerequisites(
+  config: SeedConfig,
+  token: string,
+  tenantId: string,
+  log: ReturnType<typeof makeLogger>,
+  options: { topUpComponentInventory: boolean },
+) {
+  await ensureStandardWarehouseTemplate(config, token, log)
+  const { warehouse, sellable, qa } = await getDemoWarehouseContext(tenantId)
+  const operations = await ensureOperationalLocations(config, token, log, warehouse)
+  const vendor = await ensureVendor(config, token, log)
+  const customer = await ensureCustomer(tenantId, log)
+  const finishedItem = await ensureItem(config, token, log, {
+    sku: DEMO.itemSku,
+    name: DEMO.itemName,
+    description: '75 g Siamaya demo milk chocolate bar used for 1,000-bar workflows.',
+    type: 'finished',
+    defaultUom: DEMO.uom,
+    uomDimension: 'count',
+    canonicalUom: DEMO.uom,
+    stockingUom: DEMO.uom,
+    defaultLocationId: operations.fgStage.id,
+    weight: 75,
+    weightUom: 'g',
+    isPurchasable: true,
+    isManufactured: true,
+  })
+
+  const componentItems: Array<{
+    spec: (typeof MANUAL_DEMO.components)[number]
+    item: Item
+    location: Location
+  }> = []
+  for (const spec of MANUAL_DEMO.components) {
+    const location = spec.store === 'packStore' ? operations.packStore : operations.rawStore
+    const item = await ensureItem(config, token, log, {
+      sku: spec.sku,
+      name: spec.name,
+      type: spec.type,
+      defaultUom: spec.uom,
+      uomDimension: spec.dimension,
+      canonicalUom: spec.uom,
+      stockingUom: spec.uom,
+      defaultLocationId: location.id,
+      isPurchasable: true,
+      isManufactured: false,
+    })
+    if (spec.dimension === 'mass') {
+      await ensureUomConversion(config, token, log, item.id, 'kg', 'g', 1000)
+    }
+    componentItems.push({ spec, item, location })
+  }
+
+  await ensureBom(config, token, log, {
+    bomCode: MANUAL_DEMO.bomCode,
+    outputItemId: finishedItem.id,
+    defaultUom: DEMO.uom,
+    version: {
+      yieldQuantity: 1,
+      yieldUom: DEMO.uom,
+      components: componentItems.map(({ spec, item }, index) => ({
+        lineNumber: index + 1,
+        componentItemId: item.id,
+        uom: spec.uom,
+        quantityPer: spec.quantityPer,
+      })),
+    },
+  })
+
+  if (options.topUpComponentInventory) {
+    for (const { spec, item, location } of componentItems) {
+      await topUpInventory(config, token, tenantId, log, {
+        item,
+        location,
+        uom: spec.uom,
+        targetOnHand: spec.topUpQuantity,
+        reasonCode: 'manual_seed_prereq',
+      })
+    }
+  }
+
+  return { warehouse, sellable, qa, operations, vendor, customer, finishedItem, componentItems }
 }
 
 async function verifyDemoSeed(tenantId: string) {
@@ -1164,30 +1598,18 @@ async function seedMilkChocolateDemo(
   tenantId: string,
   log: ReturnType<typeof makeLogger>,
 ) {
-  await ensureStandardWarehouseTemplate(config, token, log)
-  const { warehouse, sellable } = await getDemoWarehouseContext(tenantId)
-  const vendor = await ensureVendor(config, token, log)
-  const customer = await ensureCustomer(tenantId, log)
-  const item = await ensureItem(config, token, log, {
-    sku: DEMO.itemSku,
-    name: DEMO.itemName,
-    description: '75 g demo milk chocolate bar used for the local 1,000-bar shipment walkthrough.',
-    type: 'finished',
-    defaultUom: DEMO.uom,
-    uomDimension: 'count',
-    canonicalUom: DEMO.uom,
-    stockingUom: DEMO.uom,
-    defaultLocationId: sellable.id,
-    weight: 75,
-    weightUom: 'g',
-    isPurchasable: true,
-    isManufactured: false,
-  })
-  const po = await ensureDemoPurchaseOrder(config, token, log, vendor, item, warehouse)
+  const { warehouse, sellable, vendor, customer, finishedItem } = await ensureMilkChocolateManufacturingPrerequisites(
+    config,
+    token,
+    tenantId,
+    log,
+    { topUpComponentInventory: false },
+  )
+  const po = await ensureDemoPurchaseOrder(config, token, log, vendor, finishedItem, warehouse)
   const receipt = await ensureDemoReceipt(config, token, log, po)
   await ensureDemoQcAccepted(config, token, log, receipt)
-  const so = await ensureDemoSalesOrder(config, token, log, customer, item, warehouse, sellable)
-  await ensureDemoReservation(config, token, log, so, item, warehouse, sellable)
+  const so = await ensureDemoSalesOrder(config, token, log, customer, finishedItem, warehouse, sellable)
+  await ensureDemoReservation(config, token, log, so, finishedItem, warehouse, sellable)
   const shipment = await ensureDemoShipment(config, token, log, so, sellable)
   const postedShipment = await ensureDemoShipmentPosted(config, token, log, shipment)
   await markDemoSalesOrderShipped(tenantId, postedShipment)
@@ -1195,16 +1617,94 @@ async function seedMilkChocolateDemo(
   log.info('Milk chocolate demo verification passed.', verification)
 }
 
+async function verifyManualSeed(
+  config: SeedConfig,
+  token: string,
+  tenantId: string,
+  log: ReturnType<typeof makeLogger>,
+  context: Awaited<ReturnType<typeof ensureMilkChocolateManufacturingPrerequisites>>,
+  countsBefore: Record<string, number>,
+) {
+  const countsAfter = await countBusinessWorkflowRecords(tenantId)
+  assertCountsUnchanged(countsBefore, countsAfter)
+
+  const itemVisible = await findItemBySku(config, token, DEMO.itemSku)
+  if (!itemVisible) throw new Error(`Manual seed item is not visible through API: ${DEMO.itemSku}`)
+  const vendors = await apiRequest<{ data?: Vendor[] } | Vendor[]>(config, 'GET', '/vendors', {
+    token,
+    params: { active: true },
+  })
+  const vendorRows = Array.isArray(vendors) ? vendors : vendors.data ?? []
+  if (!vendorRows.some((row) => row.code === DEMO.vendorCode)) {
+    throw new Error(`Manual seed supplier is not visible through API: ${DEMO.vendorCode}`)
+  }
+  const rawStoreVisible = await findLocationByCode(config, token, MANUAL_DEMO.rawMaterialLocationCodes.rawStore)
+  if (!rawStoreVisible) throw new Error('Manual seed raw material location is not visible through API')
+
+  const failures: string[] = []
+  for (const { spec, item, location } of context.componentItems) {
+    const onHand = await getInventoryOnHand(tenantId, item.id, location.id, spec.uom)
+    if (onHand < spec.topUpQuantity) {
+      failures.push(`${item.sku} on-hand ${onHand} ${spec.uom}; expected at least ${spec.topUpQuantity}`)
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Manual seed inventory verification failed: ${failures.join('; ')}`)
+  }
+
+  log.info('Manual Siamaya prerequisite verification passed.', {
+    transactionalRecordCounts: countsAfter,
+    finishedItemSku: context.finishedItem.sku,
+    supplierCode: context.vendor.code,
+    customerCode: context.customer.code,
+    warehouseCode: context.warehouse.code,
+  })
+}
+
+async function seedManualSiamayaScenario(
+  config: SeedConfig,
+  token: string,
+  tenantId: string,
+  log: ReturnType<typeof makeLogger>,
+) {
+  const countsBefore = await countBusinessWorkflowRecords(tenantId)
+  const context = await ensureMilkChocolateManufacturingPrerequisites(config, token, tenantId, log, {
+    topUpComponentInventory: true,
+  })
+  await verifyManualSeed(config, token, tenantId, log, context, countsBefore)
+  log.info('Siamaya manual UI scenario seed complete.')
+}
+
 async function main() {
   const config = loadConfig()
   const log = makeLogger(config.logLevel)
+
+  log.info('Seed starting.', {
+    mode: config.mode,
+    tenantSlug: config.tenantSlug,
+    adminEmail: config.adminEmail,
+    reset: config.reset ? 'enabled' : 'disabled',
+  })
 
   if (config.reset) {
     await resetOperationalData(config, log)
   }
 
-  const token = await ensureSession(config)
+  const session = await ensureSession(config, log)
+  const token = session.accessToken
   const tenantId = await resolveTenantId(config)
+  log.info('Seed tenant context resolved.', {
+    tenantSlug: config.tenantSlug,
+    tenantId,
+    adminEmail: session.adminEmail,
+    reset: config.reset ? 'enabled' : 'disabled',
+  })
+
+  if (config.mode === 'manual') {
+    await seedManualSiamayaScenario(config, token, tenantId, log)
+    return
+  }
+
   const mainLocation = await ensureLocation(config, token, log, 'MAIN', 'Main Warehouse', 'warehouse')
 
   const sku = (base: string) => (config.prefix ? `${config.prefix}-${base}` : base)

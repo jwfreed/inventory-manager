@@ -57,21 +57,31 @@ npm run test:contracts
 npm run test:scenarios
 ```
 
-## Local Demo Seed
+## Local Demo Seeds
 
-With `DATABASE_URL` configured, migrations applied, and the API running, seed the chocolate demo data with:
+With `DATABASE_URL` configured, migrations applied, and the API running at `http://localhost:3100`, seed the completed Siamaya chocolate demo with:
 
 ```bash
 npm run dev:seed:chocolate
 ```
 
-The seed defaults to the local dev API at `http://localhost:3100`, is idempotent for the demo flow, and verifies a posted shipment for exactly 1,000 `Milk Chocolate Bar` units. It creates or reuses deterministic records including `PO-DEMO-1000-MILK-CHOCOLATE`, `SO-DEMO-1000-MILK-CHOCOLATE`, `Demo Customer`, and `SHIP-DEMO-1000-MILK-CHOCOLATE`.
+The completed seed defaults to tenant `siamaya` and login `jon.freed@gmail.com` / `admin@local`. It is idempotent for the demo flow and verifies a posted shipment for exactly 1,000 `Milk Chocolate Bar` units. It creates or reuses deterministic records including `PO-SIAMAYA-1000-MILK-CHOCOLATE`, `SO-SIAMAYA-1000-MILK-CHOCOLATE`, `Demo Customer`, and `SHIP-SIAMAYA-1000-MILK-CHOCOLATE`.
+
+To prepare only the prerequisites for a manual UI walkthrough:
+
+```bash
+npm run dev:seed:siamaya:manual
+```
+
+The manual seed also targets tenant `siamaya` with `jon.freed@gmail.com` / `admin@local`. It creates or reuses the Siamaya admin access, supplier, customer, warehouse locations, `Milk Chocolate Bar`, raw and packaging items, BOM, UOM conversions, and enough raw/packaging inventory to produce at least 1,000 bars. It intentionally does not create purchase orders, receipts, work orders, production completions, sales orders, reservations, or shipments.
 
 For a local-only destructive operational reset before seeding:
 
 ```bash
 CONFIRM_CANONICAL_RESET=1 npm run dev:seed:chocolate
 ```
+
+`CONFIRM_CANONICAL_RESET=1` truncates operational tables and should only be used against disposable local data.
 
 ## Project Structure
 

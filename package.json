@@ -22,6 +22,7 @@
     "db:conn:check": "ts-node --transpile-only -r tsconfig-paths/register scripts/db-conn-check.ts",
     "dev:seed": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/dev-seed.ts",
     "dev:seed:chocolate": "ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/chocolate-seed.ts",
+    "dev:seed:siamaya:manual": "CHOCOLATE_SEED_MODE=manual ts-node --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/chocolate-seed.ts",
     "seed": "node -r ts-node/register/transpile-only -r tsconfig-paths/register -r dotenv/config scripts/seed/run.ts",
     "seed:siamaya:bom:preprocess": "node -r ts-node/register/transpile-only -r tsconfig-paths/register scripts/seed/siamaya/preprocess_bom_csv.ts",
     "seed:siamaya:generate-simulation": "node scripts/seed/siamaya/generate_simulation_assets.mjs --write",
