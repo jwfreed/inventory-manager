@@ -198,7 +198,11 @@ function computeAtpRetryDelayMs(attempt: number): number {
   const normalizedRandom = Number.isFinite(rawRandom)
     ? Math.min(0.999999, Math.max(0, rawRandom))
     : 0;
-  const jitterMs = Math.floor(normalizedRandom * (ATP_RETRY_JITTER_MS + 1));
+  // Scale jitter with attempt count so workers spread further apart on later
+  // retries, preventing the thundering-herd herding that occurs when a large
+  // cohort wakes up within the same narrow fixed-jitter window every attempt.
+  const jitterCap = ATP_RETRY_JITTER_MS * normalizedAttempt;
+  const jitterMs = Math.floor(normalizedRandom * (jitterCap + 1));
   return ATP_RETRY_BASE_DELAY_MS * normalizedAttempt + jitterMs;
 }
 

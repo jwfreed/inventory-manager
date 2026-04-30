@@ -213,7 +213,7 @@ test('ATP retry jitter/exhaustion mapping stays deterministic and emits metrics'
     assert.equal(exhaustedError.retryAttempts, 3);
     assert.deepEqual(
       sleepCalls,
-      [7, 12],
+      [7, 14],
       'bounded jitter/backoff should invoke deterministic sleep hooks for retry attempts'
     );
 
@@ -231,7 +231,7 @@ test('ATP retry jitter/exhaustion mapping stays deterministic and emits metrics'
     assert.equal(retryAttemptMetrics.length, 2);
     assert.deepEqual(
       retryAttemptMetrics.map((entry) => entry.payload?.delayMs),
-      [7, 12]
+      [7, 14]
     );
     assert.ok(metrics.some((entry) => entry.event === 'atp_retry_count'));
     assert.ok(metrics.some((entry) => entry.event === 'atp_concurrency_exhausted_count'));
