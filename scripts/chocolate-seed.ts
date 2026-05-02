@@ -29,6 +29,7 @@ type SeedConfig = {
   seedOpeningBalances: boolean
   openingBalanceMassG: number
   openingBalanceCount: number
+  allowLocalAuthRepair: boolean
 }
 
 type ApiError = Error & { status?: number; details?: unknown }
@@ -134,9 +135,9 @@ const DEMO = {
   vendorName: 'Demo Chocolate Supplier',
   customerCode: 'SIAMAYA-DEMO-CUSTOMER',
   customerName: 'Demo Customer',
-  poNumber: 'PO-SIAMAYA-1000-MILK-CHOCOLATE',
-  soNumber: 'SO-SIAMAYA-1000-MILK-CHOCOLATE',
-  shipmentExternalRef: 'SHIP-SIAMAYA-1000-MILK-CHOCOLATE',
+  poNumber: 'PO-COMPLETED-1000-MILK-CHOCOLATE',
+  soNumber: 'SO-COMPLETED-1000-MILK-CHOCOLATE',
+  shipmentExternalRef: 'SHIP-COMPLETED-1000-MILK-CHOCOLATE',
   quantity: 1000,
   uom: 'each',
   orderDate: '2026-01-15',
@@ -145,6 +146,12 @@ const DEMO = {
   qcAt: '2026-01-16T10:00:00.000Z',
   requestedShipDate: '2026-01-17',
   shippedAt: '2026-01-17T15:00:00.000Z',
+}
+
+const LEGACY_COMPLETED_DEMO_REFS = {
+  poNumber: 'PO-SIAMAYA-1000-MILK-CHOCOLATE',
+  soNumber: 'SO-SIAMAYA-1000-MILK-CHOCOLATE',
+  shipmentExternalRef: 'SHIP-SIAMAYA-1000-MILK-CHOCOLATE',
 }
 
 const MANUAL_DEMO = {
@@ -254,6 +261,7 @@ function loadConfig(): SeedConfig {
   const seedOpeningBalances = parseBool(process.env.SEED_OPENING_BALANCE)
   const openingBalanceMassG = Number(process.env.OPENING_BALANCE_MASS_G || '0')
   const openingBalanceCount = Number(process.env.OPENING_BALANCE_COUNT || '0')
+  const allowLocalAuthRepair = parseBool(process.env.ALLOW_LOCAL_AUTH_REPAIR)
   return {
     mode: rawMode,
     baseUrl,
@@ -268,6 +276,7 @@ function loadConfig(): SeedConfig {
     seedOpeningBalances,
     openingBalanceMassG,
     openingBalanceCount,
+    allowLocalAuthRepair,
   }
 }
 
@@ -392,44 +401,21 @@ async function ensureSession(config: SeedConfig, log: ReturnType<typeof makeLogg
     return existingLogin
   }
 
+  if (!config.allowLocalAuthRepair) {
+    throw new Error(
+      `Unable to authenticate ${config.adminEmail} into tenant ${config.tenantSlug}. ` +
+        'Refusing to create memberships or repair local auth without ALLOW_LOCAL_AUTH_REPAIR=1.',
+    )
+  }
+
+  log.warn('ALLOW_LOCAL_AUTH_REPAIR=1 enabled; local tenant/admin auth repair may create access or reset password.')
   await ensureLocalTenantAdminPrincipal(config, log)
   const repairedPrincipalLogin = await tryLogin(config)
   if (repairedPrincipalLogin) {
     log.info(`Authenticated with local Siamaya admin: ${repairedPrincipalLogin.adminEmail}`)
     return repairedPrincipalLogin
   }
-
-  try {
-    const session = await apiRequest<Session>(config, 'POST', '/auth/bootstrap', {
-      body: {
-        adminEmail: config.adminEmail,
-        adminPassword: config.adminPassword,
-        tenantSlug: config.tenantSlug,
-        tenantName: config.tenantName,
-        adminName: 'Siamaya Admin',
-      },
-    })
-    if (session.tenant?.slug && session.tenant.slug !== config.tenantSlug) {
-      throw new Error(`Bootstrap authenticated into ${session.tenant.slug}, expected ${config.tenantSlug}`)
-    }
-    log.info(`Bootstrapped Siamaya admin access: ${session.user?.email ?? config.adminEmail}`)
-    return {
-      accessToken: session.accessToken,
-      adminEmail: session.user?.email ?? config.adminEmail,
-    }
-  } catch (err) {
-    const e = toApiError(err)
-    if (e.status !== 409) throw err
-  }
-
-  const repairedLogin = await tryLogin(config)
-  if (!repairedLogin) {
-    throw new Error(
-      `Unable to authenticate ${config.adminEmail} into tenant ${config.tenantSlug} after local bootstrap/repair`,
-    )
-  }
-  log.info(`Authenticated with repaired Siamaya admin: ${repairedLogin.adminEmail}`)
-  return repairedLogin
+  throw new Error(`Unable to authenticate ${config.adminEmail} into tenant ${config.tenantSlug} after local auth repair`)
 }
 
 async function resetOperationalData(config: SeedConfig, log: ReturnType<typeof makeLogger>) {
@@ -493,6 +479,9 @@ async function resetOperationalData(config: SeedConfig, log: ReturnType<typeof m
 }
 
 async function ensureLocalTenantAdminPrincipal(config: SeedConfig, log: ReturnType<typeof makeLogger>) {
+  if (!config.allowLocalAuthRepair) {
+    throw new Error('Local auth repair requires ALLOW_LOCAL_AUTH_REPAIR=1.')
+  }
   if (process.env.NODE_ENV === 'production') {
     throw new Error('Local demo seeds cannot create or repair auth principals in production.')
   }
@@ -820,8 +809,77 @@ async function resolveTenantId(config: SeedConfig): Promise<string> {
   return withDbClient(async (client) => {
     const res = await client.query<{ id: string }>('SELECT id FROM tenants WHERE slug = $1', [config.tenantSlug])
     const tenantId = res.rows[0]?.id
-    if (!tenantId) throw new Error(`Tenant not found after bootstrap: ${config.tenantSlug}`)
+    if (!tenantId) throw new Error(`Tenant not found: ${config.tenantSlug}`)
     return tenantId
+  })
+}
+
+async function migrateLegacyCompletedDemoRefs(tenantId: string, log: ReturnType<typeof makeLogger>) {
+  await withDbClient(async (client) => {
+    await client.query('BEGIN')
+    try {
+      const po = await client.query(
+        `UPDATE purchase_orders po
+            SET po_number = CASE
+                  WHEN EXISTS (
+                    SELECT 1
+                      FROM purchase_orders existing
+                     WHERE existing.po_number = $3
+                  )
+                  THEN 'PO-LEGACY-COMPLETED-1000-MILK-CHOCOLATE-' || left(po.id::text, 8)
+                  ELSE $3
+                END,
+                updated_at = now()
+          WHERE po.tenant_id = $1
+            AND po.po_number = $2`,
+        [tenantId, LEGACY_COMPLETED_DEMO_REFS.poNumber, DEMO.poNumber],
+      )
+      const so = await client.query(
+        `UPDATE sales_orders so
+            SET so_number = CASE
+                  WHEN EXISTS (
+                    SELECT 1
+                      FROM sales_orders existing
+                     WHERE existing.so_number = $3
+                  )
+                  THEN 'SO-LEGACY-COMPLETED-1000-MILK-CHOCOLATE-' || left(so.id::text, 8)
+                  ELSE $3
+                END,
+                updated_at = now()
+          WHERE so.tenant_id = $1
+            AND so.so_number = $2`,
+        [tenantId, LEGACY_COMPLETED_DEMO_REFS.soNumber, DEMO.soNumber],
+      )
+      const shipment = await client.query(
+        `UPDATE sales_order_shipments s
+            SET external_ref = CASE
+                  WHEN EXISTS (
+                    SELECT 1
+                      FROM sales_order_shipments existing
+                     WHERE existing.tenant_id = $1
+                       AND existing.external_ref = $3
+                  )
+                  THEN 'SHIP-LEGACY-COMPLETED-1000-MILK-CHOCOLATE-' || left(s.id::text, 8)
+                  ELSE $3
+                END
+          WHERE s.tenant_id = $1
+            AND s.external_ref = $2`,
+        [tenantId, LEGACY_COMPLETED_DEMO_REFS.shipmentExternalRef, DEMO.shipmentExternalRef],
+      )
+      await client.query('COMMIT')
+
+      const migrated = {
+        purchaseOrders: po.rowCount ?? 0,
+        salesOrders: so.rowCount ?? 0,
+        shipments: shipment.rowCount ?? 0,
+      }
+      if (migrated.purchaseOrders || migrated.salesOrders || migrated.shipments) {
+        log.info('Migrated legacy completed seed document refs away from reserved manual UI prefixes.', migrated)
+      }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    }
   })
 }
 
@@ -1346,7 +1404,7 @@ async function topUpInventory(
     token,
     body: {
       occurredAt: now,
-      notes: `manual_seed_top_up:${entry.item.sku}:${entry.location.code}`,
+      notes: `${entry.reasonCode}:manual_seed_top_up:${entry.item.sku}:${entry.location.code}`,
       lines: [
         {
           itemId: entry.item.id,
@@ -1354,7 +1412,7 @@ async function topUpInventory(
           uom: entry.uom,
           quantityDelta: delta,
           reasonCode: entry.reasonCode,
-          notes: `Top up to ${entry.targetOnHand} ${entry.uom} for Siamaya manual demo.`,
+          notes: `${entry.reasonCode}: top up to ${entry.targetOnHand} ${entry.uom} for Siamaya manual demo.`,
         },
       ],
     },
@@ -1388,6 +1446,155 @@ function assertCountsUnchanged(
   if (changed.length > 0) {
     throw new Error(`Manual seed created or removed transactional records: ${changed.join(', ')}`)
   }
+}
+
+async function assertNoReservedManualWorkflowArtifacts(tenantId: string) {
+  return withDbClient(async (client) => {
+    const result = await client.query<Record<string, string>>(
+      `SELECT
+         (SELECT COUNT(*)::text
+            FROM purchase_orders
+           WHERE tenant_id = $1
+             AND po_number LIKE 'PO-SIAMAYA-%') AS po_siamaya,
+         (SELECT COUNT(*)::text
+            FROM purchase_order_receipts por
+            JOIN purchase_orders po
+              ON po.id = por.purchase_order_id
+             AND po.tenant_id = por.tenant_id
+           WHERE por.tenant_id = $1
+             AND po.po_number LIKE 'PO-SIAMAYA-%') AS receipts_linked_to_siamaya_po,
+         (SELECT COUNT(*)::text
+            FROM work_orders
+           WHERE tenant_id = $1
+             AND (
+               work_order_number LIKE 'WO-SIAMAYA-%'
+               OR COALESCE(number, '') LIKE 'WO-SIAMAYA-%'
+             )) AS wo_siamaya,
+         (SELECT COUNT(*)::text
+            FROM sales_orders
+           WHERE tenant_id = $1
+             AND so_number LIKE 'SO-SIAMAYA-%') AS so_siamaya,
+         (SELECT COUNT(*)::text
+            FROM inventory_reservations r
+            JOIN sales_order_lines sol
+              ON sol.id = r.demand_id
+             AND sol.tenant_id = r.tenant_id
+            JOIN sales_orders so
+              ON so.id = sol.sales_order_id
+             AND so.tenant_id = sol.tenant_id
+           WHERE r.tenant_id = $1
+             AND so.so_number LIKE 'SO-SIAMAYA-%') AS reservations_linked_to_siamaya_so,
+         (SELECT COUNT(*)::text
+            FROM sales_order_shipments
+           WHERE tenant_id = $1
+             AND external_ref LIKE 'SHIP-SIAMAYA-%') AS ship_siamaya`,
+      [tenantId],
+    )
+    const row = Object.fromEntries(
+      Object.entries(result.rows[0] ?? {}).map(([key, value]) => [key, Number(value)]),
+    )
+    const failures = Object.entries(row).filter(([, value]) => value !== 0)
+    if (failures.length > 0) {
+      throw new Error(
+        `Manual seed reserved-prefix verification failed: ${failures
+          .map(([key, value]) => `${key}=${value}`)
+          .join(', ')}`,
+      )
+    }
+    return row
+  })
+}
+
+async function verifyManualTopologyAndBom(tenantId: string) {
+  return withDbClient(async (client) => {
+    const result = await client.query<{
+      location_failures: string | null
+      bom_active_versions: string
+      bom_lines: string
+      mass_conversions: string
+    }>(
+      `WITH expected_locations(code, role, sellable) AS (
+         VALUES
+           ('FACTORY_RECEIVING', 'HOLD', false),
+           ('FACTORY_RM_STORE', 'RM_STORE', false),
+           ('FACTORY_PACK_STORE', 'PACKAGING', false),
+           ('FACTORY_PRODUCTION', 'WIP', false),
+           ('FACTORY_FG_STAGE', 'FG_SELLABLE', true)
+       ),
+       location_checks AS (
+         SELECT e.code,
+                l.id,
+                l.role,
+                l.is_sellable
+           FROM expected_locations e
+           LEFT JOIN locations l
+             ON l.tenant_id = $1
+            AND l.code = e.code
+            AND l.role = e.role
+            AND l.is_sellable = e.sellable
+       ),
+       demo_bom AS (
+         SELECT b.id
+           FROM boms b
+           JOIN items i
+             ON i.id = b.output_item_id
+            AND i.tenant_id = b.tenant_id
+          WHERE b.tenant_id = $1
+            AND b.bom_code = $2
+            AND i.sku = $3
+       ),
+       active_versions AS (
+         SELECT bv.id
+           FROM bom_versions bv
+           JOIN demo_bom b ON b.id = bv.bom_id
+          WHERE bv.tenant_id = $1
+            AND bv.status = 'active'
+       ),
+       mass_items AS (
+         SELECT id
+           FROM items
+          WHERE tenant_id = $1
+            AND sku = ANY($4::text[])
+       )
+       SELECT
+         (SELECT string_agg(code, ', ' ORDER BY code)
+            FROM location_checks
+           WHERE id IS NULL) AS location_failures,
+         (SELECT COUNT(*)::text FROM active_versions) AS bom_active_versions,
+         (SELECT COUNT(*)::text
+            FROM bom_version_lines bvl
+            JOIN active_versions av ON av.id = bvl.bom_version_id
+           WHERE bvl.tenant_id = $1) AS bom_lines,
+         (SELECT COUNT(*)::text
+            FROM uom_conversions uc
+            JOIN mass_items mi ON mi.id = uc.item_id
+           WHERE uc.tenant_id = $1
+             AND uc.from_uom = 'kg'
+             AND uc.to_uom = 'g'
+             AND uc.factor = 1000) AS mass_conversions`,
+      [
+        tenantId,
+        MANUAL_DEMO.bomCode,
+        DEMO.itemSku,
+        MANUAL_DEMO.components.filter((component) => component.dimension === 'mass').map((component) => component.sku),
+      ],
+    )
+    const row = result.rows[0]
+    const failures: string[] = []
+    if (row?.location_failures) failures.push(`location topology missing/incorrect: ${row.location_failures}`)
+    if (Number(row?.bom_active_versions ?? 0) < 1) failures.push('active BOM version missing')
+    if (Number(row?.bom_lines ?? 0) !== MANUAL_DEMO.components.length) {
+      failures.push(`BOM line count ${row?.bom_lines}`)
+    }
+    const expectedMassConversions = MANUAL_DEMO.components.filter((component) => component.dimension === 'mass').length
+    if (Number(row?.mass_conversions ?? 0) !== expectedMassConversions) {
+      failures.push(`mass UOM conversions ${row?.mass_conversions}`)
+    }
+    if (failures.length > 0) {
+      throw new Error(`Manual seed prerequisite verification failed: ${failures.join('; ')}`)
+    }
+    return row
+  })
 }
 
 async function ensureMilkChocolateManufacturingPrerequisites(
@@ -1466,7 +1673,7 @@ async function ensureMilkChocolateManufacturingPrerequisites(
         location,
         uom: spec.uom,
         targetOnHand: spec.topUpQuantity,
-        reasonCode: 'manual_seed_prereq',
+        reasonCode: 'manual_seed_opening_balance',
       })
     }
   }
@@ -1627,6 +1834,8 @@ async function verifyManualSeed(
 ) {
   const countsAfter = await countBusinessWorkflowRecords(tenantId)
   assertCountsUnchanged(countsBefore, countsAfter)
+  const reservedWorkflowArtifacts = await assertNoReservedManualWorkflowArtifacts(tenantId)
+  const prerequisiteVerification = await verifyManualTopologyAndBom(tenantId)
 
   const itemVisible = await findItemBySku(config, token, DEMO.itemSku)
   if (!itemVisible) throw new Error(`Manual seed item is not visible through API: ${DEMO.itemSku}`)
@@ -1654,6 +1863,8 @@ async function verifyManualSeed(
 
   log.info('Manual Siamaya prerequisite verification passed.', {
     transactionalRecordCounts: countsAfter,
+    reservedWorkflowArtifacts,
+    prerequisiteVerification,
     finishedItemSku: context.finishedItem.sku,
     supplierCode: context.vendor.code,
     customerCode: context.customer.code,
@@ -1684,6 +1895,7 @@ async function main() {
     tenantSlug: config.tenantSlug,
     adminEmail: config.adminEmail,
     reset: config.reset ? 'enabled' : 'disabled',
+    authRepair: config.allowLocalAuthRepair ? 'enabled' : 'disabled',
   })
 
   if (config.reset) {
@@ -1693,11 +1905,13 @@ async function main() {
   const session = await ensureSession(config, log)
   const token = session.accessToken
   const tenantId = await resolveTenantId(config)
+  await migrateLegacyCompletedDemoRefs(tenantId, log)
   log.info('Seed tenant context resolved.', {
     tenantSlug: config.tenantSlug,
     tenantId,
     adminEmail: session.adminEmail,
     reset: config.reset ? 'enabled' : 'disabled',
+    authRepair: config.allowLocalAuthRepair ? 'enabled' : 'disabled',
   })
 
   if (config.mode === 'manual') {

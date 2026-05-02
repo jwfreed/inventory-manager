@@ -65,7 +65,7 @@ With `DATABASE_URL` configured, migrations applied, and the API running at `http
 npm run dev:seed:chocolate
 ```
 
-The completed seed defaults to tenant `siamaya` and login `jon.freed@gmail.com` / `admin@local`. It is idempotent for the demo flow and verifies a posted shipment for exactly 1,000 `Milk Chocolate Bar` units. It creates or reuses deterministic records including `PO-SIAMAYA-1000-MILK-CHOCOLATE`, `SO-SIAMAYA-1000-MILK-CHOCOLATE`, `Demo Customer`, and `SHIP-SIAMAYA-1000-MILK-CHOCOLATE`.
+The completed seed defaults to tenant `siamaya` and login `jon.freed@gmail.com` / `admin@local`. It is idempotent for the demo flow and verifies a posted shipment for exactly 1,000 `Milk Chocolate Bar` units. It creates or reuses deterministic records including `PO-COMPLETED-1000-MILK-CHOCOLATE`, `SO-COMPLETED-1000-MILK-CHOCOLATE`, `Demo Customer`, and `SHIP-COMPLETED-1000-MILK-CHOCOLATE`.
 
 To prepare only the prerequisites for a manual UI walkthrough:
 
@@ -73,7 +73,15 @@ To prepare only the prerequisites for a manual UI walkthrough:
 npm run dev:seed:siamaya:manual
 ```
 
-The manual seed also targets tenant `siamaya` with `jon.freed@gmail.com` / `admin@local`. It creates or reuses the Siamaya admin access, supplier, customer, warehouse locations, `Milk Chocolate Bar`, raw and packaging items, BOM, UOM conversions, and enough raw/packaging inventory to produce at least 1,000 bars. It intentionally does not create purchase orders, receipts, work orders, production completions, sales orders, reservations, or shipments.
+The manual seed also targets tenant `siamaya` with `jon.freed@gmail.com` / `admin@local`. It creates or reuses the supplier, customer, warehouse locations, `Milk Chocolate Bar`, raw and packaging items, BOM, UOM conversions, and enough raw/packaging inventory to produce at least 1,000 bars. Opening balance adjustments are tagged with `manual_seed_opening_balance`. It intentionally does not create purchase orders, receipts, work orders, production completions, sales orders, reservations, or shipments, and it verifies that no reserved manual UI artifacts exist with `PO-SIAMAYA-*`, `WO-SIAMAYA-*`, `SO-SIAMAYA-*`, or `SHIP-SIAMAYA-*`.
+
+Both seeds first attempt to log in with the configured Siamaya admin. They do not create tenant membership or reset an existing password unless explicitly run with:
+
+```bash
+ALLOW_LOCAL_AUTH_REPAIR=1 npm run dev:seed:chocolate
+```
+
+Use that flag only for disposable local environments where repairing the Siamaya tenant/admin bootstrap is intended.
 
 For a local-only destructive operational reset before seeding:
 
