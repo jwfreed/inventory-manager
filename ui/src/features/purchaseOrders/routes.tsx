@@ -9,6 +9,7 @@ export const purchaseOrderRoutes: AppRouteObject[] = [
     element: <PurchaseOrdersListPage />,
     handle: {
       breadcrumb: 'Purchase Orders',
+      permission: 'purchasing:read',
       nav: {
         label: 'Purchase Orders',
         to: '/purchase-orders',
@@ -23,6 +24,7 @@ export const purchaseOrderRoutes: AppRouteObject[] = [
     element: <PurchaseOrderCreatePage />,
     handle: {
       breadcrumb: 'New purchase order',
+      permission: 'purchasing:write',
     },
   },
   {
@@ -30,6 +32,7 @@ export const purchaseOrderRoutes: AppRouteObject[] = [
     element: <PurchaseOrderDetailPage />,
     handle: {
       breadcrumb: 'Purchase order',
+      permission: 'purchasing:read',
     },
   },
 ]

@@ -4,6 +4,15 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '../testUtils'
 import ShipmentDetailPage from '../../features/orderToCash/pages/ShipmentDetailPage'
 
+let authPermissions: string[] = ['outbound:post']
+
+vi.mock('@shared/auth', () => ({
+  useAuth: () => ({
+    hasPermission: (permission: string) => authPermissions.includes(permission),
+    permissions: authPermissions,
+  }),
+}))
+
 vi.mock('../../features/orderToCash/queries', () => ({
   orderToCashQueryKeys: {
     shipments: {
@@ -57,6 +66,7 @@ function renderPage() {
 describe('ShipmentDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authPermissions = ['outbound:post']
     mockedUseShipment.mockReturnValue({
       data: {
         id: 'ship-1',
@@ -87,5 +97,15 @@ describe('ShipmentDetailPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm post' }))
 
     await waitFor(() => expect(mockedPostShipment).toHaveBeenCalledWith('ship-1'))
+  })
+
+  it('hides shipment post actions without outbound post permission', async () => {
+    authPermissions = []
+
+    renderPage()
+
+    expect(await screen.findByText('Shipment detail')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Post shipment' })).toBeNull()
+    expect(mockedPostShipment).not.toHaveBeenCalled()
   })
 })

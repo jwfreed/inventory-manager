@@ -9,6 +9,7 @@ import { formatNumber } from '@shared/formatters'
 import { PurchaseOrdersSummaryCards } from '../components/PurchaseOrdersSummaryCards'
 import { PurchaseOrdersGroupTable } from '../components/PurchaseOrdersGroupTable'
 import { usePurchaseOrdersGrouping } from '../hooks/usePurchaseOrdersGrouping'
+import { useAuth } from '@shared/auth'
 
 const formatError = (err: unknown) => {
   if (!err) return 'Unknown error'
@@ -25,6 +26,7 @@ const formatError = (err: unknown) => {
 
 export default function PurchaseOrdersListPage() {
   const qc = useQueryClient()
+  const { hasPermission } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [repeatMessage, setRepeatMessage] = useState<{ label: string; id: string } | null>(null)
   const [repeatError, setRepeatError] = useState<string | null>(null)
@@ -36,6 +38,7 @@ export default function PurchaseOrdersListPage() {
   const search = searchParams.get('search') ?? ''
   const showReceiveAction =
     isReceivingMode || ['approved', 'partially_received', 'submitted'].includes(statusFilter)
+  const canWritePurchaseOrders = hasPermission('purchasing:write')
 
   const poQuery = usePurchaseOrdersList(
     { limit: 200, search: search || undefined },
@@ -141,9 +144,11 @@ export default function PurchaseOrdersListPage() {
         }
         action={
           <div className="flex items-center gap-2">
-            <Link to="/purchase-orders/new">
-              <Button size="sm">Create PO</Button>
-            </Link>
+            {canWritePurchaseOrders ? (
+              <Link to="/purchase-orders/new">
+                <Button size="sm">Create PO</Button>
+              </Link>
+            ) : null}
             <Link to="/purchase-orders?action=receive&status=approved">
               <Button size="sm" variant="secondary">
                 Receive
@@ -260,6 +265,7 @@ export default function PurchaseOrdersListPage() {
                 showEmptyState={Boolean(statusFilter)}
                 onRepeat={(poId) => repeatMutation.mutate(poId)}
                 repeatPendingId={repeatPendingId}
+                canRepeat={canWritePurchaseOrders}
                 onClearFilters={statusFilter ? () => setStatusFilter('') : undefined}
               />
             ))}

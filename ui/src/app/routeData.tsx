@@ -56,7 +56,17 @@ export const appShellRoutes: AppRouteObject[] = [
   },
 ]
 
-export const navItems: AppNavItem[] = appShellRoutes
-  .map((route) => route.handle?.nav)
+function collectNavItems(routes: AppRouteObject[], inheritedPermission?: string): AppNavItem[] {
+  return routes.flatMap((route) => {
+    const permission = route.handle?.permission ?? inheritedPermission
+    const nav = route.handle?.nav
+    return [
+      ...(nav ? [{ ...nav, permission: nav.permission ?? permission }] : []),
+      ...(route.children ? collectNavItems(route.children, permission) : []),
+    ]
+  })
+}
+
+export const navItems: AppNavItem[] = collectNavItems(appShellRoutes)
   .filter((item): item is AppNavItem => Boolean(item))
   .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))

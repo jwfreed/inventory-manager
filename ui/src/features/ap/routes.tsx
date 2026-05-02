@@ -14,6 +14,7 @@ export const apRoutes: AppRouteObject[] = [
     path: 'ap',
     handle: {
       breadcrumb: 'Accounts Payable',
+      permission: 'finance:read',
       nav: {
         label: 'Accounts Payable',
         to: '/ap',
@@ -28,12 +29,14 @@ export const apRoutes: AppRouteObject[] = [
         element: <ApDashboardPage />,
         handle: {
           breadcrumb: 'Dashboard',
+          permission: 'finance:read',
         },
       },
       {
         path: 'invoices',
         handle: {
           breadcrumb: 'Invoices',
+          permission: 'finance:read',
         },
         children: [
           {
@@ -45,6 +48,7 @@ export const apRoutes: AppRouteObject[] = [
             element: <InvoiceCreatePage />,
             handle: {
               breadcrumb: 'Create',
+              permission: 'finance:write',
             },
           },
           {
@@ -52,6 +56,7 @@ export const apRoutes: AppRouteObject[] = [
             element: <InvoiceDetailPage />,
             handle: {
               breadcrumb: 'Details',
+              permission: 'finance:read',
             },
           },
         ],
@@ -60,6 +65,7 @@ export const apRoutes: AppRouteObject[] = [
         path: 'payments',
         handle: {
           breadcrumb: 'Payments',
+          permission: 'finance:read',
         },
         children: [
           {
@@ -71,6 +77,7 @@ export const apRoutes: AppRouteObject[] = [
             element: <PaymentCreatePage />,
             handle: {
               breadcrumb: 'Create',
+              permission: 'finance:write',
             },
           },
           {
@@ -78,6 +85,7 @@ export const apRoutes: AppRouteObject[] = [
             element: <PaymentDetailPage />,
             handle: {
               breadcrumb: 'Details',
+              permission: 'finance:read',
             },
           },
         ],

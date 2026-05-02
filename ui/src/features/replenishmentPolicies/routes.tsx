@@ -9,6 +9,7 @@ export const replenishmentPolicyRoutes: AppRouteObject[] = [
     element: <ReplenishmentPoliciesListPage />,
     handle: {
       breadcrumb: 'Replenishment Policies',
+      permission: 'planning:read',
       nav: {
         label: 'Replenishment Policies',
         to: '/replenishment-policies',
@@ -23,6 +24,7 @@ export const replenishmentPolicyRoutes: AppRouteObject[] = [
     element: <ReplenishmentPolicyCreatePage />,
     handle: {
       breadcrumb: 'Create policy',
+      permission: 'planning:write',
     },
   },
   {
@@ -30,6 +32,7 @@ export const replenishmentPolicyRoutes: AppRouteObject[] = [
     element: <ReplenishmentPolicyDetailPage />,
     handle: {
       breadcrumb: 'Policy',
+      permission: 'planning:read',
     },
   },
 ]

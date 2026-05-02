@@ -7,6 +7,7 @@ export const ncrRoutes: AppRouteObject[] = [
     path: 'ncrs',
     handle: {
       breadcrumb: 'NCRs',
+      permission: 'compliance:read',
       nav: {
         label: 'Non-Conformance Reports',
         to: '/ncrs',
@@ -25,6 +26,7 @@ export const ncrRoutes: AppRouteObject[] = [
         element: <NcrDetailPage />,
         handle: {
           breadcrumb: 'NCR Details',
+          permission: 'compliance:read',
         },
       },
     ],

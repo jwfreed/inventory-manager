@@ -1,19 +1,24 @@
-export type Permission =
-  | 'admin:health'
-  | 'admin:imports'
-  | 'admin:outbox'
-  | 'admin:reconcile'
-  | 'audit:read'
+export type Permission = string
 
-const rolePermissions: Record<string, readonly Permission[]> = {
-  operator: [],
-  supervisor: ['audit:read'],
-  manager: ['audit:read'],
-  admin: ['admin:health', 'admin:imports', 'admin:outbox', 'admin:reconcile', 'audit:read'],
+export function hasUiPermission(
+  permissions: readonly string[] | null | undefined,
+  permission: Permission,
+): boolean {
+  return Boolean(permission) && Boolean(permissions?.includes(permission))
 }
 
-export function hasUiPermission(role: string | null | undefined, permission: Permission): boolean {
-  if (!role) return false
-  return rolePermissions[role]?.includes(permission) ?? false
+export function hasAnyUiPermission(
+  userPermissions: readonly string[] | null | undefined,
+  requiredPermissions: readonly Permission[],
+): boolean {
+  if (requiredPermissions.length === 0) return true
+  return requiredPermissions.some((permission) => hasUiPermission(userPermissions, permission))
 }
 
+export function hasAllUiPermissions(
+  userPermissions: readonly string[] | null | undefined,
+  requiredPermissions: readonly Permission[],
+): boolean {
+  if (requiredPermissions.length === 0) return true
+  return requiredPermissions.every((permission) => hasUiPermission(userPermissions, permission))
+}

@@ -19,6 +19,7 @@ export const reportRoutes: AppRouteObject[] = [
     element: <InventoryValuationPage />,
     handle: {
       breadcrumb: 'Inventory Valuation',
+      permission: 'reports:read',
       nav: {
         label: 'Inventory Valuation',
         to: '/reports/inventory-valuation',
@@ -33,6 +34,7 @@ export const reportRoutes: AppRouteObject[] = [
     element: <CostVariancePage />,
     handle: {
       breadcrumb: 'Cost Variance',
+      permission: 'reports:read',
       nav: {
         label: 'Cost Variance',
         to: '/reports/cost-variance',
@@ -47,6 +49,7 @@ export const reportRoutes: AppRouteObject[] = [
     element: <ReceiptCostAnalysisPage />,
     handle: {
       breadcrumb: 'Receipt Cost Analysis',
+      permission: 'reports:read',
       nav: {
         label: 'Receipt Cost Analysis',
         to: '/reports/receipt-cost-analysis',
@@ -61,6 +64,7 @@ export const reportRoutes: AppRouteObject[] = [
     element: <WorkOrderProgressPage />,
     handle: {
       breadcrumb: 'Work Order Progress',
+      permission: 'reports:read',
       nav: {
         label: 'Work Order Progress',
         to: '/reports/work-order-progress',
@@ -75,6 +79,7 @@ export const reportRoutes: AppRouteObject[] = [
     element: <MovementTransactionsPage />,
     handle: {
       breadcrumb: 'Movement Transactions',
+      permission: 'reports:read',
       nav: {
         label: 'Movement Transactions',
         to: '/reports/movement-transactions',
@@ -89,6 +94,7 @@ export const reportRoutes: AppRouteObject[] = [
     element: <InventoryVelocityPage />,
     handle: {
       breadcrumb: 'Inventory Velocity',
+      permission: 'reports:read',
       nav: {
         label: 'Inventory Velocity',
         to: '/reports/inventory-velocity',
@@ -103,6 +109,7 @@ export const reportRoutes: AppRouteObject[] = [
     element: <OpenPOAgingPage />,
     handle: {
       breadcrumb: 'Open PO Aging',
+      permission: 'reports:read',
       nav: {
         label: 'Open PO Aging',
         to: '/reports/open-po-aging',
@@ -117,6 +124,7 @@ export const reportRoutes: AppRouteObject[] = [
     element: <SalesOrderFillPage />,
     handle: {
       breadcrumb: 'Sales Order Fill',
+      permission: 'reports:read',
       nav: {
         label: 'Sales Order Fill',
         to: '/reports/sales-order-fill',
@@ -131,6 +139,7 @@ export const reportRoutes: AppRouteObject[] = [
     element: <ProductionRunFrequencyPage />,
     handle: {
       breadcrumb: 'Production Frequency',
+      permission: 'reports:read',
       nav: {
         label: 'Production Frequency',
         to: '/reports/production-frequency',

@@ -23,6 +23,7 @@ export type AuthSession = {
   user: AuthUser
   tenant: AuthTenant
   role?: string
+  permissions?: string[]
 }
 
 export type AuthState = {
@@ -31,6 +32,7 @@ export type AuthState = {
   user: AuthUser | null
   tenant: AuthTenant | null
   role: string | null
+  permissions: string[]
   logoutReason: 'manual' | 'refresh-failed' | 'remote-signout' | 'unknown' | null
 }
 
@@ -54,6 +56,9 @@ export type AuthContextValue = AuthState & {
   bootstrap: (input: BootstrapInput) => Promise<void>
   logout: () => Promise<void>
   refresh: () => Promise<void>
+  hasPermission: (permission: string) => boolean
+  hasAnyPermission: (permissions: readonly string[]) => boolean
+  hasAllPermissions: (permissions: readonly string[]) => boolean
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined)

@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { query, withTransaction } from '../db';
 import { buildRefreshToken, hashPassword, hashToken, refreshCookieOptions, signAccessToken, verifyPassword } from '../lib/auth';
 import { requireAuth } from '../middleware/auth.middleware';
+import { rolePermissions, type Role } from '../config/permissions';
 
 const router = Router();
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -125,6 +126,10 @@ function mapTenant(row: any) {
   };
 }
 
+function mapPermissions(role: string) {
+  return [...(rolePermissions[role as Role] ?? [])];
+}
+
 async function resolveMembership(
   userId: string,
   tenantId?: string,
@@ -211,7 +216,8 @@ async function createSession(res: Response, user: any, membership: any) {
     accessToken,
     user: mapUser(user),
     tenant: mapTenant(membership),
-    role: membership.role
+    role: membership.role,
+    permissions: mapPermissions(membership.role)
   };
 }
 
@@ -523,7 +529,8 @@ router.get('/auth/me', requireAuth, async (req: Request, res: Response) => {
   return res.json({
     user: mapUser(userRes.rows[0]),
     tenant: mapTenant(membership),
-    role: membership.role
+    role: membership.role,
+    permissions: mapPermissions(membership.role)
   });
 });
 

@@ -13,6 +13,7 @@ type AuthProfilePayload = {
   user: AuthUser
   tenant: AuthTenant
   role?: string | null
+  permissions?: string[]
 }
 
 type AuthStateListener = (state: AuthState) => void
@@ -28,6 +29,7 @@ let state: AuthState = {
   user: null,
   tenant: null,
   role: null,
+  permissions: [],
   logoutReason: null,
 }
 
@@ -75,6 +77,7 @@ function applySignedInFromSync() {
     user: token ? state.user : null,
     tenant: token ? state.tenant : null,
     role: token ? state.role : null,
+    permissions: token ? state.permissions : [],
     logoutReason: null,
   })
 }
@@ -87,6 +90,7 @@ function applySignedOutFromSync(reason: LogoutReason) {
     user: null,
     tenant: null,
     role: null,
+    permissions: [],
     logoutReason: reason ?? 'unknown',
   })
 }
@@ -158,6 +162,7 @@ export function setAuthLoading() {
     user: token ? state.user : null,
     tenant: token ? state.tenant : null,
     role: token ? state.role : null,
+    permissions: token ? state.permissions : [],
     logoutReason: null,
   })
 }
@@ -171,6 +176,7 @@ export function setAuthenticatedSession(session: AuthSession, options?: { broadc
     user: session.user,
     tenant: session.tenant,
     role: session.role ?? null,
+    permissions: session.permissions ?? [],
     logoutReason: null,
   })
   if (options?.broadcast !== false) {
@@ -193,6 +199,7 @@ export function setAuthenticatedProfile(
     user: token ? payload.user : null,
     tenant: token ? payload.tenant : null,
     role: token ? payload.role ?? null : null,
+    permissions: token ? payload.permissions ?? [] : [],
     logoutReason: null,
   })
   if (token && options?.broadcast !== false) {
@@ -209,6 +216,7 @@ export function clearAuthSession(reason: LogoutReason = 'unknown', options?: { b
     user: null,
     tenant: null,
     role: null,
+    permissions: [],
     logoutReason: reason,
   })
   if (options?.broadcast !== false) {

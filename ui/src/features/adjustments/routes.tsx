@@ -9,6 +9,7 @@ export const adjustmentRoutes: AppRouteObject[] = [
     element: <AdjustmentsListPage />,
     handle: {
       breadcrumb: 'Inventory adjustments',
+      permission: 'inventory:read',
       nav: {
         label: 'Adjustments',
         to: '/inventory-adjustments',
@@ -23,6 +24,7 @@ export const adjustmentRoutes: AppRouteObject[] = [
     element: <AdjustmentNewPage />,
     handle: {
       breadcrumb: 'New adjustment',
+      permission: 'inventory:adjustments:write',
     },
   },
   {
@@ -30,6 +32,7 @@ export const adjustmentRoutes: AppRouteObject[] = [
     element: <AdjustmentDetailPage />,
     handle: {
       breadcrumb: 'Adjustment detail',
+      permission: 'inventory:read',
     },
   },
 ]

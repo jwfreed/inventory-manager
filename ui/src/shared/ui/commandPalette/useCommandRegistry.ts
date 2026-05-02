@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useItemsList } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
 import { useWorkOrdersList } from '@features/workOrders/queries'
+import { useAuth } from '@shared/auth'
 
 export type CommandAction = {
   id: string
@@ -43,62 +44,68 @@ function scoreCommand(command: CommandAction, normalizedQuery: string) {
 }
 
 export function useCommandRegistry({ query, navigate }: Params) {
+  const { hasPermission } = useAuth()
   const normalizedQuery = query.trim().toLowerCase()
+  const canReadMasterData = hasPermission('masterdata:read')
+  const canReadProduction = hasPermission('production:read')
+  const canReadInventory = hasPermission('inventory:read')
+  const canWriteAdjustments = hasPermission('inventory:adjustments:write')
+  const canWriteProduction = hasPermission('production:write')
   const itemsQuery = useItemsList(
     { search: normalizedQuery || undefined, limit: MAX_RESULTS },
-    { enabled: normalizedQuery.length > 0, staleTime: 30_000 },
+    { enabled: canReadMasterData && normalizedQuery.length > 0, staleTime: 30_000 },
   )
   const locationsQuery = useLocationsList(
     { search: normalizedQuery || undefined, limit: MAX_RESULTS },
-    { enabled: normalizedQuery.length > 0, staleTime: 30_000 },
+    { enabled: canReadMasterData && normalizedQuery.length > 0, staleTime: 30_000 },
   )
-  const workOrdersQuery = useWorkOrdersList({ limit: 50 }, { staleTime: 30_000 })
+  const workOrdersQuery = useWorkOrdersList({ limit: 50 }, { enabled: canReadProduction, staleTime: 30_000 })
 
   const commands = useMemo(() => {
     const staticCommands: CommandAction[] = [
-      {
+      canReadMasterData && {
         id: 'nav-items',
         label: 'Open items',
         meta: '/items',
         group: 'Navigate',
         run: () => navigate('/items'),
       },
-      {
+      canReadProduction && {
         id: 'nav-work-orders',
         label: 'Open work orders',
         meta: '/work-orders',
         group: 'Navigate',
         run: () => navigate('/work-orders'),
       },
-      {
+      canReadInventory && {
         id: 'nav-movements',
         label: 'View movements',
         meta: '/movements',
         group: 'Inventory',
         run: () => navigate('/movements'),
       },
-      {
+      canReadMasterData && {
         id: 'nav-locations',
         label: 'Open locations',
         meta: '/locations',
         group: 'Navigate',
         run: () => navigate('/locations'),
       },
-      {
+      canWriteAdjustments && {
         id: 'action-adjust-stock',
         label: 'Adjust stock',
         meta: '/inventory-adjustments/new',
         group: 'Inventory',
         run: () => navigate('/inventory-adjustments/new'),
       },
-      {
+      canWriteProduction && {
         id: 'action-create-work-order',
         label: 'Create work order',
         meta: '/work-orders/new',
         group: 'Work Orders',
         run: () => navigate('/work-orders/new'),
       },
-    ]
+    ].filter((command): command is CommandAction => Boolean(command))
 
     const itemCommands =
       itemsQuery.data?.data.map((item) => ({
@@ -158,6 +165,11 @@ export function useCommandRegistry({ query, navigate }: Params) {
   }, [
     itemsQuery.data?.data,
     locationsQuery.data?.data,
+    canReadInventory,
+    canReadMasterData,
+    canReadProduction,
+    canWriteAdjustments,
+    canWriteProduction,
     navigate,
     normalizedQuery,
     workOrdersQuery.data?.data,

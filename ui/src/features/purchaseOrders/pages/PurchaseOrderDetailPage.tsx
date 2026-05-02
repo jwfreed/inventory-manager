@@ -29,6 +29,7 @@ import {
   getPurchaseOrderHeaderCloseOptions,
 } from '../lib/purchaseOrderClosePolicy'
 import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
+import { useAuth } from '@shared/auth'
 
 function AuditTrailPanel({ entityId }: { entityId?: string }) {
   const auditQuery = useAuditLog(
@@ -56,6 +57,7 @@ function AuditTrailPanel({ entityId }: { entityId?: string }) {
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuth()
   const [orderDate, setOrderDate] = useState('')
   const [expectedDate, setExpectedDate] = useState('')
   const [shipToLocationId, setShipToLocationId] = useState('')
@@ -363,6 +365,9 @@ export default function PurchaseOrderDetailPage() {
       helper: 'Locked.',
     }
   const isEditable = statusKey === 'draft'
+  const canWritePurchaseOrder = hasPermission('purchasing:write')
+  const canApprovePurchaseOrder = hasPermission('purchasing:approve')
+  const canVoidPurchaseOrder = hasPermission('purchasing:void')
   const isLocked = !isEditable
   const isCancelable = ['draft', 'submitted', 'approved'].includes(statusKey)
   const canCloseHeader = canClosePurchaseOrderHeader(po)
@@ -393,6 +398,7 @@ export default function PurchaseOrderDetailPage() {
     lineCloseMutation.isPending
 
   const handleSave = () => {
+    if (!canWritePurchaseOrder) return
     setSaveMessage(null)
     setSaveError(null)
     setSubmitMessage(null)
@@ -403,6 +409,7 @@ export default function PurchaseOrderDetailPage() {
   }
 
   const handleSubmitIntent = () => {
+    if (!canWritePurchaseOrder) return
     setSaveMessage(null)
     setSaveError(null)
     setSubmitMessage(null)
@@ -417,6 +424,7 @@ export default function PurchaseOrderDetailPage() {
   }
 
   const handleSubmitConfirm = () => {
+    if (!canWritePurchaseOrder) return
     setSubmitMessage(null)
     setSubmitError(null)
     setApproveMessage(null)
@@ -425,6 +433,7 @@ export default function PurchaseOrderDetailPage() {
   }
 
   const handleApprove = () => {
+    if (!canApprovePurchaseOrder) return
     setApproveMessage(null)
     setApproveError(null)
     setSubmitMessage(null)
@@ -442,7 +451,7 @@ export default function PurchaseOrderDetailPage() {
             status={currentStatus}
           />
           <PurchaseOrderAlerts
-            isLocked={isLocked}
+            isLocked={isLocked || !canWritePurchaseOrder}
             statusLabel={currentStatus.label}
             canReceive={canReceive}
             submitError={submitError}
@@ -474,7 +483,7 @@ export default function PurchaseOrderDetailPage() {
             onNotesChange={setNotes}
           />
           <PurchaseOrderChecklistPanel visible={isEditable} items={checklist} />
-          {isEditable && showSubmitConfirm && (
+          {isEditable && canWritePurchaseOrder && showSubmitConfirm && (
             <div className="mt-3">
               <Alert
                 variant="warning"
@@ -498,7 +507,7 @@ export default function PurchaseOrderDetailPage() {
               />
             </div>
           )}
-          {isSubmitted && (
+          {isSubmitted && canApprovePurchaseOrder && (
             <div className="mt-3">
               <Alert
                 variant="warning"
@@ -519,18 +528,20 @@ export default function PurchaseOrderDetailPage() {
             isBusy={isBusy}
             submitPending={submitMutation.isPending}
             savePending={updateMutation.isPending}
-            canCancel={isCancelable}
-            canClose={canCloseHeader}
+            canCancel={isCancelable && canWritePurchaseOrder}
+            canClose={canCloseHeader && canVoidPurchaseOrder}
+            canCreate={canWritePurchaseOrder}
+            canWrite={canWritePurchaseOrder}
             onSubmitIntent={handleSubmitIntent}
             onSave={handleSave}
             onCancelRequest={() => {
-              if (!isCancelable) return
+              if (!isCancelable || !canWritePurchaseOrder) return
               setCloseMessage(null)
               setCloseError(null)
               setShowCancelConfirm(true)
             }}
             onCloseRequest={() => {
-              if (!canCloseHeader) return
+              if (!canCloseHeader || !canVoidPurchaseOrder) return
               setCloseMessage(null)
               setCloseError(null)
               setShowHeaderCloseModal(true)
@@ -546,7 +557,7 @@ export default function PurchaseOrderDetailPage() {
           </div>
           <PurchaseOrderLinesTable
             lines={po.lines ?? []}
-            canCloseLine={(line) => canClosePurchaseOrderLinePolicy(po, line)}
+            canCloseLine={(line) => canWritePurchaseOrder && canClosePurchaseOrderLinePolicy(po, line)}
             closingLineId={lineCloseMutation.isPending ? lineToClose : null}
             onCloseLineRequest={(line) => {
               setCloseMessage(null)
@@ -568,7 +579,15 @@ export default function PurchaseOrderDetailPage() {
             <Button variant="secondary" size="sm" onClick={() => setShowCancelConfirm(false)}>
               Keep PO
             </Button>
-            <Button size="sm" variant="danger" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => {
+                if (!canWritePurchaseOrder) return
+                cancelMutation.mutate()
+              }}
+              disabled={cancelMutation.isPending}
+            >
               {cancelMutation.isPending ? 'Canceling...' : 'Confirm cancel'}
             </Button>
           </div>
@@ -590,13 +609,14 @@ export default function PurchaseOrderDetailPage() {
         confirmLabel="Confirm close"
         isPending={headerCloseMutation.isPending}
         onClose={() => setShowHeaderCloseModal(false)}
-        onConfirm={(payload) =>
+        onConfirm={(payload) => {
+          if (!canVoidPurchaseOrder) return
           headerCloseMutation.mutate({
             closeAs: payload.closeAs as 'closed' | 'cancelled',
             reason: payload.reason,
             notes: payload.notes,
           })
-        }
+        }}
       />
 
       <PurchaseOrderCloseModal
@@ -615,7 +635,7 @@ export default function PurchaseOrderDetailPage() {
         isPending={lineCloseMutation.isPending}
         onClose={() => setLineToClose(null)}
         onConfirm={(payload) => {
-          if (!lineToClose) return
+          if (!lineToClose || !canWritePurchaseOrder) return
           lineCloseMutation.mutate({
             lineId: lineToClose,
             closeAs: payload.closeAs as 'short' | 'cancelled',

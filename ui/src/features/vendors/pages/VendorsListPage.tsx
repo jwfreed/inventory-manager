@@ -10,9 +10,12 @@ import { LoadingSpinner } from '../../../components/Loading'
 import { Button } from '../../../components/Button'
 import { Input, Textarea } from '../../../components/Inputs'
 import { Badge } from '../../../components/Badge'
+import { useAuth } from '@shared/auth'
 
 export default function VendorsListPage() {
   const qc = useQueryClient()
+  const { hasPermission } = useAuth()
+  const canWriteSuppliers = hasPermission('masterdata:write')
   const [filterActive, setFilterActive] = useState<'all' | 'active'>('active')
   const [showForm, setShowForm] = useState(false)
   const [code, setCode] = useState('')
@@ -88,6 +91,7 @@ export default function VendorsListPage() {
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canWriteSuppliers) return
     const codeValue = code.trim()
     const nameValue = name.trim()
     setCodeError(!codeValue)
@@ -115,6 +119,7 @@ export default function VendorsListPage() {
   }
 
   const onEdit = (vendor: Vendor) => {
+    if (!canWriteSuppliers) return
     setEditingId(vendor.id)
     setCode(vendor.code)
     setName(vendor.name)
@@ -134,6 +139,7 @@ export default function VendorsListPage() {
   }
 
   const onCreate = () => {
+    if (!canWriteSuppliers) return
     setEditingId(null)
     setCode('')
     setName('')
@@ -157,6 +163,7 @@ export default function VendorsListPage() {
   }
 
   const onDeactivate = (vendorId: string) => {
+    if (!canWriteSuppliers) return
     const confirmed = window.confirm(
       'Deactivate supplier?\n\nInactive suppliers won’t appear in PO and receiving pickers. This does not delete history.',
     )
@@ -217,9 +224,11 @@ export default function VendorsListPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <Button variant="secondary" size="sm" onClick={() => (showForm ? onCloseForm() : onCreate())}>
-              {showForm ? 'Close' : 'New supplier'}
-            </Button>
+            {canWriteSuppliers ? (
+              <Button variant="secondary" size="sm" onClick={() => (showForm ? onCloseForm() : onCreate())}>
+                {showForm ? 'Close' : 'New supplier'}
+              </Button>
+            ) : null}
             <Button
               variant={filterActive === 'active' ? 'primary' : 'secondary'}
               size="sm"
@@ -237,7 +246,7 @@ export default function VendorsListPage() {
           </div>
         </div>
 
-        {showForm && (
+        {showForm && canWriteSuppliers && (
           <Card className="mt-4">
             {formSubmitting && <LoadingSpinner label="Processing..." />}
             <form className="space-y-4" onSubmit={onSubmit}>
@@ -379,22 +388,30 @@ export default function VendorsListPage() {
                   {filteredVendors.map((vendor) => (
                     <tr key={vendor.id}>
                       <td className="px-3 py-2 text-sm text-slate-800">
-                        <button
-                          className="text-brand-700 underline"
-                          type="button"
-                          onClick={() => onEdit(vendor)}
-                        >
-                          {vendor.code}
-                        </button>
+                        {canWriteSuppliers ? (
+                          <button
+                            className="text-brand-700 underline"
+                            type="button"
+                            onClick={() => onEdit(vendor)}
+                          >
+                            {vendor.code}
+                          </button>
+                        ) : (
+                          vendor.code
+                        )}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-800">
-                        <button
-                          className="text-brand-700 underline"
-                          type="button"
-                          onClick={() => onEdit(vendor)}
-                        >
-                          {vendor.name}
-                        </button>
+                        {canWriteSuppliers ? (
+                          <button
+                            className="text-brand-700 underline"
+                            type="button"
+                            onClick={() => onEdit(vendor)}
+                          >
+                            {vendor.name}
+                          </button>
+                        ) : (
+                          vendor.name
+                        )}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-800">
                         <div>{vendor.contactName || '—'}</div>
@@ -418,7 +435,8 @@ export default function VendorsListPage() {
                         </Badge>
                       </td>
                       <td className="px-3 py-2 text-right text-sm text-slate-800">
-                        <div className="flex justify-end gap-2">
+                        {canWriteSuppliers ? (
+                          <div className="flex justify-end gap-2">
                           <Button variant="secondary" size="sm" onClick={() => onEdit(vendor)}>
                             Edit
                           </Button>
@@ -436,7 +454,10 @@ export default function VendorsListPage() {
                               Inactive
                             </Button>
                           )}
-                        </div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500">Read only</span>
+                        )}
                       </td>
                     </tr>
                   ))}

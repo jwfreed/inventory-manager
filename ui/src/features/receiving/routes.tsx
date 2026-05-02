@@ -49,6 +49,7 @@ export const receivingRoutes: AppRouteObject[] = [
     element: withProviderAndSuspense(ReceivingPage),
     handle: {
       breadcrumb: 'Receiving & QC',
+      permission: 'purchasing:read',
       nav: {
         label: 'Receiving & QC',
         to: '/receiving',
@@ -63,6 +64,7 @@ export const receivingRoutes: AppRouteObject[] = [
     element: withSuspense(ReceiptsIndexPage),
     handle: {
       breadcrumb: 'Receipts',
+      permission: 'purchasing:read',
       nav: {
         label: 'Receipts',
         to: '/receipts',
@@ -77,6 +79,7 @@ export const receivingRoutes: AppRouteObject[] = [
     element: withSuspense(ReceiptDetailPage),
     handle: {
       breadcrumb: 'Receipt detail',
+      permission: 'purchasing:read',
     },
   },
   {
@@ -84,6 +87,7 @@ export const receivingRoutes: AppRouteObject[] = [
     element: withSuspense(QcReceiptsQueuePage),
     handle: {
       breadcrumb: 'QC queue',
+      permission: 'inventory:qc:write',
     },
   },
   {
@@ -91,6 +95,7 @@ export const receivingRoutes: AppRouteObject[] = [
     element: withProviderAndSuspense(QcClassificationPage),
     handle: {
       breadcrumb: 'QC Classification',
+      permission: 'inventory:qc:write',
     },
   },
   {
@@ -98,6 +103,7 @@ export const receivingRoutes: AppRouteObject[] = [
     element: withProviderAndSuspense(ReceiptCapturePage),
     handle: {
       breadcrumb: 'Receipt',
+      permission: 'purchasing:write',
     },
   },
   {
@@ -105,6 +111,7 @@ export const receivingRoutes: AppRouteObject[] = [
     element: withProviderAndSuspense(QcClassificationPage),
     handle: {
       breadcrumb: 'QC Classification',
+      permission: 'inventory:qc:write',
     },
   },
   {
@@ -112,6 +119,7 @@ export const receivingRoutes: AppRouteObject[] = [
     element: withProviderAndSuspense(PutawayPlanningPage),
     handle: {
       breadcrumb: 'Putaway',
+      permission: 'inventory:putaway:write',
     },
   },
   {
@@ -119,6 +127,7 @@ export const receivingRoutes: AppRouteObject[] = [
     element: withProviderAndSuspense(QcEventDetailPage),
     handle: {
       breadcrumb: 'QC event',
+      permission: 'inventory:qc:write',
     },
   },
 ]

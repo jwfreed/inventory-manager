@@ -22,7 +22,7 @@ import type {
 } from './authContext'
 import { AuthContext } from './authContext'
 import { useAuth } from './useAuth'
-import { hasUiPermission, type Permission } from './permissions'
+import { hasAllUiPermissions, hasAnyUiPermission, hasUiPermission, type Permission } from './permissions'
 
 function isAuthError(error: unknown) {
   const apiError = error as ApiError | undefined
@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(subscribeAuthState, getAuthState, getAuthState)
 
   const hydrateFromMe = useCallback(
-    (payload: { user: AuthUser; tenant: AuthTenant; role?: string }) => {
+    (payload: { user: AuthUser; tenant: AuthTenant; role?: string; permissions?: string[] }) => {
       const token = getAccessToken()
       if (!token) {
         clearAuthSession('unknown')
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
     if (session?.accessToken) {
-      const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string }>('/auth/me', {
+      const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string; permissions?: string[] }>('/auth/me', {
         skipAuthRefresh: true,
       })
       hydrateFromMe(me)
@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const token = getAccessToken()
       if (token) {
         try {
-          const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string }>('/auth/me', {
+          const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string; permissions?: string[] }>('/auth/me', {
             skipAuthRefresh: true,
           })
           if (!active) return
@@ -95,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
         if (session?.accessToken) {
-          const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string }>('/auth/me', {
+          const me = await apiGet<{ user: AuthUser; tenant: AuthTenant; role?: string; permissions?: string[] }>('/auth/me', {
             skipAuthRefresh: true,
           })
           if (!active) return
@@ -140,6 +140,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       bootstrap,
       logout,
       refresh,
+      hasPermission: (permission: string) => hasUiPermission(state.permissions, permission),
+      hasAnyPermission: (permissions: readonly string[]) => hasAnyUiPermission(state.permissions, permissions),
+      hasAllPermissions: (permissions: readonly string[]) => hasAllUiPermissions(state.permissions, permissions),
     }),
     [bootstrap, login, logout, refresh, state],
   )
@@ -174,9 +177,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 export function RequirePermission({ children, permission }: { children: ReactNode; permission: Permission }) {
-  const { role } = useAuth()
+  const { permissions } = useAuth()
 
-  if (!hasUiPermission(role, permission)) {
+  if (!hasUiPermission(permissions, permission)) {
     return <Navigate to="/not-found" replace />
   }
 

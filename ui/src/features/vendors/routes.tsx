@@ -8,6 +8,7 @@ export const vendorRoutes: AppRouteObject[] = [
     element: <VendorsListPage />,
     handle: {
       breadcrumb: 'Suppliers',
+      permission: 'masterdata:read',
       nav: {
         label: 'Suppliers',
         to: '/vendors',
@@ -22,6 +23,7 @@ export const vendorRoutes: AppRouteObject[] = [
     element: <SupplierScorecardsPage />,
     handle: {
       breadcrumb: 'Supplier Scorecards',
+      permission: 'purchasing:read',
       nav: {
         label: 'Supplier Scorecards',
         to: '/supplier-scorecards',

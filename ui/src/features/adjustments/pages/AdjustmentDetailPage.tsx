@@ -13,6 +13,7 @@ import {
   Textarea,
 } from '@shared/ui'
 import { formatDate, formatNumber } from '@shared/formatters'
+import { useAuth } from '@shared/auth'
 import { useItemsList, useItem } from '@features/items/queries'
 import { useLocationsList, useLocation } from '@features/locations/queries'
 import { useMovement } from '@features/ledger/queries'
@@ -79,6 +80,7 @@ export default function AdjustmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuth()
   const { progress, markTipShown } = useOnboarding()
   const [initialized, setInitialized] = useState(false)
   const [occurredAt, setOccurredAt] = useState('')
@@ -352,6 +354,7 @@ export default function AdjustmentDetailPage() {
   })
 
   const handleSaveDraft = () => {
+    if (!hasPermission('inventory:adjustments:write')) return
     if (hasErrors) {
       setShowErrors(true)
       setSaveError('Fix validation issues before saving.')
@@ -361,6 +364,7 @@ export default function AdjustmentDetailPage() {
   }
 
   const handlePost = () => {
+    if (!hasPermission('inventory:adjustments:post')) return
     if (hasErrors) {
       setShowErrors(true)
       setPostError('Fix validation issues before posting.')
@@ -375,6 +379,7 @@ export default function AdjustmentDetailPage() {
   }
 
   const openCorrectionModal = () => {
+    if (!hasPermission('inventory:adjustments:post')) return
     if (!adjustmentQuery.data) return
     setCorrectionReason('correction')
     setCorrectionNotes(`Reversal of adjustment ${adjustmentQuery.data.id}`)
@@ -386,6 +391,7 @@ export default function AdjustmentDetailPage() {
   }
 
   const handleCorrectionSubmit = async () => {
+    if (!hasPermission('inventory:adjustments:post')) return
     if (!adjustmentQuery.data) return
     const selectedLines =
       adjustmentQuery.data.lines?.filter((line) => correctionLineIds.has(line.id)) ?? []
@@ -464,6 +470,8 @@ export default function AdjustmentDetailPage() {
   const adjustment = adjustmentQuery.data
   if (!adjustment) return null
   const isDraft = adjustment.status === 'draft'
+  const canWriteAdjustment = hasPermission('inventory:adjustments:write')
+  const canPostAdjustment = hasPermission('inventory:adjustments:post')
   const shouldShowAuditTip =
     Boolean(adjustment.inventoryMovementId) &&
     !progress.tipsShown['audit_history'] &&
@@ -522,7 +530,7 @@ export default function AdjustmentDetailPage() {
               View movement
             </Button>
           )}
-          {!isDraft && (
+          {!isDraft && canPostAdjustment && (
             <Button variant="secondary" size="sm" onClick={openCorrectionModal}>
               Correct / reverse
             </Button>
@@ -642,7 +650,7 @@ export default function AdjustmentDetailPage() {
         </Card>
       </Section>
 
-      {isDraft ? (
+      {isDraft && canWriteAdjustment ? (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-6">
             <Section title="Edit draft">
@@ -740,9 +748,11 @@ export default function AdjustmentDetailPage() {
                   />
                 )}
                 <div className="flex flex-col gap-2 pt-2">
-                  <Button onClick={handlePost} disabled={postMutation.isPending}>
-                    Post adjustment
-                  </Button>
+                  {canPostAdjustment ? (
+                    <Button onClick={handlePost} disabled={postMutation.isPending}>
+                      Post adjustment
+                    </Button>
+                  ) : null}
                   <Button variant="secondary" onClick={handleSaveDraft} disabled={updateMutation.isPending}>
                     Save draft
                   </Button>

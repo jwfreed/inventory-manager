@@ -10,6 +10,7 @@ export const workOrderRoutes: AppRouteObject[] = [
     element: <WorkOrdersListPage />,
     handle: {
       breadcrumb: 'Work Orders',
+      permission: 'production:read',
       nav: {
         label: 'Work Orders',
         to: '/work-orders',
@@ -24,6 +25,7 @@ export const workOrderRoutes: AppRouteObject[] = [
     element: <ProductionOverviewPage />,
     handle: {
       breadcrumb: 'Production Overview',
+      permission: 'production:read',
       nav: {
         label: 'Production Overview',
         to: '/production-overview',
@@ -38,6 +40,7 @@ export const workOrderRoutes: AppRouteObject[] = [
     element: <WorkOrderCreatePage />,
     handle: {
       breadcrumb: 'New work order',
+      permission: 'production:write',
     },
   },
   {
@@ -45,6 +48,7 @@ export const workOrderRoutes: AppRouteObject[] = [
     element: <WorkOrderDetailPage />,
     handle: {
       breadcrumb: 'Work order',
+      permission: 'production:read',
     },
   },
 ]

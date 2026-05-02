@@ -8,6 +8,7 @@ export const itemRoutes: AppRouteObject[] = [
     element: <ItemsListPage />,
     handle: {
       breadcrumb: 'Items',
+      permission: 'masterdata:read',
       nav: {
         label: 'Items',
         to: '/items',
@@ -22,6 +23,7 @@ export const itemRoutes: AppRouteObject[] = [
     element: <ItemDetailPage />,
     handle: {
       breadcrumb: 'Item',
+      permission: 'masterdata:read',
     },
   },
 ]

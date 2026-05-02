@@ -5,6 +5,7 @@ import type { InventoryAdjustmentSummary } from '@api/types'
 import { Alert, Badge, Button, Card, DataTable, LoadingSpinner, Section } from '@shared/ui'
 import { formatDate, formatNumber } from '@shared/formatters'
 import { usePageChrome } from '../../../app/layout/usePageChrome'
+import { useAuth } from '@shared/auth'
 
 const statusOptions = [
   { label: 'All', value: '' },
@@ -37,7 +38,9 @@ function statusBadge(row: InventoryAdjustmentSummary) {
 export default function AdjustmentsListPage() {
   const navigate = useNavigate()
   const { hideTitle } = usePageChrome()
+  const { hasPermission } = useAuth()
   const [status, setStatus] = useState('')
+  const canCreateAdjustment = hasPermission('inventory:adjustments:write')
 
   const { data, isLoading, isError, error, refetch } = useInventoryAdjustmentsList(
     { status: status || undefined, limit: 50, offset: 0 },
@@ -58,7 +61,9 @@ export default function AdjustmentsListPage() {
 
       <Section title="Actions">
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={() => navigate('/inventory-adjustments/new')}>New adjustment</Button>
+          {canCreateAdjustment ? (
+            <Button onClick={() => navigate('/inventory-adjustments/new')}>New adjustment</Button>
+          ) : null}
           <select
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={status}

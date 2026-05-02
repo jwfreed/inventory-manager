@@ -12,10 +12,13 @@ import { LoadingSpinner } from '../../../components/Loading'
 import { Section } from '../../../components/Section'
 import { formatDate } from '@shared/formatters'
 import { usePageChrome } from '../../../app/layout/usePageChrome'
+import { useAuth } from '@shared/auth'
 
 export default function SalesOrdersListPage() {
   const navigate = useNavigate()
   const { hideTitle } = usePageChrome()
+  const { hasPermission } = useAuth()
+  const canWriteOutbound = hasPermission('outbound:write')
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -63,7 +66,7 @@ export default function SalesOrdersListPage() {
         <div className="flex items-center justify-between">
           <div>{!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Sales Orders</h2>}</div>
           <div className="flex gap-2">
-            {selectedIds.size > 0 && (
+            {selectedIds.size > 0 && canWriteOutbound && (
               <Button
                 size="sm"
                 variant="secondary"
@@ -73,9 +76,11 @@ export default function SalesOrdersListPage() {
                 {waveMutation.isPending ? 'Creating...' : `Create Wave (${selectedIds.size})`}
               </Button>
             )}
-            <Button size="sm" onClick={() => navigate('/sales-orders/new')}>
-              New sales order
-            </Button>
+            {canWriteOutbound ? (
+              <Button size="sm" onClick={() => navigate('/sales-orders/new')}>
+                New sales order
+              </Button>
+            ) : null}
           </div>
         </div>
         <p className="max-w-3xl text-sm text-slate-600">
@@ -127,14 +132,16 @@ export default function SalesOrdersListPage() {
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="w-8 px-4 py-3">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        checked={selectedIds.size === filtered.length && filtered.length > 0}
-                        onChange={toggleAll}
-                      />
-                    </th>
+                    {canWriteOutbound ? (
+                      <th className="w-8 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          checked={selectedIds.size === filtered.length && filtered.length > 0}
+                          onChange={toggleAll}
+                        />
+                      </th>
+                    ) : null}
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       SO Number
                     </th>
@@ -159,14 +166,16 @@ export default function SalesOrdersListPage() {
                       className="cursor-pointer hover:bg-slate-50"
                       onClick={() => navigate(`/sales-orders/${so.id}`)}
                     >
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          checked={selectedIds.has(so.id)}
-                          onChange={() => toggleSelection(so.id)}
-                        />
-                      </td>
+                      {canWriteOutbound ? (
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            checked={selectedIds.has(so.id)}
+                            onChange={() => toggleSelection(so.id)}
+                          />
+                        </td>
+                      ) : null}
                       <td className="px-4 py-3 text-sm font-semibold text-slate-900">
                         {so.soNumber}
                       </td>

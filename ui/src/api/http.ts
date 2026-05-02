@@ -8,6 +8,7 @@ export type AuthSession = {
   user?: unknown
   tenant?: unknown
   role?: unknown
+  permissions?: unknown
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {

@@ -8,6 +8,7 @@ export const kpiRoutes: AppRouteObject[] = [
     element: <DashboardPage />,
     handle: {
       breadcrumb: 'Dashboard',
+      permission: 'reports:read',
       nav: {
         label: 'Dashboard',
         to: '/dashboard',
@@ -22,6 +23,7 @@ export const kpiRoutes: AppRouteObject[] = [
     element: <ResolutionQueuePage />,
     handle: {
       breadcrumb: 'Resolution Queue',
+      permission: 'reports:read',
     },
   },
 ]

@@ -4,6 +4,15 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '../testUtils'
 import PurchaseOrderDetailPage from '@features/purchaseOrders/pages/PurchaseOrderDetailPage'
 
+let authPermissions: string[] = ['purchasing:write', 'purchasing:void', 'purchasing:approve']
+
+vi.mock('@shared/auth', () => ({
+  useAuth: () => ({
+    hasPermission: (permission: string) => authPermissions.includes(permission),
+    permissions: authPermissions,
+  }),
+}))
+
 vi.mock('@features/locations/queries', () => ({
   useLocationsList: vi.fn(),
 }))
@@ -55,6 +64,7 @@ function renderPage() {
 describe('PurchaseOrderDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authPermissions = ['purchasing:write', 'purchasing:void', 'purchasing:approve']
     mockedUseLocationsList.mockReturnValue({ data: { data: [] }, isLoading: false } as any)
     mockedUsePurchaseOrder.mockReturnValue({
       data: {
@@ -135,5 +145,16 @@ describe('PurchaseOrderDetailPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm close' }))
 
     expect(await screen.findByText('Already closed')).toBeInTheDocument()
+  })
+
+  it('hides purchase order mutation actions without write or void permissions', async () => {
+    authPermissions = ['purchasing:read']
+
+    renderPage()
+
+    expect(await screen.findByText('Purchase Order PO-0001')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Close PO' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Close line' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'New PO' })).toBeNull()
   })
 })

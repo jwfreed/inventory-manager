@@ -17,6 +17,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <SalesOrdersListPage />,
     handle: {
       breadcrumb: 'Sales Orders',
+      permission: 'outbound:read',
       nav: {
         label: 'Sales Orders',
         to: '/sales-orders',
@@ -31,6 +32,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <SalesOrderCreatePage />,
     handle: {
       breadcrumb: 'New sales order',
+      permission: 'outbound:write',
     },
   },
   {
@@ -38,6 +40,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <SalesOrderDetailPage />,
     handle: {
       breadcrumb: 'Sales order',
+      permission: 'outbound:read',
     },
   },
   {
@@ -45,6 +48,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <ReservationsListPage />,
     handle: {
       breadcrumb: 'Reservations',
+      permission: 'outbound:read',
       nav: {
         label: 'Reservations',
         to: '/reservations',
@@ -59,6 +63,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <ReservationDetailPage />,
     handle: {
       breadcrumb: 'Reservation',
+      permission: 'outbound:read',
     },
   },
   {
@@ -66,6 +71,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <ShipmentsListPage />,
     handle: {
       breadcrumb: 'Shipments',
+      permission: 'outbound:read',
       nav: {
         label: 'Shipments',
         to: '/shipments',
@@ -80,6 +86,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <ShipmentDetailPage />,
     handle: {
       breadcrumb: 'Shipment',
+      permission: 'outbound:read',
     },
   },
   {
@@ -87,6 +94,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <ReturnsListPage />,
     handle: {
       breadcrumb: 'Returns',
+      permission: 'outbound:read',
       nav: {
         label: 'Returns',
         to: '/returns',
@@ -101,6 +109,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <ReturnAuthorizationPage />,
     handle: {
       breadcrumb: 'New return authorization',
+      permission: 'outbound:write',
     },
   },
   {
@@ -108,6 +117,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <ReturnDetailPage />,
     handle: {
       breadcrumb: 'Return',
+      permission: 'outbound:read',
     },
   },
   {
@@ -115,6 +125,7 @@ export const orderToCashRoutes: AppRouteObject[] = [
     element: <ReturnReceiptPage />,
     handle: {
       breadcrumb: 'Return receipt',
+      permission: 'outbound:read',
     },
   },
 ]

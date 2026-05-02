@@ -14,6 +14,7 @@ describe('authStore', () => {
         user: { id: 'user-1', email: 'jon.freed@gmail.com' },
         tenant: { id: 'tenant-1', name: 'SIAMAYA', slug: 'siamaya' },
         role: 'admin',
+        permissions: ['admin:imports', 'finance:read'],
       },
       { broadcast: false },
     )
@@ -22,6 +23,7 @@ describe('authStore', () => {
       status: 'authenticated',
       accessToken: 'token-1',
       role: 'admin',
+      permissions: ['admin:imports', 'finance:read'],
       logoutReason: null,
     })
     expect(localStorage.getItem('inventory.accessToken')).toBe('token-1')
@@ -33,6 +35,7 @@ describe('authStore', () => {
         user: { id: 'user-1', email: 'jon.freed@gmail.com' },
         tenant: { id: 'tenant-1', name: 'SIAMAYA', slug: 'siamaya' },
         role: 'admin',
+        permissions: ['admin:imports'],
       },
       { accessToken: 'token-2', broadcast: false },
     )
@@ -45,6 +48,7 @@ describe('authStore', () => {
       user: null,
       tenant: null,
       role: null,
+      permissions: [],
       logoutReason: 'refresh-failed',
     })
     expect(localStorage.getItem('inventory.accessToken')).toBeNull()

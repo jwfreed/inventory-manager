@@ -17,6 +17,7 @@ type Props = {
   showEmptyState: boolean
   onRepeat: (poId: string) => void
   repeatPendingId: string | null
+  canRepeat: boolean
   onClearFilters?: () => void
 }
 
@@ -27,6 +28,7 @@ export function PurchaseOrdersGroupTable({
   showEmptyState,
   onRepeat,
   repeatPendingId,
+  canRepeat,
   onClearFilters,
 }: Props) {
   if (!showEmptyState && rows.length === 0) return null
@@ -154,21 +156,23 @@ export function PurchaseOrdersGroupTable({
                         View
                       </Button>
                     </Link>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => onRepeat(po.id)}
-                      disabled={isRepeating}
-                    >
-                      {isRepeating ? (
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-3 w-3 animate-spin rounded-full border border-slate-300 border-t-slate-600" />
-                          Repeating…
-                        </span>
-                      ) : (
-                        'Repeat'
-                      )}
-                    </Button>
+                    {canRepeat ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => onRepeat(po.id)}
+                        disabled={isRepeating}
+                      >
+                        {isRepeating ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="h-3 w-3 animate-spin rounded-full border border-slate-300 border-t-slate-600" />
+                            Repeating…
+                          </span>
+                        ) : (
+                          'Repeat'
+                        )}
+                      </Button>
+                    ) : null}
                   </div>
                 )
               },

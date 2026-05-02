@@ -30,10 +30,10 @@ const EXPANDED_SECTION_KEY = 'nav-expanded-section'
 export default function SectionNav({ navItems }: SectionNavProps) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { role } = useAuth()
+  const { permissions } = useAuth()
   const visibleNavItems = useMemo(
-    () => navItems.filter((item) => !item.permission || hasUiPermission(role, item.permission)),
-    [navItems, role],
+    () => navItems.filter((item) => !item.permission || hasUiPermission(permissions, item.permission)),
+    [navItems, permissions],
   )
 
   const sectionByPath = useMemo(() => {

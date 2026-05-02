@@ -14,6 +14,7 @@ export const atpRoutes: AppRouteObject[] = [
     element: <AtpQueryPage />,
     handle: {
       breadcrumb: 'Available to Promise',
+      permission: 'inventory:read',
       nav: {
         label: 'Available-to-Promise',
         to: '/atp',
@@ -28,6 +29,7 @@ export const atpRoutes: AppRouteObject[] = [
     element: <LicensePlatesPage />,
     handle: {
       breadcrumb: 'License Plates',
+      permission: 'inventory:read',
       nav: {
         label: 'License Plates',
         to: '/lpns',
@@ -42,6 +44,7 @@ export const atpRoutes: AppRouteObject[] = [
     element: <InventoryTransferCreatePage />,
     handle: {
       breadcrumb: 'Inventory Transfer',
+      permission: 'inventory:transfers:write',
       nav: {
         label: 'Inventory Transfers',
         to: '/inventory-transfers/new',
@@ -56,6 +59,7 @@ export const atpRoutes: AppRouteObject[] = [
     element: <InventoryOperationsDashboardPage />,
     handle: {
       breadcrumb: 'Inventory Operations',
+      permission: 'inventory:read',
       nav: {
         label: 'Inventory Operations',
         to: '/inventory/operations',
@@ -70,6 +74,7 @@ export const atpRoutes: AppRouteObject[] = [
     element: <WarehouseActivityBoardPage />,
     handle: {
       breadcrumb: 'Warehouse Activity',
+      permission: 'inventory:read',
       nav: {
         label: 'Warehouse Activity',
         to: '/inventory/activity',
@@ -84,6 +89,7 @@ export const atpRoutes: AppRouteObject[] = [
     element: <InventoryCountsListPage />,
     handle: {
       breadcrumb: 'Inventory Counts',
+      permission: 'inventory:read',
       nav: {
         label: 'Inventory Counts',
         to: '/inventory-counts',
@@ -98,6 +104,7 @@ export const atpRoutes: AppRouteObject[] = [
     element: <InventoryCountCreatePage />,
     handle: {
       breadcrumb: 'New inventory count',
+      permission: 'inventory:counts:write',
     },
   },
   {
@@ -105,6 +112,7 @@ export const atpRoutes: AppRouteObject[] = [
     element: <InventoryCountDetailPage />,
     handle: {
       breadcrumb: 'Inventory count',
+      permission: 'inventory:read',
     },
   },
 ]

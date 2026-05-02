@@ -6,12 +6,15 @@ import type { AppRouteObject } from '@shared/routes'
 import { appShellRoutes } from './routeData'
 import { onboardingRoutes } from '../features/onboarding'
 
-function applyPermissionGuard(route: AppRouteObject): AppRouteObject {
-  const permission = route.handle?.permission
+function applyPermissionGuard(route: AppRouteObject, inheritedPermission?: string): AppRouteObject {
+  const permission = route.handle?.permission ?? inheritedPermission
   return {
     ...route,
-    element: permission ? <RequirePermission permission={permission}>{route.element}</RequirePermission> : route.element,
-    children: route.children?.map(applyPermissionGuard),
+    element:
+      permission && route.element
+        ? <RequirePermission permission={permission}>{route.element}</RequirePermission>
+        : route.element,
+    children: route.children?.map((child) => applyPermissionGuard(child, permission)),
   }
 }
 

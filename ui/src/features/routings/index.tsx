@@ -7,6 +7,7 @@ export const routingsRoutes: AppRouteObject[] = [
     element: <WorkCentersPage />,
     handle: {
       breadcrumb: 'Production Areas',
+      permission: 'production:read',
       nav: {
         label: 'Production Areas',
         to: '/work-centers',

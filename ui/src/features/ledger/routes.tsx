@@ -8,6 +8,7 @@ export const ledgerRoutes: AppRouteObject[] = [
     element: <MovementsListPage />,
     handle: {
       breadcrumb: 'Inventory movements',
+      permission: 'inventory:read',
       nav: {
         label: 'Inventory Movements',
         to: '/movements',
@@ -22,6 +23,7 @@ export const ledgerRoutes: AppRouteObject[] = [
     element: <MovementDetailPage />,
     handle: {
       breadcrumb: 'Movement detail',
+      permission: 'inventory:read',
     },
   },
 ]

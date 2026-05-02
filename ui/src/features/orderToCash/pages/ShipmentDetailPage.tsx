@@ -21,6 +21,7 @@ import { formatStatusLabel } from '@shared/ui'
 import { ledgerQueryKeys } from '@features/ledger/queries'
 import { formatShipmentError } from '../lib/shipmentErrorMessaging'
 import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
+import { useAuth } from '@shared/auth'
 
 async function invalidateShipmentQueries(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -43,6 +44,7 @@ export default function ShipmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuth()
   const [confirmPostOpen, setConfirmPostOpen] = useState(false)
   const [postError, setPostError] = useState<string | null>(null)
 
@@ -69,10 +71,11 @@ export default function ShipmentDetailPage() {
   })
 
   const lines: ShipmentLine[] = query.data?.lines || []
+  const canPostShipment = hasPermission('outbound:post')
   const canPost = useMemo(() => {
     if (!query.data) return false
-    return !query.data.inventoryMovementId && query.data.status !== 'posted' && lines.length > 0
-  }, [lines.length, query.data])
+    return canPostShipment && !query.data.inventoryMovementId && query.data.status !== 'posted' && lines.length > 0
+  }, [canPostShipment, lines.length, query.data])
 
   const copyId = async () => {
     if (!id) return
@@ -96,9 +99,11 @@ export default function ShipmentDetailPage() {
             <Button variant="secondary" size="sm" onClick={copyId}>
               Copy ID
             </Button>
-            <Button size="sm" disabled={!canPost} onClick={() => setConfirmPostOpen(true)}>
-              Post shipment
-            </Button>
+            {canPostShipment ? (
+              <Button size="sm" disabled={!canPost} onClick={() => setConfirmPostOpen(true)}>
+                Post shipment
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -170,7 +175,7 @@ export default function ShipmentDetailPage() {
               </div>
             </div>
 
-            {!canPost ? (
+            {canPostShipment && !canPost ? (
               <div className="mt-4">
                 <ActionGuardMessage
                   title="Shipment posting locked"
@@ -247,7 +252,13 @@ export default function ShipmentDetailPage() {
             >
               Back
             </Button>
-            <Button onClick={() => postMutation.mutate()} disabled={postMutation.isPending}>
+            <Button
+              onClick={() => {
+                if (!canPostShipment) return
+                postMutation.mutate()
+              }}
+              disabled={postMutation.isPending}
+            >
               {postMutation.isPending ? 'Posting...' : 'Confirm post'}
             </Button>
           </div>
