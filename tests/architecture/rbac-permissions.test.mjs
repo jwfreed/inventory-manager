@@ -52,10 +52,19 @@ const mountedRouteFiles = {
   'src/routes/inventoryLedgerReconcile.routes.ts': '',
   'src/routes/inventoryHealth.routes.ts': '',
   'src/routes/outboxAdmin.routes.ts': '',
+  'src/routes/events.routes.ts': '',
+  'src/routes/inventorySummary.routes.ts': '',
+  'src/routes/inventorySnapshot.routes.ts': '',
+  'src/routes/inventoryChanges.routes.ts': '',
+  'src/routes/productionOverview.routes.ts': '',
   'src/routes/costLayers.routes.ts': '/api/cost-layers',
   'src/routes/costs.routes.ts': '/api',
   'src/routes/metrics.routes.ts': '/metrics',
-  'src/routes/atp.routes.ts': '/atp'
+  'src/routes/atp.routes.ts': '/atp',
+  'src/routes/supplierScorecard.routes.ts': '/supplier-scorecards',
+  'src/routes/reports.routes.ts': '/reports',
+  'src/routes/supplierPerformance.routes.ts': '/supplier-performance',
+  'src/routes/dashboardSignals.routes.ts': '/api/dashboard'
 };
 
 function mockResponse() {
@@ -175,11 +184,61 @@ test('route permission rules only reference declared permissions', () => {
   }
 });
 
+test('every mounted business GET route has an explicit permission rule', async () => {
+  const missing = [];
+  const getRoutePattern = /router\.get\(\s*['"`]([^'"`]+)['"`]/gims;
+
+  for (const [relativePath, mountPrefix] of Object.entries(mountedRouteFiles)) {
+    const absolutePath = path.resolve(process.cwd(), relativePath);
+    const source = await readFile(absolutePath, 'utf8');
+    for (const match of source.matchAll(getRoutePattern)) {
+      const fullPath = joinRoutePath(mountPrefix, match[1]);
+      if (!findRoutePermission('GET', fullPath)) {
+        missing.push(`GET ${fullPath} (${relativePath})`);
+      }
+    }
+  }
+
+  assert.equal(missing.length, 0, [
+    'RBAC_READ_ROUTE_PERMISSION_GUARD_FAILED: every mounted business GET route needs an explicit permission rule.',
+    ...missing
+  ].join('\n'));
+});
+
 test('destructive script production guard fails closed', () => {
   assert.throws(
     () => assertNonProductionEnvironment('guard-test', { NODE_ENV: 'production' }),
     /refused to run/
   );
   assert.doesNotThrow(() => assertNonProductionEnvironment('guard-test', { NODE_ENV: 'development' }));
+});
+
+test('destructive script production guard rejects production-like DATABASE_URL', () => {
+  assert.throws(
+    () => assertNonProductionEnvironment('guard-test', {
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgresql://user:pass@mydb.rds.amazonaws.com:5432/proddb'
+    }),
+    /production-like cloud hostname/
+  );
+  assert.throws(
+    () => assertNonProductionEnvironment('guard-test', {
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgres://user:pass@db.neon.tech/mydb'
+    }),
+    /production-like cloud hostname/
+  );
+  assert.doesNotThrow(() =>
+    assertNonProductionEnvironment('guard-test', {
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/devdb'
+    })
+  );
+  assert.doesNotThrow(() =>
+    assertNonProductionEnvironment('guard-test', {
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/testdb'
+    })
+  );
 });
 
