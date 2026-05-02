@@ -148,12 +148,6 @@ const DEMO = {
   shippedAt: '2026-01-17T15:00:00.000Z',
 }
 
-const LEGACY_COMPLETED_DEMO_REFS = {
-  poNumber: 'PO-SIAMAYA-1000-MILK-CHOCOLATE',
-  soNumber: 'SO-SIAMAYA-1000-MILK-CHOCOLATE',
-  shipmentExternalRef: 'SHIP-SIAMAYA-1000-MILK-CHOCOLATE',
-}
-
 const MANUAL_DEMO = {
   bomCode: 'SIAMAYA-BOM-MILK-CHOCOLATE-BAR',
   rawMaterialLocationCodes: {
@@ -531,12 +525,32 @@ async function ensureLocalTenantAdminPrincipal(config: SeedConfig, log: ReturnTy
         )
       }
 
-      await client.query(
-        `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
-         VALUES ($1, $2, $3, 'admin', 'active', now())
-         ON CONFLICT DO NOTHING`,
-        [uuidv4(), tenantId, userId],
+      const membershipRes = await client.query<{ id: string; role: string; status: string }>(
+        `SELECT id, role, status
+           FROM tenant_memberships
+          WHERE tenant_id = $1
+            AND user_id = $2
+          LIMIT 1`,
+        [tenantId, userId],
       )
+      const membership = membershipRes.rows[0]
+      if (!membership) {
+        await client.query(
+          `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
+           VALUES ($1, $2, $3, 'admin', 'active', now())`,
+          [uuidv4(), tenantId, userId],
+        )
+        log.info(`Admin tenant membership created: ${config.adminEmail} -> ${config.tenantSlug}`)
+      } else if (membership.role !== 'admin' || membership.status !== 'active') {
+        await client.query(
+          `UPDATE tenant_memberships
+              SET role = 'admin',
+                  status = 'active'
+            WHERE id = $1`,
+          [membership.id],
+        )
+        log.info(`Admin tenant membership repaired: ${config.adminEmail} -> ${config.tenantSlug}`)
+      }
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK')
@@ -811,75 +825,6 @@ async function resolveTenantId(config: SeedConfig): Promise<string> {
     const tenantId = res.rows[0]?.id
     if (!tenantId) throw new Error(`Tenant not found: ${config.tenantSlug}`)
     return tenantId
-  })
-}
-
-async function migrateLegacyCompletedDemoRefs(tenantId: string, log: ReturnType<typeof makeLogger>) {
-  await withDbClient(async (client) => {
-    await client.query('BEGIN')
-    try {
-      const po = await client.query(
-        `UPDATE purchase_orders po
-            SET po_number = CASE
-                  WHEN EXISTS (
-                    SELECT 1
-                      FROM purchase_orders existing
-                     WHERE existing.po_number = $3
-                  )
-                  THEN 'PO-LEGACY-COMPLETED-1000-MILK-CHOCOLATE-' || left(po.id::text, 8)
-                  ELSE $3
-                END,
-                updated_at = now()
-          WHERE po.tenant_id = $1
-            AND po.po_number = $2`,
-        [tenantId, LEGACY_COMPLETED_DEMO_REFS.poNumber, DEMO.poNumber],
-      )
-      const so = await client.query(
-        `UPDATE sales_orders so
-            SET so_number = CASE
-                  WHEN EXISTS (
-                    SELECT 1
-                      FROM sales_orders existing
-                     WHERE existing.so_number = $3
-                  )
-                  THEN 'SO-LEGACY-COMPLETED-1000-MILK-CHOCOLATE-' || left(so.id::text, 8)
-                  ELSE $3
-                END,
-                updated_at = now()
-          WHERE so.tenant_id = $1
-            AND so.so_number = $2`,
-        [tenantId, LEGACY_COMPLETED_DEMO_REFS.soNumber, DEMO.soNumber],
-      )
-      const shipment = await client.query(
-        `UPDATE sales_order_shipments s
-            SET external_ref = CASE
-                  WHEN EXISTS (
-                    SELECT 1
-                      FROM sales_order_shipments existing
-                     WHERE existing.tenant_id = $1
-                       AND existing.external_ref = $3
-                  )
-                  THEN 'SHIP-LEGACY-COMPLETED-1000-MILK-CHOCOLATE-' || left(s.id::text, 8)
-                  ELSE $3
-                END
-          WHERE s.tenant_id = $1
-            AND s.external_ref = $2`,
-        [tenantId, LEGACY_COMPLETED_DEMO_REFS.shipmentExternalRef, DEMO.shipmentExternalRef],
-      )
-      await client.query('COMMIT')
-
-      const migrated = {
-        purchaseOrders: po.rowCount ?? 0,
-        salesOrders: so.rowCount ?? 0,
-        shipments: shipment.rowCount ?? 0,
-      }
-      if (migrated.purchaseOrders || migrated.salesOrders || migrated.shipments) {
-        log.info('Migrated legacy completed seed document refs away from reserved manual UI prefixes.', migrated)
-      }
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    }
   })
 }
 
@@ -1905,7 +1850,6 @@ async function main() {
   const session = await ensureSession(config, log)
   const token = session.accessToken
   const tenantId = await resolveTenantId(config)
-  await migrateLegacyCompletedDemoRefs(tenantId, log)
   log.info('Seed tenant context resolved.', {
     tenantSlug: config.tenantSlug,
     tenantId,
