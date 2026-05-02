@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { pool, query, withTransaction } from '../src/db';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
+import { assertNonProductionEnvironment } from './lib/productionGuard';
 
 async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -9,6 +10,7 @@ async function hashPassword(password: string): Promise<string> {
 
 async function test() {
   try {
+    assertNonProductionEnvironment('test-bootstrap');
     // Check if any users exist
     const usersResult = await query('SELECT id FROM users LIMIT 1');
     console.log('Users exist:', (usersResult.rowCount ?? 0) > 0);

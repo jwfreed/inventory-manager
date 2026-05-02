@@ -2,6 +2,7 @@
 import { Client } from 'pg'
 import { v4 as uuidv4 } from 'uuid'
 import { hashPassword } from '../src/lib/auth'
+import { assertNonProductionEnvironment } from './lib/productionGuard'
 
 /**
  * Canonical chocolate seed with optional destructive reset and 1,000-bar demo flow.
@@ -1832,6 +1833,7 @@ async function seedManualSiamayaScenario(
 }
 
 async function main() {
+  assertNonProductionEnvironment('chocolate-seed')
   const config = loadConfig()
   const log = makeLogger(config.logLevel)
 

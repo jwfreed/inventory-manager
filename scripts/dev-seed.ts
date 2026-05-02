@@ -1,3 +1,5 @@
+import { assertNonProductionEnvironment } from './lib/productionGuard'
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 type SeedConfig = {
@@ -663,6 +665,7 @@ async function runManufacturingOptional(
 }
 
 async function main() {
+  assertNonProductionEnvironment('dev-seed')
   const config = loadConfig()
   const log = makeLogger(config.logLevel)
   const state = await loadState()

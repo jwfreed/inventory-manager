@@ -9,7 +9,7 @@ const router = express.Router();
  */
 router.get('/item/:itemId', async (req, res, next) => {
   try {
-    const tenant_id = (req as any).tenant.id;
+    const tenant_id = req.auth!.tenantId;
     const { itemId } = req.params;
     const { locationId } = req.query;
 
@@ -34,7 +34,7 @@ router.get('/item/:itemId', async (req, res, next) => {
  */
 router.get('/available', async (req, res, next) => {
   try {
-    const tenant_id = (req as any).tenant.id;
+    const tenant_id = req.auth!.tenantId;
     const { itemId, locationId, lotId } = req.query;
 
     if (!itemId || !locationId) {
@@ -66,7 +66,7 @@ router.get('/available', async (req, res, next) => {
  */
 router.get('/average-cost', async (req, res, next) => {
   try {
-    const tenant_id = (req as any).tenant.id;
+    const tenant_id = req.auth!.tenantId;
     const { itemId, locationId } = req.query;
 
     if (!itemId || !locationId) {
@@ -97,7 +97,7 @@ router.get('/average-cost', async (req, res, next) => {
  */
 router.get('/:layerId/consumptions', async (req, res, next) => {
   try {
-    const tenant_id = (req as any).tenant.id;
+    const tenant_id = req.auth!.tenantId;
     const { layerId } = req.params;
 
     const consumptions = await costLayersService.getLayerConsumptions(
@@ -120,7 +120,7 @@ router.get('/:layerId/consumptions', async (req, res, next) => {
  */
 router.get('/cogs', async (req, res, next) => {
   try {
-    const tenant_id = (req as any).tenant.id;
+    const tenant_id = req.auth!.tenantId;
     const { startDate, endDate, itemId, locationId } = req.query;
 
     if (!startDate || !endDate) {
@@ -153,7 +153,7 @@ router.get('/cogs', async (req, res, next) => {
  */
 router.post('/', async (req, res, next) => {
   try {
-    const tenant_id = (req as any).tenant.id;
+    const tenant_id = req.auth!.tenantId;
     const {
       item_id,
       location_id,
@@ -206,7 +206,7 @@ router.post('/', async (req, res, next) => {
  */
 router.post('/consume', async (req, res, next) => {
   try {
-    const tenant_id = (req as any).tenant.id;
+    const tenant_id = req.auth!.tenantId;
     const {
       item_id,
       location_id,
@@ -255,7 +255,7 @@ router.post('/consume', async (req, res, next) => {
  */
 router.delete('/:layerId', async (req, res, next) => {
   try {
-    const tenant_id = (req as any).tenant.id;
+    const tenant_id = req.auth!.tenantId;
     const { layerId } = req.params;
 
     await costLayersService.deleteCostLayer(tenant_id, layerId);

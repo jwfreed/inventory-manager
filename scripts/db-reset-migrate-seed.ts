@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 import { spawn } from 'node:child_process';
 import { Client } from 'pg';
+import { assertNonProductionEnvironment } from './lib/productionGuard';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -90,6 +91,7 @@ export async function runResetMigrateSeedFlow(options?: {
   const env = { ...(options?.env ?? process.env) };
   const freshContract = resolveFreshContractMode(argv, env);
 
+  assertNonProductionEnvironment('db-reset-migrate-seed', env);
   assertConfirmation();
   if (!env.DATABASE_URL) {
     throw new Error('DATABASE_URL is required');

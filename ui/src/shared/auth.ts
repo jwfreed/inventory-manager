@@ -1,4 +1,4 @@
-export { AuthProvider, RequireAuth } from '../lib/auth'
+export { AuthProvider, RequireAuth, RequirePermission } from '../lib/auth'
 export { useAuth } from '../lib/useAuth'
 export type {
   AuthContextValue,

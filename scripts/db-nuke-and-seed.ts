@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 import { spawn } from 'node:child_process';
 import { Client } from 'pg';
+import { assertNonProductionEnvironment } from './lib/productionGuard';
 
 type DbIdentity = {
   host: string;
@@ -100,12 +101,10 @@ function assertPreflightSafety(identity: DbIdentity): void {
     );
   }
 
-  if ((process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production') {
-    throw new Error('NUCLEAR_RESET_DENIED NODE_ENV=production');
-  }
+  assertNonProductionEnvironment('db-nuke-and-seed');
 
   if (isProdLikeHost(identity.host)) {
-    console.warn('[db:nuke-and-seed] WARNING: production-like hostname detected but proceeding because ALLOW_NUCLEAR_RESET=true');
+    throw new Error(`NUCLEAR_RESET_DENIED production-like database host detected host=${identity.host}`);
   }
 }
 

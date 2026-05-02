@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import type { AppNavItem, NavSection } from '@shared/routes'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
+import { useAuth } from '@shared/auth'
+import { hasUiPermission } from '../../lib/permissions'
 
 interface SectionNavProps {
   navItems: AppNavItem[]
@@ -28,10 +30,15 @@ const EXPANDED_SECTION_KEY = 'nav-expanded-section'
 export default function SectionNav({ navItems }: SectionNavProps) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { role } = useAuth()
+  const visibleNavItems = useMemo(
+    () => navItems.filter((item) => !item.permission || hasUiPermission(role, item.permission)),
+    [navItems, role],
+  )
 
   const sectionByPath = useMemo(() => {
     const bySection: Record<NavSection, AppNavItem[]> = {} as Record<NavSection, AppNavItem[]>
-    navItems.forEach((item) => {
+    visibleNavItems.forEach((item) => {
       const section = item.section || 'dashboard'
       if (!bySection[section]) {
         bySection[section] = []
@@ -53,7 +60,7 @@ export default function SectionNav({ navItems }: SectionNavProps) {
     }
 
     return { bySection, findSection }
-  }, [navItems])
+  }, [visibleNavItems])
 
   const activeSection = useMemo(
     () => sectionByPath.findSection(location.pathname),
@@ -77,7 +84,7 @@ export default function SectionNav({ navItems }: SectionNavProps) {
   }, [expandedSection])
 
   // Group nav items by section
-  const groupedNav = navItems.reduce<GroupedNav>((acc, item) => {
+  const groupedNav = visibleNavItems.reduce<GroupedNav>((acc, item) => {
     const section = item.section || 'dashboard'
     if (!acc[section]) {
       acc[section] = []

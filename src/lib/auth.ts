@@ -25,11 +25,11 @@ export function verifyPassword(password: string, passwordHash: string) {
 }
 
 export function signAccessToken(payload: AccessTokenPayload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL, algorithm: 'HS256' });
 }
 
 export function verifyAccessToken(token: string) {
-  return jwt.verify(token, JWT_SECRET) as AccessTokenPayload;
+  return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as AccessTokenPayload;
 }
 
 export function buildRefreshToken() {

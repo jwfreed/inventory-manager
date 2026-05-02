@@ -47,7 +47,10 @@ router.patch('/ncrs/:id/disposition', async (req: Request, res: Response) => {
   }
 
   try {
-    const ncr = await updateNcrDisposition(req.auth!.tenantId, id, parsed.data);
+    const ncr = await updateNcrDisposition(req.auth!.tenantId, id, parsed.data, {
+      type: 'user',
+      id: req.auth!.userId
+    });
     return res.json(ncr);
   } catch (error: any) {
     if (error?.message === 'NCR_NOT_FOUND') {

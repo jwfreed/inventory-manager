@@ -31,7 +31,11 @@ router.post('/purchase-order-receipts/:id/close', async (req: Request, res: Resp
   if (!uuidSchema.safeParse(receiptId).success) {
     return res.status(400).json({ error: 'Invalid receipt id.' });
   }
-  const parsed = receiptCloseSchema.safeParse(req.body ?? {});
+  const parsed = receiptCloseSchema.safeParse({
+    ...(req.body ?? {}),
+    actorType: 'user',
+    actorId: req.auth!.userId
+  });
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }

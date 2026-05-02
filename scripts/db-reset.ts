@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import { Client } from 'pg'
+import { assertNonProductionEnvironment } from './lib/productionGuard'
 
 function requiredEnv(name: string): string {
   const value = process.env[name]
@@ -13,6 +14,7 @@ function parseBool(value: string | undefined): boolean {
 }
 
 async function main() {
+  assertNonProductionEnvironment('db-reset')
   const databaseUrl = requiredEnv('DATABASE_URL')
   const confirmed = parseBool(process.env.CONFIRM_DB_RESET)
 
@@ -46,4 +48,3 @@ main().catch((err) => {
   console.error('[db-reset] Failed:', err)
   process.exit(1)
 })
-

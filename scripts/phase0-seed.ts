@@ -1,3 +1,5 @@
+import { assertNonProductionEnvironment } from './lib/productionGuard'
+
 type SeedConfig = {
   baseUrl: string
   prefix: string
@@ -212,6 +214,7 @@ async function ensurePurchaseOrder(
 }
 
 async function run() {
+  assertNonProductionEnvironment('phase0-seed')
   const config = loadConfig()
   const token = await ensureSession(config)
 

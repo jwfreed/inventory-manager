@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
 import { z } from 'zod';
+import { recordAuditLog } from '../lib/audit';
 
 export const ncrUpdateSchema = z.object({
   dispositionType: z.enum(['return_to_vendor', 'scrap', 'rework', 'use_as_is']),
@@ -94,7 +95,12 @@ export async function listNcrs(tenantId: string, status?: 'open' | 'closed') {
   return rows;
 }
 
-export async function updateNcrDisposition(tenantId: string, id: string, data: NcrUpdateInput) {
+export async function updateNcrDisposition(
+  tenantId: string,
+  id: string,
+  data: NcrUpdateInput,
+  actor?: { type: 'user' | 'system'; id?: string | null }
+) {
   return withTransaction(async (client) => {
     const ncrResult = await client.query(
       'SELECT * FROM ncrs WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
@@ -123,6 +129,19 @@ export async function updateNcrDisposition(tenantId: string, id: string, data: N
     // Implementing the actual movement would require knowing where the inventory is (MRB location)
     // and moving it to Scrap, or creating a Return to Vendor shipment, etc.
     
+    await recordAuditLog(
+      {
+        tenantId,
+        actorType: actor?.type ?? 'system',
+        actorId: actor?.id ?? null,
+        action: 'update',
+        entityType: 'ncr',
+        entityId: id,
+        after: rows[0]
+      },
+      client
+    );
+
     return rows[0];
   });
 }

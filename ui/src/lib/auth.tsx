@@ -22,6 +22,7 @@ import type {
 } from './authContext'
 import { AuthContext } from './authContext'
 import { useAuth } from './useAuth'
+import { hasUiPermission, type Permission } from './permissions'
 
 function isAuthError(error: unknown) {
   const apiError = error as ApiError | undefined
@@ -169,5 +170,15 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       />
     )
   }
+  return <>{children}</>
+}
+
+export function RequirePermission({ children, permission }: { children: ReactNode; permission: Permission }) {
+  const { role } = useAuth()
+
+  if (!hasUiPermission(role, permission)) {
+    return <Navigate to="/not-found" replace />
+  }
+
   return <>{children}</>
 }

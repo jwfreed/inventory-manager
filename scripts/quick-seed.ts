@@ -2,9 +2,11 @@ import 'dotenv/config';
 import { pool } from '../src/db';
 import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
+import { assertNonProductionEnvironment } from './lib/productionGuard';
 
 async function seed() {
   try {
+    assertNonProductionEnvironment('quick-seed');
     const tenantId = '00000000-0000-0000-0000-000000000001';
     const userId = uuid();
     const passwordHash = await bcrypt.hash('admin@local', 12);

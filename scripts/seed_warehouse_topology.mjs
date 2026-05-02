@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { fileURLToPath } from 'node:url';
 import { checkOnly, fix } from './lib/warehouseTopologyCheck.mjs';
 import { loadWarehouseTopology } from './lib/warehouseTopology.mjs';
+import { assertNonProductionEnvironment } from './lib/productionGuard.mjs';
 
 function getArg(name) {
   const prefix = `--${name}=`;
@@ -90,6 +91,7 @@ export async function seedWarehouseTopologyForTenant(client, tenantId, options =
 }
 
 export async function runSeedWarehouseTopology({ tenantId, topologyDir, fixMode } = {}) {
+  assertNonProductionEnvironment('seed_warehouse_topology');
   const resolvedTenantId = tenantId ?? getArg('tenant-id') ?? process.env.TENANT_ID;
   const shouldFix = fixMode ?? hasFlag('fix');
   if (!process.env.DATABASE_URL) {

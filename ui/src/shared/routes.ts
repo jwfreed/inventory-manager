@@ -1,4 +1,5 @@
 import type { Params, RouteObject } from 'react-router-dom'
+import type { Permission } from '../lib/permissions'
 
 export type NavSection = 
   | 'dashboard'
@@ -19,11 +20,13 @@ export type AppNavItem = {
   section?: NavSection
   icon?: string
   description?: string
+  permission?: Permission
 }
 
 export type AppRouteHandle = {
   breadcrumb?: string | ((params: Params) => string)
   nav?: AppNavItem
+  permission?: Permission
 }
 
 export type AppRouteObject = Omit<RouteObject, 'children' | 'handle'> & {

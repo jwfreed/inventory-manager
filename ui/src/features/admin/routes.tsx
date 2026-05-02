@@ -8,12 +8,14 @@ export const adminRoutes: AppRouteObject[] = [
     element: <InventoryHealthPage />,
     handle: {
       breadcrumb: 'Inventory Health',
+      permission: 'admin:health',
       nav: {
         label: 'Inventory Health',
         to: '/admin/inventory-health',
         section: 'admin',
         order: 90,
         description: 'Admin diagnostics for inventory data health checks',
+        permission: 'admin:health',
       },
     },
   },
@@ -22,11 +24,13 @@ export const adminRoutes: AppRouteObject[] = [
     element: <ImportDataPage />,
     handle: {
       breadcrumb: 'Data Import',
+      permission: 'admin:imports',
       nav: {
         label: 'Data Import',
         to: '/admin/imports',
         section: 'admin',
         order: 80,
+        permission: 'admin:imports',
       },
     },
   },

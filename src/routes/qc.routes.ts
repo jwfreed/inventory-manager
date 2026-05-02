@@ -168,7 +168,11 @@ router.post('/qc/reject', async (req: Request, res: Response) => {
 });
 
 router.post('/qc/hold-dispositions', async (req: Request, res: Response) => {
-  const parsed = holdDispositionSchema.safeParse(req.body);
+  const parsed = holdDispositionSchema.safeParse({
+    ...req.body,
+    actorType: 'user',
+    actorId: req.auth!.userId
+  });
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
@@ -246,7 +250,11 @@ router.post('/qc/hold-dispositions', async (req: Request, res: Response) => {
 });
 
 router.post('/qc-events', async (req: Request, res: Response) => {
-  const parsed = qcEventSchema.safeParse(req.body);
+  const parsed = qcEventSchema.safeParse({
+    ...req.body,
+    actorType: 'user',
+    actorId: req.auth!.userId
+  });
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }

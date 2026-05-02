@@ -48,6 +48,7 @@ import dashboardSignalsRouter from './routes/dashboardSignals.routes';
 import costLayersRouter from './routes/costLayers.routes';
 import costsRouter from './routes/costs.routes';
 import { requireAuth } from './middleware/auth.middleware';
+import { requireRoutePermission } from './middleware/permissions.middleware';
 import { destructiveGuard } from './middleware/destructiveGuard.middleware';
 import { requestContextMiddleware } from './middleware/requestContext.middleware';
 import { requestLoggerMiddleware } from './middleware/requestLogger.middleware';
@@ -150,6 +151,7 @@ app.use(healthRouter);
 app.use(authRouter);
 app.use(requireAuth);
 app.use(destructiveGuard);
+app.use(requireRoutePermission);
 
 // Refactor map:
 // - Vendors + Purchase Orders routes are defined under src/routes/*.routes.ts.
