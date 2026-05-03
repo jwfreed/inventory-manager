@@ -1,6 +1,7 @@
 import type { AppNavItem, AppRouteObject } from '../shared/routes'
 import { Navigate } from 'react-router-dom'
 import NotFoundPage from '../pages/NotFound'
+import ForbiddenPage from '../pages/Forbidden'
 import { itemRoutes } from '../features/items'
 import { kpiRoutes } from '../features/kpis'
 import { ledgerRoutes } from '../features/ledger'
@@ -52,6 +53,13 @@ export const appShellRoutes: AppRouteObject[] = [
     element: <NotFoundPage />,
     handle: {
       breadcrumb: 'Not found',
+    },
+  },
+  {
+    path: 'forbidden',
+    element: <ForbiddenPage />,
+    handle: {
+      breadcrumb: 'Forbidden',
     },
   },
 ]

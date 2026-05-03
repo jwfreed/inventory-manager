@@ -2,12 +2,14 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { useEffect, useMemo, useRef } from 'react'
 import { Badge, Breadcrumbs, Button, CommandPaletteProvider } from '@shared/ui'
 import { useAuth } from '@shared/auth'
+import { use403Handler } from '../../lib/use403Handler'
 import { navItems } from '../routeData'
 import SectionNav from './SectionNav'
 import OnboardingNudge from '@features/onboarding/components/OnboardingNudge'
 
 function AppShell() {
   const { user, tenant, logout } = useAuth()
+  use403Handler()
   const location = useLocation()
   const contentScrollRef = useRef<HTMLElement | null>(null)
   const envLabel = useMemo(() => {

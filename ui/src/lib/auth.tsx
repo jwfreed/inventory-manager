@@ -180,7 +180,7 @@ export function RequirePermission({ children, permission }: { children: ReactNod
   const { permissions } = useAuth()
 
   if (!hasUiPermission(permissions, permission)) {
-    return <Navigate to="/not-found" replace />
+    return <Navigate to="/forbidden" replace />
   }
 
   return <>{children}</>

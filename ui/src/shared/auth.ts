@@ -6,6 +6,7 @@ export {
   hasUiPermission,
   type Permission,
 } from '../lib/permissions'
+export { PERMISSIONS, type KnownPermission } from '../lib/permissionConstants'
 export type {
   AuthContextValue,
   AuthSession,

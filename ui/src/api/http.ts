@@ -157,6 +157,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
   }
 
+  if (response.status === 403 && !authPath.startsWith('/auth')) {
+    window.dispatchEvent(new CustomEvent('api:forbidden'))
+  }
+
   return handleResponse<T>(response)
 }
 
