@@ -24,6 +24,7 @@ import { canAllocateReservation } from '../lib/reservationActionPolicy'
 import { formatReservationError } from '../lib/reservationErrorMessaging'
 import { formatShipmentError } from '../lib/shipmentErrorMessaging'
 import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
+import { useAuth } from '@shared/auth'
 
 type ShipmentCreateResult = {
   shipment: Shipment
@@ -57,6 +58,7 @@ export default function SalesOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuth()
   const [shipFromLocationId, setShipFromLocationId] = useState('')
   const [shippedAt, setShippedAt] = useState('')
   const [externalRef, setExternalRef] = useState('')
@@ -192,6 +194,7 @@ export default function SalesOrderDetailPage() {
   }
 
   const canCreateShipment =
+    hasPermission('outbound:write') &&
     Boolean(orderQuery.data?.id) &&
     Boolean(shipFromLocationId) &&
     Boolean(shippedAt) &&
@@ -345,7 +348,10 @@ export default function SalesOrderDetailPage() {
                 </div>
                 <div className="flex justify-end">
                   <Button
-                    onClick={() => shipmentCreateMutation.mutate()}
+                    onClick={() => {
+                      if (!hasPermission('outbound:write')) return
+                      shipmentCreateMutation.mutate()
+                    }}
                     disabled={!canCreateShipment || shipmentCreateMutation.isPending}
                   >
                     {shipmentCreateMutation.isPending ? 'Creating shipment...' : 'Create shipment'}

@@ -24,6 +24,7 @@ import {
 } from '../lib/reservationActionPolicy'
 import { formatReservationError } from '../lib/reservationErrorMessaging'
 import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
+import { useAuth } from '@shared/auth'
 
 type QuickActionState =
   | { type: 'allocate'; reservation: Reservation }
@@ -42,6 +43,7 @@ async function invalidateReservationQueries(queryClient: ReturnType<typeof useQu
 export default function ReservationsListPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuth()
   const { hideTitle } = usePageChrome()
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
@@ -96,6 +98,8 @@ export default function ReservationsListPage() {
     )
   }, [data?.data, search, status])
 
+  const canAllocate = hasPermission('outbound:allocate')
+  const canCancel = hasPermission('outbound:write')
   const quickActionBusy = allocateMutation.isPending || cancelMutation.isPending
   const selectedReservation = quickAction?.reservation ?? null
 
@@ -271,8 +275,11 @@ export default function ReservationsListPage() {
             </Button>
             {quickAction?.type === 'allocate' && selectedReservation ? (
               <Button
-                onClick={() => allocateMutation.mutate(selectedReservation)}
-                disabled={quickActionBusy}
+                onClick={() => {
+                  if (!canAllocate) return
+                  allocateMutation.mutate(selectedReservation)
+                }}
+                disabled={!canAllocate || quickActionBusy}
               >
                 {allocateMutation.isPending ? 'Allocating...' : 'Confirm allocate'}
               </Button>
@@ -280,8 +287,11 @@ export default function ReservationsListPage() {
             {quickAction?.type === 'cancel' && selectedReservation ? (
               <Button
                 variant="danger"
-                onClick={() => cancelMutation.mutate(selectedReservation)}
-                disabled={quickActionBusy}
+                onClick={() => {
+                  if (!canCancel) return
+                  cancelMutation.mutate(selectedReservation)
+                }}
+                disabled={!canCancel || quickActionBusy}
               >
                 {cancelMutation.isPending ? 'Canceling...' : 'Confirm cancel'}
               </Button>

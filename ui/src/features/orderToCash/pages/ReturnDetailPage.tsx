@@ -20,6 +20,7 @@ import { formatDate, formatNumber } from '@shared/formatters'
 import { formatStatusLabel } from '@shared/ui'
 import { formatReturnOperationError } from '../lib/returnOperationErrorMessaging'
 import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
+import { useAuth } from '@shared/auth'
 
 function toLocalDateTimeInput(value?: string) {
   if (!value) return ''
@@ -33,6 +34,7 @@ export default function ReturnDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuth()
   const [receivedAt, setReceivedAt] = useState(toLocalDateTimeInput(new Date().toISOString()))
   const [receivedToLocationId, setReceivedToLocationId] = useState('')
   const [externalRef, setExternalRef] = useState('')
@@ -262,7 +264,13 @@ export default function ReturnDetailPage() {
               </table>
             </div>
             <div className="mt-4 flex justify-end">
-              <Button onClick={() => createReceiptMutation.mutate()} disabled={createReceiptMutation.isPending}>
+              <Button
+                onClick={() => {
+                  if (!hasPermission('outbound:write')) return
+                  createReceiptMutation.mutate()
+                }}
+                disabled={!hasPermission('outbound:write') || createReceiptMutation.isPending}
+              >
                 {createReceiptMutation.isPending ? 'Creating receipt...' : 'Create return receipt'}
               </Button>
             </div>

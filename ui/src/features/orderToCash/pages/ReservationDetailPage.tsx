@@ -27,6 +27,7 @@ import {
 import { formatReservationError } from '../lib/reservationErrorMessaging'
 import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
 import { getShipment } from '../api/shipments'
+import { useAuth } from '@shared/auth'
 
 type ActionType = 'allocate' | 'cancel' | 'fulfill'
 
@@ -51,6 +52,7 @@ export default function ReservationDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuth()
   const [activeAction, setActiveAction] = useState<ActionType | null>(null)
   const [cancelReason, setCancelReason] = useState('')
   const [fulfillQuantity, setFulfillQuantity] = useState('')
@@ -156,6 +158,9 @@ export default function ReservationDetailPage() {
 
   const currentReservation = query.data
   const guards = getReservationActionGuardMessage(currentReservation)
+  const canAllocate = hasPermission('outbound:allocate')
+  const canCancel = hasPermission('outbound:write')
+  const canFulfill = hasPermission('outbound:post')
   const mutationBusy =
     allocateMutation.isPending || cancelMutation.isPending || fulfillMutation.isPending
 
@@ -407,8 +412,11 @@ export default function ReservationDetailPage() {
             </Button>
             {activeAction === 'allocate' && currentReservation ? (
               <Button
-                disabled={mutationBusy}
-                onClick={() => allocateMutation.mutate(currentReservation)}
+                disabled={!canAllocate || mutationBusy}
+                onClick={() => {
+                  if (!canAllocate) return
+                  allocateMutation.mutate(currentReservation)
+                }}
               >
                 {allocateMutation.isPending ? 'Allocating...' : 'Confirm allocate'}
               </Button>
@@ -416,16 +424,22 @@ export default function ReservationDetailPage() {
             {activeAction === 'cancel' && currentReservation ? (
               <Button
                 variant="danger"
-                disabled={mutationBusy}
-                onClick={() => cancelMutation.mutate(currentReservation)}
+                disabled={!canCancel || mutationBusy}
+                onClick={() => {
+                  if (!canCancel) return
+                  cancelMutation.mutate(currentReservation)
+                }}
               >
                 {cancelMutation.isPending ? 'Canceling...' : 'Confirm cancel'}
               </Button>
             ) : null}
             {activeAction === 'fulfill' && currentReservation ? (
               <Button
-                disabled={mutationBusy || !(Number(fulfillQuantity) > 0)}
-                onClick={() => fulfillMutation.mutate(currentReservation)}
+                disabled={!canFulfill || mutationBusy || !(Number(fulfillQuantity) > 0)}
+                onClick={() => {
+                  if (!canFulfill) return
+                  fulfillMutation.mutate(currentReservation)
+                }}
               >
                 {fulfillMutation.isPending ? 'Fulfilling...' : 'Confirm fulfill'}
               </Button>
