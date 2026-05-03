@@ -204,7 +204,7 @@ export default function DashboardPage() {
   )
 
   const hasReorderRisk = (allExceptionSignals.find((signal) => signal.type === 'reorder_risk')?.count ?? 0) > 0
-  const canRunKpis = hasPermission('reports:read')
+  const canRunKpis = hasPermission('planning:write')
 
   const handleRunKpis = () => {
     if (!canRunKpis) return

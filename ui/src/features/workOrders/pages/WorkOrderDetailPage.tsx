@@ -366,40 +366,6 @@ export default function WorkOrderDetailPage() {
     },
   })
 
-  const canWriteWorkOrder = hasPermission('production:write') && !!workOrderQuery.data
-
-  const handleMarkReady = () => {
-    if (!canWriteWorkOrder) return
-    setLifecycleMessage(null)
-    setLifecycleError(null)
-    readyMutation.mutate()
-  }
-
-  const handleSaveDescription = () => {
-    if (!canWriteWorkOrder) return
-    descriptionMutation.mutate(descriptionDraft)
-  }
-
-  const handleCancelConfirm = () => {
-    if (!canWriteWorkOrder) return
-    cancelMutation.mutate()
-  }
-
-  const handleCloseConfirm = () => {
-    if (!canWriteWorkOrder) return
-    closeMutation.mutate()
-  }
-
-  const handleVoidConfirm = () => {
-    if (!canWriteWorkOrder) return
-    voidMutation.mutate()
-  }
-
-  const handleSwitchBom = () => {
-    if (!canWriteWorkOrder) return
-    switchBomMutation.mutate()
-  }
-
   const refreshAll = (options?: { showSummaryToast?: boolean }) => {
     void workOrderQuery.refetch()
     void executionQuery.refetch()
@@ -420,6 +386,73 @@ export default function WorkOrderDetailPage() {
     () => getWorkOrderActionPolicy(workOrderQuery.data ?? null, recentProductionReport),
     [recentProductionReport, workOrderQuery.data],
   )
+
+  const canMarkReadyWorkOrder =
+    hasPermission('production:write') &&
+    !!workOrderQuery.data &&
+    actionPolicy.canMarkReady
+
+  const canCancelWorkOrder =
+    hasPermission('production:write') &&
+    !!workOrderQuery.data &&
+    actionPolicy.canCancel
+
+  const canCloseWorkOrder =
+    hasPermission('production:write') &&
+    !!workOrderQuery.data &&
+    actionPolicy.canClose
+
+  const canSaveWorkOrderDescription =
+    hasPermission('production:write') &&
+    !!workOrderQuery.data &&
+    hasDescriptionChanges
+
+  const canVoidProductionReport =
+    hasPermission('production:write') &&
+    !!workOrderQuery.data &&
+    actionPolicy.canVoidRecentReport &&
+    Boolean(voidReason.trim())
+
+  const canSwitchWorkOrderBom =
+    hasPermission('production:write') &&
+    !!workOrderQuery.data &&
+    !isDisassembly &&
+    !!activeVersionId &&
+    !!usedBomVersion &&
+    activeVersionId !== usedBomVersion.id
+
+  const handleMarkReady = () => {
+    if (!canMarkReadyWorkOrder) return
+    setLifecycleMessage(null)
+    setLifecycleError(null)
+    readyMutation.mutate()
+  }
+
+  const handleSaveDescription = () => {
+    if (!canSaveWorkOrderDescription) return
+    descriptionMutation.mutate(descriptionDraft)
+  }
+
+  const handleCancelConfirm = () => {
+    if (!canCancelWorkOrder) return
+    cancelMutation.mutate()
+  }
+
+  const handleCloseConfirm = () => {
+    if (!canCloseWorkOrder) return
+    closeMutation.mutate()
+  }
+
+  const handleVoidConfirm = () => {
+    if (!canVoidProductionReport) return
+    voidMutation.mutate()
+  }
+
+  const handleSwitchBom = () => {
+    if (!canSwitchWorkOrderBom) return
+    switchBomMutation.mutate()
+  }
+
   const operationalHistoryItems = useMemo(
     () =>
       id ? getWorkOrderOperationalHistoryItems(operationalHistoryQuery.data?.data ?? [], id) : [],
@@ -644,7 +677,7 @@ export default function WorkOrderDetailPage() {
                       isClosePending={closeMutation.isPending}
                       lifecycleMessage={lifecycleMessage}
                       lifecycleError={lifecycleError}
-                      onMarkReady={() => handleMarkReady()}
+                      onMarkReady={handleMarkReady}
                       onRequestCancel={() => {
                         setLifecycleMessage(null)
                         setLifecycleError(null)

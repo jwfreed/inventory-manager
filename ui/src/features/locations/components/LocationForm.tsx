@@ -52,9 +52,11 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
     },
   })
 
+  const canSaveLocation = hasPermission('masterdata:write')
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!hasPermission('masterdata:write')) return
+    if (!canSaveLocation) return
     mutation.mutate({
       code,
       name,
@@ -173,7 +175,7 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
               Cancel
             </Button>
           )}
-          <Button type="submit" size="sm" disabled={mutation.isPending}>
+          <Button type="submit" size="sm" disabled={!canSaveLocation || mutation.isPending}>
             {isEdit ? 'Save changes' : 'Create location'}
           </Button>
         </div>

@@ -118,21 +118,6 @@ export default function InventoryCountDetailPage() {
     [itemsQuery.data],
   )
 
-  const isLocked = countQuery.data?.status !== 'draft'
-  const canEditCount = hasPermission('inventory:counts:write') && !isLocked
-
-  const handleSaveCount = () => {
-    if (!canEditCount) return
-    setSaveError(null)
-    setSaveMessage(null)
-    saveMutation.mutate()
-  }
-
-  const handlePostCount = () => {
-    if (!canEditCount) return
-    postMutation.mutate()
-  }
-
   const saveMutation = useMutation({
     mutationFn: () =>
       updateInventoryCount(id as string, {
@@ -182,6 +167,21 @@ export default function InventoryCountDetailPage() {
       setSaveError(formatInventoryOperationError(err, 'Failed to post inventory count.'))
     },
   })
+
+  const isLocked = countQuery.data?.status !== 'draft'
+  const canEditCount = hasPermission('inventory:counts:write') && !isLocked
+
+  const handleSaveCount = () => {
+    if (!canEditCount) return
+    setSaveError(null)
+    setSaveMessage(null)
+    saveMutation.mutate()
+  }
+
+  const handlePostCount = () => {
+    if (!canEditCount) return
+    postMutation.mutate()
+  }
 
   if (countQuery.isLoading) {
     return <LoadingSpinner label="Loading inventory count..." />
