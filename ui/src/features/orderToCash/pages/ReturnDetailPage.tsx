@@ -112,6 +112,13 @@ export default function ReturnDetailPage() {
     },
   })
 
+  const canCreateReturnReceipt = hasPermission('outbound:write')
+
+  const handleCreateReturnReceipt = () => {
+    if (!canCreateReturnReceipt) return
+    createReceiptMutation.mutate()
+  }
+
   const copyId = async () => {
     if (!id) return
     try {
@@ -265,11 +272,8 @@ export default function ReturnDetailPage() {
             </div>
             <div className="mt-4 flex justify-end">
               <Button
-                onClick={() => {
-                  if (!hasPermission('outbound:write')) return
-                  createReceiptMutation.mutate()
-                }}
-                disabled={!hasPermission('outbound:write') || createReceiptMutation.isPending}
+                onClick={handleCreateReturnReceipt}
+                disabled={!canCreateReturnReceipt || createReceiptMutation.isPending}
               >
                 {createReceiptMutation.isPending ? 'Creating receipt...' : 'Create return receipt'}
               </Button>

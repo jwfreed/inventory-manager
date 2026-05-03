@@ -200,6 +200,11 @@ export default function SalesOrderDetailPage() {
     Boolean(shippedAt) &&
     lines.some((line) => Number(lineQuantities[line.id] ?? 0) > 0)
 
+  const handleCreateShipment = () => {
+    if (!canCreateShipment) return
+    shipmentCreateMutation.mutate()
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -348,10 +353,7 @@ export default function SalesOrderDetailPage() {
                 </div>
                 <div className="flex justify-end">
                   <Button
-                    onClick={() => {
-                      if (!hasPermission('outbound:write')) return
-                      shipmentCreateMutation.mutate()
-                    }}
+                    onClick={handleCreateShipment}
                     disabled={!canCreateShipment || shipmentCreateMutation.isPending}
                   >
                     {shipmentCreateMutation.isPending ? 'Creating shipment...' : 'Create shipment'}
