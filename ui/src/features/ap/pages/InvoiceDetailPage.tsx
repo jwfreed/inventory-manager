@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
+import { useAuth } from '@shared/auth'
 import {
   getVendorInvoice,
   approveVendorInvoice,
@@ -27,6 +28,7 @@ const statusColors: Record<VendorInvoiceStatus, string> = {
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { hasPermission } = useAuth()
   const queryClient = useQueryClient()
 
   const invoiceQuery = useQuery({
@@ -66,8 +68,24 @@ export default function InvoiceDetailPage() {
 
   const invoice = invoiceQuery.data
   const canApprove =
-    invoice.status === 'draft' || invoice.status === 'pending_approval'
-  const canVoid = invoice.status !== 'void' && invoice.status !== 'paid'
+    hasPermission('finance:write') &&
+    (invoice.status === 'draft' || invoice.status === 'pending_approval')
+  const canVoid =
+    hasPermission('finance:write') &&
+    invoice.status !== 'void' &&
+    invoice.status !== 'paid'
+
+  const handleApprove = () => {
+    if (!canApprove) return
+    approveMutation.mutate()
+  }
+
+  const handleVoid = () => {
+    if (!canVoid) return
+    if (window.confirm('Are you sure you want to void this invoice? This cannot be undone.')) {
+      voidMutation.mutate()
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -93,8 +111,8 @@ export default function InvoiceDetailPage() {
           {canApprove && (
             <Button
               variant="primary"
-              onClick={() => approveMutation.mutate()}
-              disabled={approveMutation.isPending}
+              onClick={handleApprove}
+              disabled={!canApprove || approveMutation.isPending}
             >
               Approve
             </Button>
@@ -102,16 +120,8 @@ export default function InvoiceDetailPage() {
           {canVoid && (
             <Button
               variant="danger"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    'Are you sure you want to void this invoice? This cannot be undone.'
-                  )
-                ) {
-                  voidMutation.mutate()
-                }
-              }}
-              disabled={voidMutation.isPending}
+              onClick={handleVoid}
+              disabled={!canVoid || voidMutation.isPending}
             >
               Void
             </Button>

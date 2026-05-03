@@ -14,12 +14,16 @@ import { formatWorkOrderLifecycleError } from '../lib/workOrderErrorMessaging'
 import { useWorkOrdersListData } from '../hooks/useWorkOrdersListData'
 import { usePageChrome } from '../../../app/layout/usePageChrome'
 import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
+import { useAuth } from '@shared/auth'
 
 export default function WorkOrdersListPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { hideTitle } = usePageChrome()
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuth()
+
+  const canWriteWorkOrders = hasPermission('production:write')
 
   const [status, setStatus] = useState(() => searchParams.get('status') || '')
   const [search, setSearch] = useState('')
@@ -194,6 +198,7 @@ export default function WorkOrdersListPage() {
                       size="sm"
                       onClick={(event) => {
                         event.stopPropagation()
+                        if (!canWriteWorkOrders) return
                         setLifecycleMessage(null)
                         setLifecycleError(null)
                         markReadyMutation.mutate(row)
@@ -235,6 +240,7 @@ export default function WorkOrdersListPage() {
         }}
         onConfirm={() => {
           if (!selectedCancelOrder) return
+          if (!canWriteWorkOrders) return
           cancelMutation.mutate(selectedCancelOrder)
         }}
       />

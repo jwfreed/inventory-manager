@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@shared/auth'
 import type { ApiError, InventoryCount, Location } from '@api/types'
 import { useItemsList } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
@@ -69,6 +70,7 @@ function mapCountToFormValues(count: InventoryCount): InventoryCountFormValues {
 
 export default function InventoryCountDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { hasPermission } = useAuth()
   const queryClient = useQueryClient()
   const countQuery = useInventoryCount(id)
   const locationsQuery = useLocationsList({ active: true, limit: 1000 }, { staleTime: 60_000 })
@@ -117,6 +119,19 @@ export default function InventoryCountDetailPage() {
   )
 
   const isLocked = countQuery.data?.status !== 'draft'
+  const canEditCount = hasPermission('inventory:counts:write') && !isLocked
+
+  const handleSaveCount = () => {
+    if (!canEditCount) return
+    setSaveError(null)
+    setSaveMessage(null)
+    saveMutation.mutate()
+  }
+
+  const handlePostCount = () => {
+    if (!canEditCount) return
+    postMutation.mutate()
+  }
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -308,9 +323,7 @@ export default function InventoryCountDetailPage() {
             }))
           }
           onSubmit={() => {
-            setSaveError(null)
-            setSaveMessage(null)
-            saveMutation.mutate()
+            handleSaveCount()
           }}
         />
         {!isLocked ? (
@@ -335,7 +348,7 @@ export default function InventoryCountDetailPage() {
             <Button variant="secondary" size="sm" onClick={() => setShowPostConfirm(false)}>
               Keep draft
             </Button>
-            <Button size="sm" onClick={() => postMutation.mutate()} disabled={postMutation.isPending}>
+            <Button size="sm" onClick={handlePostCount} disabled={!canEditCount || postMutation.isPending}>
               {postMutation.isPending ? 'Posting...' : 'Confirm post'}
             </Button>
           </div>

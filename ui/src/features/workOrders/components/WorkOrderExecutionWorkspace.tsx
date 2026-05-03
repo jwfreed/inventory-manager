@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { useAuth } from '@shared/auth'
 import type { WorkOrder, WorkOrderDisassemblyPlan, WorkOrderReadiness } from '@api/types'
 import { Alert, Button } from '@shared/ui'
 import { formatDate, formatNumber } from '@shared/formatters'
@@ -42,6 +43,7 @@ export function WorkOrderExecutionWorkspace({
   onProductionReported,
 }: Props) {
   const isDisassembly = workOrder.kind === 'disassembly'
+  const { hasPermission } = useAuth()
   const [executionQty, setExecutionQty] = useState<number | ''>('')
   const [scrapQty, setScrapQty] = useState<number | ''>('')
   const [occurredAt, setOccurredAt] = useState(formatDate(new Date()))
@@ -196,6 +198,13 @@ export function WorkOrderExecutionWorkspace({
     normalizedExecutionQty > plannedRemaining ||
     !confirmPreview ||
     (isDisassembly ? previewProduces.length === 0 || !disassemblyPlan?.consumeLocation : !readiness?.produceLocation)
+
+  const canExecute = hasPermission('production:write') && !executionBlocked
+
+  const handleExecute = () => {
+    if (!canExecute) return
+    executionMutation.mutate()
+  }
 
   return (
     <div className="space-y-6">
@@ -418,8 +427,8 @@ export function WorkOrderExecutionWorkspace({
         <div className="mt-4 flex justify-end">
           <Button
             size="sm"
-            onClick={() => executionMutation.mutate()}
-            disabled={executionMutation.isPending || executionBlocked}
+            onClick={handleExecute}
+            disabled={!canExecute || executionMutation.isPending}
           >
             {executionMutation.isPending ? 'Posting...' : isDisassembly ? 'Post disassembly' : 'Post execution'}
           </Button>

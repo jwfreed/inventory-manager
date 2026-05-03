@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@shared/auth'
 import { createReturnDisposition, postReturnDisposition } from '../api/returnDispositions'
 import {
   orderToCashQueryKeys,
@@ -42,6 +43,7 @@ const dispositionOptions = ['restock', 'scrap', 'quarantine_hold'] as const
 export default function ReturnReceiptPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
   const queryClient = useQueryClient()
   const [occurredAt, setOccurredAt] = useState(toLocalDateTimeInput(new Date().toISOString()))
   const [dispositionType, setDispositionType] = useState<(typeof dispositionOptions)[number]>('restock')
@@ -89,6 +91,25 @@ export default function ReturnReceiptPage() {
   const dispositionCreationBlockedMessage = receiptIsPosted
     ? null
     : 'Post the receipt before creating disposition drafts.'
+
+  const canWriteReturnReceipt = hasPermission('outbound:write') && !!receiptQuery.data
+  const canCreateDisposition = hasPermission('outbound:write') && receiptIsPosted
+  const canPostDisposition = hasPermission('outbound:write') && receiptIsPosted
+
+  const handlePostReceipt = () => {
+    if (!canWriteReturnReceipt || receiptIsPosted) return
+    postReceiptMutation.mutate()
+  }
+
+  const handleCreateDisposition = () => {
+    if (!canCreateDisposition) return
+    createDispositionMutation.mutate()
+  }
+
+  const handlePostDisposition = (dispositionId: string) => {
+    if (!canPostDisposition) return
+    postDispositionMutation.mutate(dispositionId)
+  }
 
   const postReceiptMutation = useMutation({
     mutationFn: async () => {
@@ -255,8 +276,8 @@ export default function ReturnReceiptPage() {
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
               <Button
-                onClick={() => postReceiptMutation.mutate()}
-                disabled={receiptIsPosted || postReceiptMutation.isPending}
+                onClick={handlePostReceipt}
+                disabled={receiptIsPosted || !canWriteReturnReceipt || postReceiptMutation.isPending}
               >
                 {receiptIsPosted
                   ? 'Receipt posted'
@@ -422,8 +443,8 @@ export default function ReturnReceiptPage() {
 
             <div className="mt-4 flex justify-end">
               <Button
-                onClick={() => createDispositionMutation.mutate()}
-                disabled={createDispositionMutation.isPending || !receiptIsPosted}
+                onClick={handleCreateDisposition}
+                disabled={!canCreateDisposition || createDispositionMutation.isPending || !receiptIsPosted}
               >
                 {createDispositionMutation.isPending
                   ? 'Creating disposition draft...'
@@ -504,8 +525,8 @@ export default function ReturnReceiptPage() {
                               <Button
                                 variant="secondary"
                                 size="sm"
-                                onClick={() => postDispositionMutation.mutate(disposition.id)}
-                                disabled={!receiptIsPosted || postDispositionMutation.isPending}
+                                onClick={() => handlePostDisposition(disposition.id)}
+                                disabled={!receiptIsPosted || !canPostDisposition || postDispositionMutation.isPending}
                               >
                                 {receiptIsPosted
                                   ? postDispositionMutation.isPending

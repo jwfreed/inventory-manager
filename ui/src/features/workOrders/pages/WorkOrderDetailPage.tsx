@@ -61,6 +61,7 @@ import {
 } from '../lib/workOrderErrorMessaging'
 import { getWorkOrderOperationalHistoryItems } from '../lib/workOrderOperationalHistory'
 import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
+import { useAuth } from '@shared/auth'
 
 const workOrderDetailSections = [
   { id: 'overview', label: 'Overview' },
@@ -73,6 +74,7 @@ const workOrderDetailSections = [
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
   const actionsRef = useRef<HTMLDivElement | null>(null)
   const [showNextStep, setShowNextStep] = useState(false)
   const [selectedBomId, setSelectedBomId] = useState('')
@@ -364,6 +366,40 @@ export default function WorkOrderDetailPage() {
     },
   })
 
+  const canWriteWorkOrder = hasPermission('production:write') && !!workOrderQuery.data
+
+  const handleMarkReady = () => {
+    if (!canWriteWorkOrder) return
+    setLifecycleMessage(null)
+    setLifecycleError(null)
+    readyMutation.mutate()
+  }
+
+  const handleSaveDescription = () => {
+    if (!canWriteWorkOrder) return
+    descriptionMutation.mutate(descriptionDraft)
+  }
+
+  const handleCancelConfirm = () => {
+    if (!canWriteWorkOrder) return
+    cancelMutation.mutate()
+  }
+
+  const handleCloseConfirm = () => {
+    if (!canWriteWorkOrder) return
+    closeMutation.mutate()
+  }
+
+  const handleVoidConfirm = () => {
+    if (!canWriteWorkOrder) return
+    voidMutation.mutate()
+  }
+
+  const handleSwitchBom = () => {
+    if (!canWriteWorkOrder) return
+    switchBomMutation.mutate()
+  }
+
   const refreshAll = (options?: { showSummaryToast?: boolean }) => {
     void workOrderQuery.refetch()
     void executionQuery.refetch()
@@ -608,11 +644,7 @@ export default function WorkOrderDetailPage() {
                       isClosePending={closeMutation.isPending}
                       lifecycleMessage={lifecycleMessage}
                       lifecycleError={lifecycleError}
-                      onMarkReady={() => {
-                        setLifecycleMessage(null)
-                        setLifecycleError(null)
-                        readyMutation.mutate()
-                      }}
+                      onMarkReady={() => handleMarkReady()}
                       onRequestCancel={() => {
                         setLifecycleMessage(null)
                         setLifecycleError(null)
@@ -699,7 +731,7 @@ export default function WorkOrderDetailPage() {
                   </Button>
                   <Button
                     size="sm"
-                    onClick={() => descriptionMutation.mutate(descriptionDraft)}
+                    onClick={handleSaveDescription}
                     disabled={!hasDescriptionChanges || descriptionMutation.isPending}
                   >
                     Save operator notes
@@ -1034,7 +1066,7 @@ export default function WorkOrderDetailPage() {
         isPending={cancelMutation.isPending}
         errorMessage={showCancelConfirm ? lifecycleError : null}
         onCancel={() => setShowCancelConfirm(false)}
-        onConfirm={() => cancelMutation.mutate()}
+        onConfirm={handleCancelConfirm}
       />
 
       <Modal
@@ -1046,7 +1078,7 @@ export default function WorkOrderDetailPage() {
             <Button variant="secondary" size="sm" onClick={() => setShowCloseConfirm(false)}>
               Keep Open
             </Button>
-            <Button size="sm" onClick={() => closeMutation.mutate()} disabled={closeMutation.isPending}>
+            <Button size="sm" onClick={handleCloseConfirm} disabled={closeMutation.isPending}>
               {closeMutation.isPending ? 'Closing...' : 'Confirm Close Work Order'}
             </Button>
           </div>
@@ -1078,7 +1110,7 @@ export default function WorkOrderDetailPage() {
             <Button
               size="sm"
               variant="danger"
-              onClick={() => voidMutation.mutate()}
+              onClick={handleVoidConfirm}
               disabled={voidMutation.isPending || !voidReason.trim()}
             >
               {voidMutation.isPending ? 'Voiding...' : 'Confirm Void Production Report'}
@@ -1124,7 +1156,7 @@ export default function WorkOrderDetailPage() {
             </Button>
             <Button
               size="sm"
-              onClick={() => switchBomMutation.mutate()}
+              onClick={handleSwitchBom}
               disabled={switchBomMutation.isPending}
             >
               Switch to active

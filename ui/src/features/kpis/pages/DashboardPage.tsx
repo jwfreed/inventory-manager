@@ -67,7 +67,7 @@ const MONITORING_CTA_LINKS = {
 } as const
 
 export default function DashboardPage() {
-  const { user, tenant } = useAuth()
+  const { user, tenant, hasPermission } = useAuth()
   const { data, loading, error } = useDashboardSignals()
   const queryClient = useQueryClient()
   const runsQuery = useKpiRuns({ limit: 25 }, { staleTime: 60_000 })
@@ -204,6 +204,12 @@ export default function DashboardPage() {
   )
 
   const hasReorderRisk = (allExceptionSignals.find((signal) => signal.type === 'reorder_risk')?.count ?? 0) > 0
+  const canRunKpis = hasPermission('reports:read')
+
+  const handleRunKpis = () => {
+    if (!canRunKpis) return
+    runMutation.mutate()
+  }
   const additionalSections = [
     data.sections?.inventoryRisk,
     data.sections?.inventoryCoverage,
@@ -584,8 +590,8 @@ export default function DashboardPage() {
           action={
             <Button
               variant="secondary"
-              onClick={() => runMutation.mutate()}
-              disabled={runMutation.isPending}
+              onClick={handleRunKpis}
+              disabled={!canRunKpis || runMutation.isPending}
               aria-label="Run KPI calculations"
             >
               {runMutation.isPending ? 'Running KPI calculations…' : 'Run KPI calculations'}

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { useAuth } from '@shared/auth'
 import { activateBomVersion } from '../api/boms'
 import { bomsQueryKeys, useBom } from '../queries'
 import type { ApiError, Bom } from '../../../api/types'
@@ -21,6 +22,7 @@ type Props = {
 }
 
 export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
+  const { hasPermission } = useAuth()
   const queryClient = useQueryClient()
   const bomQuery = useBom(bomId, { placeholderData: fallback })
   const [pendingActivation, setPendingActivation] = useState<Bom['versions'][number] | null>(null)
@@ -42,6 +44,12 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
   }
 
   const bom = bomQuery.data
+  const canActivateBom = hasPermission('masterdata:write') && !!pendingActivation
+
+  const handleActivateBom = () => {
+    if (!canActivateBom || !pendingActivation) return
+    activateMutation.mutate(pendingActivation.id)
+  }
   const activeVersion = useMemo(
     () => bom.versions.find((version) => version.status === 'active'),
     [bom.versions],
@@ -175,7 +183,7 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
               Cancel
             </Button>
             {pendingActivation && (
-              <Button onClick={() => activateMutation.mutate(pendingActivation.id)}>
+              <Button onClick={handleActivateBom} disabled={!canActivateBom || activateMutation.isPending}>
                 Activate
               </Button>
             )}

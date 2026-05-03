@@ -2,6 +2,7 @@ import { PencilIcon, PlusIcon } from '@heroicons/react/24/outline'
 import { formatDate } from '@shared/formatters'
 import React, { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@shared/auth'
 import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
 import { LoadingSpinner } from '../../../components/Loading'
@@ -15,6 +16,7 @@ interface RoutingsCardProps {
 }
 
 export const RoutingsCard: React.FC<RoutingsCardProps> = ({ itemId }) => {
+  const { hasPermission } = useAuth()
   const [isEditing, setIsEditing] = useState(false)
   const [editingRouting, setEditingRouting] = useState<Routing | null>(null)
   const queryClient = useQueryClient()
@@ -52,7 +54,10 @@ export const RoutingsCard: React.FC<RoutingsCardProps> = ({ itemId }) => {
     },
   })
 
+  const canWriteRoutings = hasPermission('masterdata:write') && !!itemId
+
   const handleSubmit = (data: Partial<Routing>) => {
+    if (!canWriteRoutings) return
     if (editingRouting) {
       updateMutation.mutate({ id: editingRouting.id, data })
       return

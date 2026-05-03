@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@shared/auth';
 import { getWorkCenters, createWorkCenter, updateWorkCenter } from '../api';
 import { WorkCenterForm } from '../components/WorkCenterForm';
 import type { WorkCenter } from '../types';
@@ -7,6 +8,7 @@ import { listLocations } from '../../locations/api/locations';
 import { PlusIcon, PencilIcon } from '@heroicons/react/24/outline';
 
 export const WorkCentersPage: React.FC = () => {
+  const { hasPermission } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingWorkCenter, setEditingWorkCenter] = useState<WorkCenter | null>(null);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
@@ -43,7 +45,10 @@ export const WorkCentersPage: React.FC = () => {
     }
   });
 
+  const canWriteWorkCenters = hasPermission('production:write');
+
   const handleSubmit = (data: Partial<WorkCenter>) => {
+    if (!canWriteWorkCenters) return;
     if (editingWorkCenter) {
       updateMutation.mutate({ id: editingWorkCenter.id, data });
     } else {

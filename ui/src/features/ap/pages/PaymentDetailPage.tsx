@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
+import { useAuth } from '@shared/auth'
 import {
   getVendorPayment,
   postVendorPayment,
@@ -25,6 +26,7 @@ const statusColors: Record<VendorPaymentStatus, string> = {
 
 export default function PaymentDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { hasPermission } = useAuth()
   const queryClient = useQueryClient()
 
   const paymentQuery = useQuery({
@@ -63,8 +65,20 @@ export default function PaymentDetailPage() {
   }
 
   const payment = paymentQuery.data
-  const canPost = payment.status === 'draft'
-  const canVoid = payment.status !== 'void'
+  const canPost = hasPermission('finance:write') && payment.status === 'draft'
+  const canVoid = hasPermission('finance:write') && payment.status !== 'void'
+
+  const handlePost = () => {
+    if (!canPost) return
+    postMutation.mutate()
+  }
+
+  const handleVoid = () => {
+    if (!canVoid) return
+    if (window.confirm('Are you sure you want to void this payment? This cannot be undone.')) {
+      voidMutation.mutate()
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -90,8 +104,8 @@ export default function PaymentDetailPage() {
           {canPost && (
             <Button
               variant="primary"
-              onClick={() => postMutation.mutate()}
-              disabled={postMutation.isPending}
+              onClick={handlePost}
+              disabled={!canPost || postMutation.isPending}
             >
               Post Payment
             </Button>
@@ -99,16 +113,8 @@ export default function PaymentDetailPage() {
           {canVoid && (
             <Button
               variant="danger"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    'Are you sure you want to void this payment? This cannot be undone.'
-                  )
-                ) {
-                  voidMutation.mutate()
-                }
-              }}
-              disabled={voidMutation.isPending}
+              onClick={handleVoid}
+              disabled={!canVoid || voidMutation.isPending}
             >
               Void
             </Button>

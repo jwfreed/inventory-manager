@@ -289,7 +289,7 @@ type Props = {
 }
 
 export function ReceivingProvider({ children }: Props) {
-  const { user } = useAuth()
+  const { user, hasPermission } = useAuth()
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -343,6 +343,11 @@ export function ReceivingProvider({ children }: Props) {
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
 
   // ── Offline Queue ──
+  // Permission guards for mutation operations
+  const canCreateReceipt = hasPermission('purchasing:write')
+  const canWriteQc = hasPermission('inventory:qc:write')
+  const canWritePutaway = hasPermission('inventory:putaway:write')
+
   // Sync handler for offline operations
   const handleOfflineSync = useCallback(async (operation: OfflineOperation) => {
     switch (operation.type) {
@@ -930,6 +935,7 @@ export function ReceivingProvider({ children }: Props) {
     async (e: React.FormEvent) => {
       e.preventDefault()
       receiptMutation.reset()
+      if (!canCreateReceipt) return
       if (!selectedPoId) return
       if (!poEligibleForReceipt) return
       if (!resolvedReceivedToLocationId) return
@@ -988,6 +994,7 @@ export function ReceivingProvider({ children }: Props) {
       receiptMutation.mutate(payload)
     },
     [
+      canCreateReceipt,
       selectedPoId,
       receiptLineSummary,
       receiptNotes,
@@ -1000,6 +1007,7 @@ export function ReceivingProvider({ children }: Props) {
   )
 
   const onCreateQcEvent = useCallback(async () => {
+    if (!canWriteQc) return
     if (!selectedQcLine) return
     if (qcQuantityInvalid) return
 
@@ -1015,9 +1023,10 @@ export function ReceivingProvider({ children }: Props) {
     }
 
     await submitQcEventRequest(payload, { guardPending: true })
-  }, [selectedQcLine, qcQuantityInvalid, qcEventType, qcQuantityNumber, qcReasonCode, qcNotes, user, submitQcEventRequest])
+  }, [canWriteQc, selectedQcLine, qcQuantityInvalid, qcEventType, qcQuantityNumber, qcReasonCode, qcNotes, user, submitQcEventRequest])
 
   const onQuickAcceptQc = useCallback(async () => {
+    if (!canWriteQc) return
     if (!selectedQcLine) return
     if (!(qcRemaining > 0)) return
     if (qcEventMutation.isPending || qcShortcutSubmitInFlightRef.current) return
@@ -1033,7 +1042,7 @@ export function ReceivingProvider({ children }: Props) {
     }
 
     await submitQcEventRequest(payload, { guardPending: true })
-  }, [selectedQcLine, qcRemaining, user, qcEventMutation.isPending, submitQcEventRequest, updateQcDraft])
+  }, [canWriteQc, selectedQcLine, qcRemaining, user, qcEventMutation.isPending, submitQcEventRequest, updateQcDraft])
 
   const onSubmitQcShortcutEvent = useCallback(
     async (request: QcEventCreatePayload) =>
@@ -1052,6 +1061,7 @@ export function ReceivingProvider({ children }: Props) {
       reasonCode?: string,
       notes?: string,
     ) => {
+      if (!canWriteQc) return
       if (!selectedQcLine) return
       if (!(quantity > 0)) return
       holdDispositionMutation.mutate({
@@ -1065,7 +1075,7 @@ export function ReceivingProvider({ children }: Props) {
         actorId: user?.id ?? user?.email ?? undefined,
       })
     },
-    [holdDispositionMutation, selectedQcLine, user],
+    [canWriteQc, holdDispositionMutation, selectedQcLine, user],
   )
 
   const onCreatePutaway = useCallback(

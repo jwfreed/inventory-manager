@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { useAuth } from '@shared/auth'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -52,6 +53,7 @@ type ComponentDraft = {
 }
 
 export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Props) {
+  const { hasPermission } = useAuth()
   const [bomCode, setBomCode] = useState('')
   const [yieldUom, setYieldUom] = useState(defaultUom ?? '')
   const [defaultBomUom, setDefaultBomUom] = useState(defaultUom ?? '')
@@ -171,8 +173,11 @@ export function BomForm({ outputItemId, defaultUom, initialBom, onSuccess }: Pro
     })
   }
 
+  const canSaveBom = hasPermission('masterdata:write') && !!outputItemId
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canSaveBom) return
     if (!bomCode || !resolvedYieldUom || !resolvedDefaultBomUom) return
 
     const targetWeight = ratioMode ? Number(targetOutputWeight) : undefined

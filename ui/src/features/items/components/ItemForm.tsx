@@ -34,7 +34,7 @@ const CANONICAL_UOM_BY_DIMENSION = {
 export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku }: Props) {
   const isEdit = Boolean(initialItem?.id)
   const queryClient = useQueryClient()
-  const { user } = useAuth()
+  const { user, hasPermission } = useAuth()
   const baseCurrency = user?.baseCurrency ?? 'THB'
   const [sku, setSku] = useState(initialItem?.sku ?? '')
   const [name, setName] = useState(initialItem?.name ?? '')
@@ -93,8 +93,15 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
     },
   })
 
+  const canSaveItem = hasPermission('masterdata:write')
+
+  const locationOptions = locationsQuery.data?.data ?? []
+  const selectedLocationMissing =
+    Boolean(defaultLocationId) && !locationOptions.some((loc) => loc.id === defaultLocationId)
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canSaveItem) return
     const standardCostValue = standardCost.trim() ? Number(standardCost) : undefined
     const canonicalUom = uomDimension ? CANONICAL_UOM_BY_DIMENSION[uomDimension] : undefined
     mutation.mutate({
@@ -116,10 +123,6 @@ export function ItemForm({ initialItem, onSuccess, onCancel, title, autoFocusSku
         standardCostValue != null ? (standardCostCurrency ? standardCostCurrency : undefined) : undefined,
     })
   }
-
-  const locationOptions = locationsQuery.data?.data ?? []
-  const selectedLocationMissing =
-    Boolean(defaultLocationId) && !locationOptions.some((loc) => loc.id === defaultLocationId)
 
   return (
     <Card title={title ?? (isEdit ? 'Edit item' : 'Create item')}>

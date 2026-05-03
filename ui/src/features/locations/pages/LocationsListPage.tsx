@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
+import { useAuth } from '@shared/auth'
 import { createStandardWarehouseTemplate } from '../api/locations'
 import { useLocationsList } from '../queries'
 import type { ApiError, Location } from '../../../api/types'
@@ -18,6 +19,7 @@ const locationTypes = ['warehouse', 'bin', 'store', 'customer', 'vendor', 'scrap
 
 export default function LocationsListPage() {
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
   const { hideTitle } = usePageChrome()
   const [active, setActive] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -58,6 +60,13 @@ export default function LocationsListPage() {
       void refetch()
     },
   })
+
+  const canCreateTemplate = hasPermission('masterdata:write')
+
+  const handleCreateTemplate = () => {
+    if (!canCreateTemplate) return
+    templateMutation.mutate()
+  }
 
   return (
     <div className="space-y-6">
@@ -104,8 +113,8 @@ export default function LocationsListPage() {
             </label>
             <Button
               size="sm"
-              onClick={() => templateMutation.mutate()}
-              disabled={templateMutation.isPending}
+              onClick={handleCreateTemplate}
+              disabled={!canCreateTemplate || templateMutation.isPending}
             >
               {templateMutation.isPending ? 'Creating…' : 'Create standard warehouse'}
             </Button>

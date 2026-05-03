@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { useAuth } from '@shared/auth'
 import type { ApiError, Location } from '../../../api/types'
 import { createLocation, updateLocation, type LocationPayload } from '../api/locations'
 import { Alert } from '../../../components/Alert'
@@ -18,6 +19,7 @@ type Props = {
 }
 
 export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Props) {
+  const { hasPermission } = useAuth()
   const isEdit = Boolean(initialLocation?.id)
   const [code, setCode] = useState(initialLocation?.code ?? '')
   const [name, setName] = useState(initialLocation?.name ?? '')
@@ -52,6 +54,7 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!hasPermission('masterdata:write')) return
     mutation.mutate({
       code,
       name,
