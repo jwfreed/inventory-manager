@@ -83,7 +83,7 @@ export default function ShipmentDetailPage() {
   }
 
   const handleConfirmPost = () => {
-    if (!canPostShipment) return
+    if (!canPost) return
     postMutation.mutate()
   }
 
@@ -264,7 +264,7 @@ export default function ShipmentDetailPage() {
             </Button>
             <Button
               onClick={handleConfirmPost}
-              disabled={postMutation.isPending}
+              disabled={!canPost || postMutation.isPending}
             >
               {postMutation.isPending ? 'Posting...' : 'Confirm post'}
             </Button>
