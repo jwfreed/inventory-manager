@@ -8,7 +8,7 @@ The roadmap is ordered by corrected system risk: Critical items represent true d
 
 - Finding: On-hand imports do not support lot/serial fields and can be applied after validation without final stock-impact review.
 - Evidence (file path, component, function): `ImportDataPage` import fields and warning at `ui/src/features/admin/pages/ImportDataPage.tsx` lines 31-34 and 208-214; apply action lines 343-349; backend import validation and apply logic in `src/routes/imports.routes.ts` lines 53-108 and `src/services/imports.service.ts` lines 422-453 and 636-693.
-- Backend Invariant Status: Not enforced. Backend rejects lot/serial columns but does not block existing lot/serial-tracked items from on-hand import when those columns are absent.
+- Backend Invariant Status: Not Enforced. Backend rejects lot/serial columns but does not block existing lot/serial-tracked items from on-hand import when those columns are absent.
 - Operational impact: Bulk imports can create on-hand stock for tracked items without lot/serial trace attributes.
 - Workflow affected: Admin/config, traceability, inventory visibility, cycle counting/reconciliation.
 - Severity (Critical / High / Medium / Low): Critical.
@@ -23,7 +23,7 @@ The roadmap is ordered by corrected system risk: Critical items represent true d
 
 - Finding: QC hold/reject can be recorded without required operator reasons.
 - Evidence (file path, component, function): `QcDetailPanel` reason field at `ui/src/features/receiving/components/QcDetailPanel.tsx` lines 225-234; `ReceivingContext` payload at lines 1014-1025; `src/schemas/qc.schema.ts` marks `reasonCode` optional.
-- Backend Invariant Status: Not enforced for hold/reject reason. Backend validates QC quantity, UOM, source, and destination roles.
+- Backend Invariant Status: Not Enforced. Backend validates QC quantity, UOM, source, and destination roles, but does not require hold/reject reason.
 - Operational impact: Exception stock states become harder to investigate and defend during quarantine/rejection or recall review.
 - Workflow affected: QC, receiving, traceability.
 - Severity (Critical / High / Medium / Low): High.
@@ -36,7 +36,7 @@ The roadmap is ordered by corrected system risk: Critical items represent true d
 
 - Finding: QC bulk/shortcut actions rely on `window.prompt` and page-level shortcuts.
 - Evidence (file path, component, function): `QcClassificationPage` prompts/shortcuts at `ui/src/features/receiving/pages/QcClassificationPage.tsx` lines 35-104; `useKeyboardShortcuts` window listener at `ui/src/features/receiving/hooks/useKeyboardShortcuts.ts` lines 37-77.
-- Backend Invariant Status: Partially enforced. Backend rejects over-QC, UOM mismatch, invalid sources, and invalid destinations, but not structured review or required reason.
+- Backend Invariant Status: Partially Enforced. Backend rejects over-QC, UOM mismatch, invalid sources, and invalid destinations, but not structured review or required reason.
 - Operational impact: Operators can classify the wrong selected lines or omit meaningful exception context under time pressure.
 - Workflow affected: QC, putaway.
 - Severity (Critical / High / Medium / Low): High.
@@ -75,7 +75,7 @@ The roadmap is ordered by corrected system risk: Critical items represent true d
 
 - Finding: Shipment creation uses free-text ship-from and unbounded line quantities.
 - Evidence (file path, component, function): `SalesOrderDetailPage` ship-from input and line quantity fields at `ui/src/features/orderToCash/pages/SalesOrderDetailPage.tsx` lines 327-334 and 424-438; backend shipment paths in `src/schemas/orderToCash.schema.ts` lines 80-94 and `src/services/orderToCash.service.ts` lines 1733-1955 and 2038-2675.
-- Backend Invariant Status: Partially enforced. Backend validates UUID, warehouse scope, sellable ship-from, stock, and reservation state at posting; create-time demand caps were not verified in the reviewed code.
+- Backend Invariant Status: Partially Enforced. Backend validates UUID, warehouse scope, sellable ship-from, stock, and reservation state at posting; create-time demand caps were not verified in the reviewed code.
 - Operational impact: Users can create misleading draft shipments or attempt quantities above demand/readiness.
 - Workflow affected: Pick/pack/ship, allocation.
 - Severity (Critical / High / Medium / Low): High.
@@ -88,7 +88,7 @@ The roadmap is ordered by corrected system risk: Critical items represent true d
 
 - Finding: No dedicated lot/serial/recall trace route is exposed.
 - Evidence (file path, component, function): `ui/src/app/routeData.tsx` route list lines 1-56; backend trace support in `src/routes/compliance.routes.ts`, `src/services/compliance.service.ts`, and `src/services/lotTraceabilityEngine.ts`.
-- Backend Invariant Status: Partially enforced. Backend trace and recall capabilities exist, but no app-shell UI exposes the workflow.
+- Backend Invariant Status: Partially Enforced. Backend trace and recall capabilities exist, but no app-shell UI exposes the workflow.
 - Operational impact: Recall and lot genealogy work requires manual inference across movement, receipt, QC, production, and shipment screens.
 - Workflow affected: Traceability, receiving, production, shipping.
 - Severity (Critical / High / Medium / Low): High.
@@ -170,7 +170,7 @@ The roadmap is ordered by corrected system risk: Critical items represent true d
 
 - Finding: Location parent field is a raw text input.
 - Evidence (file path, component, function): `LocationForm` parent input at `ui/src/features/locations/components/LocationForm.tsx` lines 116-124; backend validation in `src/schemas/masterData.schema.ts` lines 81-95 and `src/routes/masterData.routes.ts` lines 209-248 and 293-324.
-- Backend Invariant Status: Partially enforced. Backend rejects malformed/nonexistent parent IDs and direct self-parent references, but cannot prevent selecting a valid wrong parent.
+- Backend Invariant Status: Partially Enforced. Backend rejects malformed/nonexistent parent IDs and direct self-parent references, but cannot prevent selecting a valid wrong parent.
 - Operational impact: A valid but wrong parent can create confusing warehouse hierarchy.
 - Workflow affected: Admin/config, putaway, transfers, inventory visibility.
 - Severity (Critical / High / Medium / Low): Low.
