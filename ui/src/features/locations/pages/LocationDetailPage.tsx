@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useAuth } from '@shared/auth'
 import { useLocation, useLocationInventorySummary } from '../queries'
 import type { ApiError } from '../../../api/types'
 import { formatDate, formatNumber } from '@shared/formatters'
@@ -9,7 +10,15 @@ import { ActiveFiltersSummary, Banner, ContextRail, DataTable, EmptyState, Entit
 export default function LocationDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
   const [showEdit, setShowEdit] = useState(false)
+
+  const canEditLocation = hasPermission('masterdata:write')
+
+  const handleRequestEditLocation = () => {
+    if (!canEditLocation) return
+    setShowEdit(true)
+  }
 
   const locationQuery = useLocation(id, {
     retry: (count, err: ApiError) => err?.status !== 404 && count < 1,
@@ -111,7 +120,7 @@ export default function LocationDetailPage() {
           <Panel
             title="Edit location"
             description="Master data changes should remain isolated from inventory review."
-            actions={<Button variant="secondary" size="sm" onClick={() => setShowEdit((v) => !v)}>{showEdit ? 'Hide form' : 'Edit location'}</Button>}
+            actions={<Button variant="secondary" size="sm" onClick={showEdit ? () => setShowEdit(false) : handleRequestEditLocation} disabled={!showEdit && !canEditLocation}>{showEdit ? 'Hide form' : 'Edit location'}</Button>}
           >
             {showEdit ? (
               <LocationForm
@@ -125,7 +134,7 @@ export default function LocationDetailPage() {
               <EmptyState
                 title="Edit form hidden"
                 description="Open the edit form when you need to change location metadata."
-                action={<Button variant="secondary" size="sm" onClick={() => setShowEdit(true)}>Edit location</Button>}
+                action={<Button variant="secondary" size="sm" onClick={handleRequestEditLocation} disabled={!canEditLocation}>Edit location</Button>}
               />
             )}
           </Panel>

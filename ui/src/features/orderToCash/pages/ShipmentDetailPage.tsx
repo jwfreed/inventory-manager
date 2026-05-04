@@ -77,6 +77,16 @@ export default function ShipmentDetailPage() {
     return canPostShipment && !query.data.inventoryMovementId && query.data.status !== 'posted' && lines.length > 0
   }, [canPostShipment, lines.length, query.data])
 
+  const handleRequestPost = () => {
+    if (!canPost) return
+    setConfirmPostOpen(true)
+  }
+
+  const handleConfirmPost = () => {
+    if (!canPostShipment) return
+    postMutation.mutate()
+  }
+
   const copyId = async () => {
     if (!id) return
     try {
@@ -100,7 +110,7 @@ export default function ShipmentDetailPage() {
               Copy ID
             </Button>
             {canPostShipment ? (
-              <Button size="sm" disabled={!canPost} onClick={() => setConfirmPostOpen(true)}>
+              <Button size="sm" disabled={!canPost} onClick={handleRequestPost}>
                 Post shipment
               </Button>
             ) : null}
@@ -253,10 +263,7 @@ export default function ShipmentDetailPage() {
               Back
             </Button>
             <Button
-              onClick={() => {
-                if (!canPostShipment) return
-                postMutation.mutate()
-              }}
+              onClick={handleConfirmPost}
               disabled={postMutation.isPending}
             >
               {postMutation.isPending ? 'Posting...' : 'Confirm post'}

@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useItemsList, useItemsMetrics } from '../queries'
 import { useInventorySnapshotSummary } from '../../inventory/queries'
 import { formatDate, formatNumber } from '@shared/formatters'
-import { useAuth } from '../../../lib/useAuth'
+import { useAuth } from '@shared/auth'
 import type { Item } from '../../../api/types'
 import type { ItemMetrics } from '../api/items'
 import { ItemForm } from '../components/ItemForm'
@@ -103,9 +103,16 @@ export default function ItemsListPage() {
   const [searchParams] = useSearchParams()
   const { hideTitle } = usePageChrome()
 
-  const { user } = useAuth()
+  const { user, hasPermission } = useAuth()
   const { progress, markTipShown } = useOnboarding()
   const baseCurrency = user?.baseCurrency ?? 'THB'
+
+  const canCreateItem = hasPermission('masterdata:write')
+
+  const handleRequestCreate = () => {
+    if (!canCreateItem) return
+    setShowCreate(true)
+  }
 
   const [lifecycleStatus, setLifecycleStatus] = useState('Active')
   const [search, setSearch] = useState('')
@@ -520,7 +527,7 @@ export default function ItemsListPage() {
             Browse items or add new ones. Use filters to narrow the list.
           </p>
         </div>
-        <Button size="sm" onClick={() => setShowCreate(true)}>
+        <Button size="sm" onClick={handleRequestCreate} disabled={!canCreateItem}>
           New item
         </Button>
       </div>

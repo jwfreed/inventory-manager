@@ -51,6 +51,11 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
     if (!canActivateBom || !pendingActivation) return
     activateMutation.mutate(pendingActivation.id)
   }
+
+  const handleRequestActivation = (version: Bom['versions'][number]) => {
+    if (!canInitiateBomActivation) return
+    setPendingActivation(version)
+  }
   const activeVersion = useMemo(
     () => bom.versions.find((version) => version.status === 'active'),
     [bom.versions],
@@ -96,7 +101,7 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
                 {version.status !== 'active' && (
                   <Button
                     size="sm"
-                    onClick={() => setPendingActivation(version)}
+                    onClick={() => handleRequestActivation(version)}
                     disabled={!canInitiateBomActivation || activateMutation.isPending}
                   >
                     Activate

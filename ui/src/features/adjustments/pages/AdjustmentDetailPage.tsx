@@ -378,6 +378,11 @@ export default function AdjustmentDetailPage() {
     postMutation.mutate()
   }
 
+  const handleConfirmCancelAdjustment = () => {
+    if (!canWriteAdjustment) return
+    cancelMutation.mutate()
+  }
+
   const openCorrectionModal = () => {
     if (!hasPermission('inventory:adjustments:post')) return
     if (!adjustmentQuery.data) return
@@ -824,7 +829,7 @@ export default function AdjustmentDetailPage() {
             <Button variant="secondary" onClick={() => setShowCancelConfirm(false)}>
               Keep draft
             </Button>
-            <Button variant="danger" onClick={() => cancelMutation.mutate()}>
+            <Button variant="danger" onClick={handleConfirmCancelAdjustment}>
               Cancel draft
             </Button>
           </div>
