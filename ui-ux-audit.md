@@ -1,14 +1,17 @@
 # UI/UX Audit
 
-Audit scope: source inspection of React UI routes, shared UI components, and domain invariant documentation. No visual screenshot claims are made.
+Audit scope: source inspection of React UI routes, shared UI components, domain invariant documentation, and backend/API enforcement paths. No visual screenshot claims are made.
+
+Severity distinguishes UI-driven operational risk from backend data-integrity risk. Where backend services already fail closed, the finding remains valid as a usability or operator-error risk but is not treated as direct inventory corruption risk.
 
 ## Finding 1: QC hold/reject can be recorded without a required reason
 
 - Finding: The QC detail form labels hold/reject reason code as optional, and `canRecordQc` is based on selected line, remaining quantity, and quantity validity rather than reason presence. The context sends `reasonCode` only when trimmed.
-- Evidence (file path, component, function): `ui/src/features/receiving/components/QcDetailPanel.tsx`, `QcDetailPanel`, lines 225-234 label "Reason code (optional)" for hold/reject; `ui/src/features/receiving/context/ReceivingContext.tsx`, `canRecordQc` and `onCreateQcEvent`, lines 639-641 and 1014-1025.
-- Operational impact: Operators can move received stock into hold or reject states without an auditable reason, weakening quarantine/rejection investigation and recall defensibility.
+- Evidence (file path, component, function): `ui/src/features/receiving/components/QcDetailPanel.tsx`, `QcDetailPanel`, lines 225-234 label "Reason code (optional)" for hold/reject; `ui/src/features/receiving/context/ReceivingContext.tsx`, `canRecordQc` and `onCreateQcEvent`, lines 639-641 and 1014-1025; `src/schemas/qc.schema.ts`, `qcEventSchema.reasonCode` optional.
+- Backend Invariant Status: Not enforced. Backend validates QC source, UOM, quantity limits, and destination roles, but does not require a reason code for hold/reject.
+- Operational impact: Operators can move received stock into hold or reject states without an auditable reason, weakening quarantine/rejection investigation and recall defensibility. This is primarily an auditability gap, not an immediate stock-balance corruption path.
 - Workflow affected: QC (accept / reject / hold), receiving, traceability.
-- Severity (Critical / High / Medium / Low): Critical.
+- Severity (Critical / High / Medium / Low): High.
 - Recommendation: Require reason code for `hold` and `reject`; keep `accept` reason optional. Show inline validation before enabling "Record QC" and apply the same rule to keyboard and bulk paths.
 - Effort (S/M/L): S.
 - Verification method: Unit/UI test for hold/reject disabled until reason exists; keyboard shortcut and bulk-action tests; API payload assertion that hold/reject sends reason.
@@ -16,10 +19,11 @@ Audit scope: source inspection of React UI routes, shared UI components, and dom
 ## Finding 2: QC bulk and keyboard actions rely on native prompts and shortcuts for high-impact state changes
 
 - Finding: Bulk hold/reject and keyboard hold/reject use `window.prompt`; quick accept uses the `A` shortcut to accept all remaining quantity on the selected line. Native prompts do not show line summaries, quantities, UOM, existing hold/reject state, or structured validation.
-- Evidence (file path, component, function): `ui/src/features/receiving/pages/QcClassificationPage.tsx`, `handleBulkAction` lines 35-49; keyboard shortcuts lines 55-104; `ui/src/features/receiving/components/QcDetailPanel.tsx`, quick accept lines 131-147.
-- Operational impact: A time-pressured operator can bulk-classify or accept the wrong selected lines with little review context. This can make uninspected or defective stock eligible for putaway or remove usable stock from flow.
+- Evidence (file path, component, function): `ui/src/features/receiving/pages/QcClassificationPage.tsx`, `handleBulkAction` lines 35-49; keyboard shortcuts lines 55-104; `ui/src/features/receiving/hooks/useKeyboardShortcuts.ts`, window-level shortcut listener lines 37-77; `ui/src/features/receiving/components/QcDetailPanel.tsx`, quick accept lines 131-147.
+- Backend Invariant Status: Partially enforced. Backend prevents over-QC, UOM mismatch, invalid QC sources, and invalid QC destinations, but it does not enforce structured operator review or required hold/reject reason.
+- Operational impact: A time-pressured operator can bulk-classify or accept the wrong selected lines with little review context. Backend guards reduce stock-integrity risk, but the UI still increases wrong-line classification and audit-quality risk.
 - Workflow affected: QC (accept / reject / hold), putaway.
-- Severity (Critical / High / Medium / Low): Critical.
+- Severity (Critical / High / Medium / Low): High.
 - Recommendation: Replace prompts with an application modal that lists selected receipt lines, item, quantity, UOM, current QC totals, destination state, required reason, and explicit confirm. For shortcuts, require focus inside the QC workspace and show a review step for anything except single-line accept.
 - Effort (S/M/L): M.
 - Verification method: Playwright/RTL tests for bulk hold/reject modal content, required reason, and shortcut scope; keyboard tests ensuring no mutation occurs outside the focused QC workspace.
@@ -27,10 +31,11 @@ Audit scope: source inspection of React UI routes, shared UI components, and dom
 ## Finding 3: Putaway posting is direct from button and Ctrl+P without an inventory-impact confirmation
 
 - Finding: Draft putaway creation has validation warnings, but posting an existing putaway directly calls `postPutawayMutation.mutate(ctx.putawayId)` from the button and `Ctrl+P` shortcut. The confirmation state shown after completion cannot prevent the post.
-- Evidence (file path, component, function): `ui/src/features/receiving/pages/PutawayPlanningPage.tsx`, keyboard shortcut lines 88-95; post button lines 437-446; completion copy lines 137-140.
-- Operational impact: Posting putaway moves accepted stock into storage and makes it available. A wrong destination or quantity becomes operational truth before the operator reviews a final source/destination movement summary.
+- Evidence (file path, component, function): `ui/src/features/receiving/pages/PutawayPlanningPage.tsx`, keyboard shortcut lines 88-95; post button lines 437-446; completion copy lines 137-140; backend posting checks in `src/services/putaways.service.ts` lines 629-709 and route error mapping in `src/routes/putaways.routes.ts` lines 138-203.
+- Backend Invariant Status: Enforced. Backend validates QC availability, accepted quantity limits, source stock, voided receipts, negative override policy, idempotency, and replay integrity.
+- Operational impact: A wrong destination can still become operational truth if the operator posts before reviewing all source/destination movements. Backend prevents impossible or over-quantity stock states, so the remaining risk is UI-driven misposting rather than backend data corruption.
 - Workflow affected: Putaway, inventory visibility.
-- Severity (Critical / High / Medium / Low): Critical.
+- Severity (Critical / High / Medium / Low): High.
 - Recommendation: Add a post confirmation modal showing every line, from location, to location, quantity, UOM, blocked/hold status, and resulting availability. Disable Ctrl+P until the same review state is open.
 - Effort (S/M/L): M.
 - Verification method: UI test that "Post putaway" opens preview first; test direct shortcut cannot post without preview; mutation mock verifies confirmed payload only.
@@ -38,8 +43,9 @@ Audit scope: source inspection of React UI routes, shared UI components, and dom
 ## Finding 4: Transfer posting lacks source availability context before mutation
 
 - Finding: The transfer screen validates required fields, positive quantity, UOM, and source/destination difference, but it does not display on-hand, available, allocated/on-hold/in-transit, or source shortages for the selected item/location before "Post transfer".
-- Evidence (file path, component, function): `ui/src/features/inventory/pages/InventoryTransferCreatePage.tsx`, `validateTransferForm` lines 97-115 and mutation lines 67-78; `ui/src/features/inventory/components/InventoryTransferForm.tsx`, fields and submit button lines 45-130.
-- Operational impact: Operators must guess whether the source can support the move and learn from backend failure. In a warehouse, this increases trial-and-error and can cause wrong source selection under time pressure.
+- Evidence (file path, component, function): `ui/src/features/inventory/pages/InventoryTransferCreatePage.tsx`, `validateTransferForm` lines 97-115 and mutation lines 67-78; `ui/src/features/inventory/components/InventoryTransferForm.tsx`, fields and submit button lines 45-130; backend transfer validation in `src/routes/transfers.routes.ts` lines 90-156 and `src/services/stockValidation.service.ts` lines 175-228.
+- Backend Invariant Status: Enforced. Backend validates source/destination, positive quantity, stock availability, negative override policy, ATP locks, idempotency, and replay integrity.
+- Operational impact: Operators must guess whether the source can support the move and learn from backend failure. In a warehouse, this increases trial-and-error and can cause wrong source selection under time pressure, even though backend rejects unavailable transfers.
 - Workflow affected: Transfers, inventory visibility.
 - Severity (Critical / High / Medium / Low): High.
 - Recommendation: After item/source selection, show a source stock panel with on-hand, available, allocated, on-hold/quarantined, in-transit, and projected remaining after transfer. Keep backend rejection, but make the UI prevent obvious unavailable transfers.
@@ -49,41 +55,45 @@ Audit scope: source inspection of React UI routes, shared UI components, and dom
 ## Finding 5: Shipment creation allows free-text ship-from and unbounded ship quantities
 
 - Finding: Sales order detail uses a free-text `shipFromLocationId` input and enables shipment creation when any line quantity is greater than zero. The UI does not bound ship quantity by order quantity, backorder, reservation state, or available stock before creating the shipment document.
-- Evidence (file path, component, function): `ui/src/features/orderToCash/pages/SalesOrderDetailPage.tsx`, `canCreateShipment` lines 196-201; ship-from input lines 327-334; line quantity input lines 424-438; create mutation payload lines 113-135.
-- Operational impact: Operators can create shipment documents with mistyped source IDs or quantities that exceed demand/reservation readiness, pushing errors downstream to posting or creating misleading draft shipments.
+- Evidence (file path, component, function): `ui/src/features/orderToCash/pages/SalesOrderDetailPage.tsx`, `canCreateShipment` lines 196-201; ship-from input lines 327-334; line quantity input lines 424-438; create mutation payload lines 113-135; backend shipment schema and posting paths in `src/schemas/orderToCash.schema.ts` lines 80-94 and `src/services/orderToCash.service.ts` lines 1733-1955 and 2038-2675.
+- Backend Invariant Status: Partially enforced. Backend requires UUID-shaped location IDs, validates warehouse scope, enforces sellable ship-from and stock availability at shipment posting, and handles reservation state transitions. The reviewed code did not show a create-time cap against open order demand.
+- Operational impact: Operators can create misleading draft shipment documents with mistyped-looking IDs rejected by backend or with quantities above demand/readiness. Final posting is protected by backend stock and state checks, so the principal risk is erroneous draft work and possible over-shipment if demand caps remain unenforced.
 - Workflow affected: Pick / pack / ship, allocation.
-- Severity (Critical / High / Medium / Low): Critical.
+- Severity (Critical / High / Medium / Low): High.
 - Recommendation: Replace free-text ship-from with location search/select, display line-level ordered/backorder/reserved/allocated/available quantities, and cap or warn on ship quantities above open demand or available allocated stock.
 - Effort (S/M/L): M.
 - Verification method: UI test for location selector; line quantity tests for over-order and over-available states; mutation test that invalid quantities do not call `createShipment`.
 
 ## Finding 6: ATP screen copy simplifies available-to-promise as on-hand minus reservations
 
-- Finding: The ATP page description says "on-hand minus reservations"; it does not mention holds/quarantine, blocked locations, in-transit, or other unavailable states.
-- Evidence (file path, component, function): `ui/src/features/inventory/pages/AtpQueryPage.tsx`, page description lines 45-49; ATP columns lines 140-150 and results lines 172-180.
-- Operational impact: Users may equate ATP with a simple arithmetic shortcut and make allocation decisions that ignore hold/quarantine or location constraints, especially when viewing all locations.
+- Finding: The ATP page description says "on-hand minus reservations"; it does not mention allocated quantity, sellable-location filtering, holds/quarantine, blocked locations, in-transit, or other unavailable states.
+- Evidence (file path, component, function): `ui/src/features/inventory/pages/AtpQueryPage.tsx`, page description lines 45-49; ATP columns lines 140-150 and results lines 172-180; backend ATP service reads `inventory_available_location_sellable_v` and includes allocated quantity in `src/services/atp.service.ts` lines 75-155.
+- Backend Invariant Status: Enforced. Backend ATP calculation uses the sellable availability view and includes allocated quantities; the issue is incomplete UI explanation and omitted visible columns.
+- Operational impact: Users may equate ATP with a simple arithmetic shortcut and make allocation decisions that ignore allocated or excluded stock states. Backend calculation remains authoritative, but the UI copy teaches an unsafe mental model.
 - Workflow affected: Inventory visibility, allocation, pick / pack / ship.
-- Severity (Critical / High / Medium / Low): High.
-- Recommendation: Change explanatory copy to "ledger-backed availability after reservations and blocking states"; show blocked/hold/in-transit columns or an explicit "excluded from ATP" note when available.
+- Severity (Critical / High / Medium / Low): Medium.
+- Recommendation: Change explanatory copy to "ledger-backed sellable availability after reservations, allocations, and excluded states"; show allocated and excluded-state explanation or columns when API data supports it.
 - Effort (S/M/L): S.
 - Verification method: Copy assertion in UI test; fixture showing held/in-transit stock with ATP lower than on-hand and visible explanation.
 
-## Finding 7: Cycle count posting does not expose line-level variance reasoning before adjustment
+## Finding 7: Cycle count posting does not expose line-level variance consequences before adjustment
 
-- Finding: Count lines accept optional reason codes and notes, while the post confirmation shows only aggregate variance count and total absolute variance. The UI does not require reasons for variance lines or show per-line book-vs-count adjustment consequences before posting.
-- Evidence (file path, component, function): `ui/src/features/inventory/components/InventoryCountForm.tsx`, reason code field lines 200-206; `ui/src/features/inventory/pages/InventoryCountDetailPage.tsx`, save payload maps empty reason to undefined lines 126-137; post modal aggregate-only copy lines 347-368.
-- Operational impact: Physical/recorded divergence can be converted into an authoritative adjustment without enough operator investigation context, making later reconciliation harder.
+- Finding: Count lines accept optional reason codes during draft entry, and the post confirmation shows only aggregate variance count and total absolute variance. The UI does not show per-line book-vs-count adjustment consequences before posting.
+- Evidence (file path, component, function): `ui/src/features/inventory/components/InventoryCountForm.tsx`, reason code field lines 200-206; `ui/src/features/inventory/pages/InventoryCountDetailPage.tsx`, save payload maps empty reason to undefined lines 126-137; post modal aggregate-only copy lines 347-368; backend reason and cost enforcement in `src/services/counts.service.ts` lines 910-935 and 1472-1485.
+- Backend Invariant Status: Enforced. Backend rejects non-zero count variances without reason code, requires unit cost for positive variances, applies reconciliation thresholds, and validates stock for negative variances.
+- Operational impact: Operators cannot review which items/locations will be adjusted from the final confirmation. Backend prevents reasonless variance posting, so this is a confirmation and cognitive-load risk rather than an unsupported adjustment path.
 - Workflow affected: Cycle counting / reconciliation, inventory visibility.
-- Severity (Critical / High / Medium / Low): Critical.
-- Recommendation: Show a variance review table before post with item, location, UOM, book quantity, counted quantity, delta, adjustment direction, unit cost requirement, and required reason for every variance line.
+- Severity (Critical / High / Medium / Low): Medium.
+- Recommendation: Show a variance review table before post with item, location, UOM, book quantity, counted quantity, delta, adjustment direction, unit cost requirement, and reason for every variance line.
 - Effort (S/M/L): M.
-- Verification method: UI test that post confirm lists variance lines and disables confirm until each variance has a reason; API payload test for reason propagation.
+- Verification method: UI test that post confirm lists variance lines and exposes missing backend-required fields before the backend rejection path; API test remains as guard for reason enforcement.
 
-## Finding 8: On-hand import can be applied without lot/serial support or final review
+## Finding 8: On-hand import can be applied for tracked items without lot/serial support or final review
 
-- Finding: The admin import supports `on_hand` snapshots with required `sku`, `locationCode`, `uom`, and `quantity`, explicitly says lots/serials are not supported, and applies valid imports directly from the validation results card.
-- Evidence (file path, component, function): `ui/src/features/admin/pages/ImportDataPage.tsx`, import field definition lines 31-34; support warning lines 208-214; validate/apply actions lines 343-349; `onApply` lines 132-153.
-- Operational impact: Bulk stock onboarding or correction can create stock records that omit lot/serial traceability for tracked items, and a single click after validation can commit many rows without a final stock-impact summary.
+- Finding: The admin import supports `on_hand` snapshots with required `sku`, `locationCode`, `uom`, and `quantity`, explicitly says lots/serials are not supported, and applies valid imports directly from the validation results card. Backend rejects lot/serial columns but does not block tracked items from on-hand import when those columns are absent.
+- Evidence (file path, component, function): `ui/src/features/admin/pages/ImportDataPage.tsx`, import field definition lines 31-34; support warning lines 208-214; validate/apply actions lines 343-349; `onApply` lines 132-153; backend import validation and apply logic in `src/routes/imports.routes.ts` lines 53-108 and `src/services/imports.service.ts` lines 422-453 and 636-693.
+- Backend Invariant Status: Not enforced. Backend blocks unsupported lot/serial columns but does not exclude existing lot/serial-tracked items from the on-hand snapshot path; it applies imports by creating and posting inventory counts.
+- Operational impact: Bulk stock onboarding or correction can create on-hand stock for tracked items without lot/serial trace attributes, and a single click after validation can commit many rows without a final stock-impact summary.
 - Workflow affected: Admin/config, inventory visibility, traceability, cycle counting/reconciliation.
 - Severity (Critical / High / Medium / Low): Critical.
 - Recommendation: Block on-hand import for lot/serial tracked items until lot/serial columns are supported, or route those rows to an exception queue. Add an apply confirmation summarizing rows, locations, net quantity impact, tracked-item exclusions, and movement/adjustment consequences.
@@ -92,8 +102,9 @@ Audit scope: source inspection of React UI routes, shared UI components, and dom
 
 ## Finding 9: No dedicated traceability route is exposed for lot, serial, recall, or forward/backward trace
 
-- Finding: The UI route registry includes movements and QC events but no route for lots, recalls, or trace runs. Backend traceability/compliance services exist.
-- Evidence (file path, component, function): `ui/src/app/routeData.tsx`, `appShellRoutes` imports and route list lines 1-56; `ui/src/features/receiving/routes.tsx`, QC event detail route lines 120-132; backend services `src/services/compliance.service.ts` and `src/services/lotTraceabilityEngine.ts`.
+- Finding: The UI route registry includes movements and QC events but no route for lots, recalls, or trace runs. Backend traceability/compliance services and routes exist.
+- Evidence (file path, component, function): `ui/src/app/routeData.tsx`, `appShellRoutes` imports and route list lines 1-56; `ui/src/features/receiving/routes.tsx`, QC event detail route lines 120-132; backend routes/services `src/routes/compliance.routes.ts`, `src/services/compliance.service.ts`, and `src/services/lotTraceabilityEngine.ts`.
+- Backend Invariant Status: Partially enforced. Backend capabilities exist for lots, recall cases, movement lot allocations, and trace runs, but no app-shell UI route exposes an operator workflow for direct trace or recall execution.
 - Operational impact: During recall, supplier defect investigation, or lot genealogy review, users must infer traceability through receipt, movement, and QC screens instead of executing a direct trace workflow.
 - Workflow affected: Traceability, receiving, production reporting/backflush, shipping.
 - Severity (Critical / High / Medium / Low): High.
@@ -104,8 +115,9 @@ Audit scope: source inspection of React UI routes, shared UI components, and dom
 ## Finding 10: Disabled action explanations are often stored only in `title`
 
 - Finding: Reservation list/detail buttons pass guard messages through the HTML `title` attribute, which is not reliable for keyboard or touch users and is easy to miss during scanning.
-- Evidence (file path, component, function): `ui/src/features/orderToCash/pages/ReservationsListPage.tsx`, disabled allocate/cancel buttons with `title` lines 228-244; `ui/src/features/orderToCash/pages/ReservationDetailPage.tsx`, action buttons with `title` lines 286-320.
-- Operational impact: Operators can see unavailable actions but may not understand the required next step, increasing dead-end behavior and support escalation.
+- Evidence (file path, component, function): `ui/src/features/orderToCash/pages/ReservationsListPage.tsx`, disabled allocate/cancel buttons with `title` lines 228-244; `ui/src/features/orderToCash/pages/ReservationDetailPage.tsx`, action buttons with `title` lines 286-320; policy text in `ui/src/features/orderToCash/lib/reservationActionPolicy.ts` lines 20-60.
+- Backend Invariant Status: Enforced. Backend reservation transitions reject invalid allocate/cancel/fulfill states and require idempotency keys.
+- Operational impact: Operators can see unavailable actions but may not understand the required next step, increasing dead-end behavior and support escalation. Backend protects invalid transitions, so this is an accessibility and recovery issue.
 - Workflow affected: Allocation, pick / pack / ship.
 - Severity (Critical / High / Medium / Low): Medium.
 - Recommendation: Use visible `ActionGuardMessage` or inline blocked-state text per row/action; keep `title` only as a supplement.
@@ -116,6 +128,7 @@ Audit scope: source inspection of React UI routes, shared UI components, and dom
 
 - Finding: `DataTable` supports rows, columns, keyboard navigation, row actions, and row state, but no sortable headers or built-in filter affordances. Several operational screens use plain tables or `DataTable` for long lists.
 - Evidence (file path, component, function): `ui/src/shared/ui/DataTable.tsx`, props lines 23-45 and table header rendering lines 185-207; `ui/src/components/Table.tsx`, simple table props lines 4-21; examples include `ReceiptLinesTable`, `ReservationsListPage`, and `ShipmentDetailPage`.
+- Backend Invariant Status: Enforced. Backend invariants are not directly affected by table affordances; this is a UI discoverability and exception-scanning issue.
 - Operational impact: Operators working under time pressure must scan sequentially to find exceptions unless each page hand-builds filters. This increases missed discrepancies, wrong-line selection, and slow exception handling.
 - Workflow affected: Receiving, QC, inventory visibility, allocation, pick / pack / ship, traceability.
 - Severity (Critical / High / Medium / Low): Medium.
@@ -126,7 +139,8 @@ Audit scope: source inspection of React UI routes, shared UI components, and dom
 ## Finding 12: Purchase order creation can submit for approval without a confirmation step
 
 - Finding: PO detail uses a submit confirmation alert, but PO creation directly calls `submitPo('submitted')` from the create screen button once client readiness is satisfied.
-- Evidence (file path, component, function): `ui/src/features/purchaseOrders/pages/PurchaseOrderCreatePage.tsx`, create submit button lines 337-343; `PurchaseOrderDetailPage` confirmation alert lines 486-507.
+- Evidence (file path, component, function): `ui/src/features/purchaseOrders/pages/PurchaseOrderCreatePage.tsx`, create submit button lines 337-343; `PurchaseOrderDetailPage` confirmation alert lines 486-507; backend submit-readiness validation in `src/services/purchaseOrders.service.ts` lines 215-234.
+- Backend Invariant Status: Enforced. Backend validates PO readiness before creating submitted/approved POs.
 - Operational impact: A user creating a PO can take the faster visible path and commit a buying/receiving workflow without reviewing the lock/approval consequence in the same way as detail-page submission.
 - Workflow affected: Purchasing / PO creation, receiving.
 - Severity (Critical / High / Medium / Low): Medium.
@@ -137,17 +151,18 @@ Audit scope: source inspection of React UI routes, shared UI components, and dom
 ## Finding 13: Admin location parent selection uses raw ID input
 
 - Finding: Location form asks for "Parent Location ID" as free text rather than a constrained location selector.
-- Evidence (file path, component, function): `ui/src/features/locations/components/LocationForm.tsx`, `parentLocationId` state lines 24-31 and parent input lines 116-124.
-- Operational impact: A mistyped parent ID can create invalid or confusing warehouse hierarchy, making putaway, transfer filtering, and location-scoped inventory review harder for operators.
+- Evidence (file path, component, function): `ui/src/features/locations/components/LocationForm.tsx`, `parentLocationId` state lines 24-31 and parent input lines 116-124; backend schema and route handling in `src/schemas/masterData.schema.ts` lines 81-95 and `src/routes/masterData.routes.ts` lines 209-248 and 293-324.
+- Backend Invariant Status: Partially enforced. Backend requires UUID shape, rejects nonexistent parent IDs through foreign-key handling, and blocks direct self-parent references. It does not prevent choosing a valid but operationally wrong parent.
+- Operational impact: Malformed or nonexistent parent IDs are rejected, but a valid wrong parent can create a confusing warehouse hierarchy, making putaway, transfer filtering, and location-scoped inventory review harder for operators.
 - Workflow affected: Admin/config, putaway, transfers, inventory visibility.
-- Severity (Critical / High / Medium / Low): Medium.
+- Severity (Critical / High / Medium / Low): Low.
 - Recommendation: Use a searchable location selector constrained to valid parent candidates and show resulting path/depth before saving.
 - Effort (S/M/L): S.
 - Verification method: UI test for parent selector options, invalid parent prevention, and path preview after selection.
 
 ## Workflow Coverage Self-Check
 
-- Purchasing / PO creation: Findings 12 and route inventory.
+- Purchasing / PO creation: Finding 12 and route inventory.
 - Receiving: Findings 1, 2, 3 and route inventory.
 - QC accept / reject / hold: Findings 1 and 2.
 - Putaway: Finding 3.
