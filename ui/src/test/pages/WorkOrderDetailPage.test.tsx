@@ -5,6 +5,14 @@ import WorkOrderDetailPage from '@features/workOrders/pages/WorkOrderDetailPage'
 import { renderWithQueryClient } from '../testUtils'
 import type { WorkOrder } from '@api/types'
 
+let authPermissions: string[] = ['production:write']
+
+vi.mock('@shared/auth', () => ({
+  useAuth: () => ({
+    hasPermission: (permission: string) => authPermissions.includes(permission),
+  }),
+}))
+
 vi.mock('@features/workOrders/components/WorkOrderHeader', () => ({
   WorkOrderHeader: () => <div>__work_order_header__</div>,
 }))
@@ -139,6 +147,7 @@ function renderPage() {
 describe('WorkOrderDetailPage tabs', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authPermissions = ['production:write']
     mockedUseItem.mockReturnValue({ data: { id: 'item-1', defaultLocationId: null } } as any)
     mockedUseItemsList.mockReturnValue({ data: { data: [] } } as any)
     mockedUseBom.mockReturnValue({ data: undefined, refetch: vi.fn() } as any)
@@ -414,5 +423,120 @@ describe('WorkOrderDetailPage tabs', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'requirements', 'wo-1'] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['work-orders', 'disassembly-plan', 'wo-1'] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['movements'] })
+  })
+
+  it('hides Close Work Order button when production:write permission is absent', async () => {
+    authPermissions = []
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.queryByRole('button', { name: 'Close Work Order' })).not.toBeInTheDocument()
+  })
+
+  it('opens Close Work Order modal for authorized user and submits', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Close Work Order' }))
+    expect(screen.getByText('Close Work Order?')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Close Work Order' }))
+
+    await screen.findByText('Lifecycle updated')
+    expect(mockedCloseWorkOrder).toHaveBeenCalledWith('wo-1')
+  })
+
+  it('hides Cancel Work Order button when production:write permission is absent', async () => {
+    authPermissions = []
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'ready' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.queryByRole('button', { name: 'Cancel Work Order' })).not.toBeInTheDocument()
+  })
+
+  it('does not open cancel modal when production:write permission is absent', async () => {
+    authPermissions = []
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'ready' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.queryByText('Cancel Work Order WO-0001?')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancel Work Order' })).not.toBeInTheDocument()
+  })
+
+  it('hides Ready Work Order button when production:write permission is absent', async () => {
+    authPermissions = []
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'draft' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.queryByRole('button', { name: 'Ready Work Order' })).not.toBeInTheDocument()
+  })
+
+  it('shows Cancel Work Order button and opens modal for authorized user', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'ready' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel Work Order' }))
+    expect(screen.getByText('Cancel Work Order WO-0001?')).toBeInTheDocument()
+  })
+
+  it('shows Ready Work Order button for authorized user', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'draft' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.getByRole('button', { name: 'Ready Work Order' })).toBeInTheDocument()
   })
 })

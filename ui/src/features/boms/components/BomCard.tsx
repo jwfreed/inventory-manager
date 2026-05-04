@@ -44,7 +44,8 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
   }
 
   const bom = bomQuery.data
-  const canActivateBom = hasPermission('masterdata:write') && !!pendingActivation
+  const canInitiateBomActivation = hasPermission('masterdata:write')
+  const canActivateBom = canInitiateBomActivation && !!pendingActivation
 
   const handleActivateBom = () => {
     if (!canActivateBom || !pendingActivation) return
@@ -96,7 +97,7 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
                   <Button
                     size="sm"
                     onClick={() => setPendingActivation(version)}
-                    disabled={activateMutation.isPending}
+                    disabled={!canInitiateBomActivation || activateMutation.isPending}
                   >
                     Activate
                   </Button>

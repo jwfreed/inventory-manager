@@ -183,6 +183,11 @@ export default function InventoryCountDetailPage() {
     postMutation.mutate()
   }
 
+  const handleRequestPostConfirm = () => {
+    if (!canEditCount) return
+    setShowPostConfirm(true)
+  }
+
   if (countQuery.isLoading) {
     return <LoadingSpinner label="Loading inventory count..." />
   }
@@ -330,8 +335,8 @@ export default function InventoryCountDetailPage() {
           <div className="mt-4 flex justify-end">
             <Button
               size="sm"
-              onClick={() => setShowPostConfirm(true)}
-              disabled={postMutation.isPending}
+              onClick={handleRequestPostConfirm}
+              disabled={!canEditCount || postMutation.isPending}
             >
               Post count
             </Button>

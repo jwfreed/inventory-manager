@@ -179,6 +179,9 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
             {isEdit ? 'Save changes' : 'Create location'}
           </Button>
         </div>
+        {!canSaveLocation && (
+          <p className="text-xs text-slate-500">You need master data write permission to save locations.</p>
+        )}
       </form>
     </Card>
   )

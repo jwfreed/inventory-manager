@@ -248,3 +248,20 @@ jobs:
             kill "$(cat server.pid)" || true
           fi
           tail -200 server.log || true
+
+  ui-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    container:
+      image: node:22
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install root deps
+        run: npm ci
+      - name: Install UI deps
+        run: npm --prefix ui ci
+      - name: Run mutation guard scanner
+        run: npm --prefix ui run check:mutation-guards

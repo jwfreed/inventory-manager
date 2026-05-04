@@ -413,6 +413,14 @@ export default function WorkOrderDetailPage() {
     actionPolicy.canVoidRecentReport &&
     Boolean(voidReason.trim())
 
+  const canRequestVoid =
+    hasPermission('production:write') &&
+    !!workOrderQuery.data &&
+    actionPolicy.canVoidRecentReport &&
+    !!recentProductionReport
+
+  const hasProductionWritePermission = hasPermission('production:write')
+
   const canSwitchWorkOrderBom =
     hasPermission('production:write') &&
     !!workOrderQuery.data &&
@@ -443,9 +451,36 @@ export default function WorkOrderDetailPage() {
     closeMutation.mutate()
   }
 
+  const handleRequestCancel = () => {
+    if (!canCancelWorkOrder) return
+    setLifecycleMessage(null)
+    setLifecycleError(null)
+    setShowCancelConfirm(true)
+  }
+
+  const handleRequestClose = () => {
+    if (!canCloseWorkOrder) return
+    setLifecycleMessage(null)
+    setLifecycleError(null)
+    setShowCloseConfirm(true)
+  }
+
   const handleVoidConfirm = () => {
     if (!canVoidProductionReport) return
     voidMutation.mutate()
+  }
+
+  const handleRequestVoid = () => {
+    if (!canRequestVoid) return
+    setLifecycleMessage(null)
+    setLifecycleError(null)
+    setShowVoidConfirm(true)
+  }
+
+  const handleRequestBomSwitch = () => {
+    if (!canSwitchWorkOrderBom) return
+    setBomSwitchError(null)
+    setShowBomSwitchConfirm(true)
   }
 
   const handleSwitchBom = () => {
@@ -556,7 +591,7 @@ export default function WorkOrderDetailPage() {
           }
         />
       ) : null}
-      {!isDisassembly && activeVersionId && usedBomVersion && activeVersionId !== usedBomVersion.id ? (
+      {canSwitchWorkOrderBom ? (
         <Banner
           severity="action"
           title="Work order is using an older BOM version"
@@ -572,10 +607,7 @@ export default function WorkOrderDetailPage() {
               </Button>
               <Button
                 size="sm"
-                onClick={() => {
-                  setBomSwitchError(null)
-                  setShowBomSwitchConfirm(true)
-                }}
+                onClick={handleRequestBomSwitch}
               >
                 Switch to active
               </Button>
@@ -667,9 +699,9 @@ export default function WorkOrderDetailPage() {
                   </div>
                   {workOrderQuery.data ? (
                     <WorkOrderLifecycleActions
-                      canMarkReady={actionPolicy.canMarkReady}
-                      canCancel={actionPolicy.canCancel}
-                      canClose={actionPolicy.canClose}
+                      canMarkReady={canMarkReadyWorkOrder}
+                      canCancel={canCancelWorkOrder}
+                      canClose={canCloseWorkOrder}
                       cancelDisabledReason={actionPolicy.cancelDisabledReason}
                       closeDisabledReason={actionPolicy.closeDisabledReason}
                       isMarkReadyPending={readyMutation.isPending}
@@ -678,16 +710,8 @@ export default function WorkOrderDetailPage() {
                       lifecycleMessage={lifecycleMessage}
                       lifecycleError={lifecycleError}
                       onMarkReady={handleMarkReady}
-                      onRequestCancel={() => {
-                        setLifecycleMessage(null)
-                        setLifecycleError(null)
-                        setShowCancelConfirm(true)
-                      }}
-                      onRequestClose={() => {
-                        setLifecycleMessage(null)
-                        setLifecycleError(null)
-                        setShowCloseConfirm(true)
-                      }}
+                      onRequestCancel={handleRequestCancel}
+                      onRequestClose={handleRequestClose}
                     />
                   ) : null}
                 </div>
@@ -765,11 +789,14 @@ export default function WorkOrderDetailPage() {
                   <Button
                     size="sm"
                     onClick={handleSaveDescription}
-                    disabled={!hasDescriptionChanges || descriptionMutation.isPending}
+                    disabled={!canSaveWorkOrderDescription || descriptionMutation.isPending}
                   >
                     Save operator notes
                   </Button>
                 </div>
+                {!hasProductionWritePermission && workOrderQuery.data ? (
+                  <p className="text-xs text-slate-500">You need production write permission to save operator notes.</p>
+                ) : null}
                 {descriptionMutation.isError ? (
                   <Alert
                     variant="error"
@@ -922,10 +949,7 @@ export default function WorkOrderDetailPage() {
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => {
-                              setBomSwitchError(null)
-                              setShowBomSwitchConfirm(true)
-                            }}
+                            onClick={handleRequestBomSwitch}
                           >
                             Switch to active
                           </Button>
@@ -1014,15 +1038,11 @@ export default function WorkOrderDetailPage() {
                         Only the most recent report from this page session can be voided.
                       </div>
                     </div>
-                    {actionPolicy.canVoidRecentReport && recentProductionReport ? (
+                    {canRequestVoid ? (
                       <Button
                         size="sm"
                         variant="danger"
-                        onClick={() => {
-                          setLifecycleMessage(null)
-                          setLifecycleError(null)
-                          setShowVoidConfirm(true)
-                        }}
+                        onClick={handleRequestVoid}
                       >
                         Void Production Report
                       </Button>
@@ -1111,7 +1131,7 @@ export default function WorkOrderDetailPage() {
             <Button variant="secondary" size="sm" onClick={() => setShowCloseConfirm(false)}>
               Keep Open
             </Button>
-            <Button size="sm" onClick={handleCloseConfirm} disabled={closeMutation.isPending}>
+            <Button size="sm" onClick={handleCloseConfirm} disabled={!canCloseWorkOrder || closeMutation.isPending}>
               {closeMutation.isPending ? 'Closing...' : 'Confirm Close Work Order'}
             </Button>
           </div>
@@ -1127,6 +1147,9 @@ export default function WorkOrderDetailPage() {
           </div>
           {showCloseConfirm && lifecycleError ? (
             <Alert variant="error" title="Close failed" message={lifecycleError} />
+          ) : null}
+          {!hasProductionWritePermission ? (
+            <p className="text-xs text-slate-500">You need production write permission to close this work order.</p>
           ) : null}
         </div>
       </Modal>

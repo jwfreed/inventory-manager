@@ -100,13 +100,17 @@ export const WorkCentersPage: React.FC = () => {
           <button
             type="button"
             onClick={handleAddNew}
-            className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto"
+            disabled={!canWriteWorkCenters}
+            className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
           >
             <PlusIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
             Add Production Area
           </button>
         </div>
       </div>
+      {!canWriteWorkCenters && (
+        <p className="mt-2 text-xs text-gray-500">You need production write permission to add or edit production areas.</p>
+      )}
       {hasRows ? (
         <div className="mt-8 flex flex-col">
           <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
@@ -152,7 +156,8 @@ export const WorkCentersPage: React.FC = () => {
                         <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                           <button
                             onClick={() => handleEdit(wc)}
-                            className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-900"
+                            disabled={!canWriteWorkCenters}
+                            className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-900 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <PencilIcon className="h-4 w-4" aria-hidden="true" />
                             Edit
@@ -176,7 +181,8 @@ export const WorkCentersPage: React.FC = () => {
             <button
               type="button"
               onClick={handleAddNew}
-              className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              disabled={!canWriteWorkCenters}
+              className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Add Production Area
             </button>

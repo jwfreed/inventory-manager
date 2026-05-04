@@ -4,6 +4,14 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '../testUtils'
 import InventoryCountDetailPage from '@features/inventory/pages/InventoryCountDetailPage'
 
+let authPermissions: string[] = ['inventory:counts:write']
+
+vi.mock('@shared/auth', () => ({
+  useAuth: () => ({
+    hasPermission: (permission: string) => authPermissions.includes(permission),
+  }),
+}))
+
 vi.mock('@features/items/queries', () => ({
   useItemsList: vi.fn(),
 }))
@@ -68,6 +76,7 @@ function renderPage() {
 describe('InventoryCountDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authPermissions = ['inventory:counts:write']
     mockedUseItemsList.mockReturnValue({ data: { data: [] } } as any)
     mockedUseLocationsList.mockReturnValue({ data: { data: [] } } as any)
     mockedUseInventoryCount.mockReturnValue({
@@ -143,5 +152,26 @@ describe('InventoryCountDetailPage', () => {
     expect(screen.getByText('Posted at')).toBeInTheDocument()
     expect(screen.getByText('Count locked')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'View movement' })).toBeInTheDocument()
+  })
+
+  it('disables Post count button when inventory:counts:write permission is absent', async () => {
+    authPermissions = []
+
+    renderPage()
+
+    const postButton = await screen.findByRole('button', { name: 'Post count' })
+    expect(postButton).toBeDisabled()
+  })
+
+  it('does not open post confirm modal when inventory:counts:write permission is absent', async () => {
+    authPermissions = []
+
+    renderPage()
+
+    const postButton = await screen.findByRole('button', { name: 'Post count' })
+    fireEvent.click(postButton)
+
+    expect(screen.queryByText('Post inventory count?')).not.toBeInTheDocument()
+    expect(mockedPostInventoryCount).not.toHaveBeenCalled()
   })
 })

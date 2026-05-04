@@ -4,6 +4,8 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import DashboardPage from '@features/kpis/pages/DashboardPage'
 import { renderWithQueryClient } from '../testUtils'
 
+let authPermissions: string[] = ['planning:write']
+
 const { runDashboardKpisMock, useDashboardSignalsMock, useKpiRunsMock, mockKpiQueryKeys } = vi.hoisted(() => ({
   runDashboardKpisMock: vi.fn(),
   useDashboardSignalsMock: vi.fn(),
@@ -21,6 +23,7 @@ vi.mock('@shared/auth', () => ({
   useAuth: () => ({
     user: { id: 'user-1' },
     tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+    hasPermission: (permission: string) => authPermissions.includes(permission),
   }),
 }))
 
@@ -113,6 +116,7 @@ function baseSignalsResponse(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  authPermissions = ['planning:write']
   runDashboardKpisMock.mockReset()
   runDashboardKpisMock.mockResolvedValue({
     runId: 'run-2',
@@ -403,6 +407,51 @@ describe('DashboardPage', () => {
       expect(calledWith(mockKpiQueryKeys.fulfillmentFillRatePrefix())).toBe(true)
       expect(calledWith(mockKpiQueryKeys.replenishmentRecommendationsPrefix())).toBe(true)
       expect(calledWith(mockKpiQueryKeys.replenishmentPoliciesPrefix())).toBe(true)
+    })
+  })
+
+  describe('RBAC: Run KPI calculations guard', () => {
+    it('disables Run KPI calculations button without planning:write', () => {
+      authPermissions = []
+      renderWithQueryClient(
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>,
+      )
+      expect(screen.getByRole('button', { name: 'Run KPI calculations' })).toBeDisabled()
+    })
+
+    it('shows permission-denied helper text without planning:write', () => {
+      authPermissions = []
+      renderWithQueryClient(
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>,
+      )
+      expect(
+        screen.getByText('You need planning write permission to run KPI calculations.'),
+      ).toBeInTheDocument()
+    })
+
+    it('enables Run KPI calculations button with planning:write', () => {
+      authPermissions = ['planning:write']
+      renderWithQueryClient(
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>,
+      )
+      expect(screen.getByRole('button', { name: 'Run KPI calculations' })).not.toBeDisabled()
+    })
+
+    it('does not call runDashboardKpis when planning:write is missing', () => {
+      authPermissions = []
+      renderWithQueryClient(
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Run KPI calculations' }))
+      expect(runDashboardKpisMock).not.toHaveBeenCalled()
     })
   })
 })

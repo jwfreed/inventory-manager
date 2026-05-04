@@ -598,6 +598,9 @@ export default function DashboardPage() {
             </Button>
           }
         />
+        {!canRunKpis && (
+          <p className="text-xs text-slate-500">You need planning write permission to run KPI calculations.</p>
+        )}
         <Card>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div>
