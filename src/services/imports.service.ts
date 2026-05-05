@@ -759,10 +759,13 @@ export async function applyImportJob(params: {
     `SELECT COUNT(*)                                              AS total_rows,
             COUNT(*) FILTER (WHERE status = 'error')             AS error_rows,
             COUNT(*) FILTER (
-              WHERE (normalized->>'requiresLot')::boolean = true
-                AND COALESCE(TRIM(normalized->>'lotNumber'), '') = ''
-              OR  (normalized->>'requiresSerial')::boolean = true
-                AND COALESCE(TRIM(normalized->>'serialNumber'), '') = ''
+              WHERE (
+                ((normalized->>'requiresLot')::boolean = true
+                  AND COALESCE(TRIM(normalized->>'lotNumber'), '') = '')
+                OR
+                ((normalized->>'requiresSerial')::boolean = true
+                  AND COALESCE(TRIM(normalized->>'serialNumber'), '') = '')
+              )
             )                                                     AS tracked_violation_rows
        FROM import_job_rows
       WHERE job_id = $1 AND tenant_id = $2`,
@@ -770,7 +773,13 @@ export async function applyImportJob(params: {
   );
   const revalidatedTotalRows = Number(revalidationRes.rows[0]?.total_rows ?? 0);
   const revalidatedErrorRows = Number(revalidationRes.rows[0]?.error_rows ?? 0);
-  const revalidatedTrackedViolations = Number(revalidationRes.rows[0]?.tracked_violation_rows ?? 0);
+  // tracked_violation_rows is only meaningful for on_hand imports: items imports have
+  // requiresLot in normalized (item configuration) but never have lotNumber, so the
+  // FILTER would falsely match every lot-tracked item row for non-on_hand imports.
+  const revalidatedTrackedViolations =
+    job.type === 'on_hand'
+      ? Number(revalidationRes.rows[0]?.tracked_violation_rows ?? 0)
+      : 0;
 
   if (revalidatedTotalRows === 0) {
     throw new Error('IMPORT_NOT_VALIDATED');
@@ -1061,7 +1070,7 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
               `INSERT INTO inventory_movement_lots
                   (id, tenant_id, inventory_movement_line_id, lot_id, uom, quantity_delta, created_at)
                VALUES ($1, $2, $3, $4, $5, $6, now())
-               ON CONFLICT DO NOTHING`,
+               ON CONFLICT (tenant_id, inventory_movement_line_id, lot_id) DO NOTHING`,
               [uuidv4(), tenantId, movLine.id, lotId, movLine.uom, quantityDelta]
             );
           }
