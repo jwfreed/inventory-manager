@@ -628,3 +628,115 @@ async function waitForImportCompletion(harness, jobId, maxWaitMs = 10000) {
   }
   throw new Error(`Import job ${jobId} did not complete within ${maxWaitMs}ms`);
 }
+
+// ── item_id identity hardening tests ──────────────────────────────────────────
+
+test('serial-tracked valid rows always have item_id populated', async () => {
+  const harness = await createServiceHarness({ tenantPrefix: 'import-itemid-set' });
+  const item = await harness.createItem({
+    skuPrefix: 'ITEMID',
+    requiresSerial: true,
+    defaultLocationId: harness.topology.defaults.SELLABLE.id
+  });
+  const location = harness.topology.defaults.SELLABLE;
+  const upload = await createOnHandImport(
+    harness,
+    csv([{ sku: item.sku, locationCode: location.code, uom: 'each', quantity: '1', serialNumber: 'SN-001' }])
+  );
+  await validateOnHandImport(harness, upload.jobId, upload.suggestedMapping);
+
+  const res = await harness.pool.query(
+    `SELECT item_id, status
+       FROM import_job_rows
+      WHERE job_id = $1 AND status = 'valid'`,
+    [upload.jobId]
+  );
+  assert.ok(res.rows.length > 0, 'Must have at least one valid row');
+  for (const row of res.rows) {
+    assert.ok(row.item_id !== null, `item_id must not be null for valid serial row, got null`);
+    assert.equal(row.item_id, item.id);
+  }
+});
+
+test('DB CHECK prevents serial-tracked valid row from having item_id NULL', async () => {
+  const harness = await createServiceHarness({ tenantPrefix: 'import-itemid-null-check' });
+  const item = await harness.createItem({
+    skuPrefix: 'NULLCHK',
+    requiresSerial: true,
+    defaultLocationId: harness.topology.defaults.SELLABLE.id
+  });
+  const location = harness.topology.defaults.SELLABLE;
+  const upload = await createOnHandImport(
+    harness,
+    csv([{ sku: item.sku, locationCode: location.code, uom: 'each', quantity: '1', serialNumber: 'SN-CHK-001' }])
+  );
+  await validateOnHandImport(harness, upload.jobId, upload.suggestedMapping);
+
+  // Attempt to null-out item_id on a valid serial row — must violate the CHECK constraint.
+  const rowRes = await harness.pool.query(
+    `SELECT id FROM import_job_rows WHERE job_id = $1 AND status = 'valid' LIMIT 1`,
+    [upload.jobId]
+  );
+  const rowId = rowRes.rows[0]?.id;
+  assert.ok(rowId, 'Expected a valid row to tamper with');
+
+  await assert.rejects(
+    () => harness.pool.query(
+      `UPDATE import_job_rows SET item_id = NULL WHERE id = $1`,
+      [rowId]
+    ),
+    (err) => err.code === '23514', // check_violation
+    'CHECK constraint must prevent NULL item_id on valid serial row'
+  );
+});
+
+test('duplicate normalized serial across jobs rejected via unique index', async () => {
+  const harness = await createServiceHarness({ tenantPrefix: 'import-dedup-index' });
+  const item = await harness.createItem({
+    skuPrefix: 'DUPIDX',
+    requiresSerial: true,
+    defaultLocationId: harness.topology.defaults.SELLABLE.id
+  });
+  const location = harness.topology.defaults.SELLABLE;
+
+  const first = await createOnHandImport(
+    harness,
+    csv([{ sku: item.sku, locationCode: location.code, uom: 'each', quantity: '1', serialNumber: 'DUP-IDX-001' }])
+  );
+  await validateOnHandImport(harness, first.jobId, first.suggestedMapping);
+
+  // Second import carries same serial (whitespace variant) — must be caught at validation
+  const second = await createOnHandImport(
+    harness,
+    csv([{ sku: item.sku, locationCode: location.code, uom: 'each', quantity: '1', serialNumber: ' dup-idx-001 ' }])
+  );
+  await assert.rejects(
+    () => validateOnHandImport(harness, second.jobId, second.suggestedMapping),
+    /IMPORT_DUPLICATE_SERIAL/
+  );
+});
+
+test('non-serial items are unaffected by item_id index constraints', async () => {
+  const harness = await createServiceHarness({ tenantPrefix: 'import-nonserial-itemid' });
+  const item = await harness.createItem({
+    skuPrefix: 'PLAINITEM',
+    defaultLocationId: harness.topology.defaults.SELLABLE.id
+  });
+  const location = harness.topology.defaults.SELLABLE;
+
+  const first = await createOnHandImport(
+    harness,
+    csv([{ sku: item.sku, locationCode: location.code, uom: 'each', quantity: '5' }])
+  );
+  const firstResult = await validateOnHandImport(harness, first.jobId, first.suggestedMapping);
+  assert.equal(firstResult.validRows, 1);
+  assert.equal(firstResult.errorRows, 0);
+
+  const rowRes = await harness.pool.query(
+    `SELECT item_id FROM import_job_rows WHERE job_id = $1 AND status = 'valid'`,
+    [first.jobId]
+  );
+  // Non-serial item rows should still receive item_id (backfilled via on_hand path)
+  // but are not constrained by the serial unique index.
+  assert.ok(rowRes.rows.length > 0);
+});

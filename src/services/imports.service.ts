@@ -116,7 +116,7 @@ const HEADER_SYNONYMS: Record<string, string[]> = {
 };
 
 const FORBIDDEN_HEADERS = ['lot_id', 'serial_id'];
-const IMPORT_SERIAL_UNIQUE_INDEX = 'idx_import_job_rows_tenant_sku_serial_normalized_unique';
+const IMPORT_SERIAL_UNIQUE_INDEX = 'idx_import_job_rows_tenant_item_serial_normalized_unique';
 const LOT_NORMALIZED_UNIQUE_INDEX = 'idx_lots_tenant_item_lot_code_normalized_unique';
 
 function normalizeTraceKey(value: string) {
@@ -439,6 +439,7 @@ export async function validateImportJob(params: {
     errorDetail: string | null;
     lotNumber: string | null;
     serialNumber: string | null;
+    itemId: string | null;
   };
   const pendingRows: PendingRowInsert[] = [];
 
@@ -452,6 +453,7 @@ export async function validateImportJob(params: {
     let rowFieldErrors: ImportValidationFieldError[] = [];
     let rowLotNumber: string | null = null;
     let rowSerialNumber: string | null = null;
+    let rowItemId: string | null = null;
 
     try {
       if (job.type === 'items') {
@@ -618,6 +620,7 @@ export async function validateImportJob(params: {
 
         rowLotNumber = lotNumber || null;
         rowSerialNumber = serialNumber || null;
+        rowItemId = itemInfo.id;
         normalized = {
           sku,
           locationCode,
@@ -687,7 +690,8 @@ export async function validateImportJob(params: {
       errorCode,
       errorDetail,
       lotNumber: rowLotNumber,
-      serialNumber: rowSerialNumber
+      serialNumber: rowSerialNumber,
+      itemId: rowItemId
     });
   }
 
@@ -704,8 +708,8 @@ export async function validateImportJob(params: {
         await client.query(
           `INSERT INTO import_job_rows (
               id, tenant_id, job_id, row_number, raw, normalized, status,
-              error_code, error_detail, lot_number, serial_number
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+              error_code, error_detail, lot_number, serial_number, item_id
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
           [
             pending.id,
             params.tenantId,
@@ -717,7 +721,8 @@ export async function validateImportJob(params: {
             pending.errorCode,
             pending.errorDetail,
             pending.lotNumber,
-            pending.serialNumber
+            pending.serialNumber,
+            pending.itemId
           ]
         );
       }
