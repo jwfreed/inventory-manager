@@ -29,6 +29,7 @@
     "tests/contracts/pick-pack-ship.test.mjs",
     "tests/contracts/cycle-count-reconciliation.test.mjs",
     "tests/contracts/cycle-count-session-lifecycle.test.mjs",
+    "tests/contracts/on-hand-import-traceability.test.mjs",
     "tests/contracts/mrp-planning.test.mjs"
   ]
 }

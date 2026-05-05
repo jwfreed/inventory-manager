@@ -1,6 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { PoolClient } from 'pg';
-import { query } from '../db';
+import { query, withTransaction } from '../db';
 import { parseCsv, normalizeHeader } from '../lib/csv';
 import { createItem, createLocation } from './masterData.service';
 import { getUserBaseCurrency } from './users.service';
@@ -9,6 +8,10 @@ import { createInventoryCount, postInventoryCount } from './counts.service';
 import { recordAuditLog } from '../lib/audit';
 import { ItemLifecycleStatus } from '../types/item';
 import { resolveWarehouseIdForLocation } from './warehouseDefaults.service';
+import {
+  assertTracedInventoryRequirements,
+  TRACKED_INVENTORY_TRACE_ERROR
+} from '../domains/inventory';
 
 export type ImportType = 'items' | 'locations' | 'on_hand';
 
@@ -68,7 +71,7 @@ const IMPORT_FIELDS: Record<ImportType, { required: string[]; optional: string[]
   },
   on_hand: {
     required: ['sku', 'locationCode', 'uom', 'quantity'],
-    optional: []
+    optional: ['lotNumber', 'serialNumber']
   }
 };
 
@@ -107,10 +110,39 @@ const HEADER_SYNONYMS: Record<string, string[]> = {
   parentLocationCode: ['parentlocation', 'parentlocationcode'],
   locationCode: ['location', 'locationcode'],
   uom: ['uom', 'unit', 'unitofmeasure'],
-  quantity: ['qty', 'quantity', 'onhand', 'onhandqty']
+  quantity: ['qty', 'quantity', 'onhand', 'onhandqty'],
+  lotNumber: ['lot', 'lotnumber', 'lotcode', 'lotno'],
+  serialNumber: ['serial', 'serialnumber', 'serialno', 'sn']
 };
 
-const FORBIDDEN_HEADERS = ['lot', 'lotnumber', 'serial', 'serialnumber', 'lot_id', 'serial_id'];
+const FORBIDDEN_HEADERS = ['lot_id', 'serial_id'];
+
+type ImportValidationFieldError = {
+  rowNumber: number;
+  sku: string | null;
+  field: string;
+  message: string;
+};
+
+type ImportValidationGroupedError = {
+  sku: string;
+  rowNumbers: number[];
+  messages: string[];
+  fieldErrors: Array<{
+    rowNumber: number;
+    field: string;
+    message: string;
+  }>;
+};
+
+class ImportRowValidationError extends Error {
+  fieldErrors: ImportValidationFieldError[];
+
+  constructor(message: string, fieldErrors: ImportValidationFieldError[]) {
+    super(message);
+    this.fieldErrors = fieldErrors;
+  }
+}
 
 function mapHeaders(headers: string[]) {
   const normalized = headers.map((header) => normalizeHeader(header));
@@ -158,6 +190,18 @@ function normalizeLifecycleStatus(value?: string) {
 function pickValue(raw: Record<string, string>, header?: string) {
   if (!header) return undefined;
   return raw[header]?.trim() ?? '';
+}
+
+function buildOnHandImportTraceNote(normalized: Record<string, any>) {
+  const lotNumber = String(normalized.lotNumber ?? '').trim();
+  const serialNumber = String(normalized.serialNumber ?? '').trim();
+  if (!lotNumber && !serialNumber) return null;
+  return JSON.stringify({
+    importTrace: {
+      lotNumber: lotNumber || null,
+      serialNumber: serialNumber || null
+    }
+  });
 }
 
 export async function createImportJobFromUpload(params: {
@@ -307,25 +351,81 @@ export async function validateImportJob(params: {
   );
 
   const existingItemSkus = new Set<string>();
+  const itemBySku = new Map<string, {
+    id: string;
+    sku: string;
+    canonicalUom: string;
+    requiresLot: boolean;
+    requiresSerial: boolean;
+  }>();
   const existingLocationCodes = new Set<string>();
   if (job.type === 'items' || job.type === 'on_hand') {
-    const itemsRes = await query('SELECT sku, id, canonical_uom FROM items WHERE tenant_id = $1', [params.tenantId]);
-    itemsRes.rows.forEach((row: any) => existingItemSkus.add(row.sku.trim().toLowerCase()));
+    const itemsRes = await query(
+      'SELECT sku, id, canonical_uom, requires_lot, requires_serial FROM items WHERE tenant_id = $1',
+      [params.tenantId]
+    );
+    itemsRes.rows.forEach((row: any) => {
+      const skuKey = row.sku.trim().toLowerCase();
+      existingItemSkus.add(skuKey);
+      itemBySku.set(skuKey, {
+        id: row.id,
+        sku: row.sku,
+        canonicalUom: row.canonical_uom,
+        requiresLot: !!row.requires_lot,
+        requiresSerial: !!row.requires_serial
+      });
+    });
   }
   if (job.type === 'locations' || job.type === 'on_hand' || params.mapping.defaultLocationCode) {
     const locRes = await query('SELECT code FROM locations WHERE tenant_id = $1', [params.tenantId]);
     locRes.rows.forEach((row: any) => existingLocationCodes.add(row.code.trim().toLowerCase()));
   }
 
-  await query('DELETE FROM import_job_rows WHERE job_id = $1 AND tenant_id = $2', [params.jobId, params.tenantId]);
+  // Preload existing lot/serial codes for serial-tracked items (system-level serial uniqueness)
+  const existingSerialsByItemId = new Map<string, Set<string>>();
+  if (job.type === 'on_hand') {
+    const serialItemIds = Array.from(itemBySku.values())
+      .filter((i) => i.requiresSerial)
+      .map((i) => i.id);
+    if (serialItemIds.length > 0) {
+      const lotsRes = await query(
+        `SELECT item_id, lot_code FROM lots WHERE tenant_id = $1 AND item_id = ANY($2)`,
+        [params.tenantId, serialItemIds]
+      );
+      lotsRes.rows.forEach((row: any) => {
+        const set = existingSerialsByItemId.get(row.item_id) ?? new Set<string>();
+        set.add(row.lot_code.trim().toLowerCase());
+        existingSerialsByItemId.set(row.item_id, set);
+      });
+    }
+  }
 
+  // Phase 1: validate all rows in memory — no writes until all rows are checked
   let validRows = 0;
   let errorRows = 0;
+  let invalidTrackedRowsCount = 0;
   const errorSamples: ImportJobRow[] = [];
+  const fieldErrors: ImportValidationFieldError[] = [];
+  const errorsBySku = new Map<string, ImportValidationGroupedError>();
 
   const skuSeen = new Set<string>();
   const locationSeen = new Set<string>();
   const onHandKeys = new Set<string>();
+  // Track intra-import serial uniqueness per item (regardless of location)
+  const serialsSeen = new Map<string, Set<string>>();
+
+  type PendingRowInsert = {
+    id: string;
+    rowNumber: number;
+    raw: Record<string, string>;
+    normalized: Record<string, unknown> | null;
+    status: ImportJobRow['status'];
+    errorCode: string | null;
+    errorDetail: string | null;
+    lotNumber: string | null;
+    serialNumber: string | null;
+  };
+  const pendingRows: PendingRowInsert[] = [];
 
   for (let idx = 0; idx < dataRows.length; idx += 1) {
     const rowNumber = idx + 2; // header line is 1
@@ -334,6 +434,9 @@ export async function validateImportJob(params: {
     let errorCode: string | null = null;
     let errorDetail: string | null = null;
     let normalized: Record<string, unknown> | null = null;
+    let rowFieldErrors: ImportValidationFieldError[] = [];
+    let rowLotNumber: string | null = null;
+    let rowSerialNumber: string | null = null;
 
     try {
       if (job.type === 'items') {
@@ -435,21 +538,77 @@ export async function validateImportJob(params: {
         if (!existingItemSkus.has(skuKey)) {
           throw new Error('IMPORT_UNKNOWN_ITEM');
         }
+        const itemInfo = itemBySku.get(skuKey);
+        if (!itemInfo) {
+          throw new Error('IMPORT_UNKNOWN_ITEM');
+        }
         const locationKey = locationCode.toLowerCase();
         if (!existingLocationCodes.has(locationKey)) {
           throw new Error('IMPORT_UNKNOWN_LOCATION');
         }
-        const compositeKey = `${skuKey}:${locationKey}:${uom.toLowerCase()}`;
+        const lotNumber = pickValue(raw, params.mapping.lotNumber) || '';
+        const serialNumber = pickValue(raw, params.mapping.serialNumber) || '';
+
+        // Centralized invariant: trace data required for tracked items
+        if (itemInfo.requiresLot && !lotNumber) {
+          rowFieldErrors.push({
+            rowNumber,
+            sku,
+            field: 'lotNumber',
+            message: TRACKED_INVENTORY_TRACE_ERROR
+          });
+        }
+        if (itemInfo.requiresSerial && !serialNumber) {
+          rowFieldErrors.push({
+            rowNumber,
+            sku,
+            field: 'serialNumber',
+            message: TRACKED_INVENTORY_TRACE_ERROR
+          });
+        }
+        if (rowFieldErrors.length > 0) {
+          throw new ImportRowValidationError(TRACKED_INVENTORY_TRACE_ERROR, rowFieldErrors);
+        }
+
+        // Serial uniqueness: check within this import
+        if (itemInfo.requiresSerial && serialNumber) {
+          const serialKey = serialNumber.toLowerCase();
+          const itemSerials = serialsSeen.get(itemInfo.id) ?? new Set<string>();
+          if (itemSerials.has(serialKey)) {
+            throw new Error('IMPORT_DUPLICATE_SERIAL');
+          }
+          // Serial uniqueness: check against existing system records
+          const existingSystemSerials = existingSerialsByItemId.get(itemInfo.id);
+          if (existingSystemSerials?.has(serialKey)) {
+            throw new Error('IMPORT_SERIAL_ALREADY_EXISTS');
+          }
+          itemSerials.add(serialKey);
+          serialsSeen.set(itemInfo.id, itemSerials);
+        }
+
+        const compositeKey = [
+          skuKey,
+          locationKey,
+          uom.toLowerCase(),
+          lotNumber.toLowerCase(),
+          serialNumber.toLowerCase()
+        ].join(':');
         if (onHandKeys.has(compositeKey)) {
           throw new Error('IMPORT_DUPLICATE_ON_HAND');
         }
         onHandKeys.add(compositeKey);
 
+        rowLotNumber = lotNumber || null;
+        rowSerialNumber = serialNumber || null;
         normalized = {
           sku,
           locationCode,
           uom,
-          quantity
+          quantity,
+          lotNumber: lotNumber || null,
+          serialNumber: serialNumber || null,
+          requiresLot: itemInfo.requiresLot,
+          requiresSerial: itemInfo.requiresSerial
         };
       }
     } catch (err: any) {
@@ -461,6 +620,9 @@ export async function validateImportJob(params: {
         status = 'error';
         errorCode = err instanceof Error ? err.message : 'IMPORT_INVALID_ROW';
         errorDetail = err instanceof Error ? err.message : 'Invalid row.';
+        if (err instanceof ImportRowValidationError) {
+          rowFieldErrors = err.fieldErrors;
+        }
       }
     }
 
@@ -468,47 +630,108 @@ export async function validateImportJob(params: {
       validRows += 1;
     } else if (status === 'error') {
       errorRows += 1;
+      if (rowFieldErrors.length > 0) {
+        invalidTrackedRowsCount += 1;
+        fieldErrors.push(...rowFieldErrors);
+        const skuKey = rowFieldErrors[0]?.sku?.trim() || 'UNKNOWN';
+        const grouped = errorsBySku.get(skuKey) ?? {
+          sku: skuKey,
+          rowNumbers: [],
+          messages: [],
+          fieldErrors: []
+        };
+        if (!grouped.rowNumbers.includes(rowNumber)) {
+          grouped.rowNumbers.push(rowNumber);
+        }
+        if (!grouped.messages.includes(TRACKED_INVENTORY_TRACE_ERROR)) {
+          grouped.messages.push(TRACKED_INVENTORY_TRACE_ERROR);
+        }
+        grouped.fieldErrors.push(
+          ...rowFieldErrors.map((fieldError) => ({
+            rowNumber: fieldError.rowNumber,
+            field: fieldError.field,
+            message: fieldError.message
+          }))
+        );
+        errorsBySku.set(skuKey, grouped);
+      }
       if (errorSamples.length < 50) {
         errorSamples.push({ rowNumber, status, raw, errorCode, errorDetail });
       }
     }
 
-    await query(
-      `INSERT INTO import_job_rows (
-          id, tenant_id, job_id, row_number, raw, normalized, status, error_code, error_detail
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [
-        uuidv4(),
-        params.tenantId,
-        params.jobId,
-        rowNumber,
-        raw,
-        normalized,
-        status,
-        errorCode,
-        errorDetail
-      ]
-    );
+    pendingRows.push({
+      id: uuidv4(),
+      rowNumber,
+      raw,
+      normalized,
+      status,
+      errorCode,
+      errorDetail,
+      lotNumber: rowLotNumber,
+      serialNumber: rowSerialNumber
+    });
   }
 
-  const status = errorRows > 0 ? 'validated' : 'validated';
-  await query(
-    `UPDATE import_jobs
-        SET status = $1,
-            mapping = $2,
-            total_rows = $3,
-            valid_rows = $4,
-            error_rows = $5,
-            counted_at = $6,
-            updated_at = now()
-      WHERE id = $7 AND tenant_id = $8`,
-    [status, params.mapping, dataRows.length, validRows, errorRows, params.countedAt ?? null, params.jobId, params.tenantId]
-  );
+  // Phase 2: atomic write — DELETE old rows + INSERT all new rows + UPDATE job status
+  // No partial state is possible: either all rows are written or none.
+  await withTransaction(async (client) => {
+    await client.query(
+      'DELETE FROM import_job_rows WHERE job_id = $1 AND tenant_id = $2',
+      [params.jobId, params.tenantId]
+    );
+
+    for (const pending of pendingRows) {
+      await client.query(
+        `INSERT INTO import_job_rows (
+            id, tenant_id, job_id, row_number, raw, normalized, status,
+            error_code, error_detail, lot_number, serial_number
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          pending.id,
+          params.tenantId,
+          params.jobId,
+          pending.rowNumber,
+          pending.raw,
+          pending.normalized,
+          pending.status,
+          pending.errorCode,
+          pending.errorDetail,
+          pending.lotNumber,
+          pending.serialNumber
+        ]
+      );
+    }
+
+    await client.query(
+      `UPDATE import_jobs
+          SET status = 'validated',
+              mapping = $1,
+              total_rows = $2,
+              valid_rows = $3,
+              error_rows = $4,
+              counted_at = $5,
+              updated_at = now()
+        WHERE id = $6 AND tenant_id = $7`,
+      [
+        params.mapping,
+        dataRows.length,
+        validRows,
+        errorRows,
+        params.countedAt ?? null,
+        params.jobId,
+        params.tenantId
+      ]
+    );
+  });
 
   return {
     totalRows: dataRows.length,
     validRows,
     errorRows,
+    invalidTrackedRowsCount,
+    errorsBySku: Array.from(errorsBySku.values()).sort((a, b) => a.sku.localeCompare(b.sku)),
+    fieldErrors,
     errorSamples
   };
 }
@@ -522,7 +745,37 @@ export async function applyImportJob(params: {
   if (!job) {
     throw new Error('IMPORT_JOB_NOT_FOUND');
   }
-  if (job.errorRows > 0) {
+  if (job.status !== 'validated') {
+    throw new Error('IMPORT_NOT_VALIDATED');
+  }
+
+  // Apply-time revalidation: recompute constraints from raw row data.
+  // Do NOT rely on job.errorRows or job.status — stale or tampered jobs must not bypass validation.
+  const revalidationRes = await query<{
+    total_rows: string;
+    error_rows: string;
+    tracked_violation_rows: string;
+  }>(
+    `SELECT COUNT(*)                                              AS total_rows,
+            COUNT(*) FILTER (WHERE status = 'error')             AS error_rows,
+            COUNT(*) FILTER (
+              WHERE (normalized->>'requiresLot')::boolean = true
+                AND COALESCE(TRIM(normalized->>'lotNumber'), '') = ''
+              OR  (normalized->>'requiresSerial')::boolean = true
+                AND COALESCE(TRIM(normalized->>'serialNumber'), '') = ''
+            )                                                     AS tracked_violation_rows
+       FROM import_job_rows
+      WHERE job_id = $1 AND tenant_id = $2`,
+    [params.jobId, params.tenantId]
+  );
+  const revalidatedTotalRows = Number(revalidationRes.rows[0]?.total_rows ?? 0);
+  const revalidatedErrorRows = Number(revalidationRes.rows[0]?.error_rows ?? 0);
+  const revalidatedTrackedViolations = Number(revalidationRes.rows[0]?.tracked_violation_rows ?? 0);
+
+  if (revalidatedTotalRows === 0) {
+    throw new Error('IMPORT_NOT_VALIDATED');
+  }
+  if (revalidatedErrorRows > 0 || revalidatedTrackedViolations > 0) {
     throw new Error('IMPORT_HAS_ERRORS');
   }
 
@@ -535,6 +788,41 @@ export async function applyImportJob(params: {
   void processImportJob(params.jobId, params.tenantId, params.userId);
 
   return await getImportJob(params.tenantId, params.jobId);
+}
+
+async function resolveOrCreateLotForImport(
+  tenantId: string,
+  itemId: string,
+  lotCode: string
+): Promise<string> {
+  const existing = await query<{ id: string }>(
+    'SELECT id FROM lots WHERE tenant_id = $1 AND item_id = $2 AND lot_code = $3 LIMIT 1',
+    [tenantId, itemId, lotCode]
+  );
+  if (existing.rows[0]) {
+    return existing.rows[0].id;
+  }
+  const lotId = uuidv4();
+  const now = new Date();
+  try {
+    await query(
+      `INSERT INTO lots (id, tenant_id, item_id, lot_code, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'active', $5, $5)`,
+      [lotId, tenantId, itemId, lotCode, now]
+    );
+    return lotId;
+  } catch (error: any) {
+    if (error?.code === '23505') {
+      const raceResult = await query<{ id: string }>(
+        'SELECT id FROM lots WHERE tenant_id = $1 AND item_id = $2 AND lot_code = $3 LIMIT 1',
+        [tenantId, itemId, lotCode]
+      );
+      if (raceResult.rows[0]) {
+        return raceResult.rows[0].id;
+      }
+    }
+    throw error;
+  }
 }
 
 async function processImportJob(jobId: string, tenantId: string, userId: string) {
@@ -634,12 +922,27 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
     }
 
     if (job.type === 'on_hand') {
+      // Apply-time defense: recompute trace constraints from raw normalized data.
+      // Do NOT rely solely on stored validation state.
+      for (const row of rowsRes.rows) {
+        const normalized = row.normalized as Record<string, any>;
+        assertTracedInventoryRequirements({
+          requiresLot: !!normalized.requiresLot,
+          requiresSerial: !!normalized.requiresSerial,
+          lotNumber: String(normalized.lotNumber ?? '').trim() || null,
+          serialNumber: String(normalized.serialNumber ?? '').trim() || null
+        });
+      }
+
       const itemsRes = await query(
-        'SELECT id, sku FROM items WHERE tenant_id = $1',
+        'SELECT id, sku, standard_cost FROM items WHERE tenant_id = $1',
         [tenantId]
       );
       const itemMap = new Map<string, string>(
         itemsRes.rows.map((row: any) => [row.sku.trim().toLowerCase(), row.id])
+      );
+      const itemCostMap = new Map<string, number | null>(
+        itemsRes.rows.map((row: any) => [row.id, row.standard_cost != null ? Number(row.standard_cost) : null])
       );
       const locationsRes = await query(
         'SELECT id, code FROM locations WHERE tenant_id = $1',
@@ -649,7 +952,17 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
         locationsRes.rows.map((row: any) => [row.code.trim().toLowerCase(), row.id])
       );
 
-      const byLocation = new Map<string, any[]>();
+      type OnHandLineWithTrace = {
+        itemId: string;
+        uom: string;
+        countedQuantity: number;
+        unitCostForPositiveAdjustment: number | null;
+        reasonCode: string;
+        notes: string | null;
+        lotNumber: string | null;
+        serialNumber: string | null;
+      };
+      const byLocation = new Map<string, OnHandLineWithTrace[]>();
 
       for (const row of rowsRes.rows) {
         const normalized = row.normalized as Record<string, any>;
@@ -659,17 +972,23 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
           throw new Error('IMPORT_REFERENCE_MISSING');
         }
         const canonical = await convertToCanonical(tenantId, itemId, normalized.quantity, normalized.uom);
+        const lotNumber = String(normalized.lotNumber ?? '').trim() || null;
+        const serialNumber = String(normalized.serialNumber ?? '').trim() || null;
         const lines = byLocation.get(locationId) ?? [];
         lines.push({
           itemId,
           uom: canonical.canonicalUom,
           countedQuantity: canonical.quantity,
-          reasonCode: 'import_snapshot'
+          unitCostForPositiveAdjustment: itemCostMap.get(itemId) ?? null,
+          reasonCode: 'import_snapshot',
+          notes: buildOnHandImportTraceNote(normalized),
+          lotNumber,
+          serialNumber
         });
         byLocation.set(locationId, lines);
       }
 
-      for (const [locationId, lines] of byLocation.entries()) {
+      for (const [locationId, linesWithTrace] of byLocation.entries()) {
         const warehouseId = await resolveWarehouseIdForLocation(tenantId, locationId);
         if (!warehouseId) {
           throw new Error('WAREHOUSE_SCOPE_REQUIRED');
@@ -681,9 +1000,14 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
             warehouseId,
             locationId,
             notes: `Imported on-hand snapshot (${jobId})`,
-            lines: lines.map((line) => ({
-              ...line,
-              locationId
+            lines: linesWithTrace.map((line) => ({
+              itemId: line.itemId,
+              locationId,
+              uom: line.uom,
+              countedQuantity: line.countedQuantity,
+              unitCostForPositiveAdjustment: line.unitCostForPositiveAdjustment,
+              reasonCode: line.reasonCode,
+              notes: line.notes ?? undefined
             }))
           },
           { idempotencyKey: `import:${jobId}:${locationId}` }
@@ -691,6 +1015,57 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
         await postInventoryCount(tenantId, count.id, `import-post:${jobId}:${locationId}`, {
           actor: { type: 'user', id: userId, role: 'admin' }
         });
+
+        // Structural trace persistence: create lots records and inventory_movement_lots links.
+        // This makes lot/serial data queryable and usable by traceability, recall, and FEFO systems.
+        const postedCountRes = await query<{ inventory_movement_id: string | null }>(
+          'SELECT inventory_movement_id FROM cycle_counts WHERE id = $1 AND tenant_id = $2',
+          [count.id, tenantId]
+        );
+        const movementId = postedCountRes.rows[0]?.inventory_movement_id ?? null;
+        if (movementId) {
+          // Map cycle count line IDs → line number so we can resolve trace data
+          const countLinesRes = await query<{ id: string; line_number: number }>(
+            'SELECT id, line_number FROM cycle_count_lines WHERE cycle_count_id = $1 AND tenant_id = $2',
+            [count.id, tenantId]
+          );
+          const lineNumberById = new Map(countLinesRes.rows.map((r) => [r.id, r.line_number]));
+
+          // Retrieve movement lines for this movement
+          const movLinesRes = await query<{
+            id: string;
+            source_line_id: string;
+            item_id: string;
+            uom: string;
+            quantity_delta: string;
+          }>(
+            'SELECT id, source_line_id, item_id, uom, quantity_delta FROM inventory_movement_lines WHERE movement_id = $1 AND tenant_id = $2',
+            [movementId, tenantId]
+          );
+
+          for (const movLine of movLinesRes.rows) {
+            const lineNumber = lineNumberById.get(movLine.source_line_id);
+            if (lineNumber == null) continue;
+            const traceData = linesWithTrace[lineNumber - 1];
+            if (!traceData) continue;
+
+            // Resolve lot code: for lot-tracked items use lotNumber; for serial-tracked items use serialNumber as lot code
+            const lotCode = traceData.lotNumber ?? traceData.serialNumber ?? null;
+            if (!lotCode) continue;
+
+            const lotId = await resolveOrCreateLotForImport(tenantId, movLine.item_id, lotCode);
+            const quantityDelta = Number(movLine.quantity_delta);
+            if (quantityDelta === 0) continue;
+
+            await query(
+              `INSERT INTO inventory_movement_lots
+                  (id, tenant_id, inventory_movement_line_id, lot_id, uom, quantity_delta, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, now())
+               ON CONFLICT DO NOTHING`,
+              [uuidv4(), tenantId, movLine.id, lotId, movLine.uom, quantityDelta]
+            );
+          }
+        }
       }
 
       await query(

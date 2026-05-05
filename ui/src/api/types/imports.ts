@@ -31,6 +31,23 @@ export type ImportValidationResult = {
   totalRows: number
   validRows: number
   errorRows: number
+  invalidTrackedRowsCount: number
+  errorsBySku: {
+    sku: string
+    rowNumbers: number[]
+    messages: string[]
+    fieldErrors: {
+      rowNumber: number
+      field: string
+      message: string
+    }[]
+  }[]
+  fieldErrors: {
+    rowNumber: number
+    sku: string | null
+    field: string
+    message: string
+  }[]
   errorSamples: {
     rowNumber: number
     status: string

@@ -16,9 +16,10 @@ type Props = {
   variant?: AlertVariant
   action?: ReactNode
   className?: string
+  children?: ReactNode
 }
 
-export function Alert({ title, message, variant = 'info', action, className }: Props) {
+export function Alert({ title, message, variant = 'info', action, className, children }: Props) {
   return (
     <div
       role="alert"
@@ -31,6 +32,11 @@ export function Alert({ title, message, variant = 'info', action, className }: P
       <div className="flex-1">
         {title && <div className="font-semibold">{title}</div>}
         {message && <div className="mt-1 text-sm leading-relaxed">{message}</div>}
+        {children && (
+          <div className={title || message ? 'mt-1 text-sm leading-relaxed' : undefined}>
+            {children}
+          </div>
+        )}
       </div>
       {action}
     </div>

@@ -51,7 +51,7 @@ router.post(
         return res.status(400).json({ error: 'CSV must include headers.' });
       }
       if (error?.message === 'IMPORT_FORBIDDEN_COLUMN') {
-        return res.status(400).json({ error: 'Lot/serial columns are not supported in this import.' });
+        return res.status(400).json({ error: 'Unsupported trace identifier column.' });
       }
       console.error(error);
       return res.status(500).json({ error: 'Failed to upload import file.' });
@@ -105,7 +105,7 @@ router.post('/admin/imports/:id/validate', async (req: Request, res: Response) =
       return res.status(400).json({ error: 'Mapping references unknown header.' });
     }
     if (error?.message === 'IMPORT_FORBIDDEN_COLUMN') {
-      return res.status(400).json({ error: 'Lot/serial columns are not supported in this import.' });
+      return res.status(400).json({ error: 'Unsupported trace identifier column.' });
     }
     if (error?.message === 'IMPORT_ROW_LIMIT') {
       return res.status(413).json({ error: 'CSV exceeds row limit.' });
@@ -132,6 +132,9 @@ router.post('/admin/imports/:id/apply', async (req: Request, res: Response) => {
   } catch (error: any) {
     if (error?.message === 'IMPORT_HAS_ERRORS') {
       return res.status(409).json({ error: 'Fix validation errors before applying.' });
+    }
+    if (error?.message === 'IMPORT_NOT_VALIDATED') {
+      return res.status(409).json({ error: 'Validate import before applying.' });
     }
     if (error?.message === 'IMPORT_JOB_NOT_FOUND') {
       return res.status(404).json({ error: 'Import not found.' });

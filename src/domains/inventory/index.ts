@@ -17,6 +17,13 @@ export {
 export { assertSellableLocationOrThrow } from './internal/locationGuards';
 
 export {
+  assertTracedInventoryRequirements,
+  TRACKED_INVENTORY_TRACE_ERROR,
+  type TraceFieldError,
+  type TraceInvariantViolation
+} from './internal/tracedInventoryInvariant';
+
+export {
   applyPersistedMovementToInventoryUnits,
   rebuildInventoryUnitsFromEvents
 } from './internal/inventoryUnits';

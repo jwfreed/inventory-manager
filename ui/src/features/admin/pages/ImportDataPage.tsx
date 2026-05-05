@@ -30,7 +30,7 @@ const IMPORT_FIELDS: Record<ImportType, { required: string[]; optional: string[]
   },
   on_hand: {
     required: ['sku', 'locationCode', 'uom', 'quantity'],
-    optional: [],
+    optional: ['lotNumber', 'serialNumber'],
   },
 }
 
@@ -70,6 +70,7 @@ export default function ImportDataPage() {
   const [status, setStatus] = useState<'idle' | 'uploading' | 'validating' | 'applying'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [showOptional, setShowOptional] = useState(false)
+  const [showApplyConfirm, setShowApplyConfirm] = useState(false)
 
   const fields = IMPORT_FIELDS[importType]
   const headers = uploadResult?.headers ?? []
@@ -78,6 +79,8 @@ export default function ImportDataPage() {
   const mappingComplete = missingRequired.length === 0
 
   const sampleRows = useMemo(() => uploadResult?.sampleRows ?? [], [uploadResult])
+  const trackedViolations = validation?.invalidTrackedRowsCount ?? 0
+  const affectedTrackedSkus = validation?.errorsBySku.map((entry) => entry.sku) ?? []
 
   const reset = () => {
     setUploadResult(null)
@@ -86,6 +89,7 @@ export default function ImportDataPage() {
     setJob(null)
     setError(null)
     setShowOptional(false)
+    setShowApplyConfirm(false)
   }
 
   const onUpload = async () => {
@@ -120,6 +124,7 @@ export default function ImportDataPage() {
         countedAt: countedIso,
       })
       setValidation(result.data)
+      setShowApplyConfirm(false)
       const jobRes = await getImportJob(uploadResult.jobId)
       setJob(jobRes.data)
     } catch (err: any) {
@@ -131,8 +136,14 @@ export default function ImportDataPage() {
 
   const onApply = async () => {
     if (!uploadResult) return
+    if (!validation || validation.errorRows > 0) {
+      setError(validation?.errorRows ? 'Fix validation errors before applying.' : 'Run validation first.')
+      setShowApplyConfirm(false)
+      return
+    }
     setStatus('applying')
     setError(null)
+    setShowApplyConfirm(false)
     try {
       const result = await applyImportJob(uploadResult.jobId)
       setJob(result.data)
@@ -150,6 +161,16 @@ export default function ImportDataPage() {
       setError(err?.message ?? 'Failed to apply import.')
       setStatus('idle')
     }
+  }
+
+  const onApplyRequest = () => {
+    if (!validation) return
+    if (validation.errorRows > 0) {
+      setError('Fix validation errors before applying.')
+      return
+    }
+    setError(null)
+    setShowApplyConfirm(true)
   }
 
   return (
@@ -206,9 +227,7 @@ export default function ImportDataPage() {
           </div>
         )}
         <div className="flex items-center justify-between">
-          <div className="text-sm text-slate-400">
-            Max 10 MB, 50k rows. Lots/serials not supported in v1.
-          </div>
+          <div className="text-sm text-slate-400">Max 10 MB, 50k rows.</div>
           <Button onClick={onUpload} disabled={!file || status !== 'idle'}>
             {status === 'uploading' ? 'Uploading…' : 'Upload CSV'}
           </Button>
@@ -316,7 +335,46 @@ export default function ImportDataPage() {
             <div>Total rows: {validation.totalRows}</div>
             <div>Valid rows: {validation.validRows}</div>
             <div>Errors: {validation.errorRows}</div>
+            <div>Tracked violations: {trackedViolations}</div>
           </div>
+          {trackedViolations > 0 && (
+            <Alert variant="error" title="Tracked import blocked">
+              <div className="space-y-2">
+                <p>Tracked item requires lot/serial data for on-hand import</p>
+                {affectedTrackedSkus.length > 0 && (
+                  <div className="text-sm">
+                    Affected SKUs: {affectedTrackedSkus.join(', ')}
+                  </div>
+                )}
+              </div>
+            </Alert>
+          )}
+          {validation.errorsBySku.length > 0 && (
+            <div className="max-h-56 overflow-auto border border-slate-800">
+              <table className="w-full text-left text-sm">
+                <thead className="sticky top-0 bg-slate-900 text-slate-300">
+                  <tr>
+                    <th className="px-3 py-2">SKU</th>
+                    <th className="px-3 py-2">Rows</th>
+                    <th className="px-3 py-2">Fields</th>
+                    <th className="px-3 py-2">Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {validation.errorsBySku.map((entry) => (
+                    <tr key={entry.sku} className="border-t border-slate-800">
+                      <td className="px-3 py-2">{entry.sku}</td>
+                      <td className="px-3 py-2">{entry.rowNumbers.join(', ')}</td>
+                      <td className="px-3 py-2">
+                        {Array.from(new Set(entry.fieldErrors.map((fieldError) => fieldError.field))).join(', ')}
+                      </td>
+                      <td className="px-3 py-2">{entry.messages.join(', ')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {validation.errorRows > 0 && (
             <div className="space-y-2">
               <p className="text-sm text-rose-400">Fix the errors below before applying.</p>
@@ -343,12 +401,37 @@ export default function ImportDataPage() {
           {validation.errorRows === 0 && (
             <div className="flex items-center justify-between">
               <div className="text-sm text-slate-400">Ready to apply.</div>
-              <Button onClick={onApply} disabled={status !== 'idle'}>
+              <Button onClick={onApplyRequest} disabled={status !== 'idle'}>
                 {status === 'applying' ? 'Applying…' : 'Apply Import'}
               </Button>
             </div>
           )}
         </Card>
+      )}
+
+      {showApplyConfirm && validation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
+          <Card className="w-full max-w-lg space-y-4 border border-slate-700">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-100">Apply import</h3>
+              <p className="text-sm text-slate-400">
+                {validation.totalRows} rows, {validation.validRows} valid, {trackedViolations} tracked violations.
+              </p>
+            </div>
+            <div className="space-y-2 text-sm text-slate-300">
+              <div>Affected SKUs: {affectedTrackedSkus.length > 0 ? affectedTrackedSkus.join(', ') : 'None'}</div>
+              <div>Errors: {validation.errorRows}</div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowApplyConfirm(false)} disabled={status !== 'idle'}>
+                Cancel
+              </Button>
+              <Button onClick={onApply} disabled={status !== 'idle' || trackedViolations > 0 || validation.errorRows > 0}>
+                Confirm Apply
+              </Button>
+            </div>
+          </Card>
+        </div>
       )}
 
       {job && (
