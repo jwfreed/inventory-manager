@@ -965,7 +965,7 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
         itemId: string;
         uom: string;
         countedQuantity: number;
-        unitCostForPositiveAdjustment: number | null;
+        unitCostForPositiveAdjustment?: number;
         reasonCode: string;
         notes: string | null;
         lotNumber: string | null;
@@ -983,12 +983,15 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
         const canonical = await convertToCanonical(tenantId, itemId, normalized.quantity, normalized.uom);
         const lotNumber = String(normalized.lotNumber ?? '').trim() || null;
         const serialNumber = String(normalized.serialNumber ?? '').trim() || null;
+        const unitCostForPositiveAdjustment = itemCostMap.get(itemId) ?? undefined;
         const lines = byLocation.get(locationId) ?? [];
         lines.push({
           itemId,
           uom: canonical.canonicalUom,
           countedQuantity: canonical.quantity,
-          unitCostForPositiveAdjustment: itemCostMap.get(itemId) ?? null,
+          ...(unitCostForPositiveAdjustment !== undefined
+            ? { unitCostForPositiveAdjustment }
+            : {}),
           reasonCode: 'import_snapshot',
           notes: buildOnHandImportTraceNote(normalized),
           lotNumber,
@@ -1014,7 +1017,9 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
               locationId,
               uom: line.uom,
               countedQuantity: line.countedQuantity,
-              unitCostForPositiveAdjustment: line.unitCostForPositiveAdjustment,
+              ...(line.unitCostForPositiveAdjustment !== undefined
+                ? { unitCostForPositiveAdjustment: line.unitCostForPositiveAdjustment }
+                : {}),
               reasonCode: line.reasonCode,
               notes: line.notes ?? undefined
             }))
