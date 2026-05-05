@@ -19,6 +19,7 @@
     "tests/architecture/rbac-permissions.test.mjs",
     "tests/architecture/rbac-integration.test.mjs",
     "tests/architecture/test-tier-contract.test.mjs",
+    "tests/db/import-job-rows-preflight-ambiguous-sku.test.mjs",
     "tests/db/inventory-invariants-scope-hardening.test.mjs",
     "tests/db/inventory-invariants.test.mjs",
     "tests/db/phase6-invariants-reservation-warehouse-historical-mismatch.test.mjs",
