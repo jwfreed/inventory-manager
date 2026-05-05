@@ -116,6 +116,21 @@ const HEADER_SYNONYMS: Record<string, string[]> = {
 };
 
 const FORBIDDEN_HEADERS = ['lot_id', 'serial_id'];
+const IMPORT_SERIAL_UNIQUE_INDEX = 'idx_import_job_rows_tenant_sku_serial_normalized_unique';
+const LOT_NORMALIZED_UNIQUE_INDEX = 'idx_lots_tenant_item_lot_code_normalized_unique';
+
+function normalizeTraceKey(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function isConstraintViolation(error: unknown, constraintNames: string[]) {
+  const candidate = error as { code?: string; constraint?: string } | null;
+  return (
+    candidate?.code === '23505'
+    && !!candidate.constraint
+    && constraintNames.includes(candidate.constraint)
+  );
+}
 
 type ImportValidationFieldError = {
   rowNumber: number;
@@ -451,7 +466,7 @@ export async function validateImportJob(params: {
         if (!UOM_DIMENSIONS.has(uomDimension.toLowerCase())) {
           throw new Error('IMPORT_INVALID_UOM_DIMENSION');
         }
-        const skuKey = sku.toLowerCase();
+        const skuKey = normalizeTraceKey(sku);
         if (skuSeen.has(skuKey) || existingItemSkus.has(skuKey)) {
           throw new Error('IMPORT_DUPLICATE_SKU');
         }
@@ -542,7 +557,7 @@ export async function validateImportJob(params: {
         if (!itemInfo) {
           throw new Error('IMPORT_UNKNOWN_ITEM');
         }
-        const locationKey = locationCode.toLowerCase();
+        const locationKey = normalizeTraceKey(locationCode);
         if (!existingLocationCodes.has(locationKey)) {
           throw new Error('IMPORT_UNKNOWN_LOCATION');
         }
@@ -569,10 +584,13 @@ export async function validateImportJob(params: {
         if (rowFieldErrors.length > 0) {
           throw new ImportRowValidationError(TRACKED_INVENTORY_TRACE_ERROR, rowFieldErrors);
         }
+        if (itemInfo.requiresSerial && quantity !== 1) {
+          throw new Error('IMPORT_SERIAL_QUANTITY_MUST_BE_ONE');
+        }
 
         // Serial uniqueness: check within this import
         if (itemInfo.requiresSerial && serialNumber) {
-          const serialKey = serialNumber.toLowerCase();
+          const serialKey = normalizeTraceKey(serialNumber);
           const itemSerials = serialsSeen.get(itemInfo.id) ?? new Set<string>();
           if (itemSerials.has(serialKey)) {
             throw new Error('IMPORT_DUPLICATE_SERIAL');
@@ -589,9 +607,9 @@ export async function validateImportJob(params: {
         const compositeKey = [
           skuKey,
           locationKey,
-          uom.toLowerCase(),
-          lotNumber.toLowerCase(),
-          serialNumber.toLowerCase()
+          normalizeTraceKey(uom),
+          normalizeTraceKey(lotNumber),
+          normalizeTraceKey(serialNumber)
         ].join(':');
         if (onHandKeys.has(compositeKey)) {
           throw new Error('IMPORT_DUPLICATE_ON_HAND');
@@ -675,55 +693,62 @@ export async function validateImportJob(params: {
 
   // Phase 2: atomic write — DELETE old rows + INSERT all new rows + UPDATE job status
   // No partial state is possible: either all rows are written or none.
-  await withTransaction(async (client) => {
-    await client.query(
-      'DELETE FROM import_job_rows WHERE job_id = $1 AND tenant_id = $2',
-      [params.jobId, params.tenantId]
-    );
-
-    for (const pending of pendingRows) {
+  try {
+    await withTransaction(async (client) => {
       await client.query(
-        `INSERT INTO import_job_rows (
-            id, tenant_id, job_id, row_number, raw, normalized, status,
-            error_code, error_detail, lot_number, serial_number
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        'DELETE FROM import_job_rows WHERE job_id = $1 AND tenant_id = $2',
+        [params.jobId, params.tenantId]
+      );
+
+      for (const pending of pendingRows) {
+        await client.query(
+          `INSERT INTO import_job_rows (
+              id, tenant_id, job_id, row_number, raw, normalized, status,
+              error_code, error_detail, lot_number, serial_number
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            pending.id,
+            params.tenantId,
+            params.jobId,
+            pending.rowNumber,
+            pending.raw,
+            pending.normalized,
+            pending.status,
+            pending.errorCode,
+            pending.errorDetail,
+            pending.lotNumber,
+            pending.serialNumber
+          ]
+        );
+      }
+
+      await client.query(
+        `UPDATE import_jobs
+            SET status = 'validated',
+                mapping = $1,
+                total_rows = $2,
+                valid_rows = $3,
+                error_rows = $4,
+                counted_at = $5,
+                updated_at = now()
+          WHERE id = $6 AND tenant_id = $7`,
         [
-          pending.id,
-          params.tenantId,
+          params.mapping,
+          dataRows.length,
+          validRows,
+          errorRows,
+          params.countedAt ?? null,
           params.jobId,
-          pending.rowNumber,
-          pending.raw,
-          pending.normalized,
-          pending.status,
-          pending.errorCode,
-          pending.errorDetail,
-          pending.lotNumber,
-          pending.serialNumber
+          params.tenantId
         ]
       );
+    });
+  } catch (error) {
+    if (isConstraintViolation(error, [IMPORT_SERIAL_UNIQUE_INDEX])) {
+      throw new Error('IMPORT_DUPLICATE_SERIAL');
     }
-
-    await client.query(
-      `UPDATE import_jobs
-          SET status = 'validated',
-              mapping = $1,
-              total_rows = $2,
-              valid_rows = $3,
-              error_rows = $4,
-              counted_at = $5,
-              updated_at = now()
-        WHERE id = $6 AND tenant_id = $7`,
-      [
-        params.mapping,
-        dataRows.length,
-        validRows,
-        errorRows,
-        params.countedAt ?? null,
-        params.jobId,
-        params.tenantId
-      ]
-    );
-  });
+    throw error;
+  }
 
   return {
     totalRows: dataRows.length,
@@ -744,6 +769,9 @@ export async function applyImportJob(params: {
   const job = await getImportJob(params.tenantId, params.jobId);
   if (!job) {
     throw new Error('IMPORT_JOB_NOT_FOUND');
+  }
+  if (['queued', 'processing', 'completed'].includes(job.status)) {
+    return job;
   }
   if (job.status !== 'validated') {
     throw new Error('IMPORT_NOT_VALIDATED');
@@ -788,11 +816,24 @@ export async function applyImportJob(params: {
     throw new Error('IMPORT_HAS_ERRORS');
   }
 
-  await query(
-    `UPDATE import_jobs SET status = 'queued', started_at = now(), updated_at = now()
-     WHERE id = $1 AND tenant_id = $2`,
+  const queued = await query(
+    `UPDATE import_jobs
+        SET status = 'queued',
+            started_at = COALESCE(started_at, now()),
+            updated_at = now()
+      WHERE id = $1
+        AND tenant_id = $2
+        AND status = 'validated'
+      RETURNING id`,
     [params.jobId, params.tenantId]
   );
+  if ((queued.rowCount ?? 0) === 0) {
+    const current = await getImportJob(params.tenantId, params.jobId);
+    if (current && ['queued', 'processing', 'completed'].includes(current.status)) {
+      return current;
+    }
+    throw new Error('IMPORT_NOT_VALIDATED');
+  }
 
   void processImportJob(params.jobId, params.tenantId, params.userId);
 
@@ -802,13 +843,22 @@ export async function applyImportJob(params: {
 async function resolveOrCreateLotForImport(
   tenantId: string,
   itemId: string,
-  lotCode: string
+  lotCode: string,
+  options?: { rejectExisting?: boolean }
 ): Promise<string> {
   const existing = await query<{ id: string }>(
-    'SELECT id FROM lots WHERE tenant_id = $1 AND item_id = $2 AND lot_code = $3 LIMIT 1',
+    `SELECT id
+       FROM lots
+      WHERE tenant_id = $1
+        AND item_id = $2
+        AND lower(btrim(lot_code)) = lower(btrim($3))
+      LIMIT 1`,
     [tenantId, itemId, lotCode]
   );
   if (existing.rows[0]) {
+    if (options?.rejectExisting) {
+      throw new Error('IMPORT_SERIAL_ALREADY_EXISTS');
+    }
     return existing.rows[0].id;
   }
   const lotId = uuidv4();
@@ -821,9 +871,17 @@ async function resolveOrCreateLotForImport(
     );
     return lotId;
   } catch (error: any) {
-    if (error?.code === '23505') {
+    if (isConstraintViolation(error, ['idx_lots_item_code', LOT_NORMALIZED_UNIQUE_INDEX]) || error?.code === '23505') {
+      if (options?.rejectExisting) {
+        throw new Error('IMPORT_SERIAL_ALREADY_EXISTS');
+      }
       const raceResult = await query<{ id: string }>(
-        'SELECT id FROM lots WHERE tenant_id = $1 AND item_id = $2 AND lot_code = $3 LIMIT 1',
+        `SELECT id
+           FROM lots
+          WHERE tenant_id = $1
+            AND item_id = $2
+            AND lower(btrim(lot_code)) = lower(btrim($3))
+          LIMIT 1`,
         [tenantId, itemId, lotCode]
       );
       if (raceResult.rows[0]) {
@@ -970,6 +1028,9 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
         notes: string | null;
         lotNumber: string | null;
         serialNumber: string | null;
+        requiresLot: boolean;
+        requiresSerial: boolean;
+        resolvedLotId: string | null;
       };
       const byLocation = new Map<string, OnHandLineWithTrace[]>();
 
@@ -995,9 +1056,24 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
           reasonCode: 'import_snapshot',
           notes: buildOnHandImportTraceNote(normalized),
           lotNumber,
-          serialNumber
+          serialNumber,
+          requiresLot: !!normalized.requiresLot,
+          requiresSerial: !!normalized.requiresSerial,
+          resolvedLotId: null
         });
         byLocation.set(locationId, lines);
+      }
+
+      for (const linesWithTrace of byLocation.values()) {
+        for (const traceData of linesWithTrace) {
+          if (!traceData.requiresSerial || !traceData.serialNumber) continue;
+          traceData.resolvedLotId = await resolveOrCreateLotForImport(
+            tenantId,
+            traceData.itemId,
+            traceData.serialNumber,
+            { rejectExisting: true }
+          );
+        }
       }
 
       for (const [locationId, linesWithTrace] of byLocation.entries()) {
@@ -1063,11 +1139,21 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
             const traceData = linesWithTrace[lineNumber - 1];
             if (!traceData) continue;
 
-            // Resolve lot code: for lot-tracked items use lotNumber; for serial-tracked items use serialNumber as lot code
-            const lotCode = traceData.lotNumber ?? traceData.serialNumber ?? null;
+            // Resolve lot code: for lot-tracked items use lotNumber; for serial-tracked items use serialNumber as lot code.
+            // Optional trace columns on untracked rows are import notes only, not structural lot/serial identity.
+            const lotCode = traceData.requiresLot
+              ? traceData.lotNumber
+              : traceData.requiresSerial
+                ? traceData.serialNumber
+                : null;
             if (!lotCode) continue;
 
-            const lotId = await resolveOrCreateLotForImport(tenantId, movLine.item_id, lotCode);
+            const lotId = traceData.resolvedLotId ?? await resolveOrCreateLotForImport(
+              tenantId,
+              movLine.item_id,
+              lotCode,
+              { rejectExisting: traceData.requiresSerial }
+            );
             const quantityDelta = Number(movLine.quantity_delta);
             if (quantityDelta === 0) continue;
 
@@ -1106,11 +1192,19 @@ async function processImportJob(jobId: string, tenantId: string, userId: string)
       [jobId, tenantId]
     );
   } catch (error: any) {
+    const errorSummary =
+      isConstraintViolation(error, [IMPORT_SERIAL_UNIQUE_INDEX])
+        ? 'IMPORT_DUPLICATE_SERIAL'
+        : isConstraintViolation(error, [LOT_NORMALIZED_UNIQUE_INDEX])
+          ? 'IMPORT_SERIAL_ALREADY_EXISTS'
+          : error instanceof Error
+            ? error.message
+            : 'Import failed';
     await query(
       `UPDATE import_jobs
           SET status = 'failed', error_summary = $3, finished_at = now(), updated_at = now()
         WHERE id = $1 AND tenant_id = $2`,
-      [jobId, tenantId, error instanceof Error ? error.message : 'Import failed']
+      [jobId, tenantId, errorSummary]
     );
   }
 }

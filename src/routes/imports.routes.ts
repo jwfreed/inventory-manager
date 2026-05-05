@@ -107,6 +107,12 @@ router.post('/admin/imports/:id/validate', async (req: Request, res: Response) =
     if (error?.message === 'IMPORT_FORBIDDEN_COLUMN') {
       return res.status(400).json({ error: 'Unsupported trace identifier column.' });
     }
+    if (error?.message === 'IMPORT_DUPLICATE_SERIAL') {
+      return res.status(409).json({ error: 'Duplicate serial number.' });
+    }
+    if (error?.message === 'IMPORT_SERIAL_QUANTITY_MUST_BE_ONE') {
+      return res.status(400).json({ error: 'Serial-tracked on-hand rows must have quantity 1.' });
+    }
     if (error?.message === 'IMPORT_ROW_LIMIT') {
       return res.status(413).json({ error: 'CSV exceeds row limit.' });
     }
@@ -132,6 +138,9 @@ router.post('/admin/imports/:id/apply', async (req: Request, res: Response) => {
   } catch (error: any) {
     if (error?.message === 'IMPORT_HAS_ERRORS') {
       return res.status(409).json({ error: 'Fix validation errors before applying.' });
+    }
+    if (error?.message === 'IMPORT_SERIAL_ALREADY_EXISTS' || error?.message === 'IMPORT_DUPLICATE_SERIAL') {
+      return res.status(409).json({ error: 'Duplicate serial number.' });
     }
     if (error?.message === 'IMPORT_NOT_VALIDATED') {
       return res.status(409).json({ error: 'Validate import before applying.' });
