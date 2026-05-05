@@ -11,8 +11,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+test.after(async () => {
+  await pool.end();
+});
 
 // The exact preflight fragment from migration 1794000000000 that detects
 // tenants with more than one item sharing the same lower(btrim(sku)).
@@ -102,4 +108,25 @@ test('migration preflight passes when no tenant has ambiguous normalized SKUs', 
     await pool.query(`DELETE FROM items WHERE id = $1`, [itemId]);
     await pool.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
   }
+});
+
+test('migration 1794000000000 source contains the ambiguous-SKU preflight logic this test depends on', async () => {
+  const migrationPath = resolve(
+    process.cwd(),
+    'src/migrations/1794000000000_align_import_job_rows_serial_identity.ts'
+  );
+  const source = await readFile(migrationPath, 'utf8');
+
+  assert.ok(
+    source.includes('ITEMS_AMBIGUOUS_NORMALIZED_SKU'),
+    'Migration must contain ITEMS_AMBIGUOUS_NORMALIZED_SKU error marker'
+  );
+  assert.ok(
+    source.includes('GROUP BY tenant_id, lower(btrim(sku))'),
+    'Migration must group by tenant_id, lower(btrim(sku)) for ambiguity detection'
+  );
+  assert.ok(
+    source.includes('HAVING COUNT(*) > 1'),
+    'Migration must use HAVING COUNT(*) > 1 to identify duplicate normalized SKUs'
+  );
 });
