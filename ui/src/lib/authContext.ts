@@ -15,6 +15,7 @@ export type AuthTenant = {
   name: string
   slug: string
   parentTenantId?: string | null
+  logoUrl?: string | null
   createdAt?: string
 }
 

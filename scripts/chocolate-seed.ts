@@ -495,11 +495,16 @@ async function ensureLocalTenantAdminPrincipal(config: SeedConfig, log: ReturnTy
       const tenantId = tenantRes.rows[0]?.id ?? uuidv4()
       if (!tenantRes.rows[0]) {
         await client.query(
-          `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
-           VALUES ($1, $2, $3, NULL, now())`,
-          [tenantId, config.tenantName, config.tenantSlug],
+          `INSERT INTO tenants (id, name, slug, parent_tenant_id, logo_url, created_at)
+           VALUES ($1, $2, $3, NULL, $4, now())`,
+          [tenantId, config.tenantName, config.tenantSlug, `/tenants/${config.tenantSlug}/logo.png`],
         )
         log.info(`Tenant created: ${config.tenantSlug} (${tenantId})`)
+      } else {
+        await client.query(
+          `UPDATE tenants SET logo_url = COALESCE(logo_url, $1) WHERE id = $2`,
+          [`/tenants/${config.tenantSlug}/logo.png`, tenantId],
+        )
       }
 
       const userRes = await client.query<{ id: string }>('SELECT id FROM users WHERE email = $1', [

@@ -122,6 +122,7 @@ function mapTenant(row: any) {
     name: row.name,
     slug: row.slug,
     parentTenantId: row.parent_tenant_id ?? null,
+    logoUrl: row.logo_url ?? null,
     createdAt: row.created_at
   };
 }

@@ -1145,14 +1145,14 @@ async function upsertTenant(client: PoolClient, slug: string, name: string): Pro
   const existing = await client.query<TenantRow>('SELECT id FROM tenants WHERE slug = $1', [slug]);
   if ((existing.rowCount ?? 0) > 0) {
     const tenantId = existing.rows[0].id;
-    await client.query('UPDATE tenants SET name = $1 WHERE id = $2', [name, tenantId]);
+    await client.query('UPDATE tenants SET name = $1, logo_url = $2 WHERE id = $3', [name, `/tenants/${slug}/logo.png`, tenantId]);
     return { id: tenantId, created: false };
   }
   const tenantId = deterministicId('tenant', slug);
   await client.query(
-    `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
-     VALUES ($1, $2, $3, NULL, now())`,
-    [tenantId, name, slug]
+    `INSERT INTO tenants (id, name, slug, parent_tenant_id, logo_url, created_at)
+     VALUES ($1, $2, $3, NULL, $4, now())`,
+    [tenantId, name, slug, `/tenants/${slug}/logo.png`]
   );
   return { id: tenantId, created: true };
 }
