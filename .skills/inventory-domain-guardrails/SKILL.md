@@ -19,10 +19,9 @@ Determine whether a task preserves inventory meaning, explicit state semantics, 
 ## CONSTRAINTS
 - Do not collapse `on-hand`, `available`, `allocated`, `on-hold`, `in-transit`, `WIP`, or `consumed`.
 - Do not allow implicit states or skipped workflow phases.
-- Do not allow direct balance overwrites to replace movement-based truth.
+- Do not allow direct balance overwrites; all quantity changes must be movement-based.
 - Do not allow missing or inferred UOM, location, or audit reason on quantity-affecting behavior.
 - Do not reinterpret historical stock meaning for convenience.
-- Do not allow direct balance overwrites; all quantity changes must be movement-based.
 - Do not treat network-wide stock as equivalent to location-specific usable stock.
 - Do not allow unavailable, quarantined, in-transit, or unaccepted stock to be treated as available.
 - Do not bypass discrepancy workflows (detect -> isolate -> investigate -> adjust).

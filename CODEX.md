@@ -30,6 +30,7 @@ Codex operates as defined in `AGENTS.md § Role`.
 - No duplicate logic paths.
 - No replay/execution drift.
 - Do not hallucinate repository behavior — inspect code when uncertain.
+- See `AGENTS.md § Forbidden Changes` for additional hard prohibitions.
 
 ---
 
@@ -43,7 +44,7 @@ Codex operates as defined in `AGENTS.md § Role`.
 
 ## Skills
 
-- Before implementing any non-trivial task, follow the Skill Execution Contract in `AGENTS.md`.
+- Skills are in `.skills/`. Before implementing any non-trivial task, follow the Skill Execution Contract in `AGENTS.md`.
 - Skill OUTPUT SCHEMAs required by `AGENTS.md` must be completed before implementation. They may be kept in the agent's working notes unless the user asks for them. Final responses should still report changed files, verification run, and unresolved risk when implementation is complete.
 
 ## Verification

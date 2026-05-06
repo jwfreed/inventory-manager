@@ -111,6 +111,7 @@ If a suite cannot run, say so explicitly and do not imply it passed.
 - Skills are required, not optional. If a skill applies, it must be executed.
 - Multiple applicable skills must all be executed.
 - Do not begin implementation until all OUTPUT SCHEMAs are complete.
+- Skill OUTPUT SCHEMAs are internal working artifacts. Do not show them to the user unless explicitly asked. Completion reports must still state changed files, verification outcome, and unresolved risk.
 
 ### Non-Trivial Task Definition
 
@@ -137,9 +138,21 @@ If the matrix and this section disagree, apply the stricter skill set and update
 
 ## Conflict Resolution
 
+- **Instruction precedence**: `AGENTS.md` → applicable `.skills/` → agent overlays (`CLAUDE.md`, `CODEX.md`, `.github/copilot-instructions.md`). When any two conflict, the higher authority wins.
 - If documents disagree on domain meaning, `docs/inventory/domain-invariants.md` wins.
 - If a skill and a generic coding instinct disagree, the skill wins.
 - If a task spans several risk areas, combine the relevant skills.
+
+---
+
+## Review-Only Mode
+
+When a task is a review, audit, readiness assessment, or merge decision only:
+
+- Apply `inventory-review-checklist` (and other applicable skills) to produce a review decision.
+- Do not implement code changes unless the user explicitly asks for fixes.
+- Completion means a full OUTPUT SCHEMA with a review decision — not a code change.
+- All other skill execution and verification rules still apply.
 
 ---
 
@@ -171,3 +184,5 @@ Before finalizing any change, confirm:
 - [ ] Failure modes are addressed.
 
 If any item fails, the task is incomplete.
+
+If required verification cannot run (environment unavailable, suite blocked, or CI inaccessible), deliver the work and explicitly list every verification step that did not run. Do not imply the task is fully verified.
