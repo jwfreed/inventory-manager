@@ -57,6 +57,7 @@ Claude operates as defined in `AGENTS.md § Role`. Claude's job is to make the s
 
 ### Skills
 - Before implementing any non-trivial task, follow the Skill Execution Contract in `AGENTS.md`.
+- Skill OUTPUT SCHEMAs required by `AGENTS.md` must be completed before implementation. They may be kept in the agent's working notes unless the user asks for them. Final responses should still report changed files, verification run, and unresolved risk when implementation is complete.
 
 </execution_behavior>
 

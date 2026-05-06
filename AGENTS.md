@@ -112,6 +112,16 @@ If a suite cannot run, say so explicitly and do not imply it passed.
 - Multiple applicable skills must all be executed.
 - Do not begin implementation until all OUTPUT SCHEMAs are complete.
 
+### Non-Trivial Task Definition
+
+A task is **non-trivial** if it touches any of the following:
+
+- inventory quantities, states, movements, allocations, holds, transfers, consumption, shipping, counting, adjustment, reconciliation, UOM, lots, locations, audit behavior, or idempotency
+- schema, migrations, service logic, APIs, UI workflow behavior, reporting, projections, test tiers, or CI commands
+- any code path where a wrong change could misstate stock, permit invalid operator action, weaken auditability, or create replay/execution drift
+
+A task is usually **trivial** only if it is isolated copy, comments, formatting, or documentation that does not alter domain meaning, executable behavior, tests, or operator interpretation.
+
 ### Skill Routing
 
 - `inventory-domain-guardrails` — inventory meaning, state transitions, movement semantics, reconciliation, UOM, location truth, auditability.
@@ -119,6 +129,9 @@ If a suite cannot run, say so explicitly and do not imply it passed.
 - `inventory-review-checklist` — self-review, PR review, acceptance review on inventory changes.
 - `inventory-test-strategy` — adding/changing tests for quantity-affecting behavior, failure paths, concurrency, migration safety.
 - `inventory-ui-flow-guardrails` — frontend labels, action gating, workflow screens, status mappings, UI behavior affecting operator understanding.
+
+After the initial routing pass, use `docs/engineering/skill-selection-matrix.md` to confirm all required and optional skills.
+If the matrix and this section disagree, apply the stricter skill set and update the docs in the same change only if the user asked for documentation cleanup.
 
 ---
 

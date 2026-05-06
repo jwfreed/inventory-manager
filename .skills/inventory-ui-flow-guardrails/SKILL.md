@@ -71,8 +71,18 @@ Keep inventory UI flows aligned with backend truth so the interface does not mis
 ## OUTPUT SCHEMA (REQUIRED)
 - UI states involved:
 - Invalid actions prevented:
-- Required UI constraints:
+
+### Inventory truth requirements
+- Required UI constraints (inventory truth):
 - Mismatches detected:
+
+### Operator usability requirements
+- Required UI constraints (usability):
+- Usability gaps identified:
+
+- Files inspected:
+- Evidence used:
+- Unverified assumptions:
 
 ## EXECUTION RULE
 Do not proceed until the OUTPUT SCHEMA is fully completed.

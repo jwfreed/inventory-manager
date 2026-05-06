@@ -54,8 +54,13 @@ Classify the task and define the smallest safe implementation scope before codin
 - Touched workflows:
 - Touched entities:
 - Affected layers:
+- Canonical boundaries involved:
+- Required skills after planning:
 - Non-goals:
 - Risks (max 3):
+- Files inspected:
+- Evidence used:
+- Unverified assumptions:
 
 ## EXECUTION RULE
 Do not proceed until the OUTPUT SCHEMA is fully completed.

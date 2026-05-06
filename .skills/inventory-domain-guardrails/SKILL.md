@@ -51,6 +51,9 @@ Determine whether a task preserves inventory meaning, explicit state semantics, 
 - State transitions affected:
 - Violations detected:
 - Required safeguards:
+- Files inspected:
+- Evidence used:
+- Unverified assumptions:
 
 ## EXECUTION RULE
 Do not proceed until the OUTPUT SCHEMA is fully completed.

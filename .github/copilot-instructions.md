@@ -2,6 +2,7 @@
 
 > **Source of truth: `AGENTS.md`**
 > This file is a thin overlay for GitHub Copilot. All invariants, architecture rules, and domain constraints live in `AGENTS.md`.
+> The bullets below are excerpts from `AGENTS.md` repeated here for local Copilot visibility. They do not override, extend, or replace anything defined in `AGENTS.md`.
 
 ## Ledger Safety
 

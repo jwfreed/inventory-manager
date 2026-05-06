@@ -45,8 +45,12 @@ Define the minimum test coverage required to prove inventory behavior remains co
 - Workflow:
 - Test layers:
 - Scenarios:
-  - [name]: [what it proves] -> [failure mode]
+  - [name]: [what it proves] -> [failure mode] -> [target tier/command]
 - Missing tests:
+- Verification command/tier:
+- Files inspected:
+- Evidence used:
+- Unverified assumptions:
 
 ## EXECUTION RULE
 Do not proceed until the OUTPUT SCHEMA is fully completed.

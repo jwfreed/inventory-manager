@@ -51,10 +51,15 @@ Reject if any item fails.
 
 ## OUTPUT SCHEMA (REQUIRED)
 - Decision: (accept / accept with conditions / reject)
+- Severity: (blocker / high / medium / low / none)
 - Domain risks:
 - Failure modes identified:
 - Missing protections:
 - Required fixes:
+- Verification required before merge:
+- Files inspected:
+- Evidence used:
+- Unverified assumptions:
 
 ## EXECUTION RULE
 Do not proceed until the OUTPUT SCHEMA is fully completed.
