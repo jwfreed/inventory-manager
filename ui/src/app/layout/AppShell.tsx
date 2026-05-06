@@ -28,28 +28,39 @@ function AppShell() {
     <CommandPaletteProvider>
       <div className="h-screen overflow-hidden bg-slate-25 text-slate-900">
         <aside className="fixed inset-y-0 left-0 hidden w-64 overflow-y-auto border-r border-slate-200 bg-white lg:flex lg:flex-col">
-          <div className="px-5 py-6">
-            <div className="text-lg font-semibold text-slate-900">Inventory UI</div>
-            <p className="mt-1 text-sm text-slate-500">Inventory & manufacturing ops</p>
+          <div className="flex items-center gap-3 px-5 py-6">
+            <img src="/siamaya-logo.png" alt={tenantLabel ?? 'Logo'} className="h-10 w-10 flex-shrink-0 rounded-full object-contain" />
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Inventory Manager</div>
+              {tenantLabel && <p className="text-xs text-slate-500">{tenantLabel}</p>}
+            </div>
           </div>
           <SectionNav navItems={navItems} />
         </aside>
         <div className="flex h-full min-w-0 flex-col lg:pl-64">
-          <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-            <div>
-              <h1 className="text-lg font-semibold text-slate-900">Inventory Manager</h1>
-              <p className="text-sm text-slate-500">UI foundation (Phase A)</p>
+          <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
+            {/* Mobile branding — hidden on desktop where sidebar shows it */}
+            <div className="flex items-center gap-2.5 lg:hidden">
+              <img src="/siamaya-logo.png" alt={tenantLabel ?? 'Logo'} className="h-9 w-9 flex-shrink-0 rounded-full object-contain" />
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Inventory Manager</div>
+                {tenantLabel && <div className="text-xs text-slate-400">{tenantLabel}</div>}
+              </div>
             </div>
+            {/* Desktop spacer so right cluster stays right */}
+            <div className="hidden lg:block" />
+            {/* User cluster */}
             <div className="flex items-center gap-3">
               {(userLabel || tenantLabel) && (
-                <div className="text-right text-xs text-slate-500">
-                  {userLabel && <div className="text-sm font-semibold text-slate-900">{userLabel}</div>}
-                  {tenantLabel && <div>{tenantLabel}</div>}
+                <div className="text-right">
+                  {userLabel && <div className="text-xs font-medium text-slate-700 leading-tight">{userLabel}</div>}
+                  {tenantLabel && <div className="text-xs text-slate-400 leading-tight">{tenantLabel}</div>}
                 </div>
               )}
               <Badge variant="info" className="uppercase">
                 {envLabel}
               </Badge>
+              <div className="h-4 w-px bg-slate-200" />
               <Button variant="secondary" size="sm" onClick={() => void logout()}>
                 Sign out
               </Button>
