@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import type { DashboardSignalSection } from '@api/types'
 import { runDashboardKpis } from '../api/kpis'
 import { kpisQueryKeys, useKpiRuns } from '../queries'
 import { useAuth } from '@shared/auth'
@@ -65,6 +66,7 @@ const MONITORING_CTA_LINKS = {
   cycleCount: '/items',
   warehouseScope: '/items',
 } as const
+const INVENTORY_HEALTH_DRILLDOWN = '/admin/inventory-health'
 
 export default function DashboardPage() {
   const { user, tenant, hasPermission } = useAuth()
@@ -205,6 +207,9 @@ export default function DashboardPage() {
 
   const hasReorderRisk = (allExceptionSignals.find((signal) => signal.type === 'reorder_risk')?.count ?? 0) > 0
   const canRunKpis = hasPermission('planning:write')
+  const canViewInventoryHealth = hasPermission('admin:health')
+  const resolveDrilldown = (drilldownTo: string) =>
+    drilldownTo === INVENTORY_HEALTH_DRILLDOWN && !canViewInventoryHealth ? undefined : drilldownTo
 
   const handleRunKpis = () => {
     if (!canRunKpis) return
@@ -219,7 +224,7 @@ export default function DashboardPage() {
     data.sections?.systemHealth,
     data.sections?.demandVolatility,
     data.sections?.forecastAccuracy,
-  ].filter(Boolean)
+  ].filter((section): section is DashboardSignalSection => Boolean(section))
 
   return (
     <div className="space-y-6">
@@ -258,8 +263,8 @@ export default function DashboardPage() {
           <Toggle
             ariaLabel="Dashboard signal mode"
             options={[
-              { value: 'actionable', label: 'Actionable' },
-              { value: 'all', label: 'All signals' },
+              { value: 'actionable', label: 'Needs attention' },
+              { value: 'all', label: 'Full dashboard' },
             ]}
             value={mode}
             onChange={(value) => setMode(value)}
@@ -378,7 +383,7 @@ export default function DashboardPage() {
                   value={signal.value}
                   severity={signal.severity}
                   helper={signal.helper}
-                  to={signal.drilldownTo}
+                  to={resolveDrilldown(signal.drilldownTo)}
                   explanation={{
                     formula: signal.formula,
                     asOf: data.asOfLabel,
@@ -422,7 +427,7 @@ export default function DashboardPage() {
                 value={signal.value}
                 severity={signal.severity}
                 helper={signal.helper}
-                to={signal.drilldownTo}
+                to={resolveDrilldown(signal.drilldownTo)}
                 explanation={{
                   formula: signal.formula,
                   asOf: data.asOfLabel,
@@ -461,7 +466,7 @@ export default function DashboardPage() {
                   value={metric.value}
                   severity={metric.severity}
                   helper={metric.helper}
-                  to={metric.drilldownTo}
+                  to={resolveDrilldown(metric.drilldownTo)}
                   explanation={{
                     formula: metric.formula,
                     asOf: data.asOfLabel,
@@ -486,11 +491,16 @@ export default function DashboardPage() {
                     {
                       id: 'label',
                       header: 'Entity',
-                      cell: (row) => (
-                        <Link to={row.drilldownTo} className="font-medium text-brand-700 hover:underline">
-                          {row.label}
-                        </Link>
-                      ),
+                      cell: (row) => {
+                        const drilldownTo = resolveDrilldown(row.drilldownTo)
+                        return drilldownTo ? (
+                          <Link to={drilldownTo} className="font-medium text-brand-700 hover:underline">
+                            {row.label}
+                          </Link>
+                        ) : (
+                          <span className="font-medium text-slate-900">{row.label}</span>
+                        )
+                      },
                     },
                     {
                       id: 'secondary',

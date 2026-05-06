@@ -16,6 +16,7 @@ const { runDashboardKpisMock, useDashboardSignalsMock, useKpiRunsMock, mockKpiQu
     fulfillmentFillRatePrefix: () => ['kpis', 'fill-rate'] as const,
     replenishmentRecommendationsPrefix: () => ['planning', 'replenishment'] as const,
     replenishmentPoliciesPrefix: () => ['planning', 'replenishment-policies'] as const,
+    dashboardOverviewPrefix: () => ['kpis', 'dashboard-overview'] as const,
   },
 }))
 
@@ -154,6 +155,17 @@ beforeEach(() => {
 })
 
 describe('DashboardPage', () => {
+  it('renders dashboard mode labels without changing internal mode values', () => {
+    renderWithQueryClient(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('radio', { name: 'Needs attention' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'Full dashboard' })).toHaveAttribute('aria-checked', 'false')
+  })
+
   it('shows human-readable warehouse scope label when warehouse id is present', () => {
     renderWithQueryClient(
       <MemoryRouter>
@@ -452,6 +464,74 @@ describe('DashboardPage', () => {
       )
       fireEvent.click(screen.getByRole('button', { name: 'Run KPI calculations' }))
       expect(runDashboardKpisMock).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('RBAC: inventory-health dashboard drilldowns', () => {
+    function useInventoryHealthDrilldownResponse() {
+      useDashboardSignalsMock.mockReturnValue(
+        baseSignalsResponse({
+          sections: {
+            systemHealth: {
+              key: 'systemHealth',
+              title: 'System Health',
+              description: 'Health signals',
+              metrics: [
+                {
+                  key: 'inventory_health_gate',
+                  label: 'Inventory health gate',
+                  severity: 'action',
+                  value: '2',
+                  helper: 'Two health issues',
+                  count: 2,
+                  drilldownTo: '/admin/inventory-health',
+                  formula: 'x',
+                  sources: [],
+                  queryHint: 'x',
+                },
+              ],
+              rows: [
+                {
+                  id: 'health-row-1',
+                  label: 'Health gate row',
+                  secondaryLabel: 'Ledger check',
+                  value: 'Review',
+                  severity: 'action',
+                  drilldownTo: '/admin/inventory-health',
+                },
+              ],
+            },
+          },
+        }),
+      )
+    }
+
+    it('keeps inventory-health dashboard content visible but not clickable without admin:health', () => {
+      authPermissions = ['planning:write']
+      useInventoryHealthDrilldownResponse()
+
+      renderWithQueryClient(
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>,
+      )
+
+      expect(screen.getByText('Inventory health gate')).toBeInTheDocument()
+      expect(screen.getByText('Health gate row')).toBeInTheDocument()
+      expect(document.querySelectorAll('a[href="/admin/inventory-health"]')).toHaveLength(0)
+    })
+
+    it('keeps inventory-health dashboard drilldowns clickable with admin:health', () => {
+      authPermissions = ['planning:write', 'admin:health']
+      useInventoryHealthDrilldownResponse()
+
+      renderWithQueryClient(
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>,
+      )
+
+      expect(document.querySelectorAll('a[href="/admin/inventory-health"]').length).toBeGreaterThan(0)
     })
   })
 })

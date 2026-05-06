@@ -66,7 +66,7 @@ export function selectLastSuccessfulRun(runs: KpiRun[]) {
 
 export function resolveWarehouseScopeLabel(input: {
   warehouseId?: string | null
-  warehouseLookup: Map<string, { code?: string; name?: string }>
+  warehouseLookup: Map<string, { code?: string | null; name?: string | null }>
 }) {
   const warehouseId = input.warehouseId ?? undefined
   if (!warehouseId) {

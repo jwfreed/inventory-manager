@@ -21,7 +21,7 @@ type Props = {
   unit?: string
   severity: Severity
   helper: string
-  to: string
+  to?: string
   ctaLabel?: string
   explanation: MetricExplanation
   className?: string
@@ -59,23 +59,34 @@ export function MetricCard({
               <SeverityPill severity={severity} />
             </div>
             <div className="mt-2">
-              <Link
-                to={to}
-                className="inline-flex items-baseline gap-1 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                aria-label={`View drilldown for ${title}`}
-              >
-                <span className="text-3xl font-semibold tracking-tight text-slate-900">{value}</span>
-                {unit ? <span className="text-sm text-slate-500">{unit}</span> : null}
-              </Link>
+              {to ? (
+                <Link
+                  to={to}
+                  className="inline-flex items-baseline gap-1 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                  aria-label={`View drilldown for ${title}`}
+                >
+                  <span className="text-3xl font-semibold tracking-tight text-slate-900">{value}</span>
+                  {unit ? <span className="text-sm text-slate-500">{unit}</span> : null}
+                </Link>
+              ) : (
+                <span className="inline-flex items-baseline gap-1">
+                  <span className="text-3xl font-semibold tracking-tight text-slate-900">{value}</span>
+                  {unit ? <span className="text-sm text-slate-500">{unit}</span> : null}
+                </span>
+              )}
             </div>
             <p className="mt-1 text-xs text-slate-500">{helper}</p>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <Link to={to}>
-              <Button size="sm" variant="secondary" aria-label={`${ctaLabel} ${title}`}>
-                {ctaLabel}
-              </Button>
-            </Link>
+            {to ? (
+              <Link to={to}>
+                <Button size="sm" variant="secondary" aria-label={`${ctaLabel} ${title}`}>
+                  {ctaLabel}
+                </Button>
+              </Link>
+            ) : (
+              <span />
+            )}
             <Button
               size="sm"
               variant="secondary"

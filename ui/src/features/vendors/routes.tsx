@@ -33,4 +33,12 @@ export const vendorRoutes: AppRouteObject[] = [
       },
     },
   },
+  {
+    path: 'supplier-scorecards/:vendorId',
+    element: <SupplierScorecardsPage />,
+    handle: {
+      breadcrumb: 'Supplier Scorecard',
+      permission: 'purchasing:read',
+    },
+  },
 ]
