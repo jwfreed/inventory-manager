@@ -206,7 +206,7 @@ export async function projectInventoryMovement(
     await MetricsService.invalidateCache(tenantId);
     await cacheAdapter.invalidate(tenantId, '*');
   } catch {
-    // Cache invalidation should not fail the projection.
+    // power10: intentional-empty-catch -- cache invalidation must not fail authoritative projection work.
   }
 
   try {
@@ -222,7 +222,7 @@ export async function projectInventoryMovement(
       }
     });
   } catch {
-    // Event publish is best-effort.
+    // power10: intentional-empty-catch -- event publish is best-effort after authoritative projection work.
   }
 }
 

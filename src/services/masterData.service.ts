@@ -614,17 +614,16 @@ export async function createStandardWarehouseTemplate(
     );
     if ((exists.rowCount ?? 0) === 0) return desiredCode;
     const suffixBase = suffixSeed.slice(0, 8);
-    let candidate = `${desiredCode}-${suffixBase}`;
-    let counter = 1;
-    while (true) {
+    const maxCollisionAttempts = 100;
+    for (let counter = 0; counter < maxCollisionAttempts; counter += 1) {
+      const candidate = counter === 0 ? `${desiredCode}-${suffixBase}` : `${desiredCode}-${suffixBase}-${counter}`;
       const res = await client.query(
         'SELECT 1 FROM locations WHERE tenant_id = $1 AND code = $2 LIMIT 1',
         [tenantId, candidate]
       );
       if ((res.rowCount ?? 0) === 0) return candidate;
-      candidate = `${desiredCode}-${suffixBase}-${counter}`;
-      counter += 1;
     }
+    throw new Error('WAREHOUSE_LOCATION_CODE_COLLISION_LIMIT');
   }
   return withTransaction(async (client) => {
     const created: any[] = [];

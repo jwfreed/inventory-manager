@@ -53,7 +53,7 @@ function parseSummaryFromOutput(output, summaryCode) {
         summary = parsed;
       }
     } catch {
-      // Ignore non-JSON and malformed JSON lines from subprocess output.
+      // power10: intentional-empty-catch -- subprocess output may contain non-JSON diagnostic lines.
     }
   }
   return summary;

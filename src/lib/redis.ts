@@ -236,7 +236,7 @@ class CacheAdapter {
           await this.redis.quit()
         }
       } catch {
-        // Ignore shutdown errors when Redis was already unavailable.
+        // power10: intentional-empty-catch -- shutdown continues when Redis is already unavailable.
       }
     }
     this.fallbackCache?.destroy()

@@ -126,7 +126,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
         console.warn('[EXPLAIN ANALYZE]');
         explainResult.rows.forEach((row: any) => console.warn('  ', row['QUERY PLAN']));
       } catch (err) {
-        // Ignore explain errors (e.g., for queries with side effects)
+        // power10: intentional-empty-catch -- EXPLAIN diagnostics must not affect the original query result.
       }
     }
   }

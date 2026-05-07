@@ -66,7 +66,7 @@ rl.on('line', (line) => {
     bucket.bytesOut += entry.bytesOut ?? 0;
     bucket.durationMs += entry.durationMs ?? 0;
   } catch {
-    // Ignore non-JSON lines
+    // power10: intentional-empty-catch -- baseline parser ignores non-JSON log lines.
   }
 });
 

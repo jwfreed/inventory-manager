@@ -5,9 +5,11 @@ export async function pruneIdempotencyKeys(): Promise<{ deleted: number; retenti
   const retentionDays = Number.isFinite(retentionDaysRaw) ? Math.max(1, Math.floor(retentionDaysRaw)) : 7;
   const batchSizeRaw = Number(process.env.IDEMPOTENCY_RETENTION_BATCH ?? 5000);
   const batchSize = Number.isFinite(batchSizeRaw) ? Math.max(1, Math.floor(batchSizeRaw)) : 5000;
+  const maxBatchesRaw = Number(process.env.IDEMPOTENCY_RETENTION_MAX_BATCHES ?? 100);
+  const maxBatches = Number.isFinite(maxBatchesRaw) ? Math.max(1, Math.floor(maxBatchesRaw)) : 100;
 
   let deletedTotal = 0;
-  while (true) {
+  for (let batch = 0; batch < maxBatches; batch += 1) {
     const result = await query<{ deleted: number }>(
       `WITH to_delete AS (
           SELECT tenant_id, key
