@@ -13,6 +13,8 @@ The inventory ledger, ATP locking, idempotency, replay determinism, and projecti
 - `npm run check:quality` combines typecheck, lint, build, Power10 guard fixture tests, and Power10 guards.
 - CI runs the quality gate, truth tests, and the push-only contracts suite. Heavy scenarios remain in the scheduled nightly workflow and are not CI-gated on pull requests.
 
+For fixture tests or targeted local scanner runs, `POWER10_SCAN_ROOTS` may be set to a path-delimited list of files or directories. When unset, `check:power10` scans the default `src` and `scripts` roots.
+
 ## 1. Simple Control Flow
 
 Interpretation: production inventory paths should be readable as explicit workflows. Avoid hidden exits, dynamic dispatch that obscures mutation behavior, and control flow that makes replay/execution parity hard to inspect.
