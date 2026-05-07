@@ -9,8 +9,9 @@ The inventory ledger, ATP locking, idempotency, replay determinism, and projecti
 - `npm run typecheck:core` enforces strict TypeScript on core source outside migrations.
 - `npm run lint` runs a focused, warning-free ESLint gate on guard scripts and selected high-risk platform inventory modules.
 - `npm run check:power10` runs repository-specific static guardrails in `scripts/check-power10-guards.mjs`.
-- `npm run check:quality` combines typecheck, lint, build, and Power10 guards.
-- CI runs the quality gate and preserves the existing truth/contract/scenario jobs.
+- `npm run test:power10-guards` runs fixture tests for the Power10 scanner.
+- `npm run check:quality` combines typecheck, lint, build, Power10 guard fixture tests, and Power10 guards.
+- CI runs the quality gate, truth tests, and the push-only contracts suite. Heavy scenarios remain in the scheduled nightly workflow and are not CI-gated on pull requests.
 
 ## 1. Simple Control Flow
 
@@ -186,5 +187,6 @@ Exception comments are not a substitute for inventory correctness. Ledger writes
 ## Deferred Items
 
 - Full-repository ESLint is not yet a CI gate because existing code has many pre-existing `any`, unused variable, and narrow import-zone findings.
+- `test:scenarios` remains nightly-only because it covers heavy operational and load workflows that are intentionally outside the pull request merge gate.
 - Runtime scripts still use `ts-node --transpile-only` in several places. The production-grade direction is to keep a strict typecheck gate in CI first, then migrate operational scripts away from transpile-only where practical.
 - Function-size enforcement remains review-based until the codebase can absorb a low-noise metric gate.

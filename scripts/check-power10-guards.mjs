@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const SCAN_ROOTS = ['src', 'scripts'];
+const DEFAULT_SCAN_ROOTS = ['src', 'scripts'];
+const CUSTOM_SCAN_ROOTS = String(process.env.POWER10_SCAN_ROOTS ?? '').trim();
+const SCAN_ROOTS = parseScanRoots();
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs']);
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.git']);
 const SKIP_FILES = new Set([path.join(ROOT, 'scripts', 'check-power10-guards.mjs')]);
@@ -28,6 +30,19 @@ const violations = [];
 
 function relative(filePath) {
   return path.relative(ROOT, filePath);
+}
+
+function parseScanRoots() {
+  if (!CUSTOM_SCAN_ROOTS) return DEFAULT_SCAN_ROOTS;
+  return CUSTOM_SCAN_ROOTS
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function resolveScanRoot(scanRoot) {
+  if (path.isAbsolute(scanRoot)) return scanRoot;
+  return path.join(ROOT, scanRoot);
 }
 
 function lineNumberForIndex(source, index) {
@@ -65,6 +80,12 @@ function addViolation(filePath, lineNumber, code, message) {
 
 function listFiles(dirPath) {
   if (!fs.existsSync(dirPath)) return [];
+  const stats = fs.statSync(dirPath);
+  if (stats.isFile()) {
+    if (!SOURCE_EXTENSIONS.has(path.extname(dirPath))) return [];
+    if (SKIP_FILES.has(dirPath)) return [];
+    return [dirPath];
+  }
   const result = [];
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
   for (const entry of entries) {
@@ -180,7 +201,7 @@ function checkEmptyCatch(filePath, source) {
 }
 
 function checkUnboundedBatchPatterns(filePath, source) {
-  if (!relative(filePath).startsWith('src/')) return;
+  if (!CUSTOM_SCAN_ROOTS && !relative(filePath).startsWith('src/')) return;
 
   const promiseAllRows = /\bPromise\.all\s*\(\s*(?:\w+Rows|rows|result\.rows)\.map\s*\(/g;
   let match;
@@ -208,7 +229,7 @@ function checkUnboundedBatchPatterns(filePath, source) {
   }
 }
 
-const files = SCAN_ROOTS.flatMap((root) => listFiles(path.join(ROOT, root)));
+const files = SCAN_ROOTS.flatMap((root) => listFiles(resolveScanRoot(root)));
 
 for (const filePath of files) {
   const source = fs.readFileSync(filePath, 'utf8');
