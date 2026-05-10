@@ -58,6 +58,20 @@ type Item = {
   weightUom?: string | null
   isPurchasable?: boolean
   isManufactured?: boolean
+  requiresLot?: boolean
+  requiresSerial?: boolean
+  requiresQc?: boolean
+  lifecycleStatus?: string | null
+  isPhantom?: boolean
+  volume?: number | null
+  volumeUom?: string | null
+  standardCost?: number | null
+  standardCostCurrency?: string | null
+  rolledCost?: number | null
+  costMethod?: string | null
+  sellingPrice?: number | null
+  listPrice?: number | null
+  priceCurrency?: string | null
 }
 
 type Location = {
@@ -96,6 +110,14 @@ type Receipt = {
   status?: string
   inventoryMovementId?: string | null
   lines: Array<{ id: string; itemId: string; uom: string; quantityReceived: string | number }>
+}
+
+type InventoryTransferResult = {
+  movementId?: string
+  movement_id?: string
+  transferId?: string
+  transfer_id?: string
+  replayed?: boolean
 }
 
 type SalesOrder = {
@@ -260,6 +282,17 @@ export const DEMO_SKUS = [
 
 function componentRequirement(quantityPer: number) {
   return quantityPer * DEMO_FLOW_QUANTITY
+}
+
+function nullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function nullableText(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null
+  return String(value)
 }
 
 function requiredEnv(name: string): string {
@@ -432,6 +465,8 @@ async function ensureSession(config: SeedConfig, log: ReturnType<typeof makeLogg
   }
 
   log.warn('ALLOW_LOCAL_AUTH_REPAIR=1 enabled; local tenant/admin auth repair may create access or reset password.')
+  // Local/demo auth repair only. Inventory-affecting workflows below still go
+  // through canonical API/service paths and ledger posting boundaries.
   await ensureLocalTenantAdminPrincipal(config, log)
   const repairedPrincipalLogin = await tryLogin(config)
   if (repairedPrincipalLogin) {
@@ -488,6 +523,9 @@ async function resetOperationalData(config: SeedConfig, log: ReturnType<typeof m
 
   await client.connect()
   try {
+    // Demo reset is deliberately destructive but guard-gated and local-only.
+    // It removes operational documents and idempotency claims; it never edits
+    // posted ledger rows in place or writes replacement balances.
     log.info('Truncating operational tables...')
     await client.query(`TRUNCATE TABLE ${tables.join(', ')} CASCADE;`)
     const { rows } = await client.query<{ proc: string | null }>(
@@ -509,6 +547,9 @@ async function ensureLocalTenantAdminPrincipal(config: SeedConfig, log: ReturnTy
   if (process.env.NODE_ENV === 'production') {
     throw new Error('Local demo seeds cannot create or repair auth principals in production.')
   }
+  // No public API repairs an existing local admin principal. This direct DB
+  // path is limited to tenant/user/membership bootstrap behind
+  // ALLOW_LOCAL_AUTH_REPAIR=1 and never touches inventory state.
   await withDbClient(async (client) => {
     await client.query('BEGIN')
     try {
@@ -626,27 +667,56 @@ async function ensureItem(
 ): Promise<Item> {
   const existing = await findItemBySku(config, token, payload.sku)
   if (existing) {
+    const expectedDescription = payload.description ?? existing.description ?? null
+    const expectedWeight = payload.weight ?? null
+    const expectedWeightUom = payload.weightUom ?? null
+    const expectedDefaultLocationId = payload.defaultLocationId ?? null
+    const expectedIsPurchasable = payload.isPurchasable ?? existing.isPurchasable ?? false
+    const expectedIsManufactured = payload.isManufactured ?? existing.isManufactured ?? false
     const needsUpdate =
-      (payload.isPurchasable !== undefined && existing.isPurchasable !== payload.isPurchasable) ||
-      (payload.isManufactured !== undefined && existing.isManufactured !== payload.isManufactured) ||
-      (payload.defaultLocationId !== undefined && existing.defaultLocationId !== payload.defaultLocationId)
+      existing.name !== payload.name ||
+      (existing.description ?? null) !== expectedDescription ||
+      existing.type !== payload.type ||
+      (existing.defaultUom ?? null) !== payload.defaultUom ||
+      (existing.uomDimension ?? null) !== payload.uomDimension ||
+      (existing.canonicalUom ?? null) !== payload.canonicalUom ||
+      (existing.stockingUom ?? null) !== payload.stockingUom ||
+      (existing.defaultLocationId ?? null) !== expectedDefaultLocationId ||
+      nullableNumber(existing.weight) !== nullableNumber(expectedWeight) ||
+      (existing.weightUom ?? null) !== expectedWeightUom ||
+      Boolean(existing.isPurchasable) !== expectedIsPurchasable ||
+      Boolean(existing.isManufactured) !== expectedIsManufactured
     if (needsUpdate) {
       const updated = await apiRequest<Item>(config, 'PUT', `/items/${existing.id}`, {
         token,
         body: {
           sku: payload.sku,
           name: payload.name,
-          description: payload.description ?? existing.description ?? undefined,
+          description: expectedDescription ?? undefined,
+          lifecycleStatus: existing.lifecycleStatus ?? 'active',
+          isPhantom: existing.isPhantom ?? false,
           type: payload.type,
           defaultUom: payload.defaultUom,
           uomDimension: payload.uomDimension,
           canonicalUom: payload.canonicalUom,
           stockingUom: payload.stockingUom,
-          defaultLocationId: payload.defaultLocationId ?? null,
-          weight: payload.weight ?? existing.weight ?? null,
-          weightUom: payload.weightUom ?? existing.weightUom ?? null,
-          isPurchasable: payload.isPurchasable,
-          isManufactured: payload.isManufactured,
+          defaultLocationId: expectedDefaultLocationId,
+          weight: expectedWeight,
+          weightUom: expectedWeightUom,
+          isPurchasable: expectedIsPurchasable,
+          isManufactured: expectedIsManufactured,
+          requiresLot: existing.requiresLot ?? false,
+          requiresSerial: existing.requiresSerial ?? false,
+          requiresQc: existing.requiresQc ?? false,
+          volume: nullableNumber(existing.volume),
+          volumeUom: nullableText(existing.volumeUom),
+          standardCost: nullableNumber(existing.standardCost),
+          standardCostCurrency: nullableText(existing.standardCostCurrency),
+          rolledCost: nullableNumber(existing.rolledCost),
+          costMethod: nullableText(existing.costMethod),
+          sellingPrice: nullableNumber(existing.sellingPrice),
+          listPrice: nullableNumber(existing.listPrice),
+          priceCurrency: nullableText(existing.priceCurrency),
         },
       }).catch(async (error) => {
         const e = toApiError(error)
@@ -934,6 +1004,10 @@ async function ensureOperationalLocations(
     MANUAL_DEMO.rawMaterialLocationCodes.rawStore,
     'Factory Raw Material Store',
     'bin',
+    // Current work-order component reservation sync is backed by inventory_reservations,
+    // whose DB trigger requires reservation locations to be sellable. The raw-store
+    // code/name are operationally explicit, but it must retain SELLABLE semantics
+    // until component-reservation inventory states support non-sellable RM stores.
     { role: 'SELLABLE', parentLocationId: warehouse.id, isSellable: true },
   )
   const packStore = await ensureLocation(
@@ -1007,6 +1081,9 @@ async function ensureVendor(
 }
 
 async function ensureCustomer(tenantId: string, log: ReturnType<typeof makeLogger>): Promise<Customer> {
+  // Customers do not currently have a public master-data API in this app.
+  // Keep this direct write constrained to non-inventory master data for the
+  // local demo tenant; sales orders still use the canonical order API.
   return withDbClient(async (client) => {
     const existing = await client.query<Customer>(
       `SELECT id, code, name
@@ -1161,6 +1238,35 @@ async function ensureDemoQcAccepted(
       },
     )
     log.info(`QC accept ready (${(result as any).eventId ?? (result as any).id})`)
+  }
+}
+
+async function ensureDemoComponentsStoredForProduction(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+  sourceLocation: Location,
+  destinationLocation: Location,
+  componentItems: Array<{ spec: (typeof DEMO_BOM_COMPONENTS)[number]; item: Item }>,
+) {
+  for (const { spec, item } of componentItems) {
+    const idempotencyKey = `seed:siamaya:milk-chocolate-1000:store:${spec.key}:v1`
+    const result = await apiRequest<InventoryTransferResult>(config, 'POST', '/inventory-transfers', {
+      token,
+      idempotencyKey,
+      body: {
+        sourceLocationId: sourceLocation.id,
+        destinationLocationId: destinationLocation.id,
+        itemId: item.id,
+        quantity: componentRequirement(spec.quantityPer),
+        uom: spec.uom,
+        occurredAt: DEMO_DATES.qcAt,
+        reasonCode: 'demo_putaway_to_production_store',
+        notes:
+          'Demo storage transfer after QC acceptance. Current single-stage report-production consumes all BOM components from RM_STORE.',
+      },
+    })
+    log.info(`Component stored for production: ${item.sku} (${result.movementId ?? result.movement_id ?? result.transferId})`)
   }
 }
 
@@ -1334,21 +1440,6 @@ async function ensureDemoShipmentPosted(
   })
   log.info(`Shipment posted: ${DEMO_FLOW_IDS.shipmentExternalRef} (${posted.inventoryMovementId})`)
   return posted
-}
-
-async function markDemoSalesOrderShipped(tenantId: string, shipment: Shipment) {
-  if (shipment.status !== 'posted' || !shipment.inventoryMovementId) return
-  await withDbClient(async (client) => {
-    await client.query(
-      `UPDATE sales_orders
-          SET status = 'shipped',
-              updated_at = now()
-        WHERE tenant_id = $1
-          AND so_number = $2
-          AND status <> 'shipped'`,
-      [tenantId, DEMO_SO.number],
-    )
-  })
 }
 
 async function findDemoWorkOrder(tenantId: string) {
@@ -1705,6 +1796,7 @@ async function verifyDemoSeed(tenantId: string) {
       fulfilled_qty: string | null
       shipment_status: string | null
       shipment_movement_id: string | null
+      storage_transfer_count: string | null
       sellable_on_hand: string | null
       sellable_available: string | null
     }>(
@@ -1814,6 +1906,22 @@ async function verifyDemoSeed(tenantId: string) {
            LIMIT 1) AS fulfilled_qty,
          (SELECT status FROM demo_shipment LIMIT 1) AS shipment_status,
          (SELECT inventory_movement_id::text FROM demo_shipment LIMIT 1) AS shipment_movement_id,
+         (SELECT COUNT(DISTINCT im.id)::text
+            FROM inventory_movements im
+            JOIN inventory_movement_lines iml
+              ON iml.movement_id = im.id
+             AND iml.tenant_id = im.tenant_id
+            JOIN demo_components c
+              ON c.id = iml.item_id
+             AND c.uom = iml.uom
+             AND ABS(c.required_qty - iml.quantity_delta) < 0.000001
+            JOIN locations l
+              ON l.id = iml.location_id
+             AND l.tenant_id = iml.tenant_id
+           WHERE im.tenant_id = $1
+             AND im.source_type = 'inventory_transfer'
+             AND iml.reason_code = 'demo_putaway_to_production_store_in'
+             AND l.code = 'FACTORY_RM_STORE') AS storage_transfer_count,
          (SELECT ib.on_hand::text
             FROM inventory_balance ib
             JOIN demo_item i ON i.id = ib.item_id
@@ -1870,6 +1978,9 @@ async function verifyDemoSeed(tenantId: string) {
     if (Number(row?.fulfilled_qty ?? 0) !== DEMO_FLOW_QUANTITY) failures.push(`fulfilled qty ${row?.fulfilled_qty}`)
     if (row?.shipment_status !== 'posted') failures.push(`shipment status ${row?.shipment_status}`)
     if (!row?.shipment_movement_id) failures.push('shipment movement missing')
+    if (Number(row?.storage_transfer_count ?? 0) !== DEMO_BOM_COMPONENTS.length) {
+      failures.push(`storage transfer count ${row?.storage_transfer_count}`)
+    }
     if (failures.length > 0) {
       throw new Error(`Demo seed verification failed: ${failures.join(', ')}; expected ${expected} ${DEMO_FINISHED_GOOD.defaultUom}`)
     }
@@ -1893,6 +2004,7 @@ async function seedMilkChocolateDemo(
   const po = await ensureDemoPurchaseOrder(config, token, log, vendor, componentItems, warehouse)
   const receipt = await ensureDemoReceipt(config, token, log, po, componentItems)
   await ensureDemoQcAccepted(config, token, log, receipt)
+  await ensureDemoComponentsStoredForProduction(config, token, log, context.sellable, operations.rawStore, componentItems)
   const workOrder = await ensureDemoWorkOrder(
     config,
     token,
@@ -1900,15 +2012,14 @@ async function seedMilkChocolateDemo(
     log,
     finishedItem,
     bom,
-    context.sellable,
+    operations.rawStore,
     operations.fgStage,
   )
   await ensureDemoProductionReported(config, token, tenantId, log, workOrder.id)
   const so = await ensureDemoSalesOrder(config, token, log, customer, finishedItem, warehouse, operations.fgStage)
   await ensureDemoReservation(config, token, log, so, finishedItem, warehouse, operations.fgStage)
   const shipment = await ensureDemoShipment(config, token, log, so, operations.fgStage)
-  const postedShipment = await ensureDemoShipmentPosted(config, token, log, shipment)
-  await markDemoSalesOrderShipped(tenantId, postedShipment)
+  await ensureDemoShipmentPosted(config, token, log, shipment)
   const verification = await verifyDemoSeed(tenantId)
   log.info('Milk chocolate demo verification passed.', verification)
 }

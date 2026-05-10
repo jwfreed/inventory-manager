@@ -51,6 +51,13 @@ The reset and auth repair guards remain blocked in production.
 - Customer: `SIAMAYA-DEMO-CUSTOMER`.
 - Purchase order: `PO-MILK-CHOC-1000-INGREDIENTS`, with the exact component requirements for 1,000 bars.
 - Sales order: `SO-MILK-CHOC-1000-BARS`, for `1,000 each` finished bars.
+- Factory locations:
+  - `FACTORY_RECEIVING`: receiving/hold.
+  - `FACTORY_RM_STORE`: named raw-material store with current `SELLABLE` semantics.
+  - `FACTORY_PACK_STORE`: packaging store, `PACKAGING`, not sellable.
+  - `FACTORY_PRODUCTION`: WIP/production.
+  - `FACTORY_FG_STAGE`: finished goods sellable staging.
+  - `FACTORY_SHIPPING`: shipping.
 
 ## Manual Walkthrough
 
@@ -58,7 +65,7 @@ The reset and auth repair guards remain blocked in production.
 2. Open `PO-MILK-CHOC-1000-INGREDIENTS`.
 3. Receive all PO lines for the exact ordered quantities.
 4. If the receipt lands in QA, QC accept/release the received lines.
-5. If the UI presents a putaway task, put the demo components into the operational location required by the current production workflow. In this build, the single-stage production route consumes from the warehouse sellable/raw-material location.
+5. Move the accepted demo components into `FACTORY_RM_STORE` using putaway or an inventory transfer if the UI exposes the accepted stock as already available. Current work-order component reservations require a sellable consume location, so `FACTORY_RM_STORE` is a named raw-material location that remains `SELLABLE`/sellable until non-sellable component stores are supported. Current single-stage `report-production` resolves all BOM components from one consume location; component-specific consumption from `FACTORY_PACK_STORE` is not modeled for this one-step BOM.
 6. Create or execute a production work order for `1,000 each` of `SIAMAYA-MILK-CHOCOLATE-BAR-75G` using `SIAMAYA-BOM-MILK-CHOCOLATE-BAR-75G`.
 7. Confirm finished goods are received into finished goods staging/sellable stock.
 8. Reserve or allocate `1,000 each` to `SO-MILK-CHOC-1000-BARS`.
@@ -80,7 +87,7 @@ or explicitly:
 CHOCOLATE_SEED_MODE=completed CONFIRM_CANONICAL_RESET=1 ALLOW_LOCAL_AUTH_REPAIR=1 npm run dev:seed:chocolate
 ```
 
-Completed mode creates/approves the component PO, receives and QC accepts the components, reports production for 1,000 bars, creates the SO, reserves the finished bars, and posts the shipment.
+Completed mode creates/approves the component PO, receives and QC accepts the components, transfers accepted components from the warehouse sellable default into `FACTORY_RM_STORE`, reports production for 1,000 bars, creates the SO, reserves the finished bars, and posts the shipment.
 
 ## Troubleshooting
 
@@ -88,4 +95,4 @@ Completed mode creates/approves the component PO, receives and QC accepts the co
 - Login failed: for local demo only, set `ALLOW_LOCAL_AUTH_REPAIR=1`.
 - API unavailable: start `npm run dev` and confirm `API_BASE_URL` matches the server port.
 - Receipt blocked: confirm the PO is approved and the line UOM matches the PO line.
-- Production blocked: confirm components were QC released into the workflow's sellable/raw-material consume location and no component is short.
+- Production blocked: confirm components were QC released and then moved into `FACTORY_RM_STORE`; the current one-step production workflow consumes all BOM components from that named raw-material location, which must remain sellable for work-order component reservations.
