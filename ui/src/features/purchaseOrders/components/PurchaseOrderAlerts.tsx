@@ -5,7 +5,6 @@ type Props = {
   isLocked: boolean
   statusLabel: string
   canReceive: boolean
-  receiveHref?: string
   submitError?: string | null
   approveError?: string | null
   saveError?: string | null
@@ -20,7 +19,6 @@ export function PurchaseOrderAlerts({
   isLocked,
   statusLabel,
   canReceive,
-  receiveHref,
   submitError,
   approveError,
   saveError,
@@ -48,14 +46,7 @@ export function PurchaseOrderAlerts({
       {isLocked && canReceive && (
         <ActionGuardMessage
           title="Approved purchase order"
-          message="This PO is read-only because it has been approved. Receive items to continue the inbound flow."
-          action={
-            receiveHref ? (
-              <Link to={receiveHref}>
-                <Button size="sm">Receive items</Button>
-              </Link>
-            ) : undefined
-          }
+          message="This PO is read-only because it has been approved. Receiving can now begin."
         />
       )}
       {isLocked && !canReceive && (

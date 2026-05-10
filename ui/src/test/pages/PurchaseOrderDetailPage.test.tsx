@@ -117,16 +117,61 @@ describe('PurchaseOrderDetailPage', () => {
     expect(screen.getByText('Close purchase order')).toBeInTheDocument()
   })
 
-  it('approved PO shows Receive items as primary action', async () => {
+  it('approved PO shows exactly one Receive items link in the header area', async () => {
     renderPage()
 
-    // There should be two Receive items links (header + action bar)
     const receiveLinks = await screen.findAllByRole('link', { name: 'Receive items' })
-    expect(receiveLinks.length).toBeGreaterThanOrEqual(1)
-    // Each should point to /receiving/receipt with poId query param
-    for (const link of receiveLinks) {
-      expect(link).toHaveAttribute('href', '/receiving/receipt?poId=po-1')
-    }
+    expect(receiveLinks).toHaveLength(1)
+    expect(receiveLinks[0]).toHaveAttribute('href', '/receiving/receipt?poId=po-1')
+  })
+
+  it('approved banner is explanatory-only and does not contain a Receive items button', async () => {
+    renderPage()
+
+    expect(await screen.findByText('Approved purchase order')).toBeInTheDocument()
+    expect(screen.getByText(/Receiving can now begin/)).toBeInTheDocument()
+
+    // The banner itself should not contain a Receive items button
+    const banner = screen.getByText('Approved purchase order').closest('div') as HTMLElement
+    expect(banner).not.toHaveTextContent('Receive items')
+  })
+
+  it('lower action bar does not contain Receive items', async () => {
+    renderPage()
+
+    // Wait for page to settle
+    await screen.findByText('PO PO-0001')
+
+    // The only Receive items should be the header link — action bar should not add another
+    const receiveLinks = screen.getAllByRole('link', { name: 'Receive items' })
+    expect(receiveLinks).toHaveLength(1)
+  })
+
+  it('fully received PO does not show Receive items', async () => {
+    mockedUsePurchaseOrder.mockReturnValue({
+      data: {
+        id: 'po-1',
+        poNumber: 'PO-0001',
+        vendorId: 'vendor-1',
+        vendorCode: 'SUP-1',
+        vendorName: 'Supplier',
+        status: 'approved',
+        shipToLocationId: 'loc-1',
+        receivingLocationId: 'loc-2',
+        lines: [
+          { id: 'line-1', itemId: 'item-1', quantityOrdered: 10, quantityReceived: 10, status: 'complete', uom: 'kg' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    await screen.findByText('PO PO-0001')
+    expect(screen.queryByRole('link', { name: 'Receive items' })).toBeNull()
   })
 
   it('approved PO shows workflow guidance banner, not generic locked banner', async () => {

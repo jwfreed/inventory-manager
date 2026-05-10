@@ -309,7 +309,11 @@ export default function PurchaseOrderDetailPage() {
   const po = poQuery.data
   const statusKey = (status || po.status || 'draft').toLowerCase()
   const isSubmitted = statusKey === 'submitted'
-  const canReceive = statusKey === 'approved' || statusKey === 'partially_received'
+  const isReceivableStatus = statusKey === 'approved' || statusKey === 'partially_received'
+  const hasReceivableLines = (po.lines ?? []).some(
+    (l) => (l.quantityOrdered ?? 0) - (l.quantityReceived ?? 0) > 0,
+  )
+  const canReceive = isReceivableStatus && hasReceivableLines
   const receiveHref = canReceive ? `/receiving/receipt?poId=${po.id}` : ''
   const statusMeta: Record<
     string,
@@ -457,7 +461,6 @@ export default function PurchaseOrderDetailPage() {
             isLocked={isLocked || !canWritePurchaseOrder}
             statusLabel={currentStatus.label}
             canReceive={canReceive}
-            receiveHref={receiveHref}
             submitError={submitError}
             approveError={approveError}
             saveError={saveError}
@@ -536,8 +539,6 @@ export default function PurchaseOrderDetailPage() {
             canClose={canCloseHeader && canVoidPurchaseOrder}
             canCreate={canWritePurchaseOrder}
             canWrite={canWritePurchaseOrder}
-            canReceive={canReceive}
-            receiveHref={receiveHref}
             onSubmitIntent={handleSubmitIntent}
             onSave={handleSave}
             onCancelRequest={() => {
